@@ -227,30 +227,20 @@ wait_for_healthy() {
 
   printf "\033[1;34m[INFO]\033[0m Waiting for %s" "${container}"
 
-  # First check if container has a health check defined
-  local has_healthcheck=$(docker inspect --format='{{if .State.Health}}true{{else}}false{{end}}' "${container}" 2>/dev/null || echo "false")
-
-  if [[ "${has_healthcheck}" == "false" ]]; then
-    # No health check, just verify container is running
-    if docker ps --format '{{.Names}}' | grep -q "^${container}$"; then
-      echo ""
-      log SUCCESS "${container} is running (no health check)"
-      return 0
-    else
-      echo ""
-      log ERROR "${container} is not running"
-      return 1
-    fi
-  fi
-
-  # Container has health check, wait for it to become healthy
   while [[ $attempts -lt $max_attempts ]]; do
-    local health_status=$(docker inspect --format='{{.State.Health.Status}}' "${container}" 2>/dev/null || echo "unknown")
+    local health_status=$(docker inspect --format='{{.State.Health.Status}}' "${container}" 2>/dev/null || echo "none")
 
     if [[ "${health_status}" == "healthy" ]]; then
       echo ""
       log SUCCESS "${container} is healthy"
       return 0
+    elif [[ "${health_status}" == "none" ]]; then
+      # Container has no health check, just check if it's running
+      if docker ps --format '{{.Names}}' | grep -q "^${container}$"; then
+        echo ""
+        log SUCCESS "${container} is running (no health check)"
+        return 0
+      fi
     fi
 
     printf "."

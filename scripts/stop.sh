@@ -1,30 +1,36 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Stops all TronRelic services:
-#   • kills backend and frontend processes
-#   • optionally stops Docker containers
+# Stops all TronRelic Docker containers:
+#   • Stops all 4 containers: Frontend, Backend, MongoDB, Redis
+#   • Optionally removes volumes (with --volumes flag)
+#
+# Options:
+#   --volumes      Also remove Docker volumes (WARNING: deletes all data)
+#   --prod         Use production Docker Compose configuration
+#   -h, --help     Show this help message and exit.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MONO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-LOG_DIR="${MONO_ROOT}/.run"
 
-BACKEND_PORT=4000
-FRONTEND_PORT=3000
-MONGO_CONTAINER="tronrelic-mongo"
-REDIS_CONTAINER="tronrelic-redis"
-
-STOP_DOCKER=false
+REMOVE_VOLUMES=false
+PRODUCTION=false
 
 usage() {
   cat <<'USAGE'
-Usage: scripts/stop.sh [--docker]
+Usage: scripts/stop.sh [OPTIONS]
 
-Stops all TronRelic services.
+Stops all TronRelic Docker containers.
 
 Options:
-  --docker       Also stop MongoDB and Redis Docker containers
+  --volumes      Also remove Docker volumes (WARNING: deletes all data)
+  --prod         Use production Docker Compose configuration
   -h, --help     Show this help message and exit.
+
+Examples:
+  scripts/stop.sh                # Stop containers, keep data
+  scripts/stop.sh --volumes      # Stop containers and delete all data
+  scripts/stop.sh --prod         # Stop production containers
 USAGE
 }
 
@@ -43,8 +49,12 @@ log() {
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --docker)
-      STOP_DOCKER=true
+    --volumes)
+      REMOVE_VOLUMES=true
+      shift
+      ;;
+    --prod)
+      PRODUCTION=true
       shift
       ;;
     -h|--help)
@@ -59,92 +69,45 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# Kill processes on specific ports
-kill_port() {
-  local port="$1"
-  local name="$2"
-  local found=false
-
-  # Try lsof first
-  if command -v lsof >/dev/null 2>&1; then
-    if pids=$(lsof -ti tcp:"${port}" 2>/dev/null); then
-      if [[ -n "${pids}" ]]; then
-        found=true
-        log INFO "Stopping ${name} on port ${port} (pids: ${pids})"
-        # shellcheck disable=SC2086
-        kill ${pids} >/dev/null 2>&1 || true
-        sleep 1
-        # Force kill if still running
-        if lsof -ti tcp:"${port}" >/dev/null 2>&1; then
-          # shellcheck disable=SC2086
-          kill -9 ${pids} >/dev/null 2>&1 || true
-        fi
-      fi
-    fi
-  fi
-
-  # Try fuser as fallback
-  if [[ "${found}" == false ]] && command -v fuser >/dev/null 2>&1; then
-    if fuser -s "${port}/tcp" 2>/dev/null; then
-      found=true
-      log INFO "Stopping ${name} on port ${port} (using fuser)"
-      fuser -k -TERM "${port}/tcp" >/dev/null 2>&1 || true
-      sleep 1
-      # Force kill if still running
-      if fuser -s "${port}/tcp" 2>/dev/null; then
-        fuser -k -KILL "${port}/tcp" >/dev/null 2>&1 || true
-      fi
-    fi
-  fi
-
-  if [[ "${found}" == true ]]; then
-    log SUCCESS "${name} stopped"
-  else
-    log INFO "No ${name} process found on port ${port}"
-  fi
-}
-
-container_running() {
-  docker ps --format '{{.Names}}' 2>/dev/null | grep -Fq "$1"
-}
-
-stop_container() {
-  local name="$1"
-  if container_running "${name}"; then
-    log INFO "Stopping container ${name}"
-    docker stop "${name}" >/dev/null 2>&1 || true
-    log SUCCESS "Container ${name} stopped"
-  else
-    log INFO "Container ${name} not running"
-  fi
-}
-
-log INFO "Stopping TronRelic services"
-
-# Kill processes by port
-kill_port "${BACKEND_PORT}" "Backend API"
-kill_port "${FRONTEND_PORT}" "Frontend"
-
-# Extra safety: kill any lingering Next.js dev/start processes
-if command -v pkill >/dev/null 2>&1; then
-  if pkill -f "next (dev|start)" >/dev/null 2>&1; then
-    log INFO "Killed lingering Next.js processes"
-    sleep 1
-  fi
-  # Kill any node processes running from our workspace
-  if pkill -f "node.*apps/(backend|frontend)" >/dev/null 2>&1; then
-    log INFO "Killed lingering Node processes"
-    sleep 1
-  fi
+# Check if docker command exists
+if ! command -v docker >/dev/null 2>&1; then
+  log ERROR "Docker not found. Please install Docker and try again."
+  exit 1
 fi
 
-if [[ "${STOP_DOCKER}" == true ]]; then
-  if command -v docker >/dev/null 2>&1; then
-    stop_container "${MONGO_CONTAINER}"
-    stop_container "${REDIS_CONTAINER}"
+# Change to project root for docker compose commands
+cd "${MONO_ROOT}"
+
+# Determine which docker-compose file to use
+COMPOSE_FILE="docker-compose.yml"
+if [[ "${PRODUCTION}" == true ]]; then
+  if [[ -f docker-compose.prod.yml ]]; then
+    COMPOSE_FILE="docker-compose.prod.yml"
+    log INFO "Using production configuration: ${COMPOSE_FILE}"
   else
-    log WARN "Docker not found, skipping container shutdown"
+    log WARN "Production compose file not found, using default: ${COMPOSE_FILE}"
   fi
+else
+  log INFO "Using development configuration: ${COMPOSE_FILE}"
 fi
 
-log SUCCESS "All services stopped"
+# Check if any containers are running
+if ! docker compose -f "${COMPOSE_FILE}" ps -q 2>/dev/null | grep -q .; then
+  log INFO "No TronRelic containers are running"
+  exit 0
+fi
+
+# Stop containers
+if [[ "${REMOVE_VOLUMES}" == true ]]; then
+  log WARN "Stopping containers and removing volumes (this will delete all data)"
+  docker compose -f "${COMPOSE_FILE}" down -v
+  log SUCCESS "Containers stopped and volumes removed"
+else
+  log INFO "Stopping TronRelic containers"
+  docker compose -f "${COMPOSE_FILE}" down
+  log SUCCESS "All containers stopped (data preserved)"
+fi
+
+log INFO ""
+log INFO "To start services again, run:"
+log INFO "  ./scripts/start.sh"
