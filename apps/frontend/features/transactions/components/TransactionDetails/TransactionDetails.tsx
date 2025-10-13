@@ -65,7 +65,7 @@ export function TransactionDetails({ transaction }: TransactionDetailsProps) {
                     <Badge tone="neutral">{formattedType}</Badge>
                 </header>
 
-                <section className={styles['metrics-grid']}>
+                <section className={styles.metrics_grid}>
                     <Metric label="TRX value" value={`${transaction.amountTRX.toLocaleString()} TRX`} />
                     {transaction.amountUSD != null && (
                         <Metric
@@ -78,13 +78,13 @@ export function TransactionDetails({ transaction }: TransactionDetailsProps) {
                 </section>
 
                 {transaction.memo && (
-                    <section className={styles['memo-section']}>
-                        <div className={styles['memo-section__label']}>Memo</div>
-                        <code className={styles['memo-section__content']}>{transaction.memo}</code>
+                    <section className={styles.memo_section}>
+                        <div className={styles.memo_section__label}>Memo</div>
+                        <code className={styles.memo_section__content}>{transaction.memo}</code>
                     </section>
                 )}
 
-                <section className={styles['stats-grid']}>
+                <section className={styles.stats_grid}>
                     <StatBlock
                         title="Energy"
                         primary={transaction.energy ? `${transaction.energy.consumed.toLocaleString()} units` : '—'}
@@ -105,9 +105,9 @@ export function TransactionDetails({ transaction }: TransactionDetailsProps) {
                 </section>
 
                 {transaction.analysis && (
-                    <section className={styles['analysis-section']}>
-                        <div className={styles['analysis-section__label']}>Analysis</div>
-                        <ul className={styles['analysis-section__list']}>
+                    <section className={styles.analysis_section}>
+                        <div className={styles.analysis_section__label}>Analysis</div>
+                        <ul className={styles.analysis_section__list}>
                             {transaction.analysis.pattern && (
                                 <li>Pattern detected: {transaction.analysis.pattern.replace('_', ' ')}</li>
                             )}
@@ -183,10 +183,10 @@ interface StatBlockProps {
  */
 function StatBlock({ title, primary, secondary }: StatBlockProps) {
     return (
-        <div className={styles['stat-block']}>
-            <div className={styles['stat-block__title']}>{title}</div>
-            <strong className={styles['stat-block__primary']}>{primary}</strong>
-            {secondary && <div className={styles['stat-block__secondary']}>{secondary}</div>}
+        <div className={styles.stat_block}>
+            <div className={styles.stat_block__title}>{title}</div>
+            <strong className={styles.stat_block__primary}>{primary}</strong>
+            {secondary && <div className={styles.stat_block__secondary}>{secondary}</div>}
         </div>
     );
 }

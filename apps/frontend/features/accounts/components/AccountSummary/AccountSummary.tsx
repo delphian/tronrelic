@@ -100,14 +100,14 @@ export function AccountSummary({ snapshot }: AccountSummaryProps) {
                     </div>
                 </header>
 
-                <section className={styles['metrics-grid']}>
+                <section className={styles.metrics_grid}>
                     <Metric label="Balance" value={`${snapshot.balanceTRX.toLocaleString(undefined, { maximumFractionDigits: 2 })} TRX`} />
                     <Metric label="Rewards" value={`${(snapshot.rewardsTRX ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 })} TRX`} />
                     <Metric label="Created" value={snapshot.createdAt ? new Date(snapshot.createdAt).toLocaleDateString() : 'Unknown'} />
                     <Metric label="Activated by" value={snapshot.activatedBy ?? 'Unknown'} muted />
                 </section>
 
-                <section className={styles['resources-grid']}>
+                <section className={styles.resources_grid}>
                     {snapshot.energy && (
                         <ResourceCard
                             title="Energy"
@@ -210,15 +210,15 @@ function ResourceCard({
     const percentage = limit > 0 ? Math.min(100, Math.max(0, Math.round((used / limit) * 100))) : 0;
 
     return (
-        <div className={styles['resource-card']}>
-            <div className={styles['resource-card__header']}>
-                <h3 className={styles['resource-card__title']}>{title}</h3>
-                <span className={styles['resource-card__percentage']}>{percentage}% used</span>
+        <div className={styles.resource_card}>
+            <div className={styles.resource_card__header}>
+                <h3 className={styles.resource_card__title}>{title}</h3>
+                <span className={styles.resource_card__percentage}>{percentage}% used</span>
             </div>
-            <div className={styles['resource-card__progress']}>
+            <div className={styles.resource_card__progress}>
                 <Progress value={percentage} />
             </div>
-            <ul className={styles['resource-card__details']}>
+            <ul className={styles.resource_card__details}>
                 <li>Total: {total.toLocaleString()}</li>
                 <li>Used: {used.toLocaleString()}</li>
                 <li>Limit: {limit.toLocaleString()}</li>

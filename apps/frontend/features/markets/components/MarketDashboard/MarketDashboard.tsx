@@ -155,17 +155,17 @@ export function MarketDashboard({ markets, stats, initialHistory }: MarketDashbo
   return (
     <>
       <div className={`grid ${styles.grid}`}>
-        <section className={styles['stat-grid']}>
+        <section className={styles.stat_grid}>
           {summaryItems.map(item => (
             <Card key={item.label} tone="muted" padding="sm">
-              <div className={styles['stat-card__label']}>{item.label}</div>
-              <div className={styles['stat-card__value']}>{item.value}</div>
-              <div className={styles['stat-card__delta']}>{item.helper}</div>
+              <div className={styles.stat_card__label}>{item.label}</div>
+              <div className={styles.stat_card__value}>{item.value}</div>
+              <div className={styles.stat_card__delta}>{item.helper}</div>
             </Card>
           ))}
         </section>
 
-        <div className={`${styles['dashboard-container']} market-dashboard-container ${selected ? `${styles['slideout-open']} slideout-open` : ''}`}>
+        <div className={`${styles.dashboard_container} market-dashboard-container ${selected ? `${styles.slideout-open} slideout-open` : ''}`}>
           <MarketTable
             initialMarkets={markets}
             onSelect={onSelectMarket}

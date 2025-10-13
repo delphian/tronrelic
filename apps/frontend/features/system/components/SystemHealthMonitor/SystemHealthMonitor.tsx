@@ -135,7 +135,7 @@ export function SystemHealthMonitor({ token }: Props) {
     }, [token]);
 
     if (loading) {
-        return <div className={styles['loading-state']}>Loading system health data...</div>;
+        return <div className={styles.loading_state}>Loading system health data...</div>;
     }
 
     return (
@@ -145,41 +145,41 @@ export function SystemHealthMonitor({ token }: Props) {
                 <h2 className={styles.section__title}>MongoDB Database</h2>
                 {database && (
                     <>
-                        <div className={styles['metrics-grid']}>
+                        <div className={styles.metrics_grid}>
                             <div className={cn(
-                                styles['metric-card'],
+                                styles.metric_card,
                                 database.connected ? styles['metric-card--healthy'] : styles['metric-card--danger']
                             )}>
-                                <div className={styles['metric-card__label']}>Connection Status</div>
-                                <div className={styles['metric-card__value']}>
+                                <div className={styles.metric_card__label}>Connection Status</div>
+                                <div className={styles.metric_card__value}>
                                     {database.connected ? 'Connected' : 'Disconnected'}
                                 </div>
                             </div>
 
                             {database.responseTime !== null && (
-                                <div className={cn(styles['metric-card'], styles['metric-card--default'])}>
-                                    <div className={styles['metric-card__label']}>Response Time</div>
-                                    <div className={styles['metric-card__value']}>{database.responseTime}ms</div>
+                                <div className={cn(styles.metric_card, styles['metric-card--default'])}>
+                                    <div className={styles.metric_card__label}>Response Time</div>
+                                    <div className={styles.metric_card__value}>{database.responseTime}ms</div>
                                 </div>
                             )}
 
-                            <div className={cn(styles['metric-card'], styles['metric-card--default'])}>
-                                <div className={styles['metric-card__label']}>Collections</div>
-                                <div className={styles['metric-card__value']}>{database.collectionCount}</div>
+                            <div className={cn(styles.metric_card, styles['metric-card--default'])}>
+                                <div className={styles.metric_card__label}>Collections</div>
+                                <div className={styles.metric_card__value}>{database.collectionCount}</div>
                             </div>
 
                             {database.databaseSize !== null && (
-                                <div className={cn(styles['metric-card'], styles['metric-card--default'])}>
-                                    <div className={styles['metric-card__label']}>Database Size</div>
-                                    <div className={styles['metric-card__value']}>{formatBytes(database.databaseSize)}</div>
+                                <div className={cn(styles.metric_card, styles['metric-card--default'])}>
+                                    <div className={styles.metric_card__label}>Database Size</div>
+                                    <div className={styles.metric_card__value}>{formatBytes(database.databaseSize)}</div>
                                 </div>
                             )}
                         </div>
 
                         {database.recentErrors.length > 0 && (
-                            <div className={styles['error-panel']}>
-                                <div className={styles['error-panel__title']}>Recent Errors:</div>
-                                <div className={styles['error-panel__list']}>
+                            <div className={styles.error_panel}>
+                                <div className={styles.error_panel__title}>Recent Errors:</div>
+                                <div className={styles.error_panel__list}>
                                     {database.recentErrors.map((error, idx) => (
                                         <div key={idx}>{error}</div>
                                     ))}
@@ -194,39 +194,39 @@ export function SystemHealthMonitor({ token }: Props) {
             <section className={styles.section}>
                 <h2 className={styles.section__title}>Redis Cache</h2>
                 {redis && (
-                    <div className={styles['metrics-grid']}>
+                    <div className={styles.metrics_grid}>
                         <div className={cn(
-                            styles['metric-card'],
+                            styles.metric_card,
                             redis.connected ? styles['metric-card--healthy'] : styles['metric-card--danger']
                         )}>
-                            <div className={styles['metric-card__label']}>Connection Status</div>
-                            <div className={styles['metric-card__value']}>
+                            <div className={styles.metric_card__label}>Connection Status</div>
+                            <div className={styles.metric_card__value}>
                                 {redis.connected ? 'Connected' : 'Disconnected'}
                             </div>
                         </div>
 
                         {redis.responseTime !== null && (
-                            <div className={cn(styles['metric-card'], styles['metric-card--default'])}>
-                                <div className={styles['metric-card__label']}>Response Time</div>
-                                <div className={styles['metric-card__value']}>{redis.responseTime}ms</div>
+                            <div className={cn(styles.metric_card, styles['metric-card--default'])}>
+                                <div className={styles.metric_card__label}>Response Time</div>
+                                <div className={styles.metric_card__value}>{redis.responseTime}ms</div>
                             </div>
                         )}
 
-                        <div className={cn(styles['metric-card'], styles['metric-card--default'])}>
-                            <div className={styles['metric-card__label']}>Cached Keys</div>
-                            <div className={styles['metric-card__value']}>{redis.keyCount.toLocaleString()}</div>
+                        <div className={cn(styles.metric_card, styles['metric-card--default'])}>
+                            <div className={styles.metric_card__label}>Cached Keys</div>
+                            <div className={styles.metric_card__value}>{redis.keyCount.toLocaleString()}</div>
                         </div>
 
                         {redis.memoryUsage !== null && (
-                            <div className={cn(styles['metric-card'], styles['metric-card--default'])}>
-                                <div className={styles['metric-card__label']}>Memory Usage</div>
-                                <div className={styles['metric-card__value']}>{formatBytes(redis.memoryUsage)}</div>
+                            <div className={cn(styles.metric_card, styles['metric-card--default'])}>
+                                <div className={styles.metric_card__label}>Memory Usage</div>
+                                <div className={styles.metric_card__value}>{formatBytes(redis.memoryUsage)}</div>
                             </div>
                         )}
 
-                        <div className={cn(styles['metric-card'], styles['metric-card--default'])}>
-                            <div className={styles['metric-card__label']}>Evictions</div>
-                            <div className={styles['metric-card__value']}>{redis.evictions.toLocaleString()}</div>
+                        <div className={cn(styles.metric_card, styles['metric-card--default'])}>
+                            <div className={styles.metric_card__label}>Evictions</div>
+                            <div className={styles.metric_card__value}>{redis.evictions.toLocaleString()}</div>
                         </div>
                     </div>
                 )}
@@ -236,30 +236,30 @@ export function SystemHealthMonitor({ token }: Props) {
             <section className={styles.section}>
                 <h2 className={styles.section__title}>Backend Server</h2>
                 {server && (
-                    <div className={styles['metrics-grid']}>
-                        <div className={cn(styles['metric-card'], styles['metric-card--default'])}>
-                            <div className={styles['metric-card__label']}>Uptime</div>
-                            <div className={styles['metric-card__value']}>{formatUptime(server.uptime)}</div>
+                    <div className={styles.metrics_grid}>
+                        <div className={cn(styles.metric_card, styles['metric-card--default'])}>
+                            <div className={styles.metric_card__label}>Uptime</div>
+                            <div className={styles.metric_card__value}>{formatUptime(server.uptime)}</div>
                         </div>
 
-                        <div className={cn(styles['metric-card'], styles['metric-card--default'])}>
-                            <div className={styles['metric-card__label']}>Heap Memory</div>
-                            <div className={styles['metric-card__value']}>
+                        <div className={cn(styles.metric_card, styles['metric-card--default'])}>
+                            <div className={styles.metric_card__label}>Heap Memory</div>
+                            <div className={styles.metric_card__value}>
                                 {formatBytes(server.memoryUsage.heapUsed)}
                             </div>
-                            <div className={styles['metric-card__detail']}>
+                            <div className={styles.metric_card__detail}>
                                 of {formatBytes(server.memoryUsage.heapTotal)}
                             </div>
                         </div>
 
-                        <div className={cn(styles['metric-card'], styles['metric-card--default'])}>
-                            <div className={styles['metric-card__label']}>RSS Memory</div>
-                            <div className={styles['metric-card__value']}>{formatBytes(server.memoryUsage.rss)}</div>
+                        <div className={cn(styles.metric_card, styles['metric-card--default'])}>
+                            <div className={styles.metric_card__label}>RSS Memory</div>
+                            <div className={styles.metric_card__value}>{formatBytes(server.memoryUsage.rss)}</div>
                         </div>
 
-                        <div className={cn(styles['metric-card'], styles['metric-card--default'])}>
-                            <div className={styles['metric-card__label']}>CPU Usage</div>
-                            <div className={styles['metric-card__value']}>{server.cpuUsage.toFixed(1)}%</div>
+                        <div className={cn(styles.metric_card, styles['metric-card--default'])}>
+                            <div className={styles.metric_card__label}>CPU Usage</div>
+                            <div className={styles.metric_card__value}>{server.cpuUsage.toFixed(1)}%</div>
                         </div>
                     </div>
                 )}

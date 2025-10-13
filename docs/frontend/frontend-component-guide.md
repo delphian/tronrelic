@@ -19,6 +19,75 @@ Following these guidelines eliminates these risks and ensures your interfaces fe
 
 ## CSS Architecture: Two-Layer System
 
+### ⚠️ CSS Modules Class Name Conventions
+
+**Why This Convention Matters:**
+
+CSS Modules in TypeScript generate typed objects that map class names to scoped identifiers. Using underscores for multi-word identifiers ensures you can access styles using clean dot notation (`styles.market_region`) instead of bracket notation (`styles['market-region']`), which is verbose and loses type safety.
+
+**Naming Rules:**
+
+1. **Single-word identifiers**: No separators (e.g., `.market`, `.card`, `.header`)
+2. **Multi-word identifiers**: Use underscores (e.g., `.market_region`, `.best_deal`, `.loading_state`)
+3. **BEM Element separator**: Keep double underscore `__` (e.g., `.card__header`, `.table__cell`)
+4. **BEM Element with multi-word names**: Combine underscores for words + double underscore for hierarchy (e.g., `.table__cell_market`, `.card__header_title`)
+5. **BEM Modifier separator**: Keep double hyphen `--` for modifiers (e.g., `.card--selected`, `.table__row--best_deal`)
+
+**Good Examples (Dot Notation):**
+
+```css
+/* MarketTable.module.css */
+.market { ... }                          /* Single word */
+.market_region { ... }                   /* Multi-word identifier */
+.table__cell { ... }                     /* BEM element */
+.table__cell_market { ... }              /* BEM element with multi-word name */
+.card--selected { ... }                  /* BEM modifier */
+.table__row--best_deal { ... }           /* BEM modifier with multi-word name */
+```
+
+```tsx
+// MarketTable.tsx - Clean dot notation with type safety
+import styles from './MarketTable.module.css';
+
+<div className={styles.market}>
+    <table className={styles.market_region}>
+        <td className={styles.table__cell_market}>Data</td>
+        <tr className={styles.table__row--best_deal}>Row</tr>
+    </table>
+</div>
+```
+
+**Bad Examples (Hyphens Break Dot Notation):**
+
+```css
+/* ❌ Bad - hyphens require bracket notation */
+.market-region { ... }
+.table-cell { ... }
+.best-deal { ... }
+```
+
+```tsx
+// ❌ Bad - loses type safety and readability
+import styles from './MarketTable.module.css';
+
+<div className={styles['market-region']}>
+    <td className={styles['table-cell']}>Data</td>
+</div>
+```
+
+**BEM Pattern Summary:**
+
+| Pattern | Example | TypeScript Access |
+|---------|---------|-------------------|
+| Block (single word) | `.card` | `styles.card` |
+| Block (multi-word) | `.market_card` | `styles.market_card` |
+| Element | `.card__header` | `styles.card__header` |
+| Element (multi-word) | `.card__header_title` | `styles.card__header_title` |
+| Modifier | `.card--selected` | `styles['card--selected']` |
+| Modifier (multi-word) | `.card--best_deal` | `styles['card--best_deal']` |
+
+**Note:** Double hyphens (`--`) in BEM modifiers still require bracket notation, but they are less frequently used than base classes and elements. Prioritize underscores for all multi-word identifiers to maximize dot notation usage.
+
 TronRelic separates styling concerns into two distinct layers:
 
 1. **`globals.css` provides the design foundation** - CSS variables (design tokens), utility classes, base resets, and animations that ensure visual consistency across the entire application

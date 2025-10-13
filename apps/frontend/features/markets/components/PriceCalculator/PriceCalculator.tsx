@@ -132,8 +132,8 @@ export function PriceCalculator() {
                     </p>
                 </header>
 
-                <section className={`stack stack--sm ${styles['form-section']}`}>
-                    <div className={styles['form-grid']}>
+                <section className={`stack stack--sm ${styles.form_section}`}>
+                    <div className={styles.form_grid}>
                         <Input
                             placeholder="Contract address"
                             value={form.contractAddress}
@@ -147,7 +147,7 @@ export function PriceCalculator() {
                             required
                         />
                     </div>
-                    <div className={styles['form-grid']}>
+                    <div className={styles.form_grid}>
                         <Input
                             placeholder="From address (optional)"
                             value={form.fromAddress}
@@ -159,7 +159,7 @@ export function PriceCalculator() {
                             onChange={handleChange('toAddress')}
                         />
                     </div>
-                    <div className={styles['form-actions']}>
+                    <div className={styles.form_actions}>
                         <Button onClick={() => handleSubmit()} loading={loading} disabled={!isValid || loading}>
                             {loading ? 'Calculating…' : 'Estimate energy'}
                         </Button>
@@ -201,7 +201,7 @@ export function PriceCalculator() {
 
                 <footer className={`stack stack--sm ${styles.footer}`}>
                     <h4 className={styles.footer__title}>Popular contracts</h4>
-                    <div className={styles['shortcuts-grid']}>
+                    <div className={styles.shortcuts_grid}>
                         <Shortcut label="USDT" address="TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t" onSelect={value => setForm(prev => ({ ...prev, contractAddress: value }))} />
                         <Shortcut label="USDD" address="TNzsbr98vrDiiGX8RLKeQ1Qy8DMdM8wExf" onSelect={value => setForm(prev => ({ ...prev, contractAddress: value }))} />
                         <Shortcut label="SUN" address="TFs6mEDLJrb8FEbDuwN6fEDvVguZcY1zwV" onSelect={value => setForm(prev => ({ ...prev, contractAddress: value }))} />

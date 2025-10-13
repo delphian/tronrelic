@@ -91,7 +91,7 @@ export function BestDealFinder({ markets, onSelect }: BestDealFinderProps) {
                                 Surface the most efficient rental desks by price, reliability, or availability.
                             </p>
                         </div>
-                        <div className={styles['sort-buttons']}>
+                        <div className={styles.sort_buttons}>
                             <Button
                                 variant={sortKey === 'price' ? 'primary' : 'ghost'}
                                 size="sm"
@@ -123,26 +123,26 @@ export function BestDealFinder({ markets, onSelect }: BestDealFinderProps) {
                     />
                 </header>
 
-                <section className={styles['markets-grid']}>
+                <section className={styles.markets_grid}>
                     {shortlist.map(market => (
                         <article
                             key={market.guid}
                             className={cn(
-                                styles['market-card'],
-                                onSelect && styles['market-card--clickable']
+                                styles.market_card,
+                                onSelect && styles['market_card--clickable']
                             )}
                             onClick={() => onSelect?.(market)}
                         >
-                            <div className={styles['market-card__header']}>
-                                <div className={styles['market-card__info']}>
-                                    <div className={styles['market-card__name']}>{market.name}</div>
-                                    <div className={styles['market-card__region']}>
+                            <div className={styles.market_card__header}>
+                                <div className={styles.market_card__info}>
+                                    <div className={styles.market_card__name}>{market.name}</div>
+                                    <div className={styles.market_card__region}>
                                         {market.supportedRegions?.join(', ') ?? 'Global'}
                                     </div>
                                 </div>
                                 {market.isBestDeal && <Badge tone="success">Featured</Badge>}
                             </div>
-                            <ul className={styles['market-card__metrics']}>
+                            <ul className={styles.market_card__metrics}>
                                 <li>
                                     Effective price: {market.effectivePrice != null ? `${market.effectivePrice.toFixed(2)} TRX` : '—'}
                                 </li>
@@ -156,7 +156,7 @@ export function BestDealFinder({ markets, onSelect }: BestDealFinderProps) {
                         </article>
                     ))}
                     {!shortlist.length && (
-                        <div className={styles['empty-state']}>No markets match your filters at the moment.</div>
+                        <div className={styles.empty_state}>No markets match your filters at the moment.</div>
                     )}
                 </section>
             </div>

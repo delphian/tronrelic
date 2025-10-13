@@ -79,7 +79,7 @@ export function AccountHistory({
 
                 <section className={styles.transactions}>
                     {loading && (
-                        <div className={styles['loading-state']}>
+                        <div className={styles.loading_state}>
                             {Array.from({ length: 5 }).map((_, index) => (
                                 <Skeleton key={index} style={{ height: '84px', borderRadius: 'var(--radius-lg)' }} />
                             ))}
@@ -87,7 +87,7 @@ export function AccountHistory({
                     )}
 
                     {!loading && transactions.length === 0 && (
-                        <div className={styles['empty-state']}>No transactions match your filters in this range.</div>
+                        <div className={styles.empty_state}>No transactions match your filters in this range.</div>
                     )}
 
                     {!loading && transactions.map(transaction => (
@@ -113,7 +113,7 @@ export function AccountHistory({
                     ))}
                 </section>
 
-                <div className={styles['pagination-wrapper']}>
+                <div className={styles.pagination_wrapper}>
                     <Pagination
                         total={total}
                         pageSize={pageSize}

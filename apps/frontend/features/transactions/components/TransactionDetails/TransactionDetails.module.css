@@ -37,7 +37,7 @@
     color: var(--color-text-subtle);
 }
 
-.metrics-grid {
+.metrics_grid {
     display: grid;
     gap: 1rem;
     grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -60,66 +60,66 @@
     font-size: 0.92rem;
 }
 
-.memo-section {
+.memo_section {
     background: rgba(11, 16, 28, 0.6);
     border-radius: var(--radius-md);
     padding: 0.85rem 1.1rem;
 }
 
-.memo-section__label {
+.memo_section__label {
     color: var(--color-text-subtle);
     font-size: 0.78rem;
     margin-bottom: 0.35rem;
 }
 
-.memo-section__content {
+.memo_section__content {
     font-size: 0.85rem;
     font-family: 'Courier New', monospace;
     word-break: break-word;
 }
 
-.stats-grid {
+.stats_grid {
     display: grid;
     gap: 1rem;
     grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
 }
 
-.stat-block {
+.stat_block {
     background: rgba(8, 12, 24, 0.7);
     border-radius: var(--radius-md);
     padding: 0.85rem 1.1rem;
 }
 
-.stat-block__title {
+.stat_block__title {
     color: var(--color-text-subtle);
     font-size: 0.8rem;
     margin-bottom: 0.25rem;
 }
 
-.stat-block__primary {
+.stat_block__primary {
     font-weight: 600;
     font-size: 1rem;
 }
 
-.stat-block__secondary {
+.stat_block__secondary {
     color: var(--color-text-subtle);
     font-size: 0.78rem;
     margin-top: 0.25rem;
 }
 
-.analysis-section {
+.analysis_section {
     background: rgba(12, 18, 34, 0.6);
     border-radius: var(--radius-md);
     padding: 0.85rem 1.1rem;
 }
 
-.analysis-section__label {
+.analysis_section__label {
     color: var(--color-text-subtle);
     font-size: 0.78rem;
     margin-bottom: 0.35rem;
 }
 
-.analysis-section__list {
+.analysis_section__list {
     list-style: disc;
     padding-inline-start: 1.5rem;
     margin: 0;

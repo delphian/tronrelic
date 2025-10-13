@@ -40,7 +40,7 @@
     opacity: 0.75;
 }
 
-.table-scroll {
+.table_scroll {
     overflow-x: auto;
     border-radius: var(--radius-md);
     margin-top: 1.25rem;
@@ -69,38 +69,38 @@
     background: rgba(79, 140, 255, 0.18);
 }
 
-.table__row--best-deal {
+.table__row--best_deal {
     background: rgba(87, 212, 140, 0.12);
 }
 
-.table__cell-market {
+.table__cell_market {
     display: flex;
     flex-direction: column;
     gap: 0.25rem;
 }
 
-.table__market-name {
+.table__market_name {
     /* Inherits from <strong> tag - no additional styles needed */
 }
 
-.table__market-region {
+.table__market_region {
     font-size: 0.75rem;
 }
 
-.table__price-range {
+.table__price_range {
     display: flex;
     flex-direction: column;
     gap: 0.15rem;
     font-size: 0.85rem;
 }
 
-.table__price-range-high {
+.table__price_range_high {
     opacity: 0.7;
 }
 
 /* Responsive columns that hide when slideout is open */
-.col-availability,
-.col-updated {
+.col_availability,
+.col_updated {
     transition: opacity 0.2s ease;
 }
 

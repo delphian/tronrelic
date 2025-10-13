@@ -74,19 +74,19 @@
     color: rgba(226, 234, 255, 0.68);
 }
 
-.loading-state {
+.loading_state {
     display: flex;
     flex-direction: column;
     gap: 0.75rem;
 }
 
-.empty-state {
+.empty_state {
     color: var(--color-text-subtle);
     padding: 2rem;
     text-align: center;
 }
 
-.pagination-wrapper {
+.pagination_wrapper {
     display: flex;
     justify-content: center;
 }

@@ -203,7 +203,7 @@ export function WhaleDashboard({ initialSeries, initialHighlights }: WhaleDashbo
                         </Card>
                     </section>
 
-                    <div className={styles['chart-container']}>
+                    <div className={styles.chart_container}>
                         {loading && !series.length ? (
                             <Skeleton style={{ height: '240px' }} />
                         ) : (
@@ -222,20 +222,20 @@ export function WhaleDashboard({ initialSeries, initialHighlights }: WhaleDashbo
                         )}
                     </div>
 
-                    {error && <p className={styles['error-message']}>{error}</p>}
+                    {error && <p className={styles.error_message}>{error}</p>}
                 </div>
             </Card>
 
             <Card>
                 <div className="stack">
-                    <header className={styles['highlights-header']}>
+                    <header className={styles.highlights_header}>
                         <div>
-                            <h3 className={styles['highlights-header__title']}>Latest whale transfers</h3>
-                            <p className={styles['highlights-header__description']}>Sorted by most recent activity.</p>
+                            <h3 className={styles.highlights_header__title}>Latest whale transfers</h3>
+                            <p className={styles.highlights_header__description}>Sorted by most recent activity.</p>
                         </div>
                         <Badge tone="neutral">{highlights.length} events</Badge>
                     </header>
-                    <div className={styles['highlights-list']}>
+                    <div className={styles.highlights_list}>
                         {highlights.map(item => (
                             <article key={item.txId} className={styles.highlight}>
                                 <div className={styles.highlight__header}>
@@ -253,7 +253,7 @@ export function WhaleDashboard({ initialSeries, initialHighlights }: WhaleDashbo
                             </article>
                         ))}
                         {!highlights.length && (
-                            <p className={styles['empty-state']}>No whale movements recorded yet.</p>
+                            <p className={styles.empty_state}>No whale movements recorded yet.</p>
                         )}
                     </div>
                 </div>

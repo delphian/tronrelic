@@ -23,6 +23,15 @@ export class MarketService {
     this.affiliate = new MarketAffiliateService();
   }
 
+  /**
+   * Lists all active markets from the database.
+   *
+   * If no markets exist in the database, triggers a background refresh and returns
+   * an empty array immediately rather than blocking. This ensures API endpoints
+   * remain responsive during initial market fetching.
+   *
+   * @returns Promise resolving to array of active market documents
+   */
   async listActiveMarkets(): Promise<MarketDocument[]> {
     const cached = await this.cache.get<MarketDocument[]>('markets:current');
     if (cached) {
@@ -31,8 +40,11 @@ export class MarketService {
 
     const docs = await MarketModel.find({ isActive: true }).sort({ priority: 1 }).lean<LeanMarketDoc[]>();
     if (!docs.length) {
-      await this.refreshMarkets();
-      return this.listActiveMarkets();
+      // Trigger background refresh without blocking
+      this.refreshMarkets().catch(err => {
+        console.error('Background market refresh failed:', err);
+      });
+      return [];
     }
 
     const markets = docs.map(doc => mapLeanMarketDoc(doc));

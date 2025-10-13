@@ -127,7 +127,7 @@ export function MarketTable({ initialMarkets, selectedGuid, onSelect }: MarketTa
           </div>
         )}
       </header>
-      <div className={styles['table-scroll']}>
+      <div className={styles.table_scroll}>
         <table className="table">
           <thead>
             <tr>
@@ -145,9 +145,9 @@ export function MarketTable({ initialMarkets, selectedGuid, onSelect }: MarketTa
                 </span>
               </th>
               <th className={styles.table__header_cell}>Price Range</th>
-              <th className={`${styles.table__header_cell} ${styles['col-availability']} table-col-availability`}>Availability</th>
+              <th className={`${styles.table__header_cell} ${styles.col_availability} table-col-availability`}>Availability</th>
               <th className={styles.table__header_cell}>Buy Orders</th>
-              <th className={`${styles.table__header_cell} ${styles['col-updated']} table-col-updated`}>Updated</th>
+              <th className={`${styles.table__header_cell} ${styles.col_updated} table-col-updated`}>Updated</th>
             </tr>
           </thead>
           <tbody>
@@ -202,7 +202,7 @@ export function MarketTable({ initialMarkets, selectedGuid, onSelect }: MarketTa
                 styles.table__row,
                 isHighlighted && 'table-row--flash',
                 isSelected && styles['table__row--selected'],
-                isBestDeal && !isSelected && styles['table__row--best-deal']
+                isBestDeal && !isSelected && styles['table__row--best_deal']
               );
 
               return (
@@ -221,9 +221,9 @@ export function MarketTable({ initialMarkets, selectedGuid, onSelect }: MarketTa
                   </td>
                   <td>{usdtTransferCost}</td>
                   <td>{priceRange}</td>
-                  <td className={`${styles['col-availability']} table-col-availability`}>{market.availabilityPercent != null && market.availabilityPercent > 0 ? `${market.availabilityPercent.toFixed(1)}%` : '—'}</td>
+                  <td className={`${styles.col_availability} table-col-availability`}>{market.availabilityPercent != null && market.availabilityPercent > 0 ? `${market.availabilityPercent.toFixed(1)}%` : '—'}</td>
                   <td>{market.orders?.length ?? 0}</td>
-                  <td className={`${styles['col-updated']} table-col-updated`}>{new Date(market.lastUpdated).toLocaleTimeString()}</td>
+                  <td className={`${styles.col_updated} table-col-updated`}>{new Date(market.lastUpdated).toLocaleTimeString()}</td>
                 </tr>
               );
             })}

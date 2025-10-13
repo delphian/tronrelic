@@ -21,19 +21,19 @@
 }
 
 /* Form Section */
-.form-section {
+.form_section {
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
 }
 
-.form-grid {
+.form_grid {
     display: grid;
     gap: 0.85rem;
     grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
 }
 
-.form-actions {
+.form_actions {
     display: flex;
     justify-content: flex-end;
 }
@@ -109,7 +109,7 @@
     font-weight: 500;
 }
 
-.shortcuts-grid {
+.shortcuts_grid {
     display: grid;
     gap: 0.5rem;
     grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));

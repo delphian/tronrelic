@@ -100,7 +100,7 @@ export function TransactionFilter({ value, onChange, availableTypes, onReset }: 
 
     return (
         <Card tone="muted" padding="md">
-            <div className={styles['filter-grid']}>
+            <div className={styles.filter_grid}>
                 <label className={styles.field}>
                     <span className={styles.field__label}>Transaction type</span>
                     <select
