@@ -1,0 +1,288 @@
+/**
+ * MarketDashboard CSS Module
+ *
+ * Scoped styles for the market comparison dashboard container component.
+ * Uses CSS variables from globals.css for consistent theming.
+ */
+
+.grid {
+    gap: 2rem;
+}
+
+.stat-grid {
+    display: grid;
+    gap: 1rem;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.stat-card__label {
+    color: var(--color-text-muted);
+    font-size: 0.85rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.stat-card__value {
+    font-size: 1.6rem;
+    font-weight: 700;
+}
+
+.stat-card__delta {
+    font-size: 0.85rem;
+    color: var(--color-text-muted);
+}
+
+.dashboard-container {
+    position: relative;
+    overflow: hidden;
+}
+
+/* ========================================
+   Market Slideout Panel Styles
+   ======================================== */
+
+/* Desktop: Card-contained slideout (>768px) */
+@media (min-width: 769px) {
+    /* No backdrop on desktop */
+    :global(.slideout-backdrop) {
+        display: none;
+    }
+
+    :global(.slideout-panel) {
+        position: absolute;
+        top: 0;
+        right: 0;
+        bottom: 0;
+        width: 45%;
+        background: rgba(10, 15, 26, 0.98);
+        border-left: 1px solid rgba(120, 180, 255, 0.16);
+        box-shadow: -8px 0 48px rgba(5, 12, 28, 0.65);
+        backdrop-filter: blur(18px);
+        z-index: 10;
+        container-type: inline-size;
+        display: flex;
+        flex-direction: column;
+        animation: slideout-slide-in 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    /* Table container adjusts width when slideout is open */
+    .dashboard-container.slideout-open :global(.market-table-container) {
+        width: 55%;
+        transition: width 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .dashboard-container :global(.market-table-container) {
+        width: 100%;
+        transition: width 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    /* Hide Availability and Updated columns when slideout is open */
+    .dashboard-container.slideout-open :global(.table-col-availability),
+    .dashboard-container.slideout-open :global(.table-col-updated) {
+        display: none;
+    }
+
+    :global(.table-col-availability),
+    :global(.table-col-updated) {
+        transition: opacity 0.2s ease;
+    }
+}
+
+/* Mobile: Full-screen modal (<= 768px) */
+@media (max-width: 768px) {
+    :global(.slideout-backdrop) {
+        position: fixed;
+        inset: 0;
+        background: rgba(3, 6, 15, 0.78);
+        z-index: 1100;
+        animation: slideout-fade-in 0.25s ease-out;
+    }
+
+    :global(.slideout-panel) {
+        position: fixed;
+        top: 0;
+        right: 0;
+        bottom: 0;
+        left: 0;
+        width: 100vw;
+        background: rgba(10, 15, 26, 0.98);
+        border: none;
+        box-shadow: none;
+        backdrop-filter: blur(18px);
+        z-index: 1110;
+        display: flex;
+        flex-direction: column;
+        animation: slideout-scale-in 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+}
+
+/* Slideout Header */
+:global(.slideout-header) {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1.25rem 1.5rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(12, 18, 34, 0.6);
+}
+
+/* Slideout Tabs */
+:global(.slideout-tabs) {
+    display: flex;
+    gap: 0.25rem;
+    background: rgba(11, 16, 28, 0.6);
+    border-radius: 999px;
+    padding: 0.25rem;
+    border: 1px solid rgba(120, 180, 255, 0.18);
+}
+
+@media (max-width: 768px) {
+    :global(.slideout-header) {
+        flex-direction: column;
+        gap: 1rem;
+        align-items: stretch;
+    }
+
+    :global(.slideout-tabs) {
+        width: 100%;
+    }
+}
+
+:global(.slideout-tab) {
+    border: none;
+    background: transparent;
+    color: var(--color-text-muted);
+    font-size: 0.9rem;
+    font-weight: 500;
+    padding: 0.5rem 1rem;
+    border-radius: 999px;
+    cursor: pointer;
+    transition: background-color var(--transition-base), color var(--transition-base);
+}
+
+@media (max-width: 768px) {
+    :global(.slideout-tab) {
+        flex: 1;
+        text-align: center;
+    }
+}
+
+:global(.slideout-tab:hover) {
+    background: rgba(79, 140, 255, 0.08);
+}
+
+:global(.slideout-tab--active) {
+    background: linear-gradient(135deg, rgba(79, 140, 255, 0.38), rgba(79, 140, 255, 0.18));
+    color: #f7fbff;
+}
+
+/* Close Button */
+:global(.slideout-close) {
+    border: none;
+    background: rgba(255, 255, 255, 0.08);
+    color: inherit;
+    width: 36px;
+    height: 36px;
+    border-radius: 999px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: background-color var(--transition-base);
+}
+
+@media (max-width: 768px) {
+    :global(.slideout-close) {
+        align-self: flex-end;
+    }
+}
+
+:global(.slideout-close:hover) {
+    background: rgba(255, 255, 255, 0.16);
+}
+
+/* Slideout Body */
+:global(.slideout-body) {
+    flex: 1;
+    overflow-y: auto;
+    padding: 1.5rem;
+}
+
+@media (max-width: 768px) {
+    :global(.slideout-body) {
+        padding: 1rem;
+    }
+}
+
+:global(.slideout-body::-webkit-scrollbar) {
+    width: 8px;
+}
+
+:global(.slideout-body::-webkit-scrollbar-track) {
+    background: rgba(255, 255, 255, 0.03);
+}
+
+:global(.slideout-body::-webkit-scrollbar-thumb) {
+    background: rgba(120, 180, 255, 0.2);
+    border-radius: 999px;
+}
+
+:global(.slideout-body::-webkit-scrollbar-thumb:hover) {
+    background: rgba(120, 180, 255, 0.35);
+}
+
+/* Animations */
+@keyframes slideout-fade-in {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
+}
+
+@keyframes slideout-slide-in {
+    from {
+        transform: translateX(100%);
+    }
+    to {
+        transform: translateX(0);
+    }
+}
+
+@keyframes slideout-scale-in {
+    from {
+        opacity: 0;
+        transform: scale(0.95);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+/* Container queries for compact slideout content when panel is narrow */
+@container (max-width: 800px) {
+    /* Reduce stat-grid items to 60% size in 2-column layout */
+    :global(.slideout-body) .stat-grid {
+        gap: 0.6rem;
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    :global(.slideout-body) .stat-grid * {
+        font-size: 0.775em;
+    }
+
+    /* Reduce stat-grid card padding */
+    :global(.slideout-body) .stat-grid :global(.surface--padding-sm) {
+        padding: 0.6rem 0.75rem;
+    }
+
+    :global(.slideout-body) .stat-grid :global(.surface--padding-md) {
+        padding: 0.9rem;
+    }
+
+    :global(.slideout-body) .stat-grid :global(.surface--padding-lg) {
+        padding: 1.2rem;
+    }
+}

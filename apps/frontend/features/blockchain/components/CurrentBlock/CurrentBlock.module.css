@@ -1,0 +1,114 @@
+/**
+ * CurrentBlock Component Styles
+ *
+ * Displays real-time blockchain block information with detailed statistics.
+ * Shows block number, transactions, transfers, resource usage, and timestamps.
+ */
+
+.container {
+    display: grid;
+    gap: 1.5rem;
+}
+
+.header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.header__title {
+    margin: 0;
+    font-size: 1.25rem;
+    font-weight: 600;
+}
+
+.header__timestamp {
+    font-size: 0.75rem;
+    opacity: 0.6;
+}
+
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1rem;
+}
+
+.stat-card {
+    padding: 1rem;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.stat-card--accent {
+    background: rgba(59, 130, 246, 0.1);
+    border: 1px solid rgba(59, 130, 246, 0.3);
+}
+
+.stat-card__label {
+    font-size: 0.75rem;
+    opacity: 0.7;
+    margin-bottom: 0.5rem;
+}
+
+.stat-card__value {
+    font-size: 1.5rem;
+    font-weight: 700;
+}
+
+.section {
+    display: grid;
+    gap: 0.75rem;
+}
+
+.section__title {
+    margin: 0 0 0.75rem;
+    font-size: 1rem;
+    font-weight: 500;
+    opacity: 0.9;
+}
+
+.mini-stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 0.75rem;
+}
+
+.mini-stat-card {
+    padding: 0.75rem;
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.mini-stat-card__label {
+    font-size: 0.75rem;
+    opacity: 0.7;
+}
+
+.mini-stat-card__value {
+    font-size: 1.25rem;
+    font-weight: 600;
+}
+
+.footer {
+    font-size: 0.875rem;
+    opacity: 0.7;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    padding-top: 0.75rem;
+}
+
+.loading-state,
+.error-state {
+    display: grid;
+    gap: 1rem;
+}
+
+.loading-state__message,
+.error-state__message {
+    opacity: 0.7;
+    font-size: 0.875rem;
+}

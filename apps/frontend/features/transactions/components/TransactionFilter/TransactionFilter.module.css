@@ -1,0 +1,36 @@
+/**
+ * TransactionFilter Component Styles
+ *
+ * Filter controls for transaction lists with type selection, amount threshold,
+ * search, date range, and reset functionality.
+ */
+
+.filter-grid {
+    display: grid;
+    gap: 1rem;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+}
+
+.field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    font-size: 0.85rem;
+}
+
+.field__label {
+    color: var(--color-text-subtle);
+}
+
+.field--actions {
+    justify-content: flex-end;
+}
+
+.field--actions .field__label {
+    visibility: hidden;
+    height: 1.2em; /* Maintain spacing alignment */
+}
+
+.select {
+    /* Inherits from global .input and .input--ghost classes */
+}

@@ -1,0 +1,247 @@
+/**
+ * MarketMonitor Component Styles
+ *
+ * Admin diagnostic tool for monitoring market data freshness and platform status.
+ * Displays staleness metrics, response times, reliability scores, and manual refresh controls.
+ */
+
+.container {
+    display: grid;
+    gap: 2rem;
+}
+
+/* ========================================
+   Section Styles
+   ======================================== */
+
+.section {
+    display: grid;
+    gap: 1rem;
+}
+
+.section__header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.section__title {
+    margin: 0;
+    font-size: 1.25rem;
+    font-weight: 600;
+}
+
+/* ========================================
+   Action Controls
+   ======================================== */
+
+.actions {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.button {
+    padding: 0.5rem 1rem;
+    background: rgba(59, 130, 246, 0.2);
+    border: 1px solid rgba(59, 130, 246, 0.4);
+    border-radius: 6px;
+    color: inherit;
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.button:hover:not(:disabled) {
+    background: rgba(59, 130, 246, 0.3);
+    border-color: rgba(59, 130, 246, 0.6);
+}
+
+.button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* ========================================
+   Freshness Metrics Grid
+   ======================================== */
+
+.metrics-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1rem;
+}
+
+.metric-card {
+    padding: 1rem;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+}
+
+.metric-card__label {
+    font-size: 0.75rem;
+    opacity: 0.7;
+    margin-bottom: 0.5rem;
+}
+
+.metric-card__value {
+    font-size: 1.5rem;
+    font-weight: 700;
+}
+
+/* ========================================
+   Warning Alert
+   ======================================== */
+
+.warning-alert {
+    padding: 1rem;
+    background: rgba(239, 68, 68, 0.1);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    border-radius: 8px;
+}
+
+.warning-alert__title {
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+}
+
+.warning-alert__body {
+    font-size: 0.875rem;
+}
+
+/* ========================================
+   Platform List
+   ======================================== */
+
+.platform-list {
+    display: grid;
+    gap: 0.75rem;
+}
+
+/* ========================================
+   Platform Card Variants (Status-based styling)
+   ======================================== */
+
+.platform-card {
+    padding: 1rem;
+    border-radius: 8px;
+}
+
+.platform-card--online {
+    background: rgba(34, 197, 94, 0.1);
+    border: 1px solid rgba(34, 197, 94, 0.3);
+}
+
+.platform-card--stale {
+    background: rgba(251, 191, 36, 0.1);
+    border: 1px solid rgba(251, 191, 36, 0.3);
+}
+
+.platform-card--failed {
+    background: rgba(239, 68, 68, 0.1);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.platform-card--disabled {
+    background: rgba(156, 163, 175, 0.1);
+    border: 1px solid rgba(156, 163, 175, 0.3);
+}
+
+/* ========================================
+   Platform Header
+   ======================================== */
+
+.platform-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: start;
+    margin-bottom: 0.75rem;
+}
+
+.platform-header__info {
+    /* Container for platform name and timestamp */
+}
+
+.platform-header__title {
+    font-size: 1rem;
+    font-weight: 600;
+    margin: 0;
+}
+
+.platform-header__timestamp {
+    font-size: 0.75rem;
+    opacity: 0.7;
+    margin-top: 0.25rem;
+}
+
+/* ========================================
+   Status Badges
+   ======================================== */
+
+.badges {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+}
+
+.badge {
+    padding: 0.25rem 0.75rem;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: capitalize;
+}
+
+.badge--disabled {
+    background: rgba(156, 163, 175, 0.3);
+    color: rgb(156, 163, 175);
+}
+
+.badge--online {
+    background: rgba(34, 197, 94, 0.3);
+    color: rgb(34, 197, 94);
+}
+
+.badge--stale {
+    background: rgba(251, 191, 36, 0.3);
+    color: rgb(251, 191, 36);
+}
+
+.badge--failed {
+    background: rgba(239, 68, 68, 0.3);
+    color: rgb(239, 68, 68);
+}
+
+/* ========================================
+   Platform Metrics Grid
+   ======================================== */
+
+.platform-meta {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 0.5rem;
+    font-size: 0.875rem;
+}
+
+.platform-meta__label {
+    opacity: 0.7;
+}
+
+.platform-meta__value {
+    font-weight: 600;
+}
+
+.platform-meta__value--error {
+    color: #ef4444;
+}
+
+/* ========================================
+   Loading State
+   ======================================== */
+
+.loading {
+    padding: 2rem;
+    text-align: center;
+    opacity: 0.7;
+}

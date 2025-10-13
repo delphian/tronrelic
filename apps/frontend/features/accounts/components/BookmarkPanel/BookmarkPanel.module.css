@@ -1,0 +1,114 @@
+/**
+ * BookmarkPanel Component Styles
+ *
+ * Wallet bookmark management interface with wallet connection,
+ * bookmark creation with optional labels, and bookmark list display.
+ */
+
+.header {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.header__row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+.header__title {
+    margin: 0;
+    font-size: 1.5rem;
+    font-weight: 600;
+}
+
+.header__description {
+    margin: 0;
+    color: var(--color-text-subtle);
+}
+
+.add-bookmark {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+}
+
+.add-bookmark__actions {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+.add-bookmark__target {
+    margin: 0;
+    color: var(--color-text-subtle);
+}
+
+.add-bookmark__target strong {
+    color: var(--color-text-muted);
+    font-weight: 600;
+}
+
+.bookmark-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.bookmark-list__title {
+    margin: 0;
+    font-size: 1.1rem;
+    font-weight: 600;
+}
+
+.bookmark-list__empty {
+    color: var(--color-text-subtle);
+}
+
+.bookmarks {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.bookmark-item {
+    background: rgba(10, 16, 28, 0.65);
+    padding: 0.85rem 1.1rem;
+    border-radius: var(--radius-md);
+}
+
+.bookmark-item__content {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+.bookmark-item__info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin: 0;
+}
+
+.bookmark-item__label {
+    font-weight: 600;
+    font-size: 1rem;
+}
+
+.bookmark-item__address {
+    color: var(--color-text-subtle);
+    font-size: 0.8rem;
+    word-break: break-all;
+}
+
+.error-message {
+    color: var(--color-text-subtle);
+    margin: 0;
+}

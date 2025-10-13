@@ -1,0 +1,220 @@
+/**
+ * Whale Alerts Plugin Styles
+ *
+ * Plugin-specific CSS that is colocated with the whale-alerts feature.
+ * This file demonstrates the recommended pattern for plugin styling:
+ * - Scoped class names prevent conflicts with other plugins
+ * - Self-contained styling makes the plugin portable
+ * - CSS modules or BEM naming ensures namespace isolation
+ */
+
+/* Whale Dashboard Layout */
+.whale-dashboard {
+    display: grid;
+    gap: 2rem;
+}
+
+.whale-dashboard__header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+.whale-dashboard__title-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.whale-dashboard__title {
+    margin: 0;
+    font-size: 1.2rem;
+    font-weight: 600;
+}
+
+.whale-dashboard__subtitle {
+    margin: 0;
+    color: var(--color-text-subtle);
+    font-size: 0.85rem;
+}
+
+/* Whale Stats Grid */
+.whale-stats-grid {
+    display: grid;
+    gap: 1.25rem;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    margin-top: 0.75rem;
+}
+
+.whale-stat-card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.whale-stat-card__label {
+    color: var(--color-text-muted);
+    font-size: 0.85rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.whale-stat-card__value {
+    font-size: 1.6rem;
+    font-weight: 700;
+}
+
+.whale-stat-card__delta {
+    font-size: 0.85rem;
+    color: var(--color-text-muted);
+}
+
+/* Whale Chart Container */
+.whale-chart-container {
+    margin-top: 1.5rem;
+}
+
+/* Whale Highlights List */
+.whale-highlights {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.whale-highlights__header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.whale-highlights__title {
+    margin: 0;
+    font-size: 1.1rem;
+    font-weight: 600;
+}
+
+.whale-highlights__count {
+    font-size: 0.75rem;
+}
+
+.whale-highlights__list {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    margin-top: 0.75rem;
+}
+
+.whale-highlights__empty {
+    color: var(--color-text-subtle);
+    font-style: italic;
+}
+
+/* Whale Highlight Item */
+.whale-highlight-item {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    padding: 1rem 1.25rem;
+    border-radius: var(--radius-md);
+    background: rgba(9, 15, 28, 0.6);
+    border: 1px solid var(--color-border);
+    transition: border-color var(--transition-base), transform var(--transition-base);
+}
+
+.whale-highlight-item:hover {
+    border-color: var(--color-border-strong);
+    transform: translateY(-1px);
+}
+
+.whale-highlight-item__header {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+.whale-highlight-item__amount {
+    font-weight: 600;
+    font-size: 1rem;
+}
+
+.whale-highlight-item__timestamp {
+    color: var(--color-text-subtle);
+    font-size: 0.78rem;
+}
+
+.whale-highlight-item__addresses {
+    color: var(--color-text-subtle);
+    font-size: 0.8rem;
+}
+
+.whale-highlight-item__memo {
+    color: var(--color-text-subtle);
+    font-size: 0.75rem;
+    margin-top: 0.4rem;
+}
+
+/* Whale Page Layout */
+.whale-page {
+    display: grid;
+    gap: 2.5rem;
+}
+
+.whale-page__header {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.whale-page__title {
+    font-size: clamp(1.8rem, 3vw, 2.6rem);
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    margin: 0;
+}
+
+.whale-page__subtitle {
+    font-size: 1rem;
+    color: var(--color-text-muted);
+    max-width: 64ch;
+    margin: 0;
+}
+
+/* Range Selector (reusing global segmented-control but documenting usage) */
+.whale-range-selector {
+    /* Uses global .segmented-control class */
+}
+
+/* Loading State */
+.whale-loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 240px;
+}
+
+/* Error State */
+.whale-error {
+    color: var(--color-danger);
+    font-size: 0.9rem;
+    margin-top: 1rem;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .whale-dashboard__header {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .whale-stats-grid {
+        grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    }
+
+    .whale-highlight-item__header {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+}

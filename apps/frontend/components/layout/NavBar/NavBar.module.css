@@ -1,0 +1,120 @@
+/**
+ * NavBar Component CSS Module
+ *
+ * Scoped styles for the primary navigation header with support for plugin-based
+ * menu items, dropdown categories, and wallet connection controls.
+ */
+
+.nav {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1.25rem 3rem;
+    width: min(1200px, 100%);
+    margin: 0 auto;
+}
+
+.logo {
+    font-weight: 700;
+    font-size: 1.3rem;
+    letter-spacing: -0.02em;
+}
+
+.links {
+    display: flex;
+    gap: 1.1rem;
+    align-items: center;
+    font-size: 0.95rem;
+    color: var(--color-text-muted);
+}
+
+.link {
+    padding: 0.4rem 0.6rem;
+    border-radius: 999px;
+    transition: color var(--transition-base), background-color var(--transition-base);
+}
+
+.link:hover,
+.link--active {
+    color: #f7fbff;
+    background: rgba(79, 140, 255, 0.14);
+}
+
+/* Dropdown Navigation */
+.dropdown {
+    position: relative;
+}
+
+.dropdown__trigger {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.4rem 0.6rem;
+    border-radius: 999px;
+    border: none;
+    background: transparent;
+    color: var(--color-text-muted);
+    font-size: 0.95rem;
+    font-weight: 500;
+    text-transform: capitalize;
+    cursor: pointer;
+    transition: color var(--transition-base), background-color var(--transition-base);
+}
+
+.dropdown__trigger:hover,
+.dropdown__trigger--active {
+    color: #f7fbff;
+    background: rgba(79, 140, 255, 0.14);
+}
+
+.dropdown__arrow {
+    display: inline-flex;
+    font-size: 0.7rem;
+    transition: transform var(--transition-base);
+}
+
+.dropdown__arrow--open {
+    transform: rotate(180deg);
+}
+
+.dropdown__menu {
+    position: absolute;
+    top: calc(100% + 0.5rem);
+    left: 0;
+    min-width: 180px;
+    background: rgba(10, 15, 26, 0.96);
+    border: 1px solid rgba(120, 180, 255, 0.16);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-lg);
+    backdrop-filter: blur(18px);
+    padding: 0.5rem;
+    z-index: 100;
+    animation: dropdownSlideIn 0.2s ease-out;
+}
+
+@keyframes dropdownSlideIn {
+    from {
+        opacity: 0;
+        transform: translateY(-8px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.dropdown__item {
+    display: block;
+    padding: 0.6rem 0.8rem;
+    border-radius: var(--radius-sm);
+    color: var(--color-text-muted);
+    font-size: 0.95rem;
+    transition: color var(--transition-base), background-color var(--transition-base);
+    white-space: nowrap;
+}
+
+.dropdown__item:hover,
+.dropdown__item--active {
+    color: #f7fbff;
+    background: rgba(79, 140, 255, 0.14);
+}

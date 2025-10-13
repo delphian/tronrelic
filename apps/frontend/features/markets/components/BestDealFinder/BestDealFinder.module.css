@@ -1,0 +1,97 @@
+/**
+ * BestDealFinder Component Styles
+ *
+ * Market comparison interface with sorting by price, reliability, or availability.
+ * Displays top 6 markets in a responsive grid with detailed metrics.
+ */
+
+.header {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.header__row {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+.header__title {
+    margin: 0;
+    font-size: 1.5rem;
+    font-weight: 600;
+}
+
+.header__description {
+    margin: 0;
+    color: var(--color-text-subtle);
+}
+
+.sort-buttons {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+}
+
+.markets-grid {
+    display: grid;
+    gap: 1rem;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+
+.market-card {
+    background: rgba(11, 16, 28, 0.62);
+    border-radius: var(--radius-lg);
+    padding: 0.85rem 1.1rem;
+    transition: background-color var(--transition-base), transform var(--transition-base);
+}
+
+.market-card--clickable {
+    cursor: pointer;
+}
+
+.market-card--clickable:hover {
+    background: rgba(11, 16, 28, 0.85);
+    transform: translateY(-2px);
+}
+
+.market-card__header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 0.75rem;
+}
+
+.market-card__info {
+    flex: 1;
+}
+
+.market-card__name {
+    font-weight: 600;
+    font-size: 1rem;
+    margin-bottom: 0.25rem;
+}
+
+.market-card__region {
+    color: var(--color-text-subtle);
+    font-size: 0.8rem;
+}
+
+.market-card__metrics {
+    list-style: none;
+    padding: 0;
+    margin: 0.75rem 0 0;
+    display: grid;
+    gap: 0.35rem;
+    color: var(--color-text-subtle);
+    font-size: 0.85rem;
+}
+
+.empty-state {
+    color: var(--color-text-subtle);
+    padding: 2rem;
+    text-align: center;
+}
