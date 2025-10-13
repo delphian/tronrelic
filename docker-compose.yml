@@ -103,9 +103,12 @@ services:
             # Next.js Environment
             - NODE_ENV=development
 
-            # API Connection (use backend service name)
-            - NEXT_PUBLIC_API_URL=http://backend:4000/api
-            - NEXT_PUBLIC_SOCKET_URL=http://backend:4000
+            # API URL for Next.js rewrites (SSR uses Docker service name)
+            - API_URL=http://backend:4000
+
+            # Client-side API URLs (browser accessible)
+            - NEXT_PUBLIC_API_URL=http://localhost:4000/api
+            - NEXT_PUBLIC_SOCKET_URL=http://localhost:4000
             - NEXT_PUBLIC_SITE_URL=http://localhost:3000
         depends_on:
             backend:
@@ -116,6 +119,7 @@ services:
             # Mount source for hot reloading in dev mode
             - ./apps/frontend/app:/app/apps/frontend/app
             - ./apps/frontend/components:/app/apps/frontend/components
+            - ./apps/frontend/features:/app/apps/frontend/features
             - ./apps/frontend/lib:/app/apps/frontend/lib
             # Preserve node_modules
             - /app/node_modules
