@@ -22,7 +22,18 @@
     "secrets:sync": "tsx ./scripts/sync-market-provider-secrets.ts",
     "start": "./scripts/start.sh",
     "stop": "./scripts/stop.sh",
-    "test": "npx playwright test"
+    "test": "npx playwright test",
+    "docker:build": "docker compose build",
+    "docker:build:prod": "docker compose -f docker-compose.prod.yml build",
+    "docker:up": "docker compose up -d",
+    "docker:up:prod": "docker compose -f docker-compose.prod.yml up -d",
+    "docker:down": "docker compose down",
+    "docker:down:prod": "docker compose -f docker-compose.prod.yml down",
+    "docker:logs": "docker compose logs -f",
+    "docker:logs:backend": "docker compose logs -f backend",
+    "docker:logs:frontend": "docker compose logs -f frontend",
+    "docker:clean": "docker compose down -v && docker system prune -f",
+    "docker:rebuild": "docker compose down && docker compose build --no-cache && docker compose up -d"
   },
   "devDependencies": {
     "@aws-sdk/client-secrets-manager": "^3.668.0",

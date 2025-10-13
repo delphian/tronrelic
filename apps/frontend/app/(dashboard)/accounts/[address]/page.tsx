@@ -3,6 +3,7 @@ import type { TronTransactionDocument } from '@tronrelic/shared';
 import { Card } from '../../../../components/ui/Card';
 import { Badge } from '../../../../components/ui/Badge';
 import { BookmarkPanel } from '../../../../features/accounts';
+import { getApiUrl } from '../../../../lib/config';
 
 interface AccountSnapshotSummary {
   totalSent: number;
@@ -26,10 +27,8 @@ interface AccountPageProps {
   };
 }
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? process.env.API_BASE_URL ?? 'http://localhost:4000/api';
-
 async function fetchAccount(address: string): Promise<AccountSnapshotResponse> {
-  const response = await fetch(`${API_BASE_URL}/accounts/snapshot?address=${address}`, { cache: 'no-store' });
+  const response = await fetch(getApiUrl(`/accounts/snapshot?address=${address}`), { cache: 'no-store' });
   if (!response.ok) {
     throw new Error('Failed to load account');
   }

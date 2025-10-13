@@ -550,7 +550,7 @@ fi
 run_monorepo_build
 
 start_backend
-wait_for_http "http://localhost:${BACKEND_PORT}/health" "Backend health endpoint" 120
+wait_for_http "http://localhost:${BACKEND_PORT}/api/health" "Backend health endpoint" 120
 
 start_frontend
 wait_for_http "http://localhost:${FRONTEND_PORT}" "Frontend" 120
