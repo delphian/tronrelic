@@ -1,0 +1,35 @@
+groups:
+  - name: markets-alerts
+    rules:
+      - alert: MarketFetcherFailureSpike
+        expr: increase(tronrelic_market_fetch_failure_total[5m]) > 3
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Market fetcher experiencing elevated failures"
+          description: |
+            One or more markets has recorded more than 3 failed fetch attempts in the
+            last 5 minutes. Check upstream provider health and retry logs.
+
+      - alert: MarketFetcherStalled
+        expr: increase(tronrelic_market_fetch_success_total[5m]) == 0
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Market fetch pipeline stalled"
+          description: |
+            The market aggregator has not recorded a successful fetch in the last 10 minutes.
+            Inspect scheduler logs and Redis connection health.
+
+      - alert: MarketAvailabilityDrop
+        expr: avg_over_time(tronrelic_market_availability_percent[15m]) < 40
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Average market availability low"
+          description: |
+            The rolling 15 minute availability average has dropped below 40%%. Review
+            dashboards to confirm whether this is expected maintenance or a provider outage.

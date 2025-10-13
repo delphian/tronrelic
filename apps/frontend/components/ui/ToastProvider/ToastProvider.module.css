@@ -1,0 +1,94 @@
+/**
+ * ToastProvider Component CSS Module
+ *
+ * Scoped styles for the toast notification system including viewport positioning,
+ * toast card styling, tone variants, and action button controls.
+ */
+
+.viewport {
+    position: fixed;
+    bottom: 1.5rem;
+    right: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    z-index: 1200;
+    max-width: min(420px, calc(100vw - 3rem));
+}
+
+.item {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 1rem;
+    padding: 1rem 1.1rem;
+    border-radius: var(--radius-md);
+    background: rgba(10, 15, 26, 0.96);
+    border: 1px solid;
+    box-shadow: var(--shadow-lg);
+    backdrop-filter: blur(18px);
+    animation: slideIn 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateX(100%);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+.item__meta strong {
+    font-size: 0.95rem;
+}
+
+.item__actions {
+    display: flex;
+    gap: 0.5rem;
+    align-items: flex-start;
+}
+
+.item__action,
+.item__dismiss {
+    border: none;
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: var(--radius-sm);
+    color: inherit;
+    padding: 0.35rem 0.6rem;
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: background-color var(--transition-base);
+}
+
+.item__dismiss {
+    width: 28px;
+    height: 28px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.1rem;
+}
+
+.item__action:hover,
+.item__dismiss:hover {
+    background: rgba(255, 255, 255, 0.16);
+}
+
+/* Tone Variants */
+.toast--success {
+    border-color: rgba(87, 212, 140, 0.4);
+}
+
+.toast--warning {
+    border-color: rgba(255, 200, 87, 0.45);
+}
+
+.toast--danger {
+    border-color: rgba(255, 111, 125, 0.45);
+}
+
+.toast--info {
+    border-color: rgba(120, 180, 255, 0.35);
+}

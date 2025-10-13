@@ -1,0 +1,104 @@
+/**
+ * Button Component CSS Module
+ *
+ * Scoped styles for the Button component that provides consistent interactive
+ * controls with multiple variants, sizes, and states throughout the application.
+ */
+
+.btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    border-radius: 999px;
+    border: 1px solid transparent;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    cursor: pointer;
+    transition: background-color var(--transition-base), transform var(--transition-base), box-shadow var(--transition-base), border-color var(--transition-base);
+}
+
+/* Variant Styles */
+.btn--primary {
+    background: linear-gradient(135deg, var(--color-primary), #6da3ff);
+    color: #0b1020;
+    box-shadow: 0 20px 36px rgba(58, 110, 255, 0.25);
+}
+
+.btn--primary:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 28px 52px rgba(58, 110, 255, 0.32);
+}
+
+.btn--secondary {
+    background: rgba(79, 140, 255, 0.14);
+    color: #eaf0ff;
+    border-color: rgba(79, 140, 255, 0.4);
+}
+
+.btn--secondary:hover {
+    background: rgba(79, 140, 255, 0.22);
+}
+
+.btn--ghost {
+    background: transparent;
+    color: #f5f7ff;
+    border-color: rgba(255, 255, 255, 0.12);
+}
+
+.btn--ghost:hover {
+    border-color: rgba(255, 255, 255, 0.24);
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.btn--danger {
+    background: rgba(255, 111, 125, 0.14);
+    color: #ffb3bb;
+    border-color: rgba(255, 111, 125, 0.5);
+}
+
+.btn--danger:hover {
+    background: rgba(255, 111, 125, 0.2);
+}
+
+/* Focus State */
+.btn:focus-visible {
+    outline: 2px solid rgba(124, 155, 255, 0.95);
+    outline-offset: 3px;
+    box-shadow: 0 0 0 4px rgba(124, 155, 255, 0.2);
+}
+
+/* Size Variants */
+.btn--sm {
+    min-height: 34px;
+    padding: 0.4rem 0.9rem;
+    font-size: 0.85rem;
+}
+
+.btn--md {
+    min-height: 42px;
+    padding: 0.55rem 1.3rem;
+    font-size: 0.95rem;
+}
+
+.btn--lg {
+    min-height: 50px;
+    padding: 0.75rem 1.75rem;
+    font-size: 1.05rem;
+}
+
+/* State Modifiers */
+.btn--loading {
+    opacity: 0.75;
+    cursor: progress;
+}
+
+.btn:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
+/* Icon Container */
+.btn__icon {
+    display: inline-flex;
+}

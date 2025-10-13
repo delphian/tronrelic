@@ -1,0 +1,18 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Node",
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "resolveJsonModule": true,
+    "baseUrl": ".",
+    "paths": {
+      "@tronrelic/backend/*": ["apps/backend/src/*"],
+      "@tronrelic/frontend/*": ["apps/frontend/*"]
+    }
+  },
+  "exclude": ["node_modules", "dist", "build"]
+}

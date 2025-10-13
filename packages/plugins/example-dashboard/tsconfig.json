@@ -1,0 +1,25 @@
+{
+    "extends": "../../../tsconfig.base.json",
+    "compilerOptions": {
+        "outDir": "dist",
+        "rootDir": "src",
+        "types": ["node"],
+        "lib": ["ES2022"],
+        "module": "NodeNext",
+        "moduleResolution": "NodeNext",
+        "allowSyntheticDefaultImports": true,
+        "skipLibCheck": true,
+        "declaration": true,
+        "declarationMap": true
+    },
+    "include": [
+        "src/backend/**/*.ts",
+        "src/manifest.ts"
+    ],
+    "exclude": [
+        "node_modules",
+        "dist",
+        "src/frontend/**",
+        "**/*.tsx"
+    ]
+}

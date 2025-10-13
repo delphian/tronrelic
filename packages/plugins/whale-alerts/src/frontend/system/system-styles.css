@@ -1,0 +1,143 @@
+/**
+ * Whale Alerts Admin System Styles
+ *
+ * Scoped CSS for the whale-alerts plugin admin interface.
+ * Uses BEM naming convention with .whale-admin-* prefix to prevent conflicts.
+ */
+
+/* Admin page layout */
+.whale-admin-grid {
+    display: grid;
+    gap: 1.5rem;
+    margin-bottom: 1.5rem;
+}
+
+.whale-admin-actions {
+    display: flex;
+    gap: 1rem;
+    justify-content: flex-end;
+}
+
+/* Admin section */
+.whale-admin-section {
+    display: grid;
+    gap: 1.5rem;
+}
+
+.whale-admin-section__header {
+    display: grid;
+    gap: 0.5rem;
+}
+
+.whale-admin-section__title {
+    font-size: 1.25rem;
+    font-weight: 600;
+    margin: 0;
+}
+
+.whale-admin-section__description {
+    color: var(--color-text-muted);
+    font-size: 0.875rem;
+    line-height: 1.5;
+    margin: 0;
+}
+
+.whale-admin-section__content {
+    display: grid;
+    gap: 1.25rem;
+}
+
+/* Form elements */
+.form-group {
+    display: grid;
+    gap: 0.5rem;
+}
+
+.form-label {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: rgba(255, 255, 255, 0.9);
+}
+
+.form-help {
+    font-size: 0.8125rem;
+    color: var(--color-text-subtle);
+    margin: 0;
+}
+
+.form-checkbox {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    cursor: pointer;
+    font-size: 0.9375rem;
+}
+
+.form-checkbox input[type="checkbox"] {
+    width: 1.25rem;
+    height: 1.25rem;
+    cursor: pointer;
+}
+
+/* Threshold examples */
+.whale-threshold-examples {
+    padding-top: 1rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.whale-threshold-examples__title {
+    font-size: 0.875rem;
+    font-weight: 600;
+    margin: 0 0 0.75rem 0;
+    color: rgba(255, 255, 255, 0.9);
+}
+
+.whale-threshold-examples__list {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 0.75rem;
+}
+
+.whale-threshold-example {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.75rem;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.whale-threshold-example:hover {
+    background: rgba(255, 255, 255, 0.06);
+    border-color: var(--color-primary);
+}
+
+.whale-threshold-example__value {
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: var(--color-primary);
+}
+
+.whale-threshold-example__label {
+    font-size: 0.75rem;
+    color: var(--color-text-subtle);
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .whale-threshold-examples__list {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    .whale-admin-actions {
+        flex-direction: column;
+    }
+
+    .whale-admin-actions button {
+        width: 100%;
+    }
+}

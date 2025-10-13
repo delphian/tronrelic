@@ -1,0 +1,19 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 30s
+
+rule_files:
+  - /etc/prometheus/alert.rules.yml
+
+scrape_configs:
+  - job_name: 'tronrelic-markets'
+    metrics_path: /metrics
+    static_configs:
+      - targets: ['host.docker.internal:4000']
+        labels:
+          service: 'backend'
+          domain: 'markets'
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'markets-backend'

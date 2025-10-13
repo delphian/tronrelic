@@ -1,0 +1,36 @@
+{
+    "name": "@tronrelic/frontend",
+    "version": "0.1.0",
+    "private": true,
+    "scripts": {
+        "predev": "node scripts/generate-frontend-plugin-registry.mjs",
+        "prebuild": "node scripts/generate-frontend-plugin-registry.mjs",
+        "generate:plugins": "node scripts/generate-frontend-plugin-registry.mjs",
+        "dev": "next dev --turbo",
+        "build": "next build",
+        "start": "next start",
+        "lint": "next lint",
+        "typecheck": "tsc --noEmit"
+    },
+    "dependencies": {
+        "@reduxjs/toolkit": "^2.2.5",
+        "@tronrelic/plugin-whale-alerts": "file:../../packages/plugins/whale-alerts",
+        "@tronrelic/types": "file:../../packages/types",
+        "axios": "^1.7.5",
+        "lucide-react": "^0.545.0",
+        "next": "^14.2.4",
+        "react": "^18.3.1",
+        "react-dom": "^18.3.1",
+        "react-redux": "^9.1.2",
+        "socket.io-client": "^4.7.5",
+        "zod": "^3.23.8"
+    },
+    "devDependencies": {
+        "@types/node": "^20.10.6",
+        "@types/react": "^18.2.46",
+        "@types/react-dom": "^18.2.18",
+        "eslint": "^8.57.0",
+        "eslint-config-next": "^14.2.4",
+        "typescript": "~5.6.2"
+    }
+}

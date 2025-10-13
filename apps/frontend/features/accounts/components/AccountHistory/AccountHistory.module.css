@@ -1,0 +1,92 @@
+/**
+ * AccountHistory Component Styles
+ *
+ * Displays paginated transaction history for an account with filtering capabilities.
+ * Shows transaction details including amounts, addresses, energy/bandwidth usage, and memos.
+ */
+
+.container {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+.header {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.header__title {
+    margin: 0;
+    font-size: 1.5rem;
+    font-weight: 600;
+}
+
+.header__description {
+    margin: 0;
+    color: var(--color-text-subtle);
+}
+
+.transactions {
+    display: flex;
+    flex-direction: column;
+    gap: 0.9rem;
+}
+
+.transaction {
+    background: rgba(8, 12, 24, 0.68);
+    border-radius: var(--radius-lg);
+    padding: 0.85rem 1.1rem;
+}
+
+.transaction__header {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+.transaction__amount {
+    font-weight: 600;
+    font-size: 1rem;
+}
+
+.transaction__timestamp {
+    color: var(--color-text-subtle);
+    font-size: 0.8rem;
+}
+
+.transaction__addresses {
+    margin-top: 0.35rem;
+    font-size: 0.78rem;
+    color: var(--color-text-subtle);
+    word-break: break-all;
+}
+
+.transaction__footer {
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+    margin-top: 0.5rem;
+    font-size: 0.75rem;
+    color: rgba(226, 234, 255, 0.68);
+}
+
+.loading-state {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.empty-state {
+    color: var(--color-text-subtle);
+    padding: 2rem;
+    text-align: center;
+}
+
+.pagination-wrapper {
+    display: flex;
+    justify-content: center;
+}

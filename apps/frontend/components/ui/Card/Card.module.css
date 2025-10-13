@@ -1,0 +1,46 @@
+/**
+ * Card Component CSS Module
+ *
+ * Scoped styles for the Card wrapper component that provides surface elevation
+ * and visual hierarchy throughout the application.
+ */
+
+.card {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    backdrop-filter: blur(18px);
+    box-shadow: var(--shadow-sm);
+    transition: transform var(--transition-base), border-color var(--transition-base), box-shadow var(--transition-base);
+}
+
+.card:hover {
+    border-color: var(--color-border-strong);
+    box-shadow: var(--shadow-md);
+}
+
+/* Tone Variants */
+.card--muted {
+    background: var(--color-surface-muted);
+}
+
+.card--accent {
+    background: var(--color-surface-accent);
+}
+
+.card--elevated {
+    box-shadow: var(--shadow-lg);
+}
+
+/* Padding Variants */
+.card--padding-sm {
+    padding: 1rem 1.25rem;
+}
+
+.card--padding-md {
+    padding: 1.5rem;
+}
+
+.card--padding-lg {
+    padding: 2rem;
+}
