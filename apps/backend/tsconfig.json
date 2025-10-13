@@ -10,7 +10,8 @@
     "allowSyntheticDefaultImports": true,
     "incremental": true,
     "tsBuildInfoFile": ".tsbuildinfo",
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "composite": true
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist"],
