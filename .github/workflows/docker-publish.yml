@@ -59,6 +59,7 @@ jobs:
       - name: Run integration tests
         run: |
           npm ci
+          npx playwright install --with-deps
           npm run test:integration || npm run test || echo "No tests configured yet"
 
       - name: Upload Playwright screenshots and reports
