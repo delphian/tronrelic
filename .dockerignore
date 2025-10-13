@@ -1,0 +1,121 @@
+# Docker Build Context Exclusions
+# Reduces build context size and improves build performance
+
+# Node modules (will be installed during build)
+node_modules/
+**/node_modules/
+
+# Build outputs (will be generated during build)
+dist/
+**/dist/
+.next/
+**/.next/
+build/
+**/build/
+
+# TypeScript incremental build info
+*.tsbuildinfo
+**/*.tsbuildinfo
+
+# Test coverage
+coverage/
+**/coverage/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+.run/
+**/.run/
+
+# Environment files (use docker-compose environment instead)
+.env
+.env.local
+.env.*.local
+**/.env
+**/.env.local
+**/.env.*.local
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Documentation (not needed in runtime)
+*.md
+!README.md
+docs/
+**/*.md
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+.circleci/
+
+# Docker files (avoid nested builds)
+Dockerfile
+docker-compose*.yml
+.dockerignore
+
+# Scripts (not needed in container)
+scripts/
+**/*.sh
+
+# Test files
+*.test.ts
+*.test.tsx
+*.test.js
+*.spec.ts
+*.spec.tsx
+*.spec.js
+__tests__/
+**/__tests__/
+tests/
+**/tests/
+*.test.json
+
+# Playwright
+playwright-report/
+test-results/
+playwright/.cache/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.temp
+
+# OS files
+Thumbs.db
+.DS_Store
+
+# Lock files (using package-lock.json only)
+yarn.lock
+pnpm-lock.yaml
+
+# Editor directories and files
+.editorconfig
+.eslintcache
+.prettierignore
+.prettierrc
+
+# Development only packages
+.husky/
+
+# MongoDB and Redis data (external volumes - DO NOT exclude source code data directories)
+# Note: apps/backend/src/data contains source code and must be included
+
+# Backup files
+*.bak
+*.backup
