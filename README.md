@@ -28,14 +28,42 @@ Real-time TRON blockchain monitoring and whale activity tracking.
 
 ## Quick Start
 
+### Option 1: Docker (Recommended for Production)
+
 ```bash
-./scripts/start.sh
+# Development mode
+npm run docker:up
+
+# Production mode
+npm run docker:up:prod
 ```
 
 Services will be available at:
 - **Backend**: http://localhost:4000
 - **Frontend**: http://localhost:3000
 - **System Monitor**: http://localhost:3000/system (requires admin token)
+
+**Docker commands:**
+```bash
+npm run docker:build          # Build Docker images (dev)
+npm run docker:build:prod     # Build Docker images (production)
+npm run docker:up             # Start containers (dev)
+npm run docker:up:prod        # Start containers (production)
+npm run docker:down           # Stop containers
+npm run docker:logs           # View all logs
+npm run docker:logs:backend   # View backend logs only
+npm run docker:logs:frontend  # View frontend logs only
+npm run docker:rebuild        # Clean rebuild (no cache)
+npm run docker:clean          # Remove containers and volumes
+```
+
+See [docs/docker-deployment.md](docs/docker-deployment.md) for detailed Docker deployment guide.
+
+### Option 2: Local Development
+
+```bash
+./scripts/start.sh
+```
 
 **Options:**
 ```bash
@@ -76,13 +104,25 @@ openssl rand -hex 32
 
 # Generate TELEGRAM_WEBHOOK_SECRET (if using Telegram integration)
 openssl rand -hex 32
+
+# For production Docker deployments, also generate:
+openssl rand -hex 32  # MONGO_ROOT_PASSWORD
+openssl rand -hex 32  # REDIS_PASSWORD
 ```
 
 **IMPORTANT:** Never commit `.env` files to version control. The `.gitignore` is configured to exclude them, but always verify before pushing.
 
-### Backend Environment
+### Unified Environment Configuration
 
-Create `apps/backend/.env`:
+**TronRelic uses a single `.env` file in the project root for both Docker and local development.**
+
+Copy `.env.example` to `.env` and fill in your values:
+
+```bash
+cp .env.example .env
+```
+
+Example configuration:
 
 ```bash
 # Required - Generate with: openssl rand -hex 32
@@ -93,23 +133,30 @@ TRONGRID_API_KEY=<your-key-1>
 TRONGRID_API_KEY_2=<your-key-2>
 TRONGRID_API_KEY_3=<your-key-3>
 
-# Optional (defaults work for local dev)
+# Backend Configuration (works for both Docker and local)
+NODE_ENV=development
+PORT=4000
+ENABLE_SCHEDULER=true
+ENABLE_WEBSOCKETS=true
 MONGODB_URI=mongodb://127.0.0.1:27017/tronrelic
 REDIS_URL=redis://127.0.0.1:6379
-PORT=4000
-NODE_ENV=development
-ENABLE_SCHEDULER=true
-```
+REDIS_NAMESPACE=tronrelic
 
-### Frontend Environment
-
-Create `apps/frontend/.env.local`:
-
-```bash
+# Frontend Configuration
 NEXT_PUBLIC_API_URL=http://localhost:4000/api
 NEXT_PUBLIC_SOCKET_URL=http://localhost:4000
 NEXT_PUBLIC_SITE_URL=http://localhost:3000
+
+# Production only - Database security (leave blank for development)
+MONGO_ROOT_USERNAME=admin
+MONGO_ROOT_PASSWORD=<paste-generated-token-here>
+REDIS_PASSWORD=<paste-generated-token-here>
 ```
+
+**How it works:**
+- **Local development** (`./scripts/start.sh`): Uses `.env` directly
+- **Docker Compose**: Uses `.env` with service-specific overrides in `docker-compose.yml`
+- Database URIs use `localhost` for local, Docker Compose overrides with service names (`mongodb`, `redis`)
 
 ### Admin Authentication
 
