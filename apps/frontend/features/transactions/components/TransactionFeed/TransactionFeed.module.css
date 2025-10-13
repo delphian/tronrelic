@@ -1,0 +1,82 @@
+/**
+ * TransactionFeed Component Styles
+ * Scoped styles for live transaction alerts and whale activity monitoring
+ */
+
+/* Header Section */
+.header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 1rem;
+}
+
+.header__content {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.header__title {
+    margin: 0;
+    font-size: 1.5rem;
+    font-weight: 600;
+}
+
+.header__description {
+    margin: 0;
+}
+
+/* Transaction Grid */
+.transactions {
+    margin-top: 1.25rem;
+    display: grid;
+    gap: 0.9rem;
+}
+
+/* Transaction Card */
+.transaction {
+    background: rgba(11, 16, 28, 0.6);
+    padding: var(--spacing-3);
+    border-radius: var(--radius-md);
+}
+
+.transaction__header {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+.transaction__amount {
+    font-size: 1.1rem;
+    font-weight: 600;
+}
+
+.transaction__timestamp {
+    font-size: 0.8rem;
+}
+
+.transaction__badge {
+    margin-top: 0.4rem;
+}
+
+.transaction__addresses {
+    margin-top: 0.5rem;
+    font-size: 0.82rem;
+    color: rgba(220, 228, 255, 0.78);
+    word-break: break-all;
+}
+
+.transaction__pattern {
+    margin-top: 0.4rem;
+    font-size: 0.78rem;
+}
+
+/* Empty State */
+.empty {
+    padding: 2rem 1rem;
+    text-align: center;
+}

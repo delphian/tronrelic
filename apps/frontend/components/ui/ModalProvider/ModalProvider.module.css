@@ -1,0 +1,111 @@
+/**
+ * ModalProvider Component CSS Module
+ *
+ * Scoped styles for the modal system including backdrop overlays, dialog containers,
+ * and responsive sizing variants. Supports stacked modals with proper z-index management.
+ */
+
+.layer {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    z-index: 1100;
+}
+
+.layer--active {
+    pointer-events: auto;
+}
+
+.backdrop {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(3, 6, 15, 0.78);
+    backdrop-filter: blur(14px);
+    padding: 2rem 1.5rem;
+    animation: fadeIn var(--transition-base);
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
+}
+
+.dialog {
+    width: min(640px, 100%);
+    background: rgba(10, 15, 26, 0.96);
+    border-radius: var(--radius-lg);
+    border: 1px solid rgba(120, 180, 255, 0.16);
+    box-shadow: var(--shadow-lg);
+    display: flex;
+    flex-direction: column;
+    max-height: min(90vh, 720px);
+    overflow: hidden;
+    animation: scaleIn var(--transition-base);
+}
+
+@keyframes scaleIn {
+    from {
+        opacity: 0;
+        transform: scale(0.94);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+/* Size Variants */
+.dialog--sm {
+    width: min(420px, 100%);
+}
+
+.dialog--md {
+    width: min(640px, 100%);
+}
+
+.dialog--lg {
+    width: min(820px, 100%);
+}
+
+.dialog--xl {
+    width: min(1080px, 100%);
+}
+
+.dialog__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1.25rem 1.5rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.dialog__body {
+    padding: 1.5rem;
+    overflow-y: auto;
+}
+
+.dialog__close {
+    border: none;
+    background: rgba(255, 255, 255, 0.08);
+    color: inherit;
+    width: 32px;
+    height: 32px;
+    border-radius: 999px;
+    font-size: 1.25rem;
+    cursor: pointer;
+    transition: background-color var(--transition-base);
+}
+
+.dialog__close:hover {
+    background: rgba(255, 255, 255, 0.18);
+}

@@ -1,0 +1,30 @@
+/**
+ * AccountAnalytics Component Styles
+ *
+ * Displays time-series analytics for account inflows, outflows, and net transfers.
+ * Uses Card component wrapper with chart visualization.
+ */
+
+.container {
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+}
+
+.header {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.header__title {
+    margin: 0;
+    font-size: 1.5rem;
+    font-weight: 600;
+}
+
+.header__description {
+    margin: 0;
+    color: var(--color-text-subtle);
+    line-height: 1.5;
+}

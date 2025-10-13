@@ -1,0 +1,43 @@
+/**
+ * Badge Component CSS Module
+ *
+ * Scoped styles for the Badge component that displays status indicators,
+ * labels, and categorical information with color-coded visual feedback.
+ */
+
+.badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    border-radius: 999px;
+    padding: 0.35rem 0.75rem;
+    font-size: 0.72rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    border: 1px solid transparent;
+}
+
+/* Tone Variants */
+.badge--neutral {
+    background: rgba(118, 164, 255, 0.22);
+    color: #bcd7ff;
+    border-color: rgba(118, 164, 255, 0.4);
+}
+
+.badge--success {
+    background: rgba(87, 212, 140, 0.18);
+    color: #9df5c1;
+    border-color: rgba(87, 212, 140, 0.4);
+}
+
+.badge--warning {
+    background: rgba(255, 200, 87, 0.15);
+    color: #ffe2a6;
+    border-color: rgba(255, 200, 87, 0.4);
+}
+
+.badge--danger {
+    background: rgba(255, 111, 125, 0.15);
+    color: #ffc1c8;
+    border-color: rgba(255, 111, 125, 0.45);
+}

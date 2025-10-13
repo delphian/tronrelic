@@ -1,0 +1,54 @@
+/**
+ * Pagination Component CSS Module
+ *
+ * Scoped styles for pagination controls with page numbers, navigation buttons,
+ * and ellipsis indicators for collapsed page ranges.
+ */
+
+.pagination {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.35rem 0.65rem;
+    border-radius: 999px;
+    background: rgba(11, 16, 28, 0.5);
+    border: 1px solid rgba(120, 180, 255, 0.14);
+}
+
+.control,
+.page {
+    min-width: 34px;
+    height: 34px;
+    border-radius: 999px;
+    border: none;
+    background: transparent;
+    color: var(--color-text-muted);
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: background-color var(--transition-base), color var(--transition-base);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.control:disabled,
+.page:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+}
+
+.page:hover,
+.control:hover {
+    background: rgba(79, 140, 255, 0.12);
+}
+
+.page--active {
+    background: rgba(79, 140, 255, 0.22);
+    color: #eaf0ff;
+}
+
+.dots {
+    font-size: 0.9rem;
+    color: var(--color-text-muted);
+    padding: 0 0.25rem;
+}

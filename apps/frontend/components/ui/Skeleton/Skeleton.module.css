@@ -1,0 +1,23 @@
+/**
+ * Skeleton Component CSS Module
+ *
+ * Scoped styles for loading placeholder skeletons with animated shimmer effect.
+ */
+
+.skeleton {
+    width: 100%;
+    height: 1.2em;
+    border-radius: 999px;
+    background: linear-gradient(90deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.08));
+    background-size: 200% 100%;
+    animation: shimmer 2s infinite;
+}
+
+@keyframes shimmer {
+    0% {
+        background-position: 200% 0;
+    }
+    100% {
+        background-position: -200% 0;
+    }
+}

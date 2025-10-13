@@ -1,0 +1,320 @@
+# ============================================
+# Security - Critical Files (NEVER COMMIT)
+# ============================================
+
+# Deployment credentials and scripts
+deploy*.sh
+build*.sh
+*.deploy
+*.deployment
+sftp-config.json
+ftpsync.settings
+
+# Environment and configuration files
+.env
+.env.*
+*.env
+.env.local
+.env.production
+.env.staging
+.env.development
+wp-config.php
+wp-config-local.php
+config.php
+config.local.php
+config.json
+config.local.json
+
+# API Keys and Secrets
+*secret*
+*credential*
+*.key
+*.pem
+*.p12
+*.pfx
+*.cert
+*.crt
+*.csr
+.htpasswd
+.netrc
+
+# Database dumps and backups
+*.sql
+*.sql.gz
+*.mysql
+*.dump
+*.db
+*.sqlite
+*.sqlite3
+database/
+
+# ============================================
+# WordPress Development
+# ============================================
+
+# WordPress core files (if in same directory)
+/wordpress/
+/wp-admin/
+/wp-includes/
+
+# Plugin builds and packages
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.rar
+*.7z
+preparing-pets-*.zip
+
+# WordPress uploads (if testing locally)
+/uploads/
+/wp-content/uploads/
+
+# WordPress cache
+/wp-content/cache/
+/wp-content/advanced-cache.php
+/wp-content/wp-cache-config.php
+
+# ============================================
+# Development Tools & IDE
+# ============================================
+
+# VSCode
+.vscode/
+*.code-workspace
+.history/
+
+# Cursor IDE
+.cursor/
+.cursorignore
+
+# JetBrains IDEs
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# Claude/AI context
+# .claude/  # Uncommented to allow Claude Code configuration in repo
+ai-context/
+.ai/
+
+# ============================================
+# Build Artifacts & Dependencies
+# ============================================
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+yarn.lock
+.npm/
+.yarn/
+.pnp.*
+.yarn-integrity
+
+# Composer dependencies
+# IMPORTANT: vendor/ is REQUIRED for WordPress plugins to function
+# WordPress doesn't run composer install, so vendor/ must be in the repo
+# Only exclude vendor/ if you have a build process that adds it later
+# /vendor/  # DO NOT UNCOMMENT - WordPress plugins need vendor/ in repo
+
+# Lock file can be excluded since we're including vendor/
+# composer.lock  # Keep this if you want reproducible builds
+
+# Webpack/Build output
+/dist/
+/apps/backend/dist/
+/packages/shared/dist/
+/packages/types/dist/
+/packages/plugins/*/dist/
+/build/
+/out/
+/tmp/
+.cache/
+.parcel-cache/
+.next/
+.nuxt/
+.webpack/
+*.tsbuildinfo
+
+# Compiled files
+*.min.js
+*.min.css
+*.map
+*.css.map
+*.js.map
+
+# Prevent compiled files in source directories (except intentional type declarations)
+/apps/backend/src/**/*.js
+/apps/backend/src/**/*.d.ts
+!/apps/backend/src/types/**/*.d.ts
+
+# Frontend compiled files (Next.js compiles to .next/, not source)
+/apps/frontend/**/*.js
+/apps/frontend/**/*.d.ts
+!/apps/frontend/next.config.js
+!/apps/frontend/next-env.d.ts
+!/apps/frontend/.next/**/*
+
+# ============================================
+# Operating System Files
+# ============================================
+
+# macOS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+.AppleDouble
+.LSOverride
+.DocumentRevisions-V100
+.fseventsd
+.TemporaryItems
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+*.lnk
+
+# Linux
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+.nfs*
+
+# ============================================
+# Logs and Debug Files
+# ============================================
+
+*.log
+*.log.*
+logs/
+debug.log
+error.log
+access.log
+npm-debug.log
+yarn-debug.log
+php_error.log
+php_errors.log
+error_log
+debug/
+*.stackdump
+etl/
+
+# ============================================
+# Testing
+# ============================================
+
+# PHPUnit
+/phpunit.xml
+.phpunit.cache/
+.phpunit.result.cache
+/coverage/
+/report/
+
+# Jest
+coverage/
+.nyc_output/
+
+# Cypress
+cypress/videos/
+cypress/screenshots/
+
+# Playwright
+test-results/
+playwright-report/
+playwright/.cache/
+
+# ============================================
+# Temporary Files
+# ============================================
+
+*.tmp
+*.temp
+*.bak
+*.backup
+*.swp
+*.swo
+*~
+.tmp/
+temp/
+tmp/
+
+# ============================================
+# Version Control
+# ============================================
+
+# Git
+.git/
+.gitattributes
+*.orig
+*.rej
+*.patch
+
+# SVN
+.svn/
+
+# Mercurial
+.hg/
+
+# ============================================
+# Project Specific
+# ============================================
+
+# WPEngine specific
+.wpengine
+.wpe-*
+
+# Local development
+*.local
+.local/
+
+# Sass cache
+.sass-cache/
+
+# Session files
+sess_*
+
+# Lock files (comment out if you want to track exact versions)
+# package-lock.json
+# composer.lock
+# yarn.lock
+
+# ============================================
+# Documentation (if you want to exclude)
+# ============================================
+# Uncomment if you don't want documentation in repo
+# *.md
+# docs/
+# documentation/
+
+# ============================================
+# NEVER IGNORE (Whitelist)
+# ============================================
+
+# Keep these files even if they match patterns above
+!.gitignore
+!README.md
+!LICENSE
+!CHANGELOG.md
+!SDK_*.md
+!preparing-pets-core.php
+!uninstall.php
+!composer.json
+!package.json
+!webpack.config.js

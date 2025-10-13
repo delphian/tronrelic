@@ -1,0 +1,131 @@
+{
+  "id": null,
+  "title": "TronRelic Markets Overview",
+  "timezone": "",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "Fetch Success vs Failure",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "expr": "sum(increase(tronrelic_market_fetch_success_total[5m])) by (market)",
+          "legendFormat": "{{market}} success",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(increase(tronrelic_market_fetch_failure_total[5m])) by (market)",
+          "legendFormat": "{{market}} failure",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Fetch Duration P95",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, market)(rate(tronrelic_market_fetch_duration_seconds_bucket[5m])))",
+          "legendFormat": "{{market}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Active Markets",
+      "gridPos": { "h": 6, "w": 4, "x": 0, "y": 8 },
+      "targets": [
+        {
+          "expr": "count(tronrelic_market_availability_percent)",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "center"
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Avg Availability (%)",
+      "gridPos": { "h": 6, "w": 4, "x": 4, "y": 8 },
+      "targets": [
+        {
+          "expr": "avg(tronrelic_market_availability_percent)",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "continuous-GrYlRd",
+        "graphMode": "none",
+        "justifyMode": "center"
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Reliability Score",
+      "gridPos": { "h": 8, "w": 12, "x": 8, "y": 8 },
+      "targets": [
+        {
+          "expr": "tronrelic_market_reliability_score",
+          "legendFormat": "{{market}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "table",
+      "title": "Effective Price Snapshot",
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 14 },
+      "targets": [
+        {
+          "expr": "tronrelic_market_effective_price_trx",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "{{market}}",
+          "refId": "A"
+        },
+        {
+          "expr": "tronrelic_market_availability_percent",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "{{market}} availability",
+          "refId": "B"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "merge",
+          "options": {}
+        }
+      ]
+    }
+  ],
+  "templating": {
+    "list": []
+  }
+}
