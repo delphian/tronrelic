@@ -49,7 +49,7 @@ config.local.json
 *.db
 *.sqlite
 *.sqlite3
-database/
+/database/
 
 # ============================================
 # WordPress Development
