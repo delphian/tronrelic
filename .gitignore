@@ -219,6 +219,10 @@ debug/
 *.stackdump
 etl/
 
+# Runtime logs directory (keep structure, ignore contents)
+.run/*
+!.run/.gitkeep
+
 # ============================================
 # Testing
 # ============================================
