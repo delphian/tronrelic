@@ -10,7 +10,7 @@
     align-items: center;
     justify-content: space-between;
     padding: 1.25rem 3rem;
-    width: min(1200px, 100%);
+    width: min(var(--breakpoint-desktop), 100%);
     margin: 0 auto;
 }
 

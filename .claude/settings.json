@@ -37,7 +37,9 @@
       "Bash(git rev-parse:*)",
       "Bash(git log:*)"
     ],
-    "deny": [],
+    "deny": [
+      "Bash(git push:*)"
+    ],
     "ask": [
       "Bash(git commit:*)"
     ]
