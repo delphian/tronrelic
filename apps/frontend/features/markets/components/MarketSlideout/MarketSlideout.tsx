@@ -6,6 +6,7 @@ import type { MarketHistoryRecord } from '../../../../lib/api';
 import { X } from 'lucide-react';
 import { Card } from '../../../../components/ui/Card';
 import { Badge } from '../../../../components/ui/Badge';
+import { ClientTime } from '../../../../components/ui/ClientTime';
 import { Skeleton } from '../../../../components/ui/Skeleton';
 import { LineChart } from '../../../charts/components/LineChart';
 import { Tooltip } from '../../../../components/ui/Tooltip';
@@ -164,8 +165,10 @@ export function MarketSlideout({ market, history, loading, error, onClose }: Mar
                                 </Card>
                                 <Card tone="muted" padding="sm">
                                     <div className="stat-card__label">Updated</div>
-                                    <div className="stat-card__value">{new Date(market.lastUpdated).toLocaleTimeString()}</div>
-                                    <div className="stat-card__delta">UTC</div>
+                                    <div className="stat-card__value">
+                                        <ClientTime date={market.lastUpdated} format="time" />
+                                    </div>
+                                    <div className="stat-card__delta">Last pricing data refresh</div>
                                 </Card>
                             </section>
 

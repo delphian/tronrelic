@@ -7,6 +7,7 @@ import { useAppDispatch, useAppSelector } from '../../../../store/hooks';
 import { setMarkets } from '../../slice';
 import { Card } from '../../../../components/ui/Card';
 import { Badge } from '../../../../components/ui/Badge';
+import { ClientTime } from '../../../../components/ui/ClientTime';
 import { cn } from '../../../../lib/cn';
 import { useRealtimeStatus } from '../../../realtime/hooks/useRealtimeStatus';
 import { useSocketSubscription } from '../../../realtime/hooks/useSocketSubscription';
@@ -223,7 +224,9 @@ export function MarketTable({ initialMarkets, selectedGuid, onSelect }: MarketTa
                   <td>{priceRange}</td>
                   <td className={`${styles.col_availability} table-col-availability`}>{market.availabilityPercent != null && market.availabilityPercent > 0 ? `${market.availabilityPercent.toFixed(1)}%` : '—'}</td>
                   <td>{market.orders?.length ?? 0}</td>
-                  <td className={`${styles.col_updated} table-col-updated`}>{new Date(market.lastUpdated).toLocaleTimeString()}</td>
+                  <td className={`${styles.col_updated} table-col-updated`}>
+                    <ClientTime date={market.lastUpdated} format="time" />
+                  </td>
                 </tr>
               );
             })}

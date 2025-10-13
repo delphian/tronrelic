@@ -18,6 +18,9 @@ ftpsync.settings
 .env.production
 .env.staging
 .env.development
+
+# Whitelist .env.example (template file should be tracked)
+!.env.example
 wp-config.php
 wp-config-local.php
 config.php
@@ -215,6 +218,10 @@ error_log
 debug/
 *.stackdump
 etl/
+
+# Runtime logs directory (keep structure, ignore contents)
+.run/*
+!.run/.gitkeep
 
 # ============================================
 # Testing
