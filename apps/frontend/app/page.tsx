@@ -2,11 +2,10 @@ import type { MarketDocument } from '@tronrelic/shared';
 import { MarketTable } from '../features/markets/components/MarketTable';
 import { CurrentBlock } from '../features/blockchain/components';
 import { buildMetadata } from '../lib/seo';
-
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? process.env.API_BASE_URL ?? 'http://localhost:4000/api';
+import { getApiUrl } from '../lib/config';
 
 async function fetchJSON<T>(path: string): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${path}`, { cache: 'no-store' });
+  const response = await fetch(getApiUrl(path), { cache: 'no-store' });
   if (!response.ok) {
     throw new Error(`Failed to fetch ${path}`);
   }
