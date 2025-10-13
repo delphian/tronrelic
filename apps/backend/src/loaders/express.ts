@@ -22,7 +22,7 @@ export function createExpressApp(): Express {
   app.use(express.urlencoded({ extended: true }));
   app.use(morgan(env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 
-  app.get('/health', (_req, res) => {
+  app.get('/api/health', (_req, res) => {
     res.json({ status: 'ok', timestamp: Date.now() });
   });
 
