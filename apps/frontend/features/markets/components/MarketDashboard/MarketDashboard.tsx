@@ -165,7 +165,7 @@ export function MarketDashboard({ markets, stats, initialHistory }: MarketDashbo
           ))}
         </section>
 
-        <div className={`${styles.dashboard_container} market-dashboard-container ${selected ? `${styles.slideout-open} slideout-open` : ''}`}>
+        <div className={`${styles.dashboard_container} market-dashboard-container ${selected ? 'slideout-open' : ''}`}>
           <MarketTable
             initialMarkets={markets}
             onSelect={onSelectMarket}

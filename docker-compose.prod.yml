@@ -136,7 +136,10 @@ services:
             # Next.js Environment
             - NODE_ENV=production
 
-            # API Connection (use backend service name for internal communication)
+            # API URL for Next.js rewrites (SSR uses Docker service name)
+            - API_URL=${API_URL:-http://backend:4000}
+
+            # Client-side API URLs (set via .env for production domain)
             - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:4000/api}
             - NEXT_PUBLIC_SOCKET_URL=${NEXT_PUBLIC_SOCKET_URL:-http://localhost:4000}
             - NEXT_PUBLIC_SITE_URL=${NEXT_PUBLIC_SITE_URL:-http://localhost:3000}

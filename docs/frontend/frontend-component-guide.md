@@ -854,6 +854,68 @@ Verify your plugin UI renders correctly in:
 - Modal dialog
 - Mobile viewport (< 768px)
 
+## SSR and Hydration
+
+TronRelic uses Next.js with Server-Side Rendering (SSR), where components render twice: once on the server (Node.js) and once on the client (browser). If these two renders produce different HTML, React throws a hydration error that breaks the page.
+
+### Common Hydration Pitfall: Timezone-Dependent Rendering
+
+**Problem:** Dates/times render differently on server (UTC) vs client (user's local timezone):
+
+```tsx
+// ❌ Bad - causes hydration mismatch
+<td>{new Date(market.lastUpdated).toLocaleTimeString()}</td>
+// Server renders: "14:30:00 UTC"
+// Client renders: "09:30:00" (CST, UTC-5)
+// Result: React hydration error
+```
+
+**Solution:** Use the `ClientTime` component for all time/date rendering:
+
+```tsx
+// ✅ Good - prevents hydration errors
+import { ClientTime } from '../../components/ui/ClientTime';
+
+<td>
+  <ClientTime date={market.lastUpdated} format="time" />
+</td>
+```
+
+The `ClientTime` component renders a placeholder (`—`) during SSR, then shows the actual formatted time after mounting on the client. This ensures server and client HTML match perfectly.
+
+**Available formats:**
+- `format="time"` - Time only (e.g., "2:30:15 PM")
+- `format="datetime"` - Date and time (e.g., "1/15/2025, 2:30:15 PM")
+- `format="date"` - Date only (e.g., "1/15/2025")
+
+### Other Hydration Best Practices
+
+**Avoid browser-only APIs during render:**
+```tsx
+// ❌ Bad - crashes on server
+const isMobile = window.innerWidth < 768;
+
+// ✅ Good - check for browser context
+const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
+
+// ✅ Better - use effect hook
+const [isMobile, setIsMobile] = useState(false);
+useEffect(() => {
+  setIsMobile(window.innerWidth < 768);
+}, []);
+```
+
+**Avoid random values in JSX:**
+```tsx
+// ❌ Bad - different ID each render
+<div id={`tooltip-${Math.random()}`}>
+
+// ✅ Good - stable ID across renders
+import { useId } from 'react';
+const tooltipId = useId();
+<div id={tooltipId}>
+```
+
 ## Quick Reference Checklist
 
 Before shipping any UI component or plugin page, verify:
@@ -868,6 +930,8 @@ Before shipping any UI component or plugin page, verify:
 - [ ] Uses semantic HTML (buttons, nav, lists, etc.)
 - [ ] Includes ARIA labels for icon buttons and interactive elements
 - [ ] Has visible focus states for all interactive elements
+- [ ] Uses `ClientTime` component for date/time rendering to prevent hydration errors
+- [ ] Avoids browser-only APIs (`window`, `document`) during initial render
 - [ ] Tested in multiple contexts (full-page, slideout, modal, mobile)
 - [ ] JSDoc comments explain the "why" before showing the "how"
 

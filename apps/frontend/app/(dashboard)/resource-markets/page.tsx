@@ -2,14 +2,13 @@ import type { MarketComparisonStats, MarketDocument } from '@tronrelic/shared';
 import { MarketDashboard } from '../../../features/markets';
 import type { MarketHistoryRecord } from '../../../lib/api';
 import { buildMetadata } from '../../../lib/seo';
+import { getApiUrl } from '../../../lib/config';
 
 interface MarketsResponse {
   success: boolean;
   markets: MarketDocument[];
   stats: MarketComparisonStats;
 }
-
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? process.env.API_BASE_URL ?? 'http://localhost:4000/api';
 
 export const dynamic = 'force-dynamic';
 
@@ -21,7 +20,7 @@ export const metadata = buildMetadata({
 });
 
 async function fetchMarkets(): Promise<MarketsResponse> {
-  const response = await fetch(`${API_BASE_URL}/markets/compare`, { cache: 'no-store' });
+  const response = await fetch(getApiUrl('/markets/compare'), { cache: 'no-store' });
   if (!response.ok) {
     throw new Error('Failed to load markets');
   }
@@ -29,7 +28,7 @@ async function fetchMarkets(): Promise<MarketsResponse> {
 }
 
 async function fetchHistory(guid: string): Promise<MarketHistoryRecord[]> {
-  const response = await fetch(`${API_BASE_URL}/markets/${guid}/history?limit=168`, {
+  const response = await fetch(getApiUrl(`/markets/${guid}/history?limit=168`), {
     cache: 'no-store'
   });
   if (!response.ok) {
