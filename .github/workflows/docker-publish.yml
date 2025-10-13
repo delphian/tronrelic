@@ -34,6 +34,17 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Debug build context
+        run: |
+          echo "Current directory:"
+          pwd
+          echo "Files in root:"
+          ls -la | head -20
+          echo "Checking package-lock.json:"
+          ls -lh package-lock.json
+          echo "Testing dockerignore with tar:"
+          tar -c . --exclude-from=.dockerignore 2>/dev/null | tar -t | grep "package-lock" || echo "NOT FOUND IN TAR"
+
       - name: Build backend image (for compose)
         run: docker build --target backend -t tronrelic-backend:test .
 

@@ -11,7 +11,8 @@ WORKDIR /app
 RUN apk add --no-cache libc6-compat
 
 # Copy workspace configuration files
-COPY package.json package-lock.json ./
+COPY package.json ./
+COPY package-lock.json ./
 
 # Copy all package.json files to establish workspace structure
 COPY packages/types/package.json ./packages/types/
@@ -67,7 +68,8 @@ WORKDIR /app
 RUN apk add --no-cache libc6-compat
 
 # Copy package files
-COPY package.json package-lock.json ./
+COPY package.json ./
+COPY package-lock.json ./
 COPY packages/types/package.json ./packages/types/
 COPY packages/shared/package.json ./packages/shared/
 COPY packages/plugins/whale-alerts/package.json ./packages/plugins/whale-alerts/
