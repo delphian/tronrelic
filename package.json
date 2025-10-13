@@ -19,7 +19,6 @@
     "build:plugins": "npm run build:plugin-backends && npm run build:plugin-frontends",
     "build": "npm run build --workspace packages/types && npm run build --workspace packages/shared && npm run build:plugins && npm run build --workspaces --if-present --workspace apps/backend --workspace apps/frontend",
     "build:parallel": "npm run build --workspace packages/types && npm run build --workspace packages/shared && npm run build:plugins && concurrently \"npm run build --workspace apps/backend\" \"npm run build --workspace apps/frontend\"",
-    "secrets:sync": "tsx ./scripts/sync-market-provider-secrets.ts",
     "start": "./scripts/start.sh",
     "stop": "./scripts/stop.sh",
     "test": "npx playwright test",
@@ -36,7 +35,6 @@
     "docker:rebuild": "docker compose down && docker compose build --no-cache && docker compose up -d"
   },
   "devDependencies": {
-    "@aws-sdk/client-secrets-manager": "^3.668.0",
     "@playwright/test": "^1.55.1",
     "@types/node": "^20.10.6",
     "concurrently": "^8.2.2",

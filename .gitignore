@@ -29,8 +29,6 @@ config.json
 config.local.json
 
 # API Keys and Secrets
-*secret*
-*credential*
 *.key
 *.pem
 *.p12
