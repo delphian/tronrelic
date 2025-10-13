@@ -60,7 +60,7 @@ jobs:
           EOF
 
       - name: Start all services with docker compose
-        run: docker compose up -d
+        run: docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d
 
       - name: Wait for backend health
         run: |
@@ -74,7 +74,7 @@ jobs:
             sleep 5
           done
           echo "Backend failed to become healthy"
-          docker compose logs backend
+          docker compose -f docker-compose.yml -f docker-compose.ci.yml logs backend
           exit 1
 
       - name: Run integration tests
@@ -93,11 +93,11 @@ jobs:
 
       - name: Show docker compose logs on failure
         if: failure()
-        run: docker compose logs
+        run: docker compose -f docker-compose.yml -f docker-compose.ci.yml logs
 
       - name: Stop services
         if: always()
-        run: docker compose down -v
+        run: docker compose -f docker-compose.yml -f docker-compose.ci.yml down -v
 
   build-and-push:
     runs-on: ubuntu-latest

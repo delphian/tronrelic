@@ -1,0 +1,11 @@
+# CI override: the hosted GitHub runner already binds MongoDB/Redis ports,
+# so we clear the host port mappings to avoid bind failures during compose up.
+services:
+    mongodb:
+        ports: []
+    redis:
+        ports: []
+    backend:
+        ports: []
+    frontend:
+        ports: []
