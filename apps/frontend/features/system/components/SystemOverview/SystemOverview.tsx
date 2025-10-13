@@ -135,15 +135,15 @@ export function SystemOverview({ token }: Props) {
     }, [token]);
 
     if (loading) {
-        return <div className={styles['loading-state']}>Loading system overview...</div>;
+        return <div className={styles.loading_state}>Loading system overview...</div>;
     }
 
     if (error) {
-        return <div className={styles['error-state']}>Error: {error}</div>;
+        return <div className={styles.error_state}>Error: {error}</div>;
     }
 
     if (!data) {
-        return <div className={styles['loading-state']}>No data available</div>;
+        return <div className={styles.loading_state}>No data available</div>;
     }
 
     return (

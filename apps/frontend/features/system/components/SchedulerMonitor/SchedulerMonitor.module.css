@@ -29,7 +29,7 @@
    Health Metrics Grid
    ======================================== */
 
-.health-grid {
+.health_grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
     gap: 1rem;
@@ -39,30 +39,30 @@
    Metric Card Variants
    ======================================== */
 
-.metric-card {
+.metric_card {
     padding: 1rem;
     background: rgba(255, 255, 255, 0.05);
     border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 8px;
 }
 
-.metric-card--enabled {
+.metric_card--enabled {
     background: rgba(34, 197, 94, 0.1);
     border-color: rgba(34, 197, 94, 0.3);
 }
 
-.metric-card--disabled {
+.metric_card--disabled {
     background: rgba(251, 191, 36, 0.1);
     border-color: rgba(251, 191, 36, 0.3);
 }
 
-.metric-card__label {
+.metric_card__label {
     font-size: 0.75rem;
     opacity: 0.7;
     margin-bottom: 0.5rem;
 }
 
-.metric-card__value {
+.metric_card__value {
     font-size: 1.5rem;
     font-weight: 700;
 }
@@ -71,7 +71,7 @@
    Job List
    ======================================== */
 
-.job-list {
+.job_list {
     display: grid;
     gap: 0.75rem;
 }
@@ -80,25 +80,25 @@
    Job Card Variants (Status-based borders)
    ======================================== */
 
-.job-card {
+.job_card {
     padding: 1rem;
     background: rgba(255, 255, 255, 0.05);
     border-radius: 8px;
 }
 
-.job-card--success {
+.job_card--success {
     border: 1px solid rgba(34, 197, 94, 0.3);
 }
 
-.job-card--failed {
+.job_card--failed {
     border: 1px solid rgba(239, 68, 68, 0.3);
 }
 
-.job-card--running {
+.job_card--running {
     border: 1px solid rgba(59, 130, 246, 0.3);
 }
 
-.job-card--never-run {
+.job_card--never_run {
     border: 1px solid rgba(156, 163, 175, 0.3);
 }
 
@@ -106,24 +106,24 @@
    Job Header
    ======================================== */
 
-.job-header {
+.job_header {
     display: flex;
     justify-content: space-between;
     align-items: start;
     margin-bottom: 0.75rem;
 }
 
-.job-header__info {
+.job_header__info {
     /* Container for title and schedule */
 }
 
-.job-header__title {
+.job_header__title {
     font-size: 1rem;
     font-weight: 600;
     margin: 0;
 }
 
-.job-header__schedule {
+.job_header__schedule {
     font-size: 0.75rem;
     opacity: 0.7;
     margin-top: 0.25rem;
@@ -133,7 +133,7 @@
    Status Badge Variants
    ======================================== */
 
-.status-badge {
+.status_badge {
     padding: 0.25rem 0.75rem;
     border-radius: 9999px;
     font-size: 0.75rem;
@@ -141,22 +141,22 @@
     text-transform: capitalize;
 }
 
-.status-badge--success {
+.status_badge--success {
     background: rgba(34, 197, 94, 0.3);
     color: rgb(34, 197, 94);
 }
 
-.status-badge--failed {
+.status_badge--failed {
     background: rgba(239, 68, 68, 0.3);
     color: rgb(239, 68, 68);
 }
 
-.status-badge--running {
+.status_badge--running {
     background: rgba(59, 130, 246, 0.3);
     color: rgb(59, 130, 246);
 }
 
-.status-badge--never-run {
+.status_badge--never_run {
     background: rgba(156, 163, 175, 0.3);
     color: rgb(156, 163, 175);
 }
@@ -165,14 +165,14 @@
    Job Metadata Grid
    ======================================== */
 
-.job-meta {
+.job_meta {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
     gap: 0.5rem;
     font-size: 0.875rem;
 }
 
-.job-meta__label {
+.job_meta__label {
     opacity: 0.7;
 }
 
@@ -180,7 +180,7 @@
    Error Display
    ======================================== */
 
-.error-box {
+.error_box {
     margin-top: 0.75rem;
     padding: 0.5rem;
     background: rgba(239, 68, 68, 0.1);

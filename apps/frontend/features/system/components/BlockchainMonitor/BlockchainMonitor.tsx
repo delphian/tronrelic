@@ -245,15 +245,15 @@ export function BlockchainMonitor({ token }: Props) {
                 </header>
 
                 {status?.lastError && (
-                    <div className={styles['error-alert']}>
-                        <div className={styles['error-alert__title']}>⚠ Blockchain Sync Error</div>
-                        <div className={styles['error-alert__message']}>
+                    <div className={styles.error_alert}>
+                        <div className={styles.error_alert__title}>⚠ Blockchain Sync Error</div>
+                        <div className={styles.error_alert__message}>
                             {formatErrorMessage(status.lastError)}
                         </div>
                         {(() => {
                             const errorTime = getErrorTimestamp(status);
                             return errorTime ? (
-                                <div className={styles['error-alert__timestamp']}>
+                                <div className={styles.error_alert__timestamp}>
                                     Last occurred: {errorTime}
                                 </div>
                             ) : null;
@@ -262,65 +262,65 @@ export function BlockchainMonitor({ token }: Props) {
                 )}
 
                 {status && (
-                    <div className={styles['metrics-grid']}>
-                        <div className={styles['metric-card']}>
-                            <div className={styles['metric-card__label']}>Current Block</div>
-                            <div className={styles['metric-card__value']}>{status.currentBlock.toLocaleString()}</div>
+                    <div className={styles.metrics_grid}>
+                        <div className={styles.metric_card}>
+                            <div className={styles.metric_card__label}>Current Block</div>
+                            <div className={styles.metric_card__value}>{status.currentBlock.toLocaleString()}</div>
                         </div>
 
-                        <div className={styles['metric-card']}>
-                            <div className={styles['metric-card__label']}>Network Block</div>
-                            <div className={styles['metric-card__value']}>{status.networkBlock.toLocaleString()}</div>
+                        <div className={styles.metric_card}>
+                            <div className={styles.metric_card__label}>Network Block</div>
+                            <div className={styles.metric_card__value}>{status.networkBlock.toLocaleString()}</div>
                         </div>
 
-                        <div className={`${styles['metric-card']} ${getLagClass(status.lag)}`}>
-                            <div className={styles['metric-card__label']}>Lag (Blocks Behind)</div>
-                            <div className={styles['metric-card__value']}>{status.lag.toLocaleString()}</div>
+                        <div className={`${styles.metric_card} ${getLagClass(status.lag)}`}>
+                            <div className={styles.metric_card__label}>Lag (Blocks Behind)</div>
+                            <div className={styles.metric_card__value}>{status.lag.toLocaleString()}</div>
                         </div>
 
-                        <div className={styles['metric-card']}>
-                            <div className={styles['metric-card__label']}>Backfill Queue</div>
-                            <div className={styles['metric-card__value']}>{status.backfillQueueSize.toLocaleString()}</div>
+                        <div className={styles.metric_card}>
+                            <div className={styles.metric_card__label}>Backfill Queue</div>
+                            <div className={styles.metric_card__value}>{status.backfillQueueSize.toLocaleString()}</div>
                         </div>
 
                         {status.processingBlocksPerMinute !== null && (
-                            <div className={styles['metric-card']}>
-                                <div className={styles['metric-card__label']}>Processing Rate</div>
-                                <div className={styles['metric-card__value']}>
+                            <div className={styles.metric_card}>
+                                <div className={styles.metric_card__label}>Processing Rate</div>
+                                <div className={styles.metric_card__value}>
                                     {status.processingBlocksPerMinute.toFixed(1)} blocks/min
                                 </div>
                             </div>
                         )}
 
-                        <div className={styles['metric-card']}>
-                            <div className={styles['metric-card__label']}>Network Rate</div>
-                            <div className={styles['metric-card__value']}>
+                        <div className={styles.metric_card}>
+                            <div className={styles.metric_card__label}>Network Rate</div>
+                            <div className={styles.metric_card__value}>
                                 {status.networkBlocksPerMinute.toFixed(1)} blocks/min
                             </div>
                         </div>
 
                         {status.netCatchUpRate !== null && (
-                            <div className={styles['metric-card']}>
-                                <div className={styles['metric-card__label']}>Net Catch-up Rate</div>
-                                <div className={styles['metric-card__value']}>
+                            <div className={styles.metric_card}>
+                                <div className={styles.metric_card__label}>Net Catch-up Rate</div>
+                                <div className={styles.metric_card__value}>
                                     {(status.netCatchUpRate >= 0 ? '+' : '-') + Math.abs(status.netCatchUpRate).toFixed(1)} blocks/min
                                 </div>
                             </div>
                         )}
 
                         {status.averageProcessingDelaySeconds !== null && (
-                            <div className={styles['metric-card']}>
-                                <div className={styles['metric-card__label']}>Avg Processing Delay</div>
-                                <div className={styles['metric-card__value']}>
+                            <div className={styles.metric_card}>
+                                <div className={styles.metric_card__label}>Avg Processing Delay</div>
+                                <div className={styles.metric_card__value}>
                                     {status.averageProcessingDelaySeconds.toFixed(2)}s
                                 </div>
                             </div>
                         )}
 
                         {status.estimatedCatchUpTime !== null && status.estimatedCatchUpTime > 0 && (
-                            <div className={styles['metric-card']}>
-                                <div className={styles['metric-card__label']}>Est. Catch-up Time</div>
-                                <div className={styles['metric-card__value']}>
+                            <div className={styles.metric_card}>
+                                <div className={styles.metric_card__label}>Est. Catch-up Time</div>
+                                <div className={styles.metric_card__value}>
                                     {status.estimatedCatchUpTime} min
                                 </div>
                             </div>
@@ -335,7 +335,7 @@ export function BlockchainMonitor({ token }: Props) {
                 )}
 
                 {netCatchUpRate !== null && netCatchUpRate <= 0 && (
-                    <div className={styles['warning-alert']}>
+                    <div className={styles.warning_alert}>
                         Processing throughput is slower than the network ({netCatchUpRate.toFixed(1)} blocks/min).
                         Backfill may continue to grow until throughput improves.
                     </div>
@@ -347,15 +347,15 @@ export function BlockchainMonitor({ token }: Props) {
                 <h2 className={styles.section__title}>Transaction Indexing Statistics</h2>
                 {stats && (
                     <>
-                        <div className={styles['metrics-grid']}>
-                            <div className={styles['metric-card']}>
-                                <div className={styles['metric-card__label']}>Total Indexed</div>
-                                <div className={styles['metric-card__value']}>{stats.totalIndexed.toLocaleString()}</div>
+                        <div className={styles.metrics_grid}>
+                            <div className={styles.metric_card}>
+                                <div className={styles.metric_card__label}>Total Indexed</div>
+                                <div className={styles.metric_card__value}>{stats.totalIndexed.toLocaleString()}</div>
                             </div>
 
-                            <div className={styles['metric-card']}>
-                                <div className={styles['metric-card__label']}>Indexed Today</div>
-                                <div className={styles['metric-card__value']}>{stats.indexedToday.toLocaleString()}</div>
+                            <div className={styles.metric_card}>
+                                <div className={styles.metric_card__label}>Indexed Today</div>
+                                <div className={styles.metric_card__value}>{stats.indexedToday.toLocaleString()}</div>
                             </div>
                         </div>
 
@@ -366,11 +366,11 @@ export function BlockchainMonitor({ token }: Props) {
                         {Object.keys(stats.byType).length > 0 && (
                             <div>
                                 <h3 className={styles.section__subtitle}>By Transaction Type</h3>
-                                <div className={styles['type-grid']}>
+                                <div className={styles.type_grid}>
                                     {Object.entries(stats.byType).map(([type, count]) => (
-                                        <div key={type} className={styles['type-item']}>
-                                            <span className={styles['type-item__label']}>{type}</span>
-                                            <span className={styles['type-item__value']}>{count.toLocaleString()}</span>
+                                        <div key={type} className={styles.type_item}>
+                                            <span className={styles.type_item__label}>{type}</span>
+                                            <span className={styles.type_item__value}>{count.toLocaleString()}</span>
                                         </div>
                                     ))}
                                 </div>
@@ -385,69 +385,69 @@ export function BlockchainMonitor({ token }: Props) {
                 <h2 className={styles.section__title}>Block Processing Performance</h2>
                 {metrics && (
                     <>
-                        <div className={styles['metrics-grid']}>
+                        <div className={styles.metrics_grid}>
                             {metrics.averageProcessingDelaySeconds !== null && (
-                                <div className={styles['metric-card']}>
-                                    <div className={styles['metric-card__label']}>Avg Processing Delay</div>
-                                    <div className={styles['metric-card__value']}>
+                                <div className={styles.metric_card}>
+                                    <div className={styles.metric_card__label}>Avg Processing Delay</div>
+                                    <div className={styles.metric_card__value}>
                                         {metrics.averageProcessingDelaySeconds.toFixed(2)}s
                                     </div>
                                 </div>
                             )}
 
                             {metrics.averageProcessingIntervalSeconds !== null && (
-                                <div className={styles['metric-card']}>
-                                    <div className={styles['metric-card__label']}>Avg Processing Interval</div>
-                                    <div className={styles['metric-card__value']}>
+                                <div className={styles.metric_card}>
+                                    <div className={styles.metric_card__label}>Avg Processing Interval</div>
+                                    <div className={styles.metric_card__value}>
                                         {metrics.averageProcessingIntervalSeconds.toFixed(2)}s
                                     </div>
                                 </div>
                             )}
 
                             {metrics.blocksPerMinute !== null && (
-                                <div className={styles['metric-card']}>
-                                    <div className={styles['metric-card__label']}>Processing Throughput</div>
-                                    <div className={styles['metric-card__value']}>
+                                <div className={styles.metric_card}>
+                                    <div className={styles.metric_card__label}>Processing Throughput</div>
+                                    <div className={styles.metric_card__value}>
                                         {metrics.blocksPerMinute.toFixed(1)} blocks/min
                                     </div>
                                 </div>
                             )}
 
-                            <div className={styles['metric-card']}>
-                                <div className={styles['metric-card__label']}>Network Throughput</div>
-                                <div className={styles['metric-card__value']}>
+                            <div className={styles.metric_card}>
+                                <div className={styles.metric_card__label}>Network Throughput</div>
+                                <div className={styles.metric_card__value}>
                                     {metrics.networkBlocksPerMinute.toFixed(1)} blocks/min
                                 </div>
                             </div>
 
                             {metrics.netCatchUpRate !== null && (
-                                <div className={styles['metric-card']}>
-                                    <div className={styles['metric-card__label']}>Net Catch-up Rate</div>
-                                    <div className={styles['metric-card__value']}>
+                                <div className={styles.metric_card}>
+                                    <div className={styles.metric_card__label}>Net Catch-up Rate</div>
+                                    <div className={styles.metric_card__value}>
                                         {(metrics.netCatchUpRate >= 0 ? '+' : '-') + Math.abs(metrics.netCatchUpRate).toFixed(1)} blocks/min
                                     </div>
                                 </div>
                             )}
 
                             {metrics.projectedCatchUpMinutes !== null && (
-                                <div className={styles['metric-card']}>
-                                    <div className={styles['metric-card__label']}>Projected Catch-up</div>
-                                    <div className={styles['metric-card__value']}>
+                                <div className={styles.metric_card}>
+                                    <div className={styles.metric_card__label}>Projected Catch-up</div>
+                                    <div className={styles.metric_card__value}>
                                         {metrics.projectedCatchUpMinutes} min
                                     </div>
                                 </div>
                             )}
 
-                            <div className={styles['metric-card']}>
-                                <div className={styles['metric-card__label']}>Success Rate</div>
-                                <div className={styles['metric-card__value']}>
+                            <div className={styles.metric_card}>
+                                <div className={styles.metric_card__label}>Success Rate</div>
+                                <div className={styles.metric_card__value}>
                                     {metrics.successRate.toFixed(1)}%
                                 </div>
                             </div>
 
-                            <div className={styles['metric-card']}>
-                                <div className={styles['metric-card__label']}>Backfill Queue</div>
-                                <div className={styles['metric-card__value']}>
+                            <div className={styles.metric_card}>
+                                <div className={styles.metric_card__label}>Backfill Queue</div>
+                                <div className={styles.metric_card__value}>
                                     {metrics.backfillQueueSize.toLocaleString()}
                                 </div>
                             </div>
@@ -458,16 +458,16 @@ export function BlockchainMonitor({ token }: Props) {
                                 <h3 className={styles.section__subtitle} style={{ color: '#ef4444' }}>
                                     Recent Errors
                                 </h3>
-                                <div className={styles['error-list']}>
+                                <div className={styles.error_list}>
                                     {metrics.recentErrors.map((error, idx) => (
-                                        <div key={idx} className={styles['error-item']}>
-                                            <div className={styles['error-item__block']}>
+                                        <div key={idx} className={styles.error_item}>
+                                            <div className={styles.error_item__block}>
                                                 Block {error.blockNumber}
                                             </div>
-                                            <div className={styles['error-item__timestamp']}>
+                                            <div className={styles.error_item__timestamp}>
                                                 {new Date(error.timestamp).toLocaleString()}
                                             </div>
-                                            <div className={styles['error-item__message']}>
+                                            <div className={styles.error_item__message}>
                                                 {error.message}
                                             </div>
                                         </div>
