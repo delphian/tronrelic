@@ -212,15 +212,15 @@ export function BookmarkPanel({ targetWallet }: BookmarkPanelProps) {
                 </header>
 
                 {targetWallet && (
-                    <div className={styles['add-bookmark']}>
+                    <div className={styles.add_bookmark}>
                         <Input
                             placeholder="Optional label (e.g. Treasury, Cold wallet)"
                             value={label}
                             onChange={event => setLabel(event.target.value)}
                             disabled={!wallet || submitting}
                         />
-                        <div className={styles['add-bookmark__actions']}>
-                            <p className={styles['add-bookmark__target']}>
+                        <div className={styles.add_bookmark__actions}>
+                            <p className={styles.add_bookmark__target}>
                                 Target wallet: <strong>{targetWallet}</strong>
                             </p>
                             <Button
@@ -237,29 +237,29 @@ export function BookmarkPanel({ targetWallet }: BookmarkPanelProps) {
 
                 <div className="divider" />
 
-                <section className={styles['bookmark-list']}>
-                    <h3 className={styles['bookmark-list__title']}>Saved wallets</h3>
+                <section className={styles.bookmark_list}>
+                    <h3 className={styles.bookmark_list__title}>Saved wallets</h3>
                     {bookmarksState.status === 'loading' && (
-                        <p className={styles['bookmark-list__empty']}>Loading bookmarks…</p>
+                        <p className={styles.bookmark_list__empty}>Loading bookmarks…</p>
                     )}
                     {!wallet && (
-                        <p className={styles['bookmark-list__empty']}>Connect a wallet to manage bookmarks.</p>
+                        <p className={styles.bookmark_list__empty}>Connect a wallet to manage bookmarks.</p>
                     )}
                     {wallet && !bookmarksState.items.length && bookmarksState.status !== 'loading' && (
-                        <p className={styles['bookmark-list__empty']}>
+                        <p className={styles.bookmark_list__empty}>
                             No bookmarks yet. Add wallets to build your watchlist.
                         </p>
                     )}
                     <div className={styles.bookmarks}>
                         {bookmarksState.items.map(bookmark => (
-                            <article key={bookmark.targetWallet} className={styles['bookmark-item']}>
-                                <div className={styles['bookmark-item__content']}>
-                                    <div className={styles['bookmark-item__info']}>
-                                        <strong className={styles['bookmark-item__label']}>
+                            <article key={bookmark.targetWallet} className={styles.bookmark_item}>
+                                <div className={styles.bookmark_item__content}>
+                                    <div className={styles.bookmark_item__info}>
+                                        <strong className={styles.bookmark_item__label}>
                                             {bookmark.label ?? bookmark.targetWallet}
                                         </strong>
                                         {bookmark.label && (
-                                            <span className={styles['bookmark-item__address']}>
+                                            <span className={styles.bookmark_item__address}>
                                                 {bookmark.targetWallet}
                                             </span>
                                         )}
@@ -279,7 +279,7 @@ export function BookmarkPanel({ targetWallet }: BookmarkPanelProps) {
                 </section>
 
                 {(bookmarksState.error || error) && (
-                    <p className={styles['error-message']}>{bookmarksState.error ?? error}</p>
+                    <p className={styles.error_message}>{bookmarksState.error ?? error}</p>
                 )}
             </div>
         </Card>

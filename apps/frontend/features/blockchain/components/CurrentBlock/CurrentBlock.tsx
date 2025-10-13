@@ -40,9 +40,9 @@ export function CurrentBlock() {
     if (status === 'idle' || status === 'loading') {
         return (
             <Card elevated>
-                <div className={styles['loading-state']}>
+                <div className={styles.loading_state}>
                     <h2 className={styles.header__title}>Current Block</h2>
-                    <div className={styles['loading-state__message']}>
+                    <div className={styles.loading_state__message}>
                         Waiting for blockchain data...
                     </div>
                 </div>
@@ -56,9 +56,9 @@ export function CurrentBlock() {
     if (status === 'error' || !latestBlock) {
         return (
             <Card elevated tone="muted">
-                <div className={styles['error-state']}>
+                <div className={styles.error_state}>
                     <h2 className={styles.header__title}>Current Block</h2>
-                    <div className={styles['error-state__message']}>
+                    <div className={styles.error_state__message}>
                         No block data available
                     </div>
                 </div>
@@ -83,7 +83,7 @@ export function CurrentBlock() {
                 </div>
 
                 {/* Block Number and Transaction Count */}
-                <div className={styles['stats-grid']}>
+                <div className={styles.stats_grid}>
                     <StatCard
                         label="Block Number"
                         value={latestBlock.blockNumber.toLocaleString()}
@@ -98,7 +98,7 @@ export function CurrentBlock() {
                 {/* Detailed Statistics */}
                 <div className={styles.section}>
                     <h3 className={styles.section__title}>Block Statistics</h3>
-                    <div className={styles['mini-stats-grid']}>
+                    <div className={styles.mini_stats_grid}>
                         <MiniStatCard label="Transfers" value={latestBlock.stats.transfers} />
                         <MiniStatCard label="Contract Calls" value={latestBlock.stats.contractCalls} />
                         <MiniStatCard label="Delegations" value={latestBlock.stats.delegations} />
@@ -112,7 +112,7 @@ export function CurrentBlock() {
                 {(latestBlock.stats.totalEnergyUsed > 0 || latestBlock.stats.totalBandwidthUsed > 0) && (
                     <div className={styles.section}>
                         <h3 className={styles.section__title}>Resource Usage</h3>
-                        <div className={styles['mini-stats-grid']}>
+                        <div className={styles.mini_stats_grid}>
                             <MiniStatCard
                                 label="Energy"
                                 value={formatLargeNumber(latestBlock.stats.totalEnergyUsed)}
@@ -158,11 +158,11 @@ interface StatCardProps {
 function StatCard({ label, value, tone = 'default' }: StatCardProps) {
     return (
         <div className={cn(
-            styles['stat-card'],
-            tone === 'accent' && styles['stat-card--accent']
+            styles.stat_card,
+            tone === 'accent' && styles['stat_card--accent']
         )}>
-            <div className={styles['stat-card__label']}>{label}</div>
-            <div className={styles['stat-card__value']}>{value}</div>
+            <div className={styles.stat_card__label}>{label}</div>
+            <div className={styles.stat_card__value}>{value}</div>
         </div>
     );
 }
@@ -190,9 +190,9 @@ function MiniStatCard({ label, value }: MiniStatCardProps) {
     const formattedValue = typeof value === 'number' ? value.toLocaleString() : value;
 
     return (
-        <div className={styles['mini-stat-card']}>
-            <div className={styles['mini-stat-card__label']}>{label}</div>
-            <div className={styles['mini-stat-card__value']}>{formattedValue}</div>
+        <div className={styles.mini_stat_card}>
+            <div className={styles.mini_stat_card__label}>{label}</div>
+            <div className={styles.mini_stat_card__value}>{formattedValue}</div>
         </div>
     );
 }

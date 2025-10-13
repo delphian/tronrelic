@@ -44,7 +44,7 @@
     flex-wrap: wrap;
 }
 
-.metrics-grid {
+.metrics_grid {
     display: grid;
     gap: 1.25rem;
     grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -67,40 +67,40 @@
     font-size: 0.9rem;
 }
 
-.resources-grid {
+.resources_grid {
     display: grid;
     gap: 1rem;
     grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
 }
 
-.resource-card {
+.resource_card {
     background: rgba(11, 16, 28, 0.62);
     border-radius: var(--radius-lg);
     padding: 1.25rem;
 }
 
-.resource-card__header {
+.resource_card__header {
     display: flex;
     justify-content: space-between;
     align-items: center;
 }
 
-.resource-card__title {
+.resource_card__title {
     margin: 0;
     font-size: 1.1rem;
     font-weight: 600;
 }
 
-.resource-card__percentage {
+.resource_card__percentage {
     color: var(--color-text-subtle);
     font-size: 0.75rem;
 }
 
-.resource-card__progress {
+.resource_card__progress {
     margin-top: 0.6rem;
 }
 
-.resource-card__details {
+.resource_card__details {
     list-style: none;
     padding: 0;
     margin: 0.75rem 0 0;

@@ -66,26 +66,26 @@
    Freshness Metrics Grid
    ======================================== */
 
-.metrics-grid {
+.metrics_grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
     gap: 1rem;
 }
 
-.metric-card {
+.metric_card {
     padding: 1rem;
     background: rgba(255, 255, 255, 0.05);
     border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 8px;
 }
 
-.metric-card__label {
+.metric_card__label {
     font-size: 0.75rem;
     opacity: 0.7;
     margin-bottom: 0.5rem;
 }
 
-.metric-card__value {
+.metric_card__value {
     font-size: 1.5rem;
     font-weight: 700;
 }
@@ -94,19 +94,19 @@
    Warning Alert
    ======================================== */
 
-.warning-alert {
+.warning_alert {
     padding: 1rem;
     background: rgba(239, 68, 68, 0.1);
     border: 1px solid rgba(239, 68, 68, 0.3);
     border-radius: 8px;
 }
 
-.warning-alert__title {
+.warning_alert__title {
     font-weight: 600;
     margin-bottom: 0.5rem;
 }
 
-.warning-alert__body {
+.warning_alert__body {
     font-size: 0.875rem;
 }
 
@@ -114,7 +114,7 @@
    Platform List
    ======================================== */
 
-.platform-list {
+.platform_list {
     display: grid;
     gap: 0.75rem;
 }
@@ -123,27 +123,27 @@
    Platform Card Variants (Status-based styling)
    ======================================== */
 
-.platform-card {
+.platform_card {
     padding: 1rem;
     border-radius: 8px;
 }
 
-.platform-card--online {
+.platform_card--online {
     background: rgba(34, 197, 94, 0.1);
     border: 1px solid rgba(34, 197, 94, 0.3);
 }
 
-.platform-card--stale {
+.platform_card--stale {
     background: rgba(251, 191, 36, 0.1);
     border: 1px solid rgba(251, 191, 36, 0.3);
 }
 
-.platform-card--failed {
+.platform_card--failed {
     background: rgba(239, 68, 68, 0.1);
     border: 1px solid rgba(239, 68, 68, 0.3);
 }
 
-.platform-card--disabled {
+.platform_card--disabled {
     background: rgba(156, 163, 175, 0.1);
     border: 1px solid rgba(156, 163, 175, 0.3);
 }
@@ -152,24 +152,24 @@
    Platform Header
    ======================================== */
 
-.platform-header {
+.platform_header {
     display: flex;
     justify-content: space-between;
     align-items: start;
     margin-bottom: 0.75rem;
 }
 
-.platform-header__info {
+.platform_header__info {
     /* Container for platform name and timestamp */
 }
 
-.platform-header__title {
+.platform_header__title {
     font-size: 1rem;
     font-weight: 600;
     margin: 0;
 }
 
-.platform-header__timestamp {
+.platform_header__timestamp {
     font-size: 0.75rem;
     opacity: 0.7;
     margin-top: 0.25rem;
@@ -217,22 +217,22 @@
    Platform Metrics Grid
    ======================================== */
 
-.platform-meta {
+.platform_meta {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
     gap: 0.5rem;
     font-size: 0.875rem;
 }
 
-.platform-meta__label {
+.platform_meta__label {
     opacity: 0.7;
 }
 
-.platform-meta__value {
+.platform_meta__value {
     font-weight: 600;
 }
 
-.platform-meta__value--error {
+.platform_meta__value--error {
     color: #ef4444;
 }
 

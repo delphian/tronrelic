@@ -138,13 +138,13 @@ export function MarketMonitor({ token }: Props) {
     const getPlatformCardClass = (status: string): string => {
         switch (status) {
             case 'online':
-                return styles['platform-card--online'];
+                return styles['platform_card--online'];
             case 'stale':
-                return styles['platform-card--stale'];
+                return styles['platform_card--stale'];
             case 'failed':
-                return styles['platform-card--failed'];
+                return styles['platform_card--failed'];
             default:
-                return styles['platform-card--disabled'];
+                return styles['platform_card--disabled'];
         }
     };
 
@@ -196,32 +196,32 @@ export function MarketMonitor({ token }: Props) {
                 </header>
 
                 {freshness && (
-                    <div className={styles['metrics-grid']}>
-                        <div className={styles['metric-card']}>
-                            <div className={styles['metric-card__label']}>Stale Platforms</div>
-                            <div className={styles['metric-card__value']}>{freshness.stalePlatformCount}</div>
+                    <div className={styles.metrics_grid}>
+                        <div className={styles.metric_card}>
+                            <div className={styles.metric_card__label}>Stale Platforms</div>
+                            <div className={styles.metric_card__value}>{freshness.stalePlatformCount}</div>
                         </div>
 
-                        <div className={styles['metric-card']}>
-                            <div className={styles['metric-card__label']}>Average Data Age</div>
-                            <div className={styles['metric-card__value']}>{freshness.averageDataAge.toFixed(1)} min</div>
+                        <div className={styles.metric_card}>
+                            <div className={styles.metric_card__label}>Average Data Age</div>
+                            <div className={styles.metric_card__value}>{freshness.averageDataAge.toFixed(1)} min</div>
                         </div>
 
                         {freshness.oldestDataAge !== null && (
-                            <div className={styles['metric-card']}>
-                                <div className={styles['metric-card__label']}>Oldest Data</div>
-                                <div className={styles['metric-card__value']}>{freshness.oldestDataAge.toFixed(1)} min</div>
+                            <div className={styles.metric_card}>
+                                <div className={styles.metric_card__label}>Oldest Data</div>
+                                <div className={styles.metric_card__value}>{freshness.oldestDataAge.toFixed(1)} min</div>
                             </div>
                         )}
                     </div>
                 )}
 
                 {freshness && freshness.platformsWithOldData.length > 0 && (
-                    <div className={styles['warning-alert']}>
-                        <div className={styles['warning-alert__title']}>
+                    <div className={styles.warning_alert}>
+                        <div className={styles.warning_alert__title}>
                             Platforms with Old Data ({'>'}1 hour):
                         </div>
-                        <div className={styles['warning-alert__body']}>
+                        <div className={styles.warning_alert__body}>
                             {freshness.platformsWithOldData.join(', ')}
                         </div>
                     </div>
@@ -231,17 +231,17 @@ export function MarketMonitor({ token }: Props) {
             {/* Platform Status Table */}
             <section className={styles.section}>
                 <h2 className={styles.section__title}>Platform Status</h2>
-                <div className={styles['platform-list']}>
+                <div className={styles.platform_list}>
                     {platforms.map(platform => (
                         <div
                             key={platform.guid}
-                            className={`${styles['platform-card']} ${getPlatformCardClass(platform.status)}`}
+                            className={`${styles.platform_card} ${getPlatformCardClass(platform.status)}`}
                         >
-                            <div className={styles['platform-header']}>
-                                <div className={styles['platform-header__info']}>
-                                    <h3 className={styles['platform-header__title']}>{platform.name}</h3>
+                            <div className={styles.platform_header}>
+                                <div className={styles.platform_header__info}>
+                                    <h3 className={styles.platform_header__title}>{platform.name}</h3>
                                     {platform.lastFetchedAt && (
-                                        <p className={styles['platform-header__timestamp']}>
+                                        <p className={styles.platform_header__timestamp}>
                                             Last fetched: {new Date(platform.lastFetchedAt).toLocaleString()}
                                         </p>
                                     )}
@@ -258,23 +258,23 @@ export function MarketMonitor({ token }: Props) {
                                 </div>
                             </div>
 
-                            <div className={styles['platform-meta']}>
+                            <div className={styles.platform_meta}>
                                 <div>
-                                    <span className={styles['platform-meta__label']}>Reliability: </span>
-                                    <span className={styles['platform-meta__value']}>
+                                    <span className={styles.platform_meta__label}>Reliability: </span>
+                                    <span className={styles.platform_meta__value}>
                                         {platform.reliabilityScore.toFixed(1)}%
                                     </span>
                                 </div>
                                 {platform.responseTime !== null && (
                                     <div>
-                                        <span className={styles['platform-meta__label']}>Response Time: </span>
+                                        <span className={styles.platform_meta__label}>Response Time: </span>
                                         <span>{platform.responseTime}ms</span>
                                     </div>
                                 )}
                                 {platform.consecutiveFailures > 0 && (
                                     <div>
-                                        <span className={styles['platform-meta__label']}>Consecutive Failures: </span>
-                                        <span className={`${styles['platform-meta__value']} ${styles['platform-meta__value--error']}`}>
+                                        <span className={styles.platform_meta__label}>Consecutive Failures: </span>
+                                        <span className={`${styles.platform_meta__value} ${styles['platform_meta__value--error']}`}>
                                             {platform.consecutiveFailures}
                                         </span>
                                     </div>

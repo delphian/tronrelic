@@ -73,20 +73,20 @@
    Error Alert
    ======================================== */
 
-.error-alert {
+.error_alert {
     padding: 1rem;
     background: rgba(239, 68, 68, 0.1);
     border: 1px solid rgba(239, 68, 68, 0.3);
     border-radius: 8px;
 }
 
-.error-alert__title {
+.error_alert__title {
     font-weight: 600;
     margin-bottom: 0.5rem;
     color: #ef4444;
 }
 
-.error-alert__message {
+.error_alert__message {
     font-size: 0.75rem;
     opacity: 0.7;
     margin-top: 0.5rem;
@@ -98,7 +98,7 @@
     word-break: break-word;
 }
 
-.error-alert__timestamp {
+.error_alert__timestamp {
     font-size: 0.75rem;
     opacity: 0.7;
     margin-top: 0.5rem;
@@ -108,7 +108,7 @@
    Warning Alert
    ======================================== */
 
-.warning-alert {
+.warning_alert {
     font-size: 0.85rem;
     color: #f97316;
     background: rgba(249, 115, 22, 0.12);
@@ -121,7 +121,7 @@
    Metrics Grid
    ======================================== */
 
-.metrics-grid {
+.metrics_grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
     gap: 1rem;
@@ -131,35 +131,35 @@
    Metric Card Variants
    ======================================== */
 
-.metric-card {
+.metric_card {
     padding: 1rem;
     background: rgba(255, 255, 255, 0.05);
     border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 8px;
 }
 
-.metric-card--healthy {
+.metric_card--healthy {
     background: rgba(34, 197, 94, 0.1);
     border-color: rgba(34, 197, 94, 0.3);
 }
 
-.metric-card--warning {
+.metric_card--warning {
     background: rgba(251, 191, 36, 0.1);
     border-color: rgba(251, 191, 36, 0.3);
 }
 
-.metric-card--danger {
+.metric_card--danger {
     background: rgba(239, 68, 68, 0.1);
     border-color: rgba(239, 68, 68, 0.3);
 }
 
-.metric-card__label {
+.metric_card__label {
     font-size: 0.75rem;
     opacity: 0.7;
     margin-bottom: 0.5rem;
 }
 
-.metric-card__value {
+.metric_card__value {
     font-size: 1.5rem;
     font-weight: 700;
 }
@@ -177,13 +177,13 @@
    Transaction Type Grid
    ======================================== */
 
-.type-grid {
+.type_grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
     gap: 0.5rem;
 }
 
-.type-item {
+.type_item {
     padding: 0.75rem;
     background: rgba(255, 255, 255, 0.02);
     border: 1px solid rgba(255, 255, 255, 0.05);
@@ -192,11 +192,11 @@
     justify-content: space-between;
 }
 
-.type-item__label {
+.type_item__label {
     font-size: 0.875rem;
 }
 
-.type-item__value {
+.type_item__value {
     font-size: 0.875rem;
     font-weight: 600;
 }
@@ -205,30 +205,30 @@
    Error List
    ======================================== */
 
-.error-list {
+.error_list {
     display: grid;
     gap: 0.5rem;
 }
 
-.error-item {
+.error_item {
     padding: 0.75rem;
     background: rgba(239, 68, 68, 0.1);
     border: 1px solid rgba(239, 68, 68, 0.3);
     border-radius: 4px;
 }
 
-.error-item__block {
+.error_item__block {
     font-size: 0.875rem;
     font-weight: 600;
 }
 
-.error-item__timestamp {
+.error_item__timestamp {
     font-size: 0.75rem;
     opacity: 0.7;
     margin-top: 0.25rem;
 }
 
-.error-item__message {
+.error_item__message {
     font-size: 0.875rem;
     margin-top: 0.5rem;
 }

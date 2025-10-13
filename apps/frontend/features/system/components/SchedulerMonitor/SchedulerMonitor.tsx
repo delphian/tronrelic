@@ -119,13 +119,13 @@ export function SchedulerMonitor({ token }: Props) {
     const getJobCardClass = (status: string): string => {
         switch (status) {
             case 'success':
-                return styles['job-card--success'];
+                return styles['job_card--success'];
             case 'failed':
-                return styles['job-card--failed'];
+                return styles['job_card--failed'];
             case 'running':
-                return styles['job-card--running'];
+                return styles['job_card--running'];
             default:
-                return styles['job-card--never-run'];
+                return styles['job_card--never_run'];
         }
     };
 
@@ -138,13 +138,13 @@ export function SchedulerMonitor({ token }: Props) {
     const getStatusBadgeClass = (status: string): string => {
         switch (status) {
             case 'success':
-                return styles['status-badge--success'];
+                return styles['status_badge--success'];
             case 'failed':
-                return styles['status-badge--failed'];
+                return styles['status_badge--failed'];
             case 'running':
-                return styles['status-badge--running'];
+                return styles['status_badge--running'];
             default:
-                return styles['status-badge--never-run'];
+                return styles['status_badge--never_run'];
         }
     };
 
@@ -158,22 +158,22 @@ export function SchedulerMonitor({ token }: Props) {
             <section className={styles.section}>
                 <h2 className={styles.section__title}>Scheduler Health</h2>
                 {health && (
-                    <div className={styles['health-grid']}>
-                        <div className={`${styles['metric-card']} ${health.enabled ? styles['metric-card--enabled'] : styles['metric-card--disabled']}`}>
-                            <div className={styles['metric-card__label']}>Status</div>
-                            <div className={styles['metric-card__value']}>{health.enabled ? 'Enabled' : 'Disabled'}</div>
+                    <div className={styles.health_grid}>
+                        <div className={`${styles.metric_card} ${health.enabled ? styles['metric_card--enabled'] : styles['metric_card--disabled']}`}>
+                            <div className={styles.metric_card__label}>Status</div>
+                            <div className={styles.metric_card__value}>{health.enabled ? 'Enabled' : 'Disabled'}</div>
                         </div>
 
                         {health.uptime !== null && (
-                            <div className={styles['metric-card']}>
-                                <div className={styles['metric-card__label']}>Uptime</div>
-                                <div className={styles['metric-card__value']}>{formatUptime(health.uptime)}</div>
+                            <div className={styles.metric_card}>
+                                <div className={styles.metric_card__label}>Uptime</div>
+                                <div className={styles.metric_card__value}>{formatUptime(health.uptime)}</div>
                             </div>
                         )}
 
-                        <div className={styles['metric-card']}>
-                            <div className={styles['metric-card__label']}>Success Rate</div>
-                            <div className={styles['metric-card__value']}>{health.successRate.toFixed(1)}%</div>
+                        <div className={styles.metric_card}>
+                            <div className={styles.metric_card__label}>Success Rate</div>
+                            <div className={styles.metric_card__value}>{health.successRate.toFixed(1)}%</div>
                         </div>
                     </div>
                 )}
@@ -182,39 +182,39 @@ export function SchedulerMonitor({ token }: Props) {
             {/* Scheduled Jobs */}
             <section className={styles.section}>
                 <h2 className={styles.section__title}>Scheduled Jobs</h2>
-                <div className={styles['job-list']}>
+                <div className={styles.job_list}>
                     {jobs.map(job => (
                         <div
                             key={job.name}
-                            className={`${styles['job-card']} ${getJobCardClass(job.status)}`}
+                            className={`${styles.job_card} ${getJobCardClass(job.status)}`}
                         >
-                            <div className={styles['job-header']}>
-                                <div className={styles['job-header__info']}>
-                                    <h3 className={styles['job-header__title']}>{job.name}</h3>
-                                    <p className={styles['job-header__schedule']}>{job.schedule}</p>
+                            <div className={styles.job_header}>
+                                <div className={styles.job_header__info}>
+                                    <h3 className={styles.job_header__title}>{job.name}</h3>
+                                    <p className={styles.job_header__schedule}>{job.schedule}</p>
                                 </div>
-                                <span className={`${styles['status-badge']} ${getStatusBadgeClass(job.status)}`}>
+                                <span className={`${styles.status_badge} ${getStatusBadgeClass(job.status)}`}>
                                     {job.status.replace('_', ' ')}
                                 </span>
                             </div>
 
-                            <div className={styles['job-meta']}>
+                            <div className={styles.job_meta}>
                                 {job.lastRun && (
                                     <div>
-                                        <span className={styles['job-meta__label']}>Last run: </span>
+                                        <span className={styles.job_meta__label}>Last run: </span>
                                         <span>{new Date(job.lastRun).toLocaleString()}</span>
                                     </div>
                                 )}
                                 {job.duration !== null && (
                                     <div>
-                                        <span className={styles['job-meta__label']}>Duration: </span>
+                                        <span className={styles.job_meta__label}>Duration: </span>
                                         <span>{job.duration.toFixed(2)}s</span>
                                     </div>
                                 )}
                             </div>
 
                             {job.error && (
-                                <div className={styles['error-box']}>
+                                <div className={styles.error_box}>
                                     {job.error}
                                 </div>
                             )}

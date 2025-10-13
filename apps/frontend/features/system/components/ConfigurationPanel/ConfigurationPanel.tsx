@@ -119,17 +119,17 @@ export function ConfigurationPanel({ token }: Props) {
             {/* Environment Info */}
             <section className={styles.section}>
                 <h2 className={styles.section__title}>Environment</h2>
-                <div className={styles['metrics-grid']}>
-                    <div className={styles['metric-card']}>
-                        <div className={styles['metric-card__label']}>Environment</div>
-                        <div className={`${styles['metric-card__value']} ${styles['metric-card__value--capitalize']}`}>
+                <div className={styles.metrics_grid}>
+                    <div className={styles.metric_card}>
+                        <div className={styles.metric_card__label}>Environment</div>
+                        <div className={`${styles.metric_card__value} ${styles['metric-card__value--capitalize']}`}>
                             {config.environment}
                         </div>
                     </div>
 
-                    <div className={styles['metric-card']}>
-                        <div className={styles['metric-card__label']}>Port</div>
-                        <div className={styles['metric-card__value']}>{config.port}</div>
+                    <div className={styles.metric_card}>
+                        <div className={styles.metric_card__label}>Port</div>
+                        <div className={styles.metric_card__value}>{config.port}</div>
                     </div>
                 </div>
             </section>
@@ -137,16 +137,16 @@ export function ConfigurationPanel({ token }: Props) {
             {/* Feature Flags */}
             <section className={styles.section}>
                 <h2 className={styles.section__title}>Feature Flags</h2>
-                <div className={styles['metrics-grid']}>
+                <div className={styles.metrics_grid}>
                     {Object.entries(config.features).map(([key, value]) => (
                         <div
                             key={key}
-                            className={`${styles['metric-card']} ${value ? styles['metric-card--enabled'] : styles['metric-card--disabled']}`}
+                            className={`${styles.metric_card} ${value ? styles['metric-card--enabled'] : styles['metric-card--disabled']}`}
                         >
-                            <div className={styles['metric-card__label']}>
+                            <div className={styles.metric_card__label}>
                                 {formatLabel(key)}
                             </div>
-                            <div className={styles['metric-card__value']}>
+                            <div className={styles.metric_card__value}>
                                 {value ? 'Enabled' : 'Disabled'}
                             </div>
                         </div>
@@ -164,17 +164,17 @@ export function ConfigurationPanel({ token }: Props) {
                     </p>
                 </header>
 
-                <div className={styles['metrics-grid']}>
-                    <div className={styles['metric-card']}>
-                        <div className={styles['metric-card__label']}>Large Delegation (TRX)</div>
-                        <div className={styles['metric-card__value']}>
+                <div className={styles.metrics_grid}>
+                    <div className={styles.metric_card}>
+                        <div className={styles.metric_card__label}>Large Delegation (TRX)</div>
+                        <div className={styles.metric_card__value}>
                             {config.thresholds.delegationAmountTRX.toLocaleString()}
                         </div>
                     </div>
 
-                    <div className={styles['metric-card']}>
-                        <div className={styles['metric-card__label']}>Large Stake (TRX)</div>
-                        <div className={styles['metric-card__value']}>
+                    <div className={styles.metric_card}>
+                        <div className={styles.metric_card__label}>Large Stake (TRX)</div>
+                        <div className={styles.metric_card__value}>
                             {config.thresholds.stakeAmountTRX.toLocaleString()}
                         </div>
                     </div>
@@ -184,17 +184,17 @@ export function ConfigurationPanel({ token }: Props) {
             {/* Rate Limits */}
             <section className={styles.section}>
                 <h2 className={styles.section__title}>Rate Limits</h2>
-                <div className={styles['metrics-grid']}>
-                    <div className={styles['metric-card']}>
-                        <div className={styles['metric-card__label']}>Comments Per Day</div>
-                        <div className={styles['metric-card__value']}>
+                <div className={styles.metrics_grid}>
+                    <div className={styles.metric_card}>
+                        <div className={styles.metric_card__label}>Comments Per Day</div>
+                        <div className={styles.metric_card__value}>
                             {config.limits.commentsDailyLimit}
                         </div>
                     </div>
 
-                    <div className={styles['metric-card']}>
-                        <div className={styles['metric-card__label']}>Chat Messages Per Day</div>
-                        <div className={styles['metric-card__value']}>
+                    <div className={styles.metric_card}>
+                        <div className={styles.metric_card__label}>Chat Messages Per Day</div>
+                        <div className={styles.metric_card__value}>
                             {config.limits.chatDailyLimit}
                         </div>
                     </div>
@@ -204,16 +204,16 @@ export function ConfigurationPanel({ token }: Props) {
             {/* Integrations */}
             <section className={styles.section}>
                 <h2 className={styles.section__title}>External Integrations</h2>
-                <div className={styles['metrics-grid']}>
+                <div className={styles.metrics_grid}>
                     {Object.entries(config.integrations).map(([key, value]) => (
                         <div
                             key={key}
-                            className={`${styles['metric-card']} ${value ? styles['metric-card--enabled'] : styles['metric-card--disabled']}`}
+                            className={`${styles.metric_card} ${value ? styles['metric-card--enabled'] : styles['metric-card--disabled']}`}
                         >
-                            <div className={styles['metric-card__label']}>
+                            <div className={styles.metric_card__label}>
                                 {formatLabel(key, true)}
                             </div>
-                            <div className={styles['metric-card__value']}>
+                            <div className={styles.metric_card__value}>
                                 {value ? 'Configured' : 'Not Set'}
                             </div>
                         </div>
