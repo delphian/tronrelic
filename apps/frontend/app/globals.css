@@ -26,7 +26,8 @@
   --radius-lg: 24px;
   --transition-base: 160ms ease;
   --breakpoint-mobile: 768px;
-  --breakpoint-tablet: 1024px;
+  --breakpoint-tablet: 1200px;
+  --breakpoint-desktop: 1440px;
 }
 
 * {
@@ -54,7 +55,7 @@ a:hover {
 }
 
 main {
-  width: min(1200px, 100%);
+  width: min(var(--breakpoint-desktop), 100%);
   margin: 0 auto;
   padding: 2.5rem 3rem 3.5rem;
 }
