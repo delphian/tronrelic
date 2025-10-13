@@ -5,6 +5,7 @@ import type { IPlugin, IPluginManifest } from '@tronrelic/types';
 import { frontendPluginLoaders } from './plugins.generated';
 import { pluginRegistry } from '../../lib/pluginRegistry';
 import { createPluginContext } from '../../lib/frontendPluginContext';
+import { config } from '../../lib/config';
 
 /**
  * Plugin Loader component.
@@ -24,8 +25,7 @@ export function PluginLoader() {
 
         async function loadPlugins() {
             try {
-                const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api';
-                const response = await fetch(`${apiUrl}/plugins/manifests`);
+                const response = await fetch(`${config.apiBaseUrl}/plugins/manifests`);
                 const data = await response.json();
                 const manifests: IPluginManifest[] = data.manifests ?? [];
 
