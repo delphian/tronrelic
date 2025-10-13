@@ -168,7 +168,7 @@ export function MarketSlideout({ market, history, loading, error, onClose }: Mar
                                     <div className="stat-card__value">
                                         <ClientTime date={market.lastUpdated} format="time" />
                                     </div>
-                                    <div className="stat-card__delta">Local time</div>
+                                    <div className="stat-card__delta">Last pricing data refresh</div>
                                 </Card>
                             </section>
 
