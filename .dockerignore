@@ -1,6 +1,9 @@
 # Docker Build Context Exclusions
 # Reduces build context size and improves build performance
 
+# IMPORTANT: Always include package-lock.json
+!package-lock.json
+
 # Node modules (will be installed during build)
 node_modules/
 **/node_modules/
@@ -83,7 +86,7 @@ __tests__/
 **/__tests__/
 tests/
 **/tests/
-*.test.json
+**/*.test.json
 
 # Playwright
 playwright-report/
