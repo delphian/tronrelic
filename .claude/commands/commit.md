@@ -4,7 +4,6 @@ allowed-tools:
   - Bash(git add:*)
   - Bash(git diff:*)
   - Bash(git rev-parse:*)
-  - Bash(git commit:*)
   - Bash(git status:*)
 ---
 
@@ -16,11 +15,12 @@ allowed-tools:
 - Working tree summary: !`git status --porcelain=v1`
 
 ## Task
-Write **exactly two sentences** in plain English that describe what changed on the current branch since the last commit, based **only** on the staged diff above.
+Write **exactly two sentences** in a single paragraph of plain English that describe what changed on the current branch since the last commit, based **only** on the staged diff above.
 
 Rules:
 - Be concise and specific; mention the branch name, major areas touched, and the nature of changes (added/modified/removed/renamed).
 - No tickets, emojis, tags, or boilerplate. Present tense. No code fences. No extra lines.
+- Do not append a watermark or self promotion text.
 
 After you produce the two-sentence message (call it `MSG`), **execute** these commands with the Bash tool:
 

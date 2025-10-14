@@ -133,6 +133,10 @@ export function CurrentBlock() {
                         expanded={showGraph}
                         onClick={() => setShowGraph(!showGraph)}
                     />
+                    <StatCard
+                        label="Total Energy"
+                        value={formatLargeNumber(latestBlock.stats.totalEnergyUsed)}
+                    />
                 </div>
 
                 {/* Transaction Timeseries Graph (Expandable) */}
