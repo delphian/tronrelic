@@ -15,18 +15,21 @@ import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { LineChart } from '../features/charts/components/LineChart';
 import { getSocket } from './socketClient';
+import { config } from './config';
 
 /**
  * API client implementation for frontend plugins.
  *
  * Provides a simple interface for making authenticated requests to the backend
  * without requiring plugins to manage base URLs, headers, or error handling.
+ * The base URL delegates to config.apiBaseUrl so plugin traffic benefits from
+ * the same Docker-aware fallbacks described in getBackendBaseUrl().
  */
 class ApiClient implements IApiClient {
     private baseUrl: string;
 
     constructor() {
-        this.baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api';
+        this.baseUrl = config.apiBaseUrl;
     }
 
     async get<T = any>(path: string, params?: Record<string, any>): Promise<T> {

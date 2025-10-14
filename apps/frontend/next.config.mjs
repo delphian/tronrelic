@@ -39,6 +39,29 @@ function discoverPluginPackages() {
 
 const pluginPackages = discoverPluginPackages();
 
+/**
+ * Resolves the backend origin for server-side rewrites.
+ *
+ * Why this matters:
+ * - Docker Compose injects API_URL inside the running container, so Next.js should trust it at runtime
+ * - GitHub builds execute without API_URL, and the previous implementation hard-coded http://localhost:4000
+ * - That fallback leaked into the compiled output, leaving the deployed container pointing at itself
+ * - By mirroring getBackendBaseUrl() here we keep the rewrite target aligned with the runtime helper without editing .env files
+ *
+ * @returns {string} Backend origin without a trailing slash
+ */
+function resolveInternalApiOrigin() {
+    if (process.env.API_URL) {
+        return process.env.API_URL.replace(/\/$/, '');
+    }
+
+    if (process.env.NEXT_PUBLIC_API_URL) {
+        return process.env.NEXT_PUBLIC_API_URL.replace(/\/api$/, '').replace(/\/$/, '');
+    }
+
+    return 'http://backend:4000';
+}
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
     output: 'standalone',
@@ -86,7 +109,7 @@ const nextConfig = {
         return [
             {
                 source: '/api/:path*',
-                destination: `${process.env.API_URL || 'http://localhost:4000'}/api/:path*`,
+                destination: `${resolveInternalApiOrigin()}/api/:path*`,
             },
         ];
     },
