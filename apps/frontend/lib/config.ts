@@ -12,12 +12,25 @@ const defaultSiteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://tronrelic.co
  *   - Falls back to dynamically detecting current hostname with port 4000
  *   - This ensures browsers connect to the publicly accessible backend URL
  *
+ * Historical context:
+ *   - Docker Compose supplies API_URL=http://backend:4000 inside the running container, but our GitHub build runs without it
+ *   - Previous code defaulted to http://localhost:4000 whenever API_URL was missing, so the compiled bundle baked in the wrong host
+ *   - This helper now falls back to the backend service name instead, keeping both the build output and SSR aligned without touching environment files
+ *
  * @returns The base backend URL without trailing /api path
  */
 function getBackendBaseUrl(): string {
   // Server-side (SSR): Use internal Docker service name
   if (typeof window === 'undefined') {
-    return process.env.API_URL || 'http://localhost:4000';
+    if (process.env.API_URL) {
+        return process.env.API_URL;
+    }
+
+    if (process.env.NEXT_PUBLIC_API_URL) {
+        return process.env.NEXT_PUBLIC_API_URL.replace(/\/api$/, '');
+    }
+
+    return 'http://backend:4000';
   }
 
   // Client-side: Use public URL or detect from window.location
