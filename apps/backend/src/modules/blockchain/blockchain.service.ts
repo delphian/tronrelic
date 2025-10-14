@@ -457,11 +457,29 @@ export class BlockchainService {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const results = await BlockModel.aggregate<AggregationResult>(pipeline as any);
 
-        return results.map(row => ({
-            date: row._id,
-            transactions: row.transactions,
-            avgPerBlock: Number(row.avgPerBlock.toFixed(1))
-        }));
+        return results.map(row => {
+            // Parse the date string and convert to ISO format with UTC timezone
+            // MongoDB returns strings like "2025-10-13 01:00" without timezone info
+            // We interpret these as UTC and convert to proper ISO 8601 format
+            let isoDate: string;
+            try {
+                // Append 'Z' to indicate UTC timezone, then convert to ISO string
+                const parsedDate = new Date(row._id + ':00Z');
+                if (isNaN(parsedDate.getTime())) {
+                    throw new Error('Invalid date');
+                }
+                isoDate = parsedDate.toISOString();
+            } catch {
+                // Fallback to original value if parsing fails
+                isoDate = row._id;
+            }
+
+            return {
+                date: isoDate,
+                transactions: row.transactions,
+                avgPerBlock: Number(row.avgPerBlock.toFixed(1))
+            };
+        });
     }
 
     /**

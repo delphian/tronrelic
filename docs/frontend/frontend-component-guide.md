@@ -916,6 +916,112 @@ const tooltipId = useId();
 <div id={tooltipId}>
 ```
 
+### Two-Phase Rendering Pattern for Timezone-Sensitive Data
+
+**Problem:** When rendering charts or data that depends on the user's local timezone during SSR, the server renders timestamps in one timezone (UTC) while the client renders them in the user's local timezone. This causes React hydration errors because the HTML output differs between server and client renders.
+
+**Example hydration error:**
+```
+Warning: Text content did not match. Server: "Oct 14, 02:00 AM" Client: "Oct 13, 09:00 PM"
+```
+
+**Why this happens:**
+- The server (Node.js) renders with UTC or server timezone
+- The client (browser) renders with the user's local timezone
+- React detects the mismatch and throws a hydration error
+- The page may flash incorrect content or break entirely
+
+**Solution: Use two-phase rendering with timezone-agnostic fallbacks**
+
+The two-phase pattern solves hydration mismatches by rendering timezone-agnostic content initially, then switching to timezone-specific content only after live data flows:
+
+**Phase 1 (Initial render):** Show relative time labels ("Now", "2h ago", "5m ago")
+- Server and client produce identical output
+- No timezone conversion required
+- Prevents hydration mismatch
+
+**Phase 2 (After live data arrives):** Switch to absolute timestamps ("10:31 PM", "Oct 13, 9:00 PM")
+- Detect when WebSocket connects and live updates start flowing
+- Set a state flag to indicate live data is available
+- Conditionally render absolute timestamps only when the flag is true
+
+**Implementation Steps:**
+
+1. **Track live data state:**
+```tsx
+const [hasReceivedLiveData, setHasReceivedLiveData] = useState(false);
+const realtime = useRealtimeStatus();
+
+// Detect when live WebSocket updates start flowing
+useEffect(() => {
+    if (realtime.label === 'Live' && lastUpdated) {
+        setHasReceivedLiveData(true);
+    }
+}, [realtime.label, lastUpdated]);
+```
+
+2. **Render timezone-agnostic labels initially, absolute times after live data flows:**
+```tsx
+xAxisFormatter={(date) => {
+    // Initial render (SSR + first client render): Use relative time
+    if (!hasReceivedLiveData) {
+        const now = Date.now();
+        const diffMs = now - date.getTime();
+        const diffMinutes = Math.floor(diffMs / (1000 * 60));
+        const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+
+        if (diffMinutes < 30) return 'Now';
+        if (diffHours === 0) return `${diffMinutes}m ago`;
+        if (diffHours < 24) return `${diffHours}h ago`;
+        return `${Math.floor(diffHours / 24)}d ago`;
+    }
+
+    // After live data flows: Show absolute timestamps
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}}
+```
+
+**When to use this pattern:**
+
+- **Real-time dashboards** - Charts showing live blockchain data, transaction volumes, network metrics
+- **Activity feeds** - Lists of recent events with timestamps
+- **Historical data visualizations** - Charts comparing current vs historical data
+- **Any component rendering timestamps during SSR** - If your component uses `toLocaleTimeString()`, `toLocaleDateString()`, or timezone-aware formatting
+
+**When NOT to use this pattern:**
+
+- **Client-only components** - If the component uses `'use client'` and only renders after mount, use the `ClientTime` component instead
+- **Static timestamps** - Historical data that doesn't update in real-time can use the `ClientTime` component
+- **Non-timezone-dependent data** - Data that renders identically on server and client (block numbers, transaction hashes, etc.)
+
+**Example: CurrentBlock Component**
+
+The `CurrentBlock` component (located at `/apps/frontend/features/blockchain/components/CurrentBlock/CurrentBlock.tsx`) demonstrates this pattern:
+
+- Lines 53, 77-81: State tracking for `hasReceivedLiveData` and live data detection
+- Lines 243-272: Two-phase rendering in chart axis formatter
+
+**Key implementation details:**
+1. Uses `useRealtimeStatus()` to detect when WebSocket connection is live
+2. Sets `hasReceivedLiveData` flag when live updates start flowing
+3. Conditionally switches from relative time ("2h ago") to absolute time ("10:31 PM")
+4. Ensures server and client HTML match during initial hydration
+
+**Alternative: Use ClientTime Component**
+
+For simpler cases where you need to display a single timestamp (not in a chart formatter), use the `ClientTime` component instead:
+
+```tsx
+import { ClientTime } from '../../components/ui/ClientTime';
+
+// Renders placeholder during SSR, actual time after mount
+<td>
+  <ClientTime date={transaction.timestamp} format="time" />
+</td>
+```
+
+The `ClientTime` component renders a placeholder (`—`) during SSR, then shows the formatted time after mounting on the client. This is simpler than the two-phase pattern but doesn't provide the progressive enhancement of showing relative times first.
+
 ## Quick Reference Checklist
 
 Before shipping any UI component or plugin page, verify:
@@ -930,7 +1036,8 @@ Before shipping any UI component or plugin page, verify:
 - [ ] Uses semantic HTML (buttons, nav, lists, etc.)
 - [ ] Includes ARIA labels for icon buttons and interactive elements
 - [ ] Has visible focus states for all interactive elements
-- [ ] Uses `ClientTime` component for date/time rendering to prevent hydration errors
+- [ ] Uses `ClientTime` component for static timestamps (prevents hydration errors)
+- [ ] Uses two-phase rendering pattern for timezone-sensitive real-time data (charts, live feeds)
 - [ ] Avoids browser-only APIs (`window`, `document`) during initial render
 - [ ] Tested in multiple contexts (full-page, slideout, modal, mobile)
 - [ ] JSDoc comments explain the "why" before showing the "how"

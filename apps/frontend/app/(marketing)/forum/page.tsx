@@ -15,14 +15,12 @@ export default async function ForumPage() {
   const spaces = await fetchLegacyForumSpaces();
 
   return (
-    <main>
-      <div className="page">
-        <section className="page-header">
-          <h1 className="page-title">Signed forum</h1>
-          <p className="page-subtitle">Wallet-authenticated discussions continue to live here until the Socket.io powered replacement ships.</p>
-        </section>
-        <ForumHub initialSpaces={spaces} />
-      </div>
-    </main>
+    <div className="page">
+      <section className="page-header">
+        <h1 className="page-title">Signed forum</h1>
+        <p className="page-subtitle">Wallet-authenticated discussions continue to live here until the Socket.io powered replacement ships.</p>
+      </section>
+      <ForumHub initialSpaces={spaces} />
+    </div>
   );
 }

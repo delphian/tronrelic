@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState, useRef } from 'react';
+import { Wallet } from 'lucide-react';
 import { Button } from '../../ui/Button';
 import { useWallet } from '../../../features/accounts';
 import { pluginRegistry } from '../../../lib/pluginRegistry';
@@ -11,9 +12,8 @@ import styles from './NavBar.module.css';
 
 const coreNavLinks: IMenuItemConfig[] = [
     { href: '/', label: 'Overview', order: 0 },
-    { href: '/resource-markets', label: 'Markets', order: 1 },
-    { href: '/accounts', label: 'Accounts', order: 6 },
-    { href: '/system', label: 'System', adminOnly: true, order: 100 }
+    { href: '/resource-markets', label: 'Energy Markets', order: 1 },
+    { href: '/accounts', label: 'Accounts', order: 6 }
 ];
 
 /**
@@ -232,20 +232,24 @@ export function NavBar() {
                     );
                 })}
             </nav>
-            <div>
+            <div className={styles.wallet_container}>
                 {address ? (
                     <Button variant="secondary" size="sm" onClick={disconnect}>
                         {truncateWallet(address)}
                     </Button>
                 ) : (
-                    <Button
-                        variant="primary"
-                        size="sm"
+                    <button
+                        className={styles.connect_wallet_btn}
                         onClick={connect}
-                        disabled={status === 'connecting' || !canConnect}
+                        disabled={true}
+                        aria-label="Connect wallet (coming soon)"
                     >
-                        {status === 'connecting' ? 'Connecting…' : 'Connect Wallet'}
-                    </Button>
+                        <span className={styles.wallet_icon}>
+                            <Wallet size={18} />
+                        </span>
+                        Connect Wallet
+                        <span className={styles.coming_soon_badge}>Soon</span>
+                    </button>
                 )}
             </div>
         </header>

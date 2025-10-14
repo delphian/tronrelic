@@ -26,7 +26,7 @@ export default function AboutPage() {
   ];
 
   return (
-    <main>
+    <article>
       <section>
         <h1>About TronRelic</h1>
         <p style={{ maxWidth: '640px', opacity: 0.7 }}>
@@ -35,12 +35,12 @@ export default function AboutPage() {
       </section>
       <section style={{ marginTop: '2rem', display: 'grid', gap: '1.25rem' }}>
         {items.map(item => (
-          <article key={item.title} className="card">
+          <div key={item.title} className="card">
             <h2>{item.title}</h2>
             <p style={{ opacity: 0.8 }}>{item.description}</p>
-          </article>
+          </div>
         ))}
       </section>
-    </main>
+    </article>
   );
 }

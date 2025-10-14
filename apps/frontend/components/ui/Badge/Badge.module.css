@@ -17,6 +17,34 @@
     border: 1px solid transparent;
 }
 
+/* Live Indicator - Recording dot with pulse animation */
+.live_indicator {
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #ff4444;
+    box-shadow: 0 0 4px rgba(255, 68, 68, 0.6);
+    animation: live_pulse 2s ease-in-out infinite;
+}
+
+@keyframes live_pulse {
+    0%, 100% {
+        opacity: 1;
+        transform: scale(1);
+        background: #ff0000;
+        box-shadow: 0 0 8px rgba(255, 0, 0, 0.9), 0 0 12px rgba(255, 0, 0, 0.5);
+        filter: brightness(1.3);
+    }
+    50% {
+        opacity: 0.6;
+        transform: scale(0.9);
+        background: #ff4444;
+        box-shadow: 0 0 4px rgba(255, 68, 68, 0.6);
+        filter: brightness(1);
+    }
+}
+
 /* Tone Variants */
 .badge--neutral {
     background: rgba(118, 164, 255, 0.22);

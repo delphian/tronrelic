@@ -129,7 +129,12 @@ export function TransactionFeed({ initialTransactions }: ITransactionFeedProps) 
                     <h2 className={styles.header__title}>Live transaction alerts</h2>
                     <p className={`text-subtle ${styles.header__description}`}>Whale movements, delegations, and staking activity detected in real time.</p>
                 </div>
-                <Badge tone={realtime.tone} aria-live="polite" suppressHydrationWarning>
+                <Badge
+                    tone={realtime.tone}
+                    showLiveIndicator={realtime.label === 'Live'}
+                    aria-live="polite"
+                    suppressHydrationWarning
+                >
                     <span suppressHydrationWarning>{realtime.label}</span>
                     {realtime.latencyMs !== null && (
                         <span style={{ marginLeft: '0.35rem', fontSize: '0.7rem', opacity: 0.75 }} suppressHydrationWarning>

@@ -96,8 +96,13 @@ const MARGIN = { top: 24, right: 32, bottom: 36, left: 54 };
 /**
  * Converts date string to Date object, handling various formats.
  *
- * @param value - ISO date string or timestamp
- * @returns Parsed Date object
+ * Properly handles ISO 8601 timestamps with timezone information from the backend API.
+ * The backend returns UTC timestamps in ISO format (e.g., "2025-10-13T01:00:00.000Z"),
+ * which Date.parse() correctly interprets as UTC. The resulting Date object is then
+ * displayed in the user's local timezone by the chart's xAxisFormatter.
+ *
+ * @param value - ISO date string or timestamp (should include timezone indicator)
+ * @returns Parsed Date object representing the UTC time
  */
 function toDate(value: string) {
     const time = Date.parse(value);
