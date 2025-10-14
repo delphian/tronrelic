@@ -206,6 +206,11 @@
     background: rgba(124, 155, 255, 0.3);
 }
 
+.graph-content {
+    position: relative;
+    min-height: 280px;
+}
+
 .graph-loading,
 .graph-error {
     padding: 2rem;

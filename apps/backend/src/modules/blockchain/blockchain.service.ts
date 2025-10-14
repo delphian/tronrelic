@@ -250,7 +250,7 @@ export class BlockchainService {
      * Aggregates historical block data from MongoDB to produce time-windowed transaction statistics
      * for charting purposes. The grouping granularity automatically adjusts based on the requested
      * time range to balance data resolution with response size:
-     * - 1 day: hourly buckets (24 points)
+     * - 1 day: 30-minute buckets (48 points)
      * - 7 days: hourly buckets (168 points)
      * - 30 days: 4-hour windows (180 points)
      *
@@ -272,9 +272,11 @@ export class BlockchainService {
 
         // Determine grouping format based on time range
         let dateFormat: string;
+        let use30MinBuckets = false;
         if (clampedDays <= 1) {
-            // 1 day: group by hour (24 points)
+            // 1 day: group by 30 minutes (48 points)
             dateFormat = '%Y-%m-%d %H:00';
+            use30MinBuckets = true;
         } else if (clampedDays <= 7) {
             // 7 days: group by hour (168 points)
             dateFormat = '%Y-%m-%d %H:00';
@@ -357,8 +359,74 @@ export class BlockchainService {
                     }
                 }
             );
+        } else if (use30MinBuckets) {
+            // For 1 day, group by 30-minute buckets
+            pipeline.push(
+                {
+                    $addFields: {
+                        hour: { $hour: '$timestamp' },
+                        minute: { $minute: '$timestamp' },
+                        dateOnly: { $dateToString: { format: dateFormat, date: '$timestamp' } }
+                    }
+                },
+                {
+                    $addFields: {
+                        minuteBucket: {
+                            $multiply: [
+                                { $floor: { $divide: ['$minute', 30] } },
+                                30
+                            ]
+                        }
+                    }
+                },
+                {
+                    $group: {
+                        _id: {
+                            date: '$dateOnly',
+                            hour: '$hour',
+                            bucket: '$minuteBucket'
+                        },
+                        transactions: { $sum: '$transactionCount' },
+                        blockCount: { $sum: 1 }
+                    }
+                },
+                {
+                    $project: {
+                        _id: {
+                            $concat: [
+                                { $substr: [{ $toString: '$_id.date' }, 0, 10] },
+                                ' ',
+                                {
+                                    $cond: [
+                                        { $lt: ['$_id.hour', 10] },
+                                        { $concat: ['0', { $toString: '$_id.hour' }] },
+                                        { $toString: '$_id.hour' }
+                                    ]
+                                },
+                                ':',
+                                {
+                                    $cond: [
+                                        { $lt: ['$_id.bucket', 10] },
+                                        { $concat: ['0', { $toString: '$_id.bucket' }] },
+                                        { $toString: '$_id.bucket' }
+                                    ]
+                                }
+                            ]
+                        },
+                        transactions: 1,
+                        blockCount: 1,
+                        avgPerBlock: {
+                            $cond: [
+                                { $gt: ['$blockCount', 0] },
+                                { $divide: ['$transactions', '$blockCount'] },
+                                0
+                            ]
+                        }
+                    }
+                }
+            );
         } else {
-            // For 1-7 days, group by hour directly
+            // For 2-7 days, group by hour directly
             pipeline.push(
                 {
                     $group: {
