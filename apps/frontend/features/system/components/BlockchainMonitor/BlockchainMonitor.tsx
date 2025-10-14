@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { config as runtimeConfig } from '@/lib/config';
+import { config as runtimeConfig } from '../../../../lib/config';
 import styles from './BlockchainMonitor.module.css';
 
 interface BlockchainError {

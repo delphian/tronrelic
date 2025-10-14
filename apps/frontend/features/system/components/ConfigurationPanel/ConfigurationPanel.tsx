@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { config as runtimeConfig } from '@/lib/config';
+import { config as runtimeConfig } from '../../../../lib/config';
 import styles from './ConfigurationPanel.module.css';
 
 interface Configuration {

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { config as runtimeConfig } from '@/lib/config';
+import { config as runtimeConfig } from '../../../../lib/config';
 import { cn } from '../../../../lib/cn';
 import styles from './SystemHealthMonitor.module.css';
 
