@@ -245,6 +245,158 @@ export class BlockchainService {
     }
 
     /**
+     * Retrieve transaction count timeseries data grouped by time windows.
+     *
+     * Aggregates historical block data from MongoDB to produce time-windowed transaction statistics
+     * for charting purposes. The grouping granularity automatically adjusts based on the requested
+     * time range to balance data resolution with response size:
+     * - 1 day: hourly buckets (24 points)
+     * - 7 days: hourly buckets (168 points)
+     * - 30 days: 4-hour windows (180 points)
+     *
+     * Each data point includes:
+     * - Total transactions in that time window (sum across blocks)
+     * - Average transactions per block in that window
+     *
+     * @param days - Number of days of history to retrieve (min 1, max 90, clamped automatically)
+     * @returns Array of timeseries points sorted chronologically
+     * @throws ValidationError if days parameter is invalid
+     */
+    async getTransactionTimeseries(days: number) {
+        if (!Number.isFinite(days) || days <= 0) {
+            throw new Error('Days must be a positive number');
+        }
+
+        const clampedDays = Math.min(Math.max(days, 1), 90);
+        const startDate = new Date(Date.now() - clampedDays * 24 * 60 * 60 * 1000);
+
+        // Determine grouping format based on time range
+        let dateFormat: string;
+        if (clampedDays <= 1) {
+            // 1 day: group by hour (24 points)
+            dateFormat = '%Y-%m-%d %H:00';
+        } else if (clampedDays <= 7) {
+            // 7 days: group by hour (168 points)
+            dateFormat = '%Y-%m-%d %H:00';
+        } else {
+            // 30+ days: group by 4-hour windows (6 buckets per day)
+            // Use hour modulo to create 4-hour buckets: 00-03, 04-07, 08-11, 12-15, 16-19, 20-23
+            dateFormat = '%Y-%m-%d';
+        }
+
+        interface AggregationResult {
+            _id: string;
+            hour?: number;
+            transactions: number;
+            avgPerBlock: number;
+            blockCount: number;
+        }
+
+        const pipeline: object[] = [
+            {
+                $match: {
+                    timestamp: { $gte: startDate }
+                }
+            }
+        ];
+
+        if (clampedDays > 7) {
+            // For 30+ days, add hour field and round to 4-hour buckets
+            pipeline.push(
+                {
+                    $addFields: {
+                        hour: { $hour: '$timestamp' },
+                        dateOnly: { $dateToString: { format: dateFormat, date: '$timestamp' } }
+                    }
+                },
+                {
+                    $addFields: {
+                        hourBucket: {
+                            $multiply: [
+                                { $floor: { $divide: ['$hour', 4] } },
+                                4
+                            ]
+                        }
+                    }
+                },
+                {
+                    $group: {
+                        _id: {
+                            date: '$dateOnly',
+                            bucket: '$hourBucket'
+                        },
+                        transactions: { $sum: '$transactionCount' },
+                        blockCount: { $sum: 1 }
+                    }
+                },
+                {
+                    $project: {
+                        _id: {
+                            $concat: [
+                                { $toString: '$_id.date' },
+                                ' ',
+                                {
+                                    $cond: [
+                                        { $lt: ['$_id.bucket', 10] },
+                                        { $concat: ['0', { $toString: '$_id.bucket' }] },
+                                        { $toString: '$_id.bucket' }
+                                    ]
+                                },
+                                ':00'
+                            ]
+                        },
+                        transactions: 1,
+                        blockCount: 1,
+                        avgPerBlock: {
+                            $cond: [
+                                { $gt: ['$blockCount', 0] },
+                                { $divide: ['$transactions', '$blockCount'] },
+                                0
+                            ]
+                        }
+                    }
+                }
+            );
+        } else {
+            // For 1-7 days, group by hour directly
+            pipeline.push(
+                {
+                    $group: {
+                        _id: { $dateToString: { format: dateFormat, date: '$timestamp' } },
+                        transactions: { $sum: '$transactionCount' },
+                        blockCount: { $sum: 1 }
+                    }
+                },
+                {
+                    $project: {
+                        _id: 1,
+                        transactions: 1,
+                        blockCount: 1,
+                        avgPerBlock: {
+                            $cond: [
+                                { $gt: ['$blockCount', 0] },
+                                { $divide: ['$transactions', '$blockCount'] },
+                                0
+                            ]
+                        }
+                    }
+                }
+            );
+        }
+
+        pipeline.push({ $sort: { _id: 1 } });
+
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const results = await BlockModel.aggregate<AggregationResult>(pipeline as any);
+
+        return results.map(row => ({
+            date: row._id,
+            transactions: row.transactions,
+            avgPerBlock: Number(row.avgPerBlock.toFixed(1))
+        }));
+    }
+
+    /**
      * Load the current blockchain sync cursor from MongoDB.
      * Returns the last successfully processed block number and backfill queue, or null if this is a fresh install.
      */
@@ -1272,7 +1424,7 @@ export class BlockchainService {
      * deprecated category flags.
      */
     private calculateBlockStats(transactions: ProcessedTransaction[]): BlockStats {
-        return transactions.reduce<BlockStats>(
+        return transactions.reduce(
             (acc, transaction) => {
                 const { payload } = transaction;
 
@@ -1298,6 +1450,7 @@ export class BlockchainService {
 
                 acc.internalTransactions += payload.internalTransactions?.length ?? 0;
                 acc.totalEnergyUsed += payload.energy?.consumed ?? 0;
+                acc.totalEnergyCost += payload.energy?.totalCost ?? 0;
                 acc.totalBandwidthUsed += payload.bandwidth?.consumed ?? 0;
 
                 return acc;
@@ -1310,6 +1463,7 @@ export class BlockchainService {
                 tokenCreations: 0,
                 internalTransactions: 0,
                 totalEnergyUsed: 0,
+                totalEnergyCost: 0,
                 totalBandwidthUsed: 0
             }
         );
