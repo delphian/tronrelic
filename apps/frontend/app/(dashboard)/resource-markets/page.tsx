@@ -27,7 +27,7 @@ async function fetchMarkets(): Promise<MarketsResponse> {
   return response.json();
 }
 
-export default async function MarketsPage() {
+export default async function MarketsPage(): Promise<JSX.Element> {
   const data = await fetchMarkets();
   return (
     <div className="page">

@@ -12,7 +12,7 @@ export const metadata = buildMetadata({
   keywords: ['TRON guides', 'TRON research', 'TRON staking articles']
 });
 
-export default async function ArticlesPage() {
+export default async function ArticlesPage(): Promise<JSX.Element> {
   const articles = await fetchLegacyArticles();
   const structuredData = buildArticleListStructuredData(articles);
 

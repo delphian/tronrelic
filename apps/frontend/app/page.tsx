@@ -16,7 +16,7 @@ export const metadata = buildMetadata({
   ]
 });
 
-export default async function HomePage() {
+export default async function HomePage(): Promise<JSX.Element> {
   const faqSchema = {
     '@context': 'https://schema.org',
     '@type': 'FAQPage',
