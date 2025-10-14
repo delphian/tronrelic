@@ -27,7 +27,7 @@ When a task arrives, Claude MUST respond with:
 - Keywords: market, fetcher, pricing, tiers, fees, API data, third-party, normalize, marketplace, exchange, energy rental, sun, TRX rates
 - Use for: ANY work involving market data fetchers, including analysis, investigation, research, creation, updates, troubleshooting, or debugging
 
-**tronrelic-plugin-coder:**
+**tronrelic-plugin-specialist:**
 - Keywords: plugin, observer, BaseObserver, blockchain observer, WebSocket subscription, plugin page, plugin API, plugin registration
 - Use for: ANY work involving TronRelic plugins (analysis, investigation, research, creation, debugging, architecture decisions, code review)
 - Exception: Work on the general plugin system infrastructure should NOT be handled by this subagent
@@ -46,7 +46,7 @@ Claude MUST automatically use these agents when working with these file paths:
 - `apps/backend/src/modules/markets/**`
 - `apps/backend/src/config/market-providers.ts`
 
-**tronrelic-plugin-coder:**
+**tronrelic-plugin-specialist:**
 - `packages/plugins/**/observers/**`
 - `packages/plugins/**/backend/**`
 - `packages/plugins/**/frontend/**`
@@ -54,6 +54,7 @@ Claude MUST automatically use these agents when working with these file paths:
 **documentation-writer:**
 - `docs/**/*.md`
 - `**/README.md`
+- `**/AGENTS.md`
 - `**/CONTRIBUTING.md`
 - `**/*-guidance.md`
 
