@@ -114,7 +114,7 @@ const nextConfig = {
 
         return [
             {
-                source: '/rent-tron-energy',
+                source: '/rent-tron-energy/:path*',
                 destination: '/resource-markets',
                 permanent: true,
             },
