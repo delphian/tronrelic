@@ -11,6 +11,35 @@ import { logger } from '../../lib/logger.js';
 import { env } from '../../config/env.js';
 import { SchedulerService } from '../../services/scheduler.service.js';
 import { blockchainConfig } from '../../config/blockchain.js';
+interface TimeoutResult<T> {
+  timedOut: boolean;
+  value?: T;
+  error?: unknown;
+}
+
+async function raceWithTimeout<T>(promise: Promise<T>, ms: number): Promise<TimeoutResult<T>> {
+  let timeoutId: NodeJS.Timeout | undefined;
+  const timeoutPromise = new Promise<TimeoutResult<T>>(resolve => {
+    timeoutId = setTimeout(() => resolve({ timedOut: true }), ms);
+  });
+
+  const wrapped = promise
+    .then(value => ({ timedOut: false as const, value }))
+    .catch(error => ({ timedOut: false as const, error }));
+
+  const result = await Promise.race([wrapped, timeoutPromise]);
+
+  if (timeoutId) {
+    clearTimeout(timeoutId);
+  }
+
+  if (result.timedOut) {
+    // ensure rejections are handled even after timeout
+    promise.catch(() => {});
+  }
+
+  return result;
+}
 
 /**
  * Safely converts a date to ISO string, returning null if invalid
@@ -398,23 +427,19 @@ export class SystemMonitorService {
   }
 
   async getTransactionStats(): Promise<TransactionStats> {
-    const total = await TransactionModel.countDocuments();
+    let total = 0;
+    try {
+      total = await TransactionModel.estimatedDocumentCount();
+    } catch (error) {
+      logger.warn({ error }, 'Failed to estimate transaction count');
+    }
 
     const startOfToday = new Date();
     startOfToday.setHours(0, 0, 0, 0);
 
-    const todayCount = await TransactionModel.countDocuments({
-      timestamp: { $gte: startOfToday }
-    });
+    const todayCount = 0;
 
-    const typeAggregation = await TransactionModel.aggregate([
-      {
-        $group: {
-          _id: '$type',
-          count: { $sum: 1 }
-        }
-      }
-    ]);
+    const typeAggregation: Array<{ _id: string; count: number }> = [];
 
     const byType: Record<string, number> = {};
     for (const item of typeAggregation) {
@@ -613,11 +638,13 @@ export class SystemMonitorService {
     let responseTime: number | null = null;
     if (connected && mongoose.connection.db) {
       const start = Date.now();
-      try {
-        await mongoose.connection.db.admin().ping();
+      const pingResult = await raceWithTimeout(mongoose.connection.db.admin().ping(), 2000);
+      if (pingResult.timedOut) {
+        logger.warn('Database ping timed out after 2000ms');
+      } else if (pingResult.error) {
+        logger.error({ error: pingResult.error }, 'Database ping failed');
+      } else {
         responseTime = Date.now() - start;
-      } catch (error) {
-        logger.error({ error }, 'Database ping failed');
       }
     }
 
@@ -628,12 +655,14 @@ export class SystemMonitorService {
     let collectionCount = 0;
 
     if (connected && mongoose.connection.db) {
-      try {
-        const stats = await mongoose.connection.db.stats();
-        databaseSize = stats.dataSize;
-        collectionCount = stats.collections;
-      } catch (error) {
-        logger.error({ error }, 'Failed to fetch database stats');
+      const statsResult = await raceWithTimeout(mongoose.connection.db.stats(), 2000);
+      if (statsResult.timedOut) {
+        logger.warn('MongoDB stats command timed out after 2000ms');
+      } else if (statsResult.error) {
+        logger.error({ error: statsResult.error }, 'Failed to fetch database stats');
+      } else if (statsResult.value) {
+        databaseSize = statsResult.value.dataSize;
+        collectionCount = statsResult.value.collections;
       }
     }
 
