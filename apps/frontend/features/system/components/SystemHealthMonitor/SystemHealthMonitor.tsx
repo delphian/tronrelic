@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { config as runtimeConfig } from '@/lib/config';
 import { cn } from '../../../../lib/cn';
 import styles from './SystemHealthMonitor.module.css';
 
@@ -101,13 +102,13 @@ export function SystemHealthMonitor({ token }: Props) {
     const fetchData = async () => {
         try {
             const [dbRes, redisRes, serverRes] = await Promise.all([
-                fetch(`${process.env.NEXT_PUBLIC_API_URL}/admin/system/health/database`, {
+                fetch(`${runtimeConfig.apiBaseUrl}/admin/system/health/database`, {
                     headers: { 'X-Admin-Token': token }
                 }),
-                fetch(`${process.env.NEXT_PUBLIC_API_URL}/admin/system/health/redis`, {
+                fetch(`${runtimeConfig.apiBaseUrl}/admin/system/health/redis`, {
                     headers: { 'X-Admin-Token': token }
                 }),
-                fetch(`${process.env.NEXT_PUBLIC_API_URL}/admin/system/health/server`, {
+                fetch(`${runtimeConfig.apiBaseUrl}/admin/system/health/server`, {
                     headers: { 'X-Admin-Token': token }
                 })
             ]);

@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { config as runtimeConfig } from '@/lib/config';
 import type { IPluginInfo } from '@tronrelic/types';
 
 interface PluginCardProps {
@@ -300,7 +301,7 @@ export default function PluginsManagementPage() {
         try {
             setIsLoading(true);
             setError(null);
-            const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/plugin-management/all`, {
+            const response = await fetch(`${runtimeConfig.apiBaseUrl}/plugin-management/all`, {
                 headers: {
                     'Authorization': `Bearer ${token}`
                 }
@@ -325,7 +326,7 @@ export default function PluginsManagementPage() {
             setError(null);
             setSuccessMessage(null);
 
-            const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/plugin-management/${pluginId}/${action}`, {
+            const response = await fetch(`${runtimeConfig.apiBaseUrl}/plugin-management/${pluginId}/${action}`, {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${token}`,

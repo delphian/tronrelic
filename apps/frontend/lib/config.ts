@@ -1,4 +1,34 @@
 const defaultSiteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://tronrelic.com';
+const LOCAL_HOSTNAMES = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
+
+/**
+ * Normalizes client-provided backend URLs while avoiding localhost defaults in production.
+ *
+ * @param rawUrl - The raw environment URL to normalize
+ * @returns A normalized origin string or null when the URL should be ignored
+ */
+function normalizeClientEnvUrl(rawUrl: string | undefined): string | null {
+    if (!rawUrl) {
+        return null;
+    }
+
+    try {
+        const trimmed = rawUrl.replace(/\/api$/, '').replace(/\/$/, '');
+        const resolved = new URL(trimmed, window.location.origin);
+        const targetHost = resolved.hostname;
+        const currentHost = window.location.hostname;
+        const targetIsLocal = LOCAL_HOSTNAMES.has(targetHost);
+        const currentIsLocal = LOCAL_HOSTNAMES.has(currentHost);
+
+        if (targetIsLocal && !currentIsLocal) {
+            return null;
+        }
+
+        return `${resolved.protocol}//${resolved.host}`;
+    } catch {
+        return null;
+    }
+}
 
 /**
  * Gets the appropriate backend base URL for the current runtime context.
@@ -34,16 +64,27 @@ function getBackendBaseUrl(): string {
   }
 
   // Client-side: Use public URL or detect from window.location
-  const envUrl = process.env.NEXT_PUBLIC_SOCKET_URL || process.env.NEXT_PUBLIC_API_URL;
+  const envUrl =
+    normalizeClientEnvUrl(process.env.NEXT_PUBLIC_SOCKET_URL) ??
+    normalizeClientEnvUrl(process.env.NEXT_PUBLIC_API_URL);
   if (envUrl) {
-    // Remove /api suffix if present
-    return envUrl.replace(/\/api$/, '');
+    return envUrl;
   }
 
-  // Fallback: dynamically detect from current page
+  // Fallback: dynamically detect from current page (distinguish local dev vs production)
   const protocol = window.location.protocol;
   const hostname = window.location.hostname;
-  return `${protocol}//${hostname}:4000`;
+  const port = window.location.port;
+
+  if (LOCAL_HOSTNAMES.has(hostname)) {
+    return `${protocol}//${hostname}:4000`;
+  }
+
+  if (port) {
+    return `${protocol}//${hostname}:${port}`;
+  }
+
+  return `${protocol}//${hostname}`;
 }
 
 /**

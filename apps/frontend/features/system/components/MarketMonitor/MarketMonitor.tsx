@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { config as runtimeConfig } from '@/lib/config';
 import styles from './MarketMonitor.module.css';
 
 interface MarketPlatform {
@@ -70,10 +71,10 @@ export function MarketMonitor({ token }: Props) {
     const fetchData = async () => {
         try {
             const [platformsRes, freshnessRes] = await Promise.all([
-                fetch(`${process.env.NEXT_PUBLIC_API_URL}/admin/system/markets/platforms`, {
+                fetch(`${runtimeConfig.apiBaseUrl}/admin/system/markets/platforms`, {
                     headers: { 'X-Admin-Token': token }
                 }),
-                fetch(`${process.env.NEXT_PUBLIC_API_URL}/admin/system/markets/freshness`, {
+                fetch(`${runtimeConfig.apiBaseUrl}/admin/system/markets/freshness`, {
                     headers: { 'X-Admin-Token': token }
                 })
             ]);
@@ -100,7 +101,7 @@ export function MarketMonitor({ token }: Props) {
     const triggerRefresh = async (force = false) => {
         setRefreshing(true);
         try {
-            await fetch(`${process.env.NEXT_PUBLIC_API_URL}/admin/system/markets/refresh`, {
+            await fetch(`${runtimeConfig.apiBaseUrl}/admin/system/markets/refresh`, {
                 method: 'POST',
                 headers: {
                     'X-Admin-Token': token,
