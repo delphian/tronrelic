@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import { config as runtimeConfig } from '@/lib/config';
 import styles from './ConfigurationPanel.module.css';
 
 interface Configuration {
@@ -71,7 +72,7 @@ export function ConfigurationPanel({ token }: Props) {
      */
     const fetchData = useCallback(async () => {
         try {
-            const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/admin/system/config`, {
+            const response = await fetch(`${runtimeConfig.apiBaseUrl}/admin/system/config`, {
                 headers: { 'X-Admin-Token': token }
             });
             const data = await response.json();

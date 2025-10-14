@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { config as runtimeConfig } from '@/lib/config';
 import styles from './BlockchainMonitor.module.css';
 
 interface BlockchainError {
@@ -108,13 +109,13 @@ export function BlockchainMonitor({ token }: Props) {
     const fetchData = async () => {
         try {
             const [statusRes, statsRes, metricsRes] = await Promise.all([
-                fetch(`${process.env.NEXT_PUBLIC_API_URL}/admin/system/blockchain/status`, {
+                fetch(`${runtimeConfig.apiBaseUrl}/admin/system/blockchain/status`, {
                     headers: { 'X-Admin-Token': token }
                 }),
-                fetch(`${process.env.NEXT_PUBLIC_API_URL}/admin/system/blockchain/transactions`, {
+                fetch(`${runtimeConfig.apiBaseUrl}/admin/system/blockchain/transactions`, {
                     headers: { 'X-Admin-Token': token }
                 }),
-                fetch(`${process.env.NEXT_PUBLIC_API_URL}/admin/system/blockchain/metrics`, {
+                fetch(`${runtimeConfig.apiBaseUrl}/admin/system/blockchain/metrics`, {
                     headers: { 'X-Admin-Token': token }
                 })
             ]);
@@ -145,7 +146,7 @@ export function BlockchainMonitor({ token }: Props) {
     const triggerSync = async () => {
         setSyncing(true);
         try {
-            await fetch(`${process.env.NEXT_PUBLIC_API_URL}/admin/system/blockchain/sync`, {
+            await fetch(`${runtimeConfig.apiBaseUrl}/admin/system/blockchain/sync`, {
                 method: 'POST',
                 headers: { 'X-Admin-Token': token }
             });

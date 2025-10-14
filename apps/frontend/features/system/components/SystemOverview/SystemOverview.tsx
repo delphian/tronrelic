@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { config as runtimeConfig } from '@/lib/config';
 import { cn } from '../../../../lib/cn';
 import styles from './SystemOverview.module.css';
 
@@ -102,7 +103,7 @@ export function SystemOverview({ token }: Props) {
      */
     const fetchData = async () => {
         try {
-            const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/admin/system/overview`, {
+            const response = await fetch(`${runtimeConfig.apiBaseUrl}/admin/system/overview`, {
                 headers: {
                     'X-Admin-Token': token
                 }
