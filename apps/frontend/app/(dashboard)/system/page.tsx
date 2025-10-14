@@ -39,7 +39,7 @@ export default function SystemMonitoringPage() {
 
   if (!isAuthenticated) {
     return (
-      <main style={{ maxWidth: '400px', margin: '4rem auto', padding: '2rem' }}>
+      <div className="page" style={{ maxWidth: '400px', margin: '4rem auto', padding: '2rem' }}>
         <div style={{ display: 'grid', gap: '1.5rem' }}>
           <header>
             <h1>System Monitoring</h1>
@@ -64,12 +64,12 @@ export default function SystemMonitoringPage() {
             </button>
           </form>
         </div>
-      </main>
+      </div>
     );
   }
 
   return (
-    <main style={{ padding: '2rem' }}>
+    <div className="page" style={{ padding: '2rem' }}>
       <div style={{ display: 'grid', gap: '2rem' }}>
         <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
@@ -124,6 +124,6 @@ export default function SystemMonitoringPage() {
           {activeTab === 'config' && <ConfigurationPanel token={token} />}
         </section>
       </div>
-    </main>
+    </div>
   );
 }

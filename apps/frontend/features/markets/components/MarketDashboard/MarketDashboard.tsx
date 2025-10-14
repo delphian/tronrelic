@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { MarketComparisonStats, MarketDocument } from '@tronrelic/shared';
 import { MarketTable } from '../MarketTable';
-import { MarketSlideout } from '../MarketSlideout';
 import { Card } from '../../../../components/ui/Card';
 import { getMarketHistory, getMarkets, type MarketHistoryRecord } from '../../../../lib/api';
 import { useAppDispatch, useAppSelector } from '../../../../store/hooks';
@@ -18,7 +17,7 @@ interface MarketDashboardProps {
 
 export function MarketDashboard({ markets, stats, initialHistory }: MarketDashboardProps) {
   const dispatch = useAppDispatch();
-  const [selected, setSelected] = useState<MarketDocument | null>(markets[0] ?? null);
+  const [expandedGuid, setExpandedGuid] = useState<string | null>(null);
   const [history, setHistory] = useState(initialHistory);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -26,17 +25,24 @@ export function MarketDashboard({ markets, stats, initialHistory }: MarketDashbo
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   /**
-   * Handles market selection from the table, opening the slideout panel and loading historical data.
+   * Handles market expansion/collapse, toggling the inline dropdown and loading historical data.
    *
-   * When a user clicks a market row, this callback fetches the market's pricing history from the
-   * backend API and stores it in local state for the slideout to display. Loading and error states
-   * are managed to provide feedback during the fetch operation. If the same market is clicked twice,
-   * the slideout remains open (to close it, the user must click the X button or backdrop).
+   * When a user clicks a market row, this callback either expands the row to show details (if collapsed)
+   * or collapses it (if already expanded). On expansion, it fetches the market's pricing history from the
+   * backend API and stores it in local state for the dropdown to display. Loading and error states
+   * are managed to provide feedback during the fetch operation.
    *
-   * @param market - The market document selected by the user
+   * @param market - The market document to toggle expansion for
    */
-  const onSelectMarket = async (market: MarketDocument) => {
-    setSelected(market);
+  const onToggleExpand = async (market: MarketDocument) => {
+    // If clicking the same market, collapse it
+    if (expandedGuid === market.guid) {
+      setExpandedGuid(null);
+      return;
+    }
+
+    // Expand the new market and load its history
+    setExpandedGuid(market.guid);
     setLoading(true);
     setError(null);
     try {
@@ -48,16 +54,6 @@ export function MarketDashboard({ markets, stats, initialHistory }: MarketDashbo
     } finally {
       setLoading(false);
     }
-  };
-
-  /**
-   * Closes the slideout panel by clearing the selected market.
-   *
-   * This callback is passed to the MarketSlideout component and invoked when the user clicks
-   * the close button or backdrop. Setting `selected` to null hides the slideout.
-   */
-  const onCloseSlideout = () => {
-    setSelected(null);
   };
 
   /**
@@ -165,19 +161,14 @@ export function MarketDashboard({ markets, stats, initialHistory }: MarketDashbo
           ))}
         </section>
 
-        <div className={`${styles.dashboard_container} market-dashboard-container ${selected ? 'slideout-open' : ''}`}>
+        <div className={styles.dashboard_container}>
           <MarketTable
             initialMarkets={markets}
-            onSelect={onSelectMarket}
-            selectedGuid={selected?.guid}
-          />
-
-          <MarketSlideout
-            market={selected}
+            onToggleExpand={onToggleExpand}
+            expandedGuid={expandedGuid ?? undefined}
             history={history}
-            loading={loading}
-            error={error}
-            onClose={onCloseSlideout}
+            historyLoading={loading}
+            historyError={error}
           />
         </div>
       </div>

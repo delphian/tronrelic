@@ -25,19 +25,17 @@ export default async function ToolsPage() {
   };
 
   return (
-    <main>
-      <div className="page">
-        <section className="page-header">
-          <h1 className="page-title">Legacy toolset</h1>
-          <p className="page-subtitle">Access the original calculators and helper utilities while they are refactored into the new React-driven UX.</p>
-        </section>
-        <ToolsCatalog initialTools={tools} />
-      </div>
+    <div className="page">
+      <section className="page-header">
+        <h1 className="page-title">Legacy toolset</h1>
+        <p className="page-subtitle">Access the original calculators and helper utilities while they are refactored into the new React-driven UX.</p>
+      </section>
+      <ToolsCatalog initialTools={tools} />
       <script
         suppressHydrationWarning
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(toolStructuredData) }}
       />
-    </main>
+    </div>
   );
 }

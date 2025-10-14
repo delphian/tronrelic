@@ -14,6 +14,13 @@ interface BadgeProps extends HTMLAttributes<HTMLSpanElement> {
      * @default 'neutral'
      */
     tone?: 'neutral' | 'success' | 'warning' | 'danger';
+
+    /**
+     * Whether to display a pulsing red recording indicator dot before the badge content.
+     * Used to emphasize real-time/live status and draw attention to actively updating content.
+     * @default false
+     */
+    showLiveIndicator?: boolean;
 }
 
 /**
@@ -41,18 +48,26 @@ const toneClass: Record<NonNullable<BadgeProps['tone']>, string> = {
  *
  * @example
  * ```tsx
+ * <Badge tone="success" showLiveIndicator>
+ *   Live
+ * </Badge>
+ * ```
+ *
+ * @example
+ * ```tsx
  * <Badge tone="warning">
  *   <Icon name="alert" size={12} />
  *   Limited availability
  * </Badge>
  * ```
  *
- * @param props - Badge component properties including tone variant and children
+ * @param props - Badge component properties including tone variant, live indicator flag, and children
  * @returns A styled span element with badge styling
  */
-export function Badge({ tone = 'neutral', children, className, ...props }: PropsWithChildren<BadgeProps>) {
+export function Badge({ tone = 'neutral', showLiveIndicator = false, children, className, ...props }: PropsWithChildren<BadgeProps>) {
     return (
         <span className={cn(toneClass[tone], className)} {...props}>
+            {showLiveIndicator && <span className={styles.live_indicator} aria-hidden="true" />}
             {children}
         </span>
     );

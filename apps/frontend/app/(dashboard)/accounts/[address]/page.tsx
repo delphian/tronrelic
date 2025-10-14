@@ -95,12 +95,11 @@ export default async function AccountPage({ params }: AccountPageProps) {
   const lastActiveText = lastActiveDate ? lastActiveDate.toLocaleString() : 'Unknown';
 
   return (
-    <main>
-      <div className="page">
-        <section className="page-header">
-          <h1 className="page-title">{params.address}</h1>
-          <p className="page-subtitle">Summary of TRX flows, recent transactions, and quick bookmarking for this wallet.</p>
-        </section>
+    <div className="page">
+      <section className="page-header">
+        <h1 className="page-title">{params.address}</h1>
+        <p className="page-subtitle">Summary of TRX flows, recent transactions, and quick bookmarking for this wallet.</p>
+      </section>
         <div className="grid grid--cols-2" style={{ gap: '2rem' }}>
           <Card>
             <header style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap', alignItems: 'baseline' }}>
@@ -264,6 +263,6 @@ export default async function AccountPage({ params }: AccountPageProps) {
           )}
         </Card>
       </div>
-    </main>
+    </div>
   );
 }

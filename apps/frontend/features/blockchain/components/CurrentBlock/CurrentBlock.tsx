@@ -50,6 +50,7 @@ export function CurrentBlock() {
     const [isMounted, setIsMounted] = useState(false);
     const [showGraph, setShowGraph] = useState(false);
     const [selectedPeriod, setSelectedPeriod] = useState<'live' | 1 | 7 | 30>('live');
+    const [hasReceivedLiveData, setHasReceivedLiveData] = useState(false);
 
     // Only fetch from API when not in live mode
     const { data: timeseriesData, loading: timeseriesLoading, error: timeseriesError } = useTransactionTimeseries(
@@ -71,6 +72,13 @@ export function CurrentBlock() {
     useEffect(() => {
         setIsMounted(true);
     }, []);
+
+    // Track when we receive live WebSocket updates
+    useEffect(() => {
+        if (realtime.label === 'Live' && lastUpdated) {
+            setHasReceivedLiveData(true);
+        }
+    }, [realtime.label, lastUpdated]);
 
     /**
      * Loading state - blockchain data is being fetched.
@@ -126,7 +134,12 @@ export function CurrentBlock() {
                         )}
                     </div>
                     {isMounted && (
-                        <Badge tone={realtime.tone} aria-live="polite" suppressHydrationWarning>
+                        <Badge
+                            tone={realtime.tone}
+                            showLiveIndicator={realtime.label === 'Live'}
+                            aria-live="polite"
+                            suppressHydrationWarning
+                        >
                             <span suppressHydrationWarning>{realtime.label}</span>
                             {realtime.latencyMs !== null && (
                                 <span suppressHydrationWarning>
@@ -228,7 +241,31 @@ export function CurrentBlock() {
                                     ]}
                                     yAxisFormatter={(value) => formatLargeNumber(value)}
                                     xAxisFormatter={(date) => {
-                                        if (selectedPeriod === 'live' || selectedPeriod === 1) {
+                                        if (selectedPeriod === 'live') {
+                                            // Initial render: Use relative time to avoid SSR/client hydration mismatch
+                                            // After live data flows: Switch to actual times for precision
+                                            if (!hasReceivedLiveData) {
+                                                const now = Date.now();
+                                                const diffMs = now - date.getTime();
+                                                const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+                                                const diffMinutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+
+                                                if (diffHours === 0 && diffMinutes < 30) {
+                                                    return 'Now';
+                                                }
+                                                if (diffHours === 0) {
+                                                    return `${diffMinutes}m ago`;
+                                                }
+                                                if (diffHours < 24) {
+                                                    return `${diffHours}h ago`;
+                                                }
+                                                return `${Math.floor(diffHours / 24)}d ago`;
+                                            }
+                                            // Live data is flowing - show actual times
+                                            return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                                        }
+                                        // For historical data (1d, 7d, 30d), show actual times/dates
+                                        if (selectedPeriod === 1) {
                                             return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
                                         }
                                         return date.toLocaleDateString([], { month: 'short', day: 'numeric' });

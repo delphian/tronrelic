@@ -27,30 +27,15 @@ async function fetchMarkets(): Promise<MarketsResponse> {
   return response.json();
 }
 
-async function fetchHistory(guid: string): Promise<MarketHistoryRecord[]> {
-  const response = await fetch(getApiUrl(`/markets/${guid}/history?limit=168`), {
-    cache: 'no-store'
-  });
-  if (!response.ok) {
-    return [];
-  }
-  const data = (await response.json()) as { success: boolean; history: MarketHistoryRecord[] };
-  return data.history ?? [];
-}
-
 export default async function MarketsPage() {
   const data = await fetchMarkets();
-  const initialMarket = data.markets[0];
-  const history = initialMarket ? await fetchHistory(initialMarket.guid) : [];
   return (
-    <main>
-      <div className="page">
-        <section className="page-header">
-          <h1 className="page-title">Market intelligence</h1>
-          <p className="page-subtitle">Compare pricing desks, monitor availability, and evaluate reliability trends.</p>
-        </section>
-        <MarketDashboard markets={data.markets} stats={data.stats} initialHistory={history} />
-      </div>
-    </main>
+    <div className="page">
+      <section className="page-header">
+        <h1 className="page-title">Energy Markets</h1>
+        <p className="page-subtitle">Compare pricing desks, monitor availability, and evaluate reliability trends.</p>
+      </section>
+      <MarketDashboard markets={data.markets} stats={data.stats} initialHistory={[]} />
+    </div>
   );
 }

@@ -1,0 +1,144 @@
+/**
+ * MarketDetailsRow Component CSS Module
+ *
+ * Scoped styles for the expandable market details row with inline dropdown behavior.
+ * The row expands to show a two-column layout with market details and pricing information.
+ */
+
+/* Toggle row - clickable row that expands/collapses the details */
+.toggle_row {
+    cursor: pointer;
+    background: rgba(11, 16, 28, 0.4);
+    transition: background-color var(--transition-base);
+}
+
+.toggle_row:hover {
+    background: rgba(79, 140, 255, 0.08);
+}
+
+.toggle_cell {
+    padding: 0.75rem 1rem !important;
+    border-bottom: 1px solid rgba(120, 180, 255, 0.12);
+}
+
+.toggle_content {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    color: var(--color-primary);
+    font-size: 0.85rem;
+    font-weight: 500;
+}
+
+.toggle_label {
+    user-select: none;
+}
+
+/* Details row - expandable row with full content */
+.details_row {
+    background: rgba(5, 10, 18, 0.6);
+}
+
+.details_cell {
+    padding: 0 !important;
+    border-bottom: 1px solid rgba(120, 180, 255, 0.16);
+}
+
+.details_container {
+    container-type: inline-size;
+    container-name: market-details;
+    animation: expandIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    overflow: hidden;
+}
+
+/* Two-column grid layout */
+.details_grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2rem;
+    padding: 2rem;
+}
+
+@container market-details (max-width: 900px) {
+    .details_grid {
+        grid-template-columns: 1fr;
+        gap: 2rem;
+    }
+}
+
+/* Section styling */
+.details_section,
+.pricing_section {
+    min-width: 0; /* Prevent grid blowout */
+}
+
+.section_title {
+    margin: 0;
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: #f7fbff;
+}
+
+/* Market name link styling */
+.market_link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: var(--color-primary);
+    text-decoration: none;
+    transition: color var(--transition-base);
+}
+
+.market_link:hover {
+    color: #6DA3FF;
+    text-decoration: underline;
+}
+
+.market_link:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+    border-radius: 2px;
+}
+
+.external_icon {
+    flex-shrink: 0;
+    opacity: 0.7;
+    transition: opacity var(--transition-base);
+}
+
+.market_link:hover .external_icon {
+    opacity: 1;
+}
+
+.subsection_title {
+    margin: 0 0 0.75rem;
+    font-size: 1rem;
+    font-weight: 600;
+    color: #f7fbff;
+}
+
+/* Stat grid - 2x2 grid within the details section */
+.stat_grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.75rem;
+}
+
+@container market-details (max-width: 600px) {
+    .stat_grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* Animation for expanding the details row */
+@keyframes expandIn {
+    from {
+        opacity: 0;
+        max-height: 0;
+    }
+    to {
+        opacity: 1;
+        max-height: 2000px;
+    }
+}

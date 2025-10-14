@@ -12,6 +12,9 @@ import styles from './BlockTicker.module.css';
  * - **Transaction count** - Total transactions in latest block
  * - **Transfer count** - TRX/TRC-10/TRC-20 transfer operations
  * - **Contract calls** - Smart contract interactions
+ * - **Delegations** - Resource delegation operations
+ * - **Stakes** - Staking operations (freezeBalance, unfreezeBalance)
+ * - **Tokens** - New token creation operations
  * - **Energy usage** - Total energy consumed (if > 0)
  *
  * The component subscribes to Redux blockchain state and updates in real-time
@@ -69,6 +72,27 @@ export function BlockTicker() {
                     <span className={styles.label}>Contracts:</span>
                     <span className={styles.value}>
                         {latestBlock.stats.contractCalls.toLocaleString()}
+                    </span>
+                </div>
+                <div className={styles.separator} />
+                <div className={styles.item}>
+                    <span className={styles.label}>Delegations:</span>
+                    <span className={styles.value}>
+                        {latestBlock.stats.delegations.toLocaleString()}
+                    </span>
+                </div>
+                <div className={styles.separator} />
+                <div className={styles.item}>
+                    <span className={styles.label}>Stakes:</span>
+                    <span className={styles.value}>
+                        {latestBlock.stats.stakes.toLocaleString()}
+                    </span>
+                </div>
+                <div className={styles.separator} />
+                <div className={styles.item}>
+                    <span className={styles.label}>Tokens:</span>
+                    <span className={styles.value}>
+                        {latestBlock.stats.tokenCreations.toLocaleString()}
                     </span>
                 </div>
                 {latestBlock.stats.totalEnergyUsed > 0 && (

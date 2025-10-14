@@ -65,12 +65,9 @@
     cursor: pointer;
 }
 
-.table__row--selected {
-    background: rgba(79, 140, 255, 0.18);
-}
-
-.table__row--best_deal {
-    background: rgba(87, 212, 140, 0.12);
+.table__row--expanded {
+    background: rgba(79, 140, 255, 0.12);
+    border-left: 3px solid var(--color-primary);
 }
 
 .table__cell_market {
