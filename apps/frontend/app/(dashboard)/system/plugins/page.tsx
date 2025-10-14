@@ -369,7 +369,7 @@ export default function PluginsManagementPage() {
 
     if (!isAuthenticated) {
         return (
-            <main style={{ maxWidth: '400px', margin: '4rem auto', padding: '2rem' }}>
+            <div className="page" style={{ maxWidth: '400px', margin: '4rem auto', padding: '2rem' }}>
                 <div style={{ display: 'grid', gap: '1.5rem' }}>
                     <header>
                         <h1>Plugin Management</h1>
@@ -394,12 +394,12 @@ export default function PluginsManagementPage() {
                         </button>
                     </form>
                 </div>
-            </main>
+            </div>
         );
     }
 
     return (
-        <main style={{ padding: '2rem', maxWidth: '1200px', margin: '0 auto' }}>
+        <div className="page" style={{ padding: '2rem', maxWidth: '1200px', margin: '0 auto' }}>
             <div style={{ display: 'grid', gap: '2rem' }}>
                 <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div>
@@ -495,6 +495,6 @@ export default function PluginsManagementPage() {
                     </div>
                 )}
             </div>
-        </main>
+        </div>
     );
 }

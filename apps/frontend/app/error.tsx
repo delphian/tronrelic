@@ -13,7 +13,7 @@ export default function GlobalError({ error, reset }: { error: Error; reset: () 
   return (
     <html lang="en">
       <body>
-        <main>
+        <div className="page">
           <Card elevated tone="accent" padding="lg" style={{ marginTop: '4rem' }}>
             <h1 style={{ marginTop: 0 }}>Something went wrong</h1>
             <p className="text-subtle">{error.message ?? 'An unexpected error occurred while rendering this page.'}</p>
@@ -26,7 +26,7 @@ export default function GlobalError({ error, reset }: { error: Error; reset: () 
               </Link>
             </div>
           </Card>
-        </main>
+        </div>
       </body>
     </html>
   );

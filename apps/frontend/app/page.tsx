@@ -1,21 +1,5 @@
-import type { MarketDocument } from '@tronrelic/shared';
-import { MarketTable } from '../features/markets/components/MarketTable';
 import { CurrentBlock } from '../features/blockchain/components';
 import { buildMetadata } from '../lib/seo';
-import { getApiUrl } from '../lib/config';
-
-async function fetchJSON<T>(path: string): Promise<T> {
-  const response = await fetch(getApiUrl(path), { cache: 'no-store' });
-  if (!response.ok) {
-    throw new Error(`Failed to fetch ${path}`);
-  }
-  return response.json() as Promise<T>;
-}
-
-interface MarketsResponse {
-  success: boolean;
-  markets: MarketDocument[];
-}
 
 export const dynamic = 'force-dynamic';
 
@@ -33,8 +17,6 @@ export const metadata = buildMetadata({
 });
 
 export default async function HomePage() {
-  const marketsResponse = await fetchJSON<MarketsResponse>('/markets');
-
   const faqSchema = {
     '@context': 'https://schema.org',
     '@type': 'FAQPage',
@@ -83,18 +65,15 @@ export default async function HomePage() {
   } as const;
 
   return (
-    <main>
+    <div className="page">
       <section>
         <CurrentBlock />
-      </section>
-      <section style={{ marginTop: '2rem' }}>
-        <MarketTable initialMarkets={marketsResponse.markets} />
       </section>
       <script
         suppressHydrationWarning
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(faqSchema) }}
       />
-    </main>
+    </div>
   );
 }

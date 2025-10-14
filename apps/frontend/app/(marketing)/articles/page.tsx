@@ -17,19 +17,17 @@ export default async function ArticlesPage() {
   const structuredData = buildArticleListStructuredData(articles);
 
   return (
-    <main>
-      <div className="page">
-        <section className="page-header">
-          <h1 className="page-title">Legacy articles &amp; guides</h1>
-          <p className="page-subtitle">Browse the classic Eleventy-powered knowledge base while the Next.js migration rolls out in phases.</p>
-        </section>
-        <ArticlesList initialArticles={articles} />
-      </div>
+    <div className="page">
+      <section className="page-header">
+        <h1 className="page-title">Legacy articles &amp; guides</h1>
+        <p className="page-subtitle">Browse the classic Eleventy-powered knowledge base while the Next.js migration rolls out in phases.</p>
+      </section>
+      <ArticlesList initialArticles={articles} />
       <script
         suppressHydrationWarning
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
       />
-    </main>
+    </div>
   );
 }
