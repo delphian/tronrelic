@@ -19,7 +19,7 @@ import styles from './CurrentBlock.module.css';
  * - Detailed statistics (transfers, contract calls, delegations, stakes, etc.)
  * - Resource usage (energy and bandwidth consumption)
  * - Block timestamp and update freshness indicator
- * - Expandable transaction timeseries chart (1d/7d/30d views)
+ * - Expandable transaction timeseries chart (Live/1d/7d/30d views)
  *
  * The component handles three states:
  * - **Loading** - Shows "Waiting for blockchain data" placeholder
@@ -31,8 +31,10 @@ import styles from './CurrentBlock.module.css';
  * processed by the backend blockchain service.
  *
  * When the user clicks the "Transactions" stat card, an interactive timeseries chart
- * expands below showing transaction volume over time with period selection (1d/7d/30d).
- * Clicking again collapses the chart for a clean, compact view.
+ * expands below showing transaction volume over time with period selection:
+ * - **Live** - Real-time data from Redux block history (last ~120 blocks), auto-updates
+ * - **1d/7d/30d** - Historical aggregated data fetched from backend API
+ * Clicking the stat card again collapses the chart for a clean, compact view.
  *
  * The component is designed to be relocatable and can be placed anywhere in the
  * application layout. It uses the elevated Card variant for visual prominence.
@@ -43,12 +45,28 @@ export function CurrentBlock() {
     const latestBlock = useAppSelector(state => state.blockchain.latestBlock);
     const status = useAppSelector(state => state.blockchain.status);
     const lastUpdated = useAppSelector(state => state.blockchain.lastUpdated);
+    const blockHistory = useAppSelector(state => state.blockchain.history);
     const realtime = useRealtimeStatus();
     const [isMounted, setIsMounted] = useState(false);
     const [showGraph, setShowGraph] = useState(false);
-    const [selectedPeriod, setSelectedPeriod] = useState<1 | 7 | 30>(7);
+    const [selectedPeriod, setSelectedPeriod] = useState<'live' | 1 | 7 | 30>('live');
 
-    const { data: timeseriesData, loading: timeseriesLoading, error: timeseriesError } = useTransactionTimeseries(selectedPeriod);
+    // Only fetch from API when not in live mode
+    const { data: timeseriesData, loading: timeseriesLoading, error: timeseriesError } = useTransactionTimeseries(
+        selectedPeriod === 'live' ? 1 : selectedPeriod
+    );
+
+    // Use live Redux data when in live mode
+    const liveTimeseriesData = blockHistory.map(block => ({
+        date: block.timestamp,
+        transactions: block.transactionCount
+    }));
+
+    // Determine which data source to use
+    const isLiveMode = selectedPeriod === 'live';
+    const chartData = isLiveMode ? liveTimeseriesData : timeseriesData;
+    const chartLoading = isLiveMode ? false : timeseriesLoading;
+    const chartError = isLiveMode ? null : timeseriesError;
 
     useEffect(() => {
         setIsMounted(true);
@@ -133,18 +151,23 @@ export function CurrentBlock() {
                         expanded={showGraph}
                         onClick={() => setShowGraph(!showGraph)}
                     />
-                    <StatCard
-                        label="Total Energy"
-                        value={formatLargeNumber(latestBlock.stats.totalEnergyUsed)}
-                    />
                 </div>
 
                 {/* Transaction Timeseries Graph (Expandable) */}
                 {showGraph && (
-                    <div className={styles.section}>
+                    <div className={styles.section} key="graph-section">
                         <div className={styles['graph-header']}>
                             <h3 className={styles.section__title}>Transaction Volume</h3>
                             <div className={styles['period-selector']}>
+                                <button
+                                    className={cn(
+                                        styles['period-button'],
+                                        selectedPeriod === 'live' && styles['period-button--active']
+                                    )}
+                                    onClick={() => setSelectedPeriod('live')}
+                                >
+                                    Live
+                                </button>
                                 <button
                                     className={cn(
                                         styles['period-button'],
@@ -175,41 +198,44 @@ export function CurrentBlock() {
                             </div>
                         </div>
 
-                        {timeseriesLoading && (
-                            <div className={styles['graph-loading']}>
-                                Loading transaction data...
-                            </div>
-                        )}
+                        <div className={styles['graph-content']}>
+                            {chartLoading && (
+                                <div className={styles['graph-loading']}>
+                                    Loading transaction data...
+                                </div>
+                            )}
 
-                        {timeseriesError && (
-                            <div className={styles['graph-error']}>
-                                Failed to load transaction data: {timeseriesError}
-                            </div>
-                        )}
+                            {chartError && !chartLoading && (
+                                <div className={styles['graph-error']}>
+                                    Failed to load transaction data: {chartError}
+                                </div>
+                            )}
 
-                        {!timeseriesLoading && !timeseriesError && timeseriesData && (
-                            <LineChart
-                                height={280}
-                                series={[
-                                    {
-                                        id: 'transactions',
-                                        label: 'Transactions',
-                                        data: timeseriesData.map(point => ({
-                                            date: point.date,
-                                            value: point.transactions
-                                        })),
-                                        color: '#7C9BFF'
-                                    }
-                                ]}
-                                yAxisFormatter={(value) => formatLargeNumber(value)}
-                                xAxisFormatter={(date) => {
-                                    if (selectedPeriod === 1) {
-                                        return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                                    }
-                                    return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
-                                }}
-                            />
-                        )}
+                            {!chartError && chartData && chartData.length > 0 && (
+                                <LineChart
+                                    key={selectedPeriod}
+                                    height={280}
+                                    series={[
+                                        {
+                                            id: 'transactions',
+                                            label: 'Transactions',
+                                            data: chartData.map(point => ({
+                                                date: point.date,
+                                                value: point.transactions
+                                            })),
+                                            color: '#7C9BFF'
+                                        }
+                                    ]}
+                                    yAxisFormatter={(value) => formatLargeNumber(value)}
+                                    xAxisFormatter={(date) => {
+                                        if (selectedPeriod === 'live' || selectedPeriod === 1) {
+                                            return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                                        }
+                                        return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+                                    }}
+                                />
+                            )}
+                        </div>
                     </div>
                 )}
 
