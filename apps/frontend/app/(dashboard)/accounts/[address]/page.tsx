@@ -41,7 +41,7 @@ export async function generateMetadata({ params }: AccountPageProps): Promise<Me
   };
 }
 
-export default async function AccountPage({ params }: AccountPageProps) {
+export default async function AccountPage({ params }: AccountPageProps): Promise<JSX.Element> {
   const data = await fetchAccount(params.address);
   const snapshot: AccountSnapshot = data.snapshot ?? {
     summary: {
@@ -262,7 +262,6 @@ export default async function AccountPage({ params }: AccountPageProps) {
             <p className="text-subtle" style={{ marginTop: '1.5rem' }}>No recent transactions recorded.</p>
           )}
         </Card>
-      </div>
     </div>
   );
 }

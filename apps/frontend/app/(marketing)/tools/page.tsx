@@ -11,7 +11,7 @@ export const metadata = buildMetadata({
   keywords: ['TRON tools', 'TRON energy calculator', 'TRON delegation planner']
 });
 
-export default async function ToolsPage() {
+export default async function ToolsPage(): Promise<JSX.Element> {
   const tools = await fetchLegacyTools();
   const toolStructuredData = {
     '@context': 'https://schema.org',

@@ -11,7 +11,7 @@ export const metadata = buildMetadata({
   keywords: ['TRON forum', 'TRON community', 'wallet signed forum']
 });
 
-export default async function ForumPage() {
+export default async function ForumPage(): Promise<JSX.Element> {
   const spaces = await fetchLegacyForumSpaces();
 
   return (
