@@ -28,9 +28,16 @@ When a task arrives, Claude MUST respond with:
 - Use for: ANY work involving market data fetchers, including analysis, investigation, research, creation, updates, troubleshooting, or debugging
 
 **tronrelic-plugin-specialist:**
-- Keywords: plugin, observer, BaseObserver, blockchain observer, WebSocket subscription, plugin page, plugin API, plugin registration
-- Use for: ANY work involving TronRelic plugins (analysis, investigation, research, creation, debugging, architecture decisions, code review)
+- Keywords: plugin, observer, BaseObserver, blockchain observer, WebSocket subscription, plugin page, plugin API, plugin registration, plugin logic, plugin architecture, plugin integration
+- Use for: ANY work involving TronRelic plugin logic, architecture, and integration (analysis, investigation, research, creation, debugging, architecture decisions, code review)
+- Scope: PRIMARY agent for plugin tooling, logic, organization, communication, backend services, and system integration. Defers to frontend-specialist for UX/UI design work
 - Exception: Work on the general plugin system infrastructure should NOT be handled by this subagent
+
+**frontend-specialist:**
+- Keywords: frontend, React, Next.js, components, UI, styling, TailwindCSS, Redux, Socket.IO client, pages, layouts, hooks, client-side, App Router, server components, client components, forms, validation, routing, navigation, UX, user experience, design, accessibility
+- Use for: ALL UX/UI work across TronRelic (component design, styling, user experience, accessibility, visual design)
+- Scope: PRIMARY agent for user experience and visual design regardless of location (apps/frontend OR packages/plugins/*/frontend). Defers to tronrelic-plugin-specialist for plugin logic, architecture, and system integration
+- Exception: Work on general Next.js infrastructure or build configuration may not require this subagent
 
 **documentation-writer:**
 - Keywords: documentation, docs, README, markdown, .md files, documentation gaps, documentation review, documentation standards
@@ -38,7 +45,12 @@ When a task arrives, Claude MUST respond with:
 
 ## Automatic Agent Delegation by File Path
 
-Claude MUST automatically use these agents when working with these file paths:
+Claude MUST automatically use these agents when working with these file paths.
+
+**Delegation principles:**
+1. **Task nature determines agent** - UX/UI tasks use frontend specialist regardless of file location; logic/integration tasks use domain specialists
+2. **Plugin work splits by concern** - Plugin logic/architecture uses plugin specialist; plugin UX/UI uses frontend specialist
+3. **When unclear** - Analyze the task description for keywords (styling/UX → frontend; logic/integration → domain specialist)
 
 **market-fetcher-specialist:**
 - `**/fetchers/**/*.fetcher.ts`
@@ -47,9 +59,18 @@ Claude MUST automatically use these agents when working with these file paths:
 - `apps/backend/src/config/market-providers.ts`
 
 **tronrelic-plugin-specialist:**
-- `packages/plugins/**/observers/**`
-- `packages/plugins/**/backend/**`
-- `packages/plugins/**/frontend/**`
+- `packages/plugins/**/observers/**` (blockchain observers, event processing)
+- `packages/plugins/**/backend/**` (plugin backend services, API routes)
+- `packages/plugins/**/frontend/**` (plugin frontend logic, hooks, data fetching, state management)
+- Note: Defers to frontend-specialist when task focuses on UX/UI design
+
+**frontend-specialist:**
+- `apps/frontend/**` (main frontend application)
+- `apps/frontend/app/**` (Next.js pages and layouts)
+- `apps/frontend/components/**` (shared UI components)
+- `apps/frontend/lib/**` (frontend utilities)
+- `packages/plugins/**/frontend/**` (when task focuses on UX/UI, styling, accessibility, visual design)
+- Note: Defers to tronrelic-plugin-specialist for plugin logic, architecture, and integration work
 
 **documentation-writer:**
 - `docs/**/*.md`
