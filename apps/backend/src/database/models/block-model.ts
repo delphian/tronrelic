@@ -8,6 +8,7 @@ export interface BlockStats {
   tokenCreations: number;
   internalTransactions: number;
   totalEnergyUsed: number;
+  totalEnergyCost: number;
   totalBandwidthUsed: number;
 }
 
@@ -39,6 +40,7 @@ const BlockSchema = new Schema<BlockDoc>({
     tokenCreations: { type: Number, default: 0 },
     internalTransactions: { type: Number, default: 0 },
     totalEnergyUsed: { type: Number, default: 0 },
+    totalEnergyCost: { type: Number, default: 0 },
     totalBandwidthUsed: { type: Number, default: 0 }
   },
   processedAt: { type: Date, default: Date.now }

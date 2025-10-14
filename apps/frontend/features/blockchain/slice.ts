@@ -13,6 +13,7 @@ export interface BlockStatSnapshot {
   tokenCreations: number;
   internalTransactions: number;
   totalEnergyUsed: number;
+  totalEnergyCost: number;
   totalBandwidthUsed: number;
 }
 
@@ -72,6 +73,7 @@ function normalizeStats(raw: Record<string, unknown> | undefined): BlockStatSnap
     tokenCreations: toNumber(raw?.tokenCreations),
     internalTransactions: toNumber(raw?.internalTransactions),
     totalEnergyUsed: toNumber(raw?.totalEnergyUsed),
+    totalEnergyCost: toNumber(raw?.totalEnergyCost),
     totalBandwidthUsed: toNumber(raw?.totalBandwidthUsed)
   };
 }
