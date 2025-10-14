@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { config as runtimeConfig } from '@/lib/config';
 import styles from './SchedulerMonitor.module.css';
 
 interface SchedulerJob {
@@ -67,10 +68,10 @@ export function SchedulerMonitor({ token }: Props) {
     const fetchData = async () => {
         try {
             const [jobsRes, healthRes] = await Promise.all([
-                fetch(`${process.env.NEXT_PUBLIC_API_URL}/admin/system/scheduler/status`, {
+                fetch(`${runtimeConfig.apiBaseUrl}/admin/system/scheduler/status`, {
                     headers: { 'X-Admin-Token': token }
                 }),
-                fetch(`${process.env.NEXT_PUBLIC_API_URL}/admin/system/scheduler/health`, {
+                fetch(`${runtimeConfig.apiBaseUrl}/admin/system/scheduler/health`, {
                     headers: { 'X-Admin-Token': token }
                 })
             ]);
