@@ -532,6 +532,254 @@ Potential improvements:
 4. **Feature Flags**: Add runtime feature toggles
 5. **Micro-frontends**: Consider splitting into separate deployable units
 
+## Environment Configuration and Runtime Contexts
+
+### Why This Matters
+
+Next.js applications run in two distinct environments: server-side during rendering (SSR) and client-side in the browser. Using the wrong backend URL in each context causes critical failures:
+
+- **SSR with public URL** - Results in 502 Bad Gateway errors when Docker containers can't reach external URLs
+- **Client with internal URL** - Causes browser requests to fail because `http://backend:4000` isn't accessible from outside the container
+- **Direct environment access** - Makes code fragile and prevents runtime switching between development and production URLs
+
+TronRelic solves this by centralizing all backend URL handling through a single configuration module that detects the runtime context and returns the appropriate URL automatically.
+
+### Environment Variables by Context
+
+TronRelic uses different environment variables depending on where code executes:
+
+| Variable | Context | Purpose | Example |
+|----------|---------|---------|---------|
+| `API_URL` | SSR only (server) | Internal Docker service URL for Next.js server | `http://backend:4000` |
+| `NEXT_PUBLIC_API_URL` | Client only (browser) | Public backend URL for browser requests | `https://tronrelic.com/api` |
+| `NEXT_PUBLIC_SOCKET_URL` | Client only (browser) | Public WebSocket URL for real-time connections | `https://tronrelic.com` |
+| `NEXT_PUBLIC_SITE_URL` | Both contexts | Public site URL for metadata and redirects | `https://tronrelic.com` |
+
+**Key principle:** Variables prefixed with `NEXT_PUBLIC_` are exposed to the browser bundle. Variables without the prefix are server-only and stay secure.
+
+### Centralized Configuration Pattern
+
+All backend URL logic lives in `/apps/frontend/lib/config.ts`. Never access environment variables directly in feature code.
+
+**The configuration module provides:**
+
+```typescript
+import { config, getApiUrl } from '@/lib/config';
+
+// Automatically selects correct URL for SSR vs client
+config.apiBaseUrl;     // http://backend:4000/api (SSR) or https://tronrelic.com/api (client)
+config.socketUrl;      // http://backend:4000 (SSR) or https://tronrelic.com (client)
+config.siteUrl;        // https://tronrelic.com (both contexts)
+
+// Helper for building API URLs
+getApiUrl('/markets/compare');  // Returns absolute URL (SSR) or relative URL (client)
+```
+
+**How it works:**
+
+The `getBackendBaseUrl()` function checks `typeof window` to determine the runtime context:
+
+```typescript
+function getBackendBaseUrl(): string {
+  // Server-side (SSR): Use internal Docker service name
+  if (typeof window === 'undefined') {
+    return process.env.API_URL || 'http://localhost:4000';
+  }
+
+  // Client-side: Use public URL from environment or detect from window.location
+  const envUrl = process.env.NEXT_PUBLIC_SOCKET_URL || process.env.NEXT_PUBLIC_API_URL;
+  if (envUrl) {
+    return envUrl.replace(/\/api$/, '');
+  }
+
+  // Fallback: dynamically detect from current page
+  const protocol = window.location.protocol;
+  const hostname = window.location.hostname;
+  return `${protocol}//${hostname}:4000`;
+}
+```
+
+### Correct Usage Patterns
+
+**Feature API calls (use axios client):**
+
+```typescript
+// apps/frontend/lib/api.ts
+import axios from 'axios';
+import { config } from './config';
+
+// Configure once at module level
+export const apiClient = axios.create({
+  baseURL: config.apiBaseUrl,  // Correct URL for SSR and client
+  timeout: 5000
+});
+
+// All API functions use the pre-configured client
+export async function getMarkets(limit?: number) {
+  const response = await apiClient.get('/markets/compare', {
+    params: limit ? { limit } : undefined
+  });
+  return response.data.markets;
+}
+```
+
+**Server-side data fetching in Next.js pages:**
+
+```typescript
+// app/(dashboard)/markets/page.tsx
+import { getApiUrl } from '@/lib/config';
+
+export default async function MarketsPage() {
+  // getApiUrl returns absolute URL with internal service name during SSR
+  const response = await fetch(getApiUrl('/markets/compare'));
+  const data = await response.json();
+
+  return <MarketDashboard markets={data.markets} />;
+}
+```
+
+**Client-side socket connections:**
+
+```typescript
+// features/realtime/socket.ts
+import { io } from 'socket.io-client';
+import { config } from '@/lib/config';
+
+export const socket = io(config.socketUrl, {
+  transports: ['websocket', 'polling']
+});
+```
+
+### Incorrect Patterns to Avoid
+
+**Never access environment variables directly:**
+
+```typescript
+// ❌ BAD - Hardcodes client URL, breaks SSR in Docker
+const apiUrl = process.env.NEXT_PUBLIC_API_URL;
+
+// ✅ GOOD - Uses centralized config
+import { config } from '@/lib/config';
+const apiUrl = config.apiBaseUrl;
+```
+
+**Never build URLs manually:**
+
+```typescript
+// ❌ BAD - No context awareness
+const url = `${process.env.NEXT_PUBLIC_API_URL}/markets/compare`;
+
+// ✅ GOOD - Context-aware helper
+import { getApiUrl } from '@/lib/config';
+const url = getApiUrl('/markets/compare');
+```
+
+**Never use public URLs in SSR context:**
+
+```typescript
+// ❌ BAD - Causes 502 errors in Docker deployments
+export default async function Page() {
+  // This runs server-side and tries to reach https://tronrelic.com from inside Docker
+  const response = await fetch('https://tronrelic.com/api/markets/compare');
+  // ...
+}
+
+// ✅ GOOD - Uses internal service URL during SSR
+import { getApiUrl } from '@/lib/config';
+
+export default async function Page() {
+  // Returns http://backend:4000/api/markets/compare during SSR
+  const response = await fetch(getApiUrl('/markets/compare'));
+  // ...
+}
+```
+
+### Development vs Production Configuration
+
+The same config module works across environments by reading different variable values:
+
+**Development (local):**
+
+```bash
+# .env.local
+API_URL=http://localhost:4000
+NEXT_PUBLIC_API_URL=http://localhost:4000/api
+NEXT_PUBLIC_SOCKET_URL=http://localhost:4000
+NEXT_PUBLIC_SITE_URL=http://localhost:3000
+```
+
+**Production (Docker):**
+
+```bash
+# .env
+API_URL=http://backend:4000
+NEXT_PUBLIC_API_URL=https://tronrelic.com/api
+NEXT_PUBLIC_SOCKET_URL=https://tronrelic.com
+NEXT_PUBLIC_SITE_URL=https://tronrelic.com
+```
+
+Code never changes—only the environment variable values differ.
+
+### Troubleshooting URL Issues
+
+**Symptom: 502 Bad Gateway errors in production**
+
+- **Cause:** SSR code using `NEXT_PUBLIC_API_URL` (external URL) instead of `API_URL` (internal service URL)
+- **Fix:** Replace direct environment access with `config.apiBaseUrl` or `getApiUrl()`
+
+**Symptom: CORS errors in browser**
+
+- **Cause:** Client-side code using internal Docker service name (`http://backend:4000`)
+- **Fix:** Ensure `NEXT_PUBLIC_API_URL` is set correctly in environment and use `config.apiBaseUrl`
+
+**Symptom: WebSocket connection failures**
+
+- **Cause:** Socket.IO client using wrong URL for runtime context
+- **Fix:** Use `config.socketUrl` instead of hardcoded URLs
+
+**Verification steps:**
+
+1. Check runtime context logs: Add `console.log('typeof window:', typeof window)` to confirm SSR vs client
+2. Check resolved URLs: Add `console.log('Using URL:', config.apiBaseUrl)` before requests
+3. Check environment variables: Verify correct variables are set in `.env` or `.env.local`
+4. Check Docker networking: Ensure backend service is named `backend` in `docker-compose.yml`
+
+### Quick Reference
+
+**Always use centralized config:**
+
+```typescript
+// apps/frontend/lib/config.ts
+import { config, getApiUrl } from '@/lib/config';
+
+config.apiBaseUrl;              // For axios baseURL
+config.socketUrl;               // For Socket.IO connection
+config.siteUrl;                 // For metadata and redirects
+getApiUrl('/path');             // For fetch() in SSR pages
+```
+
+**Never access directly:**
+
+```typescript
+// ❌ Don't do this
+process.env.NEXT_PUBLIC_API_URL;
+process.env.API_URL;
+```
+
+**For new API routes:**
+
+1. Add function to `/apps/frontend/lib/api.ts`
+2. Use pre-configured `apiClient` instance
+3. Export typed functions for features to import
+
+**For new pages with SSR data fetching:**
+
+1. Import `getApiUrl` from `@/lib/config`
+2. Use `getApiUrl('/your-endpoint')` with `fetch()`
+3. Never hardcode URLs
+
+See [config.ts](../../apps/frontend/lib/config.ts) for the complete implementation.
+
 ## Related Documentation
 
 - [Frontend Component Guide](./frontend-component-guide.md) - How to style components (CSS Modules, design system, patterns)

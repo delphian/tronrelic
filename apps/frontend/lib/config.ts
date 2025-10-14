@@ -1,46 +1,61 @@
 const defaultSiteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://tronrelic.com';
 
 /**
- * Gets the runtime base URL for API and WebSocket connections.
- * In browser, uses window.location to dynamically determine the backend URL.
- * In SSR, falls back to environment variables.
+ * Gets the appropriate backend base URL for the current runtime context.
  *
- * @returns The base URL (protocol + hostname + port) for backend connections
+ * Server-side (SSR within Docker):
+ *   - Uses API_URL environment variable (e.g., http://backend:4000)
+ *   - This allows the Next.js server to communicate with the backend container via Docker networking
+ *
+ * Client-side (browser):
+ *   - Uses NEXT_PUBLIC_SOCKET_URL or NEXT_PUBLIC_API_URL from environment
+ *   - Falls back to dynamically detecting current hostname with port 4000
+ *   - This ensures browsers connect to the publicly accessible backend URL
+ *
+ * @returns The base backend URL without trailing /api path
  */
-function getRuntimeBackendUrl(): string {
-  // Client-side: Use current hostname and port 4000
-  if (typeof window !== 'undefined') {
-    const protocol = window.location.protocol;
-    const hostname = window.location.hostname;
-    return `${protocol}//${hostname}:4000`;
+function getBackendBaseUrl(): string {
+  // Server-side (SSR): Use internal Docker service name
+  if (typeof window === 'undefined') {
+    return process.env.API_URL || 'http://localhost:4000';
   }
 
-  // Server-side: Use environment variable or default
-  return process.env.NEXT_PUBLIC_SOCKET_URL ?? 'http://localhost:4000';
+  // Client-side: Use public URL or detect from window.location
+  const envUrl = process.env.NEXT_PUBLIC_SOCKET_URL || process.env.NEXT_PUBLIC_API_URL;
+  if (envUrl) {
+    // Remove /api suffix if present
+    return envUrl.replace(/\/api$/, '');
+  }
+
+  // Fallback: dynamically detect from current page
+  const protocol = window.location.protocol;
+  const hostname = window.location.hostname;
+  return `${protocol}//${hostname}:4000`;
 }
 
+/**
+ * Configuration object for runtime URLs.
+ * Uses getBackendBaseUrl() to ensure SSR and client-side contexts use the correct URLs.
+ */
 export const config = {
-  apiBaseUrl: typeof window !== 'undefined'
-    ? `${getRuntimeBackendUrl()}/api`
-    : (process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000/api'),
-  socketUrl: getRuntimeBackendUrl(),
+  apiBaseUrl: `${getBackendBaseUrl()}/api`,
+  socketUrl: getBackendBaseUrl(),
   siteUrl: defaultSiteUrl.replace(/\/$/, '') || 'https://tronrelic.com'
 };
 
 /**
  * Gets the appropriate API URL for the current context (SSR vs client-side).
  *
- * For SSR (server-side rendering), uses the full API_URL from environment.
- * For client-side, uses relative URLs which get rewritten by Next.js.
+ * For SSR (server-side rendering), returns absolute URL using internal Docker service name.
+ * For client-side, returns relative URL which Next.js rewrites will proxy.
  *
  * @param path - The API path (e.g., '/markets/compare')
  * @returns The full URL to use for fetching
  */
 export function getApiUrl(path: string): string {
-  // Server-side (SSR) - need absolute URL
+  // Server-side (SSR) - need absolute URL with internal service name
   if (typeof window === 'undefined') {
-    const baseUrl = process.env.API_URL || 'http://localhost:4000';
-    return `${baseUrl}/api${path}`;
+    return `${getBackendBaseUrl()}/api${path}`;
   }
 
   // Client-side - use relative URL (Next.js rewrites handle it)
