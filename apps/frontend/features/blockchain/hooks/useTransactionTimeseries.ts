@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { config } from '../../../lib/config';
 
 /**
  * Individual data point in the transaction timeseries.
@@ -84,8 +85,7 @@ export function useTransactionTimeseries(days: number): UseTransactionTimeseries
             setError(null);
 
             try {
-                const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api';
-                const url = `${apiUrl}/blockchain/transactions/timeseries?days=${days}`;
+                const url = `${config.apiBaseUrl}/blockchain/transactions/timeseries?days=${days}`;
 
                 const response = await fetch(url);
 
