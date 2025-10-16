@@ -21,6 +21,10 @@
 - [@plugins-api-registration.md](docs/plugins/plugins-api-registration.md)
 - [@plugins-database.md](docs/plugins/plugins-database.md)
 - [@plugins-websocket-subscriptions.md](docs/plugins/plugins-websocket-subscriptions.md)
+- [@operations.md](docs/operations/operations.md)
+- [@operations-server-info.md](docs/operations/operations-server-info.md)
+- [@operations-workflows.md](docs/operations/operations-workflows.md)
+- [@operations-remote-access.md](docs/operations/operations-remote-access.md)
 
 ## Code Quality
 - Dependency Injection via constructor is prefered.

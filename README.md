@@ -25,6 +25,10 @@ Real-time TRON blockchain monitoring and whale activity tracking.
 - [@plugins-api-registration.md](docs/plugins/plugins-api-registration.md)
 - [@plugins-database.md](docs/plugins/plugins-database.md)
 - [@plugins-websocket-subscriptions.md](docs/plugins/plugins-websocket-subscriptions.md)
+- [@operations.md](docs/operations/operations.md)
+- [@operations-server-info.md](docs/operations/operations-server-info.md)
+- [@operations-workflows.md](docs/operations/operations-workflows.md)
+- [@operations-remote-access.md](docs/operations/operations-remote-access.md)
 
 ## Quick Start
 
@@ -57,7 +61,7 @@ npm run docker:rebuild        # Clean rebuild (no cache)
 npm run docker:clean          # Remove containers and volumes
 ```
 
-See [docs/docker-deployment.md](docs/docker-deployment.md) for detailed Docker deployment guide.
+See [docs/operations/operations.md](docs/operations/operations.md) for detailed operations guide.
 
 ### Option 2: Local Development
 
