@@ -616,7 +616,7 @@ docker compose down && docker compose up -d
 
 ## Further Reading
 
-- [deployment-server-info.md](./deployment-server-info.md) - Server locations, credentials, authentication
-- [deployment-remote-access.md](./deployment-remote-access.md) - SSH usage, debugging, log inspection
-- [deployment.md](./deployment.md) - Deployment overview and quick reference
+- [operations-server-info.md](./operations-server-info.md) - Server locations, credentials, authentication
+- [operations-remote-access.md](./operations-remote-access.md) - SSH usage, debugging, log inspection
+- [operations.md](./operations.md) - Deployment overview and quick reference
 - [docker-deployment.md](../docker-deployment.md) - Docker architecture and local development

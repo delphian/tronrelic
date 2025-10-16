@@ -326,7 +326,7 @@ sudo systemctl reload nginx
 
 **When server details change (IP address, domain, credentials), update these locations:**
 
-1. **This document** (`docs/deployment/deployment-server-info.md`)
+1. **This document** (`docs/operations/operations-server-info.md`)
 2. **Deployment scripts:**
    - `scripts/droplet-deploy.sh` (DROPLET_IP variable)
    - `scripts/droplet-deploy-dev.sh` (DROPLET_IP variable)
@@ -389,6 +389,6 @@ dig +short dev.tronrelic.com
 
 ## Further Reading
 
-- [deployment-workflows.md](./deployment-workflows.md) - Initial setup and update procedures
-- [deployment-remote-access.md](./deployment-remote-access.md) - SSH usage, debugging, log inspection
-- [deployment.md](./deployment.md) - Deployment overview and quick reference
+- [operations-workflows.md](./operations-workflows.md) - Initial setup and update procedures
+- [operations-remote-access.md](./operations-remote-access.md) - SSH usage, debugging, log inspection
+- [operations.md](./operations.md) - Deployment overview and quick reference
