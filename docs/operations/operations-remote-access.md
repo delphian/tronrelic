@@ -30,7 +30,7 @@ cd /opt/tronrelic
 
 **Connect to development:**
 ```bash
-ssh root@<OLD_DEV_DROPLET_IP>
+ssh root@<DEV_DROPLET_IP>
 
 # Once connected, navigate to deployment directory
 cd /opt/tronrelic-dev
@@ -63,7 +63,7 @@ Host tronrelic-prod
 
 # Development
 Host tronrelic-dev
-    HostName <OLD_DEV_DROPLET_IP>
+    HostName <DEV_DROPLET_IP>
     User root
     IdentityFile ~/.ssh/id_ed25519
     ServerAliveInterval 60
@@ -96,13 +96,15 @@ ssh root@<DROPLET_IP> 'free -h'
 **Use deployment scripts for common tasks:**
 ```bash
 # View comprehensive server statistics
-./scripts/droplet-stats.sh <DROPLET_IP>
 
-# Production default (if IP configured in script)
-./scripts/droplet-stats.sh
+# Production
+./scripts/utils/droplet-stats.sh prod
 
 # Development
-./scripts/droplet-stats.sh <OLD_DEV_DROPLET_IP>
+./scripts/utils/droplet-stats.sh dev
+
+# Defaults to prod if no argument provided
+./scripts/utils/droplet-stats.sh
 ```
 
 ## Docker Container Management
@@ -542,7 +544,13 @@ docker exec -it tronrelic-redis-prod redis-cli --ldb MONITOR | grep "tronrelic:"
 **Use the comprehensive stats script:**
 ```bash
 # From local machine
-./scripts/droplet-stats.sh <DROPLET_IP>
+./scripts/utils/droplet-stats.sh <env>
+
+# Production
+./scripts/utils/droplet-stats.sh prod
+
+# Development
+./scripts/utils/droplet-stats.sh dev
 
 # Example output includes:
 # - System information (OS, CPU cores, total RAM/disk)
@@ -804,7 +812,7 @@ sudo cat /etc/nginx/sites-available/tronrelic
 **Connect to servers:**
 ```bash
 ssh root@<PROD_DROPLET_IP>  # Production
-ssh root@<OLD_DEV_DROPLET_IP>      # Development
+ssh root@<DEV_DROPLET_IP>      # Development
 ```
 
 **Container management:**
@@ -823,9 +831,9 @@ docker exec -it tronrelic-redis-prod redis-cli
 
 **Resource monitoring:**
 ```bash
-./scripts/droplet-stats.sh <DROPLET_IP>  # Comprehensive stats
-docker stats --no-stream                  # Container resources
-df -h && free -h                          # Disk and memory
+./scripts/utils/droplet-stats.sh <env>  # Comprehensive stats
+docker stats --no-stream                 # Container resources
+df -h && free -h                         # Disk and memory
 ```
 
 **Health checks:**

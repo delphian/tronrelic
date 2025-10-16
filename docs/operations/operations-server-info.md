@@ -48,7 +48,7 @@ ssh root@<PROD_DROPLET_IP>
 **Purpose:** Development and staging environment for testing changes before production
 
 - **Domain:** dev.tronrelic.com
-- **IP Address:** <OLD_DEV_DROPLET_IP>
+- **IP Address:** `<DEV_DROPLET_IP>`
 - **Provider:** Digital Ocean Droplet
 - **Region:** (Specify region)
 - **Deployment Directory:** `/opt/tronrelic-dev`
@@ -58,13 +58,71 @@ ssh root@<PROD_DROPLET_IP>
 
 **SSH Access:**
 ```bash
-ssh root@<OLD_DEV_DROPLET_IP>
+ssh root@<DEV_DROPLET_IP>
 ```
 
 **Application URLs:**
 - Frontend: http://dev.tronrelic.com/
 - Backend API: http://dev.tronrelic.com/api
 - System Monitor: http://dev.tronrelic.com/system (requires ADMIN_API_TOKEN)
+
+## Centralized Environment Configuration
+
+TronRelic uses a **centralized configuration system** via `scripts/droplet-config.sh` to eliminate hardcoded IPs and duplicate configuration across deployment scripts.
+
+**Purpose:**
+All deployment scripts (`droplet-deploy.sh`, `droplet-update.sh`, `droplet-setup-ssl.sh`, utility scripts) source this central configuration file to retrieve environment-specific settings. This ensures consistency and makes IP address changes require only a single file update.
+
+**Configuration file:** `/home/delphian/projects/tronrelic.com-beta/scripts/droplet-config.sh`
+
+**What it provides:**
+- `DROPLET_IP` - IP address of the droplet
+- `DROPLET_HOST` - SSH connection string (root@IP)
+- `DEPLOY_DIR` - Deployment directory on droplet
+- `CONTAINER_SUFFIX` - Suffix for container names (-prod, -dev)
+- `IMAGE_TAG` - Docker image tag (latest, dev)
+- `MONGO_CONTAINER` - MongoDB container name
+- `REDIS_CONTAINER` - Redis container name
+- `BACKEND_CONTAINER` - Backend container name
+- `FRONTEND_CONTAINER` - Frontend container name
+- `GITHUB_USERNAME` - GitHub username for container registry
+- `GITHUB_REPO` - GitHub repository name
+
+**Configured environments:**
+```bash
+prod  -> IP: <defined in droplet-config.sh>
+dev   -> IP: <DEV_DROPLET_IP>
+```
+
+**Usage in scripts:**
+```bash
+# All deployment scripts follow this pattern:
+source "$(dirname "$0")/droplet-config.sh"
+get_config "prod"  # or "dev"
+
+# Now all environment-specific variables are available
+echo "$DROPLET_IP"        # Returns configured IP
+echo "$DEPLOY_DIR"        # Returns /opt/tronrelic or /opt/tronrelic-dev
+echo "$MONGO_CONTAINER"   # Returns tronrelic-mongo-prod or tronrelic-mongo-dev
+```
+
+**Why this matters:**
+- **Single source of truth**: IP address changes require updating only `droplet-config.sh`
+- **Eliminates duplication**: No more hardcoded IPs scattered across multiple scripts
+- **Prevents errors**: Container names, image tags, and paths are always consistent
+- **Simplifies maintenance**: Adding new environments requires only adding entries to the config file
+
+**Updating server information:**
+When IP addresses or configuration changes, update `scripts/droplet-config.sh`:
+```bash
+# Edit the ENVIRONMENTS associative array
+declare -A ENVIRONMENTS=(
+    [prod]="<NEW_PROD_IP>"
+    [dev]="<NEW_DEV_IP>"
+)
+```
+
+All deployment scripts will automatically use the new configuration on next run.
 
 ## SSH Authentication
 
@@ -88,7 +146,7 @@ ssh-keygen -t ed25519 -C "your_email@example.com"
 ssh root@<PROD_DROPLET_IP>
 
 # Development
-ssh root@<OLD_DEV_DROPLET_IP>
+ssh root@<DEV_DROPLET_IP>
 
 # Expected output: SSH login prompt or shell prompt
 # If connection fails: Verify SSH key is authorized and firewall allows port 22
@@ -104,7 +162,7 @@ Host tronrelic-prod
     IdentityFile ~/.ssh/id_ed25519
 
 Host tronrelic-dev
-    HostName <OLD_DEV_DROPLET_IP>
+    HostName <DEV_DROPLET_IP>
     User root
     IdentityFile ~/.ssh/id_ed25519
 ```
@@ -120,7 +178,7 @@ ssh tronrelic-dev
 **GitHub Actions requires SSH private key** for automated deployment to development server.
 
 **GitHub repository secrets required:**
-- `DEV_DROPLET_HOST` = <OLD_DEV_DROPLET_IP>
+- `DEV_DROPLET_HOST` = <DEV_DROPLET_IP>
 - `DEV_DROPLET_USER` = root
 - `DEV_DROPLET_SSH_KEY` = (full SSH private key content)
 
@@ -224,7 +282,7 @@ docker pull ghcr.io/delphian/tronrelic/backend:latest
 | Record Type | Hostname | Value | TTL | Purpose |
 |-------------|----------|-------|-----|---------|
 | A | tronrelic.com | `<PROD_DROPLET_IP>` | 300 | Production frontend |
-| A | dev.tronrelic.com | <OLD_DEV_DROPLET_IP> | 300 | Development frontend |
+| A | dev.tronrelic.com | `<DEV_DROPLET_IP>` | 300 | Development frontend |
 
 **Verify DNS propagation:**
 ```bash
@@ -234,7 +292,7 @@ dig +short tronrelic.com
 
 # Development
 dig +short dev.tronrelic.com
-# Expected output: <OLD_DEV_DROPLET_IP>
+# Expected output: <DEV_DROPLET_IP>
 
 # If results don't match, wait 5-15 minutes for DNS propagation
 ```
@@ -295,7 +353,7 @@ sudo systemctl reload nginx
 **Re-run SSL setup script (if certificate is missing):**
 ```bash
 # From local machine
-./scripts/droplet-setup-ssl.sh <PROD_DROPLET_IP> tronrelic.com admin@tronrelic.com
+./scripts/droplet-setup-ssl.sh prod tronrelic.com admin@tronrelic.com
 ```
 
 ## Credential Storage Best Practices
@@ -326,13 +384,11 @@ sudo systemctl reload nginx
 
 **When server details change (IP address, domain, credentials), update these locations:**
 
-1. **This document** (`docs/operations/operations-server-info.md`)
-2. **Deployment scripts:**
-   - `scripts/droplet-deploy.sh` (DROPLET_IP variable)
-   - `scripts/droplet-deploy-dev.sh` (DROPLET_IP variable)
-   - `scripts/droplet-update.sh` (DROPLET_HOST variable)
-   - `scripts/droplet-update-dev.sh` (DROPLET_HOST variable)
-   - `scripts/droplet-stats.sh` (default DROPLET_IP)
+1. **Primary: Centralized configuration** (`scripts/droplet-config.sh`)
+   - Update the `ENVIRONMENTS` associative array with new IP addresses
+   - All deployment scripts will automatically use the new configuration
+2. **This document** (`docs/operations/operations-server-info.md`)
+   - Update IP addresses in server tables and examples
 3. **GitHub Actions workflows:**
    - `.github/workflows/docker-publish-dev.yml` (DEV_DROPLET_HOST secret)
 4. **Nginx configuration on servers:**
@@ -342,13 +398,15 @@ sudo systemctl reload nginx
    - `/opt/tronrelic/.env` (NEXT_PUBLIC_* URLs)
    - `/opt/tronrelic-dev/.env` (NEXT_PUBLIC_* URLs)
 
+**Note:** With the centralized `droplet-config.sh`, you no longer need to update IP addresses in individual deployment scripts. Update only the config file and documentation.
+
 **After updates, verify deployment still works:**
 ```bash
 # Test SSH connection
 ssh root@<NEW_IP>
 
 # Test deployment script
-./scripts/droplet-update.sh  # or droplet-update-dev.sh
+./scripts/droplet-update.sh prod  # or dev
 
 # Verify application health
 curl https://tronrelic.com/api/health
@@ -365,7 +423,7 @@ cd /opt/tronrelic
 
 **Development server access:**
 ```bash
-ssh root@<OLD_DEV_DROPLET_IP>
+ssh root@<DEV_DROPLET_IP>
 cd /opt/tronrelic-dev
 ```
 
