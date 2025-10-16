@@ -34,7 +34,7 @@ Production (tronrelic.com)
 
 Development (dev.tronrelic.com)
 ├── Domain: dev.tronrelic.com
-├── Server: Digital Ocean Droplet (165.232.161.21)
+├── Server: Digital Ocean Droplet (<DEV_DROPLET_IP>)
 ├── Deployment: /opt/tronrelic-dev
 ├── Docker Images: ghcr.io/delphian/tronrelic/*:dev
 └── CI/CD: Auto-deploy on push to 'dev' branch
@@ -79,7 +79,7 @@ This directory contains four focused documents covering different aspects of dep
 | Environment | Domain | IP Address | Deploy Directory | Image Tag |
 |-------------|--------|------------|------------------|-----------|
 | **Production** | tronrelic.com | <PROD_DROPLET_IP> | /opt/tronrelic | :latest |
-| **Development** | dev.tronrelic.com | 165.232.161.21 | /opt/tronrelic-dev | :dev |
+| **Development** | dev.tronrelic.com | <DEV_DROPLET_IP> | /opt/tronrelic-dev | :dev |
 
 ### Common Commands
 
@@ -89,16 +89,16 @@ This directory contains four focused documents covering different aspects of dep
 ssh root@<PROD_DROPLET_IP>
 
 # Development
-ssh root@165.232.161.21
+ssh root@<DEV_DROPLET_IP>
 ```
 
 **Deploy updates:**
 ```bash
 # Production (manual)
-./scripts/droplet-update.sh
+./scripts/droplet-update.sh prod
 
 # Development (manual)
-./scripts/droplet-update-dev.sh
+./scripts/droplet-update.sh dev
 ```
 
 **View logs:**
@@ -117,7 +117,8 @@ docker compose ps
 docker stats --no-stream
 
 # From local machine
-./scripts/droplet-stats.sh <DROPLET_IP>
+./scripts/utils/droplet-stats.sh prod  # Production
+./scripts/utils/droplet-stats.sh dev   # Development
 ```
 
 **Access databases:**
@@ -137,9 +138,9 @@ docker exec -it tronrelic-redis-prod redis-cli
 - [ ] Point DNS A record to droplet IP
 - [ ] Generate GitHub Personal Access Token (read:packages scope)
 - [ ] Obtain three TronGrid API keys
-- [ ] Run initial deployment script (droplet-deploy.sh or droplet-deploy-dev.sh)
+- [ ] Run initial deployment script (`./scripts/droplet-deploy.sh <env>`)
 - [ ] Save generated credentials securely
-- [ ] (Production only) Run SSL setup script (droplet-setup-ssl.sh)
+- [ ] (Production only) Run SSL setup script (`./scripts/droplet-setup-ssl.sh prod <domain> <email>`)
 - [ ] Verify deployment health checks
 
 **Update deployment:**
@@ -154,7 +155,7 @@ docker exec -it tronrelic-redis-prod redis-cli
 - [ ] View logs: `docker compose logs -f backend frontend`
 - [ ] Verify network connectivity: `curl http://localhost:4000/api/health`
 - [ ] Check disk space: `df -h`
-- [ ] Monitor resources: `./scripts/droplet-stats.sh`
+- [ ] Monitor resources: `./scripts/utils/droplet-stats.sh <env>`
 
 ## CI/CD Pipeline
 
@@ -166,7 +167,7 @@ TronRelic uses GitHub Actions for automated deployment:
 3. Builds backend and frontend images
 4. Tags images as `:latest` and `:$COMMIT_SHA`
 5. Pushes images to GitHub Container Registry
-6. Manual deployment required (run `./scripts/droplet-update.sh`)
+6. Manual deployment required (run `./scripts/droplet-update.sh prod`)
 
 **Development pipeline (.github/workflows/docker-publish-dev.yml):**
 1. Triggered on push to `dev` branch
