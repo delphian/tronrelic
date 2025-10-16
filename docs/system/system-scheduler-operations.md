@@ -55,7 +55,7 @@ Jobs persist their configuration in MongoDB (`scheduler_configs` collection), so
 
 ## Scheduler Jobs
 
-TronRelic includes seven built-in scheduler jobs:
+TronRelic includes six built-in scheduler jobs:
 
 | Job Name | Default Schedule | Purpose | Impact if Down |
 |----------|------------------|---------|-----------------|
@@ -63,7 +63,6 @@ TronRelic includes seven built-in scheduler jobs:
 | `blockchain:sync` | Every 1 min | Retrieve new TRON blocks and index transactions | Whale alerts, transaction data stale |
 | `cache:cleanup` | Every 60 min | Remove expired cache entries | Memory usage grows unbounded |
 | `alerts:dispatch` | Every 1 min | Send pending alert notifications | Users don't receive alerts |
-| `alerts:parity` | Every 5 min | Verify alert consistency | Alert system integrity degraded |
 | `chain-parameters:fetch` | Every 10 min | Fetch TRON chain parameters (energy costs) | Energy cost calculations become inaccurate |
 | `usdt-parameters:fetch` | Every 10 min | Fetch USDT transfer energy cost | USDT transfer pricing becomes inaccurate |
 

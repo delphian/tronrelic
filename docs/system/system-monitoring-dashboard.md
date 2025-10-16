@@ -85,7 +85,7 @@ A comprehensive system monitoring dashboard has been implemented to provide real
     - `blockchain:sync` (every 1 minute)
     - `cache:cleanup` (every hour)
     - `alerts:dispatch` (every 1 minute)
-    - `alerts:parity` (every 5 minutes)
+    - `chain-parameters:fetch` (every 10 minutes)
   - For each job: name, schedule, last run, next run, status, duration, errors
 
 #### Markets Tab (`MarketMonitor.tsx`)
