@@ -153,13 +153,13 @@ docker inspect tronrelic-backend-prod --format='{{json .State.Health}}' | jq
 
 **Test health endpoints directly:**
 ```bash
-# Backend health check
+# Backend health check (direct)
 curl http://localhost:4000/api/health
 # Expected: {"status":"ok","timestamp":"..."}
 
-# Frontend health check
+# Frontend health check (tests frontend's health & integration with backend)
 curl http://localhost:3000/api/health
-# Expected: {"status":"ok"}
+# Expected: {"status":"ok","timestamp":"..."}
 
 # Via Nginx reverse proxy (external URL)
 curl http://localhost/api/health
@@ -838,8 +838,8 @@ df -h && free -h                         # Disk and memory
 
 **Health checks:**
 ```bash
-curl http://localhost:4000/api/health  # Backend
-curl http://localhost:3000/api/health  # Frontend
+curl http://localhost:4000/api/health  # Backend (direct)
+curl http://localhost:3000/api/health  # Frontend + backend integration
 curl https://tronrelic.com/system      # System monitor
 ```
 
