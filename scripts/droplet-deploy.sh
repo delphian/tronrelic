@@ -7,7 +7,7 @@
 ## TronRelic environment ready for droplet-update.sh to run.
 ##
 ## Usage:
-##   ./scripts/droplet-deploy-unified.sh <env> [--force]
+##   ./scripts/droplet-deploy.sh <env> [--force]
 ##
 ## Arguments:
 ##   env           Environment (prod, dev)
@@ -576,7 +576,7 @@ echo "  1. Access the frontend at http://$DROPLET_IP/"
 echo "  2. Test the system monitor at http://$DROPLET_IP/system"
 echo "  3. Use ./scripts/droplet-update.sh $ENV to deploy updates"
 if [[ "$ENV" == "prod" ]]; then
-    echo "  4. Set up SSL/HTTPS with: ./scripts/droplet-setup-ssl.sh $DROPLET_IP yourdomain.com your-email@example.com"
+    echo "  4. Set up SSL/HTTPS with: ./scripts/droplet-setup-ssl.sh prod yourdomain.com your-email@example.com"
 fi
 echo ""
 echo -e "${CYAN}View Logs:${NC}"

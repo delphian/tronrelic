@@ -85,7 +85,7 @@ Admin Credentials:
 Next Steps:
   1. Access the frontend at http://<DROPLET_IP>/
   2. Test the system monitor at http://<DROPLET_IP>/system
-  3. Set up SSL/HTTPS with: ./scripts/droplet-setup-ssl.sh <DROPLET_IP> tronrelic.com admin@example.com
+  3. Set up SSL/HTTPS with: ./scripts/droplet-setup-ssl.sh prod tronrelic.com admin@example.com
 ```
 
 **Save the generated credentials immediately!** Store them in a password manager before proceeding.
@@ -162,7 +162,7 @@ Configuration:
 Next Steps:
   1. Access the frontend at http://dev.tronrelic.com/
   2. Push to 'dev' branch to trigger automatic deployments
-  3. Use ./scripts/droplet-update-dev.sh for manual updates
+  3. Use ./scripts/droplet-update.sh dev for manual updates
 ```
 
 **Configure GitHub Actions auto-deployment:**
@@ -507,7 +507,7 @@ git push origin rollback-<commit-sha>:main --force
 
 # Wait for GitHub Actions to build and push images
 # Then run deployment script
-./scripts/droplet-update.sh  # or droplet-update-dev.sh
+./scripts/droplet-update.sh prod  # or: ./scripts/droplet-update.sh dev
 ```
 
 **Warning:** Force pushing to main should be a last resort. Prefer rolling forward with a fix commit.
@@ -592,7 +592,7 @@ npm run test:integration
 # Verify SSH key is correct in GitHub secrets
 # Verify dev droplet is accessible from GitHub Actions runners
 # Manually run deployment script to test
-./scripts/droplet-update-dev.sh
+./scripts/droplet-update.sh dev
 ```
 
 ## Quick Reference
