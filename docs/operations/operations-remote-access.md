@@ -837,7 +837,7 @@ curl https://tronrelic.com/system      # System monitor
 
 ## Further Reading
 
-- [deployment-server-info.md](./deployment-server-info.md) - Server locations, credentials, authentication
-- [deployment-workflows.md](./deployment-workflows.md) - Setup and update procedures
-- [deployment.md](./deployment.md) - Deployment overview and quick reference
+- [operations-server-info.md](./operations-server-info.md) - Server locations, credentials, authentication
+- [operations-workflows.md](./operations-workflows.md) - Setup and update procedures
+- [operations.md](./operations.md) - Deployment overview and quick reference
 - [api-catalog.md](../api-catalog.md) - API endpoints and health check documentation
