@@ -596,36 +596,36 @@ See `MarketSnapshot` type definition in [market-snapshot.dto.ts](/apps/backend/s
 
 ### How Scheduling Works
 
-Each market fetcher runs **independently** on its own cron schedule defined in the fetcher's constructor. All fetchers currently run every **10 minutes** (`*/10 * * * *`).
+All market fetchers execute together via a centralized `markets:refresh` cron job that runs every **10 minutes** by default (`*/10 * * * *`). Individual fetchers no longer have their own schedules.
 
 **Key points:**
 
-- **Independent execution** - Each fetcher runs on its own schedule, not as a batch job
-- **Cron-based** - Uses `node-cron` library for scheduling
+- **Centralized scheduling** - All fetchers run together as a single batch job
+- **Admin-configurable** - System administrators can adjust the refresh interval via the admin UI (System > Scheduler section)
+- **Single schedule** - Uses one cron expression for all market data, simplifying operations
 - **No immediate execution on startup** - Fetchers only run at their scheduled intervals, not when the backend starts
 - **Data persists** - Market data is stored in MongoDB and survives restarts, so old data remains until the next scheduled fetch
 
-**Example from [tronify.fetcher.ts](/apps/backend/src/modules/markets/fetchers/implementations/tronify.fetcher.ts):**
+**How to adjust the schedule:**
 
-```typescript
-constructor() {
-    super({ name: 'Tronify', guid: MARKET_GUID, schedule: '*/10 * * * *' });
-}
-```
+1. Open the system monitor at `http://localhost:3000/system` (requires `ADMIN_API_TOKEN`)
+2. Navigate to the **Scheduler** section
+3. Find the `markets:refresh` job and update its cron expression
+4. Changes take effect immediately without requiring a rebuild
 
 ### Scheduler Architecture
 
-The global scheduler service registers all market fetchers and runs them according to their individual schedules:
+The centralized scheduler service runs all market fetchers together on a fixed schedule:
 
 1. **Registration** - Fetchers are registered in [fetcher-registry.ts](/apps/backend/src/modules/markets/fetchers/fetcher-registry.ts)
-2. **Initialization** - The market service calls `refreshMarkets()` which iterates through all registered fetchers
-3. **Execution** - Each fetcher's `pull()` method runs at its scheduled interval
+2. **Batch execution** - The `markets:refresh` job calls `refreshMarkets()` which iterates through all registered fetchers
+3. **Sequential execution** - Each fetcher's `pull()` method runs in sequence within the batch job
 4. **Storage** - Market snapshots are saved to MongoDB and served to the frontend
 
 **Why this matters for development:**
 
-- **After rebuilding code** - Old data remains in the database until the next scheduled fetch (up to 10 minutes)
-- **Testing new fetchers** - You must wait for the scheduler to run or manually trigger a market refresh
+- **After rebuilding code** - Old data remains in the database until the next scheduled batch execution (up to 10 minutes)
+- **Testing new fetchers** - You must wait for the scheduler to run or manually trigger a market refresh via the admin API
 - **`--force-build` doesn't refresh data** - It only rebuilds code, it doesn't clear or re-fetch market data
 
 **Solution: Wait for the scheduler or manually trigger a refresh**
@@ -634,21 +634,33 @@ The global scheduler service registers all market fetchers and runs them accordi
 # Wait for the scheduler (10 minutes max)
 sleep 600
 
-# Or manually trigger via MongoDB
+# Or manually trigger via admin API
+curl -X POST http://localhost:4000/api/admin/markets/your-market/refresh \
+  -H "x-admin-token: your-admin-token" \
+  -H "Content-Type: application/json" \
+  -d '{"force": true}'
+
+# Or clear market data to force re-fetch on next cycle
 docker exec tronrelic-mongo mongosh tronrelic --quiet --eval "db.markets.deleteMany({guid: 'market-name'})"
 # Then wait for the scheduler to re-fetch (up to 10 minutes)
 ```
 
-### Standardized Schedule
+### Default Schedule and Customization
 
-All market fetchers use the same 10-minute schedule to:
+Market fetchers run together every **10 minutes** by default to:
 
 - **Provide consistent data freshness** across all markets
-- **Simplify debugging** - no need to track different schedules per market
+- **Simplify operations** - one schedule for all market data, no per-fetcher configuration
 - **Balance API rate limits** - 10 minutes is frequent enough for users while being respectful of external APIs
-- **Distribute load** - Although they run at the same interval, fetchers execute sequentially, not simultaneously
+- **Distribute load** - All fetchers execute within the same batch, reducing overall resource consumption
 
-**Historical note:** Earlier versions used varied schedules (5, 10, or 15 minutes) with no documented rationale. This was standardized to 10 minutes for consistency.
+**Custom schedules:**
+
+Administrators can adjust the interval via the admin UI without modifying code or rebuilding. Common intervals:
+- `*/5 * * * *` - Every 5 minutes (more frequent, higher API load)
+- `*/10 * * * *` - Every 10 minutes (default, balanced)
+- `*/15 * * * *` - Every 15 minutes (less frequent, lower API load)
+- `0 * * * *` - Hourly (minimal API consumption)
 
 ## Related Documentation
 

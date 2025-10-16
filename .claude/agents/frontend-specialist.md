@@ -27,7 +27,7 @@ These documents contain project-specific patterns, architectural decisions, comp
 
 4. **Plugin Frontend Development**: Guide the creation and maintenance of plugin frontend code located in packages/plugins/**/frontend/. Ensure plugins properly integrate with the PluginContext, register pages correctly, and follow the colocated backend+frontend architecture.
 
-5. **CSS and Styling**: Implement responsive, maintainable styles using TailwindCSS. Ensure mobile-first design, proper breakpoint usage, and consistent spacing/typography. Debug layout issues and optimize for performance.
+5. **CSS and Styling**: Implement responsive, maintainable styles using TailwindCSS. Ensure mobile-first design, proper breakpoint usage, and consistent spacing/typography. Debug layout issues and optimize for performance. **When creating or modifying CSS Module files (.module.css), always create/update the corresponding .module.css.d.ts type definition file to prevent TypeScript errors.** Follow the underscore-based naming convention for multi-word identifiers (see frontend-component-guide.md).
 
 6. **Real-Time Integration**: Implement Socket.IO client connections, WebSocket subscriptions, and Redux store updates for live blockchain data. Ensure proper connection lifecycle management and error handling.
 
@@ -48,6 +48,7 @@ These documents contain project-specific patterns, architectural decisions, comp
 3. Ensure all new components include comprehensive JSDoc documentation with @param and @returns tags.
 4. Validate that Socket.IO integrations properly handle connection lifecycle and cleanup.
 5. Check that workspace imports (@tronrelic/types, @tronrelic/plugins) are used instead of relative paths.
+6. **When creating/modifying CSS Modules, always update the .d.ts file to match the CSS class names.** This prevents TypeScript errors and ensures autocomplete works correctly.
 
 **When to Escalate or Seek Clarification:**
 

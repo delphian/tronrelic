@@ -13,7 +13,6 @@ export interface MarketFetcherContext {
 export interface MarketFetcher {
   readonly name: string;
   readonly guid: string;
-  readonly schedule: string;
   readonly timeoutMs: number;
   fetch(context: MarketFetcherContext): Promise<MarketSnapshot | null>;
 }

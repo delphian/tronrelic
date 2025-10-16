@@ -44,7 +44,7 @@ export class TronSaveFetcher extends BaseMarketFetcher {
   private readonly config = marketProviderConfig.tronSave;
 
   constructor() {
-    super({ name: 'Tron Save 能量 租赁', guid: MARKET_GUID, schedule: '*/10 * * * *' });
+    super({ name: 'Tron Save 能量 租赁', guid: MARKET_GUID });
   }
 
   private async executeGraphQl<T>(context: MarketFetcherContext, payload: Record<string, unknown>) {

@@ -65,7 +65,7 @@ export class TronLendingFetcher extends BaseMarketFetcher {
     private readonly config = marketProviderConfig.tronLending;
 
     constructor() {
-        super({ name: 'Tron Lending', guid: MARKET_GUID, schedule: '*/10 * * * *' });
+        super({ name: 'Tron Lending', guid: MARKET_GUID });
     }
 
     /**

@@ -114,7 +114,7 @@ export class BrutusFinanceFetcher extends BaseMarketFetcher {
   private readonly config = marketProviderConfig.brutusFinance;
 
   constructor() {
-    super({ name: 'Brutus Finance', guid: MARKET_GUID, schedule: '*/10 * * * *' });
+    super({ name: 'Brutus Finance', guid: MARKET_GUID });
   }
 
   /**

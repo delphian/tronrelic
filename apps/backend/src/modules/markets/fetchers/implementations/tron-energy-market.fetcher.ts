@@ -37,7 +37,7 @@ export class TronEnergyMarketFetcher extends BaseMarketFetcher {
   private readonly config = marketProviderConfig.tronEnergyMarket;
 
   constructor() {
-    super({ name: 'Tron Energy Market', guid: MARKET_GUID, schedule: '*/10 * * * *' });
+    super({ name: 'Tron Energy Market', guid: MARKET_GUID });
   }
 
   async pull(context: MarketFetcherContext): Promise<MarketSnapshot | null> {

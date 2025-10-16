@@ -59,7 +59,7 @@ export class ApiTrxFetcher extends BaseMarketFetcher {
   private readonly config = marketProviderConfig.apiTrx;
 
   constructor() {
-    super({ name: 'Api TRX', guid: MARKET_GUID, schedule: '*/10 * * * *' });
+    super({ name: 'Api TRX', guid: MARKET_GUID });
   }
 
   async pull(context: MarketFetcherContext): Promise<MarketSnapshot | null> {

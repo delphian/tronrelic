@@ -51,7 +51,7 @@ export class TronPulseFetcher extends BaseMarketFetcher {
   private readonly config = marketProviderConfig.tronPulse;
 
   constructor() {
-    super({ name: 'Tron Pulse', guid: MARKET_GUID, schedule: '*/10 * * * *' });
+    super({ name: 'Tron Pulse', guid: MARKET_GUID });
   }
 
   private buildHeaders() {

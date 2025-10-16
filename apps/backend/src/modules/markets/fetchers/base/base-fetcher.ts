@@ -7,20 +7,17 @@ import type { MarketFetcher, MarketFetcherContext } from '../types.js';
 export interface MarketFetcherOptions {
   name: string;
   guid: string;
-  schedule?: string;
   timeoutMs?: number;
 }
 
 export abstract class BaseMarketFetcher implements MarketFetcher {
   readonly name: string;
   readonly guid: string;
-  readonly schedule: string;
   readonly timeoutMs: number;
 
   protected constructor(options: MarketFetcherOptions) {
     this.name = options.name;
     this.guid = options.guid;
-    this.schedule = options.schedule ?? '*/5 * * * *';
     this.timeoutMs = options.timeoutMs ?? 10_000;
   }
 

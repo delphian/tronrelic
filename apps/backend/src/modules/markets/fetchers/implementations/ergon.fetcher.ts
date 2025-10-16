@@ -20,7 +20,7 @@ export class ErgonFetcher extends BaseMarketFetcher {
   private readonly config = marketProviderConfig.ergon;
 
   constructor() {
-    super({ name: 'Ergon', guid: MARKET_GUID, schedule: '*/10 * * * *' });
+    super({ name: 'Ergon', guid: MARKET_GUID });
   }
 
   async pull(context: MarketFetcherContext): Promise<MarketSnapshot | null> {

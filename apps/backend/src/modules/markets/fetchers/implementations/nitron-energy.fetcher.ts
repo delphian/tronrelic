@@ -91,7 +91,7 @@ export class NitronEnergyFetcher extends BaseMarketFetcher {
   private readonly config = marketProviderConfig.nitronEnergy;
 
   constructor() {
-    super({ name: 'NiTron Energy', guid: MARKET_GUID, schedule: '*/10 * * * *' });
+    super({ name: 'NiTron Energy', guid: MARKET_GUID });
   }
 
   async pull(context: MarketFetcherContext): Promise<MarketSnapshot | null> {

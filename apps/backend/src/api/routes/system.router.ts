@@ -23,6 +23,7 @@ export function systemRouter() {
   // Scheduler endpoints
   router.get('/scheduler/status', controller.getSchedulerStatus);
   router.get('/scheduler/health', controller.getSchedulerHealth);
+  router.patch('/scheduler/job/:jobName', controller.updateSchedulerJob);
 
   // Market endpoints
   router.get('/markets/platforms', controller.getMarketPlatformStatus);

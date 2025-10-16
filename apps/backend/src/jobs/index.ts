@@ -13,7 +13,28 @@ import axios from 'axios';
 
 let scheduler: SchedulerService | null = null;
 
-export function initializeJobs() {
+/**
+ * Returns the initialized scheduler instance.
+ *
+ * Used by admin API to update scheduler configuration at runtime.
+ * Returns null if scheduler is disabled or not yet initialized.
+ *
+ * @returns {SchedulerService | null} Scheduler instance or null
+ */
+export function getScheduler(): SchedulerService | null {
+    return scheduler;
+}
+
+/**
+ * Initializes and starts all scheduled jobs.
+ *
+ * Registers all cron jobs (markets, blockchain, alerts, etc.) and starts
+ * the scheduler. The scheduler loads configuration from MongoDB and schedules
+ * enabled jobs according to their configured intervals.
+ *
+ * @returns {Promise<SchedulerService | null>} Scheduler instance or null if disabled
+ */
+export async function initializeJobs(): Promise<SchedulerService | null> {
     if (!env.ENABLE_SCHEDULER) {
         logger.warn('Scheduler disabled by configuration');
         return null;
@@ -45,8 +66,8 @@ export function initializeJobs() {
         await usdtParametersFetcher.fetch();
     });
 
-    // Markets: every 5 minutes
-    scheduler.register('markets:refresh', '*/5 * * * *', async () => {
+    // Markets: every 10 minutes (configurable via admin API)
+    scheduler.register('markets:refresh', '*/10 * * * *', async () => {
         await marketService.refreshMarkets();
     });
 
@@ -67,8 +88,8 @@ export function initializeJobs() {
     await alertParityQueue.enqueue('verify', {});
   });
 
-  scheduler.start();
-  logger.info('Scheduler started');
+  await scheduler.start();
+  logger.info('Scheduler started with configuration from MongoDB');
   return scheduler;
 }
 

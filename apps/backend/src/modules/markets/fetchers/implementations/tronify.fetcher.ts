@@ -46,7 +46,7 @@ export class TronifyFetcher extends BaseMarketFetcher {
   private readonly config = marketProviderConfig.tronify;
 
   constructor() {
-    super({ name: 'Tronify', guid: MARKET_GUID, schedule: '*/10 * * * *' });
+    super({ name: 'Tronify', guid: MARKET_GUID });
   }
 
   async pull(context: MarketFetcherContext): Promise<MarketSnapshot | null> {

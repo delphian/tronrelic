@@ -44,7 +44,7 @@ export class FeeeIoFetcher extends BaseMarketFetcher {
   private readonly config = marketProviderConfig.feeeIo;
 
   constructor() {
-    super({ name: 'Feee.io', guid: MARKET_GUID, schedule: '*/10 * * * *' });
+    super({ name: 'Feee.io', guid: MARKET_GUID });
   }
 
   private async fetchTrades(context: MarketFetcherContext) {

@@ -28,7 +28,7 @@ async function bootstrap() {
     // Load plugins AFTER WebSocket is initialized so they can register handlers
     await loadPlugins();
 
-    initializeJobs();
+    await initializeJobs();
 
     server.listen(env.PORT, () => {
       logger.info({ port: env.PORT }, 'Server listening');

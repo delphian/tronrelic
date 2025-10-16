@@ -15,7 +15,7 @@ export class MeFreeNetFetcher extends BaseMarketFetcher {
   private readonly config = marketProviderConfig.meFreeNet;
 
   constructor() {
-    super({ name: 'MeFree.Net', guid: MARKET_GUID, schedule: '*/10 * * * *' });
+    super({ name: 'MeFree.Net', guid: MARKET_GUID });
   }
 
   /**

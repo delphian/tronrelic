@@ -124,6 +124,8 @@ services:
             # Preserve node_modules
             - /app/node_modules
             - /app/apps/frontend/node_modules
+            # Mount logs directory for debugging (pre-created via .gitkeep to prevent permission issues)
+            - ./.run:/app/.run
 
 networks:
     tronrelic-network:
