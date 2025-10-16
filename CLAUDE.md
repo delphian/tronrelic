@@ -43,6 +43,10 @@ When a task arrives, Claude MUST respond with:
 - Keywords: documentation, docs, README, markdown, .md files, documentation gaps, documentation review, documentation standards
 - Use for: ANY work involving project documentation (analysis, investigation, creation, updates, reviews, improvements)
 
+**operations-specialist:**
+- Keywords: deployment, infrastructure, server, Docker, docker-compose, Nginx, SSL, certificates, CI/CD, GitHub Actions, MongoDB admin, Redis admin, database, SSH, firewall, environment variables, DNS, production, staging, droplet, Digital Ocean, logs, monitoring
+- Use for: Deployment issues, infrastructure setup, server management, CI/CD pipelines, database administration, SSL configuration, troubleshooting production/staging environments
+
 ## Automatic Agent Delegation by File Path
 
 Claude MUST automatically use these agents when working with these file paths.
@@ -78,5 +82,16 @@ Claude MUST automatically use these agents when working with these file paths.
 - `**/AGENTS.md`
 - `**/CONTRIBUTING.md`
 - `**/*-guidance.md`
+
+**operations-specialist:**
+- `docker-compose.yml`
+- `docker-compose.*.yml`
+- `Dockerfile`
+- `**/Dockerfile`
+- `.github/workflows/**`
+- `**/nginx.conf`
+- `**/nginx/**`
+- `scripts/deploy*.sh`
+- `docs/operations/**`
 
 **Exception:** If the user explicitly says "don't use agents" or "do it yourself", skip delegation.
