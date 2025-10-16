@@ -26,7 +26,7 @@
 ##   ./scripts/droplet-update.sh dev --force
 ##
 
-set -e  # Exit on error
+set -euo pipefail  # Exit on error, undefined variables, and pipe failures
 
 # Source environment configuration
 SCRIPT_DIR="$(dirname "$0")"
@@ -55,7 +55,8 @@ fi
 ENV="$1"
 FORCE_DEPLOY=false
 
-if [[ "$2" == "--force" ]]; then
+# Check for optional --force flag
+if [[ ${2:-} == "--force" ]]; then
     FORCE_DEPLOY=true
 fi
 
