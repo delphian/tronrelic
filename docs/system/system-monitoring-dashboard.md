@@ -80,12 +80,13 @@ A comprehensive system monitoring dashboard has been implemented to provide real
   - Overall success rate
 
 - **Individual job status:**
-  - 5 cron jobs displayed:
-    - `markets:refresh` (every 5 minutes)
+  - 6 cron jobs displayed:
+    - `markets:refresh` (every 10 minutes)
     - `blockchain:sync` (every 1 minute)
     - `cache:cleanup` (every hour)
     - `alerts:dispatch` (every 1 minute)
     - `chain-parameters:fetch` (every 10 minutes)
+    - `usdt-parameters:fetch` (every 10 minutes)
   - For each job: name, schedule, last run, next run, status, duration, errors
 
 #### Markets Tab (`MarketMonitor.tsx`)

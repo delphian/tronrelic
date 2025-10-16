@@ -848,4 +848,4 @@ curl https://tronrelic.com/system      # System monitor
 - [operations-server-info.md](./operations-server-info.md) - Server locations, credentials, authentication
 - [operations-workflows.md](./operations-workflows.md) - Setup and update procedures
 - [operations.md](./operations.md) - Deployment overview and quick reference
-- [api-catalog.md](../api-catalog.md) - API endpoints and health check documentation
+- [system-api.md](../system/system-api.md) - API endpoints and health check documentation

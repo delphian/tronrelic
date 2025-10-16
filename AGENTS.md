@@ -3,7 +3,6 @@
 **Always load and apply the following documentation before answering or changing code:**
 
 - [@AGENTS.md](AGENTS.md)
-- [@api-catalog.md](docs/api-catalog.md)
 - [@tron-chain-parameters.md](docs/tron/tron-chain-parameters.md)
 - [@documentation-guidance.md](docs/documentation-guidance.md)
 - [@environment.md](docs/environment.md)

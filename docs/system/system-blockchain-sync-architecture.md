@@ -135,15 +135,20 @@ The TRON price is fetched from market data (updated every 10 minutes via schedul
 
 ### 4. Calculate Energy Costs
 
-For transactions that consume energy:
+**⚠️ Known Limitation:** Energy cost calculations are **not currently implemented** in transaction processing. This is a deliberate tradeoff:
+
+- **Why disabled:** Fetching detailed transaction receipts would require 1 API call per transaction (~200+ extra requests/minute), consuming significant TronGrid rate limit allocation
+- **Current behavior:** `energyUsed` and `energyCostTrx` fields are always `undefined`
+- **Tradeoff:** We prioritize syncing all transactions at volume over calculating energy costs for each one
+- **Future improvement:** If rate limits allow or separate rate-limited pool is provisioned, this can be re-enabled
+
+Chain parameters (energy cost per unit) ARE fetched periodically from the blockchain via `triggerconstantcontract` and stored in the system, but are not used in transaction enrichment at this time.
 
 ```typescript
-const energyCost = contractData.energyUsed;  // From blockchain
-const energyPrice = chainParameters.energyPrice;  // Updated every 10 minutes
-const energyCostTRX = energyCost * energyPrice / 1_000_000;
+// Current implementation always passes null for transaction receipt info
+const energyUsed = undefined;  // Not available
+const energyCostTrx = undefined;  // Not calculated
 ```
-
-Chain parameters (energy cost per unit) are fetched periodically from the blockchain via `triggerconstantcontract`.
 
 ### 5. Build ProcessedTransaction
 
@@ -293,11 +298,18 @@ Under normal conditions:
 On fresh installation, instead of starting from block 0 (which would take months), TronRelic:
 
 1. Fetches current network height at startup
-2. Begins sync from `current - lookbackBlocks` (e.g., 2 weeks ago)
-3. Processes recent history to populate initial data
-4. Gradually fills in remaining history in background (if configured)
+2. **Begins sync from the current network block (live chain tip)**
+3. Starts indexing all NEW transactions going forward
 
-This allows the system to be useful immediately rather than requiring weeks of backfill.
+**Important:** Fresh installs do NOT backfill historical data automatically. This is by design to:
+- Start the system immediately with zero delay
+- Avoid weeks of historical sync on first launch
+- Process live transactions the moment the system starts
+
+**If you need historical data**, you can:
+- Manually configure a backfill job to sync historical blocks after launch
+- Use MongoDB queries to look up historical transactions from existing APIs
+- Run a separate one-time sync process for specific date ranges
 
 ## Related Documentation
 
