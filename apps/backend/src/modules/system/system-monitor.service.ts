@@ -6,10 +6,11 @@ import { BlockModel } from '../../database/models/block-model.js';
 import { TransactionModel } from '../../database/models/transaction-model.js';
 import { MarketModel } from '../../database/models/market-model.js';
 import { MarketReliabilityModel } from '../../database/models/market-reliability-model.js';
+import { SchedulerExecutionModel } from '../../database/models/scheduler-execution-model.js';
 import { TronGridClient } from '../blockchain/tron-grid.client.js';
 import { logger } from '../../lib/logger.js';
 import { env } from '../../config/env.js';
-import { SchedulerService } from '../../services/scheduler.service.js';
+import { getScheduler } from '../../jobs/index.js';
 import { blockchainConfig } from '../../config/blockchain.js';
 interface TimeoutResult<T> {
   timedOut: boolean;
@@ -113,6 +114,7 @@ interface BlockProcessingSnapshot {
 export interface SchedulerJobStatus {
   name: string;
   schedule: string;
+  enabled: boolean;
   lastRun: string | null;
   nextRun: string | null;
   status: 'running' | 'success' | 'failed' | 'never_run';
@@ -486,59 +488,43 @@ export class SystemMonitorService {
   }
 
   async getSchedulerStatus(): Promise<SchedulerJobStatus[]> {
-    // Get blockchain sync error state
-    const syncState = await SyncStateModel.findOne({ key: 'blockchain:last-block' }).lean();
-    const meta = (syncState?.meta || {}) as any;
-    const blockchainError = meta.lastError || null;
-    const blockchainLastRun = safeToISOString(meta.lastScheduledAt);
+    const scheduler = getScheduler();
+    if (!scheduler) {
+      return [];
+    }
 
-    const jobs: SchedulerJobStatus[] = [
-      {
-        name: 'markets:refresh',
-        schedule: '*/5 * * * *',
-        lastRun: null,
-        nextRun: null,
-        status: 'never_run',
-        duration: null,
-        error: null
-      },
-      {
-        name: 'blockchain:sync',
-        schedule: '*/1 * * * *',
-        lastRun: blockchainLastRun,
-        nextRun: null,
-        status: blockchainError ? 'failed' : blockchainLastRun ? 'success' : 'never_run',
-        duration: null,
-        error: blockchainError
-      },
-      {
-        name: 'cache:cleanup',
-        schedule: '0 * * * *',
-        lastRun: null,
-        nextRun: null,
-        status: 'never_run',
-        duration: null,
-        error: null
-      },
-      {
-        name: 'alerts:dispatch',
-        schedule: '*/1 * * * *',
-        lastRun: null,
-        nextRun: null,
-        status: 'never_run',
-        duration: null,
-        error: null
-      },
-      {
-        name: 'alerts:parity',
-        schedule: '*/5 * * * *',
-        lastRun: null,
-        nextRun: null,
-        status: 'never_run',
-        duration: null,
-        error: null
+    const jobConfigs = scheduler.getAllJobConfigs();
+    const jobs: SchedulerJobStatus[] = [];
+
+    for (const config of jobConfigs) {
+      // Get the most recent execution for this job
+      const lastExecution = await SchedulerExecutionModel.findOne({ jobName: config.name })
+        .sort({ startedAt: -1 })
+        .lean();
+
+      let status: 'running' | 'success' | 'failed' | 'never_run' = 'never_run';
+      let lastRun: string | null = null;
+      let duration: number | null = null;
+      let error: string | null = null;
+
+      if (lastExecution) {
+        status = lastExecution.status;
+        lastRun = safeToISOString(lastExecution.startedAt);
+        duration = lastExecution.duration ? lastExecution.duration / 1000 : null; // Convert ms to seconds
+        error = lastExecution.error;
       }
-    ];
+
+      jobs.push({
+        name: config.name,
+        schedule: config.schedule,
+        enabled: config.enabled,
+        lastRun,
+        nextRun: null, // node-cron doesn't provide next run time easily
+        status: config.enabled ? status : 'never_run',
+        duration,
+        error
+      });
+    }
 
     return jobs;
   }
