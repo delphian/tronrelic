@@ -619,4 +619,5 @@ docker compose down && docker compose up -d
 - [operations-server-info.md](./operations-server-info.md) - Server locations, credentials, authentication
 - [operations-remote-access.md](./operations-remote-access.md) - SSH usage, debugging, log inspection
 - [operations.md](./operations.md) - Deployment overview and quick reference
-- [docker-deployment.md](../docker-deployment.md) - Docker architecture and local development
+- [README.md - Docker Quick Start](../../README.md#option-1-docker-recommended-for-production) - Docker commands and local development
+- [README.md - Architecture](../../README.md#architecture) - System architecture and directory structure
