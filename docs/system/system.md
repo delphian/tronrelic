@@ -51,7 +51,7 @@ The scheduler manages seven built-in jobs that keep the system healthy: market d
 
 **Critical jobs:**
 - `blockchain:sync` - Fetches new TRON blocks every minute
-- `markets:refresh` - Updates all energy market prices every 5 minutes
+- `markets:refresh` - Updates all energy market prices every 10 minutes
 - `chain-parameters:fetch` - Fetches TRON energy costs every 10 minutes
 
 **Safe to disable temporarily:**
@@ -67,6 +67,42 @@ The scheduler manages seven built-in jobs that keep the system healthy: market d
 - Cron expression syntax and common modifications
 - Comprehensive troubleshooting runbooks for common failure scenarios
 - Configuration persistence to MongoDB for durability across restarts
+
+### System Monitoring API
+
+The system monitoring API provides programmatic access to all operational metrics, job control, and infrastructure health checks. All endpoints require admin authentication and support both web dashboard and custom automation workflows.
+
+**Available endpoint categories:**
+
+- **System Overview** - Consolidated snapshot of all metrics in a single request
+- **Blockchain Monitoring** - Sync status, transaction stats, processing metrics, manual sync trigger
+- **Scheduler Operations** - Job status, health checks, runtime configuration updates
+- **Market Monitoring** - Platform status, data freshness, manual refresh trigger
+- **System Health** - Database, Redis, and server metrics
+- **Configuration** - Environment settings and feature flags
+- **WebSocket Monitoring** - Plugin subscription stats and connection tracking
+
+**See [system-api.md](./system-api.md) for complete details on:**
+- Authentication requirements and header formats
+- All 16+ API endpoints with request/response examples
+- Field-by-field documentation of response structures
+- Practical usage examples with curl and JavaScript
+- Common operations (health checks, job control, data refresh)
+- Troubleshooting API issues
+- Building custom monitoring scripts
+
+### System Monitoring Dashboard
+
+The web-based monitoring dashboard provides real-time visibility into all system operations through a tabbed interface. Built on top of the system monitoring API, it offers point-and-click job control, live metric displays, and manual operation triggers.
+
+**See [system-monitoring-dashboard.md](./system-monitoring-dashboard.md) for complete details on:**
+- Accessing the dashboard at `/system` with admin token authentication
+- Overview tab with at-a-glance health indicators
+- Blockchain, Scheduler, Markets, Health, and Config tabs
+- Live auto-refresh behavior and manual refresh controls
+- Job enable/disable toggles and schedule modification
+- Manual sync and refresh trigger buttons
+- Visual status indicators and error displays
 
 ## Quick Reference
 
@@ -119,6 +155,8 @@ curl -X PATCH \
 **Detailed documentation:**
 - [system-blockchain-sync-architecture.md](./system-blockchain-sync-architecture.md) - Complete technical overview of block retrieval, transaction enrichment, observer notification, and performance characteristics
 - [system-scheduler-operations.md](./system-scheduler-operations.md) - Scheduler control, job management, troubleshooting, and configuration persistence
+- [system-api.md](./system-api.md) - Complete API reference with all endpoints, authentication, request/response formats, and usage examples
+- [system-monitoring-dashboard.md](./system-monitoring-dashboard.md) - Web dashboard UI guide with tab-by-tab feature documentation
 
 **Related topics:**
 - [plugins/plugins-blockchain-observers.md](../plugins/plugins-blockchain-observers.md) - How to build observers that react to transactions
