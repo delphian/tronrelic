@@ -50,9 +50,6 @@ export async function initializeJobs(): Promise<SchedulerService | null> {
     const alertDispatchQueue = new QueueService('alerts-dispatch', async () => {
         await alertService.dispatchPendingAlerts();
     });
-    const alertParityQueue = new QueueService('alerts-parity', async () => {
-        await alertService.verifyParity();
-    });
 
     scheduler = new SchedulerService();
 
@@ -82,10 +79,6 @@ export async function initializeJobs(): Promise<SchedulerService | null> {
 
   scheduler.register('alerts:dispatch', '*/1 * * * *', async () => {
     await alertDispatchQueue.enqueue('dispatch', {});
-  });
-
-  scheduler.register('alerts:parity', '*/5 * * * *', async () => {
-    await alertParityQueue.enqueue('verify', {});
   });
 
   await scheduler.start();

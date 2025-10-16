@@ -4,13 +4,11 @@ import { logger } from '../lib/logger.js';
 import {
   TransactionMemoModel,
   SunPumpTokenModel,
-  SyncStateModel,
   type SunPumpTokenDoc,
 } from '../database/models/index.js';
 import { TelegramService } from './telegram.service.js';
 import { TronGridClient, TronGridEvent } from '../modules/blockchain/tron-grid.client.js';
 import type { TransactionPersistencePayload } from '../modules/blockchain/blockchain.service.js';
-import { telegramConfig } from '../config/telegram.js';
 import { WebSocketService } from './websocket.service.js';
 
 const MEMO_MAX_BURST = 10;
@@ -86,37 +84,6 @@ export class AlertService {
     await this.dispatchSunPumpAlerts();
   }
 
-  async verifyParity() {
-    const threshold = new Date(Date.now() - telegramConfig.parity.maxUnnotifiedLagMs);
-
-    const [staleMemoCount, staleSunPumpCount] = await Promise.all([
-      TransactionMemoModel.countDocuments({ notifiedAt: null, timestamp: { $lt: threshold } }),
-      SunPumpTokenModel.countDocuments({ notifiedAt: null, timestamp: { $lt: threshold } })
-    ]);
-
-    const checkedAt = new Date();
-    const parityState = {
-      checkedAt,
-      staleMemoCount,
-      staleSunPumpCount,
-      threshold: threshold.toISOString()
-    };
-
-    if (staleMemoCount > 0 || staleSunPumpCount > 0) {
-      logger.error(parityState, 'Alert parity verification failed');
-    } else {
-      logger.debug(parityState, 'Alert parity verification passed');
-    }
-
-    await SyncStateModel.updateOne(
-      { key: 'alerts:parity' },
-      {
-        cursor: { checkedAt },
-        meta: parityState
-      },
-      { upsert: true }
-    );
-  }
 
   private async persistMemos(memos: MemoRecord[]) {
     const operations = memos.map(memo => ({
