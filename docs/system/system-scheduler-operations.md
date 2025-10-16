@@ -341,6 +341,6 @@ Job state preserved as configured
 
 ## Related Documentation
 
-- [blockchain-sync-architecture.md](./blockchain-sync-architecture.md) - How the `blockchain:sync` job processes transactions
+- [system-blockchain-sync-architecture.md](./system-blockchain-sync-architecture.md) - How the `blockchain:sync` job processes transactions
 - [environment.md](../environment.md) - `ENABLE_SCHEDULER` and `TRONGRID_API_KEY` configuration
 - [markets/market-system-operations.md](../markets/market-system-operations.md) - What the `markets:refresh` job does
