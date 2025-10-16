@@ -25,6 +25,10 @@ Real-time TRON blockchain monitoring and whale activity tracking.
 - [@plugins-api-registration.md](docs/plugins/plugins-api-registration.md)
 - [@plugins-database.md](docs/plugins/plugins-database.md)
 - [@plugins-websocket-subscriptions.md](docs/plugins/plugins-websocket-subscriptions.md)
+- [@deployment.md](docs/deployment/deployment.md)
+- [@deployment-server-info.md](docs/deployment/deployment-server-info.md)
+- [@deployment-workflows.md](docs/deployment/deployment-workflows.md)
+- [@deployment-remote-access.md](docs/deployment/deployment-remote-access.md)
 
 ## Quick Start
 
