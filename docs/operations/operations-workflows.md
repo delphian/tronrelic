@@ -47,10 +47,13 @@ These workflows take a fresh Ubuntu 22.04 droplet and configure it to run TronRe
 **Run initial setup script:**
 ```bash
 # From your local machine
-./scripts/droplet-deploy.sh <DROPLET_IP>
+./scripts/droplet-deploy.sh <env>
 
-# Example:
-./scripts/droplet-deploy.sh 206.189.95.8
+# Example (production):
+./scripts/droplet-deploy.sh prod
+
+# Example (development):
+./scripts/droplet-deploy.sh dev
 ```
 
 **What the script does:**
@@ -90,10 +93,13 @@ Next Steps:
 **Setup SSL/HTTPS (required for production):**
 ```bash
 # From your local machine
-./scripts/droplet-setup-ssl.sh <DROPLET_IP> tronrelic.com your-email@example.com
+./scripts/droplet-setup-ssl.sh <env> <domain> <email>
 
-# Example:
-./scripts/droplet-setup-ssl.sh 206.189.95.8 tronrelic.com admin@tronrelic.com
+# Example (production):
+./scripts/droplet-setup-ssl.sh prod tronrelic.com admin@tronrelic.com
+
+# Example (development - if using custom domain):
+./scripts/droplet-setup-ssl.sh dev dev.tronrelic.com admin@tronrelic.com
 ```
 
 **What the SSL script does:**
@@ -120,17 +126,17 @@ curl -I http://tronrelic.com/
 **Prerequisites:**
 - Fresh Ubuntu 22.04+ Digital Ocean droplet
 - Root SSH access configured
-- Domain DNS A record pointing dev.tronrelic.com to droplet IP (165.232.161.21)
+- Domain DNS A record pointing dev.tronrelic.com to droplet IP (<DEV_DROPLET_IP>)
 - GitHub Personal Access Token with `read:packages` scope
 - Three TronGrid API keys
 
 **Run development setup script:**
 ```bash
 # From your local machine
-./scripts/droplet-deploy-dev.sh
+./scripts/droplet-deploy.sh dev
 
 # Or skip confirmation prompt
-./scripts/droplet-deploy-dev.sh --force
+./scripts/droplet-deploy.sh dev --force
 ```
 
 **Differences from production setup:**
@@ -165,7 +171,7 @@ The development environment supports automatic deployment via GitHub Actions. Se
 
 1. Navigate to repository Settings → Secrets and variables → Actions
 2. Add these secrets:
-   - `DEV_DROPLET_HOST` = 165.232.161.21
+   - `DEV_DROPLET_HOST` = <DEV_DROPLET_IP>
    - `DEV_DROPLET_USER` = root
    - `DEV_DROPLET_SSH_KEY` = (paste full SSH private key)
 
@@ -201,21 +207,24 @@ Use these scripts to manually update running deployments with the latest Docker 
 **Run update script:**
 ```bash
 # From your local machine
-./scripts/droplet-update.sh
+./scripts/droplet-update.sh prod
 
 # Or skip confirmation prompt
-./scripts/droplet-update.sh --force
+./scripts/droplet-update.sh prod --force
 ```
 
 **What the script does:**
 1. **Verifies SSH connection** to production server
 2. **Shows current container status** (docker compose ps)
 3. **Pulls latest images** from ghcr.io (`:latest` tags)
-4. **Restarts containers** with new images (docker compose down && up -d)
+4. **Restarts containers** with new images using rolling restart strategy (docker compose up -d)
 5. **Waits for startup** (15 seconds)
 6. **Checks container health** (docker compose ps)
 7. **Verifies backend health** (curl http://localhost:4000/api/health)
 8. **Verifies frontend health** (curl http://localhost:3000/)
+
+**Production restart strategy:**
+Production uses `docker compose up -d` which performs a rolling restart to minimize downtime. This keeps existing containers running while starting new ones, ensuring continuous service availability.
 
 **Expected output:**
 ```
@@ -250,32 +259,35 @@ ssh root@<PROD_DROPLET_IP> 'cd /opt/tronrelic && docker compose logs --tail=50 b
 **Run update script:**
 ```bash
 # From your local machine
-./scripts/droplet-update-dev.sh
+./scripts/droplet-update.sh dev
 
 # Or skip confirmation prompt
-./scripts/droplet-update-dev.sh --force
+./scripts/droplet-update.sh dev --force
 ```
 
 **What the script does:**
-1. **Verifies SSH connection** to development server (165.232.161.21)
+1. **Verifies SSH connection** to development server (<DEV_DROPLET_IP>)
 2. **Shows current container status**
 3. **Pulls latest :dev images** from ghcr.io
-4. **Restarts containers** with new images
+4. **Restarts containers** with new images using full restart strategy (docker compose down && docker compose up -d)
 5. **Waits for startup** (15 seconds)
 6. **Checks container health**
 7. **Verifies backend and frontend health** via Nginx
+
+**Development restart strategy:**
+Development uses `docker compose down && docker compose up -d` which performs a full restart. This ensures a completely clean state, which is more suitable for development environments where state consistency matters more than uptime.
 
 **Expected output:**
 ```
 Dev deployment complete!
 
 Application URLs:
-  Frontend: http://165.232.161.21/
-  Backend:  http://165.232.161.21/api
-  System:   http://165.232.161.21/system
+  Frontend: http://<DEV_DROPLET_IP>/
+  Backend:  http://<DEV_DROPLET_IP>/api
+  System:   http://<DEV_DROPLET_IP>/system
 
 View logs with:
-  ssh root@165.232.161.21 'cd /opt/tronrelic-dev && docker compose logs -f'
+  ssh root@<DEV_DROPLET_IP> 'cd /opt/tronrelic-dev && docker compose logs -f'
 ```
 
 ## CI/CD Automated Deployment
@@ -319,7 +331,7 @@ TronRelic uses GitHub Actions for continuous integration and deployment.
 **Trigger production deployment:**
 ```bash
 # After GitHub Actions completes successfully:
-./scripts/droplet-update.sh
+./scripts/droplet-update.sh prod
 ```
 
 ### Development CI/CD (dev branch)
@@ -338,7 +350,7 @@ TronRelic uses GitHub Actions for continuous integration and deployment.
    - Push frontend image to ghcr.io
 
 2. **Automatic Deployment:**
-   - SSH to dev.tronrelic.com (165.232.161.21)
+   - SSH to dev.tronrelic.com (<DEV_DROPLET_IP>)
    - Run `cd /opt/tronrelic-dev && docker compose pull`
    - Run `docker compose down && docker compose up -d`
    - Wait 15 seconds for startup
@@ -356,7 +368,7 @@ TronRelic uses GitHub Actions for continuous integration and deployment.
 # Navigate to: https://github.com/delphian/tronrelic/actions
 
 # View deployment logs
-ssh root@165.232.161.21 'cd /opt/tronrelic-dev && docker compose logs --tail=100 -f'
+ssh root@<DEV_DROPLET_IP> 'cd /opt/tronrelic-dev && docker compose logs --tail=100 -f'
 ```
 
 ## Environment-Specific Configuration
@@ -429,17 +441,26 @@ REDIS_URL=redis://:<password>@redis:6379
 services:
   backend:
     image: ghcr.io/delphian/tronrelic/backend:dev  # Development tag
-    container_name: tronrelic-backend-dev
+    container_name: tronrelic-backend-dev           # Dev-specific container name
   frontend:
     image: ghcr.io/delphian/tronrelic/frontend:dev  # Development tag
-    container_name: tronrelic-frontend-dev
+    container_name: tronrelic-frontend-dev          # Dev-specific container name
   mongodb:
-    container_name: tronrelic-mongo-dev
+    container_name: tronrelic-mongo-dev             # Dev-specific container name
     command: ["mongod", "--auth"]  # Authentication enabled
   redis:
-    container_name: tronrelic-redis-dev
+    container_name: tronrelic-redis-dev             # Dev-specific container name
     command: ["redis-server", "--requirepass", "${REDIS_PASSWORD}"]  # Auth enabled
 ```
+
+**Development container naming:**
+All development containers use the `-dev` suffix to distinguish them from production containers:
+- `tronrelic-backend-dev` (instead of `tronrelic-backend-prod`)
+- `tronrelic-frontend-dev` (instead of `tronrelic-frontend-prod`)
+- `tronrelic-mongo-dev` (instead of `tronrelic-mongo-prod`)
+- `tronrelic-redis-dev` (instead of `tronrelic-redis-prod`)
+
+This naming convention allows production and development containers to coexist on the same server if needed, though they typically run on separate droplets.
 
 ## Deployment Rollback
 
@@ -579,20 +600,20 @@ npm run test:integration
 **Initial setup:**
 ```bash
 # Production (with SSL)
-./scripts/droplet-deploy.sh <DROPLET_IP>
-./scripts/droplet-setup-ssl.sh <DROPLET_IP> tronrelic.com your-email@example.com
+./scripts/droplet-deploy.sh prod
+./scripts/droplet-setup-ssl.sh prod tronrelic.com your-email@example.com
 
 # Development
-./scripts/droplet-deploy-dev.sh
+./scripts/droplet-deploy.sh dev
 ```
 
 **Manual updates:**
 ```bash
 # Production
-./scripts/droplet-update.sh
+./scripts/droplet-update.sh prod
 
 # Development
-./scripts/droplet-update-dev.sh
+./scripts/droplet-update.sh dev
 ```
 
 **Verify deployment:**
