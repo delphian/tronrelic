@@ -6,7 +6,7 @@ This document explains how TronRelic's scheduler works, how to control individua
 
 The scheduler is responsible for:
 
-- **Fetching market pricing data** - Every 5 minutes, all 14 energy rental markets are queried
+- **Fetching market pricing data** - Every 10 minutes, all 14 energy rental markets are queried
 - **Syncing the blockchain** - Every minute, new TRON blocks are retrieved and transactions are processed
 - **Maintaining system health** - Periodic cleanup jobs, alert dispatch, and chain parameter updates
 
@@ -59,7 +59,7 @@ TronRelic includes six built-in scheduler jobs:
 
 | Job Name | Default Schedule | Purpose | Impact if Down |
 |----------|------------------|---------|-----------------|
-| `markets:refresh` | Every 5 min | Fetch pricing from all 14 energy markets | Market leaderboard shows stale prices |
+| `markets:refresh` | Every 10 min | Fetch pricing from all 14 energy markets | Market leaderboard shows stale prices |
 | `blockchain:sync` | Every 1 min | Retrieve new TRON blocks and index transactions | Whale alerts, transaction data stale |
 | `cache:cleanup` | Every 60 min | Remove expired cache entries | Memory usage grows unbounded |
 | `alerts:dispatch` | Every 1 min | Send pending alert notifications | Users don't receive alerts |
