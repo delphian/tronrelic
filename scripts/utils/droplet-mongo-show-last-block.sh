@@ -58,4 +58,5 @@ if (!documents.length) {
 EOF
 )
 
-remote_exec "docker exec -i -e DB_NAME=\"${DB_NAME}\" -e LIMIT=\"${LIMIT}\" $MONGO_CONTAINER mongosh --username admin --password '$MONGO_PASSWORD' --authenticationDatabase admin --quiet --eval \"$MONGOSH_SCRIPT\""
+# Pass password via environment variable to prevent exposure in process lists
+remote_exec "docker exec -i -e DB_NAME=\"${DB_NAME}\" -e LIMIT=\"${LIMIT}\" -e MONGO_PASSWORD='$MONGO_PASSWORD' $MONGO_CONTAINER sh -c 'mongosh --username admin --password \"\$MONGO_PASSWORD\" --authenticationDatabase admin --quiet --eval \"$MONGOSH_SCRIPT\"'"

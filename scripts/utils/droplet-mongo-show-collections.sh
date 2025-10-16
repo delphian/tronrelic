@@ -43,10 +43,11 @@ DB_NAME="${2:-$DEFAULT_DB}"
 MONGO_PASSWORD=$(get_mongo_password)
 
 # List collections
-remote_exec "docker exec -i $MONGO_CONTAINER mongosh \
+# Pass password via environment variable to prevent exposure in process lists
+remote_exec "docker exec -i -e MONGO_PASSWORD='$MONGO_PASSWORD' $MONGO_CONTAINER sh -c 'mongosh \
     --username admin \
-    --password '$MONGO_PASSWORD' \
+    --password \"\$MONGO_PASSWORD\" \
     --authenticationDatabase admin \
     --quiet \
-    --eval 'db.getCollectionNames()' \
-    $DB_NAME"
+    --eval \"db.getCollectionNames()\" \
+    $DB_NAME'"
