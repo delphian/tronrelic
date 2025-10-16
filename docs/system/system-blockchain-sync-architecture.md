@@ -302,6 +302,6 @@ This allows the system to be useful immediately rather than requiring weeks of b
 ## Related Documentation
 
 - [plugins-blockchain-observers.md](../plugins/plugins-blockchain-observers.md) - How to build observers that react to transactions
-- [scheduler-operations.md](./scheduler-operations.md) - How the `blockchain:sync` job is scheduled and controlled
+- [system-scheduler-operations.md](./system-scheduler-operations.md) - How the `blockchain:sync` job is scheduled and controlled
 - [environment.md](../environment.md) - `ENABLE_SCHEDULER` and `TRONGRID_API_KEY` configuration
 - [tron-chain-parameters.md](../tron/tron-chain-parameters.md) - How chain parameters (energy costs) are fetched and cached
