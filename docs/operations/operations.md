@@ -51,21 +51,21 @@ Development (dev.tronrelic.com)
 
 This directory contains four focused documents covering different aspects of deployment:
 
-**See [deployment-server-info.md](./deployment-server-info.md) for complete details on:**
+**See [operations-server-info.md](./operations-server-info.md) for complete details on:**
 - Production and development server locations
 - IP addresses and domain configurations
 - SSH authentication and access procedures
 - Required credentials and secrets management
 - GitHub Container Registry authentication
 
-**See [deployment-workflows.md](./deployment-workflows.md) for complete details on:**
+**See [operations-workflows.md](./operations-workflows.md) for complete details on:**
 - Initial server setup from bare Ubuntu to running TronRelic
 - Manual deployment updates using deployment scripts
 - CI/CD automation with GitHub Actions
 - SSL certificate setup with Let's Encrypt
 - Environment-specific configuration (production vs development)
 
-**See [deployment-remote-access.md](./deployment-remote-access.md) for complete details on:**
+**See [operations-remote-access.md](./operations-remote-access.md) for complete details on:**
 - SSH connection procedures and authentication
 - Docker container management commands
 - Log inspection and debugging techniques
@@ -201,9 +201,9 @@ TronRelic uses GitHub Actions for automated deployment:
 ## Further Reading
 
 **Detailed documentation:**
-- [deployment-server-info.md](./deployment-server-info.md) - Server locations, credentials, authentication
-- [deployment-workflows.md](./deployment-workflows.md) - Setup and update procedures
-- [deployment-remote-access.md](./deployment-remote-access.md) - SSH, debugging, remote management
+- [operations-server-info.md](./operations-server-info.md) - Server locations, credentials, authentication
+- [operations-workflows.md](./operations-workflows.md) - Setup and update procedures
+- [operations-remote-access.md](./operations-remote-access.md) - SSH, debugging, remote management
 
 **Related topics:**
 - [docker-deployment.md](../docker-deployment.md) - Docker architecture and local development
