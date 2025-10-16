@@ -93,5 +93,4 @@
 - Document auth headers/tokens for admin and Telegram flows.
 - Define rate limit ceilings per endpoint (align with worker config).
 - Capture error schemas for all routes.
-- Link to ETL/migration scripts once authored (Phase 2).
 - Expand to include planned gRPC/Webhook contracts if introduced.

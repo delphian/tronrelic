@@ -103,7 +103,7 @@ Every market goes through the same automatic pipeline. **Fetchers only provide r
 
 ### 1. Data Capture (Fetchers)
 
-Each market has a dedicated fetcher that extends `BaseMarketFetcher` and implements the `pull()` method. Fetchers run on a schedule (default: every 10 minutes) and return a `MarketSnapshot` containing raw market data.
+Each market has a dedicated fetcher that extends `BaseMarketFetcher` and implements the `pull()` method. All fetchers execute together via the centralized `markets:refresh` cron job (default: every 10 minutes), and return a `MarketSnapshot` containing raw market data.
 
 **Architecture pattern:**
 

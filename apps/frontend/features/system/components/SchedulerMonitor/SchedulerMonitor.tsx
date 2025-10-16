@@ -7,6 +7,7 @@ import styles from './SchedulerMonitor.module.css';
 interface SchedulerJob {
     name: string;
     schedule: string;
+    enabled: boolean;
     lastRun: string | null;
     nextRun: string | null;
     status: 'running' | 'success' | 'failed' | 'never_run';
@@ -58,6 +59,8 @@ export function SchedulerMonitor({ token }: Props) {
     const [jobs, setJobs] = useState<SchedulerJob[]>([]);
     const [health, setHealth] = useState<SchedulerHealth | null>(null);
     const [loading, setLoading] = useState(true);
+    const [updatingJob, setUpdatingJob] = useState<string | null>(null);
+    const [feedback, setFeedback] = useState<{ jobName: string; type: 'success' | 'error'; message: string } | null>(null);
 
     /**
      * Fetches scheduler health and job status data from admin API endpoints.
@@ -149,6 +152,113 @@ export function SchedulerMonitor({ token }: Props) {
         }
     };
 
+    /**
+     * Validates a cron expression format.
+     *
+     * Ensures the cron expression has exactly 5 space-separated fields:
+     * minute, hour, day of month, month, day of week.
+     *
+     * @param {string} schedule - The cron expression to validate
+     * @returns {boolean} True if valid, false otherwise
+     */
+    const isValidCronExpression = (schedule: string): boolean => {
+        const trimmed = schedule.trim();
+        const fields = trimmed.split(/\s+/);
+        return fields.length === 5;
+    };
+
+    /**
+     * Updates a scheduler job's configuration via the admin API.
+     *
+     * Sends a PATCH request to update either the schedule or enabled status.
+     * Provides visual feedback via temporary success/error messages and
+     * refreshes job data on successful update.
+     *
+     * @param {string} jobName - Name of the job to update
+     * @param {Partial<Pick<SchedulerJob, 'schedule' | 'enabled'>>} updates - Fields to update
+     */
+    const updateJob = async (jobName: string, updates: Partial<Pick<SchedulerJob, 'schedule' | 'enabled'>>) => {
+        setUpdatingJob(jobName);
+        setFeedback(null);
+
+        try {
+            const response = await fetch(
+                `${runtimeConfig.apiBaseUrl}/admin/system/scheduler/job/${jobName}`,
+                {
+                    method: 'PATCH',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Admin-Token': token
+                    },
+                    body: JSON.stringify(updates)
+                }
+            );
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({ message: 'Unknown error' }));
+                throw new Error(errorData.message || `Server returned ${response.status}`);
+            }
+
+            setFeedback({
+                jobName,
+                type: 'success',
+                message: 'Job updated successfully'
+            });
+
+            // Refresh data after successful update
+            await fetchData();
+        } catch (error) {
+            const message = error instanceof Error ? error.message : 'Failed to update job';
+            setFeedback({
+                jobName,
+                type: 'error',
+                message
+            });
+        } finally {
+            setUpdatingJob(null);
+
+            // Clear feedback after 3 seconds
+            setTimeout(() => {
+                setFeedback(prev => prev?.jobName === jobName ? null : prev);
+            }, 3000);
+        }
+    };
+
+    /**
+     * Handles toggling the enabled status of a scheduler job.
+     *
+     * @param {string} jobName - Name of the job to toggle
+     * @param {boolean} currentEnabled - Current enabled state
+     */
+    const handleToggleEnabled = async (jobName: string, currentEnabled: boolean) => {
+        await updateJob(jobName, { enabled: !currentEnabled });
+    };
+
+    /**
+     * Handles updating a job's schedule after validation.
+     *
+     * Validates the cron expression before sending the update request.
+     * Shows inline error message if validation fails.
+     *
+     * @param {string} jobName - Name of the job to update
+     * @param {string} newSchedule - New cron schedule expression
+     */
+    const handleScheduleChange = async (jobName: string, newSchedule: string) => {
+        if (!isValidCronExpression(newSchedule)) {
+            setFeedback({
+                jobName,
+                type: 'error',
+                message: 'Invalid cron expression. Must have 5 space-separated fields.'
+            });
+            setTimeout(() => {
+                setFeedback(prev => prev?.jobName === jobName ? null : prev);
+            }, 3000);
+            return;
+        }
+
+        await updateJob(jobName, { schedule: newSchedule });
+    };
+
     if (loading) {
         return <div className={styles.loading}>Loading scheduler monitoring data...</div>;
     }
@@ -161,20 +271,20 @@ export function SchedulerMonitor({ token }: Props) {
                 {health && (
                     <div className={styles.health_grid}>
                         <div className={`${styles.metric_card} ${health.enabled ? styles['metric_card--enabled'] : styles['metric_card--disabled']}`}>
-                            <div className={styles.metric_card__label}>Status</div>
-                            <div className={styles.metric_card__value}>{health.enabled ? 'Enabled' : 'Disabled'}</div>
+                            <div className={styles['metric_card__label']}>Status</div>
+                            <div className={styles['metric_card__value']}>{health.enabled ? 'Enabled' : 'Disabled'}</div>
                         </div>
 
                         {health.uptime !== null && (
                             <div className={styles.metric_card}>
-                                <div className={styles.metric_card__label}>Uptime</div>
-                                <div className={styles.metric_card__value}>{formatUptime(health.uptime)}</div>
+                                <div className={styles['metric_card__label']}>Uptime</div>
+                                <div className={styles['metric_card__value']}>{formatUptime(health.uptime)}</div>
                             </div>
                         )}
 
                         <div className={styles.metric_card}>
-                            <div className={styles.metric_card__label}>Success Rate</div>
-                            <div className={styles.metric_card__value}>{health.successRate.toFixed(1)}%</div>
+                            <div className={styles['metric_card__label']}>Success Rate</div>
+                            <div className={styles['metric_card__value']}>{health.successRate.toFixed(1)}%</div>
                         </div>
                     </div>
                 )}
@@ -184,43 +294,102 @@ export function SchedulerMonitor({ token }: Props) {
             <section className={styles.section}>
                 <h2 className={styles.section__title}>Scheduled Jobs</h2>
                 <div className={styles.job_list}>
-                    {jobs.map(job => (
-                        <div
-                            key={job.name}
-                            className={`${styles.job_card} ${getJobCardClass(job.status)}`}
-                        >
-                            <div className={styles.job_header}>
-                                <div className={styles.job_header__info}>
-                                    <h3 className={styles.job_header__title}>{job.name}</h3>
-                                    <p className={styles.job_header__schedule}>{job.schedule}</p>
-                                </div>
-                                <span className={`${styles.status_badge} ${getStatusBadgeClass(job.status)}`}>
-                                    {job.status.replace('_', ' ')}
-                                </span>
-                            </div>
+                    {jobs.map(job => {
+                        const isUpdating = updatingJob === job.name;
+                        const jobFeedback = feedback?.jobName === job.name ? feedback : null;
 
-                            <div className={styles.job_meta}>
-                                {job.lastRun && (
-                                    <div>
-                                        <span className={styles.job_meta__label}>Last run: </span>
-                                        <span>{new Date(job.lastRun).toLocaleString()}</span>
+                        return (
+                            <div
+                                key={job.name}
+                                className={`${styles.job_card} ${getJobCardClass(job.status)} ${job.enabled ? styles['job_card--enabled'] : styles['job_card--disabled']}`}
+                            >
+                                <div className={styles.job_header}>
+                                    <div className={styles['job_header__info']}>
+                                        <h3 className={styles['job_header__title']}>{job.name}</h3>
+                                    </div>
+                                    <span className={`${styles.status_badge} ${getStatusBadgeClass(job.status)}`}>
+                                        {job.status.replace('_', ' ')}
+                                    </span>
+                                </div>
+
+                                {/* Admin Controls */}
+                                <div className={styles.controls}>
+                                    <div className={styles.control_group}>
+                                        <label className={styles.control_label}>
+                                            <input
+                                                type="checkbox"
+                                                checked={job.enabled}
+                                                onChange={() => handleToggleEnabled(job.name, job.enabled)}
+                                                disabled={isUpdating}
+                                                className={styles.checkbox}
+                                            />
+                                            <span className={styles.checkbox_label}>
+                                                {job.enabled ? 'Enabled' : 'Disabled'}
+                                            </span>
+                                        </label>
+                                    </div>
+
+                                    <div className={styles.control_group}>
+                                        <label className={styles.control_label}>
+                                            <span className={styles.input_label}>Schedule:</span>
+                                            <input
+                                                type="text"
+                                                defaultValue={job.schedule}
+                                                onBlur={(e) => {
+                                                    const newValue = e.target.value.trim();
+                                                    if (newValue !== job.schedule) {
+                                                        handleScheduleChange(job.name, newValue);
+                                                    }
+                                                }}
+                                                onKeyDown={(e) => {
+                                                    if (e.key === 'Enter') {
+                                                        e.currentTarget.blur();
+                                                    }
+                                                }}
+                                                disabled={isUpdating}
+                                                className={styles.schedule_input}
+                                                placeholder="*/5 * * * *"
+                                            />
+                                        </label>
+                                    </div>
+                                </div>
+
+                                {/* Loading/Feedback */}
+                                {isUpdating && (
+                                    <div className={styles.feedback_loading}>
+                                        Updating...
                                     </div>
                                 )}
-                                {job.duration !== null && (
-                                    <div>
-                                        <span className={styles.job_meta__label}>Duration: </span>
-                                        <span>{job.duration.toFixed(2)}s</span>
+
+                                {jobFeedback && !isUpdating && (
+                                    <div className={jobFeedback.type === 'success' ? styles.feedback_success : styles.feedback_error}>
+                                        {jobFeedback.message}
+                                    </div>
+                                )}
+
+                                <div className={styles.job_meta}>
+                                    {job.lastRun && (
+                                        <div>
+                                            <span className={styles['job_meta__label']}>Last run: </span>
+                                            <span>{new Date(job.lastRun).toLocaleString()}</span>
+                                        </div>
+                                    )}
+                                    {job.duration !== null && (
+                                        <div>
+                                            <span className={styles['job_meta__label']}>Duration: </span>
+                                            <span>{job.duration.toFixed(2)}s</span>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {job.error && (
+                                    <div className={styles.error_box}>
+                                        {job.error}
                                     </div>
                                 )}
                             </div>
-
-                            {job.error && (
-                                <div className={styles.error_box}>
-                                    {job.error}
-                                </div>
-                            )}
-                        </div>
-                    ))}
+                        );
+                    })}
                 </div>
             </section>
         </div>
