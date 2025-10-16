@@ -206,6 +206,6 @@ TronRelic uses GitHub Actions for automated deployment:
 - [operations-remote-access.md](./operations-remote-access.md) - SSH, debugging, remote management
 
 **Related topics:**
-- [docker-deployment.md](../docker-deployment.md) - Docker architecture and local development
+- [README.md - Docker Quick Start](../../README.md#option-1-docker-recommended-for-production) - Docker architecture and local development
 - [environment.md](../environment.md) - Environment variable configuration
 - [api-catalog.md](../api-catalog.md) - API endpoints and health checks
