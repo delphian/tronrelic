@@ -22,7 +22,7 @@ set -e  # Exit on error
 
 # Source environment configuration
 SCRIPT_DIR="$(dirname "$0")"
-source "$SCRIPT_DIR/droplet-config.sh"
+source "$SCRIPT_DIR/../droplet-config.sh"
 
 # Parse arguments
 ENV="${1:-prod}"
