@@ -16,9 +16,9 @@ This guide keeps TronRelic’s documentation consistent, concise, and immediatel
 
 ## Tone and Language
 
-- Write in plain English. Treat each paragraph like you’re explaining the concept to a teammate, not writing a reference manual.
-- Prefer active voice. (“Use `database.set` to seed defaults” instead of “Defaults should be seeded with `database.set`.”)
-- Define any unavoidable domain terms once, then rely on that definition.
+- Write in plain English. Treat each paragraph like you're explaining the concept to a teammate, not writing a reference manual.
+- Prefer active voice. ("Use `database.set` to seed defaults" instead of "Defaults should be seeded with `database.set`.")
+- Define any unavoidable domain terms once, then rely on that definition. Use exact terminology from `@tronrelic/types` and other shared packages to maintain consistency across the codebase.
 - Keep sentences short and scannable. Break up long explanations with bullet points or tables.
 
 ## Structure Template
@@ -51,6 +51,7 @@ Adapt the headings as needed, but always keep the “why → how → example” 
 - Only include code when it adds clarity. Verbose blocks belong in dedicated examples, not in the middle of explanation.
 - Inline comments should explain intent, not restate the obvious.
 - When possible, link to real files or appendices instead of embedding large samples.
+- Ensure all code samples are syntactically correct and follow project conventions: 4-space indentation, TypeScript, and JSDoc comments on all functions and classes.
 
 ## Maintaining Existing Docs
 
