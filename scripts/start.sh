@@ -164,6 +164,16 @@ ensure_docker_running() {
 
 ensure_docker_running
 
+# Clean up any stray processes on ports 3000 and 4000 before starting
+log INFO "Checking for processes on ports 3000 and 4000..."
+for port in 3000 4000; do
+    if lsof -ti:${port} >/dev/null 2>&1; then
+        log WARN "Found process on port ${port}, killing it"
+        lsof -ti:${port} | xargs kill -9 2>/dev/null || true
+        sleep 1
+    fi
+done
+
 # Change to project root for docker compose commands
 cd "${MONO_ROOT}"
 

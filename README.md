@@ -75,7 +75,7 @@ See [docs/operations/operations.md](docs/operations/operations.md) for detailed 
 ./scripts/start.sh --force-build   # Full rebuild (clears caches and rebuilds from scratch)
 ./scripts/start.sh --force-docker  # Recreate MongoDB/Redis containers
 ./scripts/start.sh --prod          # Run frontend in production mode (defaults to dev)
-./scripts/start.sh --force         # Full reset (all of the above + ETL refresh)
+./scripts/start.sh --force         # Full reset (combines all of the above)
 ```
 
 **Performance optimizations:**

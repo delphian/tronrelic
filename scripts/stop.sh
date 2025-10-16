@@ -47,6 +47,20 @@ log() {
   printf "%b[%s]%b %s\n" "${color}" "${level}" "\033[0m" "$*"
 }
 
+cleanup_ports() {
+    # Kill any processes still running on ports 3000 and 4000
+    log INFO "Checking for processes on ports 3000 and 4000..."
+    for port in 3000 4000; do
+        if lsof -ti:${port} >/dev/null 2>&1; then
+            log WARN "Found process on port ${port}, killing it"
+            lsof -ti:${port} | xargs kill -9 2>/dev/null || true
+        fi
+    done
+}
+
+# Ensure port cleanup happens even if script is interrupted
+trap cleanup_ports EXIT
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --volumes)

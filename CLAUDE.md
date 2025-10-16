@@ -42,6 +42,7 @@ When a task arrives, Claude MUST respond with:
 **documentation-writer:**
 - Keywords: documentation, docs, README, markdown, .md files, documentation gaps, documentation review, documentation standards
 - Use for: ANY work involving project documentation (analysis, investigation, creation, updates, reviews, improvements)
+- **MANDATORY DELEGATION:** If the conversation involves ANY documentation work (analyzing gaps, reading docs to evaluate changes, creating/updating/reviewing .md files), ALWAYS delegate to documentation-writer BEFORE doing any analysis or file operations yourself. This applies even if the task seems trivial or you're in the middle of other work. Documentation work is never self-handled.
 
 **operations-specialist:**
 - Keywords: deployment, infrastructure, server, Docker, docker-compose, Nginx, SSL, certificates, CI/CD, GitHub Actions, MongoDB admin, Redis admin, database, SSH, firewall, environment variables, DNS, production, staging, droplet, Digital Ocean, logs, monitoring
@@ -95,3 +96,20 @@ Claude MUST automatically use these agents when working with these file paths.
 - `docs/operations/**`
 
 **Exception:** If the user explicitly says "don't use agents" or "do it yourself", skip delegation.
+
+# Communication Style
+
+**NOTE:** Communication style guidelines apply AFTER agent delegation is resolved. If a task requires delegation, the delegation protocol takes precedence over brevity.
+
+**For questions:**
+- Lead with a direct answer (2-3 sentences max) in plain english
+- Add key details only if needed
+- Use bullets over paragraphs
+
+**For tasks:**
+- Brief explanation, then execute
+- Show results, not process narration
+
+**Example:**
+Good: "Yes, `.run` is mounted (line 84). Use `tail -f .run/*.log` to monitor."
+Avoid: "Let me check the file... After examining... I can see that..."
