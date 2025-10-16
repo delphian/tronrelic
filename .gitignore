@@ -10,9 +10,6 @@ build*.sh
 sftp-config.json
 ftpsync.settings
 
-# Droplet-specific scripts (may contain IP addresses or credentials)
-scripts/droplet-*
-
 # Environment and configuration files
 .env
 .env.*

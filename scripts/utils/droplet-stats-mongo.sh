@@ -33,9 +33,10 @@ get_config "$ENV"
 MONGO_PASSWORD=$(get_mongo_password)
 
 # Execute MongoDB statistics query
-remote_exec "docker exec -i $MONGO_CONTAINER mongosh \
+# Pass password via environment variable to prevent exposure in process lists
+remote_exec "docker exec -i -e MONGO_PASSWORD='$MONGO_PASSWORD' $MONGO_CONTAINER sh -c 'mongosh \
     --username admin \
-    --password '$MONGO_PASSWORD' \
+    --password \"\$MONGO_PASSWORD\" \
     --authenticationDatabase admin \
     --quiet \
-    --eval 'db.getMongo().getDBNames().forEach(function(dbName){db=db.getSiblingDB(dbName);db.getCollectionNames().forEach(function(c){s=db.getCollection(c).stats();print(dbName+\".\"+c+\": \"+s.size+\" bytes (\"+s.count+\" docs)\");})})'"
+    --eval \"db.getMongo().getDBNames().forEach(function(dbName){db=db.getSiblingDB(dbName);db.getCollectionNames().forEach(function(c){s=db.getCollection(c).stats();print(dbName+\\\".\\\"+c+\\\": \\\"+s.size+\\\" bytes (\\\"+s.count+\\\" docs)\\\");})})\"'"
