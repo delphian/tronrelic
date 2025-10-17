@@ -1,0 +1,23 @@
+/**
+ * Resource Tracking Plugin Global Styles
+ *
+ * This file contains minimal global styles for the resource-tracking plugin.
+ * Most styling is handled through CSS Modules to prevent conflicts with
+ * other plugins and the core application.
+ *
+ * Global styles should only be used for:
+ * - Plugin-wide CSS variable overrides
+ * - Shared animation keyframes
+ * - Reset/normalization specific to plugin components
+ */
+
+/* Plugin-specific CSS variables (if needed in the future) */
+:root {
+    /* Resource tracking color palette */
+    --resource-tracking-energy-delegated: #22c55e;
+    --resource-tracking-energy-reclaimed: #ef4444;
+    --resource-tracking-net-energy: #3b82f6;
+    --resource-tracking-bandwidth-delegated: #a855f7;
+    --resource-tracking-bandwidth-reclaimed: #f97316;
+    --resource-tracking-net-bandwidth: #06b6d4;
+}

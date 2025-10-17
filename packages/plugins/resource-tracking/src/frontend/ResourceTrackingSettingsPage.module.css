@@ -1,0 +1,79 @@
+/* Resource Tracking Settings Page Styles */
+
+.page {
+    container-type: inline-size;
+    container-name: resource-tracking-settings-page;
+    padding: var(--spacing-lg);
+}
+
+.header {
+    margin-bottom: var(--spacing-xl);
+}
+
+.title {
+    font-size: var(--text-3xl);
+    font-weight: 700;
+    color: var(--color-text-primary);
+    margin: 0 0 var(--spacing-sm) 0;
+}
+
+.subtitle {
+    font-size: var(--text-base);
+    color: var(--color-text-secondary);
+    margin: 0;
+}
+
+.container {
+    max-width: 600px;
+    padding: var(--spacing-xl);
+}
+
+.form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-xl);
+}
+
+.field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-xs);
+}
+
+.label {
+    font-weight: 600;
+    font-size: var(--text-base);
+    color: var(--color-text-primary);
+}
+
+.description {
+    font-size: var(--text-sm);
+    color: var(--color-text-secondary);
+    margin: 0 0 var(--spacing-sm) 0;
+    line-height: 1.5;
+}
+
+.message {
+    padding: var(--spacing-md);
+    border-radius: var(--radius-md);
+    font-size: var(--text-sm);
+    font-weight: 500;
+}
+
+.messageSuccess {
+    background-color: var(--color-success-bg, #22c55e20);
+    color: var(--color-success, #22c55e);
+    border: 1px solid var(--color-success, #22c55e);
+}
+
+.messageError {
+    background-color: var(--color-error-bg, #ef444420);
+    color: var(--color-error, #ef4444);
+    border: 1px solid var(--color-error, #ef4444);
+}
+
+.actions {
+    display: flex;
+    justify-content: flex-start;
+    padding-top: var(--spacing-md);
+}
