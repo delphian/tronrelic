@@ -113,19 +113,34 @@ export class PluginDatabaseService implements IPluginDatabase {
      * Set a value in the plugin's key-value store.
      *
      * Upserts (insert or update) a key-value pair in the special `_kv` collection.
-     * Values must be JSON-serializable.
+     * Values must be JSON-serializable. Verifies that MongoDB acknowledged the write
+     * operation to prevent silent failures.
      *
      * @param key - The key to store under
      * @param value - The value to store
+     * @throws Error if MongoDB does not acknowledge the write operation
      */
     public async set<T = any>(key: string, value: T): Promise<void> {
         try {
             const collection = this.getCollection<{ key: string; value: T }>('_kv');
-            await collection.updateOne(
+            const result = await collection.updateOne(
                 { key } as Filter<{ key: string; value: T }>,
                 { $set: { key, value } } as UpdateFilter<{ key: string; value: T }>,
                 { upsert: true }
             );
+
+            // Verify write was acknowledged by MongoDB
+            if (!result.acknowledged) {
+                throw new Error('MongoDB write was not acknowledged');
+            }
+
+            // Verify something was actually modified or inserted
+            if (result.modifiedCount === 0 && result.upsertedCount === 0) {
+                logger.warn(
+                    { pluginId: this.pluginId, key, result },
+                    'updateOne completed but no documents were modified or upserted'
+                );
+            }
         } catch (error) {
             logger.error({ error, pluginId: this.pluginId, key }, 'Failed to set key in plugin KV store');
             throw error;

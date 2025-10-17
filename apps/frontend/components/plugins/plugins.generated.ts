@@ -11,6 +11,11 @@ async function load_example_dashboard(): Promise<IPlugin> {
     return resolvePluginExport('example-dashboard', module);
 }
 
+async function load_resource_tracking(): Promise<IPlugin> {
+    const module = await import('../../../../packages/plugins/resource-tracking/src/frontend/frontend');
+    return resolvePluginExport('resource-tracking', module);
+}
+
 async function load_whale_alerts(): Promise<IPlugin> {
     const module = await import('../../../../packages/plugins/whale-alerts/src/frontend/frontend');
     return resolvePluginExport('whale-alerts', module);
@@ -18,6 +23,7 @@ async function load_whale_alerts(): Promise<IPlugin> {
 
 export const frontendPluginLoaders: Record<string, () => Promise<IPlugin>> = {
     'example-dashboard': load_example_dashboard,
+    'resource-tracking': load_resource_tracking,
     'whale-alerts': load_whale_alerts,
 };
 
