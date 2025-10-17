@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useSystemAuth } from '../../../../features/system';
 import type { IPluginWebSocketStats, IAggregatePluginWebSocketStats } from '@tronrelic/types';
 
 /**
@@ -8,9 +9,10 @@ import type { IPluginWebSocketStats, IAggregatePluginWebSocketStats } from '@tro
  *
  * Displays real-time statistics for all plugin WebSocket subscriptions, rooms, and event
  * emissions. Provides system-wide aggregates and per-plugin detailed breakdowns for debugging
- * and capacity planning. Requires admin authentication.
+ * and capacity planning. Requires admin authentication via shared SystemAuth context.
  */
 export default function WebSocketMonitoringPage() {
+    const { token } = useSystemAuth();
     const [aggregate, setAggregate] = useState<IAggregatePluginWebSocketStats | null>(null);
     const [pluginStats, setPluginStats] = useState<IPluginWebSocketStats[]>([]);
     const [loading, setLoading] = useState(true);
@@ -25,13 +27,6 @@ export default function WebSocketMonitoringPage() {
      */
     const fetchStats = async () => {
         try {
-            const token = localStorage.getItem('adminToken');
-            if (!token) {
-                setError('Admin token not found. Please log in.');
-                setLoading(false);
-                return;
-            }
-
             const [aggregateRes, statsRes] = await Promise.all([
                 fetch('/api/system/websockets/aggregate', {
                     headers: { 'Authorization': `Bearer ${token}` }
@@ -71,42 +66,22 @@ export default function WebSocketMonitoringPage() {
     }, []);
 
     if (loading) {
-        return (
-            <div className="page">
-                <div className="page-header">
-                    <h1 className="page-title">Plugin WebSocket Monitoring</h1>
-                </div>
-                <p>Loading WebSocket statistics...</p>
-            </div>
-        );
+        return <p>Loading WebSocket statistics...</p>;
     }
 
     if (error) {
         return (
-            <div className="page">
-                <div className="page-header">
-                    <h1 className="page-title">Plugin WebSocket Monitoring</h1>
-                </div>
-                <div style={{ padding: '1rem', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid #ef4444', borderRadius: '0.5rem' }}>
-                    <p style={{ color: '#ef4444', margin: 0 }}>Error: {error}</p>
-                </div>
+            <div style={{ padding: '1rem', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid #ef4444', borderRadius: '0.5rem' }}>
+                <p style={{ color: '#ef4444', margin: 0 }}>Error: {error}</p>
             </div>
         );
     }
 
     return (
-        <div className="page">
-            <div className="page-header">
-                <h1 className="page-title">Plugin WebSocket Monitoring</h1>
-                <p style={{ color: 'var(--color-text-subtle)', marginTop: '0.5rem' }}>
-                    Real-time monitoring of plugin WebSocket subscriptions and events
-                </p>
-            </div>
+        <div>
 
-            {/* Aggregate Statistics */}
             {aggregate && (
                 <div style={{ marginBottom: '2rem' }}>
-                    <h2 style={{ fontSize: '1.25rem', fontWeight: 600, marginBottom: '1rem' }}>System Overview</h2>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
                         <StatCard
                             label="Total Plugins"
@@ -141,9 +116,7 @@ export default function WebSocketMonitoringPage() {
                 </div>
             )}
 
-            {/* Per-Plugin Statistics */}
             <div>
-                <h2 style={{ fontSize: '1.25rem', fontWeight: 600, marginBottom: '1rem' }}>Plugin Details</h2>
                 {pluginStats.length === 0 ? (
                     <p style={{ color: 'var(--color-text-subtle)' }}>No plugins with WebSocket capabilities found.</p>
                 ) : (

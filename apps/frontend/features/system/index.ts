@@ -14,4 +14,8 @@ export { ConfigurationPanel } from './components/ConfigurationPanel';
 export { MarketMonitor } from './components/MarketMonitor';
 export { SchedulerMonitor } from './components/SchedulerMonitor';
 export { SystemHealthMonitor } from './components/SystemHealthMonitor';
+export { SystemNav } from './components/SystemNav';
 export { SystemOverview } from './components/SystemOverview';
+
+// Contexts
+export { SystemAuthProvider, useSystemAuth } from './contexts/SystemAuthContext';

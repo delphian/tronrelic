@@ -11,7 +11,15 @@
 
 # Agent Delegation Protocol
 
-When a task arrives, Claude MUST respond with:
+## MANDATORY: Check Delegation BEFORE Any Implementation
+
+When a task involves implementation work (keywords: "implement", "create", "build", "add", "update", "write code", "make changes"), Claude MUST:
+
+1. **STOP** - Do not create todo lists, plans, or start implementation
+2. **CHECK** - Scan for agent trigger keywords in the request
+3. **DELEGATE** - If keywords match, delegate immediately
+
+Response format:
 
 "I'm analyzing this task... [brief analysis]
 
@@ -26,6 +34,8 @@ When a task arrives, Claude MUST respond with:
 1. User explicitly says "don't use agents" or "do it yourself"
 2. Task is trivial (< 5 lines of code, single file read)
 3. Task is purely conversational
+
+**If you skip delegation, explicitly state which condition applies.**
 
 # Subagent Delegation Rules
 
@@ -43,6 +53,7 @@ When a task arrives, Claude MUST respond with:
 
 **frontend-specialist:**
 - Keywords: frontend, React, Next.js, components, UI, styling, TailwindCSS, Redux, Socket.IO client, pages, layouts, hooks, client-side, App Router, server components, client components, forms, validation, routing, navigation, UX, user experience, design, accessibility
+- **Mandatory triggers** (always delegate): URL structure changes, navigation components, routing implementation, layout creation, authentication UI, context providers
 - Use for: ALL UX/UI work across TronRelic (component design, styling, user experience, accessibility, visual design)
 - Scope: PRIMARY agent for user experience and visual design regardless of location (apps/frontend OR packages/plugins/*/frontend). Defers to tronrelic-plugin-specialist for plugin logic, architecture, and system integration
 - Exception: Work on general Next.js infrastructure or build configuration may not require this subagent
