@@ -7,6 +7,7 @@
 @docs/system/system.md          - System architecture overview
 @docs/markets/markets.md        - Market system overview
 @docs/operations/operations.md  - Deployment and operations overview
+@docs/TODO.md                   - Future requirements.
 
 # Agent Delegation Protocol
 

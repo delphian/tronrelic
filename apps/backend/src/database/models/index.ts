@@ -1,7 +1,5 @@
 export * from './market-model.js';
 export * from './transaction-model.js';
-export * from './comment-model.js';
-export * from './chat-message-model.js';
 export * from './sync-state-model.js';
 export * from './cache-model.js';
 export * from './notification-subscription-model.js';

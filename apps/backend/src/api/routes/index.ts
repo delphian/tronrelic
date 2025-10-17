@@ -10,7 +10,6 @@ import { telegramRouter } from './telegram.router.js';
 import { adminMarketsRouter } from './admin-markets.router.js';
 import { inflowsRouter } from './inflows.router.js';
 import { outflowsRouter } from './outflows.router.js';
-import { adminModerationRouter } from './admin-moderation.router.js';
 import { dashboardRouter } from './dashboard.router.js';
 import { resourceRouter } from './resource.router.js';
 import { energyRouter } from './energy.router.js';
@@ -41,7 +40,6 @@ export function createApiRouter() {
   router.use('/live', liveRouter());
   router.use('/tokens', tokensRouter());
   router.use('/admin/markets', adminMarketsRouter());
-  router.use('/admin/moderation', adminModerationRouter());
   router.use('/admin/system', systemRouter());
   router.use('/dashboard', dashboardRouter());
   router.use('/plugins', pluginsRouter);

@@ -246,8 +246,9 @@ docker exec tronrelic-backend-prod node --version
 # List files in frontend
 docker exec tronrelic-frontend-prod ls -la /app
 
-# Check MongoDB collections
-docker exec tronrelic-mongo-prod mongosh tronrelic --eval "db.getCollectionNames()"
+# Check MongoDB collections (see MongoDB Access section below for full details)
+docker exec -i -e MONGO_PASSWORD='your-password' tronrelic-mongo-prod sh -c \
+  'mongosh --username admin --password "$MONGO_PASSWORD" --authenticationDatabase admin --quiet --eval "db.getCollectionNames()" tronrelic-prod'
 
 # Check Redis memory usage
 docker exec tronrelic-redis-prod redis-cli info memory
@@ -365,27 +366,33 @@ docker exec tronrelic-frontend-prod node -e "console.log(process.memoryUsage())"
 ```
 
 **MongoDB debugging:**
-```bash
-# Connect to MongoDB shell
-docker exec -it tronrelic-mongo-prod mongosh tronrelic
 
-# Inside mongosh:
-# Show databases
+Remote droplets require authentication. Use the connection instructions in the "MongoDB Access" section below.
+
+For local development without authentication:
+```bash
+# Connect to MongoDB shell (local only, no auth required)
+docker exec -it tronrelic-mongo mongosh tronrelic
+```
+
+Once connected to mongosh, you can run these queries:
+```javascript
+// Show databases
 show dbs
 
-# Show collections
+// Show collections
 show collections
 
-# Count documents in transactions collection
+// Count documents in transactions collection
 db.transactions.countDocuments()
 
-# Find recent transactions
+// Find recent transactions
 db.transactions.find().sort({timestamp: -1}).limit(10)
 
-# Check database stats
+// Check database stats
 db.stats()
 
-# Exit mongosh
+// Exit mongosh
 exit
 ```
 
@@ -421,17 +428,35 @@ exit
 ### MongoDB Access
 
 **Connect to MongoDB with authentication:**
-```bash
-# Production (with auth)
-docker exec -it tronrelic-mongo-prod mongosh tronrelic -u admin -p
 
-# Enter password when prompted (from .env MONGO_ROOT_PASSWORD)
+For authenticated MongoDB instances (production and development with `--auth` enabled), use the full connection syntax:
+
+```bash
+# Production - Get password from server .env first
+ssh root@<PROD_DROPLET_IP> 'grep MONGO_ROOT_PASSWORD /opt/tronrelic/.env'
+
+# Then connect using password in environment variable (prevents exposure in process list)
+ssh root@<PROD_DROPLET_IP> 'cd /opt/tronrelic && \
+  docker exec -i -e MONGO_PASSWORD="<paste-password-here>" tronrelic-mongo-prod sh -c \
+  "mongosh --username admin --password \"\$MONGO_PASSWORD\" --authenticationDatabase admin tronrelic-prod"'
+
+# Development - Same pattern
+ssh root@<DEV_DROPLET_IP> 'grep MONGO_ROOT_PASSWORD /opt/tronrelic-dev/.env'
+
+ssh root@<DEV_DROPLET_IP> 'cd /opt/tronrelic-dev && \
+  docker exec -i -e MONGO_PASSWORD="<paste-password-here>" tronrelic-mongo-dev sh -c \
+  "mongosh --username admin --password \"\$MONGO_PASSWORD\" --authenticationDatabase admin tronrelic"'
 ```
+
+**Key flags explained:**
+- `--username admin` - MongoDB root user (created during initialization)
+- `--password "$MONGO_PASSWORD"` - Password from `MONGO_ROOT_PASSWORD` in .env
+- `--authenticationDatabase admin` - Admin database where root user credentials are stored (required!)
+- `-e MONGO_PASSWORD="..."` - Pass via environment variable to avoid exposing password in process lists
+- `-i` - Interactive mode (needed for mongosh to function properly)
 
 **Common MongoDB queries:**
 ```javascript
-// Inside mongosh
-
 // View all collections
 db.getCollectionNames()
 
@@ -451,31 +476,49 @@ db.transactions.getIndexes()
 db.stats(1024*1024)  // Size in MB
 
 // Drop a specific collection (BE CAREFUL!)
-// db.oldCollection.drop()
+db.oldCollection.drop()
 ```
 
 **Export MongoDB data:**
+
+Remote droplets require authentication. Authentication flags must be added to mongodump/mongoexport commands:
+
 ```bash
-# Export entire database
-docker exec tronrelic-mongo-prod mongodump --out /tmp/backup
+# Export entire database (from remote droplet)
+PASS=$(ssh root@<DROPLET_IP> 'grep MONGO_ROOT_PASSWORD /opt/tronrelic*/\.env | cut -d= -f2') && \
+ssh root@<DROPLET_IP> "cd /opt/tronrelic* && \
+  docker exec -i -e MONGO_PASSWORD='$PASS' tronrelic-mongo-* sh -c \
+  'mongodump --username admin --password \"\\\$MONGO_PASSWORD\" --authenticationDatabase admin --out /tmp/backup'"
 
 # Copy backup to local machine
-docker cp tronrelic-mongo-prod:/tmp/backup ./mongo-backup-$(date +%Y%m%d)
+ssh root@<DROPLET_IP> 'cd /opt/tronrelic* && docker cp tronrelic-mongo-*:/tmp/backup /tmp/backup-$(date +%Y%m%d)'
+scp -r root@<DROPLET_IP>:/tmp/backup-* ./mongo-backup-$(date +%Y%m%d)
 
-# Export specific collection
-docker exec tronrelic-mongo-prod mongoexport --db=tronrelic --collection=transactions --out=/tmp/transactions.json
+# Export specific collection (from remote droplet)
+PASS=$(ssh root@<DROPLET_IP> 'grep MONGO_ROOT_PASSWORD /opt/tronrelic*/\.env | cut -d= -f2') && \
+ssh root@<DROPLET_IP> "cd /opt/tronrelic* && \
+  docker exec -i -e MONGO_PASSWORD='$PASS' tronrelic-mongo-* sh -c \
+  'mongoexport --username admin --password \"\\\$MONGO_PASSWORD\" --authenticationDatabase admin --db=tronrelic --collection=transactions --out=/tmp/transactions.json'"
 ```
 
 **Import MongoDB data:**
+
 ```bash
-# Copy backup to container
-docker cp ./mongo-backup tronrelic-mongo-prod:/tmp/restore
+# Copy backup to container (from local machine to remote droplet)
+scp -r ./mongo-backup root@<DROPLET_IP>:/tmp/restore
 
-# Restore database
-docker exec tronrelic-mongo-prod mongorestore /tmp/restore
+# Restore database (with authentication)
+PASS=$(ssh root@<DROPLET_IP> 'grep MONGO_ROOT_PASSWORD /opt/tronrelic*/\.env | cut -d= -f2') && \
+ssh root@<DROPLET_IP> "cd /opt/tronrelic* && \
+  docker exec -i -e MONGO_PASSWORD='$PASS' tronrelic-mongo-* sh -c \
+  'mongorestore --username admin --password \"\\\$MONGO_PASSWORD\" --authenticationDatabase admin /tmp/restore'"
 
-# Import specific collection
-docker exec tronrelic-mongo-prod mongoimport --db=tronrelic --collection=transactions --file=/tmp/transactions.json
+# Import specific collection (with authentication)
+PASS=$(ssh root@<DROPLET_IP> 'grep MONGO_ROOT_PASSWORD /opt/tronrelic*/\.env | cut -d= -f2') && \
+ssh root@<DROPLET_IP> "cd /opt/tronrelic* && \
+  docker cp ./transactions.json tronrelic-mongo-*:/tmp/transactions.json && \
+  docker exec -i -e MONGO_PASSWORD='$PASS' tronrelic-mongo-* sh -c \
+  'mongoimport --username admin --password \"\\\$MONGO_PASSWORD\" --authenticationDatabase admin --db=tronrelic --collection=transactions --file=/tmp/transactions.json'"
 ```
 
 ### Redis Access
@@ -823,10 +866,12 @@ docker compose restart         # Restart all
 docker compose down && up -d   # Fresh restart
 ```
 
-**Database access:**
+**Database access (remote droplets require authentication):**
 ```bash
-docker exec -it tronrelic-mongo-prod mongosh tronrelic
-docker exec -it tronrelic-redis-prod redis-cli
+# See MongoDB Access section for full authenticated connection commands
+# For local development:
+docker exec -it tronrelic-mongo mongosh tronrelic
+docker exec -it tronrelic-redis redis-cli
 ```
 
 **Resource monitoring:**
