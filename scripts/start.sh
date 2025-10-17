@@ -215,10 +215,22 @@ fi
 # Handle force-build: rebuild images without cache
 if [[ "${FORCE_BUILD}" == true ]]; then
   log INFO "Building Docker images (no cache)"
-  docker compose -f "${COMPOSE_FILE}" build --no-cache
+  if [[ "${PRODUCTION}" == true ]]; then
+    docker build --no-cache --target backend -t tronrelic-monorepo-backend .
+    docker build --no-cache --target frontend-prod -t tronrelic-monorepo-frontend .
+  else
+    docker build --no-cache --target backend -t tronrelic-monorepo-backend .
+    docker build --no-cache --target frontend-dev -t tronrelic-monorepo-frontend .
+  fi
 elif [[ "${FORCE_DOCKER}" == true ]] || ! docker images | grep -q "tronrelic-monorepo-backend"; then
   log INFO "Building Docker images"
-  docker compose -f "${COMPOSE_FILE}" build
+  if [[ "${PRODUCTION}" == true ]]; then
+    docker build --target backend -t tronrelic-monorepo-backend .
+    docker build --target frontend-prod -t tronrelic-monorepo-frontend .
+  else
+    docker build --target backend -t tronrelic-monorepo-backend .
+    docker build --target frontend-dev -t tronrelic-monorepo-frontend .
+  fi
 else
   log INFO "Using existing Docker images (use --force-build to rebuild)"
 fi
