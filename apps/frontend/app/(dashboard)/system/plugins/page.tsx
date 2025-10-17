@@ -2,18 +2,32 @@
 
 import { useEffect, useState } from 'react';
 import { config as runtimeConfig } from '../../../../lib/config';
+import { useSystemAuth } from '../../../../features/system';
 import type { IPluginInfo } from '@tronrelic/types';
 
-interface PluginCardProps {
+/**
+ * Plugin card component for managing individual plugin state.
+ *
+ * Displays plugin metadata, installation status, and action buttons for install,
+ * uninstall, enable, and disable operations. Requires confirmation clicks before
+ * executing state-changing operations to prevent accidental changes.
+ *
+ * @param props - Component props
+ * @param props.pluginInfo - Plugin manifest and metadata
+ * @param props.onInstall - Callback when install button is confirmed
+ * @param props.onUninstall - Callback when uninstall button is confirmed
+ * @param props.onEnable - Callback when enable button is confirmed
+ * @param props.onDisable - Callback when disable button is confirmed
+ * @param props.isLoading - Whether any operation is in progress
+ */
+function PluginCard({ pluginInfo, onInstall, onUninstall, onEnable, onDisable, isLoading }: {
     pluginInfo: IPluginInfo;
     onInstall: (pluginId: string) => void;
     onUninstall: (pluginId: string) => void;
     onEnable: (pluginId: string) => void;
     onDisable: (pluginId: string) => void;
     isLoading: boolean;
-}
-
-function PluginCard({ pluginInfo, onInstall, onUninstall, onEnable, onDisable, isLoading }: PluginCardProps) {
+}) {
     const { manifest, metadata } = pluginInfo;
     const [showConfirm, setShowConfirm] = useState<'install' | 'uninstall' | 'enable' | 'disable' | null>(null);
 
@@ -275,27 +289,23 @@ function PluginCard({ pluginInfo, onInstall, onUninstall, onEnable, onDisable, i
     );
 }
 
+/**
+ * Plugin management page.
+ *
+ * Displays all discovered plugins with installation, enable, and disable controls.
+ * Provides aggregate statistics for total, installed, enabled, and error counts.
+ * Requires admin authentication via shared SystemAuth context.
+ */
 export default function PluginsManagementPage() {
-    const [token, setToken] = useState('');
-    const [isAuthenticated, setIsAuthenticated] = useState(false);
+    const { token } = useSystemAuth();
     const [plugins, setPlugins] = useState<IPluginInfo[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
     useEffect(() => {
-        const savedToken = localStorage.getItem('admin_token');
-        if (savedToken) {
-            setToken(savedToken);
-            setIsAuthenticated(true);
-        }
+        fetchPlugins();
     }, []);
-
-    useEffect(() => {
-        if (isAuthenticated) {
-            fetchPlugins();
-        }
-    }, [isAuthenticated]);
 
     const fetchPlugins = async () => {
         try {
@@ -354,148 +364,89 @@ export default function PluginsManagementPage() {
         }
     };
 
-    const handleLogin = (e: React.FormEvent) => {
-        e.preventDefault();
-        if (token.trim()) {
-            localStorage.setItem('admin_token', token);
-            setIsAuthenticated(true);
-        }
-    };
-
-    const handleLogout = () => {
-        localStorage.removeItem('admin_token');
-        setToken('');
-        setIsAuthenticated(false);
-    };
-
-    if (!isAuthenticated) {
-        return (
-            <div className="page" style={{ maxWidth: '400px', margin: '4rem auto', padding: '2rem' }}>
-                <div style={{ display: 'grid', gap: '1.5rem' }}>
-                    <header>
-                        <h1>Plugin Management</h1>
-                        <p style={{ opacity: 0.7, marginTop: '0.5rem' }}>
-                            Enter your admin token to manage plugins
-                        </p>
-                    </header>
-                    <form onSubmit={handleLogin} style={{ display: 'grid', gap: '1rem' }}>
-                        <label style={{ display: 'grid', gap: '0.5rem' }}>
-                            <span>Admin Token</span>
-                            <input
-                                type="password"
-                                value={token}
-                                onChange={e => setToken(e.target.value)}
-                                placeholder="Enter admin API token"
-                                style={{ padding: '0.75rem', fontSize: '1rem' }}
-                                required
-                            />
-                        </label>
-                        <button type="submit" style={{ padding: '0.75rem', fontSize: '1rem' }}>
-                            Access Plugin Management
-                        </button>
-                    </form>
-                </div>
-            </div>
-        );
-    }
-
     return (
-        <div className="page" style={{ padding: '2rem', maxWidth: '1200px', margin: '0 auto' }}>
-            <div style={{ display: 'grid', gap: '2rem' }}>
-                <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div>
-                        <h1>Plugin Management</h1>
-                        <p style={{ opacity: 0.7, marginTop: '0.5rem' }}>
-                            Manage plugin installation and activation status
-                        </p>
-                    </div>
-                    <button onClick={handleLogout} style={{ padding: '0.5rem 1rem' }}>
-                        Logout
-                    </button>
-                </header>
-
-                {error && (
-                    <div style={{
-                        padding: '1rem',
-                        background: 'rgba(239, 68, 68, 0.1)',
-                        border: '1px solid rgba(239, 68, 68, 0.3)',
-                        borderRadius: '4px',
-                        color: '#ef4444'
-                    }}>
-                        {error}
-                    </div>
-                )}
-
-                {successMessage && (
-                    <div style={{
-                        padding: '1rem',
-                        background: 'rgba(34, 197, 94, 0.1)',
-                        border: '1px solid rgba(34, 197, 94, 0.3)',
-                        borderRadius: '4px',
-                        color: '#22c55e'
-                    }}>
-                        {successMessage}
-                    </div>
-                )}
-
+        <div style={{ display: 'grid', gap: '2rem', maxWidth: '1200px', margin: '0 auto' }}>
+            {error && (
                 <div style={{
-                    display: 'flex',
-                    gap: '1rem',
                     padding: '1rem',
-                    background: 'rgba(255,255,255,0.02)',
-                    borderRadius: '8px',
-                    border: '1px solid rgba(255,255,255,0.1)'
+                    background: 'rgba(239, 68, 68, 0.1)',
+                    border: '1px solid rgba(239, 68, 68, 0.3)',
+                    borderRadius: '4px',
+                    color: '#ef4444'
                 }}>
-                    <div style={{ flex: 1 }}>
-                        <div style={{ fontSize: '0.875rem', opacity: 0.6 }}>Total Plugins</div>
-                        <div style={{ fontSize: '2rem', fontWeight: 600 }}>{plugins.length}</div>
-                    </div>
-                    <div style={{ flex: 1 }}>
-                        <div style={{ fontSize: '0.875rem', opacity: 0.6 }}>Installed</div>
-                        <div style={{ fontSize: '2rem', fontWeight: 600, color: '#22c55e' }}>
-                            {plugins.filter(p => p.metadata.installed).length}
-                        </div>
-                    </div>
-                    <div style={{ flex: 1 }}>
-                        <div style={{ fontSize: '0.875rem', opacity: 0.6 }}>Enabled</div>
-                        <div style={{ fontSize: '2rem', fontWeight: 600, color: '#3b82f6' }}>
-                            {plugins.filter(p => p.metadata.enabled).length}
-                        </div>
-                    </div>
-                    <div style={{ flex: 1 }}>
-                        <div style={{ fontSize: '0.875rem', opacity: 0.6 }}>Errors</div>
-                        <div style={{ fontSize: '2rem', fontWeight: 600, color: '#ef4444' }}>
-                            {plugins.filter(p => p.metadata.lastError).length}
-                        </div>
+                    {error}
+                </div>
+            )}
+
+            {successMessage && (
+                <div style={{
+                    padding: '1rem',
+                    background: 'rgba(34, 197, 94, 0.1)',
+                    border: '1px solid rgba(34, 197, 94, 0.3)',
+                    borderRadius: '4px',
+                    color: '#22c55e'
+                }}>
+                    {successMessage}
+                </div>
+            )}
+
+            <div style={{
+                display: 'flex',
+                gap: '1rem',
+                padding: '1rem',
+                background: 'rgba(255,255,255,0.02)',
+                borderRadius: '8px',
+                border: '1px solid rgba(255,255,255,0.1)'
+            }}>
+                <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: '0.875rem', opacity: 0.6 }}>Total Plugins</div>
+                    <div style={{ fontSize: '2rem', fontWeight: 600 }}>{plugins.length}</div>
+                </div>
+                <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: '0.875rem', opacity: 0.6 }}>Installed</div>
+                    <div style={{ fontSize: '2rem', fontWeight: 600, color: '#22c55e' }}>
+                        {plugins.filter(p => p.metadata.installed).length}
                     </div>
                 </div>
-
-                <div style={{ display: 'grid', gap: '1rem' }}>
-                    {plugins.map(pluginInfo => (
-                        <PluginCard
-                            key={pluginInfo.manifest.id}
-                            pluginInfo={pluginInfo}
-                            onInstall={(id) => handlePluginAction('install', id)}
-                            onUninstall={(id) => handlePluginAction('uninstall', id)}
-                            onEnable={(id) => handlePluginAction('enable', id)}
-                            onDisable={(id) => handlePluginAction('disable', id)}
-                            isLoading={isLoading}
-                        />
-                    ))}
-                </div>
-
-                {plugins.length === 0 && !isLoading && (
-                    <div style={{
-                        padding: '3rem',
-                        textAlign: 'center',
-                        opacity: 0.6,
-                        border: '1px dashed rgba(255,255,255,0.1)',
-                        borderRadius: '8px'
-                    }}>
-                        No plugins found
+                <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: '0.875rem', opacity: 0.6 }}>Enabled</div>
+                    <div style={{ fontSize: '2rem', fontWeight: 600, color: '#3b82f6' }}>
+                        {plugins.filter(p => p.metadata.enabled).length}
                     </div>
-                )}
+                </div>
+                <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: '0.875rem', opacity: 0.6 }}>Errors</div>
+                    <div style={{ fontSize: '2rem', fontWeight: 600, color: '#ef4444' }}>
+                        {plugins.filter(p => p.metadata.lastError).length}
+                    </div>
+                </div>
             </div>
+
+            <div style={{ display: 'grid', gap: '1rem' }}>
+                {plugins.map(pluginInfo => (
+                    <PluginCard
+                        key={pluginInfo.manifest.id}
+                        pluginInfo={pluginInfo}
+                        onInstall={(id) => handlePluginAction('install', id)}
+                        onUninstall={(id) => handlePluginAction('uninstall', id)}
+                        onEnable={(id) => handlePluginAction('enable', id)}
+                        onDisable={(id) => handlePluginAction('disable', id)}
+                        isLoading={isLoading}
+                    />
+                ))}
+            </div>
+
+            {plugins.length === 0 && !isLoading && (
+                <div style={{
+                    padding: '3rem',
+                    textAlign: 'center',
+                    opacity: 0.6,
+                    border: '1px dashed rgba(255,255,255,0.1)',
+                    borderRadius: '8px'
+                }}>
+                    No plugins found
+                </div>
+            )}
         </div>
     );
 }
