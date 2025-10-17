@@ -10,7 +10,8 @@ import styles from './SystemNav.module.css';
  * Displays tabbed navigation for all system routes with active state highlighting based
  * on the current URL. Uses Next.js Link components for client-side navigation while
  * maintaining a traditional tab appearance. Links are styled to show which section is
- * currently active based on the pathname.
+ * currently active based on the pathname. Uses startsWith matching to highlight the
+ * active tab even when viewing nested routes (e.g., /system/blockchain/details).
  */
 export function SystemNav() {
     const pathname = usePathname();
@@ -27,14 +28,15 @@ export function SystemNav() {
     ];
 
     return (
-        <nav className={styles.nav}>
+        <nav className={styles.nav} aria-label="System monitoring navigation">
             {tabs.map(tab => {
-                const isActive = pathname === tab.href;
+                const isActive = pathname.startsWith(tab.href);
                 return (
                     <Link
                         key={tab.id}
                         href={tab.href}
                         className={`${styles.tab} ${isActive ? styles.active : ''}`}
+                        aria-current={isActive ? 'page' : undefined}
                     >
                         {tab.label}
                     </Link>
