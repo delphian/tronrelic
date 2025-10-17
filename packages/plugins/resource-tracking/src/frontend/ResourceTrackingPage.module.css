@@ -1,0 +1,124 @@
+/* Resource Tracking Page Styles */
+
+.page {
+    container-type: inline-size;
+    container-name: resource-tracking-page;
+    padding: var(--spacing-lg);
+}
+
+.header {
+    margin-bottom: var(--spacing-xl);
+}
+
+.title {
+    font-size: var(--text-3xl);
+    font-weight: 700;
+    color: var(--color-text-primary);
+    margin: 0 0 var(--spacing-sm) 0;
+}
+
+.subtitle {
+    font-size: var(--text-base);
+    color: var(--color-text-secondary);
+    margin: 0;
+}
+
+.container {
+    container-type: inline-size;
+    container-name: resource-tracking-container;
+    padding: var(--spacing-lg);
+}
+
+.controls {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-lg);
+    margin-bottom: var(--spacing-xl);
+}
+
+.periodSelector {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-md);
+    flex-wrap: wrap;
+}
+
+.label {
+    font-weight: 600;
+    color: var(--color-text-primary);
+    white-space: nowrap;
+}
+
+.buttonGroup {
+    display: flex;
+    gap: var(--spacing-xs);
+    flex-wrap: wrap;
+}
+
+.toggles {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+}
+
+.toggleGroup {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--spacing-md) var(--spacing-lg);
+}
+
+.toggle {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-xs);
+    cursor: pointer;
+    user-select: none;
+}
+
+.toggle input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
+}
+
+.toggleLabel {
+    font-size: var(--text-sm);
+    font-weight: 500;
+}
+
+.chartContainer {
+    min-height: 400px;
+    width: 100%;
+}
+
+.noData {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 400px;
+    color: var(--color-text-tertiary);
+    text-align: center;
+}
+
+.noData p {
+    margin: 0 0 var(--spacing-xs) 0;
+}
+
+.noDataHint {
+    font-size: var(--text-sm);
+    color: var(--color-text-quaternary);
+}
+
+/* Responsive adjustments */
+@container resource-tracking-container (min-width: 600px) {
+    .controls {
+        flex-direction: row;
+        justify-content: space-between;
+        align-items: flex-start;
+    }
+
+    .toggles {
+        flex: 1;
+    }
+}
