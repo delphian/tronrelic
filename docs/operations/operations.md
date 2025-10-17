@@ -123,10 +123,13 @@ docker stats --no-stream
 
 **Access databases:**
 ```bash
-# MongoDB
-docker exec -it tronrelic-mongo-prod mongosh tronrelic
+# MongoDB (remote droplets require authentication)
+# See MongoDB Access section in operations-remote-access.md for full details and dev examples
+ssh root@<DROPLET_IP> 'cd /opt/tronrelic* && \
+  docker exec -i -e MONGO_PASSWORD="<password>" tronrelic-mongo-* sh -c \
+  "mongosh --username admin --password \"\$MONGO_PASSWORD\" --authenticationDatabase admin <db-name>"'
 
-# Redis
+# Redis (remote droplets may require authentication)
 docker exec -it tronrelic-redis-prod redis-cli
 ```
 
