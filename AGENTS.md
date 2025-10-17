@@ -4,10 +4,6 @@
 
 - [@AGENTS.md](AGENTS.md) - Project rules and agent delegation protocol
 - [@README.md](README.md) - Project overview and quick start
-- [@documentation-guidance.md](docs/documentation-guidance.md) - Documentation standards and writing conventions
-
-**Load these summary documents based on your task domain:**
-
 - [@environment.md](docs/environment.md) - Environment variable reference
 - [@tron.md](docs/tron/tron.md) - TRON blockchain concepts overview
 - [@frontend.md](docs/frontend/frontend.md) - Frontend system overview
@@ -15,6 +11,8 @@
 - [@system.md](docs/system/system.md) - System architecture overview
 - [@markets.md](docs/markets/markets.md) - Market system overview
 - [@operations.md](docs/operations/operations.md) - Deployment and operations overview
+- [@TODO.md](docs/TODO.md) - Future requirements.
+- [@documentation-guidance.md](docs/documentation-guidance.md) - Documentation standards and writing conventions
 
 **Note:** These summary documents link to detailed implementation guides. Load additional detailed documentation as needed based on your specific task (e.g., load `frontend-architecture.md` when working on frontend file organization, load `plugins-blockchain-observers.md` when implementing transaction observers).
 
