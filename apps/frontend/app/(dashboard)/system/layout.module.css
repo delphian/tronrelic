@@ -1,0 +1,111 @@
+/**
+ * System layout styles.
+ *
+ * Provides layout structure for the system monitoring section including login form,
+ * authenticated layout, header, and logout button. Uses design system variables
+ * for consistent theming.
+ */
+
+/* Login form container */
+.login_container {
+    max-width: 400px;
+    margin: 4rem auto;
+    padding: 2rem;
+}
+
+.login_content {
+    display: grid;
+    gap: 1.5rem;
+}
+
+.login_header {
+    display: grid;
+    gap: 0.5rem;
+}
+
+.login_title {
+    font-size: 1.75rem;
+    font-weight: 700;
+    margin: 0;
+}
+
+.login_subtitle {
+    color: var(--color-text-muted);
+    margin: 0;
+    font-size: 0.95rem;
+}
+
+.login_form {
+    display: grid;
+    gap: 1rem;
+}
+
+.login_label {
+    display: grid;
+    gap: 0.5rem;
+}
+
+.login_label_text {
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: var(--color-text-muted);
+}
+
+/* Authenticated layout container */
+.layout_container {
+    padding: 2rem;
+}
+
+.layout_content {
+    display: grid;
+    gap: 2rem;
+}
+
+.layout_header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 1.5rem;
+}
+
+.layout_header_text {
+    display: grid;
+    gap: 0.5rem;
+}
+
+.layout_title {
+    font-size: 1.85rem;
+    font-weight: 700;
+    margin: 0;
+}
+
+.layout_subtitle {
+    color: var(--color-text-muted);
+    margin: 0;
+    font-size: 0.95rem;
+}
+
+.layout_section {
+    container-type: inline-size;
+    container-name: system-layout;
+}
+
+/* Error message styling */
+.error_message {
+    padding: 0.75rem 1rem;
+    background: rgba(255, 111, 125, 0.1);
+    border: 1px solid rgba(255, 111, 125, 0.3);
+    border-radius: var(--radius-sm);
+    color: var(--color-danger);
+    font-size: 0.9rem;
+    margin-top: 0.5rem;
+}
+
+/* Responsive adjustments */
+@container system-layout (max-width: 768px) {
+    .layout_header {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+}
