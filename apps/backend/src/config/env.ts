@@ -58,10 +58,6 @@ const envSchema = z.object({
   STORAGE_SECRET_ACCESS_KEY: z.string().optional(),
   STORAGE_BUCKET: z.string().optional(),
   STORAGE_FORCE_PATH_STYLE: z.coerce.boolean().optional(),
-  COMMENTS_DAILY_LIMIT: z.coerce.number().int().positive().default(1),
-  CHAT_DAILY_LIMIT: z.coerce.number().int().positive().default(25),
-  COMMENTS_ATTACHMENT_MAX_SIZE: z.coerce.number().int().positive().default(5242880),
-  COMMENTS_ATTACHMENT_URL_TTL: z.coerce.number().int().positive().default(900),
   NOTIFICATION_WEBSOCKET_THROTTLE_MS: z.coerce.number().int().positive().default(5000),
   NOTIFICATION_TELEGRAM_THROTTLE_MS: z.coerce.number().int().positive().default(60000),
   NOTIFICATION_EMAIL_THROTTLE_MS: z.coerce.number().int().positive().default(300000)

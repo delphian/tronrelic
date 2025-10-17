@@ -4,8 +4,6 @@ import { blockchainRouter } from './blockchain.router.js';
 import { accountsRouter } from './accounts.router.js';
 import { transactionsRouter } from './transactions.router.js';
 import { transactionRouter } from './transaction.router.js';
-import { commentsRouter } from './comments.router.js';
-import { chatRouter } from './chat.router.js';
 import { notificationsRouter } from './notifications.router.js';
 import { toolsRouter } from './tools.router.js';
 import { telegramRouter } from './telegram.router.js';
@@ -34,8 +32,6 @@ export function createApiRouter() {
   router.use('/transaction', transactionRouter());
   router.use('/inflows', inflowsRouter());
   router.use('/outflows', outflowsRouter());
-  router.use('/comments', commentsRouter());
-  router.use('/chat', chatRouter());
   router.use('/notifications', notificationsRouter());
   router.use('/tools', toolsRouter());
   router.use('/telegram', telegramRouter());

@@ -4,30 +4,23 @@ Real-time TRON blockchain monitoring and whale activity tracking.
 
 # Project Rules
 
-**Always load and apply the following documentation before answering or changing code:**
+**Always load and apply these foundational documents first:**
 
-- [@AGENTS.md](AGENTS.md)
-- [@tron-chain-parameters.md](docs/tron/tron-chain-parameters.md)
-- [@documentation-guidance.md](docs/documentation-guidance.md)
-- [@environment.md](docs/environment.md)
-- [@frontend.md](docs/frontend/frontend.md)
-- [@frontend-architecture.md](docs/frontend/frontend-architecture.md)
-- [@frontend-component-guide.md](docs/frontend/frontend-component-guide.md)
-- [@market-fetcher-discovery.md](docs/markets/market-fetcher-discovery.md)
-- [@market-system-architecture.md](docs/markets/market-system-architecture.md)
-- [@market-system-operations.md](docs/markets/market-system-operations.md)
-- [@plugins.md](docs/plugins/plugins.md)
-- [@plugins-system-architecture.md](docs/plugins/plugins-system-architecture.md)
-- [@plugins-blockchain-observers.md](docs/plugins/plugins-blockchain-observers.md)
-- [@plugins-page-registration.md](docs/plugins/plugins-page-registration.md)
-- [@plugins-frontend-context.md](docs/plugins/plugins-frontend-context.md)
-- [@plugins-api-registration.md](docs/plugins/plugins-api-registration.md)
-- [@plugins-database.md](docs/plugins/plugins-database.md)
-- [@plugins-websocket-subscriptions.md](docs/plugins/plugins-websocket-subscriptions.md)
-- [@operations.md](docs/operations/operations.md)
-- [@operations-server-info.md](docs/operations/operations-server-info.md)
-- [@operations-workflows.md](docs/operations/operations-workflows.md)
-- [@operations-remote-access.md](docs/operations/operations-remote-access.md)
+- [@AGENTS.md](AGENTS.md) - Project rules and agent delegation protocol
+- [@README.md](README.md) - Project overview and quick start
+- [@documentation-guidance.md](docs/documentation-guidance.md) - Documentation standards and writing conventions
+
+**Load these summary documents based on your task domain:**
+
+- [@environment.md](docs/environment.md) - Environment variable reference
+- [@tron.md](docs/tron/tron.md) - TRON blockchain concepts overview
+- [@frontend.md](docs/frontend/frontend.md) - Frontend system overview
+- [@plugins.md](docs/plugins/plugins.md) - Plugin system overview
+- [@system.md](docs/system/system.md) - System architecture overview
+- [@markets.md](docs/markets/markets.md) - Market system overview
+- [@operations.md](docs/operations/operations.md) - Deployment and operations overview
+
+**Note:** These summary documents link to detailed implementation guides. Load additional detailed documentation as needed based on your specific task (e.g., load `frontend-architecture.md` when working on frontend file organization, load `plugins-blockchain-observers.md` when implementing transaction observers).
 
 ## Quick Start
 
