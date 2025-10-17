@@ -28,7 +28,8 @@ const SystemAuthContext = createContext<ISystemAuthContext | undefined>(undefine
  *
  * Wraps the system monitoring section and manages authentication state. Automatically
  * loads saved tokens from localStorage on mount. Should be placed in the system
- * layout.tsx to cover all system routes.
+ * layout.tsx to cover all system routes. Prevents hydration mismatches by deferring
+ * localStorage access until after client-side mount.
  *
  * @param props - Component props
  * @param props.children - Child components that can access the auth context
@@ -36,8 +37,12 @@ const SystemAuthContext = createContext<ISystemAuthContext | undefined>(undefine
 export function SystemAuthProvider({ children }: { children: ReactNode }) {
     const [token, setToken] = useState('');
     const [isAuthenticated, setIsAuthenticated] = useState(false);
+    const [isHydrated, setIsHydrated] = useState(false);
 
     useEffect(() => {
+        // Mark as hydrated to prevent flash of login form
+        setIsHydrated(true);
+
         const savedToken = localStorage.getItem('admin_token');
         if (savedToken) {
             setToken(savedToken);
@@ -58,6 +63,11 @@ export function SystemAuthProvider({ children }: { children: ReactNode }) {
         setToken('');
         setIsAuthenticated(false);
     };
+
+    // Prevent flash of login form during initial hydration
+    if (!isHydrated) {
+        return null;
+    }
 
     return (
         <SystemAuthContext.Provider value={{ token, isAuthenticated, login, logout }}>
