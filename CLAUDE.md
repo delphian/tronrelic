@@ -1,5 +1,12 @@
-@AGENTS.md
-@README.md
+@AGENTS.md                      - Project rules and agent delegation protocol
+@README.md                      - Project overview and quick start
+@docs/environment.md            - Environment variable reference
+@docs/tron/tron.md              - TRON blockchain concepts overview
+@docs/frontend/frontend.md      - Frontend system overview
+@docs/plugins/plugins.md        - Plugin system overview
+@docs/system/system.md          - System architecture overview
+@docs/markets/markets.md        - Market system overview
+@docs/operations/operations.md  - Deployment and operations overview
 
 # Agent Delegation Protocol
 

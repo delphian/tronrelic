@@ -47,12 +47,13 @@ The blockchain sync service retrieves blocks from TronGrid, enriches transaction
 
 ### Scheduler Operations
 
-The scheduler manages seven built-in jobs that keep the system healthy: market data refreshes, blockchain sync, cache cleanup, alert dispatch, and chain parameter updates. Each job runs on an independent schedule and can be controlled at runtime without requiring backend restarts.
+The scheduler manages six built-in jobs that keep the system healthy: market data refreshes, blockchain sync, cache cleanup, alert dispatch, and chain parameter updates. Each job runs on an independent schedule and can be controlled at runtime without requiring backend restarts.
 
 **Critical jobs:**
 - `blockchain:sync` - Fetches new TRON blocks every minute
 - `markets:refresh` - Updates all energy market prices every 10 minutes
 - `chain-parameters:fetch` - Fetches TRON energy costs every 10 minutes
+- `usdt-parameters:fetch` - Fetches USDT transfer energy cost every 10 minutes
 
 **Safe to disable temporarily:**
 - `cache:cleanup` - Only impacts memory usage
@@ -61,7 +62,7 @@ The scheduler manages seven built-in jobs that keep the system healthy: market d
 **See [system-scheduler-operations.md](./system-scheduler-operations.md) for complete details on:**
 - Global enable/disable via `ENABLE_SCHEDULER` environment variable
 - Per-job configuration and runtime control without restarts
-- Complete list of all seven scheduler jobs with schedules and impacts
+- Complete list of all six scheduler jobs with schedules and impacts
 - System Monitor dashboard UI for job control
 - Admin API endpoints for programmatic control
 - Cron expression syntax and common modifications
@@ -80,7 +81,7 @@ The system monitoring API provides programmatic access to all operational metric
 - **Market Monitoring** - Platform status, data freshness, manual refresh trigger
 - **System Health** - Database, Redis, and server metrics
 - **Configuration** - Environment settings and feature flags
-- **WebSocket Monitoring** - Plugin subscription stats and connection tracking
+- **WebSocket Monitoring** - Plugin subscription stats, connection tracking, and real-time event diagnostics
 
 **See [system-api.md](./system-api.md) for complete details on:**
 - Authentication requirements and header formats
@@ -115,6 +116,8 @@ Access the system monitoring dashboard at `/system` (requires `ADMIN_API_TOKEN`)
 3. **API Queue** - Pending requests, error rates, rate limit warnings
 
 ### Common Operations
+
+**Note:** Replace `$ADMIN_API_TOKEN` with your actual admin token from `.env` in these examples.
 
 **Check scheduler status:**
 ```bash

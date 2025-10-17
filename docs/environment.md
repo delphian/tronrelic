@@ -74,7 +74,7 @@ ADMIN_API_TOKEN=dev-admin-token-123
 - **Default:** None
 - **Required:** ✅ **Yes**
 
-**Description:** MongoDB database connection string. All transaction data, market prices, user comments, and system state are stored here.
+**Description:** MongoDB database connection string. All transaction data, market prices, and system state are stored here.
 
 **Example Values:**
 ```bash
@@ -149,12 +149,9 @@ REDIS_URL=redis-sentinel://host1:26379,host2:26379/mymaster
 - **Required:** No
 - **Accepts:** `true`, `false`, `1`, `0`, `yes`, `no`, `on`, `off`, or empty string
 
-**Description:** Controls whether the cron job scheduler runs. When enabled, the following jobs execute automatically:
-- **Market refresh** - Every 5 minutes, fetches pricing from all 14 energy rental platforms
-- **Blockchain sync** - Every 1 minute, syncs new blocks from TRON network and indexes transactions
-- **Cache cleanup** - Every hour, removes expired cache entries
-- **Alerts dispatch** - Every minute, sends pending notifications
-- **Alerts parity** - Every 5 minutes, verifies alert consistency
+**Description:** Controls whether the cron job scheduler runs. When enabled, periodic jobs execute automatically (market refresh, blockchain sync, cache cleanup, alerts dispatch, chain parameter fetching).
+
+See [system-scheduler-operations.md](./system/system-scheduler-operations.md) for complete job details, schedules, and runtime control.
 
 **When to Enable:**
 - ✅ Production deployment (data must be live and fresh)
@@ -190,12 +187,9 @@ ENABLE_SCHEDULER=        # Empty string also disables
 - **Default:** `true`
 - **Required:** No
 
-**Description:** Controls whether Socket.IO WebSocket server starts. When enabled, clients receive real-time updates for:
-- New whale transactions (large TRX transfers)
-- Market price updates
-- New blockchain blocks
-- Chat messages
-- Comment notifications
+**Description:** Controls whether Socket.IO WebSocket server starts for real-time updates (whale transactions, market prices, blockchain events).
+
+See [system-api.md](./system/system-api.md#websocket-events-reference) for complete event documentation and subscription patterns.
 
 **When to Enable:**
 - ✅ Production (users expect real-time updates)
@@ -216,12 +210,7 @@ ENABLE_SCHEDULER=        # Empty string also disables
 - **Default:** `true`
 - **Required:** No
 
-**Description:** Controls whether Prometheus metrics are exposed at `/metrics` endpoint for monitoring. Tracks:
-- HTTP request counts and durations
-- Database query performance
-- Cache hit/miss rates
-- Memory and CPU usage
-- Custom business metrics (transactions processed, market fetches, etc.)
+**Description:** Controls whether Prometheus metrics are exposed at `/metrics` endpoint. Tracks HTTP performance, database queries, cache efficiency, resource usage, and custom business metrics.
 
 **When to Enable:**
 - ✅ Production (monitoring is critical)
@@ -333,77 +322,6 @@ scrape_configs:
 
 ## Rate Limiting & Throttling
 
-### COMMENTS_DAILY_LIMIT
-- **Type:** `number`
-- **Default:** `1`
-- **Required:** No
-
-**Description:** Maximum comments a user can post per day (per wallet address).
-
-**Purpose:** Prevents spam and abuse while allowing legitimate discussion.
-
-**Recommended Values:**
-- `1` - Very restrictive, development/testing
-- `5` - Moderate, prevents spam
-- `25` - Generous, active communities
-- `100` - Very permissive
-
----
-
-### CHAT_DAILY_LIMIT
-- **Type:** `number`
-- **Default:** `25`
-- **Required:** No
-
-**Description:** Maximum chat messages a user can send per day (per wallet address).
-
-**Recommended Values:**
-- `25` - Default, balanced
-- `50` - Active users
-- `100` - Very active communities
-- `500` - Power users
-
----
-
-### COMMENTS_ATTACHMENT_MAX_SIZE
-- **Type:** `number` (bytes)
-- **Default:** `5242880` (5 MB)
-- **Required:** No
-
-**Description:** Maximum file size for comment attachments.
-
-**Common Values:**
-```bash
-# 5 MB (default)
-COMMENTS_ATTACHMENT_MAX_SIZE=5242880
-
-# 10 MB
-COMMENTS_ATTACHMENT_MAX_SIZE=10485760
-
-# 1 MB (very restrictive)
-COMMENTS_ATTACHMENT_MAX_SIZE=1048576
-```
-
-**Storage Impact:** Larger files require more storage space (S3/R2) and bandwidth.
-
----
-
-### COMMENTS_ATTACHMENT_URL_TTL
-- **Type:** `number` (seconds)
-- **Default:** `900` (15 minutes)
-- **Required:** No
-
-**Description:** How long presigned URLs for comment attachments remain valid.
-
-**Security:** Shorter TTL = more secure (URLs expire faster) but requires more frequent regeneration.
-
-**Common Values:**
-- `900` (15 min) - Default, good balance
-- `3600` (1 hour) - Generous
-- `300` (5 min) - Very secure
-
----
-
 ### NOTIFICATION_WEBSOCKET_THROTTLE_MS
 - **Type:** `number` (milliseconds)
 - **Default:** `5000` (5 seconds)
@@ -439,7 +357,7 @@ COMMENTS_ATTACHMENT_MAX_SIZE=1048576
 
 ## Object Storage (S3/R2)
 
-All storage variables are optional. Used for comment attachments and uploaded files.
+All storage variables are optional. Used for uploaded files and attachments.
 
 ### STORAGE_ENDPOINT
 - **Type:** `string` (URL)
@@ -853,76 +771,28 @@ STORAGE_REGION=us-west-2
 STORAGE_BUCKET=tronrelic-prod-attachments
 STORAGE_ACCESS_KEY_ID=<your-key>
 STORAGE_SECRET_ACCESS_KEY=<your-secret>
-
-# Rate limiting (generous for production)
-COMMENTS_DAILY_LIMIT=5
-CHAT_DAILY_LIMIT=50
 ```
 
 ---
 
-## Security Checklist
+## Pre-Deployment Security
 
-Before deploying to production:
+Before deploying to production, review the security checklist in [README.md - Security Checklist](../README.md#security-checklist) and [operations-workflows.md - Production Setup](./operations/operations-workflows.md#production-setup-tronreliccom).
 
-- [ ] Generate new `ADMIN_API_TOKEN` (use `openssl rand -hex 32`)
-- [ ] Set `NODE_ENV=production`
-- [ ] Use TLS/SSL for MongoDB and Redis connections
-- [ ] Never commit `.env` files to version control
-- [ ] Use environment variables or secrets manager in production
-- [ ] Rotate API keys periodically
-- [ ] Enable TronGrid API key for better rate limits
-- [ ] Configure storage credentials securely
-- [ ] Set appropriate rate limits for your user base
-- [ ] Enable monitoring (`ENABLE_TELEMETRY=true`)
+**Critical environment variable security practices:**
+- Generate secure tokens with `openssl rand -hex 32` (ADMIN_API_TOKEN, TELEGRAM_WEBHOOK_SECRET, database passwords)
+- Never commit `.env` files to version control
+- Use TLS/SSL connection strings for MongoDB and Redis in production
+- Rotate API keys and credentials periodically
 
 ---
 
-## Troubleshooting
+## Troubleshooting Configuration Issues
 
-### Application won't start
-**Problem:** `MONGODB_URI is required` error
-
-**Solution:** Ensure `MONGODB_URI` is set in `apps/backend/.env`
-
----
-
-### No data appearing in dashboard
-**Problem:** System monitoring shows 0 transactions, stale market data
-
-**Solution:** Enable the scheduler:
-```bash
-ENABLE_SCHEDULER=true
-```
-
----
-
-### Cannot access /system dashboard
-**Problem:** 401 Unauthorized or 503 Service Unavailable
-
-**Solution:** Set admin token:
-```bash
-ADMIN_API_TOKEN=your-secure-token
-```
-
----
-
-### TronGrid rate limiting errors
-**Problem:** Logs show 429 Too Many Requests from TronGrid
-
-**Solutions:**
-1. Add TronGrid API key: `TRONGRID_API_KEY=your-key`
-2. Disable scheduler during development: `ENABLE_SCHEDULER=false`
-
----
-
-### WebSocket connections failing
-**Problem:** Real-time updates not working
-
-**Solutions:**
-1. Enable WebSockets: `ENABLE_WEBSOCKETS=true`
-2. Check `NEXT_PUBLIC_SOCKET_URL` matches backend URL
-3. Verify proxy supports WebSocket upgrade
+For troubleshooting environment configuration problems, see:
+- [README.md - Troubleshooting](../README.md#troubleshooting) - Common startup and configuration errors
+- [system-scheduler-operations.md - Troubleshooting](./system/system-scheduler-operations.md#troubleshooting) - Scheduler-specific issues
+- [market-system-operations.md - Troubleshooting](./markets/market-system-operations.md#troubleshooting) - Market data issues
 
 ---
 

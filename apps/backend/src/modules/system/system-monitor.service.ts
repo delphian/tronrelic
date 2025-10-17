@@ -193,10 +193,7 @@ export interface ConfigurationValues {
     delegationAmountTRX: number;
     stakeAmountTRX: number;
   };
-  limits: {
-    commentsDailyLimit: number;
-    chatDailyLimit: number;
-  };
+  limits: Record<string, never>;
   integrations: {
     hasTronGridKey: boolean;
     hasTelegramBot: boolean;
@@ -748,10 +745,7 @@ export class SystemMonitorService {
         delegationAmountTRX: blockchainConfig.thresholds.delegationAmountTRX,
         stakeAmountTRX: blockchainConfig.thresholds.stakeAmountTRX
       },
-      limits: {
-        commentsDailyLimit: env.COMMENTS_DAILY_LIMIT,
-        chatDailyLimit: env.CHAT_DAILY_LIMIT
-      },
+      limits: {},
       integrations: {
         hasTronGridKey: !!env.TRONGRID_API_KEY,
         hasTelegramBot: !!env.TELEGRAM_BOT_TOKEN,

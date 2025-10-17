@@ -162,12 +162,12 @@ Jobs use standard cron format: `minute hour day-of-month month day-of-week`
 
 **Common modifications:**
 
-| Current | Change To | Effect |
-|---------|-----------|--------|
-| `*/5 * * * *` | `*/2 * * * *` | Run twice as often (every 2 min instead of 5) |
-| `*/5 * * * *` | `*/10 * * * *` | Run half as often (every 10 min instead of 5) |
-| `*/1 * * * *` | `0 * * * *` | Run once per hour instead of every minute |
-| `* * * * *` | `0 9 * * *` | Run once daily at 9 AM instead of every minute |
+| Current | Change To | Effect | When to Use |
+|---------|-----------|--------|-------------|
+| `*/5 * * * *` | `*/2 * * * *` | Run twice as often (every 2 min instead of 5) | Catching up after downtime, need faster updates |
+| `*/5 * * * *` | `*/10 * * * *` | Run half as often (every 10 min instead of 5) | Reducing API load, data doesn't need frequent updates |
+| `*/1 * * * *` | `0 * * * *` | Run once per hour instead of every minute | Maintenance window, temporarily reduce frequency |
+| `* * * * *` | `0 9 * * *` | Run once daily at 9 AM instead of every minute | Job only needs to run once per day |
 
 **Validation:** Invalid cron expressions are rejected with an error message. The expression must have exactly 5 space-separated fields.
 
@@ -181,17 +181,17 @@ Jobs use standard cron format: `minute hour day-of-month month day-of-week`
 
 **Diagnosis:**
 
-1. Check if scheduler is globally enabled:
+- [ ] Check if scheduler is globally enabled:
    ```bash
    echo $ENABLE_SCHEDULER
    ```
 
-2. Check market job status in `/system`:
+- [ ] Check market job status in `/system`:
    - Find `markets:refresh` job card
    - Check if it's enabled (bright background) or disabled (dim)
    - Look at "Last run" timestamp and status badge
 
-3. Check logs for errors:
+- [ ] Check logs for errors:
    ```bash
    tail -100 .run/backend.log | grep -i market
    ```
@@ -212,17 +212,17 @@ Jobs use standard cron format: `minute hour day-of-month month day-of-week`
 
 **Diagnosis:**
 
-1. Check blockchain job status in `/system`:
+- [ ] Check blockchain job status in `/system`:
    - Find `blockchain:sync` job card
    - Verify it's enabled (bright background)
    - Check if status is "success" (green) or "failed" (red)
 
-2. Check blockchain sync metrics in `/system`:
+- [ ] Check blockchain sync metrics in `/system`:
    - Under "Blockchain Status" section
    - Compare "Current Block" vs "Network Block"
    - Check "Processing Rate" (blocks per minute)
 
-3. Check logs:
+- [ ] Check logs:
    ```bash
    tail -100 .run/backend.log | grep -i blockchain
    ```
@@ -274,12 +274,12 @@ No restart needed. Job resumes normally.
 
 **Diagnosis:**
 
-1. Is scheduler globally enabled?
+- [ ] Is scheduler globally enabled?
    ```bash
    echo $ENABLE_SCHEDULER
    ```
 
-2. Check backend logs for initialization:
+- [ ] Check backend logs for initialization:
    ```bash
    tail -50 .run/backend.log | grep -i scheduler
    ```
@@ -300,11 +300,11 @@ No restart needed. Job resumes normally.
 
 **Diagnosis:**
 
-1. Check what job is slow:
+- [ ] Check what job is slow:
    - Find job in `/system` dashboard
    - Note the duration value
 
-2. Check logs:
+- [ ] Check logs:
    ```bash
    tail -100 .run/backend.log | grep "jobName"
    ```

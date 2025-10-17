@@ -234,6 +234,8 @@ If an observer's queue exceeds 1,000 transactions:
 3. Skip oldest transactions (may lose some data)
 4. Continue with incoming transactions
 
+This is a deliberate safety mechanism - we prioritize system stability over guaranteed delivery during extreme lag. If an observer falls too far behind, dropping old transactions prevents unbounded memory growth that could crash the entire system.
+
 ## Blockchain Service Lifecycle
 
 ### Startup
