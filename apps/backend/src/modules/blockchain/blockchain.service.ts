@@ -1151,10 +1151,7 @@ export class BlockchainService {
 
         const rawTransaction: ITransaction = { payload, snapshot, categories: emptyCategories, rawValue: value, info };
 
-        return new ProcessedTransaction(rawTransaction, {
-            delegationAmountTRX: blockchainConfig.thresholds.delegationAmountTRX,
-            stakeAmountTRX: blockchainConfig.thresholds.stakeAmountTRX
-        });
+        return new ProcessedTransaction(rawTransaction);
     }
 
     /**

@@ -3,25 +3,15 @@ import type { ITransactionPersistencePayload } from './ITransactionPersistencePa
 import type { ITransactionCategoryFlags } from './ITransactionCategoryFlags.js';
 
 /**
- * Transaction category threshold configuration.
- *
- * These thresholds determine when a transaction qualifies for special categorization.
- * They should be passed from the backend's blockchainConfig to ensure consistency.
- */
-export interface TransactionCategoryThresholds {
-    /** Minimum TRX amount to qualify as a delegation transaction */
-    delegationAmountTRX: number;
-    /** Minimum TRX amount to qualify as a stake transaction */
-    stakeAmountTRX: number;
-}
-
-/**
  * Enriched transaction model with category detection methods.
  *
  * This class wraps the ITransaction interface and provides convenience methods
  * for checking transaction categories. By decentralizing category logic into the model
  * itself, we eliminate the need for separate category flags and keep the detection logic
  * portable across observers and plugins.
+ *
+ * Note: These methods only identify transaction types. Amount-based filtering should be
+ * applied at the application level where business logic requires it.
  */
 export class ProcessedTransaction implements ITransaction {
     /** Complete transaction data ready for database persistence */
@@ -35,56 +25,41 @@ export class ProcessedTransaction implements ITransaction {
     /** Transaction receipt with energy/bandwidth execution details (may be null) */
     info: any;
 
-    private thresholds: TransactionCategoryThresholds;
-
-    constructor(data: ITransaction, thresholds: TransactionCategoryThresholds) {
+    constructor(data: ITransaction) {
         this.payload = data.payload;
         this.snapshot = data.snapshot;
         this.categories = data.categories;
         this.rawValue = data.rawValue;
         this.info = data.info;
-        this.thresholds = thresholds;
     }
 
     /**
-     * Check if this transaction qualifies as a delegation transaction.
+     * Check if this transaction is a delegation transaction.
      *
      * A transaction is considered a delegation if it's a DelegateResourceContract or
-     * UnDelegateResourceContract and the amount exceeds the configured threshold.
-     * This method replaces the old `categories.isDelegation` flag.
+     * UnDelegateResourceContract. This method only identifies the transaction type and
+     * does not apply amount thresholds.
      */
     isDelegation(): boolean {
-        const isDelegationType =
+        return (
             this.payload.type === 'DelegateResourceContract' ||
-            this.payload.type === 'UnDelegateResourceContract';
-
-        if (!isDelegationType) {
-            return false;
-        }
-
-        const amountTRX = this.payload.amountTRX ?? 0;
-        return amountTRX >= this.thresholds.delegationAmountTRX;
+            this.payload.type === 'UnDelegateResourceContract'
+        );
     }
 
     /**
-     * Check if this transaction qualifies as a stake transaction.
+     * Check if this transaction is a stake transaction.
      *
      * A transaction is considered a stake if it's a FreezeBalanceContract,
-     * FreezeBalanceV2Contract, or UnfreezeBalanceContract and the amount exceeds
-     * the configured threshold. This method replaces the old `categories.isStake` flag.
+     * FreezeBalanceV2Contract, or UnfreezeBalanceContract. This method only identifies
+     * the transaction type and does not apply amount thresholds.
      */
     isStake(): boolean {
-        const isStakeType =
+        return (
             this.payload.type === 'FreezeBalanceContract' ||
             this.payload.type === 'FreezeBalanceV2Contract' ||
-            this.payload.type === 'UnfreezeBalanceContract';
-
-        if (!isStakeType) {
-            return false;
-        }
-
-        const amountTRX = this.payload.amountTRX ?? 0;
-        return amountTRX >= this.thresholds.stakeAmountTRX;
+            this.payload.type === 'UnfreezeBalanceContract'
+        );
     }
 
     /**

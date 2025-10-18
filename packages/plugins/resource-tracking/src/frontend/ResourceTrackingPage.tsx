@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import type { IFrontendPluginContext } from '@tronrelic/types';
+import { Activity, Calendar, AlertCircle, BarChart3 } from 'lucide-react';
 import styles from './ResourceTrackingPage.module.css';
 
 interface ISummationPoint {
@@ -15,6 +16,19 @@ interface ISummationPoint {
 }
 
 type TimePeriod = '1d' | '7d' | '30d' | '6m';
+
+/**
+ * Chart color palette matching toggle labels.
+ * Each color is consistent between the line chart and toggle label indicators.
+ */
+const CHART_COLORS = {
+    energyDelegated: '#22c55e',
+    energyReclaimed: '#ef4444',
+    netEnergy: '#3b82f6',
+    bandwidthDelegated: '#a855f7',
+    bandwidthReclaimed: '#f97316',
+    netBandwidth: '#06b6d4'
+} as const;
 
 /**
  * Resource Tracking Page Component.
@@ -34,7 +48,7 @@ type TimePeriod = '1d' | '7d' | '30d' | '6m';
  * @param props.context - Frontend plugin context with API client, UI components, and charts
  */
 export function ResourceTrackingPage({ context }: { context: IFrontendPluginContext }) {
-    const { ui, api, charts } = context;
+    const { api, charts, ui } = context;
 
     const [data, setData] = useState<ISummationPoint[]>([]);
     const [loading, setLoading] = useState(true);
@@ -48,6 +62,29 @@ export function ResourceTrackingPage({ context }: { context: IFrontendPluginCont
     const [showBandwidthDelegated, setShowBandwidthDelegated] = useState(false);
     const [showBandwidthReclaimed, setShowBandwidthReclaimed] = useState(false);
     const [showNetBandwidth, setShowNetBandwidth] = useState(false);
+
+    /**
+     * Calculate time range for the chart based on the selected period.
+     *
+     * Returns fixed min/max dates to prevent the chart from stretching sparse data
+     * across the full width. Data points will appear at their actual timestamps within
+     * the selected time range.
+     */
+    function getTimeRange(): { minDate: Date; maxDate: Date } {
+        const now = new Date();
+        const periodMap: Record<TimePeriod, number> = {
+            '1d': 1,
+            '7d': 7,
+            '30d': 30,
+            '6m': 180
+        };
+
+        const days = periodMap[period];
+        const minDate = new Date();
+        minDate.setDate(minDate.getDate() - days);
+
+        return { minDate, maxDate: now };
+    }
 
     /**
      * Load summation data from the API.
@@ -148,67 +185,79 @@ export function ResourceTrackingPage({ context }: { context: IFrontendPluginCont
 
     if (showEnergyDelegated && data.length > 0) {
         chartSeries.push({
-            name: 'Energy Delegated',
+            id: 'energy-delegated',
+            label: 'Energy Delegated',
             data: data.map(point => ({
                 date: point.timestamp,
-                value: point.energyDelegated / 1_000_000 // Convert SUN to TRX
+                value: point.energyDelegated // Already in billions from API
             })),
-            color: '#22c55e' // Green
+            color: CHART_COLORS.energyDelegated,
+            fill: true
         });
     }
 
     if (showEnergyReclaimed && data.length > 0) {
         chartSeries.push({
-            name: 'Energy Reclaimed',
+            id: 'energy-reclaimed',
+            label: 'Energy Reclaimed',
             data: data.map(point => ({
                 date: point.timestamp,
-                value: point.energyReclaimed / 1_000_000
+                value: point.energyReclaimed // Already in billions from API
             })),
-            color: '#ef4444' // Red
+            color: CHART_COLORS.energyReclaimed,
+            fill: true
         });
     }
 
     if (showNetEnergy && data.length > 0) {
         chartSeries.push({
-            name: 'Net Energy',
+            id: 'net-energy',
+            label: 'Net Energy',
             data: data.map(point => ({
                 date: point.timestamp,
-                value: point.netEnergy / 1_000_000
+                value: point.netEnergy // Already in billions from API
             })),
-            color: '#3b82f6' // Blue
+            color: CHART_COLORS.netEnergy,
+            fill: true
         });
     }
 
     if (showBandwidthDelegated && data.length > 0) {
         chartSeries.push({
-            name: 'Bandwidth Delegated',
+            id: 'bandwidth-delegated',
+            label: 'Bandwidth Delegated',
             data: data.map(point => ({
                 date: point.timestamp,
-                value: point.bandwidthDelegated / 1_000_000
+                value: point.bandwidthDelegated // Already in billions from API
             })),
-            color: '#a855f7' // Purple
+            color: CHART_COLORS.bandwidthDelegated,
+            fill: true
         });
     }
 
     if (showBandwidthReclaimed && data.length > 0) {
         chartSeries.push({
-            name: 'Bandwidth Reclaimed',
+            id: 'bandwidth-reclaimed',
+            label: 'Bandwidth Reclaimed',
             data: data.map(point => ({
                 date: point.timestamp,
-                value: point.bandwidthReclaimed / 1_000_000
+                value: point.bandwidthReclaimed // Already in billions from API
             })),
-            color: '#f97316' // Orange
+            color: CHART_COLORS.bandwidthReclaimed,
+            fill: true
         });
     }
 
     if (showNetBandwidth && data.length > 0) {
         chartSeries.push({
-            name: 'Net Bandwidth',
+            id: 'net-bandwidth',
+            label: 'Net Bandwidth',
             data: data.map(point => ({
                 date: point.timestamp,
-                value: point.netBandwidth / 1_000_000
+                value: point.netBandwidth // Already in billions from API
             })),
-            color: '#06b6d4' // Cyan
+            color: CHART_COLORS.netBandwidth,
+            fill: true
         });
     }
 
@@ -216,9 +265,16 @@ export function ResourceTrackingPage({ context }: { context: IFrontendPluginCont
         return (
             <main className={styles.page}>
                 <header className={styles.header}>
-                    <h1 className={styles.title}>Resource Tracking</h1>
+                    <h1 className={styles.title}>
+                        <Activity size={28} style={{ display: 'inline-block', marginRight: '0.5rem', verticalAlign: 'middle' }} />
+                        Resource Tracking
+                    </h1>
                     <p className={styles.subtitle}>Loading delegation data...</p>
                 </header>
+                <div className={`surface ${styles.container}`}>
+                    <div className={styles.skeletonLoader} style={{ height: '60px', marginBottom: 'var(--spacing-md)' }} />
+                    <div className={styles.skeletonLoader} style={{ height: '400px' }} />
+                </div>
             </main>
         );
     }
@@ -227,9 +283,21 @@ export function ResourceTrackingPage({ context }: { context: IFrontendPluginCont
         return (
             <main className={styles.page}>
                 <header className={styles.header}>
-                    <h1 className={styles.title}>Resource Tracking</h1>
-                    <p className={styles.subtitle}>{error}</p>
+                    <h1 className={styles.title}>
+                        <Activity size={28} style={{ display: 'inline-block', marginRight: '0.5rem', verticalAlign: 'middle' }} />
+                        Resource Tracking
+                    </h1>
+                    <p className={styles.subtitle}>Monitor TRON resource delegation patterns</p>
                 </header>
+                <div className={`surface ${styles.container}`}>
+                    <div className={styles.errorContainer}>
+                        <AlertCircle size={48} color="var(--color-danger, #ef4444)" />
+                        <p className={styles.errorText}>{error}</p>
+                        <button className="btn btn--secondary" onClick={loadData}>
+                            Retry
+                        </button>
+                    </div>
+                </div>
             </main>
         );
     }
@@ -237,9 +305,12 @@ export function ResourceTrackingPage({ context }: { context: IFrontendPluginCont
     return (
         <main className={styles.page}>
             <header className={styles.header}>
-                <h1 className={styles.title}>Resource Tracking</h1>
+                <h1 className={styles.title}>
+                    <Activity size={28} style={{ display: 'inline-block', marginRight: '0.5rem', verticalAlign: 'middle' }} />
+                    Resource Tracking
+                </h1>
                 <p className={styles.subtitle}>
-                    Monitor TRON resource delegation and reclaim patterns over time
+                    Monitor TRON resource delegation and reclaim patterns (billions of SUN units)
                 </p>
             </header>
 
@@ -247,29 +318,40 @@ export function ResourceTrackingPage({ context }: { context: IFrontendPluginCont
                 {/* Time Period Selector */}
                 <div className={styles.controls}>
                     <div className={styles.periodSelector}>
-                        <span className={styles.label}>Time Period:</span>
+                        <span className={styles.label}>
+                            <Calendar size={16} style={{ display: 'inline-block', marginRight: '0.25rem', verticalAlign: 'middle' }} />
+                            Time Period:
+                        </span>
                         <div className={styles.buttonGroup}>
                             <button
                                 className={`btn btn--sm ${period === '1d' ? 'btn--primary' : ''}`}
                                 onClick={() => setPeriod('1d')}
+                                aria-label="Show data for 1 day"
+                                aria-pressed={period === '1d'}
                             >
                                 1 Day
                             </button>
                             <button
                                 className={`btn btn--sm ${period === '7d' ? 'btn--primary' : ''}`}
                                 onClick={() => setPeriod('7d')}
+                                aria-label="Show data for 7 days"
+                                aria-pressed={period === '7d'}
                             >
                                 7 Days
                             </button>
                             <button
                                 className={`btn btn--sm ${period === '30d' ? 'btn--primary' : ''}`}
                                 onClick={() => setPeriod('30d')}
+                                aria-label="Show data for 30 days"
+                                aria-pressed={period === '30d'}
                             >
                                 30 Days
                             </button>
                             <button
                                 className={`btn btn--sm ${period === '6m' ? 'btn--primary' : ''}`}
                                 onClick={() => setPeriod('6m')}
+                                aria-label="Show data for 6 months"
+                                aria-pressed={period === '6m'}
                             >
                                 6 Months
                             </button>
@@ -285,8 +367,9 @@ export function ResourceTrackingPage({ context }: { context: IFrontendPluginCont
                                     type="checkbox"
                                     checked={showEnergyDelegated}
                                     onChange={(e) => setShowEnergyDelegated(e.target.checked)}
+                                    aria-label="Toggle Energy Delegated line visibility"
                                 />
-                                <span className={styles.toggleLabel} style={{ color: '#22c55e' }}>
+                                <span className={`${styles.toggleLabel} ${styles.toggleLabelEnergyDelegated}`}>
                                     Energy Delegated
                                 </span>
                             </label>
@@ -295,8 +378,9 @@ export function ResourceTrackingPage({ context }: { context: IFrontendPluginCont
                                     type="checkbox"
                                     checked={showEnergyReclaimed}
                                     onChange={(e) => setShowEnergyReclaimed(e.target.checked)}
+                                    aria-label="Toggle Energy Reclaimed line visibility"
                                 />
-                                <span className={styles.toggleLabel} style={{ color: '#ef4444' }}>
+                                <span className={`${styles.toggleLabel} ${styles.toggleLabelEnergyReclaimed}`}>
                                     Energy Reclaimed
                                 </span>
                             </label>
@@ -305,8 +389,9 @@ export function ResourceTrackingPage({ context }: { context: IFrontendPluginCont
                                     type="checkbox"
                                     checked={showNetEnergy}
                                     onChange={(e) => setShowNetEnergy(e.target.checked)}
+                                    aria-label="Toggle Net Energy line visibility"
                                 />
-                                <span className={styles.toggleLabel} style={{ color: '#3b82f6' }}>
+                                <span className={`${styles.toggleLabel} ${styles.toggleLabelNetEnergy}`}>
                                     Net Energy
                                 </span>
                             </label>
@@ -315,8 +400,9 @@ export function ResourceTrackingPage({ context }: { context: IFrontendPluginCont
                                     type="checkbox"
                                     checked={showBandwidthDelegated}
                                     onChange={(e) => setShowBandwidthDelegated(e.target.checked)}
+                                    aria-label="Toggle Bandwidth Delegated line visibility"
                                 />
-                                <span className={styles.toggleLabel} style={{ color: '#a855f7' }}>
+                                <span className={`${styles.toggleLabel} ${styles.toggleLabelBandwidthDelegated}`}>
                                     Bandwidth Delegated
                                 </span>
                             </label>
@@ -325,8 +411,9 @@ export function ResourceTrackingPage({ context }: { context: IFrontendPluginCont
                                     type="checkbox"
                                     checked={showBandwidthReclaimed}
                                     onChange={(e) => setShowBandwidthReclaimed(e.target.checked)}
+                                    aria-label="Toggle Bandwidth Reclaimed line visibility"
                                 />
-                                <span className={styles.toggleLabel} style={{ color: '#f97316' }}>
+                                <span className={`${styles.toggleLabel} ${styles.toggleLabelBandwidthReclaimed}`}>
                                     Bandwidth Reclaimed
                                 </span>
                             </label>
@@ -335,8 +422,9 @@ export function ResourceTrackingPage({ context }: { context: IFrontendPluginCont
                                     type="checkbox"
                                     checked={showNetBandwidth}
                                     onChange={(e) => setShowNetBandwidth(e.target.checked)}
+                                    aria-label="Toggle Net Bandwidth line visibility"
                                 />
-                                <span className={styles.toggleLabel} style={{ color: '#06b6d4' }}>
+                                <span className={`${styles.toggleLabel} ${styles.toggleLabelNetBandwidth}`}>
                                     Net Bandwidth
                                 </span>
                             </label>
@@ -349,11 +437,13 @@ export function ResourceTrackingPage({ context }: { context: IFrontendPluginCont
                     {chartSeries.length > 0 ? (
                         <charts.LineChart
                             series={chartSeries}
-                            height={400}
-                            yAxisLabel="TRX"
+                            yAxisFormatter={(value) => `${Math.round(value).toLocaleString()}`}
+                            minDate={getTimeRange().minDate}
+                            maxDate={getTimeRange().maxDate}
                         />
                     ) : (
                         <div className={styles.noData}>
+                            <BarChart3 size={64} style={{ opacity: 0.3, marginBottom: 'var(--spacing-md)' }} />
                             <p>No data available or all lines are hidden</p>
                             <p className={styles.noDataHint}>
                                 Select at least one line to display the chart
