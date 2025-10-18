@@ -1,9 +1,19 @@
 import { Schema, model, type Document } from 'mongoose';
 import type { TronTransactionDocument } from '@tronrelic/shared';
 
-export interface TransactionDoc extends Document, Omit<TronTransactionDocument, 'id' | 'timestamp'> {
+/**
+ * Plain field interface for Transaction documents.
+ * Use this when working with `.lean()` queries to avoid type mismatches with Mongoose Document types.
+ */
+export interface TransactionFields extends Omit<TronTransactionDocument, 'id' | 'timestamp'> {
   timestamp: Date;
 }
+
+/**
+ * Mongoose document interface for Transaction.
+ * Extends both Document (for Mongoose methods) and TransactionFields (for domain properties).
+ */
+export interface TransactionDoc extends Document, TransactionFields {}
 
 const TransactionSchema = new Schema<TransactionDoc>({
   txId: { type: String, index: true, unique: true, required: true },

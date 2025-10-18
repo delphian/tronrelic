@@ -6,9 +6,9 @@ import type { Redis as RedisClient } from 'ioredis';
 import type { TronTransactionDocument } from '@tronrelic/shared';
 import type { ITransaction, ITransactionPersistencePayload, ITransactionCategoryFlags } from '@tronrelic/types';
 import { ProcessedTransaction } from '@tronrelic/types';
-import { TransactionModel, type TransactionDoc } from '../../database/models/transaction-model.js';
-import { SyncStateModel, type SyncStateDoc } from '../../database/models/sync-state-model.js';
-import { BlockModel, type BlockStats } from '../../database/models/block-model.js';
+import { TransactionModel, type TransactionDoc, type TransactionFields } from '../../database/models/transaction-model.js';
+import { SyncStateModel, type SyncStateDoc, type SyncStateFields } from '../../database/models/sync-state-model.js';
+import { BlockModel, type BlockStats, type BlockFields } from '../../database/models/block-model.js';
 import { DelegationFlowModel, ContractActivityModel, TokenModel } from '../../database/models/index.js';
 import { QueueService } from '../../services/queue.service.js';
 import { blockchainConfig } from '../../config/blockchain.js';
@@ -240,8 +240,8 @@ export class BlockchainService {
      * Retrieve the most recent transactions from the database.
      * Useful for API endpoints that display recent blockchain activity, sorted by timestamp descending to show newest first.
      */
-    async getLatestTransactions(limit = 50) {
-        return TransactionModel.find().sort({ timestamp: -1 }).limit(limit).lean();
+    async getLatestTransactions(limit = 50): Promise<TransactionFields[]> {
+        return TransactionModel.find().sort({ timestamp: -1 }).limit(limit).lean() as Promise<TransactionFields[]>;
     }
 
     /**
@@ -486,8 +486,8 @@ export class BlockchainService {
      * Load the current blockchain sync cursor from MongoDB.
      * Returns the last successfully processed block number and backfill queue, or null if this is a fresh install.
      */
-    private async getSyncState(): Promise<SyncStateDoc | null> {
-        return SyncStateModel.findOne({ key: 'blockchain:last-block' }).lean();
+    private async getSyncState(): Promise<SyncStateFields | null> {
+        return SyncStateModel.findOne({ key: 'blockchain:last-block' }).lean() as Promise<SyncStateFields | null>;
     }
 
     /**
@@ -658,7 +658,7 @@ export class BlockchainService {
      * The parity target represents a desired historical sync point, allowing the scheduler to backfill towards a specific block height
      * when catching up with external systems or recovering from data gaps. Returns null if no parity target is configured.
      */
-    private getParityTarget(state: SyncStateDoc | null): number | null {
+    private getParityTarget(state: SyncStateFields | null): number | null {
         if (!state?.meta) {
             return null;
         }
@@ -675,7 +675,7 @@ export class BlockchainService {
      * The backfill queue accumulates blocks that failed during initial sync or were skipped due to gaps, ensuring eventual complete
      * historical coverage. The scheduler prioritizes these blocks before advancing the main cursor to maintain data continuity.
      */
-    private getBackfillQueue(state: SyncStateDoc | null): number[] {
+    private getBackfillQueue(state: SyncStateFields | null): number[] {
         if (!state?.meta) {
             return [];
         }
@@ -696,7 +696,7 @@ export class BlockchainService {
      * historical backfill. For existing installations it reads the cursor from MongoDB, handling both numeric and string-encoded values
      * for database compatibility across different MongoDB driver versions.
      */
-    private getLastProcessedBlock(state: SyncStateDoc | null, latestNetworkBlock: number): number {
+    private getLastProcessedBlock(state: SyncStateFields | null, latestNetworkBlock: number): number {
         if (!state?.cursor) {
             // On fresh install, start from current block instead of 0
             logger.info({ latestNetworkBlock }, 'Fresh install detected, starting sync from current block');
@@ -807,7 +807,7 @@ export class BlockchainService {
             blockNumber: { $gte: lowerBound, $lt: lastProcessed }
         })
             .select('blockNumber')
-            .lean();
+            .lean() as BlockFields[];
 
         const existingSet = new Set<number>(existing.map(block => block.blockNumber));
         const missing: number[] = [];

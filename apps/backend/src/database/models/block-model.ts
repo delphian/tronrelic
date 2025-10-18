@@ -12,7 +12,11 @@ export interface BlockStats {
   totalBandwidthUsed: number;
 }
 
-export interface BlockDoc extends Document {
+/**
+ * Plain field interface for Block documents.
+ * Use this when working with `.lean()` queries to avoid type mismatches with Mongoose Document types.
+ */
+export interface BlockFields {
   blockNumber: number;
   blockId: string;
   parentHash: string;
@@ -23,6 +27,12 @@ export interface BlockDoc extends Document {
   stats: BlockStats;
   processedAt: Date;
 }
+
+/**
+ * Mongoose document interface for Block.
+ * Extends both Document (for Mongoose methods) and BlockFields (for domain properties).
+ */
+export interface BlockDoc extends Document, BlockFields {}
 
 const BlockSchema = new Schema<BlockDoc>({
   blockNumber: { type: Number, required: true, unique: true, index: true },

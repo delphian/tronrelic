@@ -1,6 +1,10 @@
 import { Schema, model, type Document } from 'mongoose';
 
-export interface DelegationFlowDoc extends Document {
+/**
+ * Plain field interface for DelegationFlow documents.
+ * Use this when working with `.lean()` queries to avoid type mismatches with Mongoose Document types.
+ */
+export interface DelegationFlowFields {
   txId: string;
   timestamp: Date;
   fromAddress: string;
@@ -13,6 +17,12 @@ export interface DelegationFlowDoc extends Document {
   createdAt: Date;
   updatedAt: Date;
 }
+
+/**
+ * Mongoose document interface for DelegationFlow.
+ * Extends both Document (for Mongoose methods) and DelegationFlowFields (for domain properties).
+ */
+export interface DelegationFlowDoc extends Document, DelegationFlowFields {}
 
 const DelegationFlowSchema = new Schema<DelegationFlowDoc>(
   {

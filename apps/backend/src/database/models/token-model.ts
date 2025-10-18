@@ -2,7 +2,11 @@ import { Schema, model, type Document } from 'mongoose';
 
 export type TokenType = 'trc10' | 'trc20' | 'sunpump' | 'contract';
 
-export interface TokenDoc extends Document {
+/**
+ * Plain field interface for Token documents.
+ * Use this when working with `.lean()` queries to avoid type mismatches with Mongoose Document types.
+ */
+export interface TokenFields {
   txId: string;
   contractAddress: string;
   ownerAddress: string;
@@ -15,6 +19,12 @@ export interface TokenDoc extends Document {
   updatedAt: Date;
   metadata?: Record<string, unknown>;
 }
+
+/**
+ * Mongoose document interface for Token.
+ * Extends both Document (for Mongoose methods) and TokenFields (for domain properties).
+ */
+export interface TokenDoc extends Document, TokenFields {}
 
 const TokenSchema = new Schema<TokenDoc>(
   {

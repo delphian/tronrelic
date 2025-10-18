@@ -50,6 +50,10 @@ interface LineChartProps {
     minDate?: Date;
     /** Fixed maximum date for X-axis (prevents auto-scaling when data is sparse) */
     maxDate?: Date;
+    /** Fixed minimum value for Y-axis (overrides auto-calculated minimum) */
+    yAxisMin?: number;
+    /** Fixed maximum value for Y-axis (overrides auto-calculated maximum) */
+    yAxisMax?: number;
 }
 
 /**
@@ -149,7 +153,9 @@ export function LineChart({
     className,
     emptyLabel = 'Not enough data to render a chart.',
     minDate: fixedMinDate,
-    maxDate: fixedMaxDate
+    maxDate: fixedMaxDate,
+    yAxisMin: fixedYMin,
+    yAxisMax: fixedYMax
 }: LineChartProps) {
     const containerRef = useRef<HTMLElement | null>(null);
     const [containerWidth, setContainerWidth] = useState(860);
@@ -207,8 +213,29 @@ export function LineChart({
         const maxValue = Math.max(...allPoints.map(point => point.value));
 
         const rangeX = maxDate.getTime() === minDate.getTime() ? 1 : maxDate.getTime() - minDate.getTime();
-        const minY = minValue === maxValue ? minValue - 1 : minValue;
-        const maxY = minValue === maxValue ? maxValue + 1 : maxValue;
+
+        // Use fixed Y-axis bounds if provided, otherwise calculate from data
+        let minY: number;
+        let maxY: number;
+
+        if (fixedYMin !== undefined && fixedYMax !== undefined) {
+            // Both min and max are fixed
+            minY = fixedYMin;
+            maxY = fixedYMax;
+        } else if (fixedYMin !== undefined) {
+            // Only min is fixed
+            minY = fixedYMin;
+            maxY = minValue === maxValue ? maxValue + 1 : Math.max(maxValue, minY + 1);
+        } else if (fixedYMax !== undefined) {
+            // Only max is fixed
+            maxY = fixedYMax;
+            minY = minValue === maxValue ? minValue - 1 : Math.min(minValue, maxY - 1);
+        } else {
+            // Auto-calculate both from data
+            minY = minValue === maxValue ? minValue - 1 : minValue;
+            maxY = minValue === maxValue ? maxValue + 1 : maxValue;
+        }
+
         const rangeY = maxY - minY || 1;
 
         const width = Math.max(containerWidth, 320);
@@ -265,7 +292,7 @@ export function LineChart({
             scaleY,
             domainPoints
         };
-    }, [series, height, containerWidth, fixedMinDate, fixedMaxDate]);
+    }, [series, height, containerWidth, fixedMinDate, fixedMaxDate, fixedYMin, fixedYMax]);
 
     if (!chartData) {
         return <div className={cn(styles.chart, className)}>{emptyLabel}</div>;

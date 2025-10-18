@@ -47,6 +47,12 @@ export interface ISchedulerExecution {
     error: string | null;
 }
 
+/**
+ * Plain field interface for SchedulerExecution documents.
+ * Use this when working with `.lean()` queries to avoid type mismatches with Mongoose Document types.
+ */
+export type ISchedulerExecutionFields = ISchedulerExecution;
+
 export type SchedulerExecutionDoc = Document & ISchedulerExecution;
 
 const schedulerExecutionSchema = new Schema<SchedulerExecutionDoc>(
