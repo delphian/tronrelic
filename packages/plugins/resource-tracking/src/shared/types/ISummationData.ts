@@ -1,7 +1,7 @@
 /**
  * Aggregated resource delegation statistics for a time period.
  *
- * Rolled up every 10 minutes from individual transaction details to provide
+ * Rolled up every 5 minutes from individual transaction details to provide
  * trend analysis without retaining full transaction history. Energy and bandwidth
  * are tracked separately with both gross flows (delegated/reclaimed) and net totals.
  */

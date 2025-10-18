@@ -2,14 +2,14 @@ import type { IPluginDatabase, ILogger, IPluginWebSocketManager } from '@tronrel
 import type { IDelegationTransaction, ISummationData, IResourceTrackingConfig } from '../shared/types/index.js';
 
 /**
- * Aggregate delegation transaction data into summation records every 10 minutes.
+ * Aggregate delegation transaction data into summation records every 5 minutes.
  *
  * This job queries all delegation transactions since the last summation, groups them
  * by resource type, sums delegated and reclaimed amounts, and stores aggregated
  * statistics for long-term trend analysis. Summation data has a configurable TTL
  * (default 6 months) while individual transaction details are purged after 48 hours.
  *
- * The job runs every 10 minutes and creates a single summation record per run,
+ * The job runs every 5 minutes and creates a single summation record per run,
  * capturing the current state of delegation flows. This provides manageable data
  * volumes for charting while preserving historical trends.
  *
@@ -38,7 +38,7 @@ export async function runSummationJob(
 
         const startTime = lastSummation?.timestamp
             ? new Date(lastSummation.timestamp.getTime())
-            : new Date(Date.now() - 10 * 60 * 1000); // Default to last 10 minutes
+            : new Date(Date.now() - 5 * 60 * 1000); // Default to last 5 minutes
 
         // Query all delegation transactions since last summation
         const transactions = await database.find<IDelegationTransaction>(
