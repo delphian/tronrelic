@@ -1,8 +1,6 @@
 # TronRelic Development Environment
 # Use this for local development with hot reloading
 
-version: '3.8'
-
 services:
     # MongoDB Database
     mongodb:

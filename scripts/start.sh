@@ -207,32 +207,30 @@ if [[ "${FORCE_DOCKER}" == true ]]; then
   log INFO "Stopping and removing containers"
   docker compose -f "${COMPOSE_FILE}" down -v
 
-  log INFO "Removing Docker images"
-  docker rmi -f tronrelic-monorepo-backend 2>/dev/null || true
-  docker rmi -f tronrelic-monorepo-frontend 2>/dev/null || true
+  log INFO "Removing all TronRelic Docker images"
+  # Remove images matching both naming patterns (old and new)
+  docker images --format "{{.Repository}}:{{.Tag}}" | grep -E 'tronrelic|tronreliccom' | xargs -r docker rmi -f 2>/dev/null || true
 fi
 
 # Handle force-build: rebuild images without cache
 if [[ "${FORCE_BUILD}" == true ]]; then
-  log INFO "Building Docker images (no cache)"
-  if [[ "${PRODUCTION}" == true ]]; then
-    docker build --no-cache --target backend -t tronrelic-monorepo-backend .
-    docker build --no-cache --target frontend-prod -t tronrelic-monorepo-frontend .
-  else
-    docker build --no-cache --target backend -t tronrelic-monorepo-backend .
-    docker build --no-cache --target frontend-dev -t tronrelic-monorepo-frontend .
-  fi
-elif [[ "${FORCE_DOCKER}" == true ]] || ! docker images | grep -q "tronrelic-monorepo-backend"; then
-  log INFO "Building Docker images"
-  if [[ "${PRODUCTION}" == true ]]; then
-    docker build --target backend -t tronrelic-monorepo-backend .
-    docker build --target frontend-prod -t tronrelic-monorepo-frontend .
-  else
-    docker build --target backend -t tronrelic-monorepo-backend .
-    docker build --target frontend-dev -t tronrelic-monorepo-frontend .
-  fi
+  log INFO "Removing all TronRelic Docker images"
+  docker images --format "{{.Repository}}:{{.Tag}}" | grep -E 'tronrelic|tronreliccom' | xargs -r docker rmi -f 2>/dev/null || true
+
+  log INFO "Building Docker images with docker compose (no cache)"
+  docker compose -f "${COMPOSE_FILE}" build --no-cache
+elif [[ "${FORCE_DOCKER}" == true ]]; then
+  log INFO "Building Docker images with docker compose"
+  docker compose -f "${COMPOSE_FILE}" build
 else
-  log INFO "Using existing Docker images (use --force-build to rebuild)"
+  # Check if images exist using compose config
+  local backend_image=$(docker compose -f "${COMPOSE_FILE}" config --format json | grep -o '"Image":"[^"]*backend[^"]*"' | head -1 | cut -d'"' -f4)
+  if [[ -z "${backend_image}" ]] || ! docker images --format "{{.Repository}}:{{.Tag}}" | grep -q "${backend_image}"; then
+    log INFO "Building Docker images with docker compose"
+    docker compose -f "${COMPOSE_FILE}" build
+  else
+    log INFO "Using existing Docker images (use --force-build to rebuild)"
+  fi
 fi
 
 # Start all services
