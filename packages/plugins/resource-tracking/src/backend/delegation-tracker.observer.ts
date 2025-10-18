@@ -88,14 +88,14 @@ export function createDelegationTrackerObserver(
 
             const txId = payload.txId;
             if (!txId) {
-                scopedLogger.debug('Skipping transaction without txId');
+                scopedLogger.error('Skipping transaction without txId');
                 return;
             }
 
             // Check if already persisted to avoid duplicates
             const existing = await this.database.findOne<IDelegationTransaction>('transactions', { txId });
             if (existing) {
-                scopedLogger.debug({ txId }, 'Delegation transaction already persisted');
+                scopedLogger.info({ txId }, 'Delegation transaction already persisted - skipping');
                 return;
             }
 

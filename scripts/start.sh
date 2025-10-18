@@ -2,6 +2,7 @@
 set -euo pipefail
 
 # Starts the TronRelic application stack using Docker Compose:
+#   • Clears log files (.run/backend.log and .run/frontend.log)
 #   • Builds Docker images (frontend and backend)
 #   • Starts all 4 containers: MongoDB, Redis, Backend, Frontend
 #   • Waits for services to become healthy
@@ -177,6 +178,13 @@ done
 # Change to project root for docker compose commands
 cd "${MONO_ROOT}"
 
+# Clear log files to ensure fresh logs for this run
+log INFO "Clearing log files..."
+mkdir -p .run
+> .run/backend.log
+> .run/frontend.log
+log SUCCESS "Log files cleared"
+
 # Check for .env file
 if [[ ! -f .env ]]; then
   log ERROR "Missing .env file. Copy .env.example to .env and fill in your configuration."
@@ -223,13 +231,13 @@ elif [[ "${FORCE_DOCKER}" == true ]]; then
   log INFO "Building Docker images with docker compose"
   docker compose -f "${COMPOSE_FILE}" build
 else
-  # Check if images exist using compose config
-  backend_image=$(docker compose -f "${COMPOSE_FILE}" config --format json | grep -o '"Image":"[^"]*backend[^"]*"' | head -1 | cut -d'"' -f4)
-  if [[ -z "${backend_image}" ]] || ! docker images --format "{{.Repository}}:{{.Tag}}" | grep -q "${backend_image}"; then
+  # Check if images exist by looking for built images matching the project name
+  # Docker Compose generates image names like: tronreliccom-beta-backend:latest
+  if docker images --format "{{.Repository}}" | grep -q "tronrelic.*-backend"; then
+    log INFO "Using existing Docker images (use --force-build to rebuild)"
+  else
     log INFO "Building Docker images with docker compose"
     docker compose -f "${COMPOSE_FILE}" build
-  else
-    log INFO "Using existing Docker images (use --force-build to rebuild)"
   fi
 fi
 

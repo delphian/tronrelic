@@ -1,19 +1,11 @@
 @AGENTS.md                      - Project rules and agent delegation protocol
 @README.md                      - Project overview and quick start
-@docs/environment.md            - Environment variable reference
-@docs/tron/tron.md              - TRON blockchain concepts overview
-@docs/frontend/frontend.md      - Frontend system overview
-@docs/plugins/plugins.md        - Plugin system overview
-@docs/system/system.md          - System architecture overview
-@docs/markets/markets.md        - Market system overview
-@docs/operations/operations.md  - Deployment and operations overview
-@docs/TODO.md                   - Future requirements.
 
 # Agent Delegation Protocol
 
-## MANDATORY: Check Delegation BEFORE Any Implementation
+## MANDATORY: Check Delegation BEFORE All Else
 
-When a task involves implementation work (keywords: "implement", "create", "build", "add", "update", "write code", "make changes"), Claude MUST:
+Claude MUST:
 
 1. **STOP** - Do not create todo lists, plans, or start implementation
 2. **CHECK** - Scan for agent trigger keywords in the request
@@ -132,3 +124,42 @@ Claude MUST automatically use these agents when working with these file paths.
 **Example:**
 Good: "Yes, `.run` is mounted (line 84). Use `tail -f .run/*.log` to monitor."
 Avoid: "Let me check the file... After examining... I can see that..."
+
+# Project Framework Context
+
+@docs/environment.md            - Environment variable reference
+@docs/tron/tron.md              - TRON blockchain concepts overview
+@docs/frontend/frontend.md      - Frontend system overview
+@docs/plugins/plugins.md        - Plugin system overview
+@docs/system/system.md          - System architecture overview
+@docs/markets/markets.md        - Market system overview
+@docs/operations/operations.md  - Deployment and operations overview
+@docs/TODO.md                   - Future requirements.
+
+# Agent Delegation Protocol
+
+## MANDATORY: Check Delegation BEFORE All Else
+
+Claude MUST:
+
+1. **STOP** - Do not create todo lists, plans, or start implementation
+2. **CHECK** - Scan for agent trigger keywords in the request
+3. **DELEGATE** - If keywords match, delegate immediately
+
+Response format:
+
+"I'm analyzing this task... [brief analysis]
+
+**Agent delegation check:**
+- Task involves: [market fetchers/plugins/documentation/etc]
+- Appropriate agent: [agent-name]
+- Launching `[agent-name]` agent now..."
+
+[Then use Task tool]
+
+**Only skip agent delegation if:**
+1. User explicitly says "don't use agents" or "do it yourself"
+2. Task is trivial (< 5 lines of code, single file read)
+3. Task is purely conversational
+
+**If you skip delegation, explicitly state which condition applies.**
