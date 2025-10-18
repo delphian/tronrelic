@@ -234,15 +234,15 @@ export const resourceTrackingBackendPlugin = definePlugin({
                         { sort: { timestamp: 1 } }
                     );
 
-                    // Format response
+                    // Format response - convert to billions with 1 decimal precision
                     const data = summations.map(s => ({
                         timestamp: s.timestamp.toISOString(),
-                        energyDelegated: s.energyDelegated,
-                        energyReclaimed: s.energyReclaimed,
-                        bandwidthDelegated: s.bandwidthDelegated,
-                        bandwidthReclaimed: s.bandwidthReclaimed,
-                        netEnergy: s.netEnergy,
-                        netBandwidth: s.netBandwidth
+                        energyDelegated: Number((s.energyDelegated / 1_000_000_000).toFixed(1)),
+                        energyReclaimed: Number((s.energyReclaimed / 1_000_000_000).toFixed(1)),
+                        bandwidthDelegated: Number((s.bandwidthDelegated / 1_000_000_000).toFixed(1)),
+                        bandwidthReclaimed: Number((s.bandwidthReclaimed / 1_000_000_000).toFixed(1)),
+                        netEnergy: Number((s.netEnergy / 1_000_000_000).toFixed(1)),
+                        netBandwidth: Number((s.netBandwidth / 1_000_000_000).toFixed(1))
                     }));
 
                     res.json({ success: true, data });

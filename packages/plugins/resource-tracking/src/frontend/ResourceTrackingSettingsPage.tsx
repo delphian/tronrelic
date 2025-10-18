@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import type { IFrontendPluginContext } from '@tronrelic/types';
+import { Settings } from 'lucide-react';
 import styles from './ResourceTrackingSettingsPage.module.css';
 
 interface ISettings {
@@ -79,9 +80,17 @@ export function ResourceTrackingSettingsPage({ context }: { context: IFrontendPl
         return (
             <main className={styles.page}>
                 <header className={styles.header}>
-                    <h1 className={styles.title}>Resource Tracking Settings</h1>
+                    <h1 className={styles.title}>
+                        <Settings size={28} style={{ display: 'inline-block', marginRight: '0.5rem', verticalAlign: 'middle' }} />
+                        Resource Tracking Settings
+                    </h1>
                     <p className={styles.subtitle}>Loading settings...</p>
                 </header>
+                <div className={`surface ${styles.container}`}>
+                    <div className={styles.skeletonLoader} style={{ height: '60px', marginBottom: 'var(--spacing-md)' }} />
+                    <div className={styles.skeletonLoader} style={{ height: '60px', marginBottom: 'var(--spacing-md)' }} />
+                    <div className={styles.skeletonLoader} style={{ height: '60px' }} />
+                </div>
             </main>
         );
     }
@@ -89,7 +98,10 @@ export function ResourceTrackingSettingsPage({ context }: { context: IFrontendPl
     return (
         <main className={styles.page}>
             <header className={styles.header}>
-                <h1 className={styles.title}>Resource Tracking Settings</h1>
+                <h1 className={styles.title}>
+                    <Settings size={28} style={{ display: 'inline-block', marginRight: '0.5rem', verticalAlign: 'middle' }} />
+                    Resource Tracking Settings
+                </h1>
                 <p className={styles.subtitle}>
                     Configure data retention policies and cleanup frequency
                 </p>
