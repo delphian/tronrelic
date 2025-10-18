@@ -2,8 +2,14 @@ import { Schema, model, type Document } from 'mongoose';
 import type { IUsdtParameters } from '@tronrelic/types';
 
 /**
+ * Plain field interface for UsdtParameters documents.
+ * Use this when working with `.lean()` queries to avoid type mismatches with Mongoose Document types.
+ */
+export type IUsdtParametersFields = IUsdtParameters;
+
+/**
  * MongoDB document type for USDT parameters
- * Extends IUsdtParameters with Mongoose Document methods
+ * Extends both Document (for Mongoose methods) and IUsdtParameters (for domain properties)
  */
 export interface IUsdtParametersDocument extends IUsdtParameters, Document {}
 

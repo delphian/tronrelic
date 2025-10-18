@@ -1,11 +1,21 @@
 import { Schema, model, type Document } from 'mongoose';
 
-export interface CacheDoc<T = unknown> extends Document {
+/**
+ * Plain field interface for Cache documents.
+ * Use this when working with `.lean()` queries to avoid type mismatches with Mongoose Document types.
+ */
+export interface CacheFields<T = unknown> {
   key: string;
   value: T;
   expiresAt?: Date;
   tags?: string[];
 }
+
+/**
+ * Mongoose document interface for Cache.
+ * Extends both Document (for Mongoose methods) and CacheFields (for domain properties).
+ */
+export interface CacheDoc<T = unknown> extends Document, CacheFields<T> {}
 
 const CacheSchema = new Schema<CacheDoc>({
   key: { type: String, required: true, unique: true },

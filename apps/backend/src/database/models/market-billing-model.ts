@@ -1,6 +1,10 @@
 import { Schema, model, type Document } from 'mongoose';
 
-export interface MarketBillingDoc extends Document {
+/**
+ * Plain field interface for MarketBilling documents.
+ * Use this when working with `.lean()` queries to avoid type mismatches with Mongoose Document types.
+ */
+export interface MarketBillingFields {
   transactionId: string;
   transactionTimestamp: Date;
   addressFrom: string;
@@ -11,6 +15,12 @@ export interface MarketBillingDoc extends Document {
   createdAt: Date;
   updatedAt: Date;
 }
+
+/**
+ * Mongoose document interface for MarketBilling.
+ * Extends both Document (for Mongoose methods) and MarketBillingFields (for domain properties).
+ */
+export interface MarketBillingDoc extends Document, MarketBillingFields {}
 
 const MarketBillingSchema = new Schema<MarketBillingDoc>(
   {

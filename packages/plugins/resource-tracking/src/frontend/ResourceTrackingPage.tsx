@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import type { IFrontendPluginContext } from '@tronrelic/types';
-import { Activity, Calendar, AlertCircle, BarChart3 } from 'lucide-react';
+import { Activity, Calendar, AlertCircle, BarChart3, Zap, Gauge } from 'lucide-react';
 import styles from './ResourceTrackingPage.module.css';
 
 interface ISummationPoint {
@@ -53,7 +53,7 @@ export function ResourceTrackingPage({ context }: { context: IFrontendPluginCont
     const [data, setData] = useState<ISummationPoint[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-    const [period, setPeriod] = useState<TimePeriod>('7d');
+    const [period, setPeriod] = useState<TimePeriod>('1d');
 
     // Line toggle state
     const [showEnergyDelegated, setShowEnergyDelegated] = useState(true);
@@ -179,6 +179,59 @@ export function ResourceTrackingPage({ context }: { context: IFrontendPluginCont
             websocket.offConnect(handleReconnect);
         };
     }, [context.websocket]);
+
+    /**
+     * Determine whether any 'net' metrics are currently displayed.
+     *
+     * Net metrics (net energy or net bandwidth) can have negative values, requiring
+     * the Y-axis to include both positive and negative ranges centered on zero.
+     * Non-net metrics (delegated/reclaimed) are always positive and should have a
+     * Y-axis minimum of zero.
+     */
+    const hasNetMetrics = showNetEnergy || showNetBandwidth;
+
+    /**
+     * Calculate Y-axis bounds based on displayed metrics.
+     *
+     * - When NO net metrics are shown: Y-axis minimum is always 0 (non-negative values only)
+     * - When net metrics ARE shown: Y-axis is centered on 0 with symmetric positive/negative range
+     *   to ensure the zero line appears in the middle of the chart
+     */
+    let yAxisMin: number | undefined;
+    let yAxisMax: number | undefined;
+
+    if (data.length > 0) {
+        if (!hasNetMetrics) {
+            // No net metrics: bottom of chart should always be 0
+            yAxisMin = 0;
+            yAxisMax = undefined; // Let chart auto-scale the maximum
+        } else {
+            // Net metrics present: center the chart on zero
+            const allValues: number[] = [];
+
+            // Collect all visible metric values
+            if (showEnergyDelegated) allValues.push(...data.map(p => p.energyDelegated));
+            if (showEnergyReclaimed) allValues.push(...data.map(p => p.energyReclaimed));
+            if (showNetEnergy) allValues.push(...data.map(p => p.netEnergy));
+            if (showBandwidthDelegated) allValues.push(...data.map(p => p.bandwidthDelegated));
+            if (showBandwidthReclaimed) allValues.push(...data.map(p => p.bandwidthReclaimed));
+            if (showNetBandwidth) allValues.push(...data.map(p => p.netBandwidth));
+
+            if (allValues.length > 0) {
+                const dataMin = Math.min(...allValues);
+                const dataMax = Math.max(...allValues);
+
+                // Create symmetric range around zero
+                const maxAbsValue = Math.max(Math.abs(dataMin), Math.abs(dataMax));
+
+                // Add 10% padding to prevent data from touching the edges
+                const paddedMax = maxAbsValue * 1.1;
+
+                yAxisMin = -paddedMax;
+                yAxisMax = paddedMax;
+            }
+        }
+    }
 
     // Convert summation data to chart series format
     const chartSeries = [];
@@ -370,7 +423,7 @@ export function ResourceTrackingPage({ context }: { context: IFrontendPluginCont
                                     aria-label="Toggle Energy Delegated line visibility"
                                 />
                                 <span className={`${styles.toggleLabel} ${styles.toggleLabelEnergyDelegated}`}>
-                                    Energy Delegated
+                                    <Zap size={14} style={{ display: 'inline-block', marginRight: '0.25rem', verticalAlign: 'middle' }} /> Delegated
                                 </span>
                             </label>
                             <label className={styles.toggle}>
@@ -381,7 +434,7 @@ export function ResourceTrackingPage({ context }: { context: IFrontendPluginCont
                                     aria-label="Toggle Energy Reclaimed line visibility"
                                 />
                                 <span className={`${styles.toggleLabel} ${styles.toggleLabelEnergyReclaimed}`}>
-                                    Energy Reclaimed
+                                    <Zap size={14} style={{ display: 'inline-block', marginRight: '0.25rem', verticalAlign: 'middle' }} /> Reclaimed
                                 </span>
                             </label>
                             <label className={styles.toggle}>
@@ -392,7 +445,7 @@ export function ResourceTrackingPage({ context }: { context: IFrontendPluginCont
                                     aria-label="Toggle Net Energy line visibility"
                                 />
                                 <span className={`${styles.toggleLabel} ${styles.toggleLabelNetEnergy}`}>
-                                    Net Energy
+                                    Net <Zap size={14} style={{ display: 'inline-block', marginLeft: '0.25rem', verticalAlign: 'middle' }} />
                                 </span>
                             </label>
                             <label className={styles.toggle}>
@@ -403,7 +456,7 @@ export function ResourceTrackingPage({ context }: { context: IFrontendPluginCont
                                     aria-label="Toggle Bandwidth Delegated line visibility"
                                 />
                                 <span className={`${styles.toggleLabel} ${styles.toggleLabelBandwidthDelegated}`}>
-                                    Bandwidth Delegated
+                                    <Gauge size={14} style={{ display: 'inline-block', marginRight: '0.25rem', verticalAlign: 'middle' }} /> Delegated
                                 </span>
                             </label>
                             <label className={styles.toggle}>
@@ -414,7 +467,7 @@ export function ResourceTrackingPage({ context }: { context: IFrontendPluginCont
                                     aria-label="Toggle Bandwidth Reclaimed line visibility"
                                 />
                                 <span className={`${styles.toggleLabel} ${styles.toggleLabelBandwidthReclaimed}`}>
-                                    Bandwidth Reclaimed
+                                    <Gauge size={14} style={{ display: 'inline-block', marginRight: '0.25rem', verticalAlign: 'middle' }} /> Reclaimed
                                 </span>
                             </label>
                             <label className={styles.toggle}>
@@ -425,7 +478,7 @@ export function ResourceTrackingPage({ context }: { context: IFrontendPluginCont
                                     aria-label="Toggle Net Bandwidth line visibility"
                                 />
                                 <span className={`${styles.toggleLabel} ${styles.toggleLabelNetBandwidth}`}>
-                                    Net Bandwidth
+                                    Net <Gauge size={14} style={{ display: 'inline-block', marginLeft: '0.25rem', verticalAlign: 'middle' }} />
                                 </span>
                             </label>
                         </div>
@@ -445,6 +498,8 @@ export function ResourceTrackingPage({ context }: { context: IFrontendPluginCont
                             }}
                             minDate={getTimeRange().minDate}
                             maxDate={getTimeRange().maxDate}
+                            yAxisMin={yAxisMin}
+                            yAxisMax={yAxisMax}
                         />
                     ) : (
                         <div className={styles.noData}>

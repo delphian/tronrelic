@@ -1,7 +1,11 @@
 import { Schema, model, type Document } from 'mongoose';
 import type { NotificationChannel } from '@tronrelic/shared';
 
-export interface NotificationDeliveryDoc extends Document {
+/**
+ * Plain field interface for NotificationDelivery documents.
+ * Use this when working with `.lean()` queries to avoid type mismatches with Mongoose Document types.
+ */
+export interface NotificationDeliveryFields {
   wallet: string;
   channel: NotificationChannel;
   event: string;
@@ -10,6 +14,12 @@ export interface NotificationDeliveryDoc extends Document {
   createdAt: Date;
   updatedAt: Date;
 }
+
+/**
+ * Mongoose document interface for NotificationDelivery.
+ * Extends both Document (for Mongoose methods) and NotificationDeliveryFields (for domain properties).
+ */
+export interface NotificationDeliveryDoc extends Document, NotificationDeliveryFields {}
 
 const NotificationDeliverySchema = new Schema<NotificationDeliveryDoc>(
   {

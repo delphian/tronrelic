@@ -1,13 +1,23 @@
 import { Schema, model, type Document } from 'mongoose';
 import type { NotificationChannel } from '@tronrelic/shared';
 
-export interface NotificationSubscriptionDoc extends Document {
+/**
+ * Plain field interface for NotificationSubscription documents.
+ * Use this when working with `.lean()` queries to avoid type mismatches with Mongoose Document types.
+ */
+export interface NotificationSubscriptionFields {
   wallet: string;
   channels: NotificationChannel[];
   thresholds: Record<string, number>;
   preferences: Record<string, unknown>;
   throttleOverrides?: Partial<Record<NotificationChannel, number>>;
 }
+
+/**
+ * Mongoose document interface for NotificationSubscription.
+ * Extends both Document (for Mongoose methods) and NotificationSubscriptionFields (for domain properties).
+ */
+export interface NotificationSubscriptionDoc extends Document, NotificationSubscriptionFields {}
 
 const NotificationSubscriptionSchema = new Schema<NotificationSubscriptionDoc>({
   wallet: { type: String, required: true, unique: true },

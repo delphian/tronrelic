@@ -2,8 +2,14 @@ import { Schema, model, type Document } from 'mongoose';
 import type { IChainParameters } from '@tronrelic/types';
 
 /**
+ * Plain field interface for ChainParameters documents.
+ * Use this when working with `.lean()` queries to avoid type mismatches with Mongoose Document types.
+ */
+export type IChainParametersFields = IChainParameters;
+
+/**
  * MongoDB document type for chain parameters
- * Extends IChainParameters with Mongoose Document methods
+ * Extends both Document (for Mongoose methods) and IChainParameters (for domain properties)
  */
 export interface IChainParametersDocument extends IChainParameters, Document {}
 

@@ -4,7 +4,8 @@ import { WebSocketService } from './websocket.service.js';
 import {
   NotificationDeliveryModel,
   NotificationSubscriptionModel,
-  type NotificationSubscriptionDoc
+  type NotificationSubscriptionDoc,
+  type NotificationSubscriptionFields
 } from '../database/models/index.js';
 import { logger } from '../lib/logger.js';
 import { resolveChannels, resolveThrottleMs } from '../config/notifications.js';
@@ -37,7 +38,7 @@ export class NotificationService {
       return;
     }
 
-    const subscriptions = await NotificationSubscriptionModel.find({ wallet: { $in: uniqueWallets } }).lean();
+    const subscriptions = await NotificationSubscriptionModel.find({ wallet: { $in: uniqueWallets } }).lean() as NotificationSubscriptionFields[];
 
     if (!subscriptions.length) {
       return;
@@ -47,7 +48,7 @@ export class NotificationService {
 
     await Promise.all(
       subscriptions.map(subscription =>
-        this.dispatchToWallet(subscription.wallet, event, payloadHash, subscription)
+        this.dispatchToWallet(subscription.wallet, event, payloadHash, subscription as unknown as NotificationSubscriptionDoc)
       )
     );
   }
@@ -74,7 +75,7 @@ export class NotificationService {
       throw new Error('Wallet is required for preferences lookup');
     }
 
-    const doc = await NotificationSubscriptionModel.findOne({ wallet: normalizedWallet }).lean();
+    const doc = await NotificationSubscriptionModel.findOne({ wallet: normalizedWallet }).lean() as NotificationSubscriptionFields | null;
     const channels = resolveChannels(doc?.channels);
     return {
       wallet: normalizedWallet,

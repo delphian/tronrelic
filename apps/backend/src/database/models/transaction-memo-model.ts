@@ -1,6 +1,10 @@
 import { Schema, model, type Document } from 'mongoose';
 
-export interface TransactionMemoDoc extends Document {
+/**
+ * Plain field interface for TransactionMemo documents.
+ * Use this when working with `.lean()` queries to avoid type mismatches with Mongoose Document types.
+ */
+export interface TransactionMemoFields {
   txId: string;
   blockNumber: number;
   timestamp: Date;
@@ -13,6 +17,12 @@ export interface TransactionMemoDoc extends Document {
   createdAt: Date;
   updatedAt: Date;
 }
+
+/**
+ * Mongoose document interface for TransactionMemo.
+ * Extends both Document (for Mongoose methods) and TransactionMemoFields (for domain properties).
+ */
+export interface TransactionMemoDoc extends Document, TransactionMemoFields {}
 
 const TransactionMemoSchema = new Schema<TransactionMemoDoc>(
   {
