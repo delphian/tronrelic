@@ -17,8 +17,7 @@ COPY package-lock.json ./
 # Copy all package.json files to establish workspace structure
 COPY packages/types/package.json ./packages/types/
 COPY packages/shared/package.json ./packages/shared/
-COPY packages/plugins/whale-alerts/package.json ./packages/plugins/whale-alerts/
-COPY packages/plugins/example-dashboard/package.json ./packages/plugins/example-dashboard/
+COPY packages/plugins/ ./packages/plugins/
 COPY apps/backend/package.json ./apps/backend/
 COPY apps/frontend/package.json ./apps/frontend/
 
@@ -37,8 +36,7 @@ COPY tsconfig.base.json ./
 # Copy tsconfig files for project references
 COPY packages/types/tsconfig.json ./packages/types/
 COPY packages/shared/tsconfig.json ./packages/shared/
-COPY packages/plugins/whale-alerts/tsconfig.json ./packages/plugins/whale-alerts/
-COPY packages/plugins/example-dashboard/tsconfig.json ./packages/plugins/example-dashboard/
+# Plugin tsconfigs already copied with full plugins directory above
 
 # Copy source code for shared packages and plugins
 COPY packages/types ./packages/types
@@ -72,8 +70,7 @@ COPY package.json ./
 COPY package-lock.json ./
 COPY packages/types/package.json ./packages/types/
 COPY packages/shared/package.json ./packages/shared/
-COPY packages/plugins/whale-alerts/package.json ./packages/plugins/whale-alerts/
-COPY packages/plugins/example-dashboard/package.json ./packages/plugins/example-dashboard/
+COPY packages/plugins/ ./packages/plugins/
 COPY apps/backend/package.json ./apps/backend/
 
 # Install ALL dependencies (needed for building)
