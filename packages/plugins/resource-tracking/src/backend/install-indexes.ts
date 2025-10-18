@@ -27,10 +27,11 @@ export async function createResourceTrackingIndexes(context: IPluginContext): Pr
     logger.info('Created indexes for transactions collection');
 
     // Index for summation data collection
+    // - Block range composite index supports efficient block-based queries
     // - timestamp index supports time-range queries for chart data
-    // - TTL index automatically removes old summations based on retention policy
     const summationsCollection = database.getCollection('summations');
-    await summationsCollection.createIndex({ timestamp: 1 }, { unique: true });
+    await summationsCollection.createIndex({ startBlock: 1, endBlock: 1 }, { name: 'idx_summations_block_range' });
+    await summationsCollection.createIndex({ timestamp: 1 });
 
     logger.info('Created indexes for summations collection');
 

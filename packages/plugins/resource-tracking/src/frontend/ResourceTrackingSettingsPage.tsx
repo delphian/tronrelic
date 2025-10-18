@@ -9,19 +9,25 @@ interface ISettings {
     detailsRetentionDays: number;
     summationRetentionMonths: number;
     purgeFrequencyHours: number;
+    blocksPerInterval: number;
 }
 
 /**
  * Resource Tracking Settings Page Component.
  *
- * Admin interface for configuring data retention policies and purge frequency.
- * Allows administrators to control storage requirements by adjusting how long
- * transaction details and aggregated summation data are kept.
+ * Admin interface for configuring data retention policies, purge frequency, and
+ * aggregation intervals. Allows administrators to control storage requirements
+ * by adjusting how long transaction details and aggregated summation data are kept,
+ * and how data is aggregated over time.
  *
  * Settings:
  * - Details Retention (days): How long to keep individual delegation transactions
  * - Summation Retention (months): How long to keep aggregated summation data
  * - Purge Frequency (hours): How often the cleanup job runs
+ * - Blocks Per Interval: Number of blocks to aggregate per summation period (default: 100)
+ *
+ * All changes take effect immediately without requiring backend restart due to
+ * dynamic configuration loading in the summation and purge jobs.
  *
  * @param props - Component props
  * @param props.context - Frontend plugin context with API client and UI components
@@ -32,7 +38,8 @@ export function ResourceTrackingSettingsPage({ context }: { context: IFrontendPl
     const [settings, setSettings] = useState<ISettings>({
         detailsRetentionDays: 2,
         summationRetentionMonths: 6,
-        purgeFrequencyHours: 1
+        purgeFrequencyHours: 1,
+        blocksPerInterval: 100
     });
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
@@ -176,6 +183,29 @@ export function ResourceTrackingSettingsPage({ context }: { context: IFrontendPl
                             value={settings.purgeFrequencyHours}
                             onChange={(e) =>
                                 setSettings({ ...settings, purgeFrequencyHours: parseInt(e.target.value, 10) })
+                            }
+                            required
+                        />
+                    </div>
+
+                    {/* Blocks Per Interval */}
+                    <div className={styles.field}>
+                        <label htmlFor="blocksPerInterval" className={styles.label}>
+                            Blocks Per Aggregation Interval
+                        </label>
+                        <p className={styles.description}>
+                            Number of blocks to aggregate per summation period. Default is 100 blocks,
+                            which equals approximately 5 minutes at 20 blocks per minute.
+                            Changes take effect immediately for the next summation job run.
+                        </p>
+                        <ui.Input
+                            id="blocksPerInterval"
+                            type="number"
+                            min={100}
+                            max={1000}
+                            value={settings.blocksPerInterval}
+                            onChange={(e) =>
+                                setSettings({ ...settings, blocksPerInterval: parseInt(e.target.value, 10) })
                             }
                             required
                         />
