@@ -51,7 +51,8 @@ export const resourceTrackingBackendPlugin = definePlugin({
             const defaultConfig: IResourceTrackingConfig = {
                 detailsRetentionDays: 2, // 48 hours for transaction details
                 summationRetentionMonths: 6, // 6 months for aggregated data
-                purgeFrequencyHours: 1 // Run purge job every hour
+                purgeFrequencyHours: 1, // Run purge job every hour
+                blocksPerInterval: 100 // 100 blocks = ~5 minutes at 20 blocks/minute (3-second block time)
             };
             await context.database.set('config', defaultConfig);
             context.logger.info({ config: defaultConfig }, 'Created default resource tracking configuration');
@@ -172,14 +173,18 @@ export const resourceTrackingBackendPlugin = definePlugin({
         // Import and register the delegation transaction observer
         const { createDelegationTrackerObserver } = await import('./delegation-tracker.observer.js');
 
-        createDelegationTrackerObserver(
+        const observer = createDelegationTrackerObserver(
             context.BaseObserver,
             context.observerRegistry,
             context.database,
             context.logger
         );
 
-        context.logger.info('Delegation tracker observer initialized');
+        context.logger.info({ observerName: observer.getName() }, 'Delegation tracker observer initialized');
+
+        // Log subscription stats to verify registration
+        const stats = context.observerRegistry.getSubscriptionStats();
+        context.logger.info({ subscriptionStats: stats }, 'Observer registry subscription stats');
 
         // Register WebSocket subscription handler for real-time summation updates
         // Clients subscribe to this room to receive notifications when new summation data is created
@@ -231,19 +236,25 @@ export const resourceTrackingBackendPlugin = definePlugin({
                     const summations = await pluginContext.database.find<ISummationData>(
                         'summations',
                         { timestamp: { $gte: startDate } },
-                        { sort: { timestamp: 1 } }
+                        { sort: { startBlock: 1 } }
                     );
 
                     // Format response - convert SUN to millions of TRX with 1 decimal precision
                     // 1 TRX = 1,000,000 SUN, so 1M TRX = 1,000,000,000,000 SUN (1e12)
                     const data = summations.map(s => ({
                         timestamp: s.timestamp.toISOString(),
+                        startBlock: s.startBlock,
+                        endBlock: s.endBlock,
                         energyDelegated: Number((s.energyDelegated / 1e12).toFixed(1)),
                         energyReclaimed: Number((s.energyReclaimed / 1e12).toFixed(1)),
                         bandwidthDelegated: Number((s.bandwidthDelegated / 1e12).toFixed(1)),
                         bandwidthReclaimed: Number((s.bandwidthReclaimed / 1e12).toFixed(1)),
                         netEnergy: Number((s.netEnergy / 1e12).toFixed(1)),
-                        netBandwidth: Number((s.netBandwidth / 1e12).toFixed(1))
+                        netBandwidth: Number((s.netBandwidth / 1e12).toFixed(1)),
+                        transactionCount: s.transactionCount,
+                        totalTransactionsDelegated: s.totalTransactionsDelegated,
+                        totalTransactionsUndelegated: s.totalTransactionsUndelegated,
+                        totalTransactionsNet: s.totalTransactionsNet
                     }));
 
                     res.json({ success: true, data });
@@ -274,14 +285,16 @@ export const resourceTrackingBackendPlugin = definePlugin({
                     const {
                         detailsRetentionDays,
                         summationRetentionMonths,
-                        purgeFrequencyHours
+                        purgeFrequencyHours,
+                        blocksPerInterval
                     } = req.body;
 
                     // Validate and sanitize settings
                     const config: IResourceTrackingConfig = {
                         detailsRetentionDays: Math.max(Number(detailsRetentionDays) || 2, 1),
                         summationRetentionMonths: Math.max(Number(summationRetentionMonths) || 6, 1),
-                        purgeFrequencyHours: Math.max(Number(purgeFrequencyHours) || 1, 1)
+                        purgeFrequencyHours: Math.max(Number(purgeFrequencyHours) || 1, 1),
+                        blocksPerInterval: Math.max(Number(blocksPerInterval) || 300, 100)
                     };
 
                     await pluginContext.database.set('config', config);

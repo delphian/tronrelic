@@ -12,4 +12,6 @@ export interface IResourceTrackingConfig {
     summationRetentionMonths: number;
     /** How often the purge job runs in hours (default: 1) */
     purgeFrequencyHours: number;
+    /** Number of blocks to aggregate per summation period (default: 100, approximately 5 minutes at 20 blocks/minute) */
+    blocksPerInterval: number;
 }

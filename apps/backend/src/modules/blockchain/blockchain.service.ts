@@ -1,6 +1,4 @@
 import { randomUUID } from 'node:crypto';
-import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
-import { dirname, join, normalize } from 'node:path';
 import type { AnyBulkWriteOperation } from 'mongoose';
 import type { Redis as RedisClient } from 'ioredis';
 import type { TronTransactionDocument } from '@tronrelic/shared';
@@ -134,83 +132,6 @@ export class BlockchainService {
         return BlockchainService.instance;
     }
 
-    /**
-     * Log corrupt block data for offline debugging.
-     *
-     * When block parsing fails due to malformed TronGrid responses, this method preserves the raw JSON in a dedicated log file
-     * so engineers can analyze edge cases without blocking the sync process. This keeps blockchain ingestion resilient while
-     * maintaining a paper trail for data quality issues that need investigation.
-     */
-    private logCorruptBlock(blockNumber: number, block: unknown, error: string) {
-        try {
-            const logPath = join(process.cwd(), '.run', 'backend_corrupt_block.log');
-            const timestamp = new Date().toISOString();
-            const logEntry = {
-                timestamp,
-                blockNumber,
-                error,
-                rawBlock: block
-            };
-            const logLine = JSON.stringify(logEntry, null, 2) + '\n' + '='.repeat(80) + '\n';
-            appendFileSync(logPath, logLine, 'utf8');
-            logger.warn({ blockNumber, logPath }, 'Corrupt block data written to log file');
-        } catch (logError) {
-            logger.error({ logError, blockNumber }, 'Failed to write corrupt block to log file');
-        }
-    }
-
-    /**
-     * Log corrupt transaction data for offline analysis.
-     *
-     * When individual transaction parsing fails within an otherwise valid block, this method captures the raw transaction payload
-     * and error details without halting the entire block sync. By isolating bad transactions while continuing to process the rest,
-     * we prevent single malformed records from stalling blockchain ingestion entirely.
-     */
-    private logCorruptTransaction(blockNumber: number, transaction: TronGridTransaction, error: unknown) {
-        try {
-            const cwd = normalize(process.cwd());
-            let searchDir = cwd;
-            let rootDir = cwd;
-            while (true) {
-                const packagePath = join(searchDir, 'package.json');
-                if (existsSync(packagePath)) {
-                    try {
-                        const packageJson = JSON.parse(readFileSync(packagePath, 'utf8')) as { workspaces?: unknown };
-                        if (packageJson?.workspaces) {
-                            rootDir = searchDir;
-                            break;
-                        }
-                    } catch (parseError) {
-                        logger.warn({ packagePath, parseError }, 'Failed to parse package.json while determining project root');
-                    }
-                }
-                const parent = dirname(searchDir);
-                if (parent === searchDir) {
-                    break;
-                }
-                searchDir = parent;
-            }
-            const logDir = join(rootDir, '.run');
-            mkdirSync(logDir, { recursive: true });
-            const logPath = join(logDir, 'backend_corrupt_transaction.log');
-            const timestamp = new Date().toISOString();
-            const logEntry = {
-                timestamp,
-                blockNumber,
-                txId: transaction?.txID,
-                error:
-                    error instanceof Error
-                        ? { message: error.message, stack: error.stack }
-                        : error,
-                rawTransaction: transaction
-            };
-            const logLine = JSON.stringify(logEntry, null, 2) + '\n' + '='.repeat(80) + '\n';
-            appendFileSync(logPath, logLine, 'utf8');
-            logger.warn({ blockNumber, txId: transaction?.txID, logPath }, 'Corrupt transaction data written to log file');
-        } catch (logError) {
-            logger.error({ blockNumber, logError }, 'Failed to write corrupt transaction to log file');
-        }
-    }
 
     /**
      * Mark a block for temporary cooldown after exhausting retry attempts.
@@ -858,7 +779,7 @@ export class BlockchainService {
 
             // Validate block structure before proceeding
             if (!block?.block_header?.raw_data?.timestamp) {
-                this.logCorruptBlock(blockNumber, block, 'Missing timestamp in block structure');
+                logger.error({ blockNumber, block }, 'Invalid block structure - missing timestamp');
                 throw new Error(`Invalid block structure returned from TronGrid API for block ${blockNumber} - missing timestamp`);
             }
 
@@ -884,7 +805,7 @@ export class BlockchainService {
                     throw new Error('Invalid normalized block timestamp');
                 }
             } catch (dateError) {
-                this.logCorruptBlock(blockNumber, block, `Invalid timestamp value: ${block.block_header.raw_data.timestamp}`);
+                logger.error({ blockNumber, timestamp: block.block_header.raw_data.timestamp, dateError }, 'Invalid block timestamp');
                 throw new Error(`Invalid timestamp in block ${blockNumber}: ${block.block_header.raw_data.timestamp} (${dateError instanceof Error ? dateError.message : String(dateError)})`);
             }
             const priceUSD = await this.priceService.getTrxPriceUsd();
@@ -923,7 +844,7 @@ export class BlockchainService {
                     // Notify observers of the processed transaction
                     await this.observerRegistry.notifyTransaction(result);
                 } catch (transactionError) {
-                    this.logCorruptTransaction(blockNumber, transaction, transactionError);
+                    logger.warn({ blockNumber, txId: transaction?.txID, transactionError }, 'Failed to process transaction - skipping');
                 }
             }
 

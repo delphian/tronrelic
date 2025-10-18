@@ -7,12 +7,18 @@ import styles from './ResourceTrackingPage.module.css';
 
 interface ISummationPoint {
     timestamp: string;
+    startBlock: number;
+    endBlock: number;
     energyDelegated: number;
     energyReclaimed: number;
     bandwidthDelegated: number;
     bandwidthReclaimed: number;
     netEnergy: number;
     netBandwidth: number;
+    transactionCount: number;
+    totalTransactionsDelegated: number;
+    totalTransactionsUndelegated: number;
+    totalTransactionsNet: number;
 }
 
 type TimePeriod = '1d' | '7d' | '30d' | '6m';
@@ -113,21 +119,6 @@ export function ResourceTrackingPage({ context }: { context: IFrontendPluginCont
         void loadData();
     }, [api, period]);
 
-    // Auto-polling: Refresh data every 5 minutes
-    useEffect(() => {
-        const POLL_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes in milliseconds
-
-        const intervalId = setInterval(() => {
-            console.log('Auto-polling: Refreshing resource tracking data');
-            void loadData();
-        }, POLL_INTERVAL_MS);
-
-        // Cleanup interval on unmount
-        return () => {
-            clearInterval(intervalId);
-        };
-    }, [api, period]); // Re-establish interval if api or period changes
-
     // WebSocket subscription for real-time updates
     useEffect(() => {
         const { websocket } = context;
@@ -136,13 +127,35 @@ export function ResourceTrackingPage({ context }: { context: IFrontendPluginCont
          * Handle new summation creation events from the backend.
          *
          * When the summation job completes every 5 minutes, the backend emits this event
-         * to all subscribed clients. We refetch the data to update the chart with the latest
-         * aggregated statistics.
+         * to all subscribed clients. We append the new data point directly to avoid
+         * a harsh full-page refetch, creating a smooth real-time update experience.
          */
         const handleSummationCreated = (payload: any) => {
             console.log('New summation created:', payload);
-            // Refetch data to update chart with latest summation
-            void loadData();
+
+            // Optimistically append new data point without triggering loading state
+            setData(prevData => {
+                const newPoint: ISummationPoint = {
+                    timestamp: payload.timestamp,
+                    startBlock: payload.startBlock,
+                    endBlock: payload.endBlock,
+                    energyDelegated: payload.energyDelegated,
+                    energyReclaimed: payload.energyReclaimed,
+                    bandwidthDelegated: payload.bandwidthDelegated,
+                    bandwidthReclaimed: payload.bandwidthReclaimed,
+                    netEnergy: payload.netEnergy,
+                    netBandwidth: payload.netBandwidth,
+                    transactionCount: payload.transactionCount,
+                    totalTransactionsDelegated: payload.totalTransactionsDelegated,
+                    totalTransactionsUndelegated: payload.totalTransactionsUndelegated,
+                    totalTransactionsNet: payload.totalTransactionsNet
+                };
+
+                // Append to end and maintain sort order by timestamp
+                return [...prevData, newPoint].sort((a, b) =>
+                    new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+                );
+            });
         };
 
         /**
@@ -173,24 +186,23 @@ export function ResourceTrackingPage({ context }: { context: IFrontendPluginCont
          */
         const handleReconnect = () => {
             console.log('WebSocket reconnected, resubscribing to summation updates');
-            websocket.subscribe('summation-updates', {});
+            websocket.subscribe('summation-updates');
         };
 
-        // Subscribe to summation updates room
-        websocket.subscribe('summation-updates', {});
-
-        // Register event listeners
+        // Use helper method - automatically prefixes to 'resource-tracking:summation-created'
         websocket.on('summation-created', handleSummationCreated);
-        websocket.on('subscribed', handleSubscribed);
-        websocket.on('subscription-error', handleSubscriptionError);
+
+        // Use helper method for connection events
         websocket.onConnect(handleReconnect);
+
+        console.log('📡 Listening for summation-created events');
+
+        // Fire once immediately; the client buffers it until the connection is live
+        websocket.subscribe('summation-updates');
 
         // Cleanup on unmount
         return () => {
-            websocket.unsubscribe('summation-updates', {});
             websocket.off('summation-created', handleSummationCreated);
-            websocket.off('subscribed', handleSubscribed);
-            websocket.off('subscription-error', handleSubscriptionError);
             websocket.offConnect(handleReconnect);
         };
     }, [context.websocket]);
@@ -379,22 +391,57 @@ export function ResourceTrackingPage({ context }: { context: IFrontendPluginCont
                 </h1>
                 <p className={styles.subtitle}>
                     Monitor TRON resource delegation and reclaim patterns (millions of TRX equivalence)
-                    <HelpCircle
-                        size={16}
-                        style={{
-                            display: 'inline-block',
-                            marginLeft: '0.35rem',
-                            verticalAlign: 'middle',
-                            cursor: 'help',
-                            opacity: 0.7
-                        }}
+                    <span
+                        className={styles.helpIcon}
+                        role="img"
+                        aria-label="Information"
                         title="Values shown are not raw energy values but the equivalent TRX staked to obtain such energy"
-                        aria-label="Values shown are not raw energy values but the equivalent TRX staked to obtain such energy"
-                    />
+                    >
+                        <HelpCircle
+                            size={16}
+                            style={{
+                                display: 'inline-block',
+                                marginLeft: '0.35rem',
+                                verticalAlign: 'middle',
+                                cursor: 'help',
+                                opacity: 0.7
+                            }}
+                        />
+                    </span>
                 </p>
             </header>
 
             <div className={`surface ${styles.container}`}>
+                {/* Summary Stats */}
+                {data.length > 0 && (
+                    <div className={styles.summary}>
+                        <div className={styles.summaryItem}>
+                            <span className={styles.summaryLabel}>Latest Block Range:</span>
+                            <span className={styles.summaryValue}>
+                                {data[data.length - 1].startBlock.toLocaleString()} - {data[data.length - 1].endBlock.toLocaleString()}
+                            </span>
+                        </div>
+                        <div className={styles.summaryItem}>
+                            <span className={styles.summaryLabel}>Total Transactions:</span>
+                            <span className={styles.summaryValue}>
+                                {data.reduce((sum, point) => sum + point.transactionCount, 0).toLocaleString()}
+                            </span>
+                        </div>
+                        <div className={styles.summaryItem}>
+                            <span className={styles.summaryLabel}>Delegations:</span>
+                            <span className={styles.summaryValue}>
+                                {data.reduce((sum, point) => sum + point.totalTransactionsDelegated, 0).toLocaleString()}
+                            </span>
+                        </div>
+                        <div className={styles.summaryItem}>
+                            <span className={styles.summaryLabel}>Undelegations:</span>
+                            <span className={styles.summaryValue}>
+                                {data.reduce((sum, point) => sum + point.totalTransactionsUndelegated, 0).toLocaleString()}
+                            </span>
+                        </div>
+                    </div>
+                )}
+
                 {/* Time Period Selector */}
                 <div className={styles.controls}>
                     <div className={styles.periodSelector}>

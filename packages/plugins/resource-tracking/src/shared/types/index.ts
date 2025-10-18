@@ -7,3 +7,4 @@
 export type { IResourceTrackingConfig } from './IResourceTrackingConfig.js';
 export type { IDelegationTransaction } from './IDelegationTransaction.js';
 export type { ISummationData } from './ISummationData.js';
+export type { IAggregationState } from './IAggregationState.js';

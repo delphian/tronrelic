@@ -1,20 +1,27 @@
 import type { IPluginDatabase, ILogger, IPluginWebSocketManager } from '@tronrelic/types';
-import type { IDelegationTransaction, ISummationData, IResourceTrackingConfig } from '../shared/types/index.js';
+import type { IDelegationTransaction, ISummationData, IResourceTrackingConfig, IAggregationState } from '../shared/types/index.js';
 
 /**
- * Aggregate delegation transaction data into summation records every 5 minutes.
+ * Aggregate delegation transaction data into summation records using block-based windows.
  *
- * This job queries all delegation transactions since the last summation, groups them
- * by resource type, sums delegated and reclaimed amounts, and stores aggregated
- * statistics for long-term trend analysis. Summation data has a configurable TTL
- * (default 6 months) while individual transaction details are purged after 48 hours.
+ * This job operates on fixed block ranges (default 300 blocks ≈ 5 minutes at 3-second blocks)
+ * instead of time-based intervals. Block-based aggregation provides deterministic, verifiable
+ * summaries that align with blockchain's natural progression unit.
  *
- * The job runs every 5 minutes and creates a single summation record per run,
- * capturing the current state of delegation flows. This provides manageable data
- * volumes for charting while preserving historical trends.
+ * The job maintains a persistent cursor (lastProcessedBlock) and calculates the next block
+ * range to process based on the configurable blocksPerInterval setting. Before processing,
+ * it verifies that block N+1 exists to ensure all blocks in the target range are fully indexed
+ * and no transactions are missing.
  *
- * After creating a new summation record, emits a WebSocket event to notify subscribed
- * clients that new data is available, enabling real-time chart updates without polling.
+ * When the job detects it's fallen behind (blockchain sync is ahead), it processes up to
+ * 3 tranches per run to catch up faster while still maintaining verification for each tranche.
+ *
+ * Key benefits over time-based aggregation:
+ * - Deterministic: Reprocessing blocks 1000-1299 always produces identical results
+ * - Verifiable: Each summation declares exact block ranges for audit trails
+ * - Replayable: Can backfill or reprocess historical block ranges accurately
+ * - Resilient: Waits for blockchain sync instead of creating incomplete summations
+ * - Catch-up capable: Processes multiple tranches when behind
  *
  * @param database - Plugin-scoped database service for reading transactions and writing summations
  * @param logger - Scoped logger for job execution tracking
@@ -25,111 +32,277 @@ export async function runSummationJob(
     logger: ILogger,
     websocket: IPluginWebSocketManager
 ): Promise<void> {
-    logger.debug('Starting summation aggregation job');
+    const jobStartTime = new Date();
+    const MAX_TRANCHES_PER_RUN = 3;
 
     try {
-        // Find the most recent summation timestamp to avoid double-counting
-        const allSummations = await database.find<ISummationData>(
-            'summations',
-            {},
-            { sort: { timestamp: -1 }, limit: 1 }
-        );
-        const lastSummation = allSummations.length > 0 ? allSummations[0] : null;
+        // Step 1: Load persistent aggregation state
+        let state = await database.get<IAggregationState>('aggregation-state');
 
-        const startTime = lastSummation?.timestamp
-            ? new Date(lastSummation.timestamp.getTime())
-            : new Date(Date.now() - 5 * 60 * 1000); // Default to last 5 minutes
+        // Initialize state if first run
+        if (!state) {
+            // Find the earliest block in transactions collection
+            const earliestTxs = await database.find<IDelegationTransaction>(
+                'transactions',
+                {},
+                { sort: { blockNumber: 1 }, limit: 1 }
+            );
 
-        // Query all delegation transactions since last summation
-        const transactions = await database.find<IDelegationTransaction>(
-            'transactions',
-            {
-                timestamp: { $gte: startTime }
+            if (earliestTxs.length === 0) {
+                logger.info('No transactions found - waiting for blockchain sync to populate data');
+                return;
             }
-        );
 
-        if (transactions.length === 0) {
-            logger.debug({ since: startTime }, 'No new delegation transactions to aggregate');
+            const initialBlock = earliestTxs[0].blockNumber;
+            state = {
+                lastProcessedBlock: initialBlock - 1, // Start before first transaction
+                lastAggregationTime: new Date()
+            };
+
+            await database.set('aggregation-state', state);
+            logger.info(
+                { initialBlock, lastProcessedBlock: state.lastProcessedBlock },
+                'Initialized block aggregation state'
+            );
+            return; // Wait for next run to process first range
+        }
+
+        // Step 2: Load configuration to get blocks per interval
+        const config = await database.get<IResourceTrackingConfig>('config');
+        if (!config) {
+            logger.warn('No configuration found - cannot determine blocksPerInterval');
             return;
         }
 
-        // Aggregate by resource type
-        let energyDelegated = 0;
-        let energyReclaimed = 0;
-        let bandwidthDelegated = 0;
-        let bandwidthReclaimed = 0;
+        const blocksPerInterval = config.blocksPerInterval;
 
-        for (const tx of transactions) {
-            const amount = Math.abs(tx.amountSun); // Use absolute value for sums
-            const isDelegation = tx.amountSun > 0;
+        // Step 3: Process up to MAX_TRANCHES_PER_RUN tranches
+        let tranchesProcessed = 0;
 
-            if (tx.resourceType === 1) {
-                // ENERGY
-                if (isDelegation) {
-                    energyDelegated += amount;
-                } else {
-                    energyReclaimed += amount;
-                }
-            } else {
-                // BANDWIDTH
-                if (isDelegation) {
-                    bandwidthDelegated += amount;
-                } else {
-                    bandwidthReclaimed += amount;
+        for (let tranche = 0; tranche < MAX_TRANCHES_PER_RUN; tranche++) {
+            // Reload state to get updated lastProcessedBlock from previous iteration
+            state = await database.get<IAggregationState>('aggregation-state');
+            if (!state) {
+                logger.error('Aggregation state disappeared during job execution');
+                return;
+            }
+
+            // Calculate target block range
+            const startBlock = state.lastProcessedBlock + 1;
+            const endBlock = startBlock + blocksPerInterval - 1;
+
+            logger.info(
+                {
+                    tranche: tranche + 1,
+                    maxTranches: MAX_TRANCHES_PER_RUN,
+                    lastProcessedBlock: state.lastProcessedBlock,
+                    startBlock,
+                    endBlock,
+                    blocksPerInterval,
+                    rangeSize: endBlock - startBlock + 1
+                },
+                'Calculated block range for tranche'
+            );
+
+            // Verify N+1 block exists (ensures all blocks in range are fully indexed)
+            const verificationBlock = endBlock + 1;
+            const verificationTxs = await database.find<IDelegationTransaction>(
+                'transactions',
+                { blockNumber: verificationBlock },
+                { limit: 1 }
+            );
+
+            if (verificationTxs.length === 0) {
+                // Check what the latest indexed block is for better logging
+                const latestTxs = await database.find<IDelegationTransaction>(
+                    'transactions',
+                    {},
+                    { sort: { blockNumber: -1 }, limit: 1 }
+                );
+
+                const latestIndexedBlock = latestTxs[0]?.blockNumber ?? 0;
+
+                logger.info(
+                    {
+                        tranche: tranche + 1,
+                        tranchesProcessed,
+                        targetRange: [startBlock, endBlock],
+                        verificationBlock,
+                        latestIndexedBlock,
+                        blocksBehind: verificationBlock - latestIndexedBlock
+                    },
+                    'Block N+1 not indexed yet - stopping tranche processing'
+                );
+                break; // Stop processing tranches, blockchain sync needs to catch up
+            }
+
+            // Query all transactions in block range
+            const transactions = await database.find<IDelegationTransaction>(
+                'transactions',
+                {
+                    blockNumber: { $gte: startBlock, $lte: endBlock }
+                },
+                { sort: { blockNumber: 1, timestamp: 1 } }
+            );
+
+            logger.info(
+                {
+                    tranche: tranche + 1,
+                    startBlock,
+                    endBlock,
+                    transactionCount: transactions.length
+                },
+                'Retrieved transactions for block range'
+            );
+
+            // Determine timestamp from first transaction in the starting block
+            // If no transactions exist in range, use current time as fallback
+            let summationTimestamp = new Date();
+            if (transactions.length > 0) {
+                const firstTransaction = transactions.find(tx => tx.blockNumber === startBlock);
+                if (firstTransaction) {
+                    summationTimestamp = firstTransaction.timestamp;
                 }
             }
-        }
 
-        // Calculate net flows
-        const netEnergy = energyDelegated - energyReclaimed;
-        const netBandwidth = bandwidthDelegated - bandwidthReclaimed;
+            // Aggregate by resource type and count transaction types
+            let energyDelegated = 0;
+            let energyReclaimed = 0;
+            let bandwidthDelegated = 0;
+            let bandwidthReclaimed = 0;
+            let totalTransactionsDelegated = 0;
+            let totalTransactionsUndelegated = 0;
 
-        // Create summation record
-        const summation: Omit<ISummationData, 'createdAt'> = {
-            timestamp: new Date(),
-            energyDelegated,
-            energyReclaimed,
-            bandwidthDelegated,
-            bandwidthReclaimed,
-            netEnergy,
-            netBandwidth,
-            transactionCount: transactions.length
-        };
+            for (const tx of transactions) {
+                const amount = Math.abs(tx.amountSun); // Use absolute value for sums
+                const isDelegation = tx.amountSun > 0;
 
-        await database.insertOne('summations', summation);
+                // Count transaction types
+                if (isDelegation) {
+                    totalTransactionsDelegated++;
+                } else {
+                    totalTransactionsUndelegated++;
+                }
 
-        logger.info(
-            {
-                timestamp: summation.timestamp,
-                transactionCount: transactions.length,
+                // Aggregate amounts by resource type
+                if (tx.resourceType === 1) {
+                    // ENERGY
+                    if (isDelegation) {
+                        energyDelegated += amount;
+                    } else {
+                        energyReclaimed += amount;
+                    }
+                } else {
+                    // BANDWIDTH
+                    if (isDelegation) {
+                        bandwidthDelegated += amount;
+                    } else {
+                        bandwidthReclaimed += amount;
+                    }
+                }
+            }
+
+            // Calculate net flows
+            const netEnergy = energyDelegated - energyReclaimed;
+            const netBandwidth = bandwidthDelegated - bandwidthReclaimed;
+            const totalTransactionsNet = totalTransactionsDelegated - totalTransactionsUndelegated;
+
+            // Create summation record with block range
+            const summation: Omit<ISummationData, 'createdAt'> = {
+                timestamp: summationTimestamp, // Use timestamp from first transaction in starting block
+                startBlock,
+                endBlock,
                 energyDelegated,
                 energyReclaimed,
-                netEnergy,
                 bandwidthDelegated,
                 bandwidthReclaimed,
-                netBandwidth
+                netEnergy,
+                netBandwidth,
+                transactionCount: transactions.length,
+                totalTransactionsDelegated,
+                totalTransactionsUndelegated,
+                totalTransactionsNet
+            };
+
+            await database.insertOne('summations', summation);
+
+            // Update state cursor
+            const updatedState: IAggregationState = {
+                lastProcessedBlock: endBlock,
+                lastAggregationTime: new Date()
+            };
+
+            await database.set('aggregation-state', updatedState);
+
+            tranchesProcessed++;
+
+            logger.info(
+                {
+                    tranche: tranche + 1,
+                    startBlock,
+                    endBlock,
+                    transactionCount: transactions.length,
+                    energyDelegated,
+                    energyReclaimed,
+                    netEnergy,
+                    bandwidthDelegated,
+                    bandwidthReclaimed,
+                    netBandwidth,
+                    totalTransactionsDelegated,
+                    totalTransactionsUndelegated,
+                    totalTransactionsNet,
+                    lastProcessedBlock: endBlock
+                },
+                'Block-based summation tranche completed'
+            );
+
+            // Emit WebSocket event to notify subscribed clients
+            websocket.emitToRoom('summation-updates', 'summation-created', {
+                timestamp: summation.timestamp.toISOString(),
+                startBlock,
+                endBlock,
+                energyDelegated,
+                energyReclaimed,
+                bandwidthDelegated,
+                bandwidthReclaimed,
+                netEnergy,
+                netBandwidth,
+                transactionCount: transactions.length,
+                totalTransactionsDelegated,
+                totalTransactionsUndelegated,
+                totalTransactionsNet
+            });
+
+            logger.info(
+                {
+                    tranche: tranche + 1,
+                    startBlock,
+                    endBlock,
+                    transactionCount: transactions.length
+                },
+                'Emitted WebSocket event for tranche'
+            );
+        }
+
+        // Final summary
+        logger.info(
+            {
+                tranchesProcessed,
+                maxTranches: MAX_TRANCHES_PER_RUN,
+                durationMs: Date.now() - jobStartTime.getTime()
             },
-            'Summation aggregation completed'
+            'Summation job completed'
         );
 
-        // Emit WebSocket event to notify subscribed clients of new summation data
-        // Room name 'summation-updates' matches what clients subscribe to
-        // Event name 'summation-created' identifies this specific event type
-        websocket.emitToRoom('summation-updates', 'summation-created', {
-            timestamp: summation.timestamp.toISOString(),
-            energyDelegated,
-            energyReclaimed,
-            bandwidthDelegated,
-            bandwidthReclaimed,
-            netEnergy,
-            netBandwidth,
-            transactionCount: transactions.length
-        });
-
-        logger.debug('Emitted WebSocket event for new summation');
-
     } catch (error) {
-        logger.error({ error }, 'Failed to run summation aggregation job');
+        logger.error(
+            {
+                error,
+                jobStartedAt: jobStartTime.toISOString(),
+                durationMs: Date.now() - jobStartTime.getTime()
+            },
+            'Failed to run block-based summation aggregation job'
+        );
         throw error;
     }
 }
