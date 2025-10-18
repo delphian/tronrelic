@@ -8,4 +8,4 @@
 export type { ITransaction } from './ITransaction.js';
 export type { ITransactionPersistencePayload } from './ITransactionPersistencePayload.js';
 export type { ITransactionCategoryFlags } from './ITransactionCategoryFlags.js';
-export { ProcessedTransaction, type TransactionCategoryThresholds } from './ProcessedTransaction.js';
+export { ProcessedTransaction } from './ProcessedTransaction.js';

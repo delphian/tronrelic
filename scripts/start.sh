@@ -224,7 +224,7 @@ elif [[ "${FORCE_DOCKER}" == true ]]; then
   docker compose -f "${COMPOSE_FILE}" build
 else
   # Check if images exist using compose config
-  local backend_image=$(docker compose -f "${COMPOSE_FILE}" config --format json | grep -o '"Image":"[^"]*backend[^"]*"' | head -1 | cut -d'"' -f4)
+  backend_image=$(docker compose -f "${COMPOSE_FILE}" config --format json | grep -o '"Image":"[^"]*backend[^"]*"' | head -1 | cut -d'"' -f4)
   if [[ -z "${backend_image}" ]] || ! docker images --format "{{.Repository}}:{{.Tag}}" | grep -q "${backend_image}"; then
     log INFO "Building Docker images with docker compose"
     docker compose -f "${COMPOSE_FILE}" build

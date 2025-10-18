@@ -46,6 +46,10 @@ interface LineChartProps {
     className?: string;
     /** Message to show when no data is available */
     emptyLabel?: string;
+    /** Fixed minimum date for X-axis (prevents auto-scaling when data is sparse) */
+    minDate?: Date;
+    /** Fixed maximum date for X-axis (prevents auto-scaling when data is sparse) */
+    maxDate?: Date;
 }
 
 /**
@@ -143,7 +147,9 @@ export function LineChart({
     yAxisFormatter = value => value.toLocaleString(),
     xAxisFormatter = value => value.toLocaleDateString(),
     className,
-    emptyLabel = 'Not enough data to render a chart.'
+    emptyLabel = 'Not enough data to render a chart.',
+    minDate: fixedMinDate,
+    maxDate: fixedMaxDate
 }: LineChartProps) {
     const containerRef = useRef<HTMLElement | null>(null);
     const [containerWidth, setContainerWidth] = useState(860);
@@ -194,8 +200,9 @@ export function LineChart({
             value: point.value
         })));
 
-        const minDate = new Date(Math.min(...allPoints.map(point => point.date.getTime())));
-        const maxDate = new Date(Math.max(...allPoints.map(point => point.date.getTime())));
+        // Use fixed dates if provided, otherwise calculate from data
+        const minDate = fixedMinDate ?? new Date(Math.min(...allPoints.map(point => point.date.getTime())));
+        const maxDate = fixedMaxDate ?? new Date(Math.max(...allPoints.map(point => point.date.getTime())));
         const minValue = Math.min(...allPoints.map(point => point.value));
         const maxValue = Math.max(...allPoints.map(point => point.value));
 
@@ -258,7 +265,7 @@ export function LineChart({
             scaleY,
             domainPoints
         };
-    }, [series, height, containerWidth]);
+    }, [series, height, containerWidth, fixedMinDate, fixedMaxDate]);
 
     if (!chartData) {
         return <div className={cn(styles.chart, className)}>{emptyLabel}</div>;

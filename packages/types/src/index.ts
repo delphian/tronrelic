@@ -3,7 +3,7 @@ export type { IBaseObserver, IObserverRegistry, IWebSocketService, IPluginContex
 export type { IPlugin, IPluginManifest, IAdminUIConfig, IPluginDatabase, IApiRouteConfig, HttpMethod, ApiRouteHandler, ApiMiddleware, IMenuItemConfig, IPageConfig, IPluginMetadata, IPluginManagementRequest, IPluginManagementResponse, IPluginInfo, IFrontendPluginContext, IUIComponents, IChartComponents, IApiClient, IWebSocketClient } from './plugin/index.js';
 export { definePlugin } from './plugin/index.js';
 export type { ITransaction, ITransactionPersistencePayload, ITransactionCategoryFlags } from './transaction/index.js';
-export { ProcessedTransaction, type TransactionCategoryThresholds } from './transaction/index.js';
+export { ProcessedTransaction } from './transaction/index.js';
 export type { IHttpRequest, IHttpResponse, IHttpNext } from './http/index.js';
 export type { ILogger } from './logging/index.js';
 export type { IChainParameters } from './chain-parameters/IChainParameters.js';
