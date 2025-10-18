@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import type { IFrontendPluginContext } from '@tronrelic/types';
-import { Activity, Calendar, AlertCircle, BarChart3, Zap, Gauge } from 'lucide-react';
+import { Activity, Calendar, AlertCircle, BarChart3, Zap, Gauge, HelpCircle } from 'lucide-react';
 import styles from './ResourceTrackingPage.module.css';
 
 interface ISummationPoint {
@@ -55,10 +55,10 @@ export function ResourceTrackingPage({ context }: { context: IFrontendPluginCont
     const [error, setError] = useState<string | null>(null);
     const [period, setPeriod] = useState<TimePeriod>('1d');
 
-    // Line toggle state
+    // Line toggle state - Only Energy Delegated is checked by default
     const [showEnergyDelegated, setShowEnergyDelegated] = useState(true);
-    const [showEnergyReclaimed, setShowEnergyReclaimed] = useState(true);
-    const [showNetEnergy, setShowNetEnergy] = useState(true);
+    const [showEnergyReclaimed, setShowEnergyReclaimed] = useState(false);
+    const [showNetEnergy, setShowNetEnergy] = useState(false);
     const [showBandwidthDelegated, setShowBandwidthDelegated] = useState(false);
     const [showBandwidthReclaimed, setShowBandwidthReclaimed] = useState(false);
     const [showNetBandwidth, setShowNetBandwidth] = useState(false);
@@ -112,6 +112,21 @@ export function ResourceTrackingPage({ context }: { context: IFrontendPluginCont
     useEffect(() => {
         void loadData();
     }, [api, period]);
+
+    // Auto-polling: Refresh data every 5 minutes
+    useEffect(() => {
+        const POLL_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes in milliseconds
+
+        const intervalId = setInterval(() => {
+            console.log('Auto-polling: Refreshing resource tracking data');
+            void loadData();
+        }, POLL_INTERVAL_MS);
+
+        // Cleanup interval on unmount
+        return () => {
+            clearInterval(intervalId);
+        };
+    }, [api, period]); // Re-establish interval if api or period changes
 
     // WebSocket subscription for real-time updates
     useEffect(() => {
@@ -363,7 +378,19 @@ export function ResourceTrackingPage({ context }: { context: IFrontendPluginCont
                     Resource Tracking
                 </h1>
                 <p className={styles.subtitle}>
-                    Monitor TRON resource delegation and reclaim patterns (millions of TRX)
+                    Monitor TRON resource delegation and reclaim patterns (millions of TRX equivalence)
+                    <HelpCircle
+                        size={16}
+                        style={{
+                            display: 'inline-block',
+                            marginLeft: '0.35rem',
+                            verticalAlign: 'middle',
+                            cursor: 'help',
+                            opacity: 0.7
+                        }}
+                        title="Values shown are not raw energy values but the equivalent TRX staked to obtain such energy"
+                        aria-label="Values shown are not raw energy values but the equivalent TRX staked to obtain such energy"
+                    />
                 </p>
             </header>
 
@@ -423,7 +450,8 @@ export function ResourceTrackingPage({ context }: { context: IFrontendPluginCont
                                     aria-label="Toggle Energy Delegated line visibility"
                                 />
                                 <span className={`${styles.toggleLabel} ${styles.toggleLabelEnergyDelegated}`}>
-                                    <Zap size={14} style={{ display: 'inline-block', marginRight: '0.25rem', verticalAlign: 'middle' }} /> Delegated
+                                    <Zap size={14} style={{ display: 'inline-block', marginRight: '0.25rem', verticalAlign: 'middle' }} />
+                                    Energy
                                 </span>
                             </label>
                             <label className={styles.toggle}>
@@ -434,7 +462,8 @@ export function ResourceTrackingPage({ context }: { context: IFrontendPluginCont
                                     aria-label="Toggle Energy Reclaimed line visibility"
                                 />
                                 <span className={`${styles.toggleLabel} ${styles.toggleLabelEnergyReclaimed}`}>
-                                    <Zap size={14} style={{ display: 'inline-block', marginRight: '0.25rem', verticalAlign: 'middle' }} /> Reclaimed
+                                    <Zap size={14} style={{ display: 'inline-block', marginRight: '0.25rem', verticalAlign: 'middle' }} />
+                                    Energy
                                 </span>
                             </label>
                             <label className={styles.toggle}>
@@ -445,7 +474,8 @@ export function ResourceTrackingPage({ context }: { context: IFrontendPluginCont
                                     aria-label="Toggle Net Energy line visibility"
                                 />
                                 <span className={`${styles.toggleLabel} ${styles.toggleLabelNetEnergy}`}>
-                                    Net <Zap size={14} style={{ display: 'inline-block', marginLeft: '0.25rem', verticalAlign: 'middle' }} />
+                                    <Zap size={14} style={{ display: 'inline-block', marginRight: '0.25rem', verticalAlign: 'middle' }} />
+                                    Net
                                 </span>
                             </label>
                             <label className={styles.toggle}>
@@ -456,7 +486,8 @@ export function ResourceTrackingPage({ context }: { context: IFrontendPluginCont
                                     aria-label="Toggle Bandwidth Delegated line visibility"
                                 />
                                 <span className={`${styles.toggleLabel} ${styles.toggleLabelBandwidthDelegated}`}>
-                                    <Gauge size={14} style={{ display: 'inline-block', marginRight: '0.25rem', verticalAlign: 'middle' }} /> Delegated
+                                    <Gauge size={14} style={{ display: 'inline-block', marginRight: '0.25rem', verticalAlign: 'middle' }} />
+                                    Bandwidth
                                 </span>
                             </label>
                             <label className={styles.toggle}>
@@ -467,7 +498,8 @@ export function ResourceTrackingPage({ context }: { context: IFrontendPluginCont
                                     aria-label="Toggle Bandwidth Reclaimed line visibility"
                                 />
                                 <span className={`${styles.toggleLabel} ${styles.toggleLabelBandwidthReclaimed}`}>
-                                    <Gauge size={14} style={{ display: 'inline-block', marginRight: '0.25rem', verticalAlign: 'middle' }} /> Reclaimed
+                                    <Gauge size={14} style={{ display: 'inline-block', marginRight: '0.25rem', verticalAlign: 'middle' }} />
+                                    Bandwidth
                                 </span>
                             </label>
                             <label className={styles.toggle}>
@@ -478,7 +510,8 @@ export function ResourceTrackingPage({ context }: { context: IFrontendPluginCont
                                     aria-label="Toggle Net Bandwidth line visibility"
                                 />
                                 <span className={`${styles.toggleLabel} ${styles.toggleLabelNetBandwidth}`}>
-                                    Net <Gauge size={14} style={{ display: 'inline-block', marginLeft: '0.25rem', verticalAlign: 'middle' }} />
+                                    <Gauge size={14} style={{ display: 'inline-block', marginRight: '0.25rem', verticalAlign: 'middle' }} />
+                                    Net
                                 </span>
                             </label>
                         </div>
