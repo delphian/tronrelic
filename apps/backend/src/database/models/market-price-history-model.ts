@@ -1,6 +1,10 @@
 import { Schema, model, type Document } from 'mongoose';
 
-export interface MarketPriceHistoryDoc extends Document {
+/**
+ * Plain field interface for MarketPriceHistory documents.
+ * Use this when working with `.lean()` queries to avoid type mismatches with Mongoose Document types.
+ */
+export interface MarketPriceHistoryFields {
   guid: string;
   name: string;
   effectivePrice?: number;
@@ -12,6 +16,12 @@ export interface MarketPriceHistoryDoc extends Document {
   sampleSize?: number;
   recordedAt: Date;
 }
+
+/**
+ * Mongoose document interface for MarketPriceHistory.
+ * Extends both Document (for Mongoose methods) and MarketPriceHistoryFields (for domain properties).
+ */
+export interface MarketPriceHistoryDoc extends Document, MarketPriceHistoryFields {}
 
 const MarketPriceHistorySchema = new Schema<MarketPriceHistoryDoc>({
   guid: { type: String, required: true, index: true },

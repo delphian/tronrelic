@@ -1,6 +1,10 @@
 import { Schema, model, type Document } from 'mongoose';
 
-export interface SunPumpTokenDoc extends Document {
+/**
+ * Plain field interface for SunPumpToken documents.
+ * Use this when working with `.lean()` queries to avoid type mismatches with Mongoose Document types.
+ */
+export interface SunPumpTokenFields {
   txId: string;
   timestamp: Date;
   ownerAddress: string;
@@ -13,6 +17,12 @@ export interface SunPumpTokenDoc extends Document {
   createdAt: Date;
   updatedAt: Date;
 }
+
+/**
+ * Mongoose document interface for SunPumpToken.
+ * Extends both Document (for Mongoose methods) and SunPumpTokenFields (for domain properties).
+ */
+export interface SunPumpTokenDoc extends Document, SunPumpTokenFields {}
 
 const SunPumpTokenSchema = new Schema<SunPumpTokenDoc>(
   {

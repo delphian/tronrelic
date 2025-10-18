@@ -2,7 +2,11 @@ import { Schema, model, type Document } from 'mongoose';
 
 type ReliabilityStatus = 'success' | 'failure';
 
-export interface MarketReliabilityHistoryDoc extends Document {
+/**
+ * Plain field interface for MarketReliabilityHistory documents.
+ * Use this when working with `.lean()` queries to avoid type mismatches with Mongoose Document types.
+ */
+export interface MarketReliabilityHistoryFields {
   guid: string;
   status: ReliabilityStatus;
   reliability?: number;
@@ -11,6 +15,12 @@ export interface MarketReliabilityHistoryDoc extends Document {
   failureReason?: string;
   recordedAt: Date;
 }
+
+/**
+ * Mongoose document interface for MarketReliabilityHistory.
+ * Extends both Document (for Mongoose methods) and MarketReliabilityHistoryFields (for domain properties).
+ */
+export interface MarketReliabilityHistoryDoc extends Document, MarketReliabilityHistoryFields {}
 
 const MarketReliabilityHistorySchema = new Schema<MarketReliabilityHistoryDoc>({
   guid: { type: String, required: true, index: true },

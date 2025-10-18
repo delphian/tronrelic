@@ -1,6 +1,10 @@
 import { Schema, model, type Document } from 'mongoose';
 
-export interface TelegramUserDoc extends Document {
+/**
+ * Plain field interface for TelegramUser documents.
+ * Use this when working with `.lean()` queries to avoid type mismatches with Mongoose Document types.
+ */
+export interface TelegramUserFields {
   telegramId: number;
   username?: string;
   firstName?: string;
@@ -9,6 +13,12 @@ export interface TelegramUserDoc extends Document {
   score: number;
   lastInteraction?: Date;
 }
+
+/**
+ * Mongoose document interface for TelegramUser.
+ * Extends both Document (for Mongoose methods) and TelegramUserFields (for domain properties).
+ */
+export interface TelegramUserDoc extends Document, TelegramUserFields {}
 
 const TelegramUserSchema = new Schema<TelegramUserDoc>({
   telegramId: { type: Number, required: true, unique: true },

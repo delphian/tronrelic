@@ -1,6 +1,10 @@
 import { Schema, model, type Document } from 'mongoose';
 
-export interface ContractActivityDoc extends Document {
+/**
+ * Plain field interface for ContractActivity documents.
+ * Use this when working with `.lean()` queries to avoid type mismatches with Mongoose Document types.
+ */
+export interface ContractActivityFields {
   contractAddress: string;
   method?: string;
   date: Date;
@@ -15,6 +19,12 @@ export interface ContractActivityDoc extends Document {
   updatedAt: Date;
   createdAt: Date;
 }
+
+/**
+ * Mongoose document interface for ContractActivity.
+ * Extends both Document (for Mongoose methods) and ContractActivityFields (for domain properties).
+ */
+export interface ContractActivityDoc extends Document, ContractActivityFields {}
 
 const ContractActivitySchema = new Schema<ContractActivityDoc>(
   {

@@ -1,9 +1,19 @@
 import { Schema, model, type Document } from 'mongoose';
 import type { MarketDocument } from '@tronrelic/shared';
 
-export interface MarketDoc extends Document, Omit<MarketDocument, 'id' | 'lastUpdated'> {
+/**
+ * Plain field interface for Market documents.
+ * Use this when working with `.lean()` queries to avoid type mismatches with Mongoose Document types.
+ */
+export interface MarketFields extends Omit<MarketDocument, 'id' | 'lastUpdated'> {
   lastUpdated: Date;
 }
+
+/**
+ * Mongoose document interface for Market.
+ * Extends both Document (for Mongoose methods) and MarketFields (for domain properties).
+ */
+export interface MarketDoc extends Document, MarketFields {}
 
 const MarketSchema = new Schema<MarketDoc>({
   name: { type: String, required: true },

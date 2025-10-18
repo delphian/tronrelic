@@ -1,12 +1,12 @@
 import type { Redis as RedisClient } from 'ioredis';
 import * as os from 'os';
 import mongoose from 'mongoose';
-import { SyncStateModel, type SyncStateDoc } from '../../database/models/sync-state-model.js';
-import { BlockModel } from '../../database/models/block-model.js';
-import { TransactionModel } from '../../database/models/transaction-model.js';
-import { MarketModel } from '../../database/models/market-model.js';
-import { MarketReliabilityModel } from '../../database/models/market-reliability-model.js';
-import { SchedulerExecutionModel } from '../../database/models/scheduler-execution-model.js';
+import { SyncStateModel, type SyncStateDoc, type SyncStateFields } from '../../database/models/sync-state-model.js';
+import { BlockModel, type BlockFields } from '../../database/models/block-model.js';
+import { TransactionModel, type TransactionFields } from '../../database/models/transaction-model.js';
+import { MarketModel, type MarketFields } from '../../database/models/market-model.js';
+import { MarketReliabilityModel, type MarketReliabilityFields } from '../../database/models/market-reliability-model.js';
+import { SchedulerExecutionModel, type ISchedulerExecutionFields } from '../../database/models/scheduler-execution-model.js';
 import { TronGridClient } from '../blockchain/tron-grid.client.js';
 import { logger } from '../../lib/logger.js';
 import { env } from '../../config/env.js';
@@ -204,7 +204,7 @@ export interface ConfigurationValues {
 export class SystemMonitorService {
   constructor(private readonly redis: RedisClient) {}
 
-  private async computeBlockProcessingSnapshot(state: SyncStateDoc | null): Promise<BlockProcessingSnapshot> {
+  private async computeBlockProcessingSnapshot(state: SyncStateFields | null): Promise<BlockProcessingSnapshot> {
     const sampleSize = blockchainConfig.metrics?.sampleSize ?? 180;
 
     const blocks = await BlockModel.find(
@@ -213,7 +213,7 @@ export class SystemMonitorService {
     )
       .sort({ processedAt: -1 })
       .limit(sampleSize)
-      .lean();
+      .lean() as BlockFields[];
 
     const normalized = blocks
       .filter(block => block?.processedAt && block?.timestamp)
@@ -354,7 +354,7 @@ export class SystemMonitorService {
   }
 
   async getBlockchainSyncStatus(): Promise<BlockchainSyncStatus> {
-    const state = await SyncStateModel.findOne({ key: 'blockchain:last-block' }).lean();
+    const state = await SyncStateModel.findOne({ key: 'blockchain:last-block' }).lean() as SyncStateFields | null;
     const tronClient = TronGridClient.getInstance();
 
     let networkBlock: number | null = null;
@@ -453,7 +453,7 @@ export class SystemMonitorService {
   }
 
   async getBlockProcessingMetrics(): Promise<BlockProcessingMetrics> {
-    const state = await SyncStateModel.findOne({ key: 'blockchain:last-block' }).lean();
+    const state = await SyncStateModel.findOne({ key: 'blockchain:last-block' }).lean() as SyncStateFields | null;
     const snapshot = await this.computeBlockProcessingSnapshot(state);
 
     const cursorBlockNumber = snapshot.lastProcessedBlockNumber;
@@ -497,7 +497,7 @@ export class SystemMonitorService {
       // Get the most recent execution for this job
       const lastExecution = await SchedulerExecutionModel.findOne({ jobName: config.name })
         .sort({ startedAt: -1 })
-        .lean();
+        .lean() as ISchedulerExecutionFields | null;
 
       let status: 'running' | 'success' | 'failed' | 'never_run' = 'never_run';
       let lastRun: string | null = null;
@@ -537,8 +537,8 @@ export class SystemMonitorService {
   }
 
   async getMarketPlatformStatus(): Promise<MarketPlatformStatus[]> {
-    const markets = await MarketModel.find().lean();
-    const reliability = await MarketReliabilityModel.find().lean();
+    const markets = await MarketModel.find().lean() as MarketFields[];
+    const reliability = await MarketReliabilityModel.find().lean() as MarketReliabilityFields[];
 
     const reliabilityMap = new Map(reliability.map(r => [r.guid, r]));
 
@@ -574,7 +574,7 @@ export class SystemMonitorService {
   }
 
   async getMarketDataFreshness(): Promise<MarketDataFreshness> {
-    const markets = await MarketModel.find({ isActive: true }).lean();
+    const markets = await MarketModel.find({ isActive: true }).lean() as MarketFields[];
 
     if (markets.length === 0) {
       return {

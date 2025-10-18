@@ -1,6 +1,6 @@
 import type { Redis as RedisClient } from 'ioredis';
 import type { FilterQuery } from 'mongoose';
-import { TransactionModel, type TransactionDoc } from '../../database/models/transaction-model.js';
+import { TransactionModel, type TransactionDoc, type TransactionFields } from '../../database/models/transaction-model.js';
 import { CacheService } from '../../services/cache.service.js';
 
 const HIGH_AMOUNT_CACHE_TTL = 300;
@@ -23,7 +23,7 @@ export class TransactionAnalyticsService {
 
   async getHighAmountTransactions(minAmountTRX: number, limit = 100) {
     const cacheKey = `analytics:high-amount:${minAmountTRX}:${limit}`;
-    const cached = await this.cache.get<TransactionDoc[]>(cacheKey);
+    const cached = await this.cache.get(cacheKey) as TransactionFields[] | null;
     if (cached) {
       return cached;
     }
@@ -31,9 +31,9 @@ export class TransactionAnalyticsService {
     const results = (await TransactionModel.find({ amountTRX: { $gte: minAmountTRX } })
       .sort({ amountTRX: -1 })
       .limit(limit)
-      .lean()) as TransactionDoc[];
+      .lean()) as TransactionFields[];
 
-    await this.cache.set(cacheKey, results, HIGH_AMOUNT_CACHE_TTL, ['transactions-high-amount']);
+    await this.cache.set(cacheKey, results as unknown, HIGH_AMOUNT_CACHE_TTL, ['transactions-high-amount']);
     return results;
   }
 
@@ -58,7 +58,7 @@ export class TransactionAnalyticsService {
       return cached;
     }
 
-    const results = (await TransactionModel.find({ type }).sort({ timestamp: -1 }).limit(limit).lean()) as TransactionDoc[];
+    const results = (await TransactionModel.find({ type }).sort({ timestamp: -1 }).limit(limit).lean()) as TransactionFields[];
     await this.cache.set(cacheKey, results, LATEST_BY_TYPE_CACHE_TTL, ['transactions-latest']);
     return results;
   }
@@ -82,7 +82,7 @@ export class TransactionAnalyticsService {
     const documents = (await TransactionModel.find(filter)
       .sort({ timestamp: -1 })
       .limit(sanitizedLimit)
-      .lean()) as TransactionDoc[];
+      .lean()) as TransactionFields[];
 
     return documents.map(doc => ({
       type: doc.type,
@@ -93,7 +93,7 @@ export class TransactionAnalyticsService {
     }));
   }
 
-  private resolveAmountTrx(doc: TransactionDoc): number | null {
+  private resolveAmountTrx(doc: TransactionFields): number | null {
     if (typeof doc.amountTRX === 'number') {
       return doc.amountTRX;
     }

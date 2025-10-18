@@ -1,6 +1,10 @@
 import { Schema, model, type Document } from 'mongoose';
 
-export interface MarketAffiliateDoc extends Document {
+/**
+ * Plain field interface for MarketAffiliate documents.
+ * Use this when working with `.lean()` queries to avoid type mismatches with Mongoose Document types.
+ */
+export interface MarketAffiliateFields {
   guid: string;
   link: string;
   conversion?: string;
@@ -11,6 +15,12 @@ export interface MarketAffiliateDoc extends Document {
   createdAt: Date;
   updatedAt: Date;
 }
+
+/**
+ * Mongoose document interface for MarketAffiliate.
+ * Extends both Document (for Mongoose methods) and MarketAffiliateFields (for domain properties).
+ */
+export interface MarketAffiliateDoc extends Document, MarketAffiliateFields {}
 
 const MarketAffiliateSchema = new Schema<MarketAffiliateDoc>({
   guid: { type: String, required: true, unique: true, index: true },

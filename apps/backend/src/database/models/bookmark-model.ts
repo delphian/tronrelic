@@ -1,12 +1,22 @@
 import { Schema, model, type Document } from 'mongoose';
 
-export interface BookmarkDoc extends Document {
+/**
+ * Plain field interface for Bookmark documents.
+ * Use this when working with `.lean()` queries to avoid type mismatches with Mongoose Document types.
+ */
+export interface BookmarkFields {
   ownerWallet: string;
   targetWallet: string;
   label?: string;
   createdAt: Date;
   updatedAt: Date;
 }
+
+/**
+ * Mongoose document interface for Bookmark.
+ * Extends both Document (for Mongoose methods) and BookmarkFields (for domain properties).
+ */
+export interface BookmarkDoc extends Document, BookmarkFields {}
 
 const BookmarkSchema = new Schema<BookmarkDoc>(
   {

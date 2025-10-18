@@ -1,6 +1,10 @@
 import { Schema, model, type Document } from 'mongoose';
 
-export interface MarketReliabilityDoc extends Document {
+/**
+ * Plain field interface for MarketReliability documents.
+ * Use this when working with `.lean()` queries to avoid type mismatches with Mongoose Document types.
+ */
+export interface MarketReliabilityFields {
   guid: string;
   successCount: number;
   failureCount: number;
@@ -11,6 +15,12 @@ export interface MarketReliabilityDoc extends Document {
   failureStreak: number;
   successStreak: number;
 }
+
+/**
+ * Mongoose document interface for MarketReliability.
+ * Extends both Document (for Mongoose methods) and MarketReliabilityFields (for domain properties).
+ */
+export interface MarketReliabilityDoc extends Document, MarketReliabilityFields {}
 
 const MarketReliabilitySchema = new Schema<MarketReliabilityDoc>({
   guid: { type: String, required: true, unique: true },
