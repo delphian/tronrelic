@@ -1,4 +1,5 @@
 import pino from 'pino';
+import { mkdirSync } from 'fs';
 import { env } from '../config/env.js';
 
 /**
@@ -8,7 +9,21 @@ import { env } from '../config/env.js';
  * This allows access to logs through either local file reads or Docker commands.
  *
  * The log level is set based on the NODE_ENV: 'debug' for development, 'info' for production.
+ *
+ * The `.run` directory is created automatically if it doesn't exist (important for Docker containers
+ * where the directory may not be pre-created in the image).
  */
+
+// Ensure .run directory exists before creating logger
+// This is critical in Docker containers where the directory may not be pre-created in the image
+try {
+  mkdirSync('.run', { recursive: true });
+} catch (err) {
+  // If directory creation fails, we'll still try to create the logger
+  // (it will log to stdout only if file logging fails)
+  console.error('Warning: Could not create .run directory:', err);
+}
+
 const transport = pino.transport({
   targets: [
     {
