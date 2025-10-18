@@ -120,7 +120,7 @@ export function ResourceTrackingPage({ context }: { context: IFrontendPluginCont
         /**
          * Handle new summation creation events from the backend.
          *
-         * When the summation job completes every 10 minutes, the backend emits this event
+         * When the summation job completes every 5 minutes, the backend emits this event
          * to all subscribed clients. We refetch the data to update the chart with the latest
          * aggregated statistics.
          */
@@ -189,7 +189,7 @@ export function ResourceTrackingPage({ context }: { context: IFrontendPluginCont
             label: 'Energy Delegated',
             data: data.map(point => ({
                 date: point.timestamp,
-                value: point.energyDelegated // Already in billions from API
+                value: point.energyDelegated // Already in millions of TRX from API
             })),
             color: CHART_COLORS.energyDelegated,
             fill: true
@@ -202,7 +202,7 @@ export function ResourceTrackingPage({ context }: { context: IFrontendPluginCont
             label: 'Energy Reclaimed',
             data: data.map(point => ({
                 date: point.timestamp,
-                value: point.energyReclaimed // Already in billions from API
+                value: point.energyReclaimed // Already in millions of TRX from API
             })),
             color: CHART_COLORS.energyReclaimed,
             fill: true
@@ -215,7 +215,7 @@ export function ResourceTrackingPage({ context }: { context: IFrontendPluginCont
             label: 'Net Energy',
             data: data.map(point => ({
                 date: point.timestamp,
-                value: point.netEnergy // Already in billions from API
+                value: point.netEnergy // Already in millions of TRX from API
             })),
             color: CHART_COLORS.netEnergy,
             fill: true
@@ -228,7 +228,7 @@ export function ResourceTrackingPage({ context }: { context: IFrontendPluginCont
             label: 'Bandwidth Delegated',
             data: data.map(point => ({
                 date: point.timestamp,
-                value: point.bandwidthDelegated // Already in billions from API
+                value: point.bandwidthDelegated // Already in millions of TRX from API
             })),
             color: CHART_COLORS.bandwidthDelegated,
             fill: true
@@ -241,7 +241,7 @@ export function ResourceTrackingPage({ context }: { context: IFrontendPluginCont
             label: 'Bandwidth Reclaimed',
             data: data.map(point => ({
                 date: point.timestamp,
-                value: point.bandwidthReclaimed // Already in billions from API
+                value: point.bandwidthReclaimed // Already in millions of TRX from API
             })),
             color: CHART_COLORS.bandwidthReclaimed,
             fill: true
@@ -254,7 +254,7 @@ export function ResourceTrackingPage({ context }: { context: IFrontendPluginCont
             label: 'Net Bandwidth',
             data: data.map(point => ({
                 date: point.timestamp,
-                value: point.netBandwidth // Already in billions from API
+                value: point.netBandwidth // Already in millions of TRX from API
             })),
             color: CHART_COLORS.netBandwidth,
             fill: true
@@ -310,7 +310,7 @@ export function ResourceTrackingPage({ context }: { context: IFrontendPluginCont
                     Resource Tracking
                 </h1>
                 <p className={styles.subtitle}>
-                    Monitor TRON resource delegation and reclaim patterns (billions of SUN units)
+                    Monitor TRON resource delegation and reclaim patterns (millions of TRX)
                 </p>
             </header>
 
@@ -438,6 +438,11 @@ export function ResourceTrackingPage({ context }: { context: IFrontendPluginCont
                         <charts.LineChart
                             series={chartSeries}
                             yAxisFormatter={(value) => `${Math.round(value).toLocaleString()}`}
+                            xAxisFormatter={(date) => {
+                                const dateStr = date.toLocaleDateString();
+                                const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+                                return `${dateStr} ${timeStr}`;
+                            }}
                             minDate={getTimeRange().minDate}
                             maxDate={getTimeRange().maxDate}
                         />

@@ -22,11 +22,11 @@ let purgeInterval: NodeJS.Timeout | null = null;
  *
  * This plugin tracks TRON resource delegation and reclaim transactions, storing
  * individual transaction details with a 48-hour TTL and aggregating statistics
- * every 10 minutes for long-term trend analysis (6-month retention).
+ * every 5 minutes for long-term trend analysis (6-month retention).
  *
  * The plugin implements:
  * - Delegation transaction observer for real-time data capture
- * - Summation job for periodic aggregation (every 10 minutes)
+ * - Summation job for periodic aggregation (every 5 minutes)
  * - Purge job for data cleanup (every hour)
  * - REST API for querying summations and managing settings
  */
@@ -111,8 +111,8 @@ export const resourceTrackingBackendPlugin = definePlugin({
             return;
         }
 
-        // Start summation job (every 10 minutes)
-        const summationIntervalMs = 10 * 60 * 1000; // 10 minutes
+        // Start summation job (every 5 minutes)
+        const summationIntervalMs = 5 * 60 * 1000; // 5 minutes
         summationInterval = setInterval(async () => {
             try {
                 await runSummationJob(context.database, context.logger, context.websocket);
@@ -121,7 +121,7 @@ export const resourceTrackingBackendPlugin = definePlugin({
             }
         }, summationIntervalMs);
 
-        context.logger.info({ intervalMinutes: 10 }, 'Summation job started');
+        context.logger.info({ intervalMinutes: 5 }, 'Summation job started');
 
         // Start purge job (configurable frequency, default 1 hour)
         const purgeIntervalMs = config.purgeFrequencyHours * 60 * 60 * 1000;
@@ -234,15 +234,16 @@ export const resourceTrackingBackendPlugin = definePlugin({
                         { sort: { timestamp: 1 } }
                     );
 
-                    // Format response - convert to billions with 1 decimal precision
+                    // Format response - convert SUN to millions of TRX with 1 decimal precision
+                    // 1 TRX = 1,000,000 SUN, so 1M TRX = 1,000,000,000,000 SUN (1e12)
                     const data = summations.map(s => ({
                         timestamp: s.timestamp.toISOString(),
-                        energyDelegated: Number((s.energyDelegated / 1_000_000_000).toFixed(1)),
-                        energyReclaimed: Number((s.energyReclaimed / 1_000_000_000).toFixed(1)),
-                        bandwidthDelegated: Number((s.bandwidthDelegated / 1_000_000_000).toFixed(1)),
-                        bandwidthReclaimed: Number((s.bandwidthReclaimed / 1_000_000_000).toFixed(1)),
-                        netEnergy: Number((s.netEnergy / 1_000_000_000).toFixed(1)),
-                        netBandwidth: Number((s.netBandwidth / 1_000_000_000).toFixed(1))
+                        energyDelegated: Number((s.energyDelegated / 1e12).toFixed(1)),
+                        energyReclaimed: Number((s.energyReclaimed / 1e12).toFixed(1)),
+                        bandwidthDelegated: Number((s.bandwidthDelegated / 1e12).toFixed(1)),
+                        bandwidthReclaimed: Number((s.bandwidthReclaimed / 1e12).toFixed(1)),
+                        netEnergy: Number((s.netEnergy / 1e12).toFixed(1)),
+                        netBandwidth: Number((s.netBandwidth / 1e12).toFixed(1))
                     }));
 
                     res.json({ success: true, data });
