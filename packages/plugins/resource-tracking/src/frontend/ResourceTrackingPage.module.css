@@ -6,8 +6,12 @@
     padding: 1.5rem;
 }
 
+/**
+ * Page header spacing matches site-wide .page grid gap of 2.5rem.
+ * This ensures consistent vertical rhythm with other pages.
+ */
 .header {
-    margin-bottom: 1rem;
+    margin-bottom: 2.5rem;
 }
 
 .title {
@@ -41,6 +45,28 @@
 .container {
     container-type: inline-size;
     container-name: resource-tracking-container;
+}
+
+.cardHeader {
+    margin-bottom: 1.5rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid var(--color-border);
+}
+
+.cardTitle {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: inherit;
+    margin: 0 0 0.5rem 0;
+}
+
+.cardSubtitle {
+    font-size: 0.875rem;
+    color: var(--color-text-muted);
+    margin: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
 }
 
 .summary {

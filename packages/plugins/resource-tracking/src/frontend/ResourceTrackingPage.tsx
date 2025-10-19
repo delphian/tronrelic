@@ -483,28 +483,39 @@ export function ResourceTrackingPage({ context }: { context: IFrontendPluginCont
                     Resource Tracking
                 </h1>
                 <p className={styles.subtitle}>
-                    Monitor TRON resource delegation and reclaim patterns (millions of TRX equivalence)
-                    <span
-                        className={styles.helpIcon}
-                        role="img"
-                        aria-label="Information"
-                        title="Values shown are not raw energy values but the equivalent TRX staked to obtain such energy"
-                    >
-                        <HelpCircle
-                            size={16}
-                            style={{
-                                display: 'inline-block',
-                                marginLeft: '0.35rem',
-                                verticalAlign: 'middle',
-                                cursor: 'help',
-                                opacity: 0.7
-                            }}
-                        />
-                    </span>
+                    Track how energy and bandwidth resources flow across the TRON network through delegation and reclaim transactions. TRON users can stake TRX to generate energy (for smart contract execution) and bandwidth (for transaction capacity), then delegate these resources to other addresses or reclaim them. This dashboard visualizes network-wide delegation patterns, showing the total value of resources being shared, reclaimed, and net changes over time. Values are expressed in millions of TRX equivalence—the amount of TRX that would need to be staked to generate the observed energy and bandwidth levels.
                 </p>
             </header>
 
             <Card elevated className={styles.container}>
+                {/* Card Header */}
+                <div className={styles.cardHeader}>
+                    <h2 className={styles.cardTitle}>
+                        <Zap size={24} style={{ display: 'inline-block', marginRight: '0.5rem', verticalAlign: 'middle' }} />
+                        Resource Delegations
+                    </h2>
+                    <p className={styles.cardSubtitle}>
+                        Monitor TRON resource delegation and reclaim patterns (millions of TRX equivalence)
+                        <span
+                            className={styles.helpIcon}
+                            role="img"
+                            aria-label="Information"
+                            title="Values shown are not raw energy values but the equivalent TRX staked to obtain such energy"
+                        >
+                            <HelpCircle
+                                size={16}
+                                style={{
+                                    display: 'inline-block',
+                                    marginLeft: '0.35rem',
+                                    verticalAlign: 'middle',
+                                    cursor: 'help',
+                                    opacity: 0.7
+                                }}
+                            />
+                        </span>
+                    </p>
+                </div>
+
                 {/* Controls: Time Period + Line Toggles */}
                 <div className={styles.controls}>
                     {/* Time Period Selector */}
@@ -629,6 +640,7 @@ export function ResourceTrackingPage({ context }: { context: IFrontendPluginCont
                     {chartSeries.length > 0 ? (
                         <charts.LineChart
                             series={chartSeries}
+                            height={400}
                             yAxisFormatter={(value) => `${Math.round(value).toLocaleString()}`}
                             xAxisFormatter={(date) => {
                                 const dateStr = date.toLocaleDateString();
