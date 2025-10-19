@@ -75,12 +75,21 @@ export interface IChartComponents {
             label: string;
             data: Array<{ date: string; value: number; max?: number; count?: number }>;
             color?: string;
+            fill?: boolean;
         }>;
         yAxisFormatter?: (value: number) => string;
-        xAxisFormatter?: (value: string) => string;
+        xAxisFormatter?: (value: Date) => string;
         emptyLabel?: string;
         height?: number;
         className?: string;
+        /** Fixed minimum date for X-axis (prevents auto-scaling when data is sparse) */
+        minDate?: Date;
+        /** Fixed maximum date for X-axis (prevents auto-scaling when data is sparse) */
+        maxDate?: Date;
+        /** Fixed minimum value for Y-axis (overrides auto-calculated minimum) */
+        yAxisMin?: number;
+        /** Fixed maximum value for Y-axis (overrides auto-calculated maximum) */
+        yAxisMax?: number;
     }>;
 }
 
