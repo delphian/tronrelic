@@ -4,6 +4,7 @@ import type { IBaseObserver } from './IBaseObserver.js';
 import type { IPluginDatabase } from '../plugin/IPluginDatabase.js';
 import type { ILogger } from '../logging/ILogger.js';
 import type { IPluginWebSocketManager } from './IPluginWebSocketManager.js';
+import type { ICacheService } from '../services/ICacheService.js';
 
 /**
  * Plugin context provided to backend plugins during initialization.
@@ -33,6 +34,9 @@ export interface IPluginContext {
 
     /** Plugin-scoped database access with automatic collection prefixing */
     database: IPluginDatabase;
+
+    /** Cache service for Redis-backed key-value storage with TTL and tagging */
+    cache: ICacheService;
 
     /** Structured logger scoped to the plugin for consistent telemetry */
     logger: ILogger;
