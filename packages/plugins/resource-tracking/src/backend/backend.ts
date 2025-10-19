@@ -251,6 +251,7 @@ export const resourceTrackingBackendPlugin = definePlugin({
                     };
 
                     const days = periodMap[period] || 7;
+                    const endDate = new Date();
                     const startDate = new Date();
                     startDate.setDate(startDate.getDate() - days);
 
@@ -261,26 +262,32 @@ export const resourceTrackingBackendPlugin = definePlugin({
                         { sort: { startBlock: 1 } }
                     );
 
-                    // Apply sampling if needed
-                    const sampledResult = sampleSummations(summations, requestedPoints);
+                    // Apply time-based bucketing with fixed date range
+                    const sampledResult = sampleSummations(summations, requestedPoints, startDate, endDate);
 
                     // Format response - convert SUN to millions of TRX with 1 decimal precision
                     // 1 TRX = 1,000,000 SUN, so 1M TRX = 1,000,000,000,000 SUN (1e12)
-                    const formattedData = sampledResult.data.map(s => ({
-                        timestamp: s.timestamp.toISOString(),
-                        startBlock: s.startBlock,
-                        endBlock: s.endBlock,
-                        energyDelegated: Number((s.energyDelegated / 1e12).toFixed(1)),
-                        energyReclaimed: Number((s.energyReclaimed / 1e12).toFixed(1)),
-                        bandwidthDelegated: Number((s.bandwidthDelegated / 1e12).toFixed(1)),
-                        bandwidthReclaimed: Number((s.bandwidthReclaimed / 1e12).toFixed(1)),
-                        netEnergy: Number((s.netEnergy / 1e12).toFixed(1)),
-                        netBandwidth: Number((s.netBandwidth / 1e12).toFixed(1)),
-                        transactionCount: s.transactionCount,
-                        totalTransactionsDelegated: s.totalTransactionsDelegated,
-                        totalTransactionsUndelegated: s.totalTransactionsUndelegated,
-                        totalTransactionsNet: s.totalTransactionsNet
-                    }));
+                    // Preserve null values for empty buckets (creates gaps in chart)
+                    const formattedData = sampledResult.data.map(s => {
+                        if (s === null) {
+                            return null;
+                        }
+                        return {
+                            timestamp: s.timestamp.toISOString(),
+                            startBlock: s.startBlock,
+                            endBlock: s.endBlock,
+                            energyDelegated: Number((s.energyDelegated / 1e12).toFixed(1)),
+                            energyReclaimed: Number((s.energyReclaimed / 1e12).toFixed(1)),
+                            bandwidthDelegated: Number((s.bandwidthDelegated / 1e12).toFixed(1)),
+                            bandwidthReclaimed: Number((s.bandwidthReclaimed / 1e12).toFixed(1)),
+                            netEnergy: Number((s.netEnergy / 1e12).toFixed(1)),
+                            netBandwidth: Number((s.netBandwidth / 1e12).toFixed(1)),
+                            transactionCount: s.transactionCount,
+                            totalTransactionsDelegated: s.totalTransactionsDelegated,
+                            totalTransactionsUndelegated: s.totalTransactionsUndelegated,
+                            totalTransactionsNet: s.totalTransactionsNet
+                        };
+                    });
 
                     const response: ISummationResponse = {
                         success: true,
