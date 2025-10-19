@@ -1,8 +1,9 @@
 import type { Redis as RedisClient } from 'ioredis';
+import type { ICacheService } from '@tronrelic/types';
 import { CacheModel, type CacheDoc } from '../database/models/cache-model.js';
 import { logger } from '../lib/logger.js';
 
-export class CacheService {
+export class CacheService implements ICacheService {
   constructor(private readonly redis: RedisClient) {}
 
   async get<T>(key: string): Promise<T | null> {
@@ -45,6 +46,14 @@ export class CacheService {
     await Promise.all(docs.map(doc => this.redis.del(doc.key)));
     await CacheModel.deleteMany({ tags: tag });
     logger.debug({ tag }, 'Cache invalidated');
+  }
+
+  async del(key: string): Promise<number> {
+    return await this.redis.del(key);
+  }
+
+  async keys(pattern: string): Promise<string[]> {
+    return await this.redis.keys(pattern);
   }
 
   private getTtlSeconds(doc: CacheDoc) {

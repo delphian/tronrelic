@@ -74,8 +74,44 @@
 
 .actions {
     display: flex;
+    gap: 1rem;
     justify-content: flex-start;
     padding-top: 1rem;
+}
+
+/* Cache Info Panel */
+.infoPanel {
+    margin-top: 2rem;
+    padding: 1.5rem;
+    background-color: rgba(59, 130, 246, 0.05);
+    border: 1px solid rgba(59, 130, 246, 0.2);
+    border-radius: var(--radius-md);
+}
+
+.infoPanelTitle {
+    font-size: 1rem;
+    font-weight: 600;
+    color: inherit;
+    margin: 0 0 0.75rem 0;
+}
+
+.infoPanelText {
+    font-size: 0.875rem;
+    color: var(--color-text-muted);
+    margin: 0 0 0.75rem 0;
+    line-height: 1.5;
+}
+
+.infoPanelList {
+    font-size: 0.875rem;
+    color: var(--color-text-muted);
+    margin: 0;
+    padding-left: 1.5rem;
+    line-height: 1.6;
+}
+
+.infoPanelList li {
+    margin-bottom: 0.25rem;
 }
 
 /* Skeleton loader placeholder */
