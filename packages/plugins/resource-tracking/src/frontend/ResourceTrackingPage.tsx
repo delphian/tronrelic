@@ -2,8 +2,22 @@
 
 import { useEffect, useState } from 'react';
 import type { IFrontendPluginContext } from '@tronrelic/types';
-import { Activity, Calendar, AlertCircle, BarChart3, Zap, Gauge, HelpCircle } from 'lucide-react';
+import { Activity, AlertCircle, BarChart3, Zap, Gauge, HelpCircle } from 'lucide-react';
 import styles from './ResourceTrackingPage.module.css';
+
+/**
+ * Card component imported from frontend context.
+ * Provides consistent surface styling with elevation, borders, and shadows.
+ */
+interface ICard {
+    (props: {
+        children: React.ReactNode;
+        className?: string;
+        elevated?: boolean;
+        padding?: 'sm' | 'md' | 'lg';
+        tone?: 'default' | 'muted' | 'accent';
+    }): JSX.Element;
+}
 
 interface ISummationPoint {
     timestamp: string;
@@ -96,22 +110,76 @@ export function ResourceTrackingPage({ context }: { context: IFrontendPluginCont
      * Load summation data from the API.
      *
      * Fetches aggregated resource delegation statistics for the selected time period.
-     * This function is called on mount, when the period changes, and when new summation
-     * data is created (triggered by WebSocket events).
+     * Requests 288 data points with optional server-side sampling to optimize payload
+     * size and chart rendering performance. This function is called on mount, when the
+     * period changes, and when new summation data is created (triggered by WebSocket events).
+     *
+     * @param showLoading - Whether to show loading state (default true). Set to false for
+     *                      background refreshes triggered by WebSocket to avoid UI flash.
      */
-    async function loadData() {
-        setLoading(true);
+    async function loadData(showLoading: boolean = true) {
+        if (showLoading) {
+            setLoading(true);
+        }
         setError(null);
 
         try {
-            const response = await api.get('/plugins/resource-tracking/summations', { period });
+            const response = await api.get('/plugins/resource-tracking/summations', {
+                period,
+                points: 288 // Request fixed 288-point sampling from backend
+            });
             setData(response.data || []);
         } catch (err) {
             console.error('Failed to load resource tracking data:', err);
             setError('Failed to load resource tracking data');
         } finally {
-            setLoading(false);
+            if (showLoading) {
+                setLoading(false);
+            }
         }
+    }
+
+    /**
+     * Intelligently merge fresh data with existing data.
+     *
+     * When WebSocket events trigger background data refreshes, we want to update the chart
+     * without flashing the UI. This function compares the existing dataset with fresh data
+     * from the API and appends only the new points that don't already exist.
+     *
+     * The merge strategy:
+     * 1. Identify the latest timestamp in the current dataset
+     * 2. Find all points in the fresh data that are newer than that timestamp
+     * 3. Append those new points to the existing dataset
+     *
+     * This ensures smooth real-time updates while maintaining the sampled data's consistency.
+     *
+     * @param freshData - Newly fetched data from the API (288 sampled points)
+     */
+    function mergeData(freshData: ISummationPoint[]) {
+        setData(prevData => {
+            if (prevData.length === 0) {
+                // No existing data - use fresh data as-is
+                return freshData;
+            }
+
+            // Find the latest timestamp in current data
+            const latestTimestamp = new Date(prevData[prevData.length - 1].timestamp).getTime();
+
+            // Find new points in fresh data (points newer than our latest)
+            const newPoints = freshData.filter(point => {
+                const pointTimestamp = new Date(point.timestamp).getTime();
+                return pointTimestamp > latestTimestamp;
+            });
+
+            if (newPoints.length === 0) {
+                // No new data to append - keep existing data
+                return prevData;
+            }
+
+            // Append new points to existing data
+            console.log(`Merging ${newPoints.length} new points into chart (${prevData.length} existing)`);
+            return [...prevData, ...newPoints];
+        });
     }
 
     // Initial data load and reload when period changes
@@ -127,35 +195,34 @@ export function ResourceTrackingPage({ context }: { context: IFrontendPluginCont
          * Handle new summation creation events from the backend.
          *
          * When the summation job completes every 5 minutes, the backend emits this event
-         * to all subscribed clients. We append the new data point directly to avoid
-         * a harsh full-page refetch, creating a smooth real-time update experience.
+         * to all subscribed clients. Instead of directly appending the raw WebSocket payload,
+         * we fetch fresh sampled data from the API and intelligently merge it with the
+         * existing dataset to maintain consistency.
+         *
+         * This approach ensures:
+         * 1. All data points are properly sampled (not mixing raw + sampled)
+         * 2. Cache TTL is respected (may hit cache or fresh data depending on timing)
+         * 3. UI doesn't flash (background fetch + merge, no loading state)
+         * 4. Chart stays smooth and responsive
          */
-        const handleSummationCreated = (payload: any) => {
+        const handleSummationCreated = async (payload: any) => {
             console.log('New summation created:', payload);
 
-            // Optimistically append new data point without triggering loading state
-            setData(prevData => {
-                const newPoint: ISummationPoint = {
-                    timestamp: payload.timestamp,
-                    startBlock: payload.startBlock,
-                    endBlock: payload.endBlock,
-                    energyDelegated: payload.energyDelegated,
-                    energyReclaimed: payload.energyReclaimed,
-                    bandwidthDelegated: payload.bandwidthDelegated,
-                    bandwidthReclaimed: payload.bandwidthReclaimed,
-                    netEnergy: payload.netEnergy,
-                    netBandwidth: payload.netBandwidth,
-                    transactionCount: payload.transactionCount,
-                    totalTransactionsDelegated: payload.totalTransactionsDelegated,
-                    totalTransactionsUndelegated: payload.totalTransactionsUndelegated,
-                    totalTransactionsNet: payload.totalTransactionsNet
-                };
+            try {
+                // Fetch fresh data in the background (no loading state)
+                const response = await api.get('/plugins/resource-tracking/summations', {
+                    period,
+                    points: 288
+                });
 
-                // Append to end and maintain sort order by timestamp
-                return [...prevData, newPoint].sort((a, b) =>
-                    new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
-                );
-            });
+                // Intelligently merge fresh data with existing data
+                if (response.data) {
+                    mergeData(response.data);
+                }
+            } catch (err) {
+                console.error('Failed to fetch fresh data after summation event:', err);
+                // Silently fail - user still has existing data displayed
+            }
         };
 
         /**
@@ -269,7 +336,11 @@ export function ResourceTrackingPage({ context }: { context: IFrontendPluginCont
             label: 'Energy Delegated',
             data: data.map(point => ({
                 date: point.timestamp,
-                value: point.energyDelegated // Already in millions of TRX from API
+                value: point.energyDelegated, // Already in millions of TRX from API
+                metadata: {
+                    transactions: point.transactionCount,
+                    blockRange: `${point.startBlock.toLocaleString()} - ${point.endBlock.toLocaleString()}`
+                }
             })),
             color: CHART_COLORS.energyDelegated,
             fill: true
@@ -282,7 +353,11 @@ export function ResourceTrackingPage({ context }: { context: IFrontendPluginCont
             label: 'Energy Reclaimed',
             data: data.map(point => ({
                 date: point.timestamp,
-                value: point.energyReclaimed // Already in millions of TRX from API
+                value: point.energyReclaimed, // Already in millions of TRX from API
+                metadata: {
+                    transactions: point.transactionCount,
+                    blockRange: `${point.startBlock.toLocaleString()} - ${point.endBlock.toLocaleString()}`
+                }
             })),
             color: CHART_COLORS.energyReclaimed,
             fill: true
@@ -295,7 +370,11 @@ export function ResourceTrackingPage({ context }: { context: IFrontendPluginCont
             label: 'Net Energy',
             data: data.map(point => ({
                 date: point.timestamp,
-                value: point.netEnergy // Already in millions of TRX from API
+                value: point.netEnergy, // Already in millions of TRX from API
+                metadata: {
+                    transactions: point.transactionCount,
+                    blockRange: `${point.startBlock.toLocaleString()} - ${point.endBlock.toLocaleString()}`
+                }
             })),
             color: CHART_COLORS.netEnergy,
             fill: true
@@ -308,7 +387,11 @@ export function ResourceTrackingPage({ context }: { context: IFrontendPluginCont
             label: 'Bandwidth Delegated',
             data: data.map(point => ({
                 date: point.timestamp,
-                value: point.bandwidthDelegated // Already in millions of TRX from API
+                value: point.bandwidthDelegated, // Already in millions of TRX from API
+                metadata: {
+                    transactions: point.transactionCount,
+                    blockRange: `${point.startBlock.toLocaleString()} - ${point.endBlock.toLocaleString()}`
+                }
             })),
             color: CHART_COLORS.bandwidthDelegated,
             fill: true
@@ -321,7 +404,11 @@ export function ResourceTrackingPage({ context }: { context: IFrontendPluginCont
             label: 'Bandwidth Reclaimed',
             data: data.map(point => ({
                 date: point.timestamp,
-                value: point.bandwidthReclaimed // Already in millions of TRX from API
+                value: point.bandwidthReclaimed, // Already in millions of TRX from API
+                metadata: {
+                    transactions: point.transactionCount,
+                    blockRange: `${point.startBlock.toLocaleString()} - ${point.endBlock.toLocaleString()}`
+                }
             })),
             color: CHART_COLORS.bandwidthReclaimed,
             fill: true
@@ -334,12 +421,18 @@ export function ResourceTrackingPage({ context }: { context: IFrontendPluginCont
             label: 'Net Bandwidth',
             data: data.map(point => ({
                 date: point.timestamp,
-                value: point.netBandwidth // Already in millions of TRX from API
+                value: point.netBandwidth, // Already in millions of TRX from API
+                metadata: {
+                    transactions: point.transactionCount,
+                    blockRange: `${point.startBlock.toLocaleString()} - ${point.endBlock.toLocaleString()}`
+                }
             })),
             color: CHART_COLORS.netBandwidth,
             fill: true
         });
     }
+
+    const Card = ui.Card as ICard;
 
     if (loading) {
         return (
@@ -351,10 +444,10 @@ export function ResourceTrackingPage({ context }: { context: IFrontendPluginCont
                     </h1>
                     <p className={styles.subtitle}>Loading delegation data...</p>
                 </header>
-                <div className={`surface ${styles.container}`}>
+                <Card elevated className={styles.container}>
                     <div className={styles.skeletonLoader} style={{ height: '60px', marginBottom: 'var(--spacing-md)' }} />
                     <div className={styles.skeletonLoader} style={{ height: '400px' }} />
-                </div>
+                </Card>
             </main>
         );
     }
@@ -369,15 +462,15 @@ export function ResourceTrackingPage({ context }: { context: IFrontendPluginCont
                     </h1>
                     <p className={styles.subtitle}>Monitor TRON resource delegation patterns</p>
                 </header>
-                <div className={`surface ${styles.container}`}>
+                <Card elevated className={styles.container}>
                     <div className={styles.errorContainer}>
                         <AlertCircle size={48} color="var(--color-danger, #ef4444)" />
                         <p className={styles.errorText}>{error}</p>
-                        <button className="btn btn--secondary" onClick={loadData}>
+                        <button className="btn btn--secondary" onClick={() => void loadData()}>
                             Retry
                         </button>
                     </div>
-                </div>
+                </Card>
             </main>
         );
     }
@@ -411,47 +504,14 @@ export function ResourceTrackingPage({ context }: { context: IFrontendPluginCont
                 </p>
             </header>
 
-            <div className={`surface ${styles.container}`}>
-                {/* Summary Stats */}
-                {data.length > 0 && (
-                    <div className={styles.summary}>
-                        <div className={styles.summaryItem}>
-                            <span className={styles.summaryLabel}>Latest Block Range:</span>
-                            <span className={styles.summaryValue}>
-                                {data[data.length - 1].startBlock.toLocaleString()} - {data[data.length - 1].endBlock.toLocaleString()}
-                            </span>
-                        </div>
-                        <div className={styles.summaryItem}>
-                            <span className={styles.summaryLabel}>Total Transactions:</span>
-                            <span className={styles.summaryValue}>
-                                {data.reduce((sum, point) => sum + point.transactionCount, 0).toLocaleString()}
-                            </span>
-                        </div>
-                        <div className={styles.summaryItem}>
-                            <span className={styles.summaryLabel}>Delegations:</span>
-                            <span className={styles.summaryValue}>
-                                {data.reduce((sum, point) => sum + point.totalTransactionsDelegated, 0).toLocaleString()}
-                            </span>
-                        </div>
-                        <div className={styles.summaryItem}>
-                            <span className={styles.summaryLabel}>Undelegations:</span>
-                            <span className={styles.summaryValue}>
-                                {data.reduce((sum, point) => sum + point.totalTransactionsUndelegated, 0).toLocaleString()}
-                            </span>
-                        </div>
-                    </div>
-                )}
-
-                {/* Time Period Selector */}
+            <Card elevated className={styles.container}>
+                {/* Controls: Time Period + Line Toggles */}
                 <div className={styles.controls}>
-                    <div className={styles.periodSelector}>
-                        <span className={styles.label}>
-                            <Calendar size={16} style={{ display: 'inline-block', marginRight: '0.25rem', verticalAlign: 'middle' }} />
-                            Time Period:
-                        </span>
+                    {/* Time Period Selector */}
+                    <div className={styles.controlRow}>
                         <div className={styles.buttonGroup}>
                             <button
-                                className={`btn btn--sm ${period === '1d' ? 'btn--primary' : ''}`}
+                                className={`${styles.periodButton} ${period === '1d' ? styles['periodButton--active'] : ''}`}
                                 onClick={() => setPeriod('1d')}
                                 aria-label="Show data for 1 day"
                                 aria-pressed={period === '1d'}
@@ -459,7 +519,7 @@ export function ResourceTrackingPage({ context }: { context: IFrontendPluginCont
                                 1 Day
                             </button>
                             <button
-                                className={`btn btn--sm ${period === '7d' ? 'btn--primary' : ''}`}
+                                className={`${styles.periodButton} ${period === '7d' ? styles['periodButton--active'] : ''}`}
                                 onClick={() => setPeriod('7d')}
                                 aria-label="Show data for 7 days"
                                 aria-pressed={period === '7d'}
@@ -467,7 +527,7 @@ export function ResourceTrackingPage({ context }: { context: IFrontendPluginCont
                                 7 Days
                             </button>
                             <button
-                                className={`btn btn--sm ${period === '30d' ? 'btn--primary' : ''}`}
+                                className={`${styles.periodButton} ${period === '30d' ? styles['periodButton--active'] : ''}`}
                                 onClick={() => setPeriod('30d')}
                                 aria-label="Show data for 30 days"
                                 aria-pressed={period === '30d'}
@@ -475,7 +535,7 @@ export function ResourceTrackingPage({ context }: { context: IFrontendPluginCont
                                 30 Days
                             </button>
                             <button
-                                className={`btn btn--sm ${period === '6m' ? 'btn--primary' : ''}`}
+                                className={`${styles.periodButton} ${period === '6m' ? styles['periodButton--active'] : ''}`}
                                 onClick={() => setPeriod('6m')}
                                 aria-label="Show data for 6 months"
                                 aria-pressed={period === '6m'}
@@ -486,8 +546,7 @@ export function ResourceTrackingPage({ context }: { context: IFrontendPluginCont
                     </div>
 
                     {/* Line Toggles */}
-                    <div className={styles.toggles}>
-                        <span className={styles.label}>Show Lines:</span>
+                    <div className={styles.controlRow}>
                         <div className={styles.toggleGroup}>
                             <label className={styles.toggle}>
                                 <input
@@ -498,7 +557,7 @@ export function ResourceTrackingPage({ context }: { context: IFrontendPluginCont
                                 />
                                 <span className={`${styles.toggleLabel} ${styles.toggleLabelEnergyDelegated}`}>
                                     <Zap size={14} style={{ display: 'inline-block', marginRight: '0.25rem', verticalAlign: 'middle' }} />
-                                    Energy
+                                    Delegated
                                 </span>
                             </label>
                             <label className={styles.toggle}>
@@ -510,7 +569,7 @@ export function ResourceTrackingPage({ context }: { context: IFrontendPluginCont
                                 />
                                 <span className={`${styles.toggleLabel} ${styles.toggleLabelEnergyReclaimed}`}>
                                     <Zap size={14} style={{ display: 'inline-block', marginRight: '0.25rem', verticalAlign: 'middle' }} />
-                                    Energy
+                                    Reclaimed
                                 </span>
                             </label>
                             <label className={styles.toggle}>
@@ -534,7 +593,7 @@ export function ResourceTrackingPage({ context }: { context: IFrontendPluginCont
                                 />
                                 <span className={`${styles.toggleLabel} ${styles.toggleLabelBandwidthDelegated}`}>
                                     <Gauge size={14} style={{ display: 'inline-block', marginRight: '0.25rem', verticalAlign: 'middle' }} />
-                                    Bandwidth
+                                    Delegated
                                 </span>
                             </label>
                             <label className={styles.toggle}>
@@ -546,7 +605,7 @@ export function ResourceTrackingPage({ context }: { context: IFrontendPluginCont
                                 />
                                 <span className={`${styles.toggleLabel} ${styles.toggleLabelBandwidthReclaimed}`}>
                                     <Gauge size={14} style={{ display: 'inline-block', marginRight: '0.25rem', verticalAlign: 'middle' }} />
-                                    Bandwidth
+                                    Reclaimed
                                 </span>
                             </label>
                             <label className={styles.toggle}>
@@ -591,7 +650,7 @@ export function ResourceTrackingPage({ context }: { context: IFrontendPluginCont
                         </div>
                     )}
                 </div>
-            </div>
+            </Card>
         </main>
     );
 }

@@ -12,6 +12,8 @@ interface DataPoint {
     date: string;
     /** Numeric value to plot */
     value: number;
+    /** Optional metadata to display in tooltip */
+    metadata?: Record<string, any>;
 }
 
 /**
@@ -70,6 +72,7 @@ interface PointShape {
 interface NormalizedPoint extends PointShape {
     date: Date;
     value: number;
+    metadata?: Record<string, any>;
 }
 
 /**
@@ -79,6 +82,7 @@ interface TooltipDatum {
     label: string;
     value: number;
     color: string;
+    metadata?: Record<string, any>;
 }
 
 /**
@@ -254,7 +258,8 @@ export function LineChart({
                     x: scaleX(date),
                     y: scaleY(point.value),
                     date,
-                    value: point.value
+                    value: point.value,
+                    metadata: point.metadata
                 };
             });
             return { ...item, color, points };
@@ -337,7 +342,8 @@ export function LineChart({
                 return {
                     label: series.label,
                     value: point.value,
-                    color: series.color ?? '#7C9BFF'
+                    color: series.color ?? '#7C9BFF',
+                    metadata: point.metadata
                 } satisfies TooltipDatum;
             })
             .filter((item): item is TooltipDatum => Boolean(item));
@@ -488,6 +494,16 @@ export function LineChart({
                             <span>{yAxisFormatter(item.value)}</span>
                         </div>
                     ))}
+                    {tooltip.items[0]?.metadata && (
+                        <div className={styles.tooltip__footer}>
+                            {tooltip.items[0].metadata.blockRange && (
+                                <div>Blocks: {tooltip.items[0].metadata.blockRange}</div>
+                            )}
+                            {tooltip.items[0].metadata.transactions !== undefined && (
+                                <div>{tooltip.items[0].metadata.transactions.toLocaleString()} transactions</div>
+                            )}
+                        </div>
+                    )}
                 </div>
             )}
 

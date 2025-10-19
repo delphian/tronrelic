@@ -8,9 +8,12 @@ import {
 } from '@tronrelic/types';
 import { resourceTrackingManifest } from '../manifest.js';
 import type { IResourceTrackingConfig, ISummationData } from '../shared/types/index.js';
+import type { ISummationResponse } from '../shared/types/api.js';
 import { createResourceTrackingIndexes } from './install-indexes.js';
 import { runSummationJob } from './summation.job.js';
 import { runPurgeJob } from './purge.job.js';
+import { sampleSummations } from './utils/sampleSummations.js';
+import { getSummationCacheKey, getSummationCachePattern } from './utils/cacheKeys.js';
 
 // Store context and intervals for API handlers and lifecycle management
 let pluginContext: IPluginContext;
@@ -219,6 +222,25 @@ export const resourceTrackingBackendPlugin = definePlugin({
             handler: async (req: IHttpRequest, res: IHttpResponse, next: IHttpNext) => {
                 try {
                     const period = (req.query.period as string) || '7d';
+                    const requestedPoints = Math.max(Number(req.query.points) || 288, 1);
+
+                    // Build cache key for this query
+                    const cacheKey = getSummationCacheKey(period, requestedPoints);
+
+                    // Try Redis cache first
+                    const cached = await pluginContext.cache.get<ISummationResponse>(cacheKey);
+                    if (cached) {
+                        pluginContext.logger.debug(
+                            { period, points: requestedPoints, cacheKey },
+                            'Summation cache hit'
+                        );
+                        return res.json(cached);
+                    }
+
+                    pluginContext.logger.debug(
+                        { period, points: requestedPoints, cacheKey },
+                        'Summation cache miss - fetching from database'
+                    );
 
                     // Parse period into days
                     const periodMap: Record<string, number> = {
@@ -239,9 +261,12 @@ export const resourceTrackingBackendPlugin = definePlugin({
                         { sort: { startBlock: 1 } }
                     );
 
+                    // Apply sampling if needed
+                    const sampledResult = sampleSummations(summations, requestedPoints);
+
                     // Format response - convert SUN to millions of TRX with 1 decimal precision
                     // 1 TRX = 1,000,000 SUN, so 1M TRX = 1,000,000,000,000 SUN (1e12)
-                    const data = summations.map(s => ({
+                    const formattedData = sampledResult.data.map(s => ({
                         timestamp: s.timestamp.toISOString(),
                         startBlock: s.startBlock,
                         endBlock: s.endBlock,
@@ -257,12 +282,32 @@ export const resourceTrackingBackendPlugin = definePlugin({
                         totalTransactionsNet: s.totalTransactionsNet
                     }));
 
-                    res.json({ success: true, data });
+                    const response: ISummationResponse = {
+                        success: true,
+                        data: formattedData as any, // Formatted for frontend (Date → ISO string, SUN → TRX)
+                        metadata: sampledResult.metadata
+                    };
+
+                    // Cache for 5 minutes (300 seconds) - matches summation job interval
+                    await pluginContext.cache.set(cacheKey, response, 300);
+
+                    pluginContext.logger.debug(
+                        {
+                            period,
+                            points: requestedPoints,
+                            actualPoints: sampledResult.metadata.actualPoints,
+                            samplingApplied: sampledResult.metadata.samplingApplied,
+                            cacheKey
+                        },
+                        'Cached summation result'
+                    );
+
+                    res.json(response);
                 } catch (error) {
                     next(error);
                 }
             },
-            description: 'Get resource delegation summation data for a time period'
+            description: 'Get resource delegation summation data for a time period with optional sampling'
         },
         {
             method: 'GET',
@@ -326,5 +371,53 @@ export const resourceTrackingBackendPlugin = definePlugin({
         }
     ] as IApiRouteConfig[],
 
-    adminRoutes: []
+    /**
+     * Admin API routes for cache management and debugging.
+     *
+     * These endpoints are accessible at /api/plugins/resource-tracking/system/*
+     * and require admin authentication.
+     */
+    adminRoutes: [
+        {
+            method: 'POST',
+            path: '/cache/clear',
+            handler: async (req: IHttpRequest, res: IHttpResponse, next: IHttpNext) => {
+                try {
+                    pluginContext.logger.info('Admin requested summation cache clear');
+
+                    // Get all cache keys matching the summation pattern
+                    const pattern = getSummationCachePattern();
+                    const keys = await pluginContext.cache.keys(pattern);
+
+                    if (keys.length === 0) {
+                        pluginContext.logger.info('No summation cache keys found to clear');
+                        return res.json({
+                            success: true,
+                            message: 'No cache entries found',
+                            keysCleared: 0
+                        });
+                    }
+
+                    // Delete all matching keys
+                    await Promise.all(keys.map((key: string) => pluginContext.cache.del(key)));
+
+                    pluginContext.logger.info(
+                        { keysCleared: keys.length, pattern },
+                        'Summation cache cleared successfully'
+                    );
+
+                    res.json({
+                        success: true,
+                        message: `Cleared ${keys.length} cache entries`,
+                        keysCleared: keys.length,
+                        pattern
+                    });
+                } catch (error) {
+                    pluginContext.logger.error({ error }, 'Failed to clear summation cache');
+                    next(error);
+                }
+            },
+            description: 'Clear all cached summation data (admin only)'
+        }
+    ] as IApiRouteConfig[]
 });

@@ -43,6 +43,7 @@ export function ResourceTrackingSettingsPage({ context }: { context: IFrontendPl
     });
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
+    const [clearingCache, setClearingCache] = useState(false);
     const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
     useEffect(() => {
@@ -80,6 +81,32 @@ export function ResourceTrackingSettingsPage({ context }: { context: IFrontendPl
             setMessage({ type: 'error', text: 'Failed to save settings' });
         } finally {
             setSaving(false);
+        }
+    };
+
+    /**
+     * Clear all cached summation data.
+     *
+     * Calls the admin endpoint to invalidate all Redis cache entries for summation queries.
+     * Useful after changing blocksPerInterval or when testing new data aggregation logic.
+     */
+    const handleClearCache = async () => {
+        setClearingCache(true);
+        setMessage(null);
+
+        try {
+            const response = await api.post('/plugins/resource-tracking/system/cache/clear');
+            if (response.success) {
+                setMessage({
+                    type: 'success',
+                    text: `Cache cleared successfully. ${response.keysCleared || 0} entries removed.`
+                });
+            }
+        } catch (error) {
+            console.error('Failed to clear cache:', error);
+            setMessage({ type: 'error', text: 'Failed to clear cache' });
+        } finally {
+            setClearingCache(false);
         }
     };
 
@@ -218,17 +245,44 @@ export function ResourceTrackingSettingsPage({ context }: { context: IFrontendPl
                         </div>
                     )}
 
-                    {/* Save Button */}
+                    {/* Action Buttons */}
                     <div className={styles.actions}>
                         <ui.Button
                             type="submit"
                             variant="primary"
-                            disabled={saving}
+                            disabled={saving || clearingCache}
                         >
                             {saving ? 'Saving...' : 'Save Settings'}
                         </ui.Button>
+                        <ui.Button
+                            type="button"
+                            variant="secondary"
+                            onClick={handleClearCache}
+                            disabled={saving || clearingCache}
+                        >
+                            {clearingCache ? 'Clearing Cache...' : 'Clear Summation Cache'}
+                        </ui.Button>
                     </div>
                 </form>
+
+                {/* Cache Info Panel */}
+                <div className={styles.infoPanel}>
+                    <h3 className={styles.infoPanelTitle}>Cache Management</h3>
+                    <p className={styles.infoPanelText}>
+                        Summation data is cached for 5 minutes to improve performance.
+                        Use the &quot;Clear Summation Cache&quot; button to force immediate
+                        data refresh after changing aggregation settings or when testing
+                        new data processing logic.
+                    </p>
+                    <p className={styles.infoPanelText}>
+                        <strong>When to clear cache:</strong>
+                    </p>
+                    <ul className={styles.infoPanelList}>
+                        <li>After changing &quot;Blocks Per Aggregation Interval&quot;</li>
+                        <li>When troubleshooting stale data issues</li>
+                        <li>After manual database modifications</li>
+                    </ul>
+                </div>
             </div>
         </main>
     );

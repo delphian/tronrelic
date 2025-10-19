@@ -12,6 +12,8 @@ import { PluginMetadataService } from '../services/plugin-metadata.service.js';
 import { PluginManagerService } from '../services/plugin-manager.service.js';
 import { PluginWebSocketManager } from '../services/plugin-websocket-manager.js';
 import { PluginWebSocketRegistry } from '../services/plugin-websocket-registry.js';
+import { CacheService } from '../services/cache.service.js';
+import { getRedisClient } from './redis.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -149,6 +151,8 @@ export async function loadPlugins(): Promise<void> {
     const websocketService = WebSocketService.getInstance();
     const wsRegistry = PluginWebSocketRegistry.getInstance();
     const io = websocketService.getIO();
+    const redis = getRedisClient();
+    const cacheService = new CacheService(redis);
 
     for (const plugin of pluginList) {
         const pluginLogger = logger.child({ pluginId: plugin.manifest.id, pluginTitle: plugin.manifest.title });
@@ -181,6 +185,7 @@ export async function loadPlugins(): Promise<void> {
                 websocket: websocketManager as any, // Will be defined if io exists
                 BaseObserver,
                 database,
+                cache: cacheService,
                 logger: pluginLogger
             };
 

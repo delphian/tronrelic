@@ -7,7 +7,7 @@
 }
 
 .header {
-    margin-bottom: 2rem;
+    margin-bottom: 1rem;
 }
 
 .title {
@@ -32,10 +32,15 @@
     cursor: help;
 }
 
+/**
+ * Container for the resource tracking chart and controls.
+ *
+ * Padding, border, and border-radius are now handled by the Card component.
+ * This container only defines its container query context for responsive layout.
+ */
 .container {
     container-type: inline-size;
     container-name: resource-tracking-container;
-    padding: 1.5rem;
 }
 
 .summary {
@@ -68,14 +73,14 @@
 .controls {
     display: flex;
     flex-direction: column;
-    gap: 1.5rem;
+    gap: 0.5rem;
     margin-bottom: 2rem;
 }
 
-.periodSelector {
+.controlRow {
     display: flex;
     align-items: center;
-    gap: 1rem;
+    gap: 0.5rem;
     flex-wrap: wrap;
 }
 
@@ -87,14 +92,37 @@
 
 .buttonGroup {
     display: flex;
-    gap: 0.25rem;
-    flex-wrap: wrap;
+    gap: 0.5rem;
+    background: rgba(255, 255, 255, 0.03);
+    padding: 0.25rem;
+    border-radius: 6px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-.toggles {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
+.periodButton {
+    padding: 0.35rem 0.75rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    background: transparent;
+    color: rgba(255, 255, 255, 0.6);
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.periodButton:hover {
+    background: rgba(255, 255, 255, 0.05);
+    color: rgba(255, 255, 255, 0.8);
+}
+
+.periodButton--active {
+    background: rgba(124, 155, 255, 0.2);
+    color: rgb(124, 155, 255);
+}
+
+.periodButton--active:hover {
+    background: rgba(124, 155, 255, 0.3);
 }
 
 .toggleGroup {
@@ -212,17 +240,4 @@
     outline: 2px solid rgba(124, 155, 255, 0.95);
     outline-offset: 2px;
     box-shadow: 0 0 0 4px rgba(124, 155, 255, 0.24);
-}
-
-/* Responsive adjustments */
-@container resource-tracking-container (min-width: 600px) {
-    .controls {
-        flex-direction: row;
-        justify-content: space-between;
-        align-items: flex-start;
-    }
-
-    .toggles {
-        flex: 1;
-    }
 }
