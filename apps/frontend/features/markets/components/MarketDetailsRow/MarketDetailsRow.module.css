@@ -131,6 +131,79 @@
     }
 }
 
+/* Title row with social icons aligned */
+.title_row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+/* Social icons container */
+.social_icons {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-shrink: 0;
+    margin-top: 0.25rem;
+}
+
+.social_icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    background: rgba(79, 140, 255, 0.1);
+    border: 1px solid rgba(79, 140, 255, 0.2);
+    border-radius: var(--radius-sm);
+    color: var(--color-primary);
+    text-decoration: none;
+    transition: all var(--transition-base);
+}
+
+.social_icon:hover {
+    background: rgba(79, 140, 255, 0.18);
+    border-color: rgba(79, 140, 255, 0.35);
+    color: #6DA3FF;
+    transform: translateY(-1px);
+}
+
+.social_icon:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+}
+
+.social_icon svg {
+    width: 16px;
+    height: 16px;
+    opacity: 0.85;
+}
+
+.social_icon:hover svg {
+    opacity: 1;
+}
+
+@container market-details (max-width: 600px) {
+    .title_row {
+        flex-wrap: wrap;
+    }
+
+    .social_icons {
+        gap: 0.4rem;
+    }
+
+    .social_icon {
+        width: 28px;
+        height: 28px;
+    }
+
+    .social_icon svg {
+        width: 14px;
+        height: 14px;
+    }
+}
+
 /* Animation for expanding the details row */
 @keyframes expandIn {
     from {

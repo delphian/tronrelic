@@ -243,8 +243,10 @@ const defaults = {
       { link: 'https://feee.io/?ic=33FH', text: 'Feee.io', conversion: 'AW-16717420950/EGWHCNP6ttsZEJazvqM-' }
     ],
     social: [
-      { platform: 'Telegram', link: 'https://t.me/tronenergymarkets', label: 'Market Orders', icon: 'bi-telegram' },
-      { platform: 'Telegram', link: 'https://t.me/trongascom', label: 'Contact', icon: 'bi-telegram' }
+      { platform: 'Telegram', link: 'https://t.me/tronenergymarkets', label: 'Channel', icon: 'bi-telegram' },
+      { platform: 'Telegram', link: 'https://t.me/trongascom', label: 'Contact (Service)', icon: 'bi-telegram' },
+      { platform: 'Telegram', link: 'https://t.me/feeeIoBot?start=33FH', label: 'Lending Bot', icon: 'bi-telegram' },
+      { platform: 'Twitter', link: 'https://x.com/Feeeio', icon: 'bi-twitter-x' }
     ],
     addresses: [
       { address: 'TGNuLPkkgsf42xdRSXYpVSqUvtFT4HEupg', labels: ['authorize'] },
@@ -267,7 +269,7 @@ const defaults = {
       }
     ],
     social: [
-      { platform: 'Telegram', link: 'https://t.me/+khQXTuasq683NzVl', icon: 'bi-telegram' },
+      { platform: 'Telegram', link: 'https://t.me/BuyEnergyTronsave_bot?start=tcrq2fjvon5mphjg', label: 'Lending Bot', icon: 'bi-telegram' },
       { platform: 'Twitter', link: 'https://twitter.com/tronsave_io', icon: 'bi-twitter-x' },
       { platform: 'YouTube', link: 'https://www.youtube.com/@TronSaveOfficial', icon: 'bi-youtube' }
     ],

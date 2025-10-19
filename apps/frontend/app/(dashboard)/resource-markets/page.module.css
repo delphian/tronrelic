@@ -1,0 +1,66 @@
+/**
+ * @file page.module.css
+ * @description Scoped styles for Energy Markets page
+ * @why Isolates page-specific components (Telegram bot CTA inline with title) from global utilities
+ */
+
+/* Header with inline CTA */
+.header_with_cta {
+    /* Override default page-header if needed */
+}
+
+/* Title row - flex container for title and CTA */
+.title_row {
+    display: flex;
+    align-items: center;
+    gap: 2rem;
+}
+
+/* Compact CTA button - inline with title */
+.bot_cta_link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.625rem 1.25rem;
+    background: linear-gradient(135deg, rgba(79, 140, 255, 0.15) 0%, rgba(79, 140, 255, 0.08) 100%);
+    border: 1.5px solid rgba(79, 140, 255, 0.3);
+    border-radius: var(--radius-md);
+    color: var(--color-primary);
+    text-decoration: none;
+    font-size: 0.9rem;
+    font-weight: 600;
+    white-space: nowrap;
+    transition: all var(--transition-base);
+    box-shadow: 0 2px 8px rgba(79, 140, 255, 0.1);
+    flex-shrink: 0;
+}
+
+.bot_cta_link:hover {
+    background: linear-gradient(135deg, rgba(79, 140, 255, 0.22) 0%, rgba(79, 140, 255, 0.12) 100%);
+    border-color: rgba(79, 140, 255, 0.45);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(79, 140, 255, 0.2);
+}
+
+.bot_cta_link:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 3px;
+}
+
+.bot_cta_link svg {
+    flex-shrink: 0;
+}
+
+/* Responsive: stack on mobile */
+@media (max-width: 768px) {
+    .title_row {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 1rem;
+    }
+
+    .bot_cta_link {
+        font-size: 0.85rem;
+        padding: 0.5rem 1rem;
+    }
+}

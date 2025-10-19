@@ -1,7 +1,17 @@
 'use client';
 
 import { useMemo } from 'react';
-import { ExternalLink } from 'lucide-react';
+import {
+    ExternalLink,
+    Twitter,
+    Send,
+    MessageCircle,
+    Github,
+    Youtube,
+    Linkedin,
+    Facebook,
+    MessageSquare
+} from 'lucide-react';
 import type { MarketDocument } from '@tronrelic/shared';
 import type { MarketHistoryRecord } from '../../../../lib/api';
 import { Card } from '../../../../components/ui/Card';
@@ -77,6 +87,45 @@ export function MarketDetailsRow({
     }, [market.affiliate?.link, market.siteLinks]);
 
     /**
+     * Maps platform names to lucide-react icon components.
+     * Provides consistent icon representation for various social media platforms.
+     *
+     * @param platform - The platform name (e.g., "Twitter", "Telegram", "Discord")
+     * @returns The appropriate lucide-react icon component for the platform
+     */
+    const getSocialIcon = (platform: string) => {
+        const normalizedPlatform = platform.toLowerCase();
+
+        if (normalizedPlatform.includes('twitter') || normalizedPlatform.includes('x')) {
+            return Twitter;
+        }
+        if (normalizedPlatform.includes('telegram')) {
+            return Send;
+        }
+        if (normalizedPlatform.includes('discord')) {
+            return MessageCircle;
+        }
+        if (normalizedPlatform.includes('github')) {
+            return Github;
+        }
+        if (normalizedPlatform.includes('youtube')) {
+            return Youtube;
+        }
+        if (normalizedPlatform.includes('linkedin')) {
+            return Linkedin;
+        }
+        if (normalizedPlatform.includes('facebook')) {
+            return Facebook;
+        }
+        if (normalizedPlatform.includes('reddit')) {
+            return MessageSquare;
+        }
+
+        // Default fallback
+        return ExternalLink;
+    };
+
+    /**
      * Transforms historical market data into a format compatible with the LineChart component.
      * Aggregates raw data points (recorded every 5 minutes) into 6-hour buckets to reduce
      * chart density and provide a more readable trend view. Each bucket shows the average
@@ -145,29 +194,59 @@ export function MarketDetailsRow({
                                     <div className="stack" style={{ gap: '1.5rem' }}>
                                         {/* Market title and description */}
                                         <div>
-                                            {marketUrl ? (
-                                                <h3 className={styles.section_title}>
-                                                    <a
-                                                        href={marketUrl}
-                                                        target="_blank"
-                                                        rel="noopener noreferrer"
-                                                        className={styles.market_link}
-                                                        aria-label={`Visit ${market.name} website`}
-                                                    >
-                                                        {market.name}
-                                                        <ExternalLink size={16} className={styles.external_icon} />
-                                                    </a>
-                                                </h3>
-                                            ) : (
-                                                <h3 className={styles.section_title}>{market.name}</h3>
-                                            )}
+                                            <div className={styles.title_row}>
+                                                <div>
+                                                    {marketUrl ? (
+                                                        <h3 className={styles.section_title}>
+                                                            <a
+                                                                href={marketUrl}
+                                                                target="_blank"
+                                                                rel="noopener noreferrer"
+                                                                className={styles.market_link}
+                                                                aria-label={`Visit ${market.name} website`}
+                                                            >
+                                                                {market.name}
+                                                                <ExternalLink size={16} className={styles.external_icon} />
+                                                            </a>
+                                                        </h3>
+                                                    ) : (
+                                                        <h3 className={styles.section_title}>{market.name}</h3>
+                                                    )}
+                                                </div>
+
+                                                {market.social && market.social.length > 0 && (
+                                                    <div className={styles.social_icons}>
+                                                        {market.social.map((social, idx) => {
+                                                            const Icon = getSocialIcon(social.platform);
+                                                            return (
+                                                                <a
+                                                                    key={idx}
+                                                                    href={social.link}
+                                                                    target="_blank"
+                                                                    rel="noopener noreferrer"
+                                                                    className={styles.social_icon}
+                                                                    aria-label={`${market.name} on ${social.platform}`}
+                                                                    title={social.label || social.platform}
+                                                                >
+                                                                    <Icon size={16} />
+                                                                </a>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                )}
+                                            </div>
+
                                             <p className="text-subtle" style={{ margin: '0.5rem 0 0', fontSize: '0.9rem' }}>
                                                 {market.description ?? 'Historical reliability and pricing trends for this marketplace.'}
                                             </p>
-                                            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginTop: '0.75rem' }}>
-                                                {market.isBestDeal && <Badge tone="success">Best deal</Badge>}
-                                                {market.bulkDiscount?.hasDiscount && <Badge tone="warning">Bulk discounts</Badge>}
-                                            </div>
+
+                                            {/* Badges row */}
+                                            {(market.isBestDeal || market.bulkDiscount?.hasDiscount) && (
+                                                <div style={{ marginTop: '1rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                                                    {market.isBestDeal && <Badge tone="success">Best deal</Badge>}
+                                                    {market.bulkDiscount?.hasDiscount && <Badge tone="warning">Bulk discounts</Badge>}
+                                                </div>
+                                            )}
                                         </div>
 
                                         {/* Market stats: 4-card grid */}
