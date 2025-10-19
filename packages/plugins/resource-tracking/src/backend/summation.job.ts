@@ -257,16 +257,18 @@ export async function runSummationJob(
             );
 
             // Emit WebSocket event to notify subscribed clients
+            // Convert SUN to millions of TRX to match API response format
+            // 1 TRX = 1,000,000 SUN, so 1M TRX = 1,000,000,000,000 SUN (1e12)
             websocket.emitToRoom('summation-updates', 'summation-created', {
                 timestamp: summation.timestamp.toISOString(),
                 startBlock,
                 endBlock,
-                energyDelegated,
-                energyReclaimed,
-                bandwidthDelegated,
-                bandwidthReclaimed,
-                netEnergy,
-                netBandwidth,
+                energyDelegated: Number((energyDelegated / 1e12).toFixed(1)),
+                energyReclaimed: Number((energyReclaimed / 1e12).toFixed(1)),
+                bandwidthDelegated: Number((bandwidthDelegated / 1e12).toFixed(1)),
+                bandwidthReclaimed: Number((bandwidthReclaimed / 1e12).toFixed(1)),
+                netEnergy: Number((netEnergy / 1e12).toFixed(1)),
+                netBandwidth: Number((netBandwidth / 1e12).toFixed(1)),
                 transactionCount: transactions.length,
                 totalTransactionsDelegated,
                 totalTransactionsUndelegated,
