@@ -35,6 +35,14 @@ interface ISummationPoint {
     totalTransactionsNet: number;
 }
 
+/**
+ * Summation response data type that may include null values for empty time buckets.
+ *
+ * The backend returns null for time buckets that have no data, which creates gaps
+ * in the chart and prevents sparse data from appearing cramped on the X-axis.
+ */
+type SummationDataPoint = ISummationPoint | null;
+
 type TimePeriod = '1d' | '7d' | '30d' | '6m';
 
 /**
@@ -70,7 +78,7 @@ const CHART_COLORS = {
 export function ResourceTrackingPage({ context }: { context: IFrontendPluginContext }) {
     const { api, charts, ui } = context;
 
-    const [data, setData] = useState<ISummationPoint[]>([]);
+    const [data, setData] = useState<SummationDataPoint[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [period, setPeriod] = useState<TimePeriod>('1d');
@@ -147,26 +155,36 @@ export function ResourceTrackingPage({ context }: { context: IFrontendPluginCont
      * from the API and appends only the new points that don't already exist.
      *
      * The merge strategy:
-     * 1. Identify the latest timestamp in the current dataset
+     * 1. Identify the latest timestamp in the current dataset (skipping null values)
      * 2. Find all points in the fresh data that are newer than that timestamp
      * 3. Append those new points to the existing dataset
      *
      * This ensures smooth real-time updates while maintaining the sampled data's consistency.
      *
-     * @param freshData - Newly fetched data from the API (288 sampled points)
+     * @param freshData - Newly fetched data from the API (288 sampled points, may include nulls)
      */
-    function mergeData(freshData: ISummationPoint[]) {
+    function mergeData(freshData: SummationDataPoint[]) {
         setData(prevData => {
             if (prevData.length === 0) {
                 // No existing data - use fresh data as-is
                 return freshData;
             }
 
-            // Find the latest timestamp in current data
-            const latestTimestamp = new Date(prevData[prevData.length - 1].timestamp).getTime();
+            // Find the latest non-null timestamp in current data
+            const nonNullPrevData = prevData.filter(p => p !== null);
+            if (nonNullPrevData.length === 0) {
+                // All existing data is null - replace with fresh data
+                return freshData;
+            }
 
-            // Find new points in fresh data (points newer than our latest)
+            const latestTimestamp = new Date(nonNullPrevData[nonNullPrevData.length - 1]!.timestamp).getTime();
+
+            // Find new points in fresh data (points newer than our latest, including nulls)
             const newPoints = freshData.filter(point => {
+                if (point === null) {
+                    // Keep null values in the new portion (they represent empty time buckets)
+                    return true;
+                }
                 const pointTimestamp = new Date(point.timestamp).getTime();
                 return pointTimestamp > latestTimestamp;
             });
@@ -184,6 +202,9 @@ export function ResourceTrackingPage({ context }: { context: IFrontendPluginCont
 
     // Initial data load and reload when period changes
     useEffect(() => {
+        // When period changes, we want to replace the data entirely (not merge)
+        // So we call loadData with showLoading=true, which will reset the state
+        setData([]); // Clear existing data first to prevent cramming during period switch
         void loadData();
     }, [api, period]);
 
@@ -303,13 +324,16 @@ export function ResourceTrackingPage({ context }: { context: IFrontendPluginCont
             // Net metrics present: center the chart on zero
             const allValues: number[] = [];
 
+            // Filter out null values before collecting metric values
+            const nonNullData = data.filter(p => p !== null);
+
             // Collect all visible metric values
-            if (showEnergyDelegated) allValues.push(...data.map(p => p.energyDelegated));
-            if (showEnergyReclaimed) allValues.push(...data.map(p => p.energyReclaimed));
-            if (showNetEnergy) allValues.push(...data.map(p => p.netEnergy));
-            if (showBandwidthDelegated) allValues.push(...data.map(p => p.bandwidthDelegated));
-            if (showBandwidthReclaimed) allValues.push(...data.map(p => p.bandwidthReclaimed));
-            if (showNetBandwidth) allValues.push(...data.map(p => p.netBandwidth));
+            if (showEnergyDelegated) allValues.push(...nonNullData.map(p => p!.energyDelegated));
+            if (showEnergyReclaimed) allValues.push(...nonNullData.map(p => p!.energyReclaimed));
+            if (showNetEnergy) allValues.push(...nonNullData.map(p => p!.netEnergy));
+            if (showBandwidthDelegated) allValues.push(...nonNullData.map(p => p!.bandwidthDelegated));
+            if (showBandwidthReclaimed) allValues.push(...nonNullData.map(p => p!.bandwidthReclaimed));
+            if (showNetBandwidth) allValues.push(...nonNullData.map(p => p!.netBandwidth));
 
             if (allValues.length > 0) {
                 const dataMin = Math.min(...allValues);
@@ -328,20 +352,23 @@ export function ResourceTrackingPage({ context }: { context: IFrontendPluginCont
     }
 
     // Convert summation data to chart series format
+    // Filter out null values (empty time buckets) before mapping to chart data
     const chartSeries = [];
 
     if (showEnergyDelegated && data.length > 0) {
         chartSeries.push({
             id: 'energy-delegated',
             label: 'Energy Delegated',
-            data: data.map(point => ({
-                date: point.timestamp,
-                value: point.energyDelegated, // Already in millions of TRX from API
-                metadata: {
-                    transactions: point.transactionCount,
-                    blockRange: `${point.startBlock.toLocaleString()} - ${point.endBlock.toLocaleString()}`
-                }
-            })),
+            data: data
+                .filter(point => point !== null)
+                .map(point => ({
+                    date: point!.timestamp,
+                    value: point!.energyDelegated, // Already in millions of TRX from API
+                    metadata: {
+                        transactions: point!.transactionCount,
+                        blockRange: `${point!.startBlock.toLocaleString()} - ${point!.endBlock.toLocaleString()}`
+                    }
+                })),
             color: CHART_COLORS.energyDelegated,
             fill: true
         });
@@ -351,14 +378,16 @@ export function ResourceTrackingPage({ context }: { context: IFrontendPluginCont
         chartSeries.push({
             id: 'energy-reclaimed',
             label: 'Energy Reclaimed',
-            data: data.map(point => ({
-                date: point.timestamp,
-                value: point.energyReclaimed, // Already in millions of TRX from API
-                metadata: {
-                    transactions: point.transactionCount,
-                    blockRange: `${point.startBlock.toLocaleString()} - ${point.endBlock.toLocaleString()}`
-                }
-            })),
+            data: data
+                .filter(point => point !== null)
+                .map(point => ({
+                    date: point!.timestamp,
+                    value: point!.energyReclaimed, // Already in millions of TRX from API
+                    metadata: {
+                        transactions: point!.transactionCount,
+                        blockRange: `${point!.startBlock.toLocaleString()} - ${point!.endBlock.toLocaleString()}`
+                    }
+                })),
             color: CHART_COLORS.energyReclaimed,
             fill: true
         });
@@ -368,14 +397,16 @@ export function ResourceTrackingPage({ context }: { context: IFrontendPluginCont
         chartSeries.push({
             id: 'net-energy',
             label: 'Net Energy',
-            data: data.map(point => ({
-                date: point.timestamp,
-                value: point.netEnergy, // Already in millions of TRX from API
-                metadata: {
-                    transactions: point.transactionCount,
-                    blockRange: `${point.startBlock.toLocaleString()} - ${point.endBlock.toLocaleString()}`
-                }
-            })),
+            data: data
+                .filter(point => point !== null)
+                .map(point => ({
+                    date: point!.timestamp,
+                    value: point!.netEnergy, // Already in millions of TRX from API
+                    metadata: {
+                        transactions: point!.transactionCount,
+                        blockRange: `${point!.startBlock.toLocaleString()} - ${point!.endBlock.toLocaleString()}`
+                    }
+                })),
             color: CHART_COLORS.netEnergy,
             fill: true
         });
@@ -385,14 +416,16 @@ export function ResourceTrackingPage({ context }: { context: IFrontendPluginCont
         chartSeries.push({
             id: 'bandwidth-delegated',
             label: 'Bandwidth Delegated',
-            data: data.map(point => ({
-                date: point.timestamp,
-                value: point.bandwidthDelegated, // Already in millions of TRX from API
-                metadata: {
-                    transactions: point.transactionCount,
-                    blockRange: `${point.startBlock.toLocaleString()} - ${point.endBlock.toLocaleString()}`
-                }
-            })),
+            data: data
+                .filter(point => point !== null)
+                .map(point => ({
+                    date: point!.timestamp,
+                    value: point!.bandwidthDelegated, // Already in millions of TRX from API
+                    metadata: {
+                        transactions: point!.transactionCount,
+                        blockRange: `${point!.startBlock.toLocaleString()} - ${point!.endBlock.toLocaleString()}`
+                    }
+                })),
             color: CHART_COLORS.bandwidthDelegated,
             fill: true
         });
@@ -402,14 +435,16 @@ export function ResourceTrackingPage({ context }: { context: IFrontendPluginCont
         chartSeries.push({
             id: 'bandwidth-reclaimed',
             label: 'Bandwidth Reclaimed',
-            data: data.map(point => ({
-                date: point.timestamp,
-                value: point.bandwidthReclaimed, // Already in millions of TRX from API
-                metadata: {
-                    transactions: point.transactionCount,
-                    blockRange: `${point.startBlock.toLocaleString()} - ${point.endBlock.toLocaleString()}`
-                }
-            })),
+            data: data
+                .filter(point => point !== null)
+                .map(point => ({
+                    date: point!.timestamp,
+                    value: point!.bandwidthReclaimed, // Already in millions of TRX from API
+                    metadata: {
+                        transactions: point!.transactionCount,
+                        blockRange: `${point!.startBlock.toLocaleString()} - ${point!.endBlock.toLocaleString()}`
+                    }
+                })),
             color: CHART_COLORS.bandwidthReclaimed,
             fill: true
         });
@@ -419,14 +454,16 @@ export function ResourceTrackingPage({ context }: { context: IFrontendPluginCont
         chartSeries.push({
             id: 'net-bandwidth',
             label: 'Net Bandwidth',
-            data: data.map(point => ({
-                date: point.timestamp,
-                value: point.netBandwidth, // Already in millions of TRX from API
-                metadata: {
-                    transactions: point.transactionCount,
-                    blockRange: `${point.startBlock.toLocaleString()} - ${point.endBlock.toLocaleString()}`
-                }
-            })),
+            data: data
+                .filter(point => point !== null)
+                .map(point => ({
+                    date: point!.timestamp,
+                    value: point!.netBandwidth, // Already in millions of TRX from API
+                    metadata: {
+                        transactions: point!.transactionCount,
+                        blockRange: `${point!.startBlock.toLocaleString()} - ${point!.endBlock.toLocaleString()}`
+                    }
+                })),
             color: CHART_COLORS.netBandwidth,
             fill: true
         });
@@ -483,7 +520,7 @@ export function ResourceTrackingPage({ context }: { context: IFrontendPluginCont
                     Resource Tracking
                 </h1>
                 <p className={styles.subtitle}>
-                    Track how energy and bandwidth resources flow across the TRON network through delegation and reclaim transactions. TRON users can stake TRX to generate energy (for smart contract execution) and bandwidth (for transaction capacity), then delegate these resources to other addresses or reclaim them. This dashboard visualizes network-wide delegation patterns, showing the total value of resources being shared, reclaimed, and net changes over time. Values are expressed in millions of TRX equivalence—the amount of TRX that would need to be staked to generate the observed energy and bandwidth levels.
+                    Track how energy and bandwidth resources flow across the TRON network through delegation and reclaim transactions. TRON users stake TRX to generate energy (for smart contracts) and bandwidth (for transactions), then delegate these resources to other addresses or reclaim them. This dashboard visualizes network-wide patterns showing resources being shared, reclaimed, and net changes over time. Values are in TRX equivalence - the amount of TRX staked to generate the observed energy and bandwidth.
                 </p>
             </header>
 
