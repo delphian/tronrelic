@@ -92,13 +92,6 @@ export function createDelegationTrackerObserver(
                 return;
             }
 
-            // Check if already persisted to avoid duplicates
-            const existing = await this.database.findOne<IDelegationTransaction>('transactions', { txId });
-            if (existing) {
-                scopedLogger.info({ txId }, 'Delegation transaction already persisted - skipping');
-                return;
-            }
-
             // Extract delegation details from transaction payload
             const isDelegation = type === 'DelegateResourceContract';
             const amountSun = Number(payload.amount ?? 0);
@@ -138,18 +131,32 @@ export function createDelegationTrackerObserver(
                 blockNumber: payload.blockNumber
             };
 
-            await this.database.insertOne('transactions', delegationRecord);
+            try {
+                await this.database.insertOne('transactions', delegationRecord);
 
-            scopedLogger.debug(
-                {
-                    txId,
-                    type,
-                    resourceType: resourceType === 0 ? 'BANDWIDTH' : 'ENERGY',
-                    amountSun: signedAmount,
-                    blockNumber: payload.blockNumber
-                },
-                'Persisted delegation transaction'
-            );
+                scopedLogger.debug(
+                    {
+                        txId,
+                        type,
+                        resourceType: resourceType === 0 ? 'BANDWIDTH' : 'ENERGY',
+                        amountSun: signedAmount,
+                        blockNumber: payload.blockNumber
+                    },
+                    'Persisted delegation transaction'
+                );
+            } catch (error) {
+                // Duplicate key error (E11000) - transaction already exists due to unique index on txId
+                // This can happen if blocks are reprocessed or observers restart mid-block
+                const isDuplicateError = error && typeof error === 'object' && 'code' in error && error.code === 11000;
+
+                if (isDuplicateError) {
+                    scopedLogger.debug({ txId }, 'Delegation transaction already persisted - skipping duplicate');
+                    return;
+                }
+
+                // Re-throw non-duplicate errors for observer error handling
+                throw error;
+            }
         }
     }
 
