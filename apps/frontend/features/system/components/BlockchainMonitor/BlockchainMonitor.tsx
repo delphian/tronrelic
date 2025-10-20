@@ -385,6 +385,24 @@ export function BlockchainMonitor({ token }: Props) {
                                 </div>
                             </div>
                         )}
+
+                        {metrics?.averageProcessingIntervalSeconds !== null && (
+                            <div className={styles.metric_card}>
+                                <div className={styles.metric_card__label}>Avg Processing Interval</div>
+                                <div className={styles.metric_card__value}>
+                                    {metrics.averageProcessingIntervalSeconds.toFixed(2)}s
+                                </div>
+                            </div>
+                        )}
+
+                        {metrics && (
+                            <div className={styles.metric_card}>
+                                <div className={styles.metric_card__label}>Success Rate</div>
+                                <div className={styles.metric_card__value}>
+                                    {metrics.successRate.toFixed(1)}%
+                                </div>
+                            </div>
+                        )}
                     </div>
                 )}
 
@@ -510,105 +528,6 @@ export function BlockchainMonitor({ token }: Props) {
                                         <div key={type} className={styles.type_item}>
                                             <span className={styles.type_item__label}>{type}</span>
                                             <span className={styles.type_item__value}>{count.toLocaleString()}</span>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        )}
-                    </>
-                )}
-            </section>
-
-            {/* Block Processing Metrics */}
-            <section className={styles.section}>
-                <h2 className={styles.section__title}>Block Processing Performance</h2>
-                {metrics && (
-                    <>
-                        <div className={styles.metrics_grid}>
-                            {metrics.averageProcessingDelaySeconds !== null && (
-                                <div className={styles.metric_card}>
-                                    <div className={styles.metric_card__label}>Avg Processing Delay</div>
-                                    <div className={styles.metric_card__value}>
-                                        {metrics.averageProcessingDelaySeconds.toFixed(2)}s
-                                    </div>
-                                </div>
-                            )}
-
-                            {metrics.averageProcessingIntervalSeconds !== null && (
-                                <div className={styles.metric_card}>
-                                    <div className={styles.metric_card__label}>Avg Processing Interval</div>
-                                    <div className={styles.metric_card__value}>
-                                        {metrics.averageProcessingIntervalSeconds.toFixed(2)}s
-                                    </div>
-                                </div>
-                            )}
-
-                            {metrics.blocksPerMinute !== null && (
-                                <div className={styles.metric_card}>
-                                    <div className={styles.metric_card__label}>Processing Throughput</div>
-                                    <div className={styles.metric_card__value}>
-                                        {metrics.blocksPerMinute.toFixed(1)} blocks/min
-                                    </div>
-                                </div>
-                            )}
-
-                            <div className={styles.metric_card}>
-                                <div className={styles.metric_card__label}>Network Throughput</div>
-                                <div className={styles.metric_card__value}>
-                                    {metrics.networkBlocksPerMinute.toFixed(1)} blocks/min
-                                </div>
-                            </div>
-
-                            {metrics.netCatchUpRate !== null && (
-                                <div className={styles.metric_card}>
-                                    <div className={styles.metric_card__label}>Net Catch-up Rate</div>
-                                    <div className={styles.metric_card__value}>
-                                        {(metrics.netCatchUpRate >= 0 ? '+' : '-') + Math.abs(metrics.netCatchUpRate).toFixed(1)} blocks/min
-                                    </div>
-                                </div>
-                            )}
-
-                            {metrics.projectedCatchUpMinutes !== null && (
-                                <div className={styles.metric_card}>
-                                    <div className={styles.metric_card__label}>Projected Catch-up</div>
-                                    <div className={styles.metric_card__value}>
-                                        {metrics.projectedCatchUpMinutes} min
-                                    </div>
-                                </div>
-                            )}
-
-                            <div className={styles.metric_card}>
-                                <div className={styles.metric_card__label}>Success Rate</div>
-                                <div className={styles.metric_card__value}>
-                                    {metrics.successRate.toFixed(1)}%
-                                </div>
-                            </div>
-
-                            <div className={styles.metric_card}>
-                                <div className={styles.metric_card__label}>Backfill Queue</div>
-                                <div className={styles.metric_card__value}>
-                                    {metrics.backfillQueueSize.toLocaleString()}
-                                </div>
-                            </div>
-                        </div>
-
-                        {metrics.recentErrors.length > 0 && (
-                            <div>
-                                <h3 className={styles.section__subtitle} style={{ color: '#ef4444' }}>
-                                    Recent Errors
-                                </h3>
-                                <div className={styles.error_list}>
-                                    {metrics.recentErrors.map((error, idx) => (
-                                        <div key={idx} className={styles.error_item}>
-                                            <div className={styles.error_item__block}>
-                                                Block {error.blockNumber}
-                                            </div>
-                                            <div className={styles.error_item__timestamp}>
-                                                {new Date(error.timestamp).toLocaleString()}
-                                            </div>
-                                            <div className={styles.error_item__message}>
-                                                {error.message}
-                                            </div>
                                         </div>
                                     ))}
                                 </div>
