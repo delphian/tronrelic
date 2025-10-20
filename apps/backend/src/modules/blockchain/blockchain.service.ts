@@ -758,8 +758,10 @@ export class BlockchainService {
      * calculates block-level statistics, and broadcasts socket events for real-time UI updates. Transaction failures are isolated so one
      * corrupt record doesn't block the entire block, and blocks that fail completely enter cooldown before retry to avoid API waste.
      *
-     * When caught up to the live chain (within 100 blocks of current network height), processing is throttled to 3-second intervals
-     * to simulate live blockchain timing on the frontend, creating a stable real-time experience even when processing historical data.
+     * When caught up to the live chain (within 100 blocks of current network height), intelligent throttling maintains consistent 3-second
+     * block intervals. The throttle calculates remaining time needed to reach 3 seconds total (processing + delay), ensuring blocks emit
+     * at predictable intervals without adding unnecessary delay when processing is already slow. This creates a stable real-time experience
+     * on the frontend while avoiding the previous issue where a fixed 3-second delay added on top of processing time caused 4-5 second intervals.
      *
      * @param blockNumber - The block number to process
      * @param isCaughtUp - Whether we're caught up to the chain head (passed from scheduler to avoid recalculation)
@@ -809,18 +811,7 @@ export class BlockchainService {
                 throw new Error(`Invalid timestamp in block ${blockNumber}: ${block.block_header.raw_data.timestamp} (${dateError instanceof Error ? dateError.message : String(dateError)})`);
             }
 
-            // Stage 2: Apply throttle if caught up to simulate live blockchain timing (flag passed from scheduler)
-            if (isCaughtUp) {
-                stageStart = Date.now();
-                const throttleMs = blockchainConfig.network.blockIntervalSeconds * 1000;
-                logger.debug({ blockNumber, throttleMs }, 'Throttling block processing to simulate live chain timing');
-                await new Promise(resolve => setTimeout(resolve, throttleMs));
-                timings.throttle = Date.now() - stageStart;
-            } else {
-                logger.debug({ blockNumber }, 'Processing block without throttle - catching up to chain head');
-            }
-
-            // Stage 3: Get TRX price
+            // Stage 2: Get TRX price
             stageStart = Date.now();
             const priceUSD = await this.priceService.getTrxPriceUsd();
             timings.getTrxPrice = Date.now() - stageStart;
@@ -936,10 +927,29 @@ export class BlockchainService {
             await this.alerts.ingestTransactions(processed.map(transaction => transaction.payload));
             timings.alertIngestion = Date.now() - stageStart;
 
-            // Calculate total time
+            // Stage 11: Apply intelligent throttle if caught up to simulate live blockchain timing
+            // This ensures blocks are emitted at consistent 3-second intervals for real-time feel
+            if (isCaughtUp) {
+                const elapsedMs = Date.now() - startTotal;
+                const targetIntervalMs = blockchainConfig.network.blockIntervalSeconds * 1000;
+                const remainingMs = Math.max(0, targetIntervalMs - elapsedMs);
+
+                if (remainingMs > 0) {
+                    stageStart = Date.now();
+                    logger.debug({ blockNumber, elapsedMs, targetIntervalMs, remainingMs }, 'Throttling to maintain consistent block interval');
+                    await new Promise(resolve => setTimeout(resolve, remainingMs));
+                    timings.throttle = Date.now() - stageStart;
+                } else {
+                    logger.debug({ blockNumber, elapsedMs, targetIntervalMs }, 'Processing time exceeded target interval, skipping throttle');
+                }
+            } else {
+                logger.debug({ blockNumber }, 'Processing block without throttle - catching up to chain head');
+            }
+
+            // Calculate total time (after throttle to include it in the total)
             timings.total = Date.now() - startTotal;
 
-            // Stage 11: Update timing metrics in SyncState (after all timings are calculated)
+            // Stage 12: Update timing metrics in SyncState (after all timings are calculated)
             await SyncStateModel.updateOne(
                 { key: 'blockchain:last-block' },
                 {
