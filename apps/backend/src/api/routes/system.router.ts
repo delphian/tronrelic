@@ -18,6 +18,7 @@ export function systemRouter() {
   router.get('/blockchain/status', controller.getBlockchainStatus);
   router.get('/blockchain/transactions', controller.getTransactionStats);
   router.get('/blockchain/metrics', controller.getBlockProcessingMetrics);
+  router.get('/blockchain/observers', controller.getObserverStats);
   router.post('/blockchain/sync', controller.triggerBlockchainSync);
 
   // Scheduler endpoints

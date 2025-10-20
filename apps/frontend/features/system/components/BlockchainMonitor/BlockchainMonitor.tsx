@@ -138,12 +138,23 @@ export function BlockchainMonitor({ token }: Props) {
                 })
             ]);
 
-            const [statusData, statsData, metricsData, observersData] = await Promise.all([
-                statusRes.json(),
-                statsRes.json(),
-                metricsRes.json(),
-                observersRes.json()
-            ]);
+            // Parse each response independently with fallbacks to prevent one failure from breaking everything
+            const statusData = await statusRes.json().catch(err => {
+                console.error('Failed to parse blockchain status:', err);
+                return { status: null };
+            });
+            const statsData = await statsRes.json().catch(err => {
+                console.error('Failed to parse transaction stats:', err);
+                return { stats: null };
+            });
+            const metricsData = await metricsRes.json().catch(err => {
+                console.error('Failed to parse metrics:', err);
+                return { metrics: null };
+            });
+            const observersData = await observersRes.json().catch(err => {
+                console.error('Failed to parse observer stats:', err);
+                return { observers: [] };
+            });
 
             setStatus(statusData.status);
             setStats(statsData.stats);
