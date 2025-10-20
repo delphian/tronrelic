@@ -157,6 +157,21 @@
     font-size: 0.75rem;
     opacity: 0.7;
     margin-bottom: 0.5rem;
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+}
+
+.info_icon {
+    display: inline-flex;
+    align-items: center;
+    opacity: 0.5;
+    cursor: help;
+    transition: opacity 0.2s ease;
+}
+
+.info_icon:hover {
+    opacity: 1;
 }
 
 .metric_card__value {
