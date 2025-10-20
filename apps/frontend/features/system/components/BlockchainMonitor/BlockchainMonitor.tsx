@@ -50,6 +50,20 @@ interface BlockProcessingMetrics {
     backfillQueueSize: number;
 }
 
+interface ObserverStats {
+    name: string;
+    queueDepth: number;
+    totalProcessed: number;
+    totalErrors: number;
+    totalDropped: number;
+    avgProcessingTimeMs: number;
+    minProcessingTimeMs: number;
+    maxProcessingTimeMs: number;
+    lastProcessedAt: string | null;
+    lastErrorAt: string | null;
+    errorRate: number;
+}
+
 interface Props {
     token: string;
 }
@@ -96,6 +110,7 @@ export function BlockchainMonitor({ token }: Props) {
     const [status, setStatus] = useState<BlockchainStatus | null>(null);
     const [stats, setStats] = useState<TransactionStats | null>(null);
     const [metrics, setMetrics] = useState<BlockProcessingMetrics | null>(null);
+    const [observers, setObservers] = useState<ObserverStats[]>([]);
     const [loading, setLoading] = useState(true);
     const [syncing, setSyncing] = useState(false);
     const netCatchUpRate = status?.netCatchUpRate ?? null;
@@ -108,7 +123,7 @@ export function BlockchainMonitor({ token }: Props) {
      */
     const fetchData = async () => {
         try {
-            const [statusRes, statsRes, metricsRes] = await Promise.all([
+            const [statusRes, statsRes, metricsRes, observersRes] = await Promise.all([
                 fetch(`${runtimeConfig.apiBaseUrl}/admin/system/blockchain/status`, {
                     headers: { 'X-Admin-Token': token }
                 }),
@@ -117,18 +132,23 @@ export function BlockchainMonitor({ token }: Props) {
                 }),
                 fetch(`${runtimeConfig.apiBaseUrl}/admin/system/blockchain/metrics`, {
                     headers: { 'X-Admin-Token': token }
+                }),
+                fetch(`${runtimeConfig.apiBaseUrl}/admin/system/blockchain/observers`, {
+                    headers: { 'X-Admin-Token': token }
                 })
             ]);
 
-            const [statusData, statsData, metricsData] = await Promise.all([
+            const [statusData, statsData, metricsData, observersData] = await Promise.all([
                 statusRes.json(),
                 statsRes.json(),
-                metricsRes.json()
+                metricsRes.json(),
+                observersRes.json()
             ]);
 
             setStatus(statusData.status);
             setStats(statsData.stats);
             setMetrics(metricsData.metrics);
+            setObservers(observersData.observers || []);
         } catch (error) {
             console.error('Failed to fetch blockchain data:', error);
         } finally {
@@ -224,6 +244,32 @@ export function BlockchainMonitor({ token }: Props) {
             return status.lastErrorAt || (typeof status.lastError === 'object' ? status.lastError.at : null);
         }
         return null;
+    };
+
+    /**
+     * Determines the health status CSS class for an observer based on performance metrics.
+     *
+     * Evaluates multiple metrics (processing time, queue depth, error rate) to determine
+     * if the observer is healthy, warning, or in danger state.
+     *
+     * @param {ObserverStats} observer - Observer statistics
+     * @returns {string} CSS Module class name for health status
+     */
+    const getObserverHealthClass = (observer: ObserverStats): string => {
+        // Check processing time
+        if (observer.avgProcessingTimeMs > 500) return styles['observer-row--danger'];
+        if (observer.avgProcessingTimeMs > 100) return styles['observer-row--warning'];
+
+        // Check queue depth
+        if (observer.queueDepth > 100) return styles['observer-row--danger'];
+        if (observer.queueDepth > 10) return styles['observer-row--warning'];
+
+        // Check error rate (as percentage)
+        const errorRatePercent = observer.errorRate * 100;
+        if (errorRatePercent > 5) return styles['observer-row--danger'];
+        if (errorRatePercent > 1) return styles['observer-row--warning'];
+
+        return styles['observer-row--healthy'];
     };
 
     if (loading) {
@@ -478,6 +524,61 @@ export function BlockchainMonitor({ token }: Props) {
                         )}
                     </>
                 )}
+            </section>
+
+            {/* Observer Performance */}
+            <section className={styles.section}>
+                <h2 className={styles.section__title}>Observer Performance</h2>
+                {observers.length === 0 ? (
+                    <p className={styles.section__note}>No observers registered</p>
+                ) : (
+                    <div className={styles.observer_table}>
+                        <div className={styles.observer_table__header}>
+                            <div className={styles.observer_table__cell}>Observer</div>
+                            <div className={styles.observer_table__cell}>Avg Time</div>
+                            <div className={styles.observer_table__cell}>Queue</div>
+                            <div className={styles.observer_table__cell}>Processed</div>
+                            <div className={styles.observer_table__cell}>Errors</div>
+                            <div className={styles.observer_table__cell}>Error Rate</div>
+                        </div>
+                        {observers.map((observer) => (
+                            <div
+                                key={observer.name}
+                                className={`${styles.observer_table__row} ${getObserverHealthClass(observer)}`}
+                            >
+                                <div className={styles.observer_table__cell}>
+                                    <strong>{observer.name}</strong>
+                                </div>
+                                <div className={styles.observer_table__cell}>
+                                    {observer.avgProcessingTimeMs.toFixed(1)}ms
+                                    <span className={styles.observer_table__range}>
+                                        ({observer.minProcessingTimeMs}-{observer.maxProcessingTimeMs}ms)
+                                    </span>
+                                </div>
+                                <div className={styles.observer_table__cell}>
+                                    {observer.queueDepth}
+                                </div>
+                                <div className={styles.observer_table__cell}>
+                                    {observer.totalProcessed.toLocaleString()}
+                                </div>
+                                <div className={styles.observer_table__cell}>
+                                    {observer.totalErrors}
+                                    {observer.totalDropped > 0 && (
+                                        <span className={styles.observer_table__dropped}>
+                                            ({observer.totalDropped} dropped)
+                                        </span>
+                                    )}
+                                </div>
+                                <div className={styles.observer_table__cell}>
+                                    {(observer.errorRate * 100).toFixed(2)}%
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )}
+                <p className={styles.section__note}>
+                    Observers process blockchain transactions asynchronously. High processing times or queue depths may indicate bottlenecks.
+                </p>
             </section>
         </div>
     );

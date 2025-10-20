@@ -242,3 +242,73 @@
     text-align: center;
     opacity: 0.7;
 }
+
+/* ========================================
+   Observer Performance Table
+   ======================================== */
+
+.observer_table {
+    display: grid;
+    gap: 0.25rem;
+    font-size: 0.875rem;
+}
+
+.observer_table__header {
+    display: grid;
+    grid-template-columns: 2fr 1.5fr 0.75fr 1fr 1fr 1fr;
+    gap: 1rem;
+    padding: 0.75rem 1rem;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 6px;
+    font-weight: 600;
+}
+
+.observer_table__row {
+    display: grid;
+    grid-template-columns: 2fr 1.5fr 0.75fr 1fr 1fr 1fr;
+    gap: 1rem;
+    padding: 0.75rem 1rem;
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 6px;
+    transition: all 0.2s ease;
+}
+
+.observer_table__row:hover {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.observer_table__cell {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
+
+.observer_table__range {
+    font-size: 0.75rem;
+    opacity: 0.6;
+    margin-top: 0.25rem;
+}
+
+.observer_table__dropped {
+    font-size: 0.75rem;
+    opacity: 0.6;
+    margin-top: 0.25rem;
+    color: #f97316;
+}
+
+/* Observer row health variants */
+.observer-row--healthy {
+    border-left: 3px solid #22c55e;
+}
+
+.observer-row--warning {
+    border-left: 3px solid #fbbf24;
+    background: rgba(251, 191, 36, 0.05);
+}
+
+.observer-row--danger {
+    border-left: 3px solid #ef4444;
+    background: rgba(239, 68, 68, 0.05);
+}
