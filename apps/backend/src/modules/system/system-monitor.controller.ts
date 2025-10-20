@@ -4,6 +4,7 @@ import { SystemMonitorService } from './system-monitor.service.js';
 import { BlockchainService } from '../blockchain/blockchain.service.js';
 import { MarketService } from '../markets/market.service.js';
 import { getScheduler } from '../../jobs/index.js';
+import { ObserverRegistry } from '../blockchain/observers/ObserverRegistry.js';
 
 export class SystemMonitorController {
   private readonly service: SystemMonitorService;
@@ -162,5 +163,11 @@ export class SystemMonitorController {
         server: serverMetrics
       }
     });
+  };
+
+  getObserverStats = async (_req: Request, res: Response) => {
+    const registry = ObserverRegistry.getInstance();
+    const observers = registry.getAllObserverStats();
+    res.json({ success: true, observers });
   };
 }
