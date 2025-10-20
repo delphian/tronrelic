@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { Info } from 'lucide-react';
 import { config as runtimeConfig } from '../../../../lib/config';
 import styles from './BlockchainMonitor.module.css';
 
@@ -17,6 +18,7 @@ interface BlockchainStatus {
     backfillQueueSize: number;
     lastProcessedAt: string | null;
     lastProcessedBlockId: string | null;
+    lastProcessedBlockNumber: number | null;
     isHealthy: boolean;
     estimatedCatchUpTime: number | null;
     lastError: string | BlockchainError | null;
@@ -194,7 +196,7 @@ export function BlockchainMonitor({ token }: Props) {
 
     useEffect(() => {
         fetchData();
-        const interval = setInterval(fetchData, 10000);
+        const interval = setInterval(fetchData, 3000);
         return () => clearInterval(interval);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [token]);
@@ -406,12 +408,6 @@ export function BlockchainMonitor({ token }: Props) {
                     </div>
                 )}
 
-                {status?.lastProcessedAt && (
-                    <div className={styles.timestamp}>
-                        Last processed: {new Date(status.lastProcessedAt).toLocaleString()}
-                    </div>
-                )}
-
                 {netCatchUpRate !== null && netCatchUpRate <= 0 && (
                     <div className={styles.warning_alert}>
                         Processing throughput is slower than the network ({netCatchUpRate.toFixed(1)} blocks/min).
@@ -420,120 +416,153 @@ export function BlockchainMonitor({ token }: Props) {
                 )}
             </section>
 
-            {/* Block Processing Performance Breakdown */}
-            {status?.lastTimings && (
-                <section className={styles.section}>
-                    <h2 className={styles.section__title}>Block Processing Performance Breakdown</h2>
-                    <p className={styles.section__note}>
-                        Timing metrics from the most recently processed block ({status.lastTransactionCount ?? 0} transactions)
-                    </p>
-
-                    <div className={styles['metrics-grid']}>
-                        <div className={styles['metric-card']}>
-                            <div className={styles['metric-card__label']}>Total Time</div>
-                            <div className={styles['metric-card__value']}>{status.lastTimings.total?.toFixed(0) ?? 'N/A'} ms</div>
-                        </div>
-
-                        {status.lastTimings.throttle !== undefined && (
-                            <div className={styles['metric-card']}>
-                                <div className={styles['metric-card__label']}>Throttle Delay</div>
-                                <div className={styles['metric-card__value']}>{status.lastTimings.throttle.toFixed(0)} ms</div>
-                            </div>
-                        )}
-
-                        <div className={styles['metric-card']}>
-                            <div className={styles['metric-card__label']}>Network Check</div>
-                            <div className={styles['metric-card__value']}>{status.lastTimings.networkCheck?.toFixed(0) ?? 'N/A'} ms</div>
-                        </div>
-
-                        <div className={styles['metric-card']}>
-                            <div className={styles['metric-card__label']}>Fetch Block (TronGrid)</div>
-                            <div className={styles['metric-card__value']}>{status.lastTimings.fetchBlock?.toFixed(0) ?? 'N/A'} ms</div>
-                        </div>
-
-                        <div className={styles['metric-card']}>
-                            <div className={styles['metric-card__label']}>Get TRX Price</div>
-                            <div className={styles['metric-card__value']}>{status.lastTimings.getTrxPrice?.toFixed(0) ?? 'N/A'} ms</div>
-                        </div>
-
-                        <div className={styles['metric-card']}>
-                            <div className={styles['metric-card__label']}>Process Transactions</div>
-                            <div className={styles['metric-card__value']}>{status.lastTimings.processTransactions?.toFixed(0) ?? 'N/A'} ms</div>
-                        </div>
-
-                        <div className={styles['metric-card']}>
-                            <div className={styles['metric-card__label']}>└─ Observer Notifications</div>
-                            <div className={styles['metric-card__value']}>{status.lastTimings.observerNotifications?.toFixed(0) ?? 'N/A'} ms</div>
-                        </div>
-
-                        <div className={styles['metric-card']}>
-                            <div className={styles['metric-card__label']}>Bulk Write (MongoDB)</div>
-                            <div className={styles['metric-card__value']}>{status.lastTimings.bulkWriteTransactions?.toFixed(0) ?? 'N/A'} ms</div>
-                        </div>
-
-                        <div className={styles['metric-card']}>
-                            <div className={styles['metric-card__label']}>Calculate Stats</div>
-                            <div className={styles['metric-card__value']}>{status.lastTimings.calculateStats?.toFixed(0) ?? 'N/A'} ms</div>
-                        </div>
-
-                        <div className={styles['metric-card']}>
-                            <div className={styles['metric-card__label']}>Update BlockModel</div>
-                            <div className={styles['metric-card__value']}>{status.lastTimings.updateBlockModel?.toFixed(0) ?? 'N/A'} ms</div>
-                        </div>
-
-                        <div className={styles['metric-card']}>
-                            <div className={styles['metric-card__label']}>Update SyncState</div>
-                            <div className={styles['metric-card__value']}>{status.lastTimings.updateSyncState?.toFixed(0) ?? 'N/A'} ms</div>
-                        </div>
-
-                        <div className={styles['metric-card']}>
-                            <div className={styles['metric-card__label']}>Socket Events</div>
-                            <div className={styles['metric-card__value']}>{status.lastTimings.socketEvents?.toFixed(0) ?? 'N/A'} ms</div>
-                        </div>
-
-                        <div className={styles['metric-card']}>
-                            <div className={styles['metric-card__label']}>Alert Ingestion</div>
-                            <div className={styles['metric-card__value']}>{status.lastTimings.alertIngestion?.toFixed(0) ?? 'N/A'} ms</div>
-                        </div>
-                    </div>
-                </section>
-            )}
-
-            {/* Transaction Statistics */}
+            {/* Block Processing Pipeline Metrics */}
             <section className={styles.section}>
-                <h2 className={styles.section__title}>Transaction Indexing Statistics</h2>
-                {stats && (
+                <h2 className={styles.section__title}>Block Processing Pipeline Metrics</h2>
+                {status?.lastTimings ? (
                     <>
-                        <div className={styles.metrics_grid}>
-                            <div className={styles.metric_card}>
-                                <div className={styles.metric_card__label}>Total Indexed</div>
-                                <div className={styles.metric_card__value}>{stats.totalIndexed.toLocaleString()}</div>
-                            </div>
-
-                            <div className={styles.metric_card}>
-                                <div className={styles.metric_card__label}>Indexed Today</div>
-                                <div className={styles.metric_card__value}>{stats.indexedToday.toLocaleString()}</div>
-                            </div>
-                        </div>
-
                         <p className={styles.section__note}>
-                            Whale alerts are now emitted by the whale alerts plugin, so this panel focuses on core indexing metrics.
+                            Timing metrics from block {(status.lastProcessedBlockNumber ?? status.currentBlock).toLocaleString()} ({status.lastTransactionCount ?? 0} transactions)
                         </p>
 
-                        {Object.keys(stats.byType).length > 0 && (
-                            <div>
-                                <h3 className={styles.section__subtitle}>By Transaction Type</h3>
-                                <div className={styles.type_grid}>
-                                    {Object.entries(stats.byType).map(([type, count]) => (
-                                        <div key={type} className={styles.type_item}>
-                                            <span className={styles.type_item__label}>{type}</span>
-                                            <span className={styles.type_item__value}>{count.toLocaleString()}</span>
-                                        </div>
-                                    ))}
+                        <div className={styles.metrics_grid}>
+                            <div className={styles.metric_card}>
+                                <div className={styles.metric_card__label}>
+                                    Network Check
+                                    <span className={styles.info_icon} title="Fetches the latest network block height to determine if we're caught up or falling behind">
+                                        <Info size={14} />
+                                    </span>
                                 </div>
+                                <div className={styles.metric_card__value}>{(status.lastTimings.networkCheck ?? 0).toFixed(0)} ms</div>
                             </div>
-                        )}
+
+                            {status.lastTimings.throttle !== undefined && (
+                                <div className={styles.metric_card}>
+                                    <div className={styles.metric_card__label}>
+                                        Throttle Delay
+                                        <span className={styles.info_icon} title="Artificial delay added when caught up to the network to simulate live blockchain timing and prevent excessive API polling">
+                                            <Info size={14} />
+                                        </span>
+                                    </div>
+                                    <div className={styles.metric_card__value}>{status.lastTimings.throttle.toFixed(0)} ms</div>
+                                </div>
+                            )}
+
+                            <div className={styles.metric_card}>
+                                <div className={styles.metric_card__label}>
+                                    Fetch Block (TronGrid)
+                                    <span className={styles.info_icon} title="API call to TronGrid to retrieve the complete block data including all transactions, timestamps, and witness information">
+                                        <Info size={14} />
+                                    </span>
+                                </div>
+                                <div className={styles.metric_card__value}>{(status.lastTimings.fetchBlock ?? 0).toFixed(0)} ms</div>
+                            </div>
+
+                            <div className={styles.metric_card}>
+                                <div className={styles.metric_card__label}>
+                                    Get TRX Price
+                                    <span className={styles.info_icon} title="Fetches the current TRX/USD exchange rate to calculate transaction values in dollars for display and analytics">
+                                        <Info size={14} />
+                                    </span>
+                                </div>
+                                <div className={styles.metric_card__value}>{(status.lastTimings.getTrxPrice ?? 0).toFixed(0)} ms</div>
+                            </div>
+
+                            <div className={styles.metric_card}>
+                                <div className={styles.metric_card__label}>
+                                    Process Transactions
+                                    <span className={styles.info_icon} title="Parses all transactions in the block, extracts addresses and amounts, enriches with USD values, and builds relationship graphs between transactions">
+                                        <Info size={14} />
+                                    </span>
+                                </div>
+                                <div className={styles.metric_card__value}>{(status.lastTimings.processTransactions ?? 0).toFixed(0)} ms</div>
+                            </div>
+
+                            <div className={styles.metric_card}>
+                                <div className={styles.metric_card__label}>
+                                    └─ Observer Notifications
+                                    <span className={styles.info_icon} title="Notifies plugin observers of each transaction so they can react to specific patterns like whale transfers or delegation events">
+                                        <Info size={14} />
+                                    </span>
+                                </div>
+                                <div className={styles.metric_card__value}>{(status.lastTimings.observerNotifications ?? 0).toFixed(0)} ms</div>
+                            </div>
+
+                            <div className={styles.metric_card}>
+                                <div className={styles.metric_card__label}>
+                                    Bulk Write (MongoDB)
+                                    <span className={styles.info_icon} title="Writes all processed transactions to the database in a single batch operation to minimize database round trips">
+                                        <Info size={14} />
+                                    </span>
+                                </div>
+                                <div className={styles.metric_card__value}>{(status.lastTimings.bulkWriteTransactions ?? 0).toFixed(0)} ms</div>
+                            </div>
+
+                            <div className={styles.metric_card}>
+                                <div className={styles.metric_card__label}>
+                                    Calculate Stats
+                                    <span className={styles.info_icon} title="Aggregates block-level statistics like total transfers, contract calls, delegations, energy usage, and bandwidth consumption">
+                                        <Info size={14} />
+                                    </span>
+                                </div>
+                                <div className={styles.metric_card__value}>{(status.lastTimings.calculateStats ?? 0).toFixed(0)} ms</div>
+                            </div>
+
+                            <div className={styles.metric_card}>
+                                <div className={styles.metric_card__label}>
+                                    Update BlockModel
+                                    <span className={styles.info_icon} title="Writes block metadata to the database including block ID, witness address, transaction count, and aggregated statistics">
+                                        <Info size={14} />
+                                    </span>
+                                </div>
+                                <div className={styles.metric_card__value}>{(status.lastTimings.updateBlockModel ?? 0).toFixed(0)} ms</div>
+                            </div>
+
+                            <div className={styles.metric_card}>
+                                <div className={styles.metric_card__label}>
+                                    Update SyncState
+                                    <span className={styles.info_icon} title="Updates the sync cursor to mark this block as processed and removes it from the backfill queue if it was being retried">
+                                        <Info size={14} />
+                                    </span>
+                                </div>
+                                <div className={styles.metric_card__value}>{(status.lastTimings.updateSyncState ?? 0).toFixed(0)} ms</div>
+                            </div>
+
+                            <div className={styles.metric_card}>
+                                <div className={styles.metric_card__label}>
+                                    Socket Events
+                                    <span className={styles.info_icon} title="Broadcasts real-time WebSocket events to connected frontend clients notifying them of the new block and its statistics">
+                                        <Info size={14} />
+                                    </span>
+                                </div>
+                                <div className={styles.metric_card__value}>{(status.lastTimings.socketEvents ?? 0).toFixed(0)} ms</div>
+                            </div>
+
+                            <div className={styles.metric_card}>
+                                <div className={styles.metric_card__label}>
+                                    Alert Ingestion
+                                    <span className={styles.info_icon} title="Processes transactions through the alert system to trigger notifications for whale transfers, interesting memos, and other notable events">
+                                        <Info size={14} />
+                                    </span>
+                                </div>
+                                <div className={styles.metric_card__value}>{(status.lastTimings.alertIngestion ?? 0).toFixed(0)} ms</div>
+                            </div>
+
+                            <div className={`${styles.metric_card} ${(status.lastTimings.total ?? 0) > 3000 ? styles['metric_card--danger'] : ''}`}>
+                                <div className={styles.metric_card__label}>
+                                    Total Time
+                                    <span className={styles.info_icon} title="Total elapsed time from the moment block processing started to when all pipeline stages completed">
+                                        <Info size={14} />
+                                    </span>
+                                </div>
+                                <div className={styles.metric_card__value}>{(status.lastTimings.total ?? 0).toFixed(0)} ms</div>
+                            </div>
+                        </div>
                     </>
+                ) : (
+                    <p className={styles.section__note}>
+                        No timing data available yet. Timing metrics will appear after the next block is processed.
+                    </p>
                 )}
             </section>
 

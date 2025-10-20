@@ -64,6 +64,7 @@ export interface BlockchainSyncStatus {
   backfillQueueSize: number;
   lastProcessedAt: string | null;
   lastProcessedBlockId: string | null;
+  lastProcessedBlockNumber: number | null;
   isHealthy: boolean;
   estimatedCatchUpTime: number | null;
   lastError: string | BlockchainSyncError | null;
@@ -416,6 +417,9 @@ export class SystemMonitorService {
     const lastTransactionCount = typeof meta.lastTransactionCount === 'number'
       ? meta.lastTransactionCount
       : null;
+    const lastProcessedBlockNumber = typeof meta.lastProcessedBlockNumber === 'number'
+      ? meta.lastProcessedBlockNumber
+      : null;
 
     return {
       currentBlock,
@@ -424,6 +428,7 @@ export class SystemMonitorService {
       backfillQueueSize: snapshot.backfillQueueSize,
       lastProcessedAt: snapshot.lastProcessedAt,
       lastProcessedBlockId: snapshot.lastProcessedBlockId,
+      lastProcessedBlockNumber,
       isHealthy,
       estimatedCatchUpTime,
       lastError,
