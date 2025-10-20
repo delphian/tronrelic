@@ -337,6 +337,16 @@ export function BlockchainMonitor({ token }: Props) {
                     <div className={styles.metrics_grid}>
                         <div className={styles.metric_card}>
                             <div className={styles.metric_card__label}>
+                                Network Height
+                                <span className={styles.info_icon} title="The latest block number available on the TRON blockchain network">
+                                    <Info size={14} />
+                                </span>
+                            </div>
+                            <div className={styles.metric_card__value}>{status.networkBlock.toLocaleString()}</div>
+                        </div>
+
+                        <div className={styles.metric_card}>
+                            <div className={styles.metric_card__label}>
                                 Current Block
                                 <span className={styles.info_icon} title="The last block number successfully processed and stored in the database">
                                     <Info size={14} />
@@ -345,41 +355,40 @@ export function BlockchainMonitor({ token }: Props) {
                             <div className={styles.metric_card__value}>{status.currentBlock.toLocaleString()}</div>
                         </div>
 
-                        <div className={styles.metric_card}>
-                            <div className={styles.metric_card__label}>
-                                Network Block
-                                <span className={styles.info_icon} title="The latest block number available on the TRON blockchain network">
-                                    <Info size={14} />
-                                </span>
-                            </div>
-                            <div className={styles.metric_card__value}>{status.networkBlock.toLocaleString()}</div>
-                        </div>
-
                         <div className={`${styles.metric_card} ${getLagClass(status.lag)}`}>
                             <div className={styles.metric_card__label}>
                                 Lag (Blocks Behind)
-                                <span className={styles.info_icon} title="How many blocks behind the network we are. Green: <10, Yellow: <100, Red: ≥100">
+                                <span className={styles.info_icon} title="How many blocks behind the network we are. Green: <10, Yellow: <100, Red: ≥100. Time behind shows average delay between block creation and processing.">
                                     <Info size={14} />
                                 </span>
                             </div>
-                            <div className={styles.metric_card__value}>{status.lag.toLocaleString()}</div>
-                        </div>
+                            <div className={styles.metric_card__value}>
+                                {status.lag.toLocaleString()}
+                                {status.averageProcessingDelaySeconds !== null && (
+                                    <span style={{ fontSize: '0.7em', opacity: 0.8, marginLeft: '0.5em' }}>
+                                        ({(() => {
+                                            const seconds = status.averageProcessingDelaySeconds;
+                                            const minutes = seconds / 60;
+                                            const hours = minutes / 60;
 
-                        <div className={styles.metric_card}>
-                            <div className={styles.metric_card__label}>
-                                Backfill Queue
-                                <span className={styles.info_icon} title="Number of historical blocks waiting to be processed to fill gaps in the database">
-                                    <Info size={14} />
-                                </span>
+                                            if (minutes > 300) {
+                                                return `${hours.toFixed(1)} hr`;
+                                            } else if (seconds > 300) {
+                                                return `${minutes.toFixed(1)} min`;
+                                            } else {
+                                                return `${seconds.toFixed(2)}s`;
+                                            }
+                                        })()})
+                                    </span>
+                                )}
                             </div>
-                            <div className={styles.metric_card__value}>{status.backfillQueueSize.toLocaleString()}</div>
                         </div>
 
                         {status.processingBlocksPerMinute !== null && (
                             <div className={styles.metric_card}>
                                 <div className={styles.metric_card__label}>
                                     Processing Rate
-                                    <span className={styles.info_icon} title="How many blocks per minute we're processing from the queue">
+                                    <span className={styles.info_icon} title="How many blocks per minute we're processing from the queue. The TRON network emits new blocks at ~20 blocks per minute (3-second interval)">
                                         <Info size={14} />
                                     </span>
                                 </div>
@@ -389,70 +398,24 @@ export function BlockchainMonitor({ token }: Props) {
                             </div>
                         )}
 
-                        <div className={styles.metric_card}>
-                            <div className={styles.metric_card__label}>
-                                Network Rate
-                                <span className={styles.info_icon} title="TRON network produces new blocks at ~20 blocks per minute (3-second interval)">
-                                    <Info size={14} />
-                                </span>
-                            </div>
-                            <div className={styles.metric_card__value}>
-                                {status.networkBlocksPerMinute.toFixed(1)} b/m
-                            </div>
-                        </div>
-
                         {status.netCatchUpRate !== null && (
                             <div className={styles.metric_card}>
                                 <div className={styles.metric_card__label}>
                                     Net Catch-up Rate
-                                    <span className={styles.info_icon} title="Processing rate minus network rate. Positive means catching up, negative means falling behind">
+                                    <span className={styles.info_icon} title="Processing rate minus network rate. Positive means catching up, negative means falling behind. Est. catch-up time shows how long until all backlog blocks are processed.">
                                         <Info size={14} />
                                     </span>
                                 </div>
                                 <div className={styles.metric_card__value}>
                                     {(status.netCatchUpRate >= 0 ? '+' : '-') + Math.abs(status.netCatchUpRate).toFixed(1)} b/m
-                                </div>
-                            </div>
-                        )}
-
-                        {status.averageProcessingDelaySeconds !== null && (
-                            <div className={styles.metric_card}>
-                                <div className={styles.metric_card__label}>
-                                    Avg Processing Delay
-                                    <span className={styles.info_icon} title="Average time delay between when a block is created on the network and when we process it">
-                                        <Info size={14} />
-                                    </span>
-                                </div>
-                                <div className={styles.metric_card__value}>
-                                    {status.averageProcessingDelaySeconds.toFixed(2)}s
-                                </div>
-                            </div>
-                        )}
-
-                        {status.estimatedCatchUpTime !== null && status.estimatedCatchUpTime > 0 && (
-                            <div className={styles.metric_card}>
-                                <div className={styles.metric_card__label}>
-                                    Est. Catch-up Time
-                                    <span className={styles.info_icon} title="Estimated time to process all remaining blocks in the backlog at current throughput">
-                                        <Info size={14} />
-                                    </span>
-                                </div>
-                                <div className={styles.metric_card__value}>
-                                    {status.estimatedCatchUpTime} min
-                                </div>
-                            </div>
-                        )}
-
-                        {metrics?.averageProcessingIntervalSeconds !== null && (
-                            <div className={styles.metric_card}>
-                                <div className={styles.metric_card__label}>
-                                    Avg Processing Interval
-                                    <span className={styles.info_icon} title="Average time between processing consecutive blocks (includes queue delays and rate limiting)">
-                                        <Info size={14} />
-                                    </span>
-                                </div>
-                                <div className={styles.metric_card__value}>
-                                    {metrics.averageProcessingIntervalSeconds.toFixed(2)}s
+                                    {status.estimatedCatchUpTime !== null && status.estimatedCatchUpTime > 0 && (
+                                        <span style={{ fontSize: '0.7em', opacity: 0.8, marginLeft: '0.5em' }}>
+                                            ({status.estimatedCatchUpTime > 300
+                                                ? `${(status.estimatedCatchUpTime / 60).toFixed(1)} hr`
+                                                : `${status.estimatedCatchUpTime} min`
+                                            })
+                                        </span>
+                                    )}
                                 </div>
                             </div>
                         )}
