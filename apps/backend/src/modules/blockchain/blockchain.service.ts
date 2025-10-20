@@ -757,25 +757,34 @@ export class BlockchainService {
      * to simulate live blockchain timing on the frontend, creating a stable real-time experience even when processing historical data.
      */
     private async processBlock(blockNumber: number) {
+        const timings: Record<string, number> = {};
+        const startTotal = Date.now();
+
         logger.info({ blockNumber }, 'Processing blockchain block');
 
         try {
-            // Check if we should throttle to simulate live chain experience
+            // Stage 1: Check if we should throttle to simulate live chain experience
+            let stageStart = Date.now();
             const latestBlock = await this.tronClient.getNowBlock();
             const latestNetworkBlock = latestBlock.block_header.raw_data.number;
             const blocksBehind = latestNetworkBlock - blockNumber;
             const isCaughtUp = blocksBehind <= blockchainConfig.network.liveChainThrottleBlocks;
+            timings.networkCheck = Date.now() - stageStart;
 
             if (isCaughtUp) {
+                stageStart = Date.now();
                 const throttleMs = blockchainConfig.network.blockIntervalSeconds * 1000;
                 logger.debug({ blockNumber, blocksBehind, throttleMs }, 'Throttling block processing to simulate live chain timing');
                 await new Promise(resolve => setTimeout(resolve, throttleMs));
+                timings.throttle = Date.now() - stageStart;
             } else {
                 logger.debug({ blockNumber, blocksBehind }, 'Processing block without throttle - catching up to chain head');
             }
 
-            // Fetch block from TronGrid - if this fails, error goes to catch block below
+            // Stage 2: Fetch block from TronGrid - if this fails, error goes to catch block below
+            stageStart = Date.now();
             const block = await this.tronClient.getBlockByNumber(blockNumber);
+            timings.fetchBlock = Date.now() - stageStart;
 
             // Validate block structure before proceeding
             if (!block?.block_header?.raw_data?.timestamp) {
@@ -808,7 +817,12 @@ export class BlockchainService {
                 logger.error({ blockNumber, timestamp: block.block_header.raw_data.timestamp, dateError }, 'Invalid block timestamp');
                 throw new Error(`Invalid timestamp in block ${blockNumber}: ${block.block_header.raw_data.timestamp} (${dateError instanceof Error ? dateError.message : String(dateError)})`);
             }
+
+            // Stage 3: Get TRX price
+            stageStart = Date.now();
             const priceUSD = await this.priceService.getTrxPriceUsd();
+            timings.getTrxPrice = Date.now() - stageStart;
+
             const addressGraph = new Map<string, Set<string>>();
 
             const buildContext: TransactionBuildContext = {
@@ -817,10 +831,13 @@ export class BlockchainService {
                 blockTime
             };
 
+            // Stage 4: Process transactions loop
             // Note: We don't fetch transaction info for every transaction like the old system
             // All necessary data (amounts, addresses, types, memos) is already in the block response
             // Transaction info (energy/bandwidth metrics, internal txs) would require 1 API call per tx
             // For a block with 200 transactions, that's 200 extra API calls vs 0 with current approach
+            stageStart = Date.now();
+            let observerNotifyTime = 0;
             const processed: ProcessedTransaction[] = [];
             const operations: AnyBulkWriteOperation<TransactionDoc>[] = [];
 
@@ -842,18 +859,30 @@ export class BlockchainService {
                     });
 
                     // Notify observers of the processed transaction
+                    const notifyStart = Date.now();
                     await this.observerRegistry.notifyTransaction(result);
+                    observerNotifyTime += (Date.now() - notifyStart);
                 } catch (transactionError) {
                     logger.warn({ blockNumber, txId: transaction?.txID, transactionError }, 'Failed to process transaction - skipping');
                 }
             }
+            timings.processTransactions = Date.now() - stageStart;
+            timings.observerNotifications = observerNotifyTime;
 
+            // Stage 5: Bulk write transactions to MongoDB
+            stageStart = Date.now();
             if (operations.length) {
                 await TransactionModel.bulkWrite(operations, { ordered: false });
             }
+            timings.bulkWriteTransactions = Date.now() - stageStart;
 
+            // Stage 6: Calculate block statistics
+            stageStart = Date.now();
             const stats = this.calculateBlockStats(processed);
+            timings.calculateStats = Date.now() - stageStart;
 
+            // Stage 7: Update BlockModel
+            stageStart = Date.now();
             await BlockModel.updateOne(
                 { blockNumber },
                 {
@@ -870,7 +899,10 @@ export class BlockchainService {
                 },
                 { upsert: true }
             );
+            timings.updateBlockModel = Date.now() - stageStart;
 
+            // Stage 8: Update SyncStateModel
+            stageStart = Date.now();
             await SyncStateModel.updateOne(
                 { key: 'blockchain:last-block' },
                 {
@@ -889,14 +921,35 @@ export class BlockchainService {
                     },
                     $set: {
                         'meta.lastProcessedAt': new Date(),
-                        'meta.lastProcessedBlockId': block.blockID
+                        'meta.lastProcessedBlockId': block.blockID,
+                        'meta.lastTimings': timings,
+                        'meta.lastTransactionCount': transactions.length
                     },
                     $pull: { 'meta.backfillQueue': blockNumber }
                 }
             );
+            timings.updateSyncState = Date.now() - stageStart;
 
+            // Stage 9: Emit socket events
+            stageStart = Date.now();
             await this.emitSocketEvents(blockNumber, block, stats, processed);
+            timings.socketEvents = Date.now() - stageStart;
+
+            // Stage 10: Alert ingestion
+            stageStart = Date.now();
             await this.alerts.ingestTransactions(processed.map(transaction => transaction.payload));
+            timings.alertIngestion = Date.now() - stageStart;
+
+            // Calculate total time and log timing breakdown
+            timings.total = Date.now() - startTotal;
+            logger.info(
+                {
+                    blockNumber,
+                    transactionCount: transactions.length,
+                    timings
+                },
+                'Block processing complete with timing breakdown'
+            );
         } catch (error) {
             // Extract error message and details
             const errorMessage = error instanceof Error ? error.message : String(error);
