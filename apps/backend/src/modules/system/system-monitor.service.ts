@@ -72,6 +72,8 @@ export interface BlockchainSyncStatus {
   networkBlocksPerMinute: number;
   netCatchUpRate: number | null;
   averageProcessingDelaySeconds: number | null;
+  lastTimings: Record<string, number> | null;
+  lastTransactionCount: number | null;
 }
 
 export interface TransactionStats {
@@ -407,9 +409,17 @@ export class SystemMonitorService {
       typeof lastErrorRaw === 'string' || typeof lastErrorRaw === 'object' ? (lastErrorRaw as BlockchainSyncError | string) : null;
     const lastErrorAt = safeToISOString(meta.lastErrorAt);
 
+    // Extract timing data from meta if available
+    const lastTimings = (meta.lastTimings && typeof meta.lastTimings === 'object')
+      ? (meta.lastTimings as Record<string, number>)
+      : null;
+    const lastTransactionCount = typeof meta.lastTransactionCount === 'number'
+      ? meta.lastTransactionCount
+      : null;
+
     return {
       currentBlock,
-  networkBlock: networkBlockValue,
+      networkBlock: networkBlockValue,
       lag,
       backfillQueueSize: snapshot.backfillQueueSize,
       lastProcessedAt: snapshot.lastProcessedAt,
@@ -421,7 +431,9 @@ export class SystemMonitorService {
       processingBlocksPerMinute: snapshot.processedBlocksPerMinute,
       networkBlocksPerMinute: snapshot.networkBlocksPerMinute,
       netCatchUpRate: snapshot.netCatchUpRate,
-      averageProcessingDelaySeconds: snapshot.averageProcessingDelaySeconds
+      averageProcessingDelaySeconds: snapshot.averageProcessingDelaySeconds,
+      lastTimings,
+      lastTransactionCount
     };
   }
 

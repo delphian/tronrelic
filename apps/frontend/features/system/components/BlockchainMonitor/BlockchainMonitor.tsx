@@ -25,6 +25,8 @@ interface BlockchainStatus {
     networkBlocksPerMinute: number;
     netCatchUpRate: number | null;
     averageProcessingDelaySeconds: number | null;
+    lastTimings: Record<string, number> | null;
+    lastTransactionCount: number | null;
 }
 
 interface TransactionStats {
@@ -399,6 +401,85 @@ export function BlockchainMonitor({ token }: Props) {
                     </div>
                 )}
             </section>
+
+            {/* Block Processing Performance Breakdown */}
+            {status?.lastTimings && (
+                <section className={styles.section}>
+                    <h2 className={styles.section__title}>Block Processing Performance Breakdown</h2>
+                    <p className={styles.section__note}>
+                        Timing metrics from the most recently processed block ({status.lastTransactionCount ?? 0} transactions)
+                    </p>
+
+                    <div className={styles['metrics-grid']}>
+                        <div className={styles['metric-card']}>
+                            <div className={styles['metric-card__label']}>Total Time</div>
+                            <div className={styles['metric-card__value']}>{status.lastTimings.total?.toFixed(0) ?? 'N/A'} ms</div>
+                        </div>
+
+                        {status.lastTimings.throttle !== undefined && (
+                            <div className={styles['metric-card']}>
+                                <div className={styles['metric-card__label']}>Throttle Delay</div>
+                                <div className={styles['metric-card__value']}>{status.lastTimings.throttle.toFixed(0)} ms</div>
+                            </div>
+                        )}
+
+                        <div className={styles['metric-card']}>
+                            <div className={styles['metric-card__label']}>Network Check</div>
+                            <div className={styles['metric-card__value']}>{status.lastTimings.networkCheck?.toFixed(0) ?? 'N/A'} ms</div>
+                        </div>
+
+                        <div className={styles['metric-card']}>
+                            <div className={styles['metric-card__label']}>Fetch Block (TronGrid)</div>
+                            <div className={styles['metric-card__value']}>{status.lastTimings.fetchBlock?.toFixed(0) ?? 'N/A'} ms</div>
+                        </div>
+
+                        <div className={styles['metric-card']}>
+                            <div className={styles['metric-card__label']}>Get TRX Price</div>
+                            <div className={styles['metric-card__value']}>{status.lastTimings.getTrxPrice?.toFixed(0) ?? 'N/A'} ms</div>
+                        </div>
+
+                        <div className={styles['metric-card']}>
+                            <div className={styles['metric-card__label']}>Process Transactions</div>
+                            <div className={styles['metric-card__value']}>{status.lastTimings.processTransactions?.toFixed(0) ?? 'N/A'} ms</div>
+                        </div>
+
+                        <div className={styles['metric-card']}>
+                            <div className={styles['metric-card__label']}>└─ Observer Notifications</div>
+                            <div className={styles['metric-card__value']}>{status.lastTimings.observerNotifications?.toFixed(0) ?? 'N/A'} ms</div>
+                        </div>
+
+                        <div className={styles['metric-card']}>
+                            <div className={styles['metric-card__label']}>Bulk Write (MongoDB)</div>
+                            <div className={styles['metric-card__value']}>{status.lastTimings.bulkWriteTransactions?.toFixed(0) ?? 'N/A'} ms</div>
+                        </div>
+
+                        <div className={styles['metric-card']}>
+                            <div className={styles['metric-card__label']}>Calculate Stats</div>
+                            <div className={styles['metric-card__value']}>{status.lastTimings.calculateStats?.toFixed(0) ?? 'N/A'} ms</div>
+                        </div>
+
+                        <div className={styles['metric-card']}>
+                            <div className={styles['metric-card__label']}>Update BlockModel</div>
+                            <div className={styles['metric-card__value']}>{status.lastTimings.updateBlockModel?.toFixed(0) ?? 'N/A'} ms</div>
+                        </div>
+
+                        <div className={styles['metric-card']}>
+                            <div className={styles['metric-card__label']}>Update SyncState</div>
+                            <div className={styles['metric-card__value']}>{status.lastTimings.updateSyncState?.toFixed(0) ?? 'N/A'} ms</div>
+                        </div>
+
+                        <div className={styles['metric-card']}>
+                            <div className={styles['metric-card__label']}>Socket Events</div>
+                            <div className={styles['metric-card__value']}>{status.lastTimings.socketEvents?.toFixed(0) ?? 'N/A'} ms</div>
+                        </div>
+
+                        <div className={styles['metric-card']}>
+                            <div className={styles['metric-card__label']}>Alert Ingestion</div>
+                            <div className={styles['metric-card__value']}>{status.lastTimings.alertIngestion?.toFixed(0) ?? 'N/A'} ms</div>
+                        </div>
+                    </div>
+                </section>
+            )}
 
             {/* Transaction Statistics */}
             <section className={styles.section}>
