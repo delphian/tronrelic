@@ -406,7 +406,7 @@ export function BlockchainMonitor({ token }: Props) {
                                         <Info size={14} />
                                     </span>
                                 </div>
-                                <div className={styles.metric_card__value}>
+                                <div className={styles.metric_card__value} style={{ whiteSpace: 'nowrap' }}>
                                     {(status.netCatchUpRate >= 0 ? '+' : '-') + Math.abs(status.netCatchUpRate).toFixed(1)} b/m
                                     {status.estimatedCatchUpTime !== null && status.estimatedCatchUpTime > 0 && (
                                         <span style={{ fontSize: '0.7em', opacity: 0.8, marginLeft: '0.5em' }}>
@@ -436,10 +436,10 @@ export function BlockchainMonitor({ token }: Props) {
                     </div>
                 )}
 
-                {netCatchUpRate !== null && netCatchUpRate <= 0 && (
+                {netCatchUpRate !== null && netCatchUpRate <= 0 && !status?.lastTimings?.throttle && (
                     <div className={styles.warning_alert}>
                         Processing throughput is slower than the network ({netCatchUpRate.toFixed(1)} b/m).
-                        Backfill may continue to grow until throughput improves.
+                        Lag may continue to grow until throughput improves.
                     </div>
                 )}
             </section>
@@ -454,28 +454,6 @@ export function BlockchainMonitor({ token }: Props) {
                         </p>
 
                         <div className={styles.metrics_grid}>
-                            <div className={styles.metric_card}>
-                                <div className={styles.metric_card__label}>
-                                    Network Check
-                                    <span className={styles.info_icon} title="Fetches the latest network block height to determine if we're caught up or falling behind">
-                                        <Info size={14} />
-                                    </span>
-                                </div>
-                                <div className={styles.metric_card__value}>{(status.lastTimings.networkCheck ?? 0).toFixed(0)} ms</div>
-                            </div>
-
-                            {status.lastTimings.throttle !== undefined && (
-                                <div className={styles.metric_card}>
-                                    <div className={styles.metric_card__label}>
-                                        Throttle Delay
-                                        <span className={styles.info_icon} title="Artificial delay added when caught up to the network to simulate live blockchain timing and prevent excessive API polling">
-                                            <Info size={14} />
-                                        </span>
-                                    </div>
-                                    <div className={styles.metric_card__value}>{status.lastTimings.throttle.toFixed(0)} ms</div>
-                                </div>
-                            )}
-
                             <div className={styles.metric_card}>
                                 <div className={styles.metric_card__label}>
                                     Fetch Block (TronGrid)
@@ -575,6 +553,18 @@ export function BlockchainMonitor({ token }: Props) {
                                 </div>
                                 <div className={styles.metric_card__value}>{(status.lastTimings.alertIngestion ?? 0).toFixed(0)} ms</div>
                             </div>
+
+                            {status.lastTimings.throttle !== undefined && (
+                                <div className={`${styles.metric_card} ${styles['metric_card--throttle']}`}>
+                                    <div className={styles.metric_card__label}>
+                                        Throttle Delay
+                                        <span className={styles.info_icon} title="Intelligent delay calculated to maintain consistent 3-second block intervals when caught up. Only adds remaining time needed after all processing completes, ensuring blocks emit at predictable intervals without unnecessary slowdown.">
+                                            <Info size={14} />
+                                        </span>
+                                    </div>
+                                    <div className={styles.metric_card__value}>{status.lastTimings.throttle.toFixed(0)} ms</div>
+                                </div>
+                            )}
 
                             <div className={`${styles.metric_card} ${(status.lastTimings.total ?? 0) > 3000 ? styles['metric_card--danger'] : ''}`}>
                                 <div className={styles.metric_card__label}>
