@@ -80,7 +80,7 @@ interface Props {
  *
  * **Key Features:**
  * - Real-time blockchain sync status (current block, network block, lag)
- * - Processing rate tracking (blocks/min, catch-up rate, projected completion)
+ * - Processing rate tracking (b/m, catch-up rate, projected completion)
  * - Transaction indexing statistics (total, daily, by transaction type)
  * - Block processing performance metrics (delays, intervals, success rates)
  * - Error tracking and recent error history
@@ -117,17 +117,18 @@ export function BlockchainMonitor({ token }: Props) {
     const [observers, setObservers] = useState<ObserverStats[]>([]);
     const [loading, setLoading] = useState(true);
     const [syncing, setSyncing] = useState(false);
+    const [schedulerEnabled, setSchedulerEnabled] = useState(true);
     const netCatchUpRate = status?.netCatchUpRate ?? null;
 
     /**
-     * Fetches blockchain status, transaction stats, and processing metrics from admin API endpoints.
+     * Fetches blockchain status, transaction stats, processing metrics, and scheduler health from admin API endpoints.
      *
      * Uses Promise.all for parallel fetching to minimize latency.
      * Updates component state with fresh data or logs errors on failure.
      */
     const fetchData = async () => {
         try {
-            const [statusRes, statsRes, metricsRes, observersRes] = await Promise.all([
+            const [statusRes, statsRes, metricsRes, observersRes, schedulerRes] = await Promise.all([
                 fetch(`${runtimeConfig.apiBaseUrl}/admin/system/blockchain/status`, {
                     headers: { 'X-Admin-Token': token }
                 }),
@@ -138,6 +139,9 @@ export function BlockchainMonitor({ token }: Props) {
                     headers: { 'X-Admin-Token': token }
                 }),
                 fetch(`${runtimeConfig.apiBaseUrl}/admin/system/blockchain/observers`, {
+                    headers: { 'X-Admin-Token': token }
+                }),
+                fetch(`${runtimeConfig.apiBaseUrl}/admin/system/scheduler/health`, {
                     headers: { 'X-Admin-Token': token }
                 })
             ]);
@@ -159,11 +163,16 @@ export function BlockchainMonitor({ token }: Props) {
                 console.error('Failed to parse observer stats:', err);
                 return { observers: [] };
             });
+            const schedulerData = await schedulerRes.json().catch(err => {
+                console.error('Failed to parse scheduler health:', err);
+                return { health: { enabled: true } };
+            });
 
             setStatus(statusData.status);
             setStats(statsData.stats);
             setMetrics(metricsData.metrics);
             setObservers(observersData.observers || []);
+            setSchedulerEnabled(schedulerData.health?.enabled ?? true);
         } catch (error) {
             console.error('Failed to fetch blockchain data:', error);
         } finally {
@@ -299,8 +308,9 @@ export function BlockchainMonitor({ token }: Props) {
                     <h2 className={styles.section__title}>Blockchain Sync Status</h2>
                     <button
                         onClick={triggerSync}
-                        disabled={syncing}
+                        disabled={syncing || schedulerEnabled}
                         className={styles.button}
+                        title={schedulerEnabled ? 'Scheduler is running automatically every minute' : 'Manually trigger blockchain sync'}
                     >
                         {syncing ? 'Triggering...' : 'Trigger Sync Now'}
                     </button>
@@ -326,53 +336,93 @@ export function BlockchainMonitor({ token }: Props) {
                 {status && (
                     <div className={styles.metrics_grid}>
                         <div className={styles.metric_card}>
-                            <div className={styles.metric_card__label}>Current Block</div>
+                            <div className={styles.metric_card__label}>
+                                Current Block
+                                <span className={styles.info_icon} title="The last block number successfully processed and stored in the database">
+                                    <Info size={14} />
+                                </span>
+                            </div>
                             <div className={styles.metric_card__value}>{status.currentBlock.toLocaleString()}</div>
                         </div>
 
                         <div className={styles.metric_card}>
-                            <div className={styles.metric_card__label}>Network Block</div>
+                            <div className={styles.metric_card__label}>
+                                Network Block
+                                <span className={styles.info_icon} title="The latest block number available on the TRON blockchain network">
+                                    <Info size={14} />
+                                </span>
+                            </div>
                             <div className={styles.metric_card__value}>{status.networkBlock.toLocaleString()}</div>
                         </div>
 
                         <div className={`${styles.metric_card} ${getLagClass(status.lag)}`}>
-                            <div className={styles.metric_card__label}>Lag (Blocks Behind)</div>
+                            <div className={styles.metric_card__label}>
+                                Lag (Blocks Behind)
+                                <span className={styles.info_icon} title="How many blocks behind the network we are. Green: <10, Yellow: <100, Red: ≥100">
+                                    <Info size={14} />
+                                </span>
+                            </div>
                             <div className={styles.metric_card__value}>{status.lag.toLocaleString()}</div>
                         </div>
 
                         <div className={styles.metric_card}>
-                            <div className={styles.metric_card__label}>Backfill Queue</div>
+                            <div className={styles.metric_card__label}>
+                                Backfill Queue
+                                <span className={styles.info_icon} title="Number of historical blocks waiting to be processed to fill gaps in the database">
+                                    <Info size={14} />
+                                </span>
+                            </div>
                             <div className={styles.metric_card__value}>{status.backfillQueueSize.toLocaleString()}</div>
                         </div>
 
                         {status.processingBlocksPerMinute !== null && (
                             <div className={styles.metric_card}>
-                                <div className={styles.metric_card__label}>Processing Rate</div>
+                                <div className={styles.metric_card__label}>
+                                    Processing Rate
+                                    <span className={styles.info_icon} title="How many blocks per minute we're processing from the queue">
+                                        <Info size={14} />
+                                    </span>
+                                </div>
                                 <div className={styles.metric_card__value}>
-                                    {status.processingBlocksPerMinute.toFixed(1)} blocks/min
+                                    {status.processingBlocksPerMinute.toFixed(1)} b/m
                                 </div>
                             </div>
                         )}
 
                         <div className={styles.metric_card}>
-                            <div className={styles.metric_card__label}>Network Rate</div>
+                            <div className={styles.metric_card__label}>
+                                Network Rate
+                                <span className={styles.info_icon} title="TRON network produces new blocks at ~20 blocks per minute (3-second interval)">
+                                    <Info size={14} />
+                                </span>
+                            </div>
                             <div className={styles.metric_card__value}>
-                                {status.networkBlocksPerMinute.toFixed(1)} blocks/min
+                                {status.networkBlocksPerMinute.toFixed(1)} b/m
                             </div>
                         </div>
 
                         {status.netCatchUpRate !== null && (
                             <div className={styles.metric_card}>
-                                <div className={styles.metric_card__label}>Net Catch-up Rate</div>
+                                <div className={styles.metric_card__label}>
+                                    Net Catch-up Rate
+                                    <span className={styles.info_icon} title="Processing rate minus network rate. Positive means catching up, negative means falling behind">
+                                        <Info size={14} />
+                                    </span>
+                                </div>
                                 <div className={styles.metric_card__value}>
-                                    {(status.netCatchUpRate >= 0 ? '+' : '-') + Math.abs(status.netCatchUpRate).toFixed(1)} blocks/min
+                                    {(status.netCatchUpRate >= 0 ? '+' : '-') + Math.abs(status.netCatchUpRate).toFixed(1)} b/m
                                 </div>
                             </div>
                         )}
 
                         {status.averageProcessingDelaySeconds !== null && (
                             <div className={styles.metric_card}>
-                                <div className={styles.metric_card__label}>Avg Processing Delay</div>
+                                <div className={styles.metric_card__label}>
+                                    Avg Processing Delay
+                                    <span className={styles.info_icon} title="Average time delay between when a block is created on the network and when we process it">
+                                        <Info size={14} />
+                                    </span>
+                                </div>
                                 <div className={styles.metric_card__value}>
                                     {status.averageProcessingDelaySeconds.toFixed(2)}s
                                 </div>
@@ -381,7 +431,12 @@ export function BlockchainMonitor({ token }: Props) {
 
                         {status.estimatedCatchUpTime !== null && status.estimatedCatchUpTime > 0 && (
                             <div className={styles.metric_card}>
-                                <div className={styles.metric_card__label}>Est. Catch-up Time</div>
+                                <div className={styles.metric_card__label}>
+                                    Est. Catch-up Time
+                                    <span className={styles.info_icon} title="Estimated time to process all remaining blocks in the backlog at current throughput">
+                                        <Info size={14} />
+                                    </span>
+                                </div>
                                 <div className={styles.metric_card__value}>
                                     {status.estimatedCatchUpTime} min
                                 </div>
@@ -390,7 +445,12 @@ export function BlockchainMonitor({ token }: Props) {
 
                         {metrics?.averageProcessingIntervalSeconds !== null && (
                             <div className={styles.metric_card}>
-                                <div className={styles.metric_card__label}>Avg Processing Interval</div>
+                                <div className={styles.metric_card__label}>
+                                    Avg Processing Interval
+                                    <span className={styles.info_icon} title="Average time between processing consecutive blocks (includes queue delays and rate limiting)">
+                                        <Info size={14} />
+                                    </span>
+                                </div>
                                 <div className={styles.metric_card__value}>
                                     {metrics.averageProcessingIntervalSeconds.toFixed(2)}s
                                 </div>
@@ -399,7 +459,12 @@ export function BlockchainMonitor({ token }: Props) {
 
                         {metrics && (
                             <div className={styles.metric_card}>
-                                <div className={styles.metric_card__label}>Success Rate</div>
+                                <div className={styles.metric_card__label}>
+                                    Success Rate
+                                    <span className={styles.info_icon} title="Percentage of blocks processed successfully without errors in the last 180 blocks">
+                                        <Info size={14} />
+                                    </span>
+                                </div>
                                 <div className={styles.metric_card__value}>
                                     {metrics.successRate.toFixed(1)}%
                                 </div>
@@ -410,7 +475,7 @@ export function BlockchainMonitor({ token }: Props) {
 
                 {netCatchUpRate !== null && netCatchUpRate <= 0 && (
                     <div className={styles.warning_alert}>
-                        Processing throughput is slower than the network ({netCatchUpRate.toFixed(1)} blocks/min).
+                        Processing throughput is slower than the network ({netCatchUpRate.toFixed(1)} b/m).
                         Backfill may continue to grow until throughput improves.
                     </div>
                 )}

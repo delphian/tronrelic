@@ -28,6 +28,7 @@ const observerRegistryLogger = logger.child({ module: 'observer-registry' });
  */
 interface BlockSyncJob {
     blockNumber: number;
+    isCaughtUp: boolean;
 }
 
 // Re-export types from @tronrelic/types for backward compatibility
@@ -102,7 +103,7 @@ export class BlockchainService {
         this.queue = new QueueService<BlockSyncJob>(
             'block-sync',
             async job => {
-                await this.processBlock(job.data.blockNumber);
+                await this.processBlock(job.data.blockNumber, job.data.isCaughtUp);
             },
             {
                 // No retry at job level - TronGrid client handles retries (6 attempts with 1s, 2s, 4s, 8s, 16s, 32s backoff)
@@ -501,10 +502,14 @@ export class BlockchainService {
                 eligibleTargets.push(blockNumber);
             }
 
+            // Calculate if we're caught up to determine throttle behavior for all queued blocks
+            const blocksBehind = latestNetworkBlock - lastProcessed;
+            const isCaughtUp = blocksBehind <= blockchainConfig.network.liveChainThrottleBlocks;
+
             for (const blockNumber of eligibleTargets) {
                 await this.queue.enqueue(
                     'sync-block',
-                    { blockNumber },
+                    { blockNumber, isCaughtUp },
                     {
                         jobId: `block-${blockNumber}`
                         // No attempts/backoff config - use queue defaults (single attempt, TronGrid handles retries)
@@ -755,34 +760,19 @@ export class BlockchainService {
      *
      * When caught up to the live chain (within 100 blocks of current network height), processing is throttled to 3-second intervals
      * to simulate live blockchain timing on the frontend, creating a stable real-time experience even when processing historical data.
+     *
+     * @param blockNumber - The block number to process
+     * @param isCaughtUp - Whether we're caught up to the chain head (passed from scheduler to avoid recalculation)
      */
-    private async processBlock(blockNumber: number) {
+    private async processBlock(blockNumber: number, isCaughtUp: boolean) {
         const timings: Record<string, number> = {};
         const startTotal = Date.now();
 
         logger.info({ blockNumber }, 'Processing blockchain block');
 
         try {
-            // Stage 1: Check if we should throttle to simulate live chain experience
+            // Stage 1: Fetch block from TronGrid first to get its timestamp for calculations
             let stageStart = Date.now();
-            const latestBlock = await this.tronClient.getNowBlock();
-            const latestNetworkBlock = latestBlock.block_header.raw_data.number;
-            const blocksBehind = latestNetworkBlock - blockNumber;
-            const isCaughtUp = blocksBehind <= blockchainConfig.network.liveChainThrottleBlocks;
-            timings.networkCheck = Date.now() - stageStart;
-
-            if (isCaughtUp) {
-                stageStart = Date.now();
-                const throttleMs = blockchainConfig.network.blockIntervalSeconds * 1000;
-                logger.debug({ blockNumber, blocksBehind, throttleMs }, 'Throttling block processing to simulate live chain timing');
-                await new Promise(resolve => setTimeout(resolve, throttleMs));
-                timings.throttle = Date.now() - stageStart;
-            } else {
-                logger.debug({ blockNumber, blocksBehind }, 'Processing block without throttle - catching up to chain head');
-            }
-
-            // Stage 2: Fetch block from TronGrid - if this fails, error goes to catch block below
-            stageStart = Date.now();
             const block = await this.tronClient.getBlockByNumber(blockNumber);
             timings.fetchBlock = Date.now() - stageStart;
 
@@ -792,6 +782,7 @@ export class BlockchainService {
                 throw new Error(`Invalid block structure returned from TronGrid API for block ${blockNumber} - missing timestamp`);
             }
 
+            // Parse and normalize block timestamp
             const transactions = block.transactions ?? [];
             let blockTime: Date;
             try {
@@ -816,6 +807,17 @@ export class BlockchainService {
             } catch (dateError) {
                 logger.error({ blockNumber, timestamp: block.block_header.raw_data.timestamp, dateError }, 'Invalid block timestamp');
                 throw new Error(`Invalid timestamp in block ${blockNumber}: ${block.block_header.raw_data.timestamp} (${dateError instanceof Error ? dateError.message : String(dateError)})`);
+            }
+
+            // Stage 2: Apply throttle if caught up to simulate live blockchain timing (flag passed from scheduler)
+            if (isCaughtUp) {
+                stageStart = Date.now();
+                const throttleMs = blockchainConfig.network.blockIntervalSeconds * 1000;
+                logger.debug({ blockNumber, throttleMs }, 'Throttling block processing to simulate live chain timing');
+                await new Promise(resolve => setTimeout(resolve, throttleMs));
+                timings.throttle = Date.now() - stageStart;
+            } else {
+                logger.debug({ blockNumber }, 'Processing block without throttle - catching up to chain head');
             }
 
             // Stage 3: Get TRX price
