@@ -901,7 +901,7 @@ export class BlockchainService {
             );
             timings.updateBlockModel = Date.now() - stageStart;
 
-            // Stage 8: Update SyncStateModel
+            // Stage 8: Update SyncStateModel (initial update for cursor)
             stageStart = Date.now();
             await SyncStateModel.updateOne(
                 { key: 'blockchain:last-block' },
@@ -919,12 +919,6 @@ export class BlockchainService {
                     $max: {
                         'cursor.blockNumber': blockNumber
                     },
-                    $set: {
-                        'meta.lastProcessedAt': new Date(),
-                        'meta.lastProcessedBlockId': block.blockID,
-                        'meta.lastTimings': timings,
-                        'meta.lastTransactionCount': transactions.length
-                    },
                     $pull: { 'meta.backfillQueue': blockNumber }
                 }
             );
@@ -940,8 +934,22 @@ export class BlockchainService {
             await this.alerts.ingestTransactions(processed.map(transaction => transaction.payload));
             timings.alertIngestion = Date.now() - stageStart;
 
-            // Calculate total time and log timing breakdown
+            // Calculate total time
             timings.total = Date.now() - startTotal;
+
+            // Stage 11: Update timing metrics in SyncState (after all timings are calculated)
+            await SyncStateModel.updateOne(
+                { key: 'blockchain:last-block' },
+                {
+                    $set: {
+                        'meta.lastProcessedAt': new Date(),
+                        'meta.lastProcessedBlockId': block.blockID,
+                        'meta.lastProcessedBlockNumber': blockNumber,
+                        'meta.lastTimings': timings,
+                        'meta.lastTransactionCount': transactions.length
+                    }
+                }
+            );
             logger.info(
                 {
                     blockNumber,
