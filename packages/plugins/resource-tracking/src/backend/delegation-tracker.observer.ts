@@ -102,13 +102,11 @@ export function createDelegationTrackerObserver(
             const resourceValue = contractParams?.resource;
 
             // TRON resource types: 'BANDWIDTH' = 0, 'ENERGY' = 1
-            // Parse from string or numeric value
-            let resourceType: 0 | 1 = 1; // Default to ENERGY
-            if (typeof resourceValue === 'string') {
-                resourceType = resourceValue.toUpperCase() === 'BANDWIDTH' ? 0 : 1;
-            } else if (typeof resourceValue === 'number') {
-                resourceType = resourceValue === 0 ? 0 : 1;
-            }
+            // TRON protocol: missing/null resource field defaults to BANDWIDTH
+            const resourceType: 0 | 1 =
+                (typeof resourceValue === 'string' && resourceValue.toUpperCase() === 'ENERGY') ||
+                (typeof resourceValue === 'number' && resourceValue === 1)
+                ? 1 : 0;
 
             // Use negative amount for reclaims to simplify aggregation
             const signedAmount = isDelegation ? amountSun : -amountSun;
