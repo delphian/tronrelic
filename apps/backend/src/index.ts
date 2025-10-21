@@ -7,6 +7,7 @@ import { logger } from './lib/logger.js';
 import { WebSocketService } from './services/websocket.service.js';
 import { initializeJobs, stopJobs } from './jobs/index.js';
 import { loadPlugins } from './loaders/plugins.js';
+import { MenuService } from './modules/menu/menu.service.js';
 // Import observers to trigger auto-registration via side effects
 import './modules/blockchain/observers/index.js';
 
@@ -24,6 +25,9 @@ async function bootstrap() {
     if (env.ENABLE_WEBSOCKETS) {
       WebSocketService.getInstance().initialize(server);
     }
+
+    // Initialize MenuService AFTER database connection is ready
+    await MenuService.getInstance().initialize();
 
     // Load plugins AFTER WebSocket is initialized so they can register handlers
     await loadPlugins();
