@@ -1094,6 +1094,8 @@ export class BlockchainService {
             blockNumber,
             timestamp,
             type: contractType,
+            // TRON protocol: resource field is "ENERGY" for energy operations, or undefined/null for BANDWIDTH
+            // Observers must interpret undefined as BANDWIDTH (default resource type per TRON specification)
             subType: typeof value.resource === 'string' ? (value.resource as string) : undefined,
             from: {
                 address: ownerAddress,
@@ -1366,6 +1368,15 @@ export class BlockchainService {
                 return {
                     address: TronGridClient.toBase58Address(value.receiver_address as string) ?? 'unknown',
                     method: 'delegateResource',
+                    parameters: {
+                        resource: value.resource,
+                        balanceTRX: this.resolveAmounts(contractType, value).amountTRX
+                    }
+                };
+            case 'UnDelegateResourceContract':
+                return {
+                    address: TronGridClient.toBase58Address(value.receiver_address as string) ?? 'unknown',
+                    method: 'undelegateResource',
                     parameters: {
                         resource: value.resource,
                         balanceTRX: this.resolveAmounts(contractType, value).amountTRX

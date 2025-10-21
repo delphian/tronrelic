@@ -26,6 +26,7 @@ Response format:
 1. User explicitly says "don't use agents" or "do it yourself"
 2. Task is trivial (< 5 lines of code, single file read)
 3. Task is purely conversational
+4. Task has already been delegated to a subagent
 
 **If you skip delegation, explicitly state which condition applies.**
 
@@ -161,5 +162,6 @@ Response format:
 1. User explicitly says "don't use agents" or "do it yourself"
 2. Task is trivial (< 5 lines of code, single file read)
 3. Task is purely conversational
+4. Task has already been delegated to a subagent
 
 **If you skip delegation, explicitly state which condition applies.**
