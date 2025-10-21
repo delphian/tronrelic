@@ -1,9 +1,10 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import type { IFrontendPluginContext } from '@tronrelic/types';
-import { Activity, AlertCircle, BarChart3, Zap, Gauge, HelpCircle } from 'lucide-react';
+import { Activity, AlertCircle } from 'lucide-react';
 import styles from './ResourceTrackingPage.module.css';
+import { ResourceDelegationsCard } from './ResourceDelegationsCard';
 
 /**
  * Card component imported from frontend context.
@@ -76,7 +77,7 @@ const CHART_COLORS = {
  * @param props.context - Frontend plugin context with API client, UI components, and charts
  */
 export function ResourceTrackingPage({ context }: { context: IFrontendPluginContext }) {
-    const { api, charts, ui } = context;
+    const { api, ui } = context;
 
     const [data, setData] = useState<SummationDataPoint[]>([]);
     const [loading, setLoading] = useState(true);
@@ -97,8 +98,12 @@ export function ResourceTrackingPage({ context }: { context: IFrontendPluginCont
      * Returns fixed min/max dates to prevent the chart from stretching sparse data
      * across the full width. Data points will appear at their actual timestamps within
      * the selected time range.
+     *
+     * Memoized to prevent creating new object references on every render, which would
+     * break React.memo optimization on the child card component and cause unnecessary
+     * re-renders (visual flashing).
      */
-    function getTimeRange(): { minDate: Date; maxDate: Date } {
+    const timeRange = useMemo(() => {
         const now = new Date();
         const periodMap: Record<TimePeriod, number> = {
             '1d': 1,
@@ -112,7 +117,7 @@ export function ResourceTrackingPage({ context }: { context: IFrontendPluginCont
         minDate.setDate(minDate.getDate() - days);
 
         return { minDate, maxDate: now };
-    }
+    }, [period]);
 
     /**
      * Load summation data from the API.
@@ -296,43 +301,48 @@ export function ResourceTrackingPage({ context }: { context: IFrontendPluginCont
     }, [context.websocket]);
 
     /**
-     * Determine whether any 'net' metrics are currently displayed.
+     * Determine whether any metrics that cross the zero line are currently displayed.
      *
-     * Net metrics (net energy or net bandwidth) can have negative values, requiring
-     * the Y-axis to include both positive and negative ranges centered on zero.
-     * Non-net metrics (delegated/reclaimed) are always positive and should have a
-     * Y-axis minimum of zero.
+     * Net metrics (net energy or net bandwidth) can have negative values naturally.
+     * Reclaimed metrics are displayed as negative numbers to show them below the zero line.
+     * When any of these metrics are shown, the Y-axis must include both positive and
+     * negative ranges centered on zero to make the zero line visible.
+     * Non-zero-crossing metrics (delegated only) should have a Y-axis minimum of zero.
      */
-    const hasNetMetrics = showNetEnergy || showNetBandwidth;
+    const hasZeroCrossingMetrics = showNetEnergy || showNetBandwidth || showEnergyReclaimed || showBandwidthReclaimed;
 
     /**
      * Calculate Y-axis bounds based on displayed metrics.
      *
-     * - When NO net metrics are shown: Y-axis minimum is always 0 (non-negative values only)
-     * - When net metrics ARE shown: Y-axis is centered on 0 with symmetric positive/negative range
+     * - When NO zero-crossing metrics are shown: Y-axis minimum is always 0 (non-negative values only)
+     * - When zero-crossing metrics ARE shown: Y-axis is centered on 0 with symmetric positive/negative range
      *   to ensure the zero line appears in the middle of the chart
+     *
+     * Zero-crossing metrics include:
+     * - Net energy and net bandwidth (naturally negative when reclaims exceed delegations)
+     * - Energy and bandwidth reclaimed (displayed as negative to show below zero line)
      */
     let yAxisMin: number | undefined;
     let yAxisMax: number | undefined;
 
     if (data.length > 0) {
-        if (!hasNetMetrics) {
-            // No net metrics: bottom of chart should always be 0
+        if (!hasZeroCrossingMetrics) {
+            // No zero-crossing metrics: bottom of chart should always be 0
             yAxisMin = 0;
             yAxisMax = undefined; // Let chart auto-scale the maximum
         } else {
-            // Net metrics present: center the chart on zero
+            // Zero-crossing metrics present: center the chart on zero
             const allValues: number[] = [];
 
             // Filter out null values before collecting metric values
             const nonNullData = data.filter(p => p !== null);
 
-            // Collect all visible metric values
+            // Collect all visible metric values (reclaimed values will be negated when added to chart series)
             if (showEnergyDelegated) allValues.push(...nonNullData.map(p => p!.energyDelegated));
-            if (showEnergyReclaimed) allValues.push(...nonNullData.map(p => p!.energyReclaimed));
+            if (showEnergyReclaimed) allValues.push(...nonNullData.map(p => -p!.energyReclaimed)); // Negated for display
             if (showNetEnergy) allValues.push(...nonNullData.map(p => p!.netEnergy));
             if (showBandwidthDelegated) allValues.push(...nonNullData.map(p => p!.bandwidthDelegated));
-            if (showBandwidthReclaimed) allValues.push(...nonNullData.map(p => p!.bandwidthReclaimed));
+            if (showBandwidthReclaimed) allValues.push(...nonNullData.map(p => -p!.bandwidthReclaimed)); // Negated for display
             if (showNetBandwidth) allValues.push(...nonNullData.map(p => p!.netBandwidth));
 
             if (allValues.length > 0) {
@@ -382,7 +392,7 @@ export function ResourceTrackingPage({ context }: { context: IFrontendPluginCont
                 .filter(point => point !== null)
                 .map(point => ({
                     date: point!.timestamp,
-                    value: point!.energyReclaimed, // Already in millions of TRX from API
+                    value: -point!.energyReclaimed, // Negated to display below zero line
                     metadata: {
                         transactions: point!.transactionCount,
                         blockRange: `${point!.startBlock.toLocaleString()} - ${point!.endBlock.toLocaleString()}`
@@ -439,7 +449,7 @@ export function ResourceTrackingPage({ context }: { context: IFrontendPluginCont
                 .filter(point => point !== null)
                 .map(point => ({
                     date: point!.timestamp,
-                    value: point!.bandwidthReclaimed, // Already in millions of TRX from API
+                    value: -point!.bandwidthReclaimed, // Negated to display below zero line
                     metadata: {
                         transactions: point!.transactionCount,
                         blockRange: `${point!.startBlock.toLocaleString()} - ${point!.endBlock.toLocaleString()}`
@@ -469,237 +479,42 @@ export function ResourceTrackingPage({ context }: { context: IFrontendPluginCont
         });
     }
 
-    const Card = ui.Card as ICard;
-
-    if (loading) {
-        return (
-            <main className={styles.page}>
-                <header className={styles.header}>
-                    <h1 className={styles.title}>
-                        <Activity size={28} style={{ display: 'inline-block', marginRight: '0.5rem', verticalAlign: 'middle' }} />
-                        Resource Tracking
-                    </h1>
-                    <p className={styles.subtitle}>Loading delegation data...</p>
-                </header>
-                <Card elevated className={styles.container}>
-                    <div className={styles.skeletonLoader} style={{ height: '60px', marginBottom: 'var(--spacing-md)' }} />
-                    <div className={styles.skeletonLoader} style={{ height: '400px' }} />
-                </Card>
-            </main>
-        );
-    }
-
-    if (error) {
-        return (
-            <main className={styles.page}>
-                <header className={styles.header}>
-                    <h1 className={styles.title}>
-                        <Activity size={28} style={{ display: 'inline-block', marginRight: '0.5rem', verticalAlign: 'middle' }} />
-                        Resource Tracking
-                    </h1>
-                    <p className={styles.subtitle}>Monitor TRON resource delegation patterns</p>
-                </header>
-                <Card elevated className={styles.container}>
-                    <div className={styles.errorContainer}>
-                        <AlertCircle size={48} color="var(--color-danger, #ef4444)" />
-                        <p className={styles.errorText}>{error}</p>
-                        <button className="btn btn--secondary" onClick={() => void loadData()}>
-                            Retry
-                        </button>
-                    </div>
-                </Card>
-            </main>
-        );
-    }
-
     return (
         <main className={styles.page}>
             <header className={styles.header}>
                 <h1 className={styles.title}>
                     <Activity size={28} style={{ display: 'inline-block', marginRight: '0.5rem', verticalAlign: 'middle' }} />
-                    Resource Tracking
+                    Resource Usage Tracker
                 </h1>
                 <p className={styles.subtitle}>
                     Track how energy and bandwidth resources flow across the TRON network through delegation and reclaim transactions. TRON users stake TRX to generate energy (for smart contracts) and bandwidth (for transactions), then delegate these resources to other addresses or reclaim them. This dashboard visualizes network-wide patterns showing resources being shared, reclaimed, and net changes over time. Values are in TRX equivalence - the amount of TRX staked to generate the observed energy and bandwidth.
                 </p>
             </header>
 
-            <Card elevated className={styles.container}>
-                {/* Card Header */}
-                <div className={styles.cardHeader}>
-                    <h2 className={styles.cardTitle}>
-                        <Zap size={24} style={{ display: 'inline-block', marginRight: '0.5rem', verticalAlign: 'middle' }} />
-                        Resource Delegations
-                    </h2>
-                    <p className={styles.cardSubtitle}>
-                        Monitor TRON resource delegation and reclaim patterns (millions of TRX equivalence)
-                        <span
-                            className={styles.helpIcon}
-                            role="img"
-                            aria-label="Information"
-                            title="Values shown are not raw energy values but the equivalent TRX staked to obtain such energy"
-                        >
-                            <HelpCircle
-                                size={16}
-                                style={{
-                                    display: 'inline-block',
-                                    marginLeft: '0.35rem',
-                                    verticalAlign: 'middle',
-                                    cursor: 'help',
-                                    opacity: 0.7
-                                }}
-                            />
-                        </span>
-                    </p>
-                </div>
-
-                {/* Controls: Time Period + Line Toggles */}
-                <div className={styles.controls}>
-                    {/* Time Period Selector */}
-                    <div className={styles.controlRow}>
-                        <div className={styles.buttonGroup}>
-                            <button
-                                className={`${styles.periodButton} ${period === '1d' ? styles['periodButton--active'] : ''}`}
-                                onClick={() => setPeriod('1d')}
-                                aria-label="Show data for 1 day"
-                                aria-pressed={period === '1d'}
-                            >
-                                1 Day
-                            </button>
-                            <button
-                                className={`${styles.periodButton} ${period === '7d' ? styles['periodButton--active'] : ''}`}
-                                onClick={() => setPeriod('7d')}
-                                aria-label="Show data for 7 days"
-                                aria-pressed={period === '7d'}
-                            >
-                                7 Days
-                            </button>
-                            <button
-                                className={`${styles.periodButton} ${period === '30d' ? styles['periodButton--active'] : ''}`}
-                                onClick={() => setPeriod('30d')}
-                                aria-label="Show data for 30 days"
-                                aria-pressed={period === '30d'}
-                            >
-                                30 Days
-                            </button>
-                            <button
-                                className={`${styles.periodButton} ${period === '6m' ? styles['periodButton--active'] : ''}`}
-                                onClick={() => setPeriod('6m')}
-                                aria-label="Show data for 6 months"
-                                aria-pressed={period === '6m'}
-                            >
-                                6 Months
-                            </button>
-                        </div>
-                    </div>
-
-                    {/* Line Toggles */}
-                    <div className={styles.controlRow}>
-                        <div className={styles.toggleGroup}>
-                            <label className={styles.toggle}>
-                                <input
-                                    type="checkbox"
-                                    checked={showEnergyDelegated}
-                                    onChange={(e) => setShowEnergyDelegated(e.target.checked)}
-                                    aria-label="Toggle Energy Delegated line visibility"
-                                />
-                                <span className={`${styles.toggleLabel} ${styles.toggleLabelEnergyDelegated}`}>
-                                    <Zap size={14} style={{ display: 'inline-block', marginRight: '0.25rem', verticalAlign: 'middle' }} />
-                                    Delegated
-                                </span>
-                            </label>
-                            <label className={styles.toggle}>
-                                <input
-                                    type="checkbox"
-                                    checked={showEnergyReclaimed}
-                                    onChange={(e) => setShowEnergyReclaimed(e.target.checked)}
-                                    aria-label="Toggle Energy Reclaimed line visibility"
-                                />
-                                <span className={`${styles.toggleLabel} ${styles.toggleLabelEnergyReclaimed}`}>
-                                    <Zap size={14} style={{ display: 'inline-block', marginRight: '0.25rem', verticalAlign: 'middle' }} />
-                                    Reclaimed
-                                </span>
-                            </label>
-                            <label className={styles.toggle}>
-                                <input
-                                    type="checkbox"
-                                    checked={showNetEnergy}
-                                    onChange={(e) => setShowNetEnergy(e.target.checked)}
-                                    aria-label="Toggle Net Energy line visibility"
-                                />
-                                <span className={`${styles.toggleLabel} ${styles.toggleLabelNetEnergy}`}>
-                                    <Zap size={14} style={{ display: 'inline-block', marginRight: '0.25rem', verticalAlign: 'middle' }} />
-                                    Net
-                                </span>
-                            </label>
-                            <label className={styles.toggle}>
-                                <input
-                                    type="checkbox"
-                                    checked={showBandwidthDelegated}
-                                    onChange={(e) => setShowBandwidthDelegated(e.target.checked)}
-                                    aria-label="Toggle Bandwidth Delegated line visibility"
-                                />
-                                <span className={`${styles.toggleLabel} ${styles.toggleLabelBandwidthDelegated}`}>
-                                    <Gauge size={14} style={{ display: 'inline-block', marginRight: '0.25rem', verticalAlign: 'middle' }} />
-                                    Delegated
-                                </span>
-                            </label>
-                            <label className={styles.toggle}>
-                                <input
-                                    type="checkbox"
-                                    checked={showBandwidthReclaimed}
-                                    onChange={(e) => setShowBandwidthReclaimed(e.target.checked)}
-                                    aria-label="Toggle Bandwidth Reclaimed line visibility"
-                                />
-                                <span className={`${styles.toggleLabel} ${styles.toggleLabelBandwidthReclaimed}`}>
-                                    <Gauge size={14} style={{ display: 'inline-block', marginRight: '0.25rem', verticalAlign: 'middle' }} />
-                                    Reclaimed
-                                </span>
-                            </label>
-                            <label className={styles.toggle}>
-                                <input
-                                    type="checkbox"
-                                    checked={showNetBandwidth}
-                                    onChange={(e) => setShowNetBandwidth(e.target.checked)}
-                                    aria-label="Toggle Net Bandwidth line visibility"
-                                />
-                                <span className={`${styles.toggleLabel} ${styles.toggleLabelNetBandwidth}`}>
-                                    <Gauge size={14} style={{ display: 'inline-block', marginRight: '0.25rem', verticalAlign: 'middle' }} />
-                                    Net
-                                </span>
-                            </label>
-                        </div>
-                    </div>
-                </div>
-
-                {/* Chart */}
-                <div className={styles.chartContainer}>
-                    {chartSeries.length > 0 ? (
-                        <charts.LineChart
-                            series={chartSeries}
-                            height={400}
-                            yAxisFormatter={(value) => `${Math.round(value).toLocaleString()}`}
-                            xAxisFormatter={(date) => {
-                                const dateStr = date.toLocaleDateString();
-                                const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
-                                return `${dateStr} ${timeStr}`;
-                            }}
-                            minDate={getTimeRange().minDate}
-                            maxDate={getTimeRange().maxDate}
-                            yAxisMin={yAxisMin}
-                            yAxisMax={yAxisMax}
-                        />
-                    ) : (
-                        <div className={styles.noData}>
-                            <BarChart3 size={64} style={{ opacity: 0.3, marginBottom: 'var(--spacing-md)' }} />
-                            <p>No data available or all lines are hidden</p>
-                            <p className={styles.noDataHint}>
-                                Select at least one line to display the chart
-                            </p>
-                        </div>
-                    )}
-                </div>
-            </Card>
+            <ResourceDelegationsCard
+                context={context}
+                period={period}
+                setPeriod={setPeriod}
+                chartSeries={chartSeries}
+                timeRange={timeRange}
+                yAxisMin={yAxisMin}
+                yAxisMax={yAxisMax}
+                showEnergyDelegated={showEnergyDelegated}
+                setShowEnergyDelegated={setShowEnergyDelegated}
+                showEnergyReclaimed={showEnergyReclaimed}
+                setShowEnergyReclaimed={setShowEnergyReclaimed}
+                showNetEnergy={showNetEnergy}
+                setShowNetEnergy={setShowNetEnergy}
+                showBandwidthDelegated={showBandwidthDelegated}
+                setShowBandwidthDelegated={setShowBandwidthDelegated}
+                showBandwidthReclaimed={showBandwidthReclaimed}
+                setShowBandwidthReclaimed={setShowBandwidthReclaimed}
+                showNetBandwidth={showNetBandwidth}
+                setShowNetBandwidth={setShowNetBandwidth}
+                loading={loading}
+                error={error}
+                onRetry={() => void loadData()}
+            />
         </main>
     );
 }

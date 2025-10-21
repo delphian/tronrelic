@@ -132,6 +132,7 @@ function toDate(value: string) {
  * - **Area fill** - Optional gradient fill under lines (configurable per series)
  * - **Interactive tooltip** - Hover to see values at each data point
  * - **Auto-scaling** - Axes automatically scale to data range
+ * - **Zero-line rendering** - Prominent horizontal line at y=0 when data crosses zero
  * - **Responsive** - Uses ResizeObserver to adapt to container width
  * - **Custom formatters** - Format axis labels and tooltip values
  *
@@ -140,6 +141,7 @@ function toDate(value: string) {
  * - Single-point datasets (adds padding to avoid division by zero)
  * - Date parsing from various string formats
  * - Color cycling when series count exceeds palette size
+ * - Zero-crossing detection for charts with positive and negative values
  *
  * Performance considerations:
  * - Uses `useMemo` to cache expensive coordinate calculations
@@ -273,6 +275,27 @@ export function LineChart({
             };
         });
 
+        /**
+         * When zero-crossing is detected, ensure '0' appears as a Y-axis label.
+         *
+         * This provides an explicit visual reference that aligns with the zero-line,
+         * making it clearer where positive values transition to negative values.
+         * We check if 0 already exists in the ticks (within a small epsilon) to
+         * avoid duplicate labels.
+         */
+        const showZeroLine = minY < 0 && maxY > 0;
+        if (showZeroLine) {
+            const hasZeroTick = yTicks.some(tick => Math.abs(tick.value) < 0.0001);
+            if (!hasZeroTick) {
+                yTicks.push({
+                    value: 0,
+                    y: scaleY(0)
+                });
+                // Sort ticks by value (descending) to maintain proper Y-axis ordering
+                yTicks.sort((a, b) => b.value - a.value);
+            }
+        }
+
         const xTicks = [minDate, new Date((minDate.getTime() + maxDate.getTime()) / 2), maxDate];
 
         const domainPointLookup = new Map<number, { x: number; date: Date }>();
@@ -283,6 +306,21 @@ export function LineChart({
         });
 
         const domainPoints = Array.from(domainPointLookup.values()).sort((a, b) => a.date.getTime() - b.date.getTime());
+
+        /**
+         * Calculate zero-line Y coordinate for rendering when zero-crossing detected.
+         *
+         * When data includes both positive and negative values (zero-crossing metrics),
+         * we render a solid horizontal line at y=0 to provide a clear visual reference
+         * point. This helps users distinguish between positive deltas (above the line)
+         * and negative deltas (below the line).
+         *
+         * The zero-line is rendered with:
+         * - Higher opacity (0.3) than grid lines (0.05) for prominence
+         * - Solid stroke (no dashes) to distinguish from grid lines
+         * - Slightly thicker stroke (1.5px) for visibility
+         */
+        const zeroLineY = showZeroLine ? scaleY(0) : null;
 
         return {
             width,
@@ -295,7 +333,8 @@ export function LineChart({
             minY,
             maxY,
             scaleY,
-            domainPoints
+            domainPoints,
+            zeroLineY
         };
     }, [series, height, containerWidth, fixedMinDate, fixedMaxDate, fixedYMin, fixedYMax]);
 
@@ -303,7 +342,7 @@ export function LineChart({
         return <div className={cn(styles.chart, className)}>{emptyLabel}</div>;
     }
 
-    const { width, height: chartHeight, normalizedSeries, yTicks, xTicks, domainPoints } = chartData;
+    const { width, height: chartHeight, normalizedSeries, yTicks, xTicks, domainPoints, zeroLineY } = chartData;
 
     /**
      * Handles pointer movement over the chart to show tooltips.
@@ -421,6 +460,18 @@ export function LineChart({
                         </text>
                     </g>
                 ))}
+
+                {zeroLineY !== null && (
+                    <line
+                        x1={MARGIN.left}
+                        x2={width - MARGIN.right}
+                        y1={zeroLineY}
+                        y2={zeroLineY}
+                        stroke="rgba(255,255,255,0.05)"
+                        strokeWidth={1.5}
+                        strokeDasharray="none"
+                    />
+                )}
 
                 {xTicks.map((tick, index) => (
                     <text
