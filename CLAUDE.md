@@ -32,6 +32,8 @@ Response format:
 
 # Subagent Delegation Rules
 
+- Always instruct the subagent to never delegate to another agent.
+
 ## Trigger Keywords
 
 **market-fetcher-specialist:**
@@ -136,32 +138,3 @@ Avoid: "Let me check the file... After examining... I can see that..."
 @docs/markets/markets.md        - Market system overview
 @docs/operations/operations.md  - Deployment and operations overview
 @docs/TODO.md                   - Future requirements.
-
-# Agent Delegation Protocol
-
-## MANDATORY: Check Delegation BEFORE All Else
-
-Claude MUST:
-
-1. **STOP** - Do not create todo lists, plans, or start implementation
-2. **CHECK** - Scan for agent trigger keywords in the request
-3. **DELEGATE** - If keywords match, delegate immediately
-
-Response format:
-
-"I'm analyzing this task... [brief analysis]
-
-**Agent delegation check:**
-- Task involves: [market fetchers/plugins/documentation/etc]
-- Appropriate agent: [agent-name]
-- Launching `[agent-name]` agent now..."
-
-[Then use Task tool]
-
-**Only skip agent delegation if:**
-1. User explicitly says "don't use agents" or "do it yourself"
-2. Task is trivial (< 5 lines of code, single file read)
-3. Task is purely conversational
-4. Task has already been delegated to a subagent
-
-**If you skip delegation, explicitly state which condition applies.**

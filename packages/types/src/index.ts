@@ -13,3 +13,4 @@ export type { IUsdtParameters } from './usdt-parameters/IUsdtParameters.js';
 export type { IUsdtParametersService } from './usdt-parameters/IUsdtParametersService.js';
 export type { IUsdtParametersFetcher } from './usdt-parameters/IUsdtParametersFetcher.js';
 export type { ICacheService } from './services/ICacheService.js';
+export type { IMenuNode, IMenuNodeWithChildren, IMenuTree, IMenuValidation, MenuEventType, IMenuEvent, MenuEventSubscriber, IMenuService } from './menu/index.js';
