@@ -73,6 +73,11 @@ export async function initializeJobs(): Promise<SchedulerService | null> {
         await blockchainService.syncLatestBlocks();
     });
 
+    // Blockchain pruning: every hour (removes 2 hours of oldest transactions older than 7 days)
+    scheduler.register('blockchain:prune', '0 * * * *', async () => {
+        await blockchainService.pruneOldTransactions(24 * 7, 2);
+    });
+
   scheduler.register('cache:cleanup', '0 * * * *', async () => {
     await CacheModel.deleteMany({ expiresAt: { $lte: new Date() } });
   });
