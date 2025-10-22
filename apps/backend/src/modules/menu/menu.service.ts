@@ -62,10 +62,11 @@ import type { IMenuNodeDocument } from './database/index.js';
  */
 export class MenuService implements IMenuService {
     private static instance: MenuService;
-    private menuTree: Map<string, IMenuNode> = new Map();
+    private menuTree: Map<string, Map<string, IMenuNode>> = new Map(); // namespace -> node map
     private subscribers: Map<MenuEventType, MenuEventSubscriber[]> = new Map();
     private initialized = false;
     private database: IPluginDatabase;
+    private readonly DEFAULT_NAMESPACE = 'main';
 
     /**
      * Private constructor enforcing singleton pattern with dependency injection.
@@ -143,14 +144,22 @@ export class MenuService implements IMenuService {
             const collection = this.database.getCollection<IMenuNodeDocument>('menu_nodes');
             const nodes = await collection.find({}).toArray();
 
-            // Build in-memory tree
+            // Build in-memory tree organized by namespace
             this.menuTree.clear();
             for (const node of nodes) {
-                this.menuTree.set(node._id.toString(), this.normalizeNode(node));
+                const normalized = this.normalizeNode(node);
+                const namespace = normalized.namespace || this.DEFAULT_NAMESPACE;
+
+                if (!this.menuTree.has(namespace)) {
+                    this.menuTree.set(namespace, new Map());
+                }
+
+                this.menuTree.get(namespace)!.set(normalized._id!, normalized);
             }
 
             // Create default 'Home' root node if menu is empty
-            if (this.menuTree.size === 0) {
+            const totalNodes = Array.from(this.menuTree.values()).reduce((sum, ns) => sum + ns.size, 0);
+            if (totalNodes === 0) {
                 logger.info('Menu is empty, creating default Home node');
                 await this.createDefaultHomeNode();
             }
@@ -164,7 +173,7 @@ export class MenuService implements IMenuService {
             // Emit 'loaded' event - menu tree is fully built and ready for consumption
             await this.emitLifecycleEvent('loaded');
 
-            logger.info({ nodeCount: this.menuTree.size }, 'MenuService initialized');
+            logger.info({ nodeCount: totalNodes, namespaceCount: this.menuTree.size }, 'MenuService initialized');
         } catch (error) {
             logger.error({ error }, 'Failed to initialize MenuService');
             throw error;
@@ -257,7 +266,9 @@ export class MenuService implements IMenuService {
      * ```
      */
     public async create(nodeData: Partial<IMenuNode>, persist = false): Promise<IMenuNode> {
+        const namespace = nodeData.namespace || this.DEFAULT_NAMESPACE;
         const node: IMenuNode = {
+            namespace,
             label: nodeData.label || '',
             url: nodeData.url,
             icon: nodeData.icon,
@@ -280,6 +291,7 @@ export class MenuService implements IMenuService {
             const collection = this.database.getCollection<IMenuNodeDocument>('menu_nodes');
             const now = new Date();
             const docToInsert: Partial<IMenuNodeDocument> = {
+                namespace,
                 label: node.label,
                 url: node.url,
                 icon: node.icon,
@@ -303,6 +315,7 @@ export class MenuService implements IMenuService {
             // Memory-only entry (plugin pages, runtime entries)
             created = {
                 _id: new ObjectId().toString(),
+                namespace,
                 label: node.label,
                 url: node.url,
                 icon: node.icon,
@@ -316,7 +329,10 @@ export class MenuService implements IMenuService {
         }
 
         // Update in-memory tree
-        this.menuTree.set(created._id!, created);
+        if (!this.menuTree.has(namespace)) {
+            this.menuTree.set(namespace, new Map());
+        }
+        this.menuTree.get(namespace)!.set(created._id!, created);
 
         // Emit after:create event
         await this.emitEvent('after:create', created);
@@ -360,12 +376,25 @@ export class MenuService implements IMenuService {
      * ```
      */
     public async update(id: string, updates: Partial<IMenuNode>, persist = false): Promise<IMenuNode> {
-        const existing = this.menuTree.get(id);
-        if (!existing) {
+        // Find the node across all namespaces
+        let existing: IMenuNode | undefined;
+        let existingNamespace: string | undefined;
+
+        for (const [ns, nodes] of this.menuTree) {
+            const node = nodes.get(id);
+            if (node) {
+                existing = node;
+                existingNamespace = ns;
+                break;
+            }
+        }
+
+        if (!existing || !existingNamespace) {
             throw new Error(`Menu node not found: ${id}`);
         }
 
         const updated: IMenuNode = { ...existing, ...updates, _id: id };
+        const newNamespace = updated.namespace || existingNamespace;
 
         // Emit before:update event with previous state
         const validation = await this.emitEvent('before:update', updated, existing);
@@ -377,6 +406,7 @@ export class MenuService implements IMenuService {
             // Update database for persisted entries only
             const collection = this.database.getCollection<IMenuNodeDocument>('menu_nodes');
             const updateDoc: Partial<IMenuNodeDocument> = {
+                ...(updates.namespace !== undefined && { namespace: updates.namespace }),
                 ...(updates.label !== undefined && { label: updates.label }),
                 ...(updates.url !== undefined && { url: updates.url }),
                 ...(updates.icon !== undefined && { icon: updates.icon }),
@@ -393,8 +423,20 @@ export class MenuService implements IMenuService {
             updated.updatedAt = new Date();
         }
 
-        // Update in-memory tree
-        this.menuTree.set(id, updated);
+        // Update in-memory tree (handle namespace change)
+        if (newNamespace !== existingNamespace) {
+            // Remove from old namespace
+            this.menuTree.get(existingNamespace)!.delete(id);
+
+            // Add to new namespace
+            if (!this.menuTree.has(newNamespace)) {
+                this.menuTree.set(newNamespace, new Map());
+            }
+            this.menuTree.get(newNamespace)!.set(id, updated);
+        } else {
+            // Same namespace, just update
+            this.menuTree.get(existingNamespace)!.set(id, updated);
+        }
 
         // Emit after:update event
         await this.emitEvent('after:update', updated, existing);
@@ -439,8 +481,20 @@ export class MenuService implements IMenuService {
      * ```
      */
     public async delete(id: string, persist = false): Promise<void> {
-        const existing = this.menuTree.get(id);
-        if (!existing) {
+        // Find the node across all namespaces
+        let existing: IMenuNode | undefined;
+        let existingNamespace: string | undefined;
+
+        for (const [ns, nodes] of this.menuTree) {
+            const node = nodes.get(id);
+            if (node) {
+                existing = node;
+                existingNamespace = ns;
+                break;
+            }
+        }
+
+        if (!existing || !existingNamespace) {
             throw new Error(`Menu node not found: ${id}`);
         }
 
@@ -457,7 +511,7 @@ export class MenuService implements IMenuService {
         }
 
         // Remove from in-memory tree
-        this.menuTree.delete(id);
+        this.menuTree.get(existingNamespace)!.delete(id);
 
         // Emit after:delete event
         await this.emitEvent('after:delete', existing);
@@ -490,8 +544,20 @@ export class MenuService implements IMenuService {
      * console.log('Generated at:', tree.generatedAt);
      * ```
      */
-    public getTree(): IMenuTree {
-        const all = Array.from(this.menuTree.values());
+    public getTree(namespace?: string): IMenuTree {
+        const ns = namespace || this.DEFAULT_NAMESPACE;
+        const namespaceMap = this.menuTree.get(ns);
+
+        if (!namespaceMap) {
+            // Namespace doesn't exist, return empty tree
+            return {
+                roots: [],
+                all: [],
+                generatedAt: new Date()
+            };
+        }
+
+        const all = Array.from(namespaceMap.values());
         const roots = this.buildTree(all);
 
         return {
@@ -516,8 +582,15 @@ export class MenuService implements IMenuService {
      * const dashboardChildren = menuService.getChildren(dashboardNodeId);
      * ```
      */
-    public getChildren(parentId: string | null): IMenuNode[] {
-        return Array.from(this.menuTree.values())
+    public getChildren(parentId: string | null, namespace?: string): IMenuNode[] {
+        const ns = namespace || this.DEFAULT_NAMESPACE;
+        const namespaceMap = this.menuTree.get(ns);
+
+        if (!namespaceMap) {
+            return [];
+        }
+
+        return Array.from(namespaceMap.values())
             .filter(node => node.parent === parentId)
             .sort((a, b) => a.order - b.order);
     }
@@ -531,7 +604,18 @@ export class MenuService implements IMenuService {
      * @returns The node or undefined if not found
      */
     public getNode(id: string): IMenuNode | undefined {
-        return this.menuTree.get(id);
+        // Search across all namespaces
+        for (const nodes of this.menuTree.values()) {
+            const node = nodes.get(id);
+            if (node) {
+                return node;
+            }
+        }
+        return undefined;
+    }
+
+    public getNamespaces(): string[] {
+        return Array.from(this.menuTree.keys()).sort();
     }
 
     /**
@@ -714,6 +798,7 @@ export class MenuService implements IMenuService {
     private normalizeNode(doc: IMenuNodeDocument): IMenuNode {
         return {
             _id: doc._id.toString(),
+            namespace: doc.namespace || this.DEFAULT_NAMESPACE,
             label: doc.label,
             url: doc.url,
             icon: doc.icon,
@@ -737,6 +822,7 @@ export class MenuService implements IMenuService {
         const now = new Date();
 
         const homeDoc: Partial<IMenuNodeDocument> = {
+            namespace: this.DEFAULT_NAMESPACE,
             label: 'Home',
             url: '/',
             icon: 'Home',
@@ -755,8 +841,13 @@ export class MenuService implements IMenuService {
         }
 
         const normalized = this.normalizeNode(insertedDoc);
-        this.menuTree.set(normalized._id!, normalized);
+        const namespace = normalized.namespace || this.DEFAULT_NAMESPACE;
 
-        logger.info({ nodeId: normalized._id }, 'Default Home menu node created');
+        if (!this.menuTree.has(namespace)) {
+            this.menuTree.set(namespace, new Map());
+        }
+        this.menuTree.get(namespace)!.set(normalized._id!, normalized);
+
+        logger.info({ nodeId: normalized._id, namespace }, 'Default Home menu node created');
     }
 }

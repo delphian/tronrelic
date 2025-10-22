@@ -6,6 +6,25 @@
  * routing, icons, ordering, and optional categorization for menu organization.
  */
 export interface IMenuItemConfig {
+    /**
+     * Menu namespace for isolating menu items into separate trees.
+     *
+     * Allows plugins to register menu items in different menu contexts (e.g., 'main'
+     * for primary navigation, 'footer' for footer links, 'admin-sidebar' for admin panel).
+     *
+     * Defaults to 'main' if not specified.
+     *
+     * @example
+     * ```typescript
+     * // Register in main navigation (default)
+     * { label: 'Whale Alerts', href: '/whale-alerts', namespace: 'main' }
+     *
+     * // Register in footer menu
+     * { label: 'Privacy Policy', href: '/privacy', namespace: 'footer' }
+     * ```
+     */
+    namespace?: string;
+
     /** Display label for the menu item */
     label: string;
     /** URL path (e.g., '/whales', '/my-plugin/dashboard') */

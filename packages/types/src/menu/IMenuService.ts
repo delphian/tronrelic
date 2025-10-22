@@ -188,45 +188,56 @@ export interface IMenuService {
     delete(id: string): Promise<void>;
 
     /**
-     * Get the complete menu tree structure.
+     * Get the complete menu tree structure for a specific namespace.
      *
      * Returns a hierarchical representation of all menu nodes organized by parent-child
-     * relationships. Root nodes (parent is null) are returned in the `roots` array,
-     * each potentially containing nested children. The `all` array provides a flat list
-     * for quick lookups.
+     * relationships within the specified namespace. Root nodes (parent is null) are returned
+     * in the `roots` array, each potentially containing nested children. The `all` array
+     * provides a flat list for quick lookups.
      *
      * This method uses the in-memory tree for instant access without database queries.
      * The tree is rebuilt on initialization and kept in sync through create/update/delete
      * operations.
      *
+     * @param namespace - The menu namespace to retrieve (defaults to 'main' for backward compatibility)
      * @returns Menu tree with roots, flat list, and generation timestamp
      *
      * @example
      * ```typescript
-     * const tree = menuService.getTree();
-     * console.log('Root nodes:', tree.roots);
-     * console.log('Total nodes:', tree.all.length);
-     * console.log('Generated at:', tree.generatedAt);
+     * // Get main navigation tree (default)
+     * const mainTree = menuService.getTree();
+     * const mainTreeExplicit = menuService.getTree('main');
+     *
+     * // Get footer menu tree
+     * const footerTree = menuService.getTree('footer');
+     *
+     * // Get admin sidebar tree
+     * const adminTree = menuService.getTree('admin-sidebar');
      * ```
      */
-    getTree(): IMenuTree;
+    getTree(namespace?: string): IMenuTree;
 
     /**
-     * Get child nodes of a specific parent.
+     * Get child nodes of a specific parent within a namespace.
      *
-     * Returns all nodes where parent matches the provided ID, sorted by order field.
-     * Uses the in-memory tree for fast access without database queries.
+     * Returns all nodes where parent matches the provided ID within the specified namespace,
+     * sorted by order field. Uses the in-memory tree for fast access without database queries.
      *
      * @param parentId - The _id of the parent node (or null for root nodes)
+     * @param namespace - The menu namespace to query (defaults to 'main')
      * @returns Array of child nodes sorted by order
      *
      * @example
      * ```typescript
-     * const rootNodes = menuService.getChildren(null);
-     * const dashboardChildren = menuService.getChildren(dashboardNodeId);
+     * // Get root nodes in main navigation
+     * const mainRoots = menuService.getChildren(null);
+     * const mainRootsExplicit = menuService.getChildren(null, 'main');
+     *
+     * // Get children of a specific node in footer
+     * const footerChildren = menuService.getChildren(parentNodeId, 'footer');
      * ```
      */
-    getChildren(parentId: string | null): IMenuNode[];
+    getChildren(parentId: string | null, namespace?: string): IMenuNode[];
 
     /**
      * Get a single node by ID.
@@ -245,4 +256,27 @@ export interface IMenuService {
      * ```
      */
     getNode(id: string): IMenuNode | undefined;
+
+    /**
+     * Get all available menu namespaces.
+     *
+     * Returns a list of all namespace identifiers currently in use across all menu nodes.
+     * Useful for admin interfaces that need to display or manage multiple menu trees.
+     *
+     * @returns Array of namespace strings (e.g., ['main', 'footer', 'admin-sidebar'])
+     *
+     * @example
+     * ```typescript
+     * const namespaces = menuService.getNamespaces();
+     * console.log('Available menus:', namespaces);
+     * // Output: ['main', 'footer', 'admin-sidebar']
+     *
+     * // Iterate through all menus
+     * for (const namespace of namespaces) {
+     *     const tree = menuService.getTree(namespace);
+     *     console.log(`${namespace} has ${tree.all.length} nodes`);
+     * }
+     * ```
+     */
+    getNamespaces(): string[];
 }

@@ -10,10 +10,11 @@ import { requireAdmin } from '../middleware/admin-auth.js';
  * menu operations.
  *
  * Routes:
- * - GET    /api/menu       - Get complete menu tree
- * - POST   /api/menu       - Create new menu node
- * - PATCH  /api/menu/:id   - Update existing menu node
- * - DELETE /api/menu/:id   - Delete menu node
+ * - GET    /api/menu              - Get complete menu tree (optionally for specific namespace via ?namespace=foo)
+ * - GET    /api/menu/namespaces   - Get all available menu namespaces
+ * - POST   /api/menu              - Create new menu node
+ * - PATCH  /api/menu/:id          - Update existing menu node
+ * - DELETE /api/menu/:id          - Delete menu node
  *
  * Authentication:
  * - x-admin-token header (recommended)
@@ -29,14 +30,33 @@ export function menuRouter() {
     router.use(requireAdmin);
 
     /**
-     * Get complete menu tree structure.
+     * Get all available menu namespaces.
      *
-     * Returns hierarchical representation with roots, flat list, and timestamp.
+     * Returns array of namespace strings currently in use.
      *
      * Example:
      * ```bash
      * curl -H "X-Admin-Token: $ADMIN_API_TOKEN" \
+     *   http://localhost:4000/api/menu/namespaces
+     * ```
+     */
+    router.get('/namespaces', controller.getNamespaces);
+
+    /**
+     * Get complete menu tree structure.
+     *
+     * Returns hierarchical representation with roots, flat list, and timestamp.
+     * Optionally filter by namespace via query parameter.
+     *
+     * Examples:
+     * ```bash
+     * # Get main navigation (default)
+     * curl -H "X-Admin-Token: $ADMIN_API_TOKEN" \
      *   http://localhost:4000/api/menu
+     *
+     * # Get footer menu
+     * curl -H "X-Admin-Token: $ADMIN_API_TOKEN" \
+     *   http://localhost:4000/api/menu?namespace=footer
      * ```
      */
     router.get('/', controller.getTree);
