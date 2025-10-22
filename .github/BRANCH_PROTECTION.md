@@ -6,8 +6,9 @@ This document explains how to configure GitHub branch protection rules to requir
 
 The repository uses a reusable test workflow (`.github/workflows/test.yml`) that runs:
 
-1. **Unit Tests** - Backend vitest tests
-2. **Integration Tests** - Playwright tests with full Docker Compose stack
+1. **Unit Tests** - Backend vitest tests (runs automatically on all PRs)
+
+Integration tests (Playwright) can be run manually but are not required for merging.
 
 Both the `main` and `dev` branch workflows now call this test workflow and wait for it to complete before building/deploying.
 
@@ -55,7 +56,6 @@ See [../.githooks/README.md](../.githooks/README.md) for details.
      - ☑ Require branches to be up to date before merging
      - **Required status checks:**
        - `test / unit-tests`
-       - `test / integration-tests`
    - ☑ Require conversation resolution before merging
    - ☑ **Do not allow bypassing the above settings** ← **CRITICAL: Blocks local merges**
    - ☑ **Include administrators** ← **Recommended: Even admins must use PRs**
@@ -77,7 +77,6 @@ See [../.githooks/README.md](../.githooks/README.md) for details.
      - ☑ Require branches to be up to date before merging
      - **Required status checks:**
        - `test / unit-tests`
-       - `test / integration-tests`
    - ☑ **Do not allow bypassing the above settings** ← **CRITICAL: Blocks local merges**
    - ☑ **Include administrators** ← **Recommended: Even admins must use PRs**
 
@@ -158,7 +157,6 @@ git push
 You should now see:
 
 - ✅ Status check "test / unit-tests" passing
-- ✅ Status check "test / integration-tests" passing
 - ✅ Merge button enabled
 
 ## Required Secrets
@@ -223,7 +221,7 @@ docker compose -f docker-compose.yml -f docker-compose.ci.yml down -v
 **Solution:**
 1. Merge the workflow changes to `main` and `dev` first
 2. Wait for the workflows to run on those branches
-3. The status check names will then appear in the dropdown when configuring branch protection
+3. The status check name (`test / unit-tests`) will then appear in the dropdown when configuring branch protection
 
 ## Best Practices
 
