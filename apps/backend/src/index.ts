@@ -9,7 +9,7 @@ import { initializeJobs, stopJobs } from './jobs/index.js';
 import { loadPlugins } from './loaders/plugins.js';
 import { MenuService } from './modules/menu/menu.service.js';
 import { PluginDatabaseService } from './services/plugin-database.service.js';
-import { ObserverRegistry } from './modules/blockchain/observers/ObserverRegistry.js';
+import { BlockchainObserverService } from './services/blockchain-observer/index.js';
 
 async function bootstrap() {
   try {
@@ -17,11 +17,11 @@ async function bootstrap() {
     const redis = createRedisClient();
     await redis.connect();
 
-    // Initialize observer registry explicitly
-    logger.info({}, 'Initializing observer registry...');
-    const registryLogger = logger.child({ module: 'observer-registry' });
-    ObserverRegistry.getInstance(registryLogger);
-    logger.info({}, 'Observer registry initialized');
+    // Initialize blockchain observer service explicitly before plugins load
+    logger.info({}, 'Initializing blockchain observer service...');
+    const observerLogger = logger.child({ module: 'blockchain-observer' });
+    BlockchainObserverService.initialize(observerLogger);
+    logger.info({}, 'Blockchain observer service initialized');
 
     // Create Express app and HTTP server first
     logger.info({}, 'Creating Express app...');

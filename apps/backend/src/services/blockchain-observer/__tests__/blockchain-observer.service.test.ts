@@ -1,0 +1,512 @@
+/// <reference types="vitest" />
+
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import type { IBaseObserver, IObserverStats, ILogger, ITransaction } from '@tronrelic/types';
+import { BlockchainObserverService } from '../blockchain-observer.service.js';
+
+/**
+ * Mock logger implementation for testing.
+ *
+ * Provides a complete ILogger interface with spy functions to verify
+ * that the service logs appropriate messages during operation.
+ */
+class MockLogger implements ILogger {
+    public fatal = vi.fn();
+    public error = vi.fn();
+    public warn = vi.fn();
+    public info = vi.fn();
+    public debug = vi.fn();
+    public trace = vi.fn();
+    public child = vi.fn((_bindings: Record<string, unknown>, _options?: Record<string, unknown>): ILogger => {
+        return this;
+    });
+}
+
+/**
+ * Mock observer implementation for testing.
+ *
+ * Implements IBaseObserver with tracking for enqueued transactions
+ * and configurable behavior (success, error, queue overflow).
+ */
+class MockObserver implements IBaseObserver {
+    private enqueuedTransactions: ITransaction[] = [];
+    private shouldThrowError = false;
+    private mockStats: IObserverStats;
+
+    constructor(
+        private name: string,
+        private throwError = false
+    ) {
+        this.shouldThrowError = throwError;
+        this.mockStats = {
+            name: this.name,
+            queueDepth: 0,
+            totalProcessed: 0,
+            totalErrors: 0,
+            totalDropped: 0,
+            avgProcessingTimeMs: 0,
+            minProcessingTimeMs: 0,
+            maxProcessingTimeMs: 0,
+            lastProcessedAt: null,
+            lastErrorAt: null,
+            errorRate: 0
+        };
+    }
+
+    public getName(): string {
+        return this.name;
+    }
+
+    public async enqueue(transaction: ITransaction): Promise<void> {
+        if (this.shouldThrowError) {
+            throw new Error(`Mock error from ${this.name}`);
+        }
+        this.enqueuedTransactions.push(transaction);
+        this.mockStats.queueDepth = this.enqueuedTransactions.length;
+        this.mockStats.totalProcessed++;
+    }
+
+    public getStats(): IObserverStats {
+        return this.mockStats;
+    }
+
+    public getEnqueuedTransactions(): ITransaction[] {
+        return this.enqueuedTransactions;
+    }
+
+    public setStats(stats: Partial<IObserverStats>): void {
+        this.mockStats = { ...this.mockStats, ...stats };
+    }
+
+    public clearEnqueued(): void {
+        this.enqueuedTransactions = [];
+        this.mockStats.queueDepth = 0;
+    }
+}
+
+/**
+ * Create a mock transaction for testing.
+ *
+ * Generates a minimal ITransaction object with the specified type
+ * to test observer subscription and notification behavior.
+ *
+ * @param type - Transaction type (e.g., 'TransferContract')
+ * @param txId - Optional transaction ID (defaults to auto-generated)
+ * @returns Mock transaction object
+ */
+function createMockTransaction(type: string, txId?: string): ITransaction {
+    return {
+        payload: {
+            type: type,
+            txId: txId || `tx_${Math.random().toString(36).substr(2, 9)}`,
+            blockNumber: 12345,
+            timestamp: new Date(),
+            from: {
+                address: 'TMockFromAddress'
+            },
+            to: {
+                address: 'TMockToAddress'
+            },
+            amount: 1000000
+        },
+        snapshot: {},
+        categories: {
+            isDelegation: false,
+            isStake: false,
+            isTokenCreation: false
+        },
+        rawValue: {},
+        info: null
+    };
+}
+
+describe('BlockchainObserverService', () => {
+    let service: BlockchainObserverService;
+    let mockLogger: MockLogger;
+
+    beforeEach(() => {
+        // Reset singleton before each test
+        BlockchainObserverService.resetForTesting();
+        mockLogger = new MockLogger();
+        service = BlockchainObserverService.initialize(mockLogger);
+    });
+
+    afterEach(() => {
+        // Clean up singleton after each test
+        BlockchainObserverService.resetForTesting();
+    });
+
+    describe('Singleton Pattern', () => {
+        it('should create singleton instance on initialize', () => {
+            expect(service).toBeInstanceOf(BlockchainObserverService);
+            expect(mockLogger.info).toHaveBeenCalledWith('Blockchain observer service initialized');
+        });
+
+        it('should return same instance on subsequent getInstance calls', () => {
+            const instance1 = BlockchainObserverService.getInstance();
+            const instance2 = BlockchainObserverService.getInstance();
+            expect(instance1).toBe(instance2);
+            expect(instance1).toBe(service);
+        });
+
+        it('should throw error if getInstance called before initialize', () => {
+            BlockchainObserverService.resetForTesting();
+            expect(() => BlockchainObserverService.getInstance()).toThrow(
+                'BlockchainObserverService not initialized'
+            );
+        });
+
+        it('should allow logger updates after initialization', () => {
+            const newLogger = new MockLogger();
+            const updatedService = BlockchainObserverService.initialize(newLogger);
+
+            expect(updatedService).toBe(service);
+            // Logger is updated but initialization log is not called again since instance already exists
+            expect(newLogger.info).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('Observer Subscription', () => {
+        it('should subscribe observer to transaction type', () => {
+            const observer = new MockObserver('test-observer');
+
+            service.subscribeTransactionType('TransferContract', observer);
+
+            expect(mockLogger.info).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    transactionType: 'TransferContract',
+                    observerName: 'test-observer',
+                    totalSubscribers: 1
+                }),
+                'Observer subscribed to transaction type'
+            );
+        });
+
+        it('should allow multiple observers for same transaction type', () => {
+            const observer1 = new MockObserver('observer-1');
+            const observer2 = new MockObserver('observer-2');
+
+            service.subscribeTransactionType('TransferContract', observer1);
+            service.subscribeTransactionType('TransferContract', observer2);
+
+            const stats = service.getSubscriptionStats();
+            expect(stats['TransferContract']).toBe(2);
+        });
+
+        it('should track subscriptions across multiple transaction types', () => {
+            const observer1 = new MockObserver('observer-1');
+            const observer2 = new MockObserver('observer-2');
+
+            service.subscribeTransactionType('TransferContract', observer1);
+            service.subscribeTransactionType('TriggerSmartContract', observer2);
+
+            const stats = service.getSubscriptionStats();
+            expect(stats['TransferContract']).toBe(1);
+            expect(stats['TriggerSmartContract']).toBe(1);
+        });
+
+        it('should handle same observer subscribing to multiple types', () => {
+            const observer = new MockObserver('multi-type-observer');
+
+            service.subscribeTransactionType('TransferContract', observer);
+            service.subscribeTransactionType('TriggerSmartContract', observer);
+
+            const stats = service.getSubscriptionStats();
+            expect(stats['TransferContract']).toBe(1);
+            expect(stats['TriggerSmartContract']).toBe(1);
+        });
+    });
+
+    describe('Transaction Notification', () => {
+        it('should notify subscribed observers of matching transactions', async () => {
+            const observer = new MockObserver('transfer-observer');
+            service.subscribeTransactionType('TransferContract', observer);
+
+            const transaction = createMockTransaction('TransferContract', 'tx123');
+            await service.notifyTransaction(transaction);
+
+            // Give async notification time to complete
+            await new Promise(resolve => setTimeout(resolve, 10));
+
+            const enqueued = observer.getEnqueuedTransactions();
+            expect(enqueued).toHaveLength(1);
+            expect(enqueued[0].payload.txId).toBe('tx123');
+        });
+
+        it('should not notify observers of non-matching transaction types', async () => {
+            const observer = new MockObserver('transfer-observer');
+            service.subscribeTransactionType('TransferContract', observer);
+
+            const transaction = createMockTransaction('TriggerSmartContract', 'tx456');
+            await service.notifyTransaction(transaction);
+
+            await new Promise(resolve => setTimeout(resolve, 10));
+
+            const enqueued = observer.getEnqueuedTransactions();
+            expect(enqueued).toHaveLength(0);
+        });
+
+        it('should notify all subscribed observers', async () => {
+            const observer1 = new MockObserver('observer-1');
+            const observer2 = new MockObserver('observer-2');
+
+            service.subscribeTransactionType('TransferContract', observer1);
+            service.subscribeTransactionType('TransferContract', observer2);
+
+            const transaction = createMockTransaction('TransferContract', 'tx789');
+            await service.notifyTransaction(transaction);
+
+            await new Promise(resolve => setTimeout(resolve, 10));
+
+            expect(observer1.getEnqueuedTransactions()).toHaveLength(1);
+            expect(observer2.getEnqueuedTransactions()).toHaveLength(1);
+        });
+
+        it('should handle observer errors without failing notification', async () => {
+            const goodObserver = new MockObserver('good-observer');
+            const badObserver = new MockObserver('bad-observer', true);
+
+            service.subscribeTransactionType('TransferContract', goodObserver);
+            service.subscribeTransactionType('TransferContract', badObserver);
+
+            const transaction = createMockTransaction('TransferContract', 'tx-error');
+            await service.notifyTransaction(transaction);
+
+            await new Promise(resolve => setTimeout(resolve, 10));
+
+            // Good observer should still receive transaction
+            expect(goodObserver.getEnqueuedTransactions()).toHaveLength(1);
+
+            // Error should be logged
+            expect(mockLogger.error).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    observer: 'bad-observer',
+                    txId: 'tx-error'
+                }),
+                'Failed to enqueue transaction to observer'
+            );
+        });
+
+        it('should return immediately without awaiting observers (fire-and-forget)', async () => {
+            const observer = new MockObserver('slow-observer');
+            service.subscribeTransactionType('TransferContract', observer);
+
+            const transaction = createMockTransaction('TransferContract', 'tx-fast');
+
+            const startTime = Date.now();
+            await service.notifyTransaction(transaction);
+            const duration = Date.now() - startTime;
+
+            // Should return almost immediately (< 50ms)
+            expect(duration).toBeLessThan(50);
+        });
+    });
+
+    describe('Statistics and Monitoring', () => {
+        it('should return empty subscription stats when no observers', () => {
+            const stats = service.getSubscriptionStats();
+            expect(stats).toEqual({});
+        });
+
+        it('should return correct subscription counts', () => {
+            const observer1 = new MockObserver('observer-1');
+            const observer2 = new MockObserver('observer-2');
+            const observer3 = new MockObserver('observer-3');
+
+            service.subscribeTransactionType('TransferContract', observer1);
+            service.subscribeTransactionType('TransferContract', observer2);
+            service.subscribeTransactionType('TriggerSmartContract', observer3);
+
+            const stats = service.getSubscriptionStats();
+            expect(stats).toEqual({
+                'TransferContract': 2,
+                'TriggerSmartContract': 1
+            });
+        });
+
+        it('should collect stats from all observers', () => {
+            const observer1 = new MockObserver('observer-1');
+            const observer2 = new MockObserver('observer-2');
+
+            observer1.setStats({ totalProcessed: 100, totalErrors: 5 });
+            observer2.setStats({ totalProcessed: 50, totalErrors: 2 });
+
+            service.subscribeTransactionType('TransferContract', observer1);
+            service.subscribeTransactionType('TriggerSmartContract', observer2);
+
+            const allStats = service.getAllObserverStats();
+            expect(allStats).toHaveLength(2);
+            expect(allStats[0].name).toBe('observer-1');
+            expect(allStats[1].name).toBe('observer-2');
+        });
+
+        it('should deduplicate observers subscribed to multiple types', () => {
+            const observer = new MockObserver('multi-type');
+
+            service.subscribeTransactionType('TransferContract', observer);
+            service.subscribeTransactionType('TriggerSmartContract', observer);
+
+            const allStats = service.getAllObserverStats();
+            expect(allStats).toHaveLength(1);
+            expect(allStats[0].name).toBe('multi-type');
+        });
+
+        it('should calculate correct aggregate statistics', () => {
+            const observer1 = new MockObserver('observer-1');
+            const observer2 = new MockObserver('observer-2');
+
+            observer1.setStats({
+                totalProcessed: 100,
+                totalErrors: 5,
+                totalDropped: 2,
+                queueDepth: 10,
+                avgProcessingTimeMs: 50,
+                errorRate: 0.05
+            });
+
+            observer2.setStats({
+                totalProcessed: 200,
+                totalErrors: 10,
+                totalDropped: 3,
+                queueDepth: 15,
+                avgProcessingTimeMs: 30,
+                errorRate: 0.05
+            });
+
+            service.subscribeTransactionType('TransferContract', observer1);
+            service.subscribeTransactionType('TriggerSmartContract', observer2);
+
+            const aggregate = service.getAggregateStats();
+
+            expect(aggregate.totalObservers).toBe(2);
+            expect(aggregate.totalProcessed).toBe(300);
+            expect(aggregate.totalErrors).toBe(15);
+            expect(aggregate.totalDropped).toBe(5);
+            expect(aggregate.totalQueueDepth).toBe(25);
+            expect(aggregate.avgProcessingTimeMs).toBe(40); // (50 + 30) / 2
+            expect(aggregate.highestErrorRate).toBe(0.05);
+            expect(aggregate.observersWithErrors).toBe(2);
+        });
+
+        it('should handle aggregate stats with no observers', () => {
+            const aggregate = service.getAggregateStats();
+
+            expect(aggregate.totalObservers).toBe(0);
+            expect(aggregate.totalProcessed).toBe(0);
+            expect(aggregate.totalErrors).toBe(0);
+            expect(aggregate.avgProcessingTimeMs).toBe(0);
+        });
+
+        it('should return health status with observer count and subscriptions', () => {
+            const observer1 = new MockObserver('observer-1');
+            const observer2 = new MockObserver('observer-2');
+
+            service.subscribeTransactionType('TransferContract', observer1);
+            service.subscribeTransactionType('TriggerSmartContract', observer2);
+
+            const health = service.getHealthStatus();
+
+            expect(health.totalObservers).toBe(2);
+            expect(health.subscriptions).toEqual({
+                'TransferContract': 1,
+                'TriggerSmartContract': 1
+            });
+        });
+    });
+
+    describe('Edge Cases and Error Handling', () => {
+        it('should handle notification with no subscribers', async () => {
+            const transaction = createMockTransaction('UnknownContract', 'tx-no-sub');
+
+            // Should not throw
+            await expect(service.notifyTransaction(transaction)).resolves.toBeUndefined();
+        });
+
+        it('should handle multiple rapid notifications', async () => {
+            const observer = new MockObserver('rapid-observer');
+            service.subscribeTransactionType('TransferContract', observer);
+
+            const transactions = Array.from({ length: 100 }, (_, i) =>
+                createMockTransaction('TransferContract', `tx-${i}`)
+            );
+
+            await Promise.all(transactions.map(tx => service.notifyTransaction(tx)));
+            await new Promise(resolve => setTimeout(resolve, 50));
+
+            expect(observer.getEnqueuedTransactions().length).toBe(100);
+        });
+
+        it('should isolate errors from one observer affecting others', async () => {
+            const observer1 = new MockObserver('observer-1', false);
+            const observer2 = new MockObserver('observer-2', true); // throws error
+            const observer3 = new MockObserver('observer-3', false);
+
+            service.subscribeTransactionType('TransferContract', observer1);
+            service.subscribeTransactionType('TransferContract', observer2);
+            service.subscribeTransactionType('TransferContract', observer3);
+
+            const transaction = createMockTransaction('TransferContract', 'tx-isolation');
+            await service.notifyTransaction(transaction);
+
+            await new Promise(resolve => setTimeout(resolve, 10));
+
+            expect(observer1.getEnqueuedTransactions()).toHaveLength(1);
+            expect(observer3.getEnqueuedTransactions()).toHaveLength(1);
+            expect(mockLogger.error).toHaveBeenCalled();
+        });
+
+        it('should calculate average processing time only for observers with processing', () => {
+            const observer1 = new MockObserver('processed');
+            const observer2 = new MockObserver('not-processed');
+
+            observer1.setStats({ totalProcessed: 100, avgProcessingTimeMs: 50 });
+            observer2.setStats({ totalProcessed: 0, avgProcessingTimeMs: 0 });
+
+            service.subscribeTransactionType('TransferContract', observer1);
+            service.subscribeTransactionType('TriggerSmartContract', observer2);
+
+            const aggregate = service.getAggregateStats();
+            expect(aggregate.avgProcessingTimeMs).toBe(50);
+        });
+
+        it('should handle resetForTesting correctly', () => {
+            const observer = new MockObserver('test-observer');
+            service.subscribeTransactionType('TransferContract', observer);
+
+            expect(service.getSubscriptionStats()).toEqual({ 'TransferContract': 1 });
+
+            BlockchainObserverService.resetForTesting();
+
+            expect(() => BlockchainObserverService.getInstance()).toThrow();
+        });
+    });
+
+    describe('Concurrent Operations', () => {
+        it('should handle concurrent subscriptions safely', () => {
+            const observers = Array.from({ length: 10 }, (_, i) =>
+                new MockObserver(`observer-${i}`)
+            );
+
+            observers.forEach(observer => {
+                service.subscribeTransactionType('TransferContract', observer);
+            });
+
+            const stats = service.getSubscriptionStats();
+            expect(stats['TransferContract']).toBe(10);
+        });
+
+        it('should handle concurrent notifications safely', async () => {
+            const observer = new MockObserver('concurrent-observer');
+            service.subscribeTransactionType('TransferContract', observer);
+
+            const notifications = Array.from({ length: 50 }, (_, i) =>
+                service.notifyTransaction(createMockTransaction('TransferContract', `concurrent-${i}`))
+            );
+
+            await Promise.all(notifications);
+            await new Promise(resolve => setTimeout(resolve, 50));
+
+            expect(observer.getEnqueuedTransactions().length).toBe(50);
+        });
+    });
+});

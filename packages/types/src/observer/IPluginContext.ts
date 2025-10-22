@@ -1,4 +1,4 @@
-import type { IObserverRegistry } from './IObserverRegistry.js';
+import type { IBlockchainObserverService } from './IBlockchainObserverService.js';
 import type { IWebSocketService } from './IWebSocketService.js';
 import type { IBaseObserver } from './IBaseObserver.js';
 import type { IPluginDatabase } from '../plugin/IPluginDatabase.js';
@@ -15,8 +15,8 @@ import type { ICacheService } from '../services/ICacheService.js';
  * The injected logger keeps structured telemetry consistent across plugins.
  */
 export interface IPluginContext {
-    /** Observer registry for subscribing to blockchain transaction types */
-    observerRegistry: IObserverRegistry;
+    /** Blockchain observer service for subscribing to blockchain transaction types */
+    observerRegistry: IBlockchainObserverService;
 
     /** WebSocket service for emitting real-time events to frontend clients (legacy, prefer websocket) */
     websocketService: IWebSocketService;
