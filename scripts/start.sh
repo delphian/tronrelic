@@ -54,18 +54,21 @@ Deployment Modes:
   --prod          Use production Docker Compose configuration (forces --docker mode)
 
 Force Options:
-  --force-build   Rebuild Docker images without cache
-  --force-docker  Recreate Docker containers and volumes
-  --force         Full reset (combines all force options)
+  --force-build   Clean all build artifacts and rebuild from scratch
+                  npm mode: Removes dist/, .next/, .tsbuildinfo, rebuilds all workspaces
+                  Docker mode: Rebuilds Docker images without cache
+  --force-docker  Recreate database containers and volumes (WARNING: deletes data)
+  --force         Full reset (combines both force options above)
 
 Help:
   -h, --help      Show this help message and exit
 
 Examples:
   scripts/start.sh                    # Start in npm mode (default)
+  scripts/start.sh --force-build      # Clean rebuild all workspaces, then start
   scripts/start.sh --docker           # Start all services in Docker containers
   scripts/start.sh --prod             # Start in production mode (Docker)
-  scripts/start.sh --force            # Full clean rebuild
+  scripts/start.sh --force            # Full clean rebuild (npm + database reset)
 USAGE
 }
 
@@ -158,7 +161,17 @@ fi
 # If npm mode (default unless --docker specified), delegate to npm.sh helper
 if [[ "${NPM_MODE}" == true ]]; then
   log INFO "Starting in npm mode (use --docker for full containerization)..."
-  exec "${SCRIPT_DIR}/modes/npm.sh"
+
+  # Pass force flags to npm.sh
+  NPM_ARGS=()
+  if [[ "${FORCE_BUILD}" == true ]]; then
+    NPM_ARGS+=("--force-build")
+  fi
+  if [[ "${FORCE_DOCKER}" == true ]]; then
+    NPM_ARGS+=("--force-docker")
+  fi
+
+  exec "${SCRIPT_DIR}/modes/npm.sh" "${NPM_ARGS[@]}"
   # exec replaces this process, so we never reach here
 fi
 
@@ -223,15 +236,9 @@ ensure_docker_running() {
 
 ensure_docker_running
 
-# Clean up any stray processes on ports 3000 and 4000 before starting
-log INFO "Checking for processes on ports 3000 and 4000..."
-for port in 3000 4000; do
-    if lsof -ti:${port} >/dev/null 2>&1; then
-        log WARN "Found process on port ${port}, killing it"
-        lsof -ti:${port} | xargs kill -9 2>/dev/null || true
-        sleep 1
-    fi
-done
+# Always stop services first to ensure clean restart
+log INFO "Stopping any existing TronRelic services..."
+"${SCRIPT_DIR}/stop.sh" || true
 
 # Change to project root for docker compose commands
 cd "${MONO_ROOT}"

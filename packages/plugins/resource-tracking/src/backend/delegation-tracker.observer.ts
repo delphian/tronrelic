@@ -1,7 +1,7 @@
 import type {
     ITransaction,
     IBaseObserver,
-    IObserverRegistry,
+    IBlockchainObserverService,
     IPluginDatabase,
     ILogger
 } from '@tronrelic/types';
@@ -33,7 +33,7 @@ import type { IDelegationTransaction } from '../shared/types/index.js';
  */
 export function createDelegationTrackerObserver(
     BaseObserver: abstract new (logger: ILogger) => IBaseObserver,
-    observerRegistry: IObserverRegistry,
+    observerRegistry: IBlockchainObserverService,
     database: IPluginDatabase,
     logger: ILogger
 ): IBaseObserver {
@@ -132,16 +132,7 @@ export function createDelegationTrackerObserver(
             try {
                 await this.database.insertOne('transactions', delegationRecord);
 
-                scopedLogger.debug(
-                    {
-                        txId,
-                        type,
-                        resourceType: resourceType === 0 ? 'BANDWIDTH' : 'ENERGY',
-                        amountSun: signedAmount,
-                        blockNumber: payload.blockNumber
-                    },
-                    'Persisted delegation transaction'
-                );
+                // Transaction persisted successfully (debug logging removed for performance)
             } catch (error) {
                 // Duplicate key error (E11000) - transaction already exists due to unique index on txId
                 // This can happen if blocks are reprocessed or observers restart mid-block
