@@ -1,13 +1,19 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Starts the TronRelic application stack using Docker Compose:
-#   • Clears log files (.run/backend.log and .run/frontend.log)
-#   • Builds Docker images (frontend and backend)
-#   • Starts all 4 containers: MongoDB, Redis, Backend, Frontend
-#   • Waits for services to become healthy
+# Starts the TronRelic application stack in one of two modes:
+#
+# npm mode (--npm):
+#   • MongoDB and Redis run in Docker containers
+#   • Backend and frontend run via npm on the host (lower resource usage)
+#
+# Docker mode (default):
+#   • All 4 services run in Docker containers
+#   • Use this for full containerization or production deployments
 #
 # Options:
+#   --npm           Use npm-based development mode (MongoDB/Redis in Docker, backend/frontend via npm)
+#   --docker        Explicitly use full Docker mode (all services in containers)
 #   --prod          Use production Docker Compose configuration
 #   --force-build   Rebuild Docker images without cache
 #   --force-docker  Recreate Docker containers and volumes
@@ -26,24 +32,39 @@ FORCE=false
 FORCE_DOCKER=false
 FORCE_BUILD=false
 PRODUCTION=false
+NPM_MODE=true  # Default to npm mode
+DOCKER_MODE=false
 
 usage() {
   cat <<'USAGE'
 Usage: scripts/start.sh [OPTIONS]
 
-Starts the TronRelic application stack using Docker Compose.
+Starts the TronRelic application stack in one of two modes:
 
-Options:
-  --prod          Use production Docker Compose configuration
+Development Modes:
+  (default)       Use npm-based mode (MongoDB/Redis in Docker, backend/frontend via npm)
+                  Default for local development (lower resource usage, faster hot reload)
+
+  --npm           Explicitly use npm-based mode (same as default)
+
+  --docker        Use full Docker mode (all services in containers)
+                  Use when you need full containerization
+
+Deployment Modes:
+  --prod          Use production Docker Compose configuration (forces --docker mode)
+
+Force Options:
   --force-build   Rebuild Docker images without cache
   --force-docker  Recreate Docker containers and volumes
   --force         Full reset (combines all force options)
-  -h, --help      Show this help message and exit.
+
+Help:
+  -h, --help      Show this help message and exit
 
 Examples:
-  scripts/start.sh                    # Start with existing images
-  scripts/start.sh --force-build      # Rebuild images and start
-  scripts/start.sh --prod             # Start in production mode
+  scripts/start.sh                    # Start in npm mode (default)
+  scripts/start.sh --docker           # Start all services in Docker containers
+  scripts/start.sh --prod             # Start in production mode (Docker)
   scripts/start.sh --force            # Full clean rebuild
 USAGE
 }
@@ -72,6 +93,16 @@ trap on_exit EXIT
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --npm)
+      NPM_MODE=true
+      DOCKER_MODE=false
+      shift
+      ;;
+    --docker)
+      NPM_MODE=false
+      DOCKER_MODE=true
+      shift
+      ;;
     --force)
       FORCE=true
       shift
@@ -105,6 +136,33 @@ if [[ "${FORCE}" == true ]]; then
   FORCE_BUILD=true
 fi
 
+# Validate mode selection
+if [[ "${NPM_MODE}" == true && "${DOCKER_MODE}" == true ]]; then
+  log ERROR "Cannot specify both --npm and --docker modes"
+  usage
+  exit 1
+fi
+
+if [[ "${NPM_MODE}" == true && "${PRODUCTION}" == true ]]; then
+  log ERROR "Cannot use --npm mode with --prod (production requires Docker)"
+  usage
+  exit 1
+fi
+
+# Production mode forces Docker mode
+if [[ "${PRODUCTION}" == true ]]; then
+  NPM_MODE=false
+  DOCKER_MODE=true
+fi
+
+# If npm mode (default unless --docker specified), delegate to npm.sh helper
+if [[ "${NPM_MODE}" == true ]]; then
+  log INFO "Starting in npm mode (use --docker for full containerization)..."
+  exec "${SCRIPT_DIR}/modes/npm.sh"
+  # exec replaces this process, so we never reach here
+fi
+
+# Otherwise, use Docker mode (explicit --docker flag)
 require_cmd() {
   if ! command -v "$1" >/dev/null 2>&1; then
     log ERROR "Required command '$1' not found on PATH"
