@@ -37,11 +37,15 @@ export interface IMenuValidation {
 /**
  * Event types emitted by the menu service.
  *
+ * Lifecycle events (init, ready, loaded) signal service initialization stages.
  * Pre-events (before:*) allow subscribers to validate or modify operations
  * before they occur. Post-events (after:*) notify subscribers of completed
  * changes for logging, WebSocket broadcasting, or cascading updates.
  */
 export type MenuEventType =
+    | 'init'
+    | 'ready'
+    | 'loaded'
     | 'before:create'
     | 'after:create'
     | 'before:update'
