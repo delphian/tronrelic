@@ -10,6 +10,12 @@ import { MenuService } from './menu.service.js';
  */
 const createNodeSchema = z.object({
     /**
+     * Menu namespace for isolating multiple independent menu trees.
+     * Defaults to 'main'.
+     */
+    namespace: z.string().optional(),
+
+    /**
      * Display label for the menu item (required).
      */
     label: z.string().min(1).max(200),
@@ -56,6 +62,7 @@ const createNodeSchema = z.object({
  * optional, allowing partial updates.
  */
 const updateNodeSchema = z.object({
+    namespace: z.string().optional(),
     label: z.string().min(1).max(200).optional(),
     url: z.string().optional(),
     icon: z.string().optional(),
@@ -140,7 +147,8 @@ export class MenuController {
      */
     getTree = async (req: Request, res: Response) => {
         try {
-            const tree = this.service.getTree();
+            const namespace = req.query.namespace as string | undefined;
+            const tree = this.service.getTree(namespace);
             res.json({ success: true, tree });
         } catch (error) {
             const message = error instanceof Error ? error.message : 'Failed to get menu tree';
@@ -342,6 +350,37 @@ export class MenuController {
             const message = error instanceof Error ? error.message : 'Failed to delete menu node';
             const status = message.includes('not found') ? 404 : 400;
             res.status(status).json({ success: false, error: message });
+        }
+    };
+
+    /**
+     * Get all available menu namespaces.
+     *
+     * Returns a list of all namespace identifiers currently in use across all menu nodes.
+     * Useful for admin interfaces that need to manage multiple menu trees.
+     *
+     * **Route:** GET /api/menu/namespaces
+     *
+     * **Authentication:** Requires admin token (via requireAdmin middleware)
+     *
+     * **Response:**
+     * ```json
+     * {
+     *   "success": true,
+     *   "namespaces": ["admin-sidebar", "footer", "main", "mobile"]
+     * }
+     * ```
+     *
+     * @param req - Express request object
+     * @param res - Express response object
+     */
+    getNamespaces = async (req: Request, res: Response) => {
+        try {
+            const namespaces = this.service.getNamespaces();
+            res.json({ success: true, namespaces });
+        } catch (error) {
+            const message = error instanceof Error ? error.message : 'Failed to get namespaces';
+            res.status(500).json({ success: false, error: message });
         }
     };
 }
