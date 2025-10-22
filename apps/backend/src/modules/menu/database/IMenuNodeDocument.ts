@@ -18,6 +18,7 @@ import { ObjectId } from 'mongodb';
  */
 export interface IMenuNodeDocument {
     _id: ObjectId;
+    namespace: string;
     label: string;
     url?: string;
     icon?: string;

@@ -13,6 +13,37 @@ export interface IMenuNode {
     _id?: string;
 
     /**
+     * Menu namespace for isolating multiple independent menu trees.
+     *
+     * Namespaces allow the system to maintain separate menu hierarchies for different
+     * contexts (e.g., 'main' for primary navigation, 'footer' for footer links,
+     * 'admin-sidebar' for admin panel navigation, 'mobile' for mobile-specific menus).
+     *
+     * All nodes within a namespace form an independent tree structure. Parent-child
+     * relationships are scoped to the namespace—a node cannot reference a parent in
+     * a different namespace.
+     *
+     * Common namespace conventions:
+     * - 'main' - Primary site navigation (default)
+     * - 'footer' - Footer navigation links
+     * - 'admin-sidebar' - Admin panel sidebar
+     * - 'mobile' - Mobile-specific navigation
+     * - 'user-profile' - User profile dropdown menu
+     *
+     * Defaults to 'main' for backward compatibility with existing single-tree behavior.
+     *
+     * @example
+     * ```typescript
+     * // Main navigation node
+     * { namespace: 'main', label: 'Home', url: '/', parent: null }
+     *
+     * // Footer navigation node (separate tree)
+     * { namespace: 'footer', label: 'Privacy Policy', url: '/privacy', parent: null }
+     * ```
+     */
+    namespace?: string;
+
+    /**
      * Display label for the menu item.
      * Shown in navigation UI and breadcrumbs.
      */
