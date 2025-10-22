@@ -179,14 +179,14 @@ Ensure these GitHub repository secrets are configured for tests to run:
 Before pushing, you can run tests locally to catch issues early:
 
 ```bash
-# Run unit tests
-npm run test --workspace apps/backend
+# Run unit tests (vitest)
+npm test
 
-# Run integration tests (requires Docker)
+# Run integration tests (Playwright - requires Docker)
 docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d
 npm ci
 npx playwright install --with-deps
-npm run test
+npm run test:integration
 docker compose -f docker-compose.yml -f docker-compose.ci.yml down -v
 ```
 

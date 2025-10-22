@@ -3,7 +3,7 @@
  *
  * Provides monitoring data for performance analysis and debugging observer behavior.
  * These metrics are collected automatically by the BaseObserver and exposed through
- * the ObserverRegistry for system-wide monitoring.
+ * the BlockchainObserverService for system-wide monitoring.
  */
 export interface IObserverStats {
     /** Observer name for identification */

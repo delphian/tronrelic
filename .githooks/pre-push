@@ -18,7 +18,7 @@ do
         # Run unit tests
         echo ""
         echo "Running unit tests..."
-        if ! npm run test --workspace apps/backend; then
+        if ! npm test; then
             echo "❌ Unit tests failed! Push aborted."
             echo "Fix the tests or use 'git push --no-verify' to bypass (not recommended)"
             exit 1

@@ -2,13 +2,13 @@ import type { IBaseObserver } from './IBaseObserver.js';
 import type { IObserverStats } from './IObserverStats.js';
 
 /**
- * Interface for the observer registry singleton.
+ * Interface for the blockchain observer service.
  *
- * The registry manages observer registration and routes incoming transactions to subscribed
+ * The service manages observer registration and routes incoming transactions to subscribed
  * observers based on transaction type. This interface defines the public contract for
- * interacting with the registry from plugins.
+ * interacting with the service from plugins.
  */
-export interface IObserverRegistry {
+export interface IBlockchainObserverService {
     /**
      * Subscribe an observer to a specific transaction type.
      *
