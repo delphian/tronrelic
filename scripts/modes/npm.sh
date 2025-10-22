@@ -14,15 +14,72 @@ YELLOW='\033[1;33m'
 RED='\033[0;31m'
 NC='\033[0m' # No Color
 
+# Parse options
+FORCE_BUILD=false
+FORCE_DOCKER=false
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --force-build)
+            FORCE_BUILD=true
+            shift
+            ;;
+        --force-docker)
+            FORCE_DOCKER=true
+            shift
+            ;;
+        *)
+            shift
+            ;;
+    esac
+done
+
 # Ensure .run directory exists
 mkdir -p "${RUN_DIR}"
 
 echo -e "${GREEN}Starting TronRelic in npm development mode...${NC}"
 echo -e "${YELLOW}Mode: MongoDB/Redis in Docker + Backend/Frontend via npm${NC}"
 
+# Handle --force-build: clean all caches and dist directories
+if [[ "$FORCE_BUILD" == "true" ]]; then
+    echo -e "\n${YELLOW}--force-build specified: Cleaning all build artifacts...${NC}"
+
+    # Clean TypeScript build info caches
+    echo -e "  Removing .tsbuildinfo files..."
+    find "${PROJECT_ROOT}" -name "*.tsbuildinfo" -type f -delete 2>/dev/null || true
+
+    # Clean all dist directories
+    echo -e "  Removing dist/ directories..."
+    find "${PROJECT_ROOT}/apps" -name "dist" -type d -exec rm -rf {} + 2>/dev/null || true
+    find "${PROJECT_ROOT}/packages" -name "dist" -type d -exec rm -rf {} + 2>/dev/null || true
+
+    # Clean Next.js cache
+    echo -e "  Removing Next.js cache..."
+    rm -rf "${PROJECT_ROOT}/apps/frontend/.next" 2>/dev/null || true
+
+    # Clean node_modules/.cache
+    echo -e "  Removing node_modules cache..."
+    find "${PROJECT_ROOT}" -path "*/node_modules/.cache" -type d -exec rm -rf {} + 2>/dev/null || true
+
+    echo -e "${GREEN}✓ Build artifacts cleaned${NC}"
+
+    # Rebuild all workspaces
+    echo -e "\n${GREEN}Rebuilding all workspaces...${NC}"
+    cd "${PROJECT_ROOT}"
+    npm run build --workspaces --if-present
+    echo -e "${GREEN}✓ All workspaces rebuilt${NC}"
+fi
+
 # Start MongoDB and Redis containers
 echo -e "\n${GREEN}Starting MongoDB and Redis containers...${NC}"
 cd "${PROJECT_ROOT}"
+
+# Handle --force-docker: recreate containers and volumes
+if [[ "$FORCE_DOCKER" == "true" ]]; then
+    echo -e "${YELLOW}--force-docker specified: Recreating containers and volumes...${NC}"
+    docker compose -f docker-compose.dev.yml down -v
+fi
+
 docker compose -f docker-compose.dev.yml up -d
 
 # Wait for containers to be healthy
