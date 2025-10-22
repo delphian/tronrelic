@@ -260,14 +260,17 @@ npm run lint --workspaces
 ### Testing
 
 ```bash
-# Run unit tests
-npm run test --workspace apps/backend
+# Run unit tests (vitest)
+npm test
 
-# Run integration tests (requires Docker)
-npm run test
+# Run integration tests (Playwright - requires Docker)
+npm run test:integration
 
-# Run tests before committing
-npm run test --workspace apps/backend && npm run test
+# Run specific test file
+npm test -- src/services/blockchain-observer/__tests__/blockchain-observer.service.test.ts
+
+# Run tests in watch mode
+npm test -- --watch
 ```
 
 **Automated Testing:**

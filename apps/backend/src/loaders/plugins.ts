@@ -3,7 +3,7 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import type { IPluginContext, IPlugin } from '@tronrelic/types';
 import { logger } from '../lib/logger.js';
-import { ObserverRegistry } from '../modules/blockchain/observers/ObserverRegistry.js';
+import { BlockchainObserverService } from '../services/blockchain-observer/index.js';
 import { BaseObserver } from '../modules/blockchain/observers/BaseObserver.js';
 import { WebSocketService } from '../services/websocket.service.js';
 import { PluginDatabaseService } from '../services/plugin-database.service.js';
@@ -142,8 +142,7 @@ export async function loadPlugins(): Promise<void> {
     const apiService = PluginApiService.getInstance();
     const metadataService = PluginMetadataService.getInstance();
     const pluginManager = PluginManagerService.getInstance();
-    const registryLogger = logger.child({ module: 'observer-registry' });
-    const observerRegistry = ObserverRegistry.getInstance(registryLogger);
+    const observerService = BlockchainObserverService.getInstance();
 
     logger.info(`Discovered ${pluginList.length} plugins`);
 
@@ -180,7 +179,7 @@ export async function loadPlugins(): Promise<void> {
 
             // Create plugin context with injected dependencies
             const context: IPluginContext = {
-                observerRegistry,
+                observerRegistry: observerService,
                 websocketService,
                 websocket: websocketManager as any, // Will be defined if io exists
                 BaseObserver,

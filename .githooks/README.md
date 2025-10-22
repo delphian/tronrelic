@@ -21,7 +21,7 @@ Runs unit tests before allowing pushes to `main` or `dev` branches.
 
 **What it does:**
 - Detects pushes to protected branches (`main` or `dev`)
-- Runs `npm run test --workspace apps/backend`
+- Runs `npm test` (vitest unit tests)
 - Blocks the push if tests fail
 - Allows the push if tests pass
 

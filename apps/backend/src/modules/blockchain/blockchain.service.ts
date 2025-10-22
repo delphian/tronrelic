@@ -18,9 +18,7 @@ import { NotificationService } from '../../services/notification.service.js';
 import { AlertService } from '../../services/alert.service.js';
 import { PriceService } from '../../services/price.service.js';
 import { AddressInsightService } from '../../services/address-insight.service.js';
-import { ObserverRegistry } from './observers/ObserverRegistry.js';
-
-const observerRegistryLogger = logger.child({ module: 'observer-registry' });
+import { BlockchainObserverService } from '../../services/blockchain-observer/index.js';
 
 /**
  * Job data for queuing individual block processing tasks.
@@ -89,7 +87,7 @@ export class BlockchainService {
     private readonly alerts = new AlertService(this.tronClient);
     private readonly priceService = PriceService.getInstance();
     private readonly addressInsights = new AddressInsightService();
-    private readonly observerRegistry = ObserverRegistry.getInstance(observerRegistryLogger);
+    private readonly observerService = BlockchainObserverService.getInstance();
 
     /**
      * Initialize the blockchain service with required dependencies and configure the block processing queue.
@@ -853,7 +851,7 @@ export class BlockchainService {
 
                     // Notify observers of the processed transaction
                     const notifyStart = Date.now();
-                    await this.observerRegistry.notifyTransaction(result);
+                    await this.observerService.notifyTransaction(result);
                     observerNotifyTime += (Date.now() - notifyStart);
                 } catch (transactionError) {
                     logger.warn({ blockNumber, txId: transaction?.txID, transactionError }, 'Failed to process transaction - skipping');
