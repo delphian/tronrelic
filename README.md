@@ -272,11 +272,11 @@ npm run test --workspace apps/backend && npm run test
 
 **Automated Testing:**
 
-All tests run automatically on pull requests to `main` and `dev` branches. Pull requests cannot be merged until all tests pass.
+Unit tests run automatically on pull requests to `main` and `dev` branches. Pull requests cannot be merged until unit tests pass.
 
 **See [.github/BRANCH_PROTECTION.md](.github/BRANCH_PROTECTION.md) for:**
-- Setting up branch protection rules
-- Required status checks configuration
+- Setting up branch protection rules (blocks merges without passing tests)
+- Configuring local git hooks to enforce tests before pushing
 - Testing the CI/CD pipeline locally
 - Troubleshooting test failures
 
