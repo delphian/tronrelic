@@ -1,7 +1,7 @@
 /// <reference types="vitest" />
 
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
-import type { IMenuNode, IPluginDatabase } from '@tronrelic/types';
+import type { IPluginDatabase } from '@tronrelic/types';
 import { ObjectId } from 'mongodb';
 
 /**
