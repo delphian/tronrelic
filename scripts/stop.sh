@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Stops all TronRelic Docker containers:
-#   • Stops all 4 containers: Frontend, Backend, MongoDB, Redis
+# Stops all TronRelic services:
+#   • Stops npm processes (if running in npm mode)
+#   • Stops Docker containers (all modes)
 #   • Optionally removes volumes (with --volumes flag)
 #
 # Options:
@@ -12,6 +13,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MONO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+RUN_DIR="${MONO_ROOT}/.run"
 
 REMOVE_VOLUMES=false
 PRODUCTION=false
@@ -20,7 +22,7 @@ usage() {
   cat <<'USAGE'
 Usage: scripts/stop.sh [OPTIONS]
 
-Stops all TronRelic Docker containers.
+Stops all TronRelic services (npm processes and Docker containers).
 
 Options:
   --volumes      Also remove Docker volumes (WARNING: deletes all data)
@@ -28,8 +30,8 @@ Options:
   -h, --help     Show this help message and exit.
 
 Examples:
-  scripts/stop.sh                # Stop containers, keep data
-  scripts/stop.sh --volumes      # Stop containers and delete all data
+  scripts/stop.sh                # Stop all services, keep data
+  scripts/stop.sh --volumes      # Stop services and delete all data
   scripts/stop.sh --prod         # Stop production containers
 USAGE
 }
@@ -47,18 +49,65 @@ log() {
   printf "%b[%s]%b %s\n" "${color}" "${level}" "\033[0m" "$*"
 }
 
-cleanup_ports() {
-    # Kill any processes still running on ports 3000 and 4000
-    log INFO "Checking for processes on ports 3000 and 4000..."
-    for port in 3000 4000; do
-        if lsof -ti:${port} >/dev/null 2>&1; then
-            log WARN "Found process on port ${port}, killing it"
-            lsof -ti:${port} | xargs kill -9 2>/dev/null || true
+stop_npm_processes() {
+    # Stop npm processes using PID files (if they exist)
+    local stopped_any=false
+
+    if [[ -f "${RUN_DIR}/backend.pid" ]]; then
+        local backend_pid=$(cat "${RUN_DIR}/backend.pid")
+        if kill -0 "$backend_pid" 2>/dev/null; then
+            log INFO "Stopping backend npm process (PID: $backend_pid)"
+            kill "$backend_pid" 2>/dev/null || true
+            stopped_any=true
         fi
-    done
+        rm -f "${RUN_DIR}/backend.pid"
+    fi
+
+    if [[ -f "${RUN_DIR}/frontend.pid" ]]; then
+        local frontend_pid=$(cat "${RUN_DIR}/frontend.pid")
+        if kill -0 "$frontend_pid" 2>/dev/null; then
+            log INFO "Stopping frontend npm process (PID: $frontend_pid)"
+            kill "$frontend_pid" 2>/dev/null || true
+            stopped_any=true
+        fi
+        rm -f "${RUN_DIR}/frontend.pid"
+    fi
+
+    if [[ "$stopped_any" == true ]]; then
+        log SUCCESS "npm processes stopped"
+    fi
 }
 
-# Ensure port cleanup happens even if script is interrupted
+cleanup_ports() {
+    # Kill any processes still running on ports 3000 and 4000 (failsafe)
+    log INFO "Checking for processes on ports 3000 and 4000..."
+    local killed_any=false
+
+    # Use multiple methods to find processes (lsof sometimes misses them)
+    for port in 3000 4000; do
+        # Method 1: lsof
+        if lsof -ti:${port} >/dev/null 2>&1; then
+            log WARN "Found process on port ${port} (via lsof), killing it"
+            lsof -ti:${port} | xargs kill -9 2>/dev/null || true
+            killed_any=true
+        fi
+
+        # Method 2: fuser (more reliable for some cases)
+        if command -v fuser >/dev/null 2>&1; then
+            if fuser ${port}/tcp >/dev/null 2>&1; then
+                log WARN "Found process on port ${port} (via fuser), killing it"
+                fuser -k ${port}/tcp >/dev/null 2>&1 || true
+                killed_any=true
+            fi
+        fi
+    done
+
+    if [[ "$killed_any" == true ]]; then
+        log SUCCESS "Port cleanup completed"
+    fi
+}
+
+# Ensure cleanup happens even if script is interrupted
 trap cleanup_ports EXIT
 
 while [[ $# -gt 0 ]]; do
@@ -92,36 +141,53 @@ fi
 # Change to project root for docker compose commands
 cd "${MONO_ROOT}"
 
-# Determine which docker-compose file to use
-COMPOSE_FILE="docker-compose.yml"
+# Stop npm processes first (if running in npm mode)
+stop_npm_processes
+
+# Determine which docker-compose files to try
+COMPOSE_FILES=()
 if [[ "${PRODUCTION}" == true ]]; then
   if [[ -f docker-compose.prod.yml ]]; then
-    COMPOSE_FILE="docker-compose.prod.yml"
-    log INFO "Using production configuration: ${COMPOSE_FILE}"
-  else
-    log WARN "Production compose file not found, using default: ${COMPOSE_FILE}"
+    COMPOSE_FILES+=("docker-compose.prod.yml")
   fi
 else
-  log INFO "Using development configuration: ${COMPOSE_FILE}"
+  # Try both dev and standard compose files (npm mode uses dev, Docker mode uses standard)
+  if [[ -f docker-compose.dev.yml ]]; then
+    COMPOSE_FILES+=("docker-compose.dev.yml")
+  fi
+  if [[ -f docker-compose.yml ]]; then
+    COMPOSE_FILES+=("docker-compose.yml")
+  fi
 fi
 
-# Check if any containers are running
-if ! docker compose -f "${COMPOSE_FILE}" ps -q 2>/dev/null | grep -q .; then
-  log INFO "No TronRelic containers are running"
-  exit 0
-fi
+# Stop containers for each compose file
+stopped_any=false
+for compose_file in "${COMPOSE_FILES[@]}"; do
+  # Check if any containers are running for this compose file
+  if docker compose -f "${compose_file}" ps -q 2>/dev/null | grep -q .; then
+    stopped_any=true
 
-# Stop containers
-if [[ "${REMOVE_VOLUMES}" == true ]]; then
-  log WARN "Stopping containers and removing volumes (this will delete all data)"
-  docker compose -f "${COMPOSE_FILE}" down -v
-  log SUCCESS "Containers stopped and volumes removed"
+    if [[ "${REMOVE_VOLUMES}" == true ]]; then
+      log WARN "Stopping containers and removing volumes for ${compose_file}"
+      docker compose -f "${compose_file}" down -v
+    else
+      log INFO "Stopping containers for ${compose_file}"
+      docker compose -f "${compose_file}" down
+    fi
+  fi
+done
+
+if [[ "$stopped_any" == true ]]; then
+  if [[ "${REMOVE_VOLUMES}" == true ]]; then
+    log SUCCESS "All containers stopped and volumes removed"
+  else
+    log SUCCESS "All containers stopped (data preserved)"
+  fi
 else
-  log INFO "Stopping TronRelic containers"
-  docker compose -f "${COMPOSE_FILE}" down
-  log SUCCESS "All containers stopped (data preserved)"
+  log INFO "No TronRelic containers were running"
 fi
 
 log INFO ""
 log INFO "To start services again, run:"
-log INFO "  ./scripts/start.sh"
+log INFO "  ./scripts/start.sh --npm    # npm mode (recommended)"
+log INFO "  ./scripts/start.sh          # Docker mode"

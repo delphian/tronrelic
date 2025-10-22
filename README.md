@@ -24,7 +24,60 @@ Real-time TRON blockchain monitoring and whale activity tracking.
 
 ## Quick Start
 
-### Option 1: Docker (Recommended for Production)
+### Option 1: Local Development with npm (Recommended for Development)
+
+**Lowest resource usage** - Only MongoDB and Redis run in Docker, backend and frontend run via npm directly.
+
+```bash
+./scripts/start.sh --npm
+```
+
+Services will be available at:
+- **Backend**: http://localhost:4000
+- **Frontend**: http://localhost:3000
+- **System Monitor**: http://localhost:3000/system (requires admin token)
+
+**Benefits:**
+- Lower memory and CPU usage (no backend/frontend containers)
+- Faster hot reloading
+- Direct access to logs in terminal
+- Easier debugging with native Node.js processes
+
+**Stop services:**
+```bash
+./scripts/stop.sh
+```
+
+### Option 2: Local Development with Docker (Full Containerization)
+
+All 4 services (MongoDB, Redis, backend, frontend) run in Docker containers.
+
+```bash
+./scripts/start.sh
+```
+
+**Options:**
+```bash
+./scripts/start.sh                 # Start all services in Docker (default)
+./scripts/start.sh --docker        # Explicit Docker mode
+./scripts/start.sh --force-build   # Full rebuild (clears caches and rebuilds from scratch)
+./scripts/start.sh --force-docker  # Recreate MongoDB/Redis containers
+./scripts/start.sh --force         # Full reset (combines all of the above)
+```
+
+**When to use:**
+- Testing Docker builds locally
+- Matching production environment exactly
+- Debugging container-specific issues
+
+**Stop services:**
+```bash
+./scripts/stop.sh
+```
+
+### Option 3: Production Docker Deployment
+
+See [docs/operations/operations.md](docs/operations/operations.md) for detailed deployment guide.
 
 ```bash
 # Development mode
@@ -33,11 +86,6 @@ npm run docker:up
 # Production mode
 npm run docker:up:prod
 ```
-
-Services will be available at:
-- **Backend**: http://localhost:4000
-- **Frontend**: http://localhost:3000
-- **System Monitor**: http://localhost:3000/system (requires admin token)
 
 **Docker commands:**
 ```bash
@@ -51,35 +99,6 @@ npm run docker:logs:backend   # View backend logs only
 npm run docker:logs:frontend  # View frontend logs only
 npm run docker:rebuild        # Clean rebuild (no cache)
 npm run docker:clean          # Remove containers and volumes
-```
-
-See [docs/operations/operations.md](docs/operations/operations.md) for detailed operations guide.
-
-### Option 2: Local Development
-
-```bash
-./scripts/start.sh
-```
-
-**Options:**
-```bash
-./scripts/start.sh                 # Smart incremental builds (only rebuilds changed files)
-./scripts/start.sh --force-build   # Full rebuild (clears caches and rebuilds from scratch)
-./scripts/start.sh --force-docker  # Recreate MongoDB/Redis containers
-./scripts/start.sh --prod          # Run frontend in production mode (defaults to dev)
-./scripts/start.sh --force         # Full reset (combines all of the above)
-```
-
-**Performance optimizations:**
-- **Smart incremental builds** - Only rebuilds workspaces with changed source files
-- **TypeScript incremental compilation** - Uses `.tsbuildinfo` cache for 5-10x faster rebuilds
-- **Lazy dependency loading** - Skips `npm install` when dependencies haven't changed
-- **Parallel builds** - Backend and frontend compile simultaneously when both need rebuilding
-- **Next.js Turbopack** - Dev mode uses `--turbo` for faster hot reloads
-
-**Stop services:**
-```bash
-./scripts/stop.sh
 ```
 
 ## Prerequisites

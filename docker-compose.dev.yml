@@ -1,0 +1,50 @@
+# TronRelic Development Environment - Minimal Stack
+# Use this for npm-based local development (MongoDB + Redis only)
+# Backend and frontend run via npm on the host for faster development
+
+services:
+    # MongoDB Database
+    mongodb:
+        image: mongo:6
+        container_name: tronrelic-mongo
+        restart: unless-stopped
+        ports:
+            - "27017:27017"
+        volumes:
+            - tronrelic-mongo-data:/data/db
+        networks:
+            - tronrelic-network
+        healthcheck:
+            test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+            interval: 10s
+            timeout: 5s
+            retries: 5
+            start_period: 10s
+
+    # Redis Cache and Queue
+    redis:
+        image: redis:7-alpine
+        container_name: tronrelic-redis
+        restart: unless-stopped
+        ports:
+            - "6379:6379"
+        volumes:
+            - tronrelic-redis-data:/data
+        networks:
+            - tronrelic-network
+        healthcheck:
+            test: ["CMD", "redis-cli", "ping"]
+            interval: 10s
+            timeout: 5s
+            retries: 5
+            start_period: 5s
+
+networks:
+    tronrelic-network:
+        driver: bridge
+
+volumes:
+    tronrelic-mongo-data:
+        driver: local
+    tronrelic-redis-data:
+        driver: local
