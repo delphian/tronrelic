@@ -6,7 +6,7 @@
         "predev": "node scripts/generate-frontend-plugin-registry.mjs",
         "prebuild": "node scripts/generate-frontend-plugin-registry.mjs",
         "generate:plugins": "node scripts/generate-frontend-plugin-registry.mjs",
-        "dev": "next dev --turbo",
+        "dev": "next dev --turbo --port 3000",
         "build": "next build",
         "start": "next start",
         "lint": "next lint",
