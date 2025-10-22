@@ -960,14 +960,7 @@ export class BlockchainService {
                     }
                 }
             );
-            logger.info(
-                {
-                    blockNumber,
-                    transactionCount: transactions.length,
-                    timings
-                },
-                'Block processing complete with timing breakdown'
-            );
+            // Block processing complete (timing breakdown logging removed for performance)
         } catch (error) {
             // Extract error message and details
             const errorMessage = error instanceof Error ? error.message : String(error);
