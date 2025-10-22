@@ -8,8 +8,8 @@ import { WebSocketService } from './services/websocket.service.js';
 import { initializeJobs, stopJobs } from './jobs/index.js';
 import { loadPlugins } from './loaders/plugins.js';
 import { MenuService } from './modules/menu/menu.service.js';
-// Import observers to trigger auto-registration via side effects
-import './modules/blockchain/observers/index.js';
+import { PluginDatabaseService } from './services/plugin-database.service.js';
+import { ObserverRegistry } from './modules/blockchain/observers/ObserverRegistry.js';
 
 async function bootstrap() {
   try {
@@ -17,20 +17,44 @@ async function bootstrap() {
     const redis = createRedisClient();
     await redis.connect();
 
+    // Initialize observer registry explicitly
+    logger.info({}, 'Initializing observer registry...');
+    const registryLogger = logger.child({ module: 'observer-registry' });
+    ObserverRegistry.getInstance(registryLogger);
+    logger.info({}, 'Observer registry initialized');
+
     // Create Express app and HTTP server first
+    logger.info({}, 'Creating Express app...');
     const app = createExpressApp();
+    logger.info({}, 'Creating HTTP server...');
     const server = http.createServer(app);
+    logger.info({}, 'ExpressApp initialized');
 
     // Initialize WebSocket BEFORE loading plugins so they can use it
     if (env.ENABLE_WEBSOCKETS) {
       WebSocketService.getInstance().initialize(server);
     }
+    logger.info({}, 'WebSocketService initialized');
 
-    // Initialize MenuService AFTER database connection is ready
-    await MenuService.getInstance().initialize();
+    // Initialize MenuService with database dependency injection
+    // Use 'core' as the namespace to distinguish from plugin collections
+    try {
+      const menuDatabase = new PluginDatabaseService('core');
+      MenuService.setDatabase(menuDatabase);
+      await MenuService.getInstance().initialize();
+    } catch (menuError) {
+      logger.error({ menuError, stack: menuError instanceof Error ? menuError.stack : undefined }, 'MenuService initialization failed');
+      throw menuError;
+    }
+    logger.info({}, 'MenuService initialized');
 
     // Load plugins AFTER WebSocket is initialized so they can register handlers
-    await loadPlugins();
+    try {
+      await loadPlugins();
+    } catch (pluginError) {
+      logger.error({ pluginError, stack: pluginError instanceof Error ? pluginError.stack : undefined }, 'Plugin initialization failed')
+    }
+    logger.info({}, 'Plugins initialized');
 
     await initializeJobs();
 

@@ -6,11 +6,13 @@ import type {
     IMenuEvent,
     IMenuValidation,
     MenuEventType,
-    MenuEventSubscriber
+    MenuEventSubscriber,
+    IPluginDatabase
 } from '@tronrelic/types';
-import { MenuNodeModel } from '../../database/models/index.js';
 import { logger } from '../../lib/logger.js';
 import { WebSocketService } from '../../services/websocket.service.js';
+import { ObjectId } from 'mongodb';
+import type { IMenuNodeDocument } from './database/index.js';
 
 /**
  * Singleton service managing the hierarchical menu system.
@@ -63,12 +65,33 @@ export class MenuService implements IMenuService {
     private menuTree: Map<string, IMenuNode> = new Map();
     private subscribers: Map<MenuEventType, MenuEventSubscriber[]> = new Map();
     private initialized = false;
+    private database: IPluginDatabase;
 
     /**
-     * Private constructor enforcing singleton pattern.
-     * Use getInstance() to access the service.
+     * Private constructor enforcing singleton pattern with dependency injection.
+     *
+     * Accepts database dependency to decouple from Mongoose and enable testability.
+     * Use getInstance() to access the service after calling setDatabase().
+     *
+     * @param database - Database service for menu node storage
      */
-    private constructor() {}
+    private constructor(database: IPluginDatabase) {
+        this.database = database;
+    }
+
+    /**
+     * Set the database instance for the singleton.
+     *
+     * Must be called once during application bootstrap before getInstance().
+     * This enables dependency injection while maintaining the singleton pattern.
+     *
+     * @param database - Database service for menu node storage
+     */
+    public static setDatabase(database: IPluginDatabase): void {
+        if (!MenuService.instance) {
+            MenuService.instance = new MenuService(database);
+        }
+    }
 
     /**
      * Get the singleton instance of MenuService.
@@ -77,10 +100,11 @@ export class MenuService implements IMenuService {
      * subsequent calls, ensuring a single source of truth for menu state.
      *
      * @returns The singleton MenuService instance
+     * @throws Error if setDatabase() was not called first
      */
     public static getInstance(): MenuService {
         if (!MenuService.instance) {
-            MenuService.instance = new MenuService();
+            throw new Error('MenuService.setDatabase() must be called before getInstance()');
         }
         return MenuService.instance;
     }
@@ -92,6 +116,11 @@ export class MenuService implements IMenuService {
      * connection is established. It loads all menu nodes from MongoDB into memory,
      * builds the tree structure, and creates a default 'Home' root node if the menu
      * is empty (first startup).
+     *
+     * Emits three lifecycle events during initialization:
+     * 1. 'init' - Immediately when initialization begins (functionality TBD)
+     * 2. 'ready' - When service is ready to accept registrations and API calls
+     * 3. 'loaded' - When menu tree is fully built and ready for consumption
      *
      * Subsequent calls are no-ops to prevent re-initialization.
      *
@@ -107,8 +136,12 @@ export class MenuService implements IMenuService {
         logger.info('Initializing MenuService...');
 
         try {
-            // Load all nodes from database
-            const nodes = await MenuNodeModel.find().lean();
+            // Emit 'init' event - service startup begins
+            await this.emitLifecycleEvent('init');
+
+            // Load all nodes from database using native MongoDB collection
+            const collection = this.database.getCollection<IMenuNodeDocument>('menu_nodes');
+            const nodes = await collection.find({}).toArray();
 
             // Build in-memory tree
             this.menuTree.clear();
@@ -122,7 +155,15 @@ export class MenuService implements IMenuService {
                 await this.createDefaultHomeNode();
             }
 
+            // Mark as initialized (service is ready to accept registrations)
             this.initialized = true;
+
+            // Emit 'ready' event - service can now accept API calls and registrations
+            await this.emitLifecycleEvent('ready');
+
+            // Emit 'loaded' event - menu tree is fully built and ready for consumption
+            await this.emitLifecycleEvent('loaded');
+
             logger.info({ nodeCount: this.menuTree.size }, 'MenuService initialized');
         } catch (error) {
             logger.error({ error }, 'Failed to initialize MenuService');
@@ -179,30 +220,43 @@ export class MenuService implements IMenuService {
     /**
      * Create a new menu node in the tree.
      *
-     * Validates the node through before:create event subscribers, saves to database,
-     * updates in-memory tree, emits after:create event, and broadcasts WebSocket
-     * update to all clients.
+     * Validates the node through before:create event subscribers, optionally saves
+     * to database (for admin-created entries), updates in-memory tree, emits
+     * after:create event, and broadcasts WebSocket update to all clients.
      *
      * Subscribers can halt creation by setting validation.continue = false in the
      * before:create event handler.
      *
      * @param nodeData - Partial menu node data (label, url, order, parent, etc.)
+     * @param persist - If true, saves to database for persistence across restarts.
+     *                  If false (default), creates memory-only entry (e.g., plugin pages)
      * @returns Promise resolving to the created node with assigned _id
      * @throws Error if validation fails or database operation fails
      *
      * @example
      * ```typescript
-     * const dashboardNode = await menuService.create({
+     * // Memory-only entry (default) - plugins use this for runtime pages
+     * const pluginPage = await menuService.create({
+     *     label: 'Whale Alerts',
+     *     url: '/plugins/whale-alerts',
+     *     icon: 'Fish',
+     *     order: 100,
+     *     parent: null,
+     *     enabled: true
+     * });
+     *
+     * // Persisted entry - admin API uses this for manual menu entries
+     * const adminEntry = await menuService.create({
      *     label: 'Dashboard',
      *     url: '/dashboard',
      *     icon: 'LayoutDashboard',
      *     order: 0,
      *     parent: null,
      *     enabled: true
-     * });
+     * }, true);
      * ```
      */
-    public async create(nodeData: Partial<IMenuNode>): Promise<IMenuNode> {
+    public async create(nodeData: Partial<IMenuNode>, persist = false): Promise<IMenuNode> {
         const node: IMenuNode = {
             label: nodeData.label || '',
             url: nodeData.url,
@@ -219,9 +273,47 @@ export class MenuService implements IMenuService {
             throw new Error(validation.error || 'Menu creation cancelled by subscriber');
         }
 
-        // Save to database
-        const doc = await MenuNodeModel.create(node);
-        const created = this.normalizeNode(doc.toObject());
+        let created: IMenuNode;
+
+        if (persist) {
+            // Save to database for persistence across restarts (admin entries)
+            const collection = this.database.getCollection<IMenuNodeDocument>('menu_nodes');
+            const now = new Date();
+            const docToInsert: Partial<IMenuNodeDocument> = {
+                label: node.label,
+                url: node.url,
+                icon: node.icon,
+                order: node.order,
+                parent: node.parent ? new ObjectId(node.parent) : null,
+                enabled: node.enabled,
+                requiredRole: node.requiredRole,
+                createdAt: now,
+                updatedAt: now
+            };
+
+            const result = await collection.insertOne(docToInsert as IMenuNodeDocument);
+            const insertedDoc = await collection.findOne({ _id: result.insertedId });
+
+            if (!insertedDoc) {
+                throw new Error('Failed to retrieve inserted menu node');
+            }
+
+            created = this.normalizeNode(insertedDoc);
+        } else {
+            // Memory-only entry (plugin pages, runtime entries)
+            created = {
+                _id: new ObjectId().toString(),
+                label: node.label,
+                url: node.url,
+                icon: node.icon,
+                order: node.order,
+                parent: node.parent,
+                enabled: node.enabled,
+                requiredRole: node.requiredRole,
+                createdAt: new Date(),
+                updatedAt: new Date()
+            };
+        }
 
         // Update in-memory tree
         this.menuTree.set(created._id!, created);
@@ -239,27 +331,35 @@ export class MenuService implements IMenuService {
     /**
      * Update an existing menu node.
      *
-     * Validates the update through before:update event subscribers, applies changes
-     * to database, updates in-memory tree, emits after:update event, and broadcasts
-     * WebSocket update to all clients.
+     * Validates the update through before:update event subscribers, optionally applies
+     * changes to database (for persisted entries), updates in-memory tree, emits
+     * after:update event, and broadcasts WebSocket update to all clients.
      *
      * Subscribers receive both the new node data and the previous node state in the
      * event payload, allowing comparison of what changed.
      *
      * @param id - The _id of the node to update
      * @param updates - Partial node data to apply (only provided fields are updated)
+     * @param persist - If true, saves changes to database. If false (default), memory-only update
      * @returns Promise resolving to the updated node
      * @throws Error if node not found, validation fails, or database operation fails
      *
      * @example
      * ```typescript
+     * // Memory-only update (default) - for runtime entries
      * const updated = await menuService.update(nodeId, {
      *     label: 'New Label',
      *     order: 5
      * });
+     *
+     * // Persisted update - for admin entries
+     * const persistedUpdate = await menuService.update(nodeId, {
+     *     label: 'New Label',
+     *     order: 5
+     * }, true);
      * ```
      */
-    public async update(id: string, updates: Partial<IMenuNode>): Promise<IMenuNode> {
+    public async update(id: string, updates: Partial<IMenuNode>, persist = false): Promise<IMenuNode> {
         const existing = this.menuTree.get(id);
         if (!existing) {
             throw new Error(`Menu node not found: ${id}`);
@@ -273,8 +373,25 @@ export class MenuService implements IMenuService {
             throw new Error(validation.error || 'Menu update cancelled by subscriber');
         }
 
-        // Update database
-        await MenuNodeModel.findByIdAndUpdate(id, updates);
+        if (persist) {
+            // Update database for persisted entries only
+            const collection = this.database.getCollection<IMenuNodeDocument>('menu_nodes');
+            const updateDoc: Partial<IMenuNodeDocument> = {
+                ...(updates.label !== undefined && { label: updates.label }),
+                ...(updates.url !== undefined && { url: updates.url }),
+                ...(updates.icon !== undefined && { icon: updates.icon }),
+                ...(updates.order !== undefined && { order: updates.order }),
+                ...(updates.parent !== undefined && { parent: updates.parent ? new ObjectId(updates.parent) : null }),
+                ...(updates.enabled !== undefined && { enabled: updates.enabled }),
+                ...(updates.requiredRole !== undefined && { requiredRole: updates.requiredRole }),
+                updatedAt: new Date()
+            };
+
+            await collection.updateOne({ _id: new ObjectId(id) }, { $set: updateDoc });
+        } else {
+            // Memory-only update - just update the timestamp
+            updated.updatedAt = new Date();
+        }
 
         // Update in-memory tree
         this.menuTree.set(id, updated);
@@ -292,14 +409,15 @@ export class MenuService implements IMenuService {
     /**
      * Delete a menu node from the tree.
      *
-     * Validates the deletion through before:delete event subscribers, removes from
-     * database, updates in-memory tree, emits after:delete event, and broadcasts
-     * WebSocket update to all clients.
+     * Validates the deletion through before:delete event subscribers, optionally removes
+     * from database (for persisted entries), updates in-memory tree, emits after:delete
+     * event, and broadcasts WebSocket update to all clients.
      *
      * WARNING: This does NOT cascade delete children. Subscribers should implement
      * cascade logic if needed by subscribing to before:delete and handling children.
      *
      * @param id - The _id of the node to delete
+     * @param persist - If true, removes from database. If false (default), memory-only deletion
      * @returns Promise that resolves when deletion is complete
      * @throws Error if node not found, validation fails, or database operation fails
      *
@@ -313,11 +431,14 @@ export class MenuService implements IMenuService {
      *     }
      * });
      *
-     * // Delete node (children will be deleted by subscriber)
+     * // Delete memory-only node (default)
      * await menuService.delete(nodeId);
+     *
+     * // Delete persisted node (admin entries)
+     * await menuService.delete(nodeId, true);
      * ```
      */
-    public async delete(id: string): Promise<void> {
+    public async delete(id: string, persist = false): Promise<void> {
         const existing = this.menuTree.get(id);
         if (!existing) {
             throw new Error(`Menu node not found: ${id}`);
@@ -329,8 +450,11 @@ export class MenuService implements IMenuService {
             throw new Error(validation.error || 'Menu deletion cancelled by subscriber');
         }
 
-        // Delete from database
-        await MenuNodeModel.findByIdAndDelete(id);
+        if (persist) {
+            // Delete from database for persisted entries only
+            const collection = this.database.getCollection<IMenuNodeDocument>('menu_nodes');
+            await collection.deleteOne({ _id: new ObjectId(id) });
+        }
 
         // Remove from in-memory tree
         this.menuTree.delete(id);
@@ -463,6 +587,36 @@ export class MenuService implements IMenuService {
     }
 
     /**
+     * Emit a lifecycle event to backend subscribers only.
+     *
+     * Lifecycle events (init, ready, loaded) signal different stages of service
+     * initialization to backend subscribers like plugins. These events do NOT
+     * broadcast via WebSocket because clients are not connected during backend
+     * startup. Clients should fetch initial menu data via API or SSR.
+     *
+     * @param eventType - The lifecycle event type (init, ready, or loaded)
+     */
+    private async emitLifecycleEvent(eventType: 'init' | 'ready' | 'loaded'): Promise<void> {
+        const subscribers = this.subscribers.get(eventType) || [];
+        const validation: IMenuValidation = { continue: true };
+
+        for (const subscriber of subscribers) {
+            try {
+                await subscriber({
+                    type: eventType,
+                    node: {} as IMenuNode, // Lifecycle events don't have a node
+                    validation,
+                    timestamp: new Date()
+                });
+            } catch (error) {
+                logger.error({ eventType, error }, 'Lifecycle event subscriber threw error');
+            }
+        }
+
+        logger.debug({ eventType, subscriberCount: subscribers.length }, `Menu lifecycle event '${eventType}' emitted to backend subscribers`);
+    }
+
+    /**
      * Broadcast menu tree update via WebSocket to all connected clients.
      *
      * Emits a WebSocket event with the complete menu tree and the specific event
@@ -552,19 +706,19 @@ export class MenuService implements IMenuService {
      * Normalize a database document to IMenuNode interface.
      *
      * Converts MongoDB document (with _id as ObjectId) to plain object with
-     * _id as string. Handles both Mongoose documents and plain objects.
+     * _id as string. Handles both ObjectId and string parent references.
      *
-     * @param doc - MongoDB document or plain object
+     * @param doc - MongoDB document from native collection
      * @returns Normalized menu node
      */
-    private normalizeNode(doc: any): IMenuNode {
+    private normalizeNode(doc: IMenuNodeDocument): IMenuNode {
         return {
             _id: doc._id.toString(),
             label: doc.label,
             url: doc.url,
             icon: doc.icon,
             order: doc.order ?? 0,
-            parent: doc.parent?.toString() ?? null,
+            parent: doc.parent ? doc.parent.toString() : null,
             enabled: doc.enabled ?? true,
             requiredRole: doc.requiredRole,
             createdAt: doc.createdAt,
@@ -579,16 +733,28 @@ export class MenuService implements IMenuService {
      * node pointing to the home page as the default menu structure.
      */
     private async createDefaultHomeNode(): Promise<void> {
-        const homeNode = await MenuNodeModel.create({
+        const collection = this.database.getCollection<IMenuNodeDocument>('menu_nodes');
+        const now = new Date();
+
+        const homeDoc: Partial<IMenuNodeDocument> = {
             label: 'Home',
             url: '/',
             icon: 'Home',
             order: 0,
             parent: null,
-            enabled: true
-        });
+            enabled: true,
+            createdAt: now,
+            updatedAt: now
+        };
 
-        const normalized = this.normalizeNode(homeNode.toObject());
+        const result = await collection.insertOne(homeDoc as IMenuNodeDocument);
+        const insertedDoc = await collection.findOne({ _id: result.insertedId });
+
+        if (!insertedDoc) {
+            throw new Error('Failed to create default Home node');
+        }
+
+        const normalized = this.normalizeNode(insertedDoc);
         this.menuTree.set(normalized._id!, normalized);
 
         logger.info({ nodeId: normalized._id }, 'Default Home menu node created');

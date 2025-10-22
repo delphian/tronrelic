@@ -89,7 +89,17 @@ const updateNodeSchema = z.object({
  * ```
  */
 export class MenuController {
-    private readonly service = MenuService.getInstance();
+    /**
+     * Get MenuService instance lazily to avoid initialization order issues.
+     *
+     * MenuService requires database dependency injection before getInstance() can be called.
+     * Since the controller is instantiated during Express router setup (before MenuService is
+     * initialized in bootstrap), we must access the service lazily in each method rather than
+     * eagerly in the constructor.
+     */
+    private get service() {
+        return MenuService.getInstance();
+    }
 
     /**
      * Get the complete menu tree structure.
@@ -198,7 +208,8 @@ export class MenuController {
     create = async (req: Request, res: Response) => {
         try {
             const nodeData = createNodeSchema.parse(req.body);
-            const node = await this.service.create(nodeData);
+            // Admin API operations persist to database (persist=true)
+            const node = await this.service.create(nodeData, true);
             res.json({ success: true, node });
         } catch (error) {
             if (error instanceof z.ZodError) {
@@ -264,7 +275,8 @@ export class MenuController {
         try {
             const { id } = req.params;
             const updates = updateNodeSchema.parse(req.body);
-            const node = await this.service.update(id, updates);
+            // Admin API operations persist to database (persist=true)
+            const node = await this.service.update(id, updates, true);
             res.json({ success: true, node });
         } catch (error) {
             if (error instanceof z.ZodError) {
@@ -323,7 +335,8 @@ export class MenuController {
     delete = async (req: Request, res: Response) => {
         try {
             const { id } = req.params;
-            await this.service.delete(id);
+            // Admin API operations persist to database (persist=true)
+            await this.service.delete(id, true);
             res.json({ success: true });
         } catch (error) {
             const message = error instanceof Error ? error.message : 'Failed to delete menu node';
