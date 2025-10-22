@@ -257,6 +257,29 @@ npm run lint --workspaces
 - Parallel workspace builds when multiple need rebuilding
 - Next.js skips type checking and linting during dev (run separately)
 
+### Testing
+
+```bash
+# Run unit tests
+npm run test --workspace apps/backend
+
+# Run integration tests (requires Docker)
+npm run test
+
+# Run tests before committing
+npm run test --workspace apps/backend && npm run test
+```
+
+**Automated Testing:**
+
+All tests run automatically on pull requests to `main` and `dev` branches. Pull requests cannot be merged until all tests pass.
+
+**See [.github/BRANCH_PROTECTION.md](.github/BRANCH_PROTECTION.md) for:**
+- Setting up branch protection rules
+- Required status checks configuration
+- Testing the CI/CD pipeline locally
+- Troubleshooting test failures
+
 ### Logs
 
 Logs are stored in `.run/` directory (cleared on each start):

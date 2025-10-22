@@ -1,0 +1,122 @@
+name: Run Tests
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main, dev]
+  workflow_call:
+
+jobs:
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run backend unit tests
+        run: npm run test --workspace apps/backend
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-results
+          path: |
+            apps/backend/coverage/
+          retention-days: 7
+
+  integration-tests:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build backend image (for compose)
+        run: docker build --target backend -t tronrelic-backend:test .
+
+      - name: Build frontend image (for compose)
+        run: docker build --target frontend-prod -t tronrelic-frontend:test .
+
+      - name: Create .env file for testing
+        run: |
+          cat > .env << EOF
+          NODE_ENV=production
+          PORT=4000
+          ENABLE_SCHEDULER=true
+          ENABLE_WEBSOCKETS=true
+          MONGODB_URI=mongodb://localhost:27017/tronrelic
+          REDIS_URL=redis://localhost:6379
+          REDIS_NAMESPACE=tronrelic
+          ADMIN_API_TOKEN=${{ secrets.ADMIN_API_TOKEN }}
+          TRONGRID_API_KEY=${{ secrets.TRONGRID_API_KEY }}
+          TRONGRID_API_KEY_2=${{ secrets.TRONGRID_API_KEY_2 }}
+          TRONGRID_API_KEY_3=${{ secrets.TRONGRID_API_KEY_3 }}
+          NEXT_PUBLIC_API_URL=http://localhost:4000/api
+          NEXT_PUBLIC_SOCKET_URL=http://localhost:4000
+          NEXT_PUBLIC_SITE_URL=http://localhost:3000
+          EOF
+
+      - name: Start all services with docker compose
+        run: docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d
+
+      - name: Wait for backend health
+        run: |
+          echo "Waiting for backend to become healthy..."
+          for i in {1..30}; do
+            if curl -sf http://localhost:4000/api/health; then
+              echo "Backend is healthy!"
+              exit 0
+            fi
+            echo "Attempt $i/30 - waiting 5 seconds..."
+            sleep 5
+          done
+          echo "Backend failed to become healthy"
+          docker compose -f docker-compose.yml -f docker-compose.ci.yml logs backend
+          exit 1
+
+      - name: Setup Node.js for Playwright
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright
+        run: npx playwright install --with-deps
+
+      - name: Run integration tests
+        run: npm run test
+
+      - name: Upload Playwright screenshots and reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-artifacts
+          path: |
+            test-results/
+            playwright-report/
+          retention-days: 7
+
+      - name: Show docker compose logs on failure
+        if: failure()
+        run: docker compose -f docker-compose.yml -f docker-compose.ci.yml logs
+
+      - name: Stop services
+        if: always()
+        run: docker compose -f docker-compose.yml -f docker-compose.ci.yml down -v
