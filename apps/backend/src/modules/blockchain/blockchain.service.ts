@@ -165,6 +165,72 @@ export class BlockchainService {
     }
 
     /**
+     * Prune old transactions from the database to prevent unbounded growth.
+     *
+     * This method removes transactions older than the retention period (default 7 days) to keep database size manageable.
+     * It deletes transactions in 2-hour batches to avoid long-running operations that could block other queries.
+     * The pruning is conservative - only transactions older than the retention period are eligible for deletion.
+     *
+     * @param retentionHours - Number of hours to retain transactions (default: 168 = 7 days)
+     * @param batchHours - Number of hours of old transactions to delete per run (default: 2)
+     * @returns Object containing number of transactions deleted and the oldest remaining transaction timestamp
+     */
+    async pruneOldTransactions(retentionHours = 168, batchHours = 2): Promise<{ deletedCount: number; oldestRemaining: Date | null }> {
+        const retentionMs = retentionHours * 60 * 60 * 1000;
+        const batchMs = batchHours * 60 * 60 * 1000;
+        const cutoffDate = new Date(Date.now() - retentionMs);
+
+        // Find the oldest transaction timestamp
+        const oldestDoc = await TransactionModel.findOne({}, { timestamp: 1 })
+            .sort({ timestamp: 1 })
+            .lean() as TransactionFields | null;
+
+        if (!oldestDoc) {
+            logger.debug('No transactions found for pruning');
+            return { deletedCount: 0, oldestRemaining: null };
+        }
+
+        const oldestTimestamp = oldestDoc.timestamp;
+
+        // Only prune if there are transactions older than the retention period
+        if (oldestTimestamp >= cutoffDate) {
+            logger.debug({ oldestTimestamp, cutoffDate, retentionHours }, 'No transactions old enough to prune');
+            return { deletedCount: 0, oldestRemaining: oldestTimestamp };
+        }
+
+        // Calculate the batch cutoff: delete up to batchHours worth of old transactions
+        // Start from the oldest timestamp and go forward batchHours
+        const batchCutoff = new Date(oldestTimestamp.getTime() + batchMs);
+
+        // Delete transactions older than cutoffDate AND within the batch window
+        const result = await TransactionModel.deleteMany({
+            timestamp: {
+                $lt: Math.min(batchCutoff.getTime(), cutoffDate.getTime())
+            }
+        });
+
+        const deletedCount = result.deletedCount ?? 0;
+
+        // Find the new oldest transaction
+        const newOldestDoc = await TransactionModel.findOne({}, { timestamp: 1 })
+            .sort({ timestamp: 1 })
+            .lean() as TransactionFields | null;
+
+        const oldestRemaining = newOldestDoc?.timestamp ?? null;
+
+        logger.info({
+            deletedCount,
+            retentionHours,
+            batchHours,
+            cutoffDate,
+            batchCutoff,
+            oldestRemaining
+        }, 'Pruned old transactions');
+
+        return { deletedCount, oldestRemaining };
+    }
+
+    /**
      * Retrieve transaction count timeseries data grouped by time windows.
      *
      * Aggregates historical block data from MongoDB to produce time-windowed transaction statistics
