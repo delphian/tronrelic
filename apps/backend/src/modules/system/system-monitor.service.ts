@@ -75,6 +75,7 @@ export interface BlockchainSyncStatus {
   averageProcessingDelaySeconds: number | null;
   lastTimings: Record<string, number> | null;
   lastTransactionCount: number | null;
+  liveChainThrottleBlocks: number;
 }
 
 export interface TransactionStats {
@@ -438,7 +439,8 @@ export class SystemMonitorService {
       netCatchUpRate: snapshot.netCatchUpRate,
       averageProcessingDelaySeconds: snapshot.averageProcessingDelaySeconds,
       lastTimings,
-      lastTransactionCount
+      lastTransactionCount,
+      liveChainThrottleBlocks: blockchainConfig.network.liveChainThrottleBlocks
     };
   }
 
