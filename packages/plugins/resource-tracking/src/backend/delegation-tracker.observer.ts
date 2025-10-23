@@ -136,10 +136,19 @@ export function createDelegationTrackerObserver(
             } catch (error) {
                 // Duplicate key error (E11000) - transaction already exists due to unique index on txId
                 // This can happen if blocks are reprocessed or observers restart mid-block
-                const isDuplicateError = error && typeof error === 'object' && 'code' in error && error.code === 11000;
+
+                // MongoDB errors can have different structures depending on the driver version
+                // Check both top-level and nested error.code properties
+                const isDuplicateError = error && typeof error === 'object' && (
+                    ('code' in error && error.code === 11000) ||
+                    ('error' in error && typeof error.error === 'object' && error.error && 'code' in error.error && error.error.code === 11000)
+                );
 
                 if (isDuplicateError) {
-                    scopedLogger.error({ txId }, 'Delegation transaction already persisted - skipping duplicate');
+                    scopedLogger.warn({
+                        txId,
+                        blockNumber: payload.blockNumber
+                    }, 'Delegation transaction already persisted - skipping duplicate');
                     return;
                 }
 

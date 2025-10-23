@@ -17,6 +17,8 @@ interface Configuration {
 interface SystemConfig {
     key: string;
     siteUrl: string;
+    systemLogsMaxCount: number;
+    systemLogsRetentionDays: number;
     updatedAt: string;
     updatedBy?: string;
 }
@@ -56,6 +58,8 @@ export function ConfigurationPanel({ token }: Props) {
     const [systemConfig, setSystemConfig] = useState<SystemConfig | null>(null);
     const [loading, setLoading] = useState(true);
     const [editedSiteUrl, setEditedSiteUrl] = useState('');
+    const [editedLogsMaxCount, setEditedLogsMaxCount] = useState(1000000);
+    const [editedLogsRetentionDays, setEditedLogsRetentionDays] = useState(30);
     const [saving, setSaving] = useState(false);
     const [saveMessage, setSaveMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
@@ -82,6 +86,8 @@ export function ConfigurationPanel({ token }: Props) {
             setConfig(configData.config);
             setSystemConfig(systemConfigData.config);
             setEditedSiteUrl(systemConfigData.config?.siteUrl || '');
+            setEditedLogsMaxCount(systemConfigData.config?.systemLogsMaxCount || 1000000);
+            setEditedLogsRetentionDays(systemConfigData.config?.systemLogsRetentionDays || 30);
         } catch (error) {
             console.error('Failed to fetch configuration:', error);
         } finally {
@@ -106,7 +112,11 @@ export function ConfigurationPanel({ token }: Props) {
                     'X-Admin-Token': token,
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({ siteUrl: editedSiteUrl })
+                body: JSON.stringify({
+                    siteUrl: editedSiteUrl,
+                    systemLogsMaxCount: editedLogsMaxCount,
+                    systemLogsRetentionDays: editedLogsRetentionDays
+                })
             });
 
             const data = await response.json();
@@ -167,6 +177,32 @@ export function ConfigurationPanel({ token }: Props) {
                             placeholder="https://tronrelic.com"
                             className={styles.input}
                         />
+                    </div>
+                    <div className={styles.metric_card}>
+                        <div className={styles.metric_card__label}>System Logs Max Count</div>
+                        <input
+                            type="number"
+                            value={editedLogsMaxCount}
+                            onChange={(e) => setEditedLogsMaxCount(Number(e.target.value))}
+                            placeholder="1000000"
+                            min="100"
+                            max="1000000"
+                            className={styles.input}
+                        />
+                        <div className={styles.metric_card__hint}>Maximum number of log entries to retain</div>
+                    </div>
+                    <div className={styles.metric_card}>
+                        <div className={styles.metric_card__label}>System Logs Retention Days</div>
+                        <input
+                            type="number"
+                            value={editedLogsRetentionDays}
+                            onChange={(e) => setEditedLogsRetentionDays(Number(e.target.value))}
+                            placeholder="30"
+                            min="1"
+                            max="365"
+                            className={styles.input}
+                        />
+                        <div className={styles.metric_card__hint}>Number of days to keep logs before deletion</div>
                     </div>
                 </div>
 
