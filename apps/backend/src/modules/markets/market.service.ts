@@ -101,24 +101,81 @@ export class MarketService {
     };
   }
 
-  async getPriceHistory(guid: string, limit = 168): Promise<MarketPriceHistoryEntry[]> {
-    const entries = await MarketPriceHistoryModel.find({ guid })
+  /**
+   * Retrieves market pricing history with optional time-bucket aggregation.
+   *
+   * When `bucketHours` is provided, aggregates raw data points (recorded every 10 minutes)
+   * into time buckets of the specified size (e.g., 6 hours), computing the average
+   * minUsdtTransferCost for each bucket. This reduces payload size from 4,320 records
+   * to ~120 buckets for 30-day queries, while preserving trend accuracy.
+   *
+   * @param guid - Market identifier to query
+   * @param limit - Maximum number of raw records to retrieve (default: 168 for 7 days, max: 5000)
+   * @param bucketHours - Optional aggregation bucket size in hours (1-24)
+   * @returns Array of market history entries (raw or aggregated)
+   */
+  async getPriceHistory(guid: string, limit = 168, bucketHours?: number): Promise<MarketPriceHistoryEntry[]> {
+    const rawEntries = await MarketPriceHistoryModel.find({ guid })
       .sort({ recordedAt: -1 })
-      .limit(Math.max(1, limit))
+      .limit(Math.max(1, Math.min(limit, 5000)))
       .lean();
 
-    return entries
-      .map(entry => ({
-        recordedAt: entry.recordedAt instanceof Date ? entry.recordedAt.toISOString() : new Date(entry.recordedAt).toISOString(),
-        effectivePrice: entry.effectivePrice ?? undefined,
-        bestPrice: entry.bestPrice ?? undefined,
-        averagePrice: entry.averagePrice ?? undefined,
-        minUsdtTransferCost: entry.minUsdtTransferCost ?? undefined,
-        availabilityPercent: entry.availabilityPercent ?? undefined,
-        availabilityConfidence: entry.availabilityConfidence ?? undefined,
-        sampleSize: entry.sampleSize ?? undefined
-      }))
-      .reverse();
+    // If no bucketing requested, return raw data
+    if (!bucketHours) {
+      return rawEntries
+        .map(entry => ({
+          recordedAt: entry.recordedAt instanceof Date ? entry.recordedAt.toISOString() : new Date(entry.recordedAt).toISOString(),
+          effectivePrice: entry.effectivePrice ?? undefined,
+          bestPrice: entry.bestPrice ?? undefined,
+          averagePrice: entry.averagePrice ?? undefined,
+          minUsdtTransferCost: entry.minUsdtTransferCost ?? undefined,
+          availabilityPercent: entry.availabilityPercent ?? undefined,
+          availabilityConfidence: entry.availabilityConfidence ?? undefined,
+          sampleSize: entry.sampleSize ?? undefined
+        }))
+        .reverse();
+    }
+
+    // Aggregate into time buckets
+    const bucketSizeMs = bucketHours * 60 * 60 * 1000;
+    const buckets = new Map<number, typeof rawEntries>();
+
+    rawEntries.forEach(entry => {
+      const timestamp = new Date(entry.recordedAt).getTime();
+      const bucketKey = Math.floor(timestamp / bucketSizeMs) * bucketSizeMs;
+
+      if (!buckets.has(bucketKey)) {
+        buckets.set(bucketKey, []);
+      }
+      buckets.get(bucketKey)!.push(entry);
+    });
+
+    // Calculate aggregated values for each bucket
+    const aggregated = Array.from(buckets.entries())
+      .map(([bucketTimestamp, entries]) => {
+        // Filter and aggregate minUsdtTransferCost
+        const validCosts = entries
+          .map(e => e.minUsdtTransferCost)
+          .filter((cost): cost is number => typeof cost === 'number' && cost > 0);
+
+        const avgCost = validCosts.length > 0
+          ? validCosts.reduce((sum, cost) => sum + cost, 0) / validCosts.length
+          : undefined;
+
+        return {
+          recordedAt: new Date(bucketTimestamp).toISOString(),
+          minUsdtTransferCost: avgCost,
+          effectivePrice: undefined,
+          bestPrice: undefined,
+          averagePrice: undefined,
+          availabilityPercent: undefined,
+          availabilityConfidence: undefined,
+          sampleSize: entries.length
+        };
+      })
+      .sort((a, b) => new Date(a.recordedAt).getTime() - new Date(b.recordedAt).getTime());
+
+    return aggregated;
   }
 
   async recordAffiliateImpression(guid: string, trackingCode: string): Promise<MarketAffiliateTracking | null> {

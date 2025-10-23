@@ -16,7 +16,8 @@ const historyParamsSchema = z.object({
 });
 
 const historyQuerySchema = z.object({
-  limit: z.coerce.number().min(1).max(1000).optional()
+  limit: z.coerce.number().min(1).max(5000).optional(),
+  bucket_hours: z.coerce.number().min(1).max(24).optional()
 });
 
 const affiliateBodySchema = z.object({
@@ -50,7 +51,7 @@ export class MarketController {
   history = async (req: Request, res: Response) => {
     const params = historyParamsSchema.parse(req.params);
     const query = historyQuerySchema.parse(req.query);
-    const history = await this.service.getPriceHistory(params.guid, query.limit ?? 168);
+    const history = await this.service.getPriceHistory(params.guid, query.limit ?? 4320, query.bucket_hours);
     res.json({ success: true, guid: params.guid, history });
   };
 

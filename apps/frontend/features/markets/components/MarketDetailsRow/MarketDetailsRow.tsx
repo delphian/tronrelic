@@ -127,14 +127,14 @@ export function MarketDetailsRow({
 
     /**
      * Transforms historical market data into a format compatible with the LineChart component.
-     * Aggregates raw data points (recorded every 5 minutes) into 6-hour buckets to reduce
-     * chart density and provide a more readable trend view. Each bucket shows the average
-     * minUsdtTransferCost for that 6-hour period.
+     * The backend pre-aggregates data into 6-hour buckets to reduce payload size from 4,320
+     * raw records to ~120 aggregated buckets for 30-day queries. This provides a readable
+     * trend view without overwhelming the chart with too many data points.
      *
-     * Filters out invalid data points (null/zero/negative costs) before aggregation to ensure
-     * the chart only displays meaningful pricing trends without gaps or misleading data.
+     * Filters out invalid data points (null/undefined costs) to ensure the chart only
+     * displays meaningful pricing trends without gaps or misleading data.
      *
-     * @returns Chart series configuration with 6-hour aggregated data points
+     * @returns Chart series configuration with pre-aggregated data points from backend
      */
     const priceSeries = useMemo(() => {
         if (!history.length) {
@@ -146,27 +146,12 @@ export function MarketDetailsRow({
             };
         }
 
-        // Group data into 6-hour buckets (6 hours = 21600000 ms)
-        const BUCKET_SIZE_MS = 6 * 60 * 60 * 1000;
-        const buckets = new Map<number, number[]>();
-
-        history.forEach(point => {
-            if (typeof point.minUsdtTransferCost === 'number' && point.minUsdtTransferCost > 0) {
-                const timestamp = new Date(point.recordedAt).getTime();
-                const bucketKey = Math.floor(timestamp / BUCKET_SIZE_MS) * BUCKET_SIZE_MS;
-
-                if (!buckets.has(bucketKey)) {
-                    buckets.set(bucketKey, []);
-                }
-                buckets.get(bucketKey)!.push(point.minUsdtTransferCost);
-            }
-        });
-
-        // Calculate averages for each bucket
-        const data = Array.from(buckets.entries())
-            .map(([bucketTimestamp, values]) => ({
-                date: new Date(bucketTimestamp).toISOString(),
-                value: values.reduce((sum, v) => sum + v, 0) / values.length
+        // Backend returns pre-aggregated data, just filter and transform
+        const data = history
+            .filter(point => typeof point.minUsdtTransferCost === 'number' && point.minUsdtTransferCost > 0)
+            .map(point => ({
+                date: point.recordedAt,
+                value: point.minUsdtTransferCost!
             }))
             .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
