@@ -10,12 +10,19 @@ import { loadPlugins } from './loaders/plugins.js';
 import { MenuService } from './modules/menu/menu.service.js';
 import { PluginDatabaseService } from './services/plugin-database.service.js';
 import { BlockchainObserverService } from './services/blockchain-observer/index.js';
+import { SystemConfigService } from './services/system-config/index.js';
 
 async function bootstrap() {
     try {
         await connectDatabase();
         const redis = createRedisClient();
         await redis.connect();
+
+        // Initialize system configuration service
+        logger.info({}, 'Initializing system configuration service...');
+        const configLogger = logger.child({ module: 'system-config' });
+        SystemConfigService.initialize(configLogger);
+        logger.info({}, 'System configuration service initialized');
 
         // Initialize blockchain observer service explicitly before plugins load
         logger.info({}, 'Initializing blockchain observer service...');

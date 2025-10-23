@@ -38,6 +38,8 @@ export function systemRouter() {
 
   // Configuration endpoints
   router.get('/config', controller.getConfiguration);
+  router.get('/config/system', controller.getSystemConfig);
+  router.patch('/config/system', controller.updateSystemConfig);
 
   // Plugin WebSocket monitoring endpoints
   router.get('/websockets/stats', async (req, res, next) => {

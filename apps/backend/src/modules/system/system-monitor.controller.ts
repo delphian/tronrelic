@@ -5,6 +5,7 @@ import { BlockchainService } from '../blockchain/blockchain.service.js';
 import { MarketService } from '../markets/market.service.js';
 import { getScheduler } from '../../jobs/index.js';
 import { BlockchainObserverService } from '../../services/blockchain-observer/index.js';
+import { SystemConfigService } from '../../services/system-config/index.js';
 
 export class SystemMonitorController {
   private readonly service: SystemMonitorService;
@@ -129,6 +130,37 @@ export class SystemMonitorController {
 
   getConfiguration = async (_req: Request, res: Response) => {
     const config = await this.service.getConfiguration();
+    res.json({ success: true, config });
+  };
+
+  getSystemConfig = async (_req: Request, res: Response) => {
+    const configService = SystemConfigService.getInstance();
+    const config = await configService.getConfig();
+    res.json({ success: true, config });
+  };
+
+  updateSystemConfig = async (req: Request, res: Response) => {
+    const configService = SystemConfigService.getInstance();
+    const { siteUrl } = req.body;
+
+    if (!siteUrl) {
+      return res.status(400).json({
+        success: false,
+        error: 'siteUrl is required'
+      });
+    }
+
+    // Validate URL format
+    try {
+      new URL(siteUrl);
+    } catch (err) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid URL format. Must include protocol (http:// or https://)'
+      });
+    }
+
+    const config = await configService.updateConfig({ siteUrl });
     res.json({ success: true, config });
   };
 
