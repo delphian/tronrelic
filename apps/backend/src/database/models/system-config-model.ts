@@ -16,6 +16,8 @@ import mongoose, { Schema, Document } from 'mongoose';
  * **Schema Fields:**
  * - `key` - Unique configuration key (e.g., "system", "email", "notifications")
  * - `siteUrl` - Public-facing URL of the site (e.g., "https://tronrelic.com")
+ * - `systemLogsMaxCount` - Maximum number of log entries to retain (default: 10000)
+ * - `systemLogsRetentionDays` - Number of days to keep logs before deletion (default: 30)
  * - `updatedAt` - Timestamp of last configuration change
  * - `updatedBy` - Admin identifier who made the change (for audit trail)
  *
@@ -39,6 +41,8 @@ import mongoose, { Schema, Document } from 'mongoose';
 export interface ISystemConfig {
     key: string;
     siteUrl: string;
+    systemLogsMaxCount: number;
+    systemLogsRetentionDays: number;
     updatedAt: Date;
     updatedBy?: string;
 }
@@ -58,6 +62,16 @@ const systemConfigSchema = new Schema<SystemConfigDoc>(
             type: String,
             required: true,
             default: 'http://localhost:3000'
+        },
+        systemLogsMaxCount: {
+            type: Number,
+            required: true,
+            default: 10000
+        },
+        systemLogsRetentionDays: {
+            type: Number,
+            required: true,
+            default: 30
         },
         updatedAt: {
             type: Date,

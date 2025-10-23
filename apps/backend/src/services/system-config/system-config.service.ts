@@ -100,6 +100,8 @@ export class SystemConfigService implements ISystemConfigService {
                 config = await SystemConfigModel.create({
                     key: 'system',
                     siteUrl: process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000',
+                    systemLogsMaxCount: 10000,
+                    systemLogsRetentionDays: 30,
                     updatedAt: new Date()
                 });
             }
@@ -116,6 +118,8 @@ export class SystemConfigService implements ISystemConfigService {
             return {
                 key: 'system',
                 siteUrl: process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000',
+                systemLogsMaxCount: 10000,
+                systemLogsRetentionDays: 30,
                 updatedAt: new Date()
             };
         }

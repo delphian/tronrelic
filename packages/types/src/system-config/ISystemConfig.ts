@@ -14,6 +14,8 @@
  *
  * **Current Settings:**
  * - `siteUrl` - Public-facing URL of the site (e.g., "https://tronrelic.com")
+ * - `systemLogsMaxCount` - Maximum number of log entries to retain (default: 10000)
+ * - `systemLogsRetentionDays` - Number of days to keep logs before deletion (default: 30)
  *
  * **Future Settings (examples):**
  * - `maintenanceMode` - Boolean flag to enable read-only mode
@@ -59,6 +61,47 @@ export interface ISystemConfig {
      * in the database allows zero-downtime URL updates through the admin panel.
      */
     siteUrl: string;
+
+    /**
+     * Maximum number of system log entries to retain.
+     *
+     * When the log count exceeds this value, the cleanup scheduler deletes
+     * the oldest logs to enforce the limit. This prevents unbounded MongoDB
+     * growth from error/warning accumulation.
+     *
+     * Default: 10000 logs
+     *
+     * Recommended values:
+     * - Development: 1000-5000 (lower disk usage)
+     * - Production: 10000-50000 (more historical data)
+     * - High-traffic: 100000+ (if disk space allows)
+     *
+     * Why configurable:
+     * Different environments have different disk constraints and debugging needs.
+     * Production may want more historical data, while development can be more
+     * aggressive with cleanup.
+     */
+    systemLogsMaxCount: number;
+
+    /**
+     * Number of days to retain system logs.
+     *
+     * Logs older than this many days are deleted by the cleanup scheduler,
+     * regardless of total log count. This ensures old logs don't persist
+     * indefinitely even if the maxCount limit isn't reached.
+     *
+     * Default: 30 days
+     *
+     * Recommended values:
+     * - Development: 7-14 days (shorter retention)
+     * - Production: 30-90 days (compliance/audit requirements)
+     * - Long-term archival: 365+ days (if disk space allows)
+     *
+     * Why configurable:
+     * Compliance requirements and audit needs vary by organization. Some
+     * industries require 90+ day retention, while others prioritize disk space.
+     */
+    systemLogsRetentionDays: number;
 
     /**
      * Timestamp of last configuration update.
