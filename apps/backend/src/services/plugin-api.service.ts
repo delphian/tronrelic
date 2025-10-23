@@ -164,6 +164,10 @@ export class PluginApiService {
         const hasAdminRoutes = plugin.adminRoutes && plugin.adminRoutes.length > 0;
 
         if (!hasPublicRoutes && !hasAdminRoutes) {
+            logger.warn(
+                { pluginId: plugin.manifest.id, title: plugin.manifest.title },
+                'Plugin has no routes to register (empty routes and adminRoutes arrays)'
+            );
             return;
         }
 
