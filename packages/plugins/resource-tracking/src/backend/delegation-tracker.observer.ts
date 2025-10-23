@@ -139,7 +139,7 @@ export function createDelegationTrackerObserver(
                 const isDuplicateError = error && typeof error === 'object' && 'code' in error && error.code === 11000;
 
                 if (isDuplicateError) {
-                    scopedLogger.debug({ txId }, 'Delegation transaction already persisted - skipping duplicate');
+                    scopedLogger.error({ txId }, 'Delegation transaction already persisted - skipping duplicate');
                     return;
                 }
 

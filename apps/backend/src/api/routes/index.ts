@@ -10,7 +10,6 @@ import { adminMarketsRouter } from './admin-markets.router.js';
 import { inflowsRouter } from './inflows.router.js';
 import { outflowsRouter } from './outflows.router.js';
 import { dashboardRouter } from './dashboard.router.js';
-import { resourceRouter } from './resource.router.js';
 import { energyRouter } from './energy.router.js';
 import { base58checkRouter } from './base58check.router.js';
 import { liveRouter } from './live.router.js';
@@ -33,7 +32,6 @@ export function createApiRouter() {
   router.use('/outflows', outflowsRouter());
   router.use('/notifications', notificationsRouter());
   router.use('/tools', toolsRouter());
-  router.use('/resource', resourceRouter());
   router.use('/energy', energyRouter());
   router.use('/base58check', base58checkRouter());
   router.use('/live', liveRouter());
