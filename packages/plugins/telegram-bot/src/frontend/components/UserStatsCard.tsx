@@ -67,26 +67,29 @@ export function UserStatsCard({ context }: IUserStatsCardProps) {
 
     if (loading) {
         return (
-            <ui.Card title="User Statistics">
-                <ui.Skeleton count={4} />
+            <ui.Card>
+                <h3 style={{ fontSize: '1.125rem', fontWeight: 600, marginBottom: '1rem' }}>User Statistics</h3>
+                <div>Loading...</div>
             </ui.Card>
         );
     }
 
     if (error || !stats) {
         return (
-            <ui.Card title="User Statistics">
-                <p style={{ color: 'var(--color-error)' }}>{error || 'No statistics available'}</p>
+            <ui.Card>
+                <h3 style={{ fontSize: '1.125rem', fontWeight: 600, marginBottom: '1rem' }}>User Statistics</h3>
+                <p style={{ color: 'var(--color-danger)' }}>{error || 'No statistics available'}</p>
             </ui.Card>
         );
     }
 
     return (
-        <ui.Card title="User Statistics">
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
+        <ui.Card>
+            <h3 style={{ fontSize: '1.125rem', fontWeight: 600, marginBottom: '1.5rem' }}>User Statistics</h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
                 {/* Total users */}
                 <div>
-                    <div style={{ fontSize: '0.875rem', color: 'var(--color-text-secondary)' }}>
+                    <div style={{ fontSize: '0.875rem', color: 'var(--color-text-muted)' }}>
                         Total Users
                     </div>
                     <div style={{ fontSize: '1.5rem', fontWeight: 600 }}>
@@ -96,7 +99,7 @@ export function UserStatsCard({ context }: IUserStatsCardProps) {
 
                 {/* Active users (24h) */}
                 <div>
-                    <div style={{ fontSize: '0.875rem', color: 'var(--color-text-secondary)' }}>
+                    <div style={{ fontSize: '0.875rem', color: 'var(--color-text-muted)' }}>
                         Active Users (24h)
                     </div>
                     <div style={{ fontSize: '1.5rem', fontWeight: 600 }}>
@@ -106,7 +109,7 @@ export function UserStatsCard({ context }: IUserStatsCardProps) {
 
                 {/* Total commands */}
                 <div>
-                    <div style={{ fontSize: '0.875rem', color: 'var(--color-text-secondary)' }}>
+                    <div style={{ fontSize: '0.875rem', color: 'var(--color-text-muted)' }}>
                         Total Commands
                     </div>
                     <div style={{ fontSize: '1.5rem', fontWeight: 600 }}>
@@ -117,13 +120,13 @@ export function UserStatsCard({ context }: IUserStatsCardProps) {
                 {/* Subscription breakdown */}
                 {Object.keys(stats.subscriptionCounts).length > 0 && (
                     <div>
-                        <div style={{ fontSize: '0.875rem', color: 'var(--color-text-secondary)', marginBottom: 'var(--space-sm)' }}>
+                        <div style={{ fontSize: '0.875rem', color: 'var(--color-text-muted)', marginBottom: '0.75rem' }}>
                             Subscriptions
                         </div>
                         {Object.entries(stats.subscriptionCounts).map(([type, count]) => (
-                            <div key={type} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 'var(--space-xs)' }}>
+                            <div key={type} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
                                 <span>{type}</span>
-                                <ui.Badge variant="info">{count}</ui.Badge>
+                                <ui.Badge tone="neutral">{count}</ui.Badge>
                             </div>
                         ))}
                     </div>

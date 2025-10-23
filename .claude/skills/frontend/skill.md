@@ -42,7 +42,7 @@ After loading documentation, I will apply these patterns:
 - When explicitly requested ("don't use agents")
 - Conversational explanations of frontend patterns
 
-**Delegate to `frontend-specialist` subagent for:**
+**Delegate to `frontend-ui-specialist` subagent for:**
 - Multi-component features or refactoring
 - Routing, navigation, or layout changes
 - Plugin UI pages (new pages or major redesigns)
@@ -70,5 +70,5 @@ Before completing any frontend task, verify:
 
 ## Version History
 
-- v2.0.0 (2025-10-18): Converted to documentation loader pattern; delegates complex work to frontend-specialist subagent
+- v2.0.0 (2025-10-18): Converted to documentation loader pattern; delegates complex work to frontend-ui-specialist subagent
 - v1.0.0 (2025-10-18): Initial frontend development skill with inline guidance
