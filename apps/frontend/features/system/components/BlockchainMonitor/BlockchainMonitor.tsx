@@ -29,6 +29,7 @@ interface BlockchainStatus {
     averageProcessingDelaySeconds: number | null;
     lastTimings: Record<string, number> | null;
     lastTransactionCount: number | null;
+    liveChainThrottleBlocks: number;
 }
 
 interface TransactionStats {
@@ -214,17 +215,22 @@ export function BlockchainMonitor({ token }: Props) {
      * Returns the appropriate CSS class variant for lag metric card based on severity.
      *
      * Maps lag values to color-coded variants for visual feedback:
-     * - <10 blocks: Green (healthy)
-     * - 10-99 blocks: Yellow (warning)
-     * - ≥100 blocks: Red (danger)
+     * - < liveChainThrottleBlocks: Green (healthy, within acceptable lag)
+     * - ≥ liveChainThrottleBlocks but < 100: Yellow (warning, falling behind but manageable)
+     * - ≥ 100 blocks: Red (danger, significant backlog)
+     *
+     * The liveChainThrottleBlocks threshold (default 20) represents the point where
+     * the system considers itself "caught up" and applies intelligent throttling to
+     * match TRON's 3-second block intervals.
      *
      * @param {number} lag - Number of blocks behind network
+     * @param {number} throttleThreshold - Live chain throttle blocks from backend config
      * @returns {string} CSS Module class name for lag severity variant
      */
-    const getLagClass = (lag: number): string => {
-        if (lag < 10) return styles['metric-card--healthy'];
-        if (lag < 100) return styles['metric-card--warning'];
-        return styles['metric-card--danger'];
+    const getLagClass = (lag: number, throttleThreshold: number): string => {
+        if (lag < throttleThreshold) return styles['metric_card--healthy'];
+        if (lag < 100) return styles['metric_card--warning'];
+        return styles['metric_card--danger'];
     };
 
     /**
@@ -355,10 +361,10 @@ export function BlockchainMonitor({ token }: Props) {
                             <div className={styles.metric_card__value}>{status.currentBlock.toLocaleString()}</div>
                         </div>
 
-                        <div className={`${styles.metric_card} ${getLagClass(status.lag)}`}>
+                        <div className={`${styles.metric_card} ${getLagClass(status.lag, status.liveChainThrottleBlocks)}`}>
                             <div className={styles.metric_card__label}>
                                 Lag (Blocks Behind)
-                                <span className={styles.info_icon} title="How many blocks behind the network we are. Green: <10, Yellow: <100, Red: ≥100. Time behind shows average delay between block creation and processing.">
+                                <span className={styles.info_icon} title={`How many blocks behind the network we are. Green: <${status.liveChainThrottleBlocks}, Yellow: <100, Red: ≥100. Time behind shows average delay between block creation and processing.`}>
                                     <Info size={14} />
                                 </span>
                             </div>
