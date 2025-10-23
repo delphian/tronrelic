@@ -339,9 +339,9 @@ export async function getStakingTimeseries(days = 14): Promise<StakingTimeseries
   return series;
 }
 
-export async function getMarketHistory(guid: string, limit = 120): Promise<MarketHistoryRecord[]> {
+export async function getMarketHistory(guid: string, limit = 4320, bucketHours = 6): Promise<MarketHistoryRecord[]> {
   const response = await apiClient.get(`/markets/${guid}/history`, {
-    params: { limit }
+    params: { limit, bucket_hours: bucketHours }
   });
   const { history } = response.data as { success: boolean; history: MarketHistoryRecord[] };
   return history;
