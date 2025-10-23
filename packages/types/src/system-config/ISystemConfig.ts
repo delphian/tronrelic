@@ -69,12 +69,12 @@ export interface ISystemConfig {
      * the oldest logs to enforce the limit. This prevents unbounded MongoDB
      * growth from error/warning accumulation.
      *
-     * Default: 10000 logs
+     * Default: 1000000 logs (1 million)
      *
      * Recommended values:
-     * - Development: 1000-5000 (lower disk usage)
-     * - Production: 10000-50000 (more historical data)
-     * - High-traffic: 100000+ (if disk space allows)
+     * - Development: 10000-50000 (lower disk usage)
+     * - Production: 100000-1000000 (more historical data)
+     * - High-traffic: 1000000+ (if disk space allows)
      *
      * Why configurable:
      * Different environments have different disk constraints and debugging needs.

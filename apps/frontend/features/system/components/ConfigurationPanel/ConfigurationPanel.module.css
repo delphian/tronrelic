@@ -83,6 +83,13 @@
     text-transform: capitalize;
 }
 
+.metric_card__hint {
+    font-size: 0.75rem;
+    opacity: 0.6;
+    margin-top: 0.25rem;
+    line-height: 1.4;
+}
+
 /* ========================================
    Form Input Styles
    ======================================== */
