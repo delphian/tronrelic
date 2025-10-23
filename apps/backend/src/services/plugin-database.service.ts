@@ -116,34 +116,42 @@ export class PluginDatabaseService implements IPluginDatabase {
      * Values must be JSON-serializable. Verifies that MongoDB acknowledged the write
      * operation to prevent silent failures.
      *
+     * **IMPORTANT:** Callers MUST wrap this in try-catch and log errors with appropriate context.
+     * This method does not log errors internally to avoid duplicate logging.
+     *
      * @param key - The key to store under
      * @param value - The value to store
      * @throws Error if MongoDB does not acknowledge the write operation
+     *
+     * @example
+     * ```typescript
+     * try {
+     *     await database.set('config', { threshold: 1000 });
+     * } catch (error) {
+     *     logger.error({ error, key: 'config' }, 'Failed to save plugin configuration');
+     *     throw error;
+     * }
+     * ```
      */
     public async set<T = any>(key: string, value: T): Promise<void> {
-        try {
-            const collection = this.getCollection<{ key: string; value: T }>('_kv');
-            const result = await collection.updateOne(
-                { key } as Filter<{ key: string; value: T }>,
-                { $set: { key, value } } as UpdateFilter<{ key: string; value: T }>,
-                { upsert: true }
+        const collection = this.getCollection<{ key: string; value: T }>('_kv');
+        const result = await collection.updateOne(
+            { key } as Filter<{ key: string; value: T }>,
+            { $set: { key, value } } as UpdateFilter<{ key: string; value: T }>,
+            { upsert: true }
+        );
+
+        // Verify write was acknowledged by MongoDB
+        if (!result.acknowledged) {
+            throw new Error('MongoDB write was not acknowledged');
+        }
+
+        // Verify something was actually modified or inserted
+        if (result.modifiedCount === 0 && result.upsertedCount === 0) {
+            logger.warn(
+                { pluginId: this.pluginId, key, result },
+                'updateOne completed but no documents were modified or upserted'
             );
-
-            // Verify write was acknowledged by MongoDB
-            if (!result.acknowledged) {
-                throw new Error('MongoDB write was not acknowledged');
-            }
-
-            // Verify something was actually modified or inserted
-            if (result.modifiedCount === 0 && result.upsertedCount === 0) {
-                logger.warn(
-                    { pluginId: this.pluginId, key, result },
-                    'updateOne completed but no documents were modified or upserted'
-                );
-            }
-        } catch (error) {
-            logger.error({ error, pluginId: this.pluginId, key }, 'Failed to set key in plugin KV store');
-            throw error;
         }
     }
 
@@ -170,185 +178,245 @@ export class PluginDatabaseService implements IPluginDatabase {
      * This is typically called during the plugin's install() lifecycle hook
      * to set up indexes for optimal query performance.
      *
+     * **IMPORTANT:** Callers MUST wrap this in try-catch and log errors with appropriate context.
+     * This method does not log errors internally to avoid duplicate logging.
+     *
      * @param collectionName - Logical collection name
      * @param indexSpec - MongoDB index specification
      * @param options - Index options (unique, sparse, TTL, etc.)
+     *
+     * @example
+     * ```typescript
+     * try {
+     *     await database.createIndex('transactions', { txId: 1 }, { unique: true });
+     * } catch (error) {
+     *     logger.error({ error, collection: 'transactions' }, 'Failed to create transaction index');
+     *     throw error;
+     * }
+     * ```
      */
     public async createIndex(
         collectionName: string,
         indexSpec: IndexDescription,
         options?: CreateIndexesOptions
     ): Promise<void> {
-        try {
-            const collection = this.getCollection(collectionName);
-            await collection.createIndex(indexSpec as any, options);
-            logger.info(
-                { pluginId: this.pluginId, collection: collectionName, indexSpec },
-                'Created plugin collection index'
-            );
-        } catch (error) {
-            logger.error(
-                { error, pluginId: this.pluginId, collection: collectionName, indexSpec },
-                'Failed to create plugin collection index'
-            );
-            throw error;
-        }
+        const collection = this.getCollection(collectionName);
+        await collection.createIndex(indexSpec as any, options);
+        logger.info(
+            { pluginId: this.pluginId, collection: collectionName, indexSpec },
+            'Created plugin collection index'
+        );
     }
 
     /**
      * Count documents in a collection.
      *
+     * **IMPORTANT:** Callers MUST wrap this in try-catch and log errors with appropriate context.
+     * This method does not log errors internally to avoid duplicate logging.
+     *
      * @param collectionName - Logical collection name
      * @param filter - MongoDB query filter
      * @returns Count of matching documents
+     *
+     * @example
+     * ```typescript
+     * try {
+     *     const count = await database.count('alerts', { dismissed: false });
+     * } catch (error) {
+     *     logger.error({ error }, 'Failed to count active alerts');
+     *     throw error;
+     * }
+     * ```
      */
     public async count<T extends Document = Document>(
         collectionName: string,
         filter: Filter<T>
     ): Promise<number> {
-        try {
-            const collection = this.getCollection<T>(collectionName);
-            return await collection.countDocuments(filter);
-        } catch (error) {
-            logger.error(
-                { error, pluginId: this.pluginId, collection: collectionName },
-                'Failed to count documents'
-            );
-            throw error;
-        }
+        const collection = this.getCollection<T>(collectionName);
+        return await collection.countDocuments(filter);
     }
 
     /**
      * Find documents in a collection.
      *
+     * **IMPORTANT:** Callers MUST wrap this in try-catch and log errors with appropriate context.
+     * This method does not log errors internally to avoid duplicate logging.
+     *
      * @param collectionName - Logical collection name
      * @param filter - MongoDB query filter
      * @param options - Query options (limit, sort, skip)
      * @returns Array of matching documents
+     *
+     * @example
+     * ```typescript
+     * try {
+     *     const transactions = await database.find('transactions',
+     *         { blockNumber: { $gte: 1000, $lte: 2000 } },
+     *         { sort: { timestamp: -1 }, limit: 100 }
+     *     );
+     * } catch (error) {
+     *     logger.error({ error, blockRange: [1000, 2000] }, 'Failed to fetch transactions');
+     *     throw error;
+     * }
+     * ```
      */
     public async find<T extends Document = Document>(
         collectionName: string,
         filter: Filter<T>,
         options?: { limit?: number; skip?: number; sort?: Record<string, 1 | -1> }
     ): Promise<T[]> {
-        try {
-            const collection = this.getCollection<T>(collectionName);
-            let cursor = collection.find(filter);
+        const collection = this.getCollection<T>(collectionName);
+        let cursor = collection.find(filter);
 
-            if (options?.sort) {
-                cursor = cursor.sort(options.sort);
-            }
-            if (options?.skip) {
-                cursor = cursor.skip(options.skip);
-            }
-            if (options?.limit) {
-                cursor = cursor.limit(options.limit);
-            }
-
-            return (await cursor.toArray()) as T[];
-        } catch (error) {
-            logger.error(
-                { error, pluginId: this.pluginId, collection: collectionName },
-                'Failed to find documents'
-            );
-            throw error;
+        if (options?.sort) {
+            cursor = cursor.sort(options.sort);
         }
+        if (options?.skip) {
+            cursor = cursor.skip(options.skip);
+        }
+        if (options?.limit) {
+            cursor = cursor.limit(options.limit);
+        }
+
+        return (await cursor.toArray()) as T[];
     }
 
     /**
      * Find a single document in a collection.
      *
+     * **IMPORTANT:** Callers MUST wrap this in try-catch and log errors with appropriate context.
+     * This method does not log errors internally to avoid duplicate logging.
+     *
      * @param collectionName - Logical collection name
      * @param filter - MongoDB query filter
      * @returns The first matching document, or null
+     *
+     * @example
+     * ```typescript
+     * try {
+     *     const subscription = await database.findOne('subscriptions', { userId: '123' });
+     * } catch (error) {
+     *     logger.error({ error, userId: '123' }, 'Failed to fetch user subscription');
+     *     throw error;
+     * }
+     * ```
      */
     public async findOne<T extends Document = Document>(
         collectionName: string,
         filter: Filter<T>
     ): Promise<T | null> {
-        try {
-            const collection = this.getCollection<T>(collectionName);
-            return (await collection.findOne(filter)) as T | null;
-        } catch (error) {
-            logger.error(
-                { error, pluginId: this.pluginId, collection: collectionName },
-                'Failed to find document'
-            );
-            throw error;
-        }
+        const collection = this.getCollection<T>(collectionName);
+        return (await collection.findOne(filter)) as T | null;
     }
 
     /**
      * Insert a single document into a collection.
      *
+     * **IMPORTANT:** Callers MUST wrap this in try-catch and log errors with appropriate context.
+     * This method does not log errors internally to avoid duplicate logging.
+     *
+     * Common errors to handle:
+     * - Duplicate key errors (code 11000) when violating unique indexes
+     * - Validation errors from schema constraints
+     *
      * @param collectionName - Logical collection name
      * @param document - Document to insert
      * @returns The inserted document ID
+     *
+     * @example
+     * ```typescript
+     * try {
+     *     const id = await database.insertOne('transactions', {
+     *         txId: 'abc123',
+     *         blockNumber: 1000,
+     *         timestamp: new Date()
+     *     });
+     * } catch (error) {
+     *     // Handle duplicate key errors specially
+     *     const isDuplicate = error && typeof error === 'object' &&
+     *         ('code' in error && error.code === 11000);
+     *     if (isDuplicate) {
+     *         logger.warn({ txId: 'abc123' }, 'Transaction already exists');
+     *         return;
+     *     }
+     *     logger.error({ error, txId: 'abc123' }, 'Failed to insert transaction');
+     *     throw error;
+     * }
+     * ```
      */
     public async insertOne<T extends Document = Document>(
         collectionName: string,
         document: T
     ): Promise<any> {
-        try {
-            const collection = this.getCollection<T>(collectionName);
-            const result = await collection.insertOne(document as any);
-            return result.insertedId;
-        } catch (error) {
-            logger.error(
-                { error, pluginId: this.pluginId, collection: collectionName },
-                'Failed to insert document'
-            );
-            throw error;
-        }
+        const collection = this.getCollection<T>(collectionName);
+        const result = await collection.insertOne(document as any);
+        return result.insertedId;
     }
 
     /**
      * Update multiple documents in a collection.
      *
+     * **IMPORTANT:** Callers MUST wrap this in try-catch and log errors with appropriate context.
+     * This method does not log errors internally to avoid duplicate logging.
+     *
      * @param collectionName - Logical collection name
      * @param filter - MongoDB query filter
      * @param update - MongoDB update operations
      * @returns Number of documents modified
+     *
+     * @example
+     * ```typescript
+     * try {
+     *     const count = await database.updateMany('alerts',
+     *         { timestamp: { $lt: cutoffDate } },
+     *         { $set: { dismissed: true } }
+     *     );
+     *     logger.info({ dismissed: count }, 'Dismissed old alerts');
+     * } catch (error) {
+     *     logger.error({ error }, 'Failed to dismiss old alerts');
+     *     throw error;
+     * }
+     * ```
      */
     public async updateMany<T extends Document = Document>(
         collectionName: string,
         filter: Filter<T>,
         update: UpdateFilter<T>
     ): Promise<number> {
-        try {
-            const collection = this.getCollection<T>(collectionName);
-            const result = await collection.updateMany(filter, update);
-            return result.modifiedCount;
-        } catch (error) {
-            logger.error(
-                { error, pluginId: this.pluginId, collection: collectionName },
-                'Failed to update documents'
-            );
-            throw error;
-        }
+        const collection = this.getCollection<T>(collectionName);
+        const result = await collection.updateMany(filter, update);
+        return result.modifiedCount;
     }
 
     /**
      * Delete multiple documents from a collection.
      *
+     * **IMPORTANT:** Callers MUST wrap this in try-catch and log errors with appropriate context.
+     * This method does not log errors internally to avoid duplicate logging.
+     *
      * @param collectionName - Logical collection name
      * @param filter - MongoDB query filter
      * @returns Number of documents deleted
+     *
+     * @example
+     * ```typescript
+     * try {
+     *     const deleted = await database.deleteMany('transactions',
+     *         { timestamp: { $lt: cutoffDate } }
+     *     );
+     *     logger.info({ deleted }, 'Purged old transactions');
+     * } catch (error) {
+     *     logger.error({ error, cutoffDate }, 'Failed to purge old transactions');
+     *     throw error;
+     * }
+     * ```
      */
     public async deleteMany<T extends Document = Document>(
         collectionName: string,
         filter: Filter<T>
     ): Promise<number> {
-        try {
-            const collection = this.getCollection<T>(collectionName);
-            const result = await collection.deleteMany(filter);
-            return result.deletedCount;
-        } catch (error) {
-            logger.error(
-                { error, pluginId: this.pluginId, collection: collectionName },
-                'Failed to delete documents'
-            );
-            throw error;
-        }
+        const collection = this.getCollection<T>(collectionName);
+        const result = await collection.deleteMany(filter);
+        return result.deletedCount;
     }
 }
