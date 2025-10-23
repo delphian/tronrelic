@@ -347,6 +347,71 @@ export const telegramBotBackendPlugin = definePlugin({
             description: 'Configure Telegram webhook automatically using Telegram Bot API'
         },
         {
+            method: 'GET',
+            path: '/verify-webhook',
+            handler: async (req: IHttpRequest, res: IHttpResponse, next: IHttpNext) => {
+                try {
+                    const botToken = process.env.TELEGRAM_BOT_TOKEN;
+                    if (!botToken) {
+                        res.status(503).json({
+                            success: false,
+                            error: 'TELEGRAM_BOT_TOKEN not configured'
+                        });
+                        return;
+                    }
+
+                    // Call Telegram API to get webhook info
+                    const axios = (await import('axios')).default;
+                    const telegramApiUrl = `https://api.telegram.org/bot${botToken}/getWebhookInfo`;
+
+                    const response = await axios.get(telegramApiUrl);
+
+                    if (response.data.ok) {
+                        const webhookInfo = response.data.result;
+
+                        // Construct expected webhook URL from current system config
+                        const siteUrl = await pluginContext.systemConfig.getSiteUrl();
+                        const expectedWebhookUrl = `${siteUrl}/api/plugins/telegram-bot/webhook`;
+
+                        // Check if webhook is configured correctly
+                        const isConfigured = webhookInfo.url === expectedWebhookUrl;
+
+                        pluginContext.logger.info({ webhookInfo, expectedWebhookUrl, isConfigured }, 'Retrieved webhook info from Telegram');
+
+                        res.json({
+                            success: true,
+                            isConfigured,
+                            expectedUrl: expectedWebhookUrl,
+                            webhookInfo: {
+                                url: webhookInfo.url,
+                                hasCustomCertificate: webhookInfo.has_custom_certificate,
+                                pendingUpdateCount: webhookInfo.pending_update_count,
+                                lastErrorDate: webhookInfo.last_error_date,
+                                lastErrorMessage: webhookInfo.last_error_message,
+                                maxConnections: webhookInfo.max_connections,
+                                ipAddress: webhookInfo.ip_address
+                            }
+                        });
+                    } else {
+                        pluginContext.logger.error({ response: response.data }, 'Telegram API returned error');
+                        res.status(500).json({
+                            success: false,
+                            error: response.data.description || 'Failed to get webhook info',
+                            telegramResponse: response.data
+                        });
+                    }
+                } catch (error: any) {
+                    pluginContext.logger.error({ error }, 'Failed to verify webhook');
+
+                    res.status(500).json({
+                        success: false,
+                        error: error.response?.data?.description || error.message || 'Failed to verify webhook'
+                    });
+                }
+            },
+            description: 'Verify webhook configuration with Telegram Bot API'
+        },
+        {
             method: 'POST',
             path: '/test',
             handler: async (req: IHttpRequest, res: IHttpResponse, next: IHttpNext) => {
