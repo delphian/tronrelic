@@ -43,23 +43,29 @@ const pluginPackages = discoverPluginPackages();
  * Resolves the backend origin for server-side rewrites.
  *
  * Why this matters:
- * - Docker Compose injects API_URL inside the running container, so Next.js should trust it at runtime
- * - GitHub builds execute without API_URL, and the previous implementation hard-coded http://localhost:4000
- * - That fallback leaked into the compiled output, leaving the deployed container pointing at itself
- * - By mirroring getBackendBaseUrl() here we keep the rewrite target aligned with the runtime helper without editing .env files
+ * - Docker mode: Uses API_URL=http://backend:4000 for container-to-container communication
+ * - npm mode: Falls back to NEXT_PUBLIC_API_URL or localhost:4000 for local development
+ * - This mirrors getBackendBaseUrl() in lib/config.ts to keep rewrites aligned with SSR fetch calls
+ *
+ * The rewrite rule converts client-side /api/* requests into backend API calls:
+ * - Browser requests /api/markets → Next.js rewrites to http://localhost:4000/api/markets (npm mode)
+ * - Browser requests /api/markets → Next.js rewrites to http://backend:4000/api/markets (Docker mode)
  *
  * @returns {string} Backend origin without a trailing slash
  */
 function resolveInternalApiOrigin() {
+    // Docker mode: Use internal service name
     if (process.env.API_URL) {
         return process.env.API_URL.replace(/\/$/, '');
     }
 
+    // npm mode: Use public API URL (works for localhost)
     if (process.env.NEXT_PUBLIC_API_URL) {
         return process.env.NEXT_PUBLIC_API_URL.replace(/\/api$/, '').replace(/\/$/, '');
     }
 
-    return 'http://backend:4000';
+    // Fallback for npm mode when .env isn't loaded
+    return 'http://localhost:4000';
 }
 
 /** @type {import('next').NextConfig} */

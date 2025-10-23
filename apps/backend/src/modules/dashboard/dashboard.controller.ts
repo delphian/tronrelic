@@ -3,7 +3,8 @@ import { z } from 'zod';
 import { DashboardService } from './dashboard.service.js';
 
 const daysSchema = z.coerce.number().min(1).max(90).default(14);
-const limitSchema = z.coerce.number().min(1).max(200).default(50);
+const limitSchema = z.coerce.number().min(1).max(5000).default(50);
+const bucketHoursSchema = z.coerce.number().min(1).max(24).optional();
 
 export class DashboardController {
   private readonly service = new DashboardService();
@@ -25,7 +26,8 @@ export class DashboardController {
   marketHistory = async (req: Request, res: Response) => {
     const guid = z.string().min(1).parse(req.query.guid);
     const limit = limitSchema.parse(req.query.limit);
-    const history = await this.service.getMarketHistory(guid, limit);
+    const bucketHours = bucketHoursSchema.parse(req.query.bucket_hours);
+    const history = await this.service.getMarketHistory(guid, limit, bucketHours);
     res.json({ success: true, history });
   };
 
