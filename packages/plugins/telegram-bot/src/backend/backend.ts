@@ -215,7 +215,15 @@ export const telegramBotBackendPlugin = definePlugin({
             handler: async (req: IHttpRequest, res: IHttpResponse, next: IHttpNext) => {
                 try {
                     const config = await pluginContext.database.get('config');
-                    res.json({ success: true, config: config || {} });
+                    const botTokenConfigured = !!botToken && botToken.length > 0;
+
+                    res.json({
+                        success: true,
+                        config: {
+                            ...(config || {}),
+                            botTokenConfigured
+                        }
+                    });
                 } catch (error) {
                     next(error);
                 }
@@ -272,6 +280,60 @@ export const telegramBotBackendPlugin = definePlugin({
      * Admin routes require ADMIN_API_TOKEN authentication.
      */
     adminRoutes: [
+        {
+            method: 'POST',
+            path: '/test',
+            handler: async (req: IHttpRequest, res: IHttpResponse, next: IHttpNext) => {
+                try {
+                    const { chatId, message, threadId } = req.body;
+
+                    if (!chatId || !message) {
+                        res.status(400).json({
+                            success: false,
+                            error: 'chatId and message are required'
+                        });
+                        return;
+                    }
+
+                    const botToken = process.env.TELEGRAM_BOT_TOKEN;
+                    if (!botToken) {
+                        res.status(503).json({
+                            success: false,
+                            error: 'TELEGRAM_BOT_TOKEN not configured'
+                        });
+                        return;
+                    }
+
+                    // Import and use TelegramClient
+                    const { TelegramClient } = await import('./telegram-client.js');
+                    const telegramClient = new TelegramClient(botToken);
+
+                    // Send test message with optional thread ID
+                    await telegramClient.sendMessage(
+                        chatId,
+                        message,
+                        {
+                            parseMode: null, // Send plain text
+                            threadId: threadId ? Number(threadId) : undefined
+                        }
+                    );
+
+                    res.json({
+                        success: true,
+                        message: 'Test notification sent successfully'
+                    });
+                } catch (error: any) {
+                    pluginContext.logger.error({ error }, 'Failed to send test notification');
+
+                    // Return detailed error message
+                    res.status(500).json({
+                        success: false,
+                        error: error.response?.data?.description || error.message || 'Failed to send test notification'
+                    });
+                }
+            },
+            description: 'Send a test notification to verify bot configuration'
+        },
         {
             method: 'GET',
             path: '/stats',
