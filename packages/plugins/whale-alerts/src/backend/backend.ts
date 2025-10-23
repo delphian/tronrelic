@@ -126,9 +126,27 @@ export const whaleAlertsBackendPlugin = definePlugin({
 
         context.logger.info('Whale detection observer initialized');
 
-        // Set up Telegram notifications (if token available)
+        /**
+         * DEPRECATED: Direct Telegram integration in whale-alerts plugin.
+         *
+         * This functionality will be removed in a future version. The telegram-bot plugin
+         * now provides a centralized Telegram service that other plugins should use.
+         *
+         * Future implementation:
+         * - The telegram-bot plugin will expose ITelegramBotService via IPluginContext
+         * - whale-alerts will consume that service instead of direct Telegram API calls
+         * - Configuration will move to telegram-bot plugin settings
+         *
+         * For now, this code remains functional but is disabled by default (no TELEGRAM_TOKEN).
+         * See telegram-bot plugin for the recommended Telegram integration approach.
+         */
         const telegramToken = process.env.TELEGRAM_TOKEN;
         if (telegramToken) {
+            context.logger.warn(
+                'DEPRECATED: whale-alerts uses legacy Telegram integration. ' +
+                'Please migrate to telegram-bot plugin service when available.'
+            );
+
             const notifier = new TelegramNotifier(context.database, context.logger, telegramToken);
 
             // Send notifications every 30 seconds
@@ -140,12 +158,12 @@ export const whaleAlertsBackendPlugin = definePlugin({
                 }
             }, 30000);
 
-            context.logger.info('Telegram notification service started');
+            context.logger.info('Telegram notification service started (legacy mode)');
 
             // Store interval for cleanup in disable hook
             (global as any).__whaleAlertsTelegramInterval = notificationInterval;
         } else {
-            context.logger.warn('TELEGRAM_TOKEN not set, Telegram notifications disabled');
+            context.logger.debug('TELEGRAM_TOKEN not set, Telegram notifications disabled (use telegram-bot plugin instead)');
         }
     },
 
