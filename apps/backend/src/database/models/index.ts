@@ -4,7 +4,6 @@ export * from './sync-state-model.js';
 export * from './cache-model.js';
 export * from './notification-subscription-model.js';
 export * from './notification-delivery-model.js';
-export * from './telegram-user-model.js';
 export * from './market-reliability-model.js';
 export * from './market-reliability-history-model.js';
 export * from './block-model.js';
