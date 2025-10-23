@@ -217,10 +217,16 @@ export const telegramBotBackendPlugin = definePlugin({
                     const config = await pluginContext.database.get('config');
                     const botTokenConfigured = !!botToken && botToken.length > 0;
 
+                    // Always construct webhook URL dynamically from current system config
+                    // (don't use stale cached value from plugin storage)
+                    const siteUrl = await pluginContext.systemConfig.getSiteUrl();
+                    const webhookUrl = `${siteUrl}/api/plugins/telegram-bot/webhook`;
+
                     res.json({
                         success: true,
                         config: {
                             ...(config || {}),
+                            webhookUrl,
                             botTokenConfigured
                         }
                     });
@@ -241,10 +247,6 @@ export const telegramBotBackendPlugin = definePlugin({
             { webhookUrl, siteUrl },
             'Telegram webhook endpoint ready. Configure this URL in your Telegram bot settings.'
         );
-
-        // Store webhook URL in config for admin UI
-        const config = await context.database.get('config') || {};
-        await context.database.set('config', { ...config, webhookUrl, botTokenConfigured: !!process.env.TELEGRAM_BOT_TOKEN });
 
         // PLUGIN-TO-PLUGIN SERVICE REGISTRATION (STUB)
         //
@@ -304,17 +306,9 @@ export const telegramBotBackendPlugin = definePlugin({
                         return;
                     }
 
-                    // Get webhook URL from config
-                    const config = await pluginContext.database.get('config');
-                    const webhookUrl = config?.webhookUrl;
-
-                    if (!webhookUrl) {
-                        res.status(500).json({
-                            success: false,
-                            error: 'Webhook URL not found in configuration'
-                        });
-                        return;
-                    }
+                    // Construct webhook URL dynamically from current system config
+                    const siteUrl = await pluginContext.systemConfig.getSiteUrl();
+                    const webhookUrl = `${siteUrl}/api/plugins/telegram-bot/webhook`;
 
                     // Call Telegram API to set webhook
                     const axios = (await import('axios')).default;

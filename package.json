@@ -21,7 +21,8 @@
     "build:parallel": "npm run build --workspace packages/types && npm run build --workspace packages/shared && npm run build:plugins && (npm run build --workspace apps/backend & npm run build --workspace apps/frontend & wait)",
     "start": "./scripts/start.sh",
     "stop": "./scripts/stop.sh",
-    "test": "npm run test --workspace apps/backend",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "test:integration": "npx playwright test",
     "docker:build": "docker compose build",
     "docker:build:prod": "docker compose -f docker-compose.prod.yml build",
@@ -40,6 +41,7 @@
     "@types/node": "^20.10.6",
     "esbuild": "^0.19.0",
     "playwright": "^1.55.1",
-    "typescript": "~5.6.2"
+    "typescript": "~5.6.2",
+    "vitest": "^4.0.1"
   }
 }
