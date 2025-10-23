@@ -40,6 +40,8 @@ export async function validateTelegramIp(req: IHttpRequest, allowedCidrs?: strin
     const cidrs = (allowedCidrs || DEFAULT_TELEGRAM_IPS).split(',').map(s => s.trim());
 
     // Extract client IP from request (supports proxy headers)
+    // When behind Cloudflare or other proxies, x-forwarded-for contains: "original-ip, proxy-ip"
+    // We want the FIRST IP in the chain (the original client)
     const clientIp = req.headers['x-forwarded-for']
         ? (req.headers['x-forwarded-for'] as string).split(',')[0].trim()
         : req.ip || '';
@@ -70,9 +72,10 @@ export async function validateTelegramIp(req: IHttpRequest, allowedCidrs?: strin
             }
         }
 
+        // No CIDR range matched - validation failed
         return false;
     } catch (error) {
-        // IP parsing failed
+        // IP parsing failed - validation failed
         return false;
     }
 }
