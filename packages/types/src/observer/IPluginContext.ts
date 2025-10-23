@@ -5,6 +5,7 @@ import type { IPluginDatabase } from '../plugin/IPluginDatabase.js';
 import type { ILogger } from '../logging/ILogger.js';
 import type { IPluginWebSocketManager } from './IPluginWebSocketManager.js';
 import type { ICacheService } from '../services/ICacheService.js';
+import type { ISystemConfigService } from '../system-config/ISystemConfigService.js';
 
 /**
  * Plugin context provided to backend plugins during initialization.
@@ -37,6 +38,9 @@ export interface IPluginContext {
 
     /** Cache service for Redis-backed key-value storage with TTL and tagging */
     cache: ICacheService;
+
+    /** System configuration service for accessing runtime-editable settings like site URL */
+    systemConfig: ISystemConfigService;
 
     /** Structured logger scoped to the plugin for consistent telemetry */
     logger: ILogger;

@@ -56,3 +56,48 @@ Create a centralized error/warning logging system that:
 - Historical error trends help identify recurring issues
 - Plugin-specific errors can be tracked and correlated with plugin enable/disable events
 - Production debugging becomes faster with searchable, filterable error logs
+
+## Refactor IPluginDatabase to IDatabaseService
+
+The current `IPluginDatabase` interface is specifically named and designed for plugin usage, but its functionality is generic enough to be useful across the entire application. Services like `SystemConfigService` and others could benefit from a standardized database abstraction layer rather than using Mongoose models directly.
+
+**Current State:**
+- `IPluginDatabase` provides a clean abstraction over MongoDB collections with scoped namespacing
+- Currently only used by plugins through `PluginDatabaseService`
+- Other services (like `SystemConfigService`) use Mongoose models directly, making them harder to test
+- Testing requires mocking Mongoose at a low level or using real MongoDB connections
+
+**Proposed Refactoring:**
+
+1. **Rename and generalize the interface:**
+   - Rename `IPluginDatabase` → `IDatabaseService`
+   - Keep plugin-specific implementation as `PluginDatabaseService` (extends/implements `IDatabaseService` with namespace prefixing)
+   - Create a new `DatabaseService` class for general-purpose usage (no namespace prefixing)
+
+2. **Update type definitions:**
+   - Move `IDatabaseService` to `@tronrelic/types` as a generic database abstraction
+   - Keep plugin-specific behavior in plugin types (namespace prefixing, scoped collections)
+   - Ensure backward compatibility with existing plugin code
+
+3. **Refactor services to use IDatabaseService:**
+   - Update `SystemConfigService` to accept `IDatabaseService` via dependency injection
+   - Update `MenuService` (already uses injected database, just needs type rename)
+   - Update other services that directly use Mongoose models where appropriate
+
+4. **Improve testability:**
+   - Create `MockDatabaseService` test helper (similar to `MockPluginDatabase` in menu tests)
+   - Update existing tests to use mock database service instead of mocking Mongoose
+   - Make it easy to test services without requiring real MongoDB connections
+
+**Benefits:**
+- Consistent database abstraction across the entire application
+- Improved testability - services can use mock database implementations
+- Dependency injection enables better separation of concerns
+- Plugin database behavior remains unchanged (still uses namespace prefixing)
+- Other services gain the same clean API plugins already enjoy
+
+**Implementation Notes:**
+- Ensure backward compatibility - existing plugins should continue working without changes
+- Update all type imports across the codebase (`IPluginDatabase` → `IDatabaseService`)
+- Add migration guide to documentation for plugin authors
+- Update `SystemConfigService` tests to use `MockDatabaseService` instead of mocking Mongoose

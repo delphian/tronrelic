@@ -13,6 +13,7 @@ import { PluginManagerService } from '../services/plugin-manager.service.js';
 import { PluginWebSocketManager } from '../services/plugin-websocket-manager.js';
 import { PluginWebSocketRegistry } from '../services/plugin-websocket-registry.js';
 import { CacheService } from '../services/cache.service.js';
+import { SystemConfigService } from '../services/system-config/index.js';
 import { getRedisClient } from './redis.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -152,6 +153,7 @@ export async function loadPlugins(): Promise<void> {
     const io = websocketService.getIO();
     const redis = getRedisClient();
     const cacheService = new CacheService(redis);
+    const systemConfigService = SystemConfigService.getInstance();
 
     for (const plugin of pluginList) {
         const pluginLogger = logger.child({ pluginId: plugin.manifest.id, pluginTitle: plugin.manifest.title });
@@ -185,6 +187,7 @@ export async function loadPlugins(): Promise<void> {
                 BaseObserver,
                 database,
                 cache: cacheService,
+                systemConfig: systemConfigService,
                 logger: pluginLogger
             };
 
