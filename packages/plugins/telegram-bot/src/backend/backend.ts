@@ -200,12 +200,30 @@ export const telegramBotBackendPlugin = definePlugin({
             }
         );
 
-        // Register webhook route
-        const webhookRoute: IApiRouteConfig = {
+        // Create a wrapper handler that supports both GET (health check) and POST (webhook events)
+        const webhookRouteHandler = async (req: IHttpRequest, res: IHttpResponse, next: IHttpNext) => {
+            if (req.method === 'GET') {
+                // Telegram health check - just return 200 OK
+                res.status(200).json({ ok: true, status: 'ready' });
+                return;
+            }
+            // POST request - pass to webhook handler
+            await webhookHandler(req, res, next);
+        };
+
+        // Register webhook routes (POST for events, GET for health checks)
+        const webhookPostRoute: IApiRouteConfig = {
             method: 'POST',
             path: '/webhook',
             handler: webhookHandler,
-            description: 'Telegram bot webhook endpoint'
+            description: 'Telegram bot webhook endpoint for receiving updates'
+        };
+
+        const webhookGetRoute: IApiRouteConfig = {
+            method: 'GET',
+            path: '/webhook',
+            handler: webhookRouteHandler,
+            description: 'Telegram bot webhook health check endpoint'
         };
 
         // Register config route
@@ -238,7 +256,7 @@ export const telegramBotBackendPlugin = definePlugin({
         };
 
         // Add routes to plugin (will be mounted at /api/plugins/telegram-bot/*)
-        telegramBotBackendPlugin.routes = [webhookRoute, configRoute];
+        telegramBotBackendPlugin.routes = [webhookPostRoute, webhookGetRoute, configRoute];
 
         // Log webhook URL for user to configure in Telegram
         const siteUrl = await context.systemConfig.getSiteUrl();
