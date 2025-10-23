@@ -1,7 +1,7 @@
 import React from 'react';
 import type { IFrontendPluginContext } from '@tronrelic/types';
-import { UserStatsCard } from './components/UserStatsCard.js';
-import { WebhookConfigCard } from './components/WebhookConfigCard.js';
+import { UserStatsCard } from './components/UserStatsCard';
+import { WebhookConfigCard } from './components/WebhookConfigCard';
 
 /**
  * Props for TelegramBotSettingsPage component.
@@ -85,7 +85,10 @@ export function TelegramBotSettingsPage({ context }: ITelegramBotSettingsPagePro
             </div>
 
             {/* Test notification form */}
-            <ui.Card title="Test Notification">
+            <ui.Card>
+                <h3 style={{ fontSize: '1.25rem', fontWeight: 600, marginBottom: 'var(--space-md)' }}>
+                    Test Notification
+                </h3>
                 <form onSubmit={handleTestNotification} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
                     {/* Chat ID input */}
                     <div>
@@ -154,7 +157,10 @@ export function TelegramBotSettingsPage({ context }: ITelegramBotSettingsPagePro
             </ui.Card>
 
             {/* Future feature: Subscription management */}
-            <ui.Card title="Subscription Types" style={{ marginTop: 'var(--space-lg)' }}>
+            <ui.Card style={{ marginTop: 'var(--space-lg)' }}>
+                <h3 style={{ fontSize: '1.25rem', fontWeight: 600, marginBottom: 'var(--space-md)' }}>
+                    Subscription Types
+                </h3>
                 <div style={{ color: 'var(--color-text-secondary)', fontSize: '0.875rem' }}>
                     <p style={{ marginBottom: 'var(--space-md)' }}>
                         Subscription management coming soon. Users will be able to subscribe to:
