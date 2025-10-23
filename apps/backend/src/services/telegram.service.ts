@@ -12,8 +12,8 @@ export interface TelegramSendOptions {
 
 export class TelegramService {
   private readonly token = env.TELEGRAM_BOT_TOKEN;
-  private readonly maxRetries = env.TELEGRAM_SEND_MAX_RETRIES;
-  private readonly retryDelayMs = env.TELEGRAM_SEND_RETRY_DELAY_MS;
+  private readonly maxRetries = 3; // Default max retries
+  private readonly retryDelayMs = 500; // Default retry delay (500ms)
 
   private buildUrl(method: string) {
     return `https://api.telegram.org/bot${this.token}/${method}`;

@@ -11,17 +11,8 @@ const envSchema = z.object({
   TRONGRID_API_KEY_2: z.string().optional(),
   TRONGRID_API_KEY_3: z.string().optional(),
   TELEGRAM_BOT_TOKEN: z.string().optional(),
-  TELEGRAM_MEMO_CHANNEL_ID: z.string().optional(),
-  TELEGRAM_MEMO_THREAD_ID: z.union([z.string(), z.coerce.number()]).optional(),
-  TELEGRAM_SUNPUMP_CHANNEL_ID: z.string().optional(),
-  TELEGRAM_SUNPUMP_THREAD_ID: z.union([z.string(), z.coerce.number()]).optional(),
-  TELEGRAM_WHALE_CHANNEL_ID: z.string().optional(),
-  TELEGRAM_WHALE_THREAD_ID: z.union([z.string(), z.coerce.number()]).optional(),
   TELEGRAM_WEBHOOK_SECRET: z.string().optional(),
   TELEGRAM_IP_ALLOWLIST: z.string().optional(),
-  TELEGRAM_MINI_APP_URL: z.string().url().optional(),
-  TELEGRAM_SEND_MAX_RETRIES: z.coerce.number().int().min(0).default(3),
-  TELEGRAM_SEND_RETRY_DELAY_MS: z.coerce.number().int().min(0).default(500),
   ALERT_WHALE_MIN_TRX: z.union([z.string(), z.coerce.number()]).optional(),
   ADMIN_API_TOKEN: z.string().optional(),
   METRICS_TOKEN: z.string().optional(),
@@ -59,7 +50,6 @@ const envSchema = z.object({
   STORAGE_BUCKET: z.string().optional(),
   STORAGE_FORCE_PATH_STYLE: z.coerce.boolean().optional(),
   NOTIFICATION_WEBSOCKET_THROTTLE_MS: z.coerce.number().int().positive().default(5000),
-  NOTIFICATION_TELEGRAM_THROTTLE_MS: z.coerce.number().int().positive().default(60000),
   NOTIFICATION_EMAIL_THROTTLE_MS: z.coerce.number().int().positive().default(300000)
 });
 
