@@ -43,10 +43,10 @@ Response format:
 **tronrelic-plugin-specialist:**
 - Keywords: plugin, observer, BaseObserver, blockchain observer, WebSocket subscription, plugin page, plugin API, plugin registration, plugin logic, plugin architecture, plugin integration
 - Use for: ANY work involving TronRelic plugin logic, architecture, and integration (analysis, investigation, research, creation, debugging, architecture decisions, code review)
-- Scope: PRIMARY agent for plugin tooling, logic, organization, communication, backend services, and system integration. Defers to frontend-specialist for UX/UI design work
+- Scope: PRIMARY agent for plugin tooling, logic, organization, communication, backend services, and system integration. Defers to frontend-ui-specialist for UX/UI design work
 - Exception: Work on the general plugin system infrastructure should NOT be handled by this subagent
 
-**frontend-specialist:**
+**frontend-ui-specialist:**
 - Keywords: frontend, React, Next.js, components, UI, styling, TailwindCSS, Redux, Socket.IO client, pages, layouts, hooks, client-side, App Router, server components, client components, forms, validation, routing, navigation, UX, user experience, design, accessibility
 - **Mandatory triggers** (always delegate): URL structure changes, navigation components, routing implementation, layout creation, authentication UI, context providers
 - Use for: ALL UX/UI work across TronRelic (component design, styling, user experience, accessibility, visual design)
@@ -81,9 +81,9 @@ Claude MUST automatically use these agents when working with these file paths.
 - `packages/plugins/**/observers/**` (blockchain observers, event processing)
 - `packages/plugins/**/backend/**` (plugin backend services, API routes)
 - `packages/plugins/**/frontend/**` (plugin frontend logic, hooks, data fetching, state management)
-- Note: Defers to frontend-specialist when task focuses on UX/UI design
+- Note: Defers to frontend-ui-specialist when task focuses on UX/UI design
 
-**frontend-specialist:**
+**frontend-ui-specialist:**
 - `apps/frontend/**` (main frontend application)
 - `apps/frontend/app/**` (Next.js pages and layouts)
 - `apps/frontend/components/**` (shared UI components)
