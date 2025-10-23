@@ -10,7 +10,6 @@ export * from './block-model.js';
 export * from './transaction-memo-model.js';
 export * from './sunpump-token-model.js';
 export * from './bookmark-model.js';
-export * from './market-billing-model.js';
 export * from './market-affiliate-model.js';
 export * from './market-price-history-model.js';
 export * from './token-model.js';
