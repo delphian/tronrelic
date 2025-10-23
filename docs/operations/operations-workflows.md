@@ -298,7 +298,7 @@ TronRelic uses GitHub Actions for continuous integration and deployment.
 
 **Trigger:** Push to `main` branch or pull request to `main`
 
-**Workflow file:** `.github/workflows/docker-publish.yml`
+**Workflow file:** `.github/workflows/docker-publish-prod.yml`
 
 **Pipeline stages:**
 

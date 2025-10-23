@@ -390,6 +390,7 @@ sudo systemctl reload nginx
 2. **This document** (`docs/operations/operations-server-info.md`)
    - Update IP addresses in server tables and examples
 3. **GitHub Actions workflows:**
+   - `.github/workflows/docker-publish-prod.yml` (production builds)
    - `.github/workflows/docker-publish-dev.yml` (DEV_DROPLET_HOST secret)
 4. **Nginx configuration on servers:**
    - `/etc/nginx/sites-available/tronrelic` (server_name directive)

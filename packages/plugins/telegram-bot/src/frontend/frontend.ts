@@ -14,28 +14,21 @@ import { TelegramBotSettingsPage } from './TelegramBotSettingsPage';
  * - User statistics and activity monitoring
  * - Test notification form for verification
  * - Future: Subscription type management
+ *
+ * Note: This plugin does not register menu items. The settings page is accessed
+ * directly via URL or through the System Monitor's plugin management interface.
  */
 export const telegramBotFrontendPlugin = definePlugin({
     manifest: telegramBotManifest,
 
     /**
-     * Navigation menu items.
-     * Adds "Telegram Bot" to System > Plugins navigation.
-     */
-    menuItems: [
-        {
-            label: 'Telegram Bot',
-            href: '/system/plugins/telegram-bot/settings',
-            icon: 'MessageSquare',
-            category: 'System',
-            order: 100,
-            adminOnly: true
-        }
-    ],
-
-    /**
      * Admin pages.
      * Registered under /system/plugins/ namespace with admin authentication.
+     *
+     * The settings page is accessible at /system/plugins/telegram-bot/settings
+     * but is not exposed in the navigation menu. This is intentional - the plugin
+     * provides backend infrastructure (webhook handling, command processing) and
+     * admin settings should be managed through the plugin system interface.
      */
     adminPages: [
         {
