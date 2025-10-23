@@ -235,15 +235,16 @@ export const telegramBotBackendPlugin = definePlugin({
         telegramBotBackendPlugin.routes = [webhookRoute, configRoute];
 
         // Log webhook URL for user to configure in Telegram
-        const webhookUrl = `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/api/plugins/telegram-bot/webhook`;
+        const siteUrl = await context.systemConfig.getSiteUrl();
+        const webhookUrl = `${siteUrl}/api/plugins/telegram-bot/webhook`;
         context.logger.info(
-            { webhookUrl },
+            { webhookUrl, siteUrl },
             'Telegram webhook endpoint ready. Configure this URL in your Telegram bot settings.'
         );
 
         // Store webhook URL in config for admin UI
         const config = await context.database.get('config') || {};
-        await context.database.set('config', { ...config, webhookUrl });
+        await context.database.set('config', { ...config, webhookUrl, botTokenConfigured: !!process.env.TELEGRAM_BOT_TOKEN });
 
         // PLUGIN-TO-PLUGIN SERVICE REGISTRATION (STUB)
         //
