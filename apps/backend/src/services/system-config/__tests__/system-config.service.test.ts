@@ -11,6 +11,9 @@ import { SystemConfigService } from '../system-config.service.js';
  * that the service logs appropriate messages during operation.
  */
 class MockLogger implements ILogger {
+    public level = 'info';
+    public silent = vi.fn();
+    public msgPrefix = '';
     public fatal = vi.fn();
     public error = vi.fn();
     public warn = vi.fn();
@@ -35,7 +38,7 @@ describe('SystemConfigService', () => {
 
         // Reset singleton and initialize with mock logger
         (SystemConfigService as any).instance = undefined;
-        SystemConfigService.initialize(mockLogger);
+        SystemConfigService.initialize(mockLogger as any);
         service = SystemConfigService.getInstance();
     });
 
@@ -87,7 +90,7 @@ describe('SystemConfigService', () => {
          * to prevent accidental re-initialization and loss of cached state.
          */
         it('should throw error if initialized twice', () => {
-            expect(() => SystemConfigService.initialize(mockLogger)).toThrow(
+            expect(() => SystemConfigService.initialize(mockLogger as any)).toThrow(
                 'SystemConfigService already initialized'
             );
         });
