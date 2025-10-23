@@ -6,56 +6,91 @@ TronRelic currently lacks a centralized way to track and apply required database
 
 Implement a TypeScript-based migration system in `apps/backend/src/migrations/` that runs automatically on application startup. Each migration should be a timestamped TypeScript file (e.g., `001-drop-chat-collections.ts`) that uses existing Mongoose models and the dependency injection system. The system should track which migrations have been applied by storing records in a `migration_history` MongoDB collection, preventing duplicate executions and allowing rollback capability. This approach integrates seamlessly with the backend's existing architecture, leverages the logger for audit trails, and eliminates the need for manual database maintenance scripts.
 
-## Implement Centralized Error and Warning Logging to MongoDB
+## ✅ COMPLETED: Centralized Error and Warning Logging to MongoDB
 
-TronRelic currently logs errors and warnings only to Pino transports (console and file-based logs in `.run/backend.log`). While this is useful for development and immediate debugging, there is no persistent database storage of errors and warnings that can be surfaced to administrators through the `/system` monitoring dashboard.
+**Status:** Implemented and deployed
 
-**Problem:**
-- Errors and warnings are ephemeral (lost when log files rotate or containers restart)
-- No admin interface to view historical errors, warning trends, or error frequency
-- Debugging production issues requires SSH access to servers and manual log file inspection
-- No way to correlate errors with specific plugin failures, API requests, or blockchain sync issues
+**Implementation:** System logs feature has been fully implemented with the following components:
 
-**Proposed Solution:**
+1. **MongoDB Schema** - `apps/backend/src/database/models/SystemLog.ts`
+2. **SystemLogsService** - `apps/backend/src/services/system-logs/system-logs.service.ts`
+3. **Admin API Endpoints** - Added to `apps/backend/src/api/routes/system.router.ts`
+4. **System Config** - `systemLogsMaxCount` and `systemLogsRetentionDays` settings
+5. **Scheduler Job** - `system-logs:cleanup` runs hourly
+6. **Frontend UI** - `/system/logs` page with filtering, pagination, and live polling
 
-Create a centralized error/warning logging system that:
+**TECHNICAL DEBT - Refactor Logger Monkey Patching:**
 
-1. **Captures structured log entries** at ERROR and WARN levels from Pino logger
-2. **Stores entries in MongoDB** collection `system_logs` with schema:
-   ```typescript
-   {
-       timestamp: Date,
-       level: 'error' | 'warn',
-       message: string,
-       service: string,           // e.g., 'tronrelic-backend', plugin ID
-       context: object,            // Structured metadata (error stack, request details, etc.)
-       resolved: boolean,          // Flag for marking issues as resolved
-       resolvedAt?: Date,
-       resolvedBy?: string
-   }
-   ```
-3. **Provides admin API endpoints** under `/api/admin/system/logs`:
-   - `GET /api/admin/system/logs` - List recent errors/warnings with filtering (level, service, date range, resolved status)
-   - `PATCH /api/admin/system/logs/:id/resolve` - Mark error as resolved
-   - `DELETE /api/admin/system/logs` - Clear old logs (with retention policy)
-4. **Adds System Monitor dashboard tab** showing:
-   - Error/warning counts by service and time period
-   - Recent unresolved errors with expandable details
-   - Trend charts showing error frequency over time
-   - Quick actions to mark errors as resolved or clear old logs
+The current implementation uses **monkey patching** to intercept Pino logger calls:
 
-**Implementation Notes:**
-- Use Pino custom transport/destination to write ERROR and WARN logs to MongoDB asynchronously
-- Implement log retention policy (e.g., keep last 10,000 entries or 30 days)
-- Add indexes on `timestamp`, `level`, `service`, and `resolved` for efficient querying
-- Ensure logging to MongoDB does not block request processing or introduce performance overhead
-- Consider rate limiting to prevent log spam from filling MongoDB (e.g., deduplicate identical errors within 1-minute windows)
+```typescript
+// apps/backend/src/services/system-logs/system-logs.service.ts (line 159-182)
+const originalError = logger.error.bind(logger);
+const originalWarn = logger.warn.bind(logger);
 
-**Benefits:**
-- Admins can monitor system health without SSH access
-- Historical error trends help identify recurring issues
-- Plugin-specific errors can be tracked and correlated with plugin enable/disable events
-- Production debugging becomes faster with searchable, filterable error logs
+(logger as any).error = function(this: any, ...args: any[]) {
+    (originalError as any)(...args);
+    void SystemLogsService.getInstance().saveLogFromArgs('error', args);
+};
+```
+
+**Why this is technical debt:**
+- Modifies the logger object at runtime (hidden behavior)
+- Uses `as any` to bypass TypeScript type safety
+- Makes debugging harder (stack traces may be confusing)
+- Difficult to discover for developers unfamiliar with the codebase
+
+**Proposed refactoring approaches:**
+
+**Option 1: Pino Custom Transport (Preferred)**
+Move logger initialization to happen after database connection, allowing proper Pino transport configuration:
+```typescript
+// Refactor lib/logger.ts to be a factory function
+export function createLogger(mongoTransport?: pino.DestinationStream) {
+    const targets = [
+        { target: 'pino/file', ... },
+        { target: 'pino-pretty', ... }
+    ];
+
+    if (mongoTransport) {
+        targets.push({ stream: mongoTransport });
+    }
+
+    return pino({ ... }, pino.transport({ targets }));
+}
+
+// In index.ts after database connection
+import { createLogger } from './lib/logger.js';
+const mongoStream = createMongoDBStream();
+export const logger = createLogger(mongoStream);
+```
+
+**Option 2: Pino Middleware Hook**
+Use Pino's `mixin` or custom serializer to intercept logs:
+```typescript
+const logger = pino({
+    mixin() {
+        return { /* intercept here */ };
+    }
+});
+```
+
+**Option 3: Wrapper Logger Class**
+Create a `DatabaseLogger` class that wraps Pino and is injected via dependency injection (more invasive, requires changing all imports).
+
+**Implementation requirements:**
+- Must initialize after database connection
+- Must not break existing child loggers
+- Must maintain backward compatibility with plugin logs
+- Should preserve type safety
+- Must handle initialization order correctly
+
+**Benefits of refactoring:**
+- Type-safe implementation
+- More discoverable behavior
+- Easier to test and mock
+- Clearer dependency chain
+- Follows Pino best practices
 
 ## Refactor IPluginDatabase to IDatabaseService
 

@@ -11,6 +11,7 @@ import { MenuService } from './modules/menu/menu.service.js';
 import { PluginDatabaseService } from './services/plugin-database.service.js';
 import { BlockchainObserverService } from './services/blockchain-observer/index.js';
 import { SystemConfigService } from './services/system-config/index.js';
+import { SystemLogsService } from './services/system-logs/index.js';
 
 async function bootstrap() {
     try {
@@ -23,6 +24,12 @@ async function bootstrap() {
         const configLogger = logger.child({ module: 'system-config' });
         SystemConfigService.initialize(configLogger);
         logger.info({}, 'System configuration service initialized');
+
+        // Initialize system logs service to capture ERROR and WARN logs
+        logger.info({}, 'Initializing system logs service...');
+        const systemLogsService = SystemLogsService.getInstance();
+        await systemLogsService.initialize();
+        logger.info({}, 'System logs service initialized');
 
         // Initialize blockchain observer service explicitly before plugins load
         logger.info({}, 'Initializing blockchain observer service...');
