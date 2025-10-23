@@ -141,16 +141,25 @@ else
 fi
 echo ""
 
-# Step 4: Wait for containers to start
+# Step 4: Cleanup dangling images
+log_info "Cleaning up dangling Docker images..."
+if remote_exec "docker image prune -f"; then
+    log_success "Dangling images cleaned up"
+else
+    log_warning "Failed to cleanup images (non-critical)"
+fi
+echo ""
+
+# Step 5: Wait for containers to start
 log_info "Waiting for containers to start (15 seconds)..."
 sleep 15
 
-# Step 5: Check container health
+# Step 6: Check container health
 log_info "Checking container health..."
 remote_exec "cd $DEPLOY_DIR && docker compose ps"
 echo ""
 
-# Step 6: Verify backend health
+# Step 7: Verify backend health
 log_info "Verifying backend API health..."
 if curl -sf "http://$DROPLET_IP/api/health" > /dev/null; then
     log_success "Backend is healthy"
@@ -158,7 +167,7 @@ else
     log_warning "Backend health check failed (may still be starting)"
 fi
 
-# Step 7: Verify frontend health
+# Step 8: Verify frontend health
 log_info "Verifying frontend health..."
 if curl -sf "http://$DROPLET_IP/" > /dev/null; then
     log_success "Frontend is healthy"

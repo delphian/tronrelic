@@ -164,7 +164,7 @@ docker exec -it tronrelic-redis-prod redis-cli
 
 TronRelic uses GitHub Actions for automated deployment:
 
-**Production pipeline (.github/workflows/docker-publish.yml):**
+**Production pipeline (.github/workflows/docker-publish-prod.yml):**
 1. Triggered on push to `main` branch
 2. Runs integration tests with Docker Compose
 3. Builds backend and frontend images

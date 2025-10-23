@@ -63,6 +63,17 @@ jobs:
             sleep 15
             docker compose ps
 
+      - name: Cleanup old images on dev droplet
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DEV_DROPLET_HOST }}
+          username: ${{ secrets.DEV_DROPLET_USER }}
+          key: ${{ secrets.DEV_DROPLET_SSH_KEY }}
+          script: |
+            echo "Cleaning up dangling Docker images..."
+            docker image prune -f
+            echo "Cleanup complete"
+
       - name: Verify deployment
         run: |
           echo "Deployment complete! Services should be starting..."
