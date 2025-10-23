@@ -16,6 +16,11 @@ async function load_resource_tracking(): Promise<IPlugin> {
     return resolvePluginExport('resource-tracking', module);
 }
 
+async function load_telegram_bot(): Promise<IPlugin> {
+    const module = await import('../../../../packages/plugins/telegram-bot/src/frontend/frontend');
+    return resolvePluginExport('telegram-bot', module);
+}
+
 async function load_whale_alerts(): Promise<IPlugin> {
     const module = await import('../../../../packages/plugins/whale-alerts/src/frontend/frontend');
     return resolvePluginExport('whale-alerts', module);
@@ -24,6 +29,7 @@ async function load_whale_alerts(): Promise<IPlugin> {
 export const frontendPluginLoaders: Record<string, () => Promise<IPlugin>> = {
     'example-dashboard': load_example_dashboard,
     'resource-tracking': load_resource_tracking,
+    'telegram-bot': load_telegram_bot,
     'whale-alerts': load_whale_alerts,
 };
 

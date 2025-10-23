@@ -6,8 +6,18 @@ const TRONSCAN_TX_URL = 'https://tronscan.org/#/transaction/';
 /**
  * Telegram notification service for whale alerts.
  *
+ * @deprecated This class implements direct Telegram API integration and will be removed
+ * in a future version. The telegram-bot plugin now provides a centralized Telegram service
+ * that should be used instead via plugin-to-plugin service architecture.
+ *
  * Sends Telegram messages for unnotified whale transactions using a simple
  * HTTP API approach. This keeps the plugin independent of Telegram SDK libraries.
+ *
+ * Migration path:
+ * 1. Install and enable telegram-bot plugin
+ * 2. Wait for plugin-to-plugin service registry to be implemented
+ * 3. Replace this class with calls to ITelegramBotService from context
+ * 4. Remove TELEGRAM_TOKEN environment variable (use TELEGRAM_BOT_TOKEN instead)
  */
 export class TelegramNotifier {
     private readonly database: IPluginDatabase;
