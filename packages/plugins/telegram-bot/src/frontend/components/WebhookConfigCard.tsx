@@ -22,6 +22,8 @@ export function WebhookConfigCard({ context }: IWebhookConfigCardProps) {
     const [loading, setLoading] = React.useState(true);
     const [copied, setCopied] = React.useState(false);
     const [botTokenConfigured, setBotTokenConfigured] = React.useState(true);
+    const [configuring, setConfiguring] = React.useState(false);
+    const [configureResult, setConfigureResult] = React.useState<{ success: boolean; message: string } | null>(null);
 
     /**
      * Fetches webhook URL and token configuration status from plugin configuration.
@@ -67,6 +69,43 @@ export function WebhookConfigCard({ context }: IWebhookConfigCardProps) {
             setTimeout(() => setCopied(false), 2000);
         } catch (err) {
             console.error('Failed to copy:', err);
+        }
+    };
+
+    /**
+     * Configures the Telegram webhook automatically via backend API.
+     *
+     * Why automatic configuration:
+     * Instead of requiring users to manually run curl commands with their bot token,
+     * this sends a request to the backend which securely uses the stored token.
+     * Eliminates manual errors and exposes no credentials in the frontend.
+     */
+    const handleConfigureWebhook = async () => {
+        try {
+            setConfiguring(true);
+            setConfigureResult(null);
+
+            const response = await api.post<{ success: boolean; message: string; error?: string }>(
+                '/plugins/telegram-bot/system/configure-webhook',
+                {}
+            );
+
+            if (response.success) {
+                setConfigureResult({ success: true, message: response.message || 'Webhook configured successfully!' });
+            } else {
+                setConfigureResult({ success: false, message: response.error || 'Failed to configure webhook' });
+            }
+        } catch (err: any) {
+            console.error('Error configuring webhook:', err);
+            setConfigureResult({
+                success: false,
+                message: err.response?.data?.error || err.message || 'Failed to configure webhook'
+            });
+        } finally {
+            setConfiguring(false);
+
+            // Clear result message after 5 seconds
+            setTimeout(() => setConfigureResult(null), 5000);
         }
     };
 
@@ -145,26 +184,69 @@ export function WebhookConfigCard({ context }: IWebhookConfigCardProps) {
                             Configure Webhook
                         </h3>
                         <p style={{ fontSize: '0.875rem', color: 'var(--color-text-muted)', marginBottom: '0.75rem', lineHeight: 1.5 }}>
-                            Use the Telegram Bot API to configure the webhook URL. Run this command in your terminal:
+                            Click the button below to automatically configure the webhook with Telegram:
                         </p>
-                        <pre style={{
-                            padding: '0.75rem',
-                            backgroundColor: 'var(--color-surface-muted)',
-                            borderRadius: 'var(--radius-md)',
-                            fontSize: '0.75rem',
-                            overflowX: 'auto',
-                            border: '1px solid var(--color-border)'
-                        }}>
+                        <ui.Button
+                            onClick={handleConfigureWebhook}
+                            variant="primary"
+                            size="md"
+                            disabled={configuring}
+                        >
+                            {configuring ? 'Configuring...' : 'Configure Webhook'}
+                        </ui.Button>
+
+                        {/* Show result message */}
+                        {configureResult && (
+                            <div style={{
+                                marginTop: '0.75rem',
+                                padding: '0.75rem',
+                                backgroundColor: configureResult.success
+                                    ? 'rgba(34, 197, 94, 0.1)'
+                                    : 'rgba(239, 68, 68, 0.1)',
+                                border: `1px solid ${configureResult.success ? 'var(--color-success)' : 'var(--color-error)'}`,
+                                borderRadius: 'var(--radius-md)',
+                                fontSize: '0.875rem',
+                                color: configureResult.success ? 'var(--color-success)' : 'var(--color-error)'
+                            }}>
+                                {configureResult.success ? '✓ ' : '✗ '}
+                                {configureResult.message}
+                            </div>
+                        )}
+
+                        <details style={{ marginTop: '1rem' }}>
+                            <summary style={{
+                                fontSize: '0.875rem',
+                                fontWeight: 500,
+                                cursor: 'pointer',
+                                color: 'var(--color-text-muted)',
+                                userSelect: 'none'
+                            }}>
+                                Advanced: Manual Configuration
+                            </summary>
+                            <div style={{ marginTop: '0.75rem' }}>
+                                <p style={{ fontSize: '0.875rem', color: 'var(--color-text-muted)', marginBottom: '0.75rem', lineHeight: 1.5 }}>
+                                    Alternatively, run this command in your terminal:
+                                </p>
+                                <pre style={{
+                                    padding: '0.75rem',
+                                    backgroundColor: 'var(--color-surface-muted)',
+                                    borderRadius: 'var(--radius-md)',
+                                    fontSize: '0.75rem',
+                                    overflowX: 'auto',
+                                    border: '1px solid var(--color-border)'
+                                }}>
 {`curl -X POST "https://api.telegram.org/bot<YOUR_BOT_TOKEN>/setWebhook" \\
   -H "Content-Type: application/json" \\
   -d '{
     "url": "${webhookUrl}",
     "secret_token": "<YOUR_WEBHOOK_SECRET>"
   }'`}
-                        </pre>
-                        <p style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: '0.5rem', lineHeight: 1.5 }}>
-                            Replace <code>&lt;YOUR_BOT_TOKEN&gt;</code> with your bot token and <code>&lt;YOUR_WEBHOOK_SECRET&gt;</code> with the value from <code>TELEGRAM_WEBHOOK_SECRET</code> environment variable.
-                        </p>
+                                </pre>
+                                <p style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: '0.5rem', lineHeight: 1.5 }}>
+                                    Replace <code>&lt;YOUR_BOT_TOKEN&gt;</code> with your bot token and <code>&lt;YOUR_WEBHOOK_SECRET&gt;</code> with the value from <code>TELEGRAM_WEBHOOK_SECRET</code> environment variable.
+                                </p>
+                            </div>
+                        </details>
                     </div>
                 )}
 

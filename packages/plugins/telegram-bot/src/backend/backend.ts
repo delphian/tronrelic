@@ -282,6 +282,77 @@ export const telegramBotBackendPlugin = definePlugin({
     adminRoutes: [
         {
             method: 'POST',
+            path: '/configure-webhook',
+            handler: async (req: IHttpRequest, res: IHttpResponse, next: IHttpNext) => {
+                try {
+                    const botToken = process.env.TELEGRAM_BOT_TOKEN;
+                    if (!botToken) {
+                        res.status(503).json({
+                            success: false,
+                            error: 'TELEGRAM_BOT_TOKEN not configured'
+                        });
+                        return;
+                    }
+
+                    const webhookSecret = process.env.TELEGRAM_WEBHOOK_SECRET;
+                    if (!webhookSecret) {
+                        res.status(503).json({
+                            success: false,
+                            error: 'TELEGRAM_WEBHOOK_SECRET not configured'
+                        });
+                        return;
+                    }
+
+                    // Get webhook URL from config
+                    const config = await pluginContext.database.get('config');
+                    const webhookUrl = config?.webhookUrl;
+
+                    if (!webhookUrl) {
+                        res.status(500).json({
+                            success: false,
+                            error: 'Webhook URL not found in configuration'
+                        });
+                        return;
+                    }
+
+                    // Call Telegram API to set webhook
+                    const axios = (await import('axios')).default;
+                    const telegramApiUrl = `https://api.telegram.org/bot${botToken}/setWebhook`;
+
+                    const response = await axios.post(telegramApiUrl, {
+                        url: webhookUrl,
+                        secret_token: webhookSecret
+                    });
+
+                    if (response.data.ok) {
+                        pluginContext.logger.info({ webhookUrl }, 'Telegram webhook configured successfully');
+                        res.json({
+                            success: true,
+                            message: 'Webhook configured successfully',
+                            webhookUrl,
+                            telegramResponse: response.data
+                        });
+                    } else {
+                        pluginContext.logger.error({ response: response.data }, 'Telegram API returned error');
+                        res.status(500).json({
+                            success: false,
+                            error: response.data.description || 'Failed to configure webhook',
+                            telegramResponse: response.data
+                        });
+                    }
+                } catch (error: any) {
+                    pluginContext.logger.error({ error }, 'Failed to configure webhook');
+
+                    res.status(500).json({
+                        success: false,
+                        error: error.response?.data?.description || error.message || 'Failed to configure webhook'
+                    });
+                }
+            },
+            description: 'Configure Telegram webhook automatically using Telegram Bot API'
+        },
+        {
+            method: 'POST',
             path: '/test',
             handler: async (req: IHttpRequest, res: IHttpResponse, next: IHttpNext) => {
                 try {
