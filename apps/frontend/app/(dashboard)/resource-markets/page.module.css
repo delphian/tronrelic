@@ -9,11 +9,37 @@
     /* Override default page-header if needed */
 }
 
+/* Full-width subtitle - override global max-width constraint */
+.subtitle {
+    font-size: 1rem;
+    color: var(--color-text-muted);
+    max-width: 100%;
+}
+
 /* Title row - flex container for title and CTA */
 .title_row {
     display: flex;
     align-items: center;
     gap: 2rem;
+}
+
+/* Bright red lightning icon next to title */
+.title_icon {
+    display: inline-block;
+    vertical-align: middle;
+    color: #ff1744;
+    margin-right: 0.75rem;
+    filter: drop-shadow(0 0 8px rgba(255, 23, 68, 0.4));
+    animation: pulse-glow 2s ease-in-out infinite;
+}
+
+@keyframes pulse-glow {
+    0%, 100% {
+        filter: drop-shadow(0 0 8px rgba(255, 23, 68, 0.4));
+    }
+    50% {
+        filter: drop-shadow(0 0 12px rgba(255, 23, 68, 0.6));
+    }
 }
 
 /* Compact CTA button - inline with title */
