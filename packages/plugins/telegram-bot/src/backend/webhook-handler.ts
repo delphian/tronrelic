@@ -33,12 +33,22 @@ export function createWebhookHandler(
             const isValid = await validateTelegramWebhook(req, securityOptions);
 
             if (!isValid) {
+                // Extract client IP for logging
+                const forwardedFor = req.headers['x-forwarded-for'];
+                const clientIp = forwardedFor
+                    ? (forwardedFor as string).split(',')[0].trim()
+                    : req.ip || 'unknown';
+
                 logger.warn(
                     {
-                        ip: req.ip,
-                        headers: req.headers
+                        clientIp,
+                        requestIp: req.ip,
+                        forwardedFor,
+                        secretTokenPresent: !!req.headers['x-telegram-bot-api-secret-token'],
+                        allowedIps: securityOptions.allowedIps || 'default (149.154.160.0/20,91.108.4.0/22)',
+                        webhookSecretConfigured: !!securityOptions.webhookSecret
                     },
-                    'Rejected Telegram webhook: security validation failed'
+                    'REJECTED unauthorized Telegram webhook request'
                 );
                 res.status(403).json({ error: 'Forbidden' });
                 return;
