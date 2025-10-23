@@ -1,23 +1,14 @@
-import { Types } from 'mongoose';
-import { alertConfig } from '../config/alerts.js';
 import { logger } from '../lib/logger.js';
 import {
   TransactionMemoModel,
   SunPumpTokenModel,
-  type SunPumpTokenDoc,
 } from '../database/models/index.js';
-import { TelegramService } from './telegram.service.js';
 import { TronGridClient, TronGridEvent } from '../modules/blockchain/tron-grid.client.js';
 import type { TransactionPersistencePayload } from '../modules/blockchain/blockchain.service.js';
 import { WebSocketService } from './websocket.service.js';
 
-const MEMO_MAX_BURST = 10;
-const MEMO_DELAY_MS = 10_000;
 const SUNPUMP_FACTORY_ADDRESS = 'TTfvyrAz86hbZk5iDpKD78pqLGgi8C7AAw';
 const SUNPUMP_METHOD_SIGNATURE = '2f70d762';
-const TRONSCAN_TX_URL = 'https://tronscan.org/#/transaction/';
-
-const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 interface MemoRecord {
   txId: string;
@@ -38,8 +29,18 @@ interface SunPumpRecord {
 }
 
 
+/**
+ * AlertService collects and stores blockchain alerts (memos, SunPump tokens).
+ *
+ * This service ingests transactions from the blockchain sync pipeline and:
+ * - Persists memo transactions to database
+ * - Persists SunPump token creations to database
+ * - Emits WebSocket events for real-time frontend updates
+ *
+ * Note: Telegram notification delivery was removed and should be handled by
+ * the telegram-bot plugin using plugin-to-plugin service architecture.
+ */
 export class AlertService {
-  private readonly telegram = new TelegramService();
   private readonly tronClient: TronGridClient;
   private readonly websocket = WebSocketService.getInstance();
 
@@ -47,6 +48,14 @@ export class AlertService {
     this.tronClient = tronClient ?? TronGridClient.getInstance();
   }
 
+  /**
+   * Ingest transactions from blockchain sync and persist alerts to database.
+   *
+   * Extracts memo transactions and SunPump token creations, stores them in
+   * the database, and emits WebSocket events for real-time frontend updates.
+   *
+   * @param transactions - Array of transactions from blockchain sync pipeline
+   */
   async ingestTransactions(transactions: TransactionPersistencePayload[]) {
     const memoRecords: MemoRecord[] = [];
     const sunPumpCandidates: TransactionPersistencePayload[] = [];
@@ -76,12 +85,6 @@ export class AlertService {
     if (sunPumpCandidates.length) {
       await this.persistSunPumpTokens(sunPumpCandidates);
     }
-
-  }
-
-  async dispatchPendingAlerts() {
-    await this.dispatchMemoAlerts();
-    await this.dispatchSunPumpAlerts();
   }
 
 
@@ -95,9 +98,7 @@ export class AlertService {
             timestamp: memo.timestamp,
             fromAddress: memo.fromAddress,
             toAddress: memo.toAddress,
-            memo: memo.memo,
-            channelId: alertConfig.memos.channelId,
-            threadId: alertConfig.memos.threadId
+            memo: memo.memo
           }
         },
         upsert: true
@@ -149,9 +150,7 @@ export class AlertService {
               ownerAddress: entry.ownerAddress,
               tokenName: entry.tokenName,
               tokenSymbol: entry.tokenSymbol,
-              tokenContract: entry.tokenContract,
-              channelId: alertConfig.sunpump.channelId,
-              threadId: alertConfig.sunpump.threadId
+              tokenContract: entry.tokenContract
             }
           },
           upsert: true
@@ -249,80 +248,4 @@ export class AlertService {
     }
     return address;
   }
-
-  private async dispatchMemoAlerts() {
-    const memos = await TransactionMemoModel.find({ notifiedAt: null })
-      .sort({ timestamp: 1 })
-      .limit(25);
-
-    if (!memos.length) {
-      return;
-    }
-
-    const now = new Date();
-    const channelId = alertConfig.memos.channelId;
-    const threadId = alertConfig.memos.threadId;
-
-    const memoTexts = memos.map(memo => memo.memo);
-
-    try {
-      if (memoTexts.length > MEMO_MAX_BURST) {
-        const body = memoTexts.join('\n');
-        await this.telegram.sendMessage(channelId, body, { threadId, parseMode: null });
-      } else {
-        for (let index = 0; index < memoTexts.length; index += 1) {
-          await this.telegram.sendMessage(channelId, memoTexts[index], { threadId, parseMode: null });
-          if (memoTexts.length > 1 && index < memoTexts.length - 1) {
-            await delay(MEMO_DELAY_MS);
-          }
-        }
-      }
-
-      await TransactionMemoModel.updateMany(
-        { _id: { $in: memos.map(memo => memo._id as Types.ObjectId) } },
-        { $set: { notifiedAt: now } }
-      );
-    } catch (error) {
-      logger.error({ error }, 'Failed to dispatch memo alerts');
-    }
-  }
-
-  private async dispatchSunPumpAlerts() {
-    const tokens = await SunPumpTokenModel.find({ notifiedAt: null })
-      .sort({ timestamp: 1 })
-      .limit(10);
-
-    if (!tokens.length) {
-      return;
-    }
-
-    const now = new Date();
-    const channelId = alertConfig.sunpump.channelId;
-    const threadId = alertConfig.sunpump.threadId;
-
-    try {
-      for (const token of tokens) {
-        const message = this.buildSunPumpMessage(token);
-        await this.telegram.sendMessage(channelId, message, { threadId, parseMode: null, disablePreview: true });
-      }
-
-      await SunPumpTokenModel.updateMany(
-        { _id: { $in: tokens.map(token => token._id as Types.ObjectId) } },
-        { $set: { notifiedAt: now } }
-      );
-    } catch (error) {
-      logger.error({ error }, 'Failed to dispatch SunPump alerts');
-    }
-  }
-
-  private buildSunPumpMessage(token: SunPumpTokenDoc): string {
-    const lines = [
-      `${token.tokenSymbol} / ${token.tokenName}`,
-      `Owner: ${token.ownerAddress}`,
-      `Contract: ${token.tokenContract}`
-    ];
-    return lines.join('\n');
-  }
-
-
 }

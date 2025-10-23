@@ -5,8 +5,6 @@ import { MarketService } from '../modules/markets/market.service.js';
 import { BlockchainService } from '../modules/blockchain/blockchain.service.js';
 import { logger } from '../lib/logger.js';
 import { CacheModel } from '../database/models/cache-model.js';
-import { AlertService } from '../services/alert.service.js';
-import { QueueService } from '../services/queue.service.js';
 import { ChainParametersFetcher } from '../modules/chain-parameters/chain-parameters-fetcher.js';
 import { UsdtParametersFetcher } from '../modules/usdt-parameters/usdt-parameters-fetcher.js';
 import axios from 'axios';
@@ -43,13 +41,8 @@ export async function initializeJobs(): Promise<SchedulerService | null> {
     const redis = getRedisClient();
     const marketService = new MarketService(redis);
     const blockchainService = BlockchainService.getInstance();
-    const alertService = new AlertService();
     const chainParametersFetcher = new ChainParametersFetcher(axios, logger);
     const usdtParametersFetcher = new UsdtParametersFetcher(axios, logger);
-
-    const alertDispatchQueue = new QueueService('alerts-dispatch', async () => {
-        await alertService.dispatchPendingAlerts();
-    });
 
     scheduler = new SchedulerService();
 
@@ -80,10 +73,6 @@ export async function initializeJobs(): Promise<SchedulerService | null> {
 
   scheduler.register('cache:cleanup', '0 * * * *', async () => {
     await CacheModel.deleteMany({ expiresAt: { $lte: new Date() } });
-  });
-
-  scheduler.register('alerts:dispatch', '*/1 * * * *', async () => {
-    await alertDispatchQueue.enqueue('dispatch', {});
   });
 
   await scheduler.start();

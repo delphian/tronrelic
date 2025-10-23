@@ -7,7 +7,7 @@ export const notificationConfig = {
   defaultChannels: ['websocket'] as NotificationChannel[],
   throttleMs: {
     websocket: env.NOTIFICATION_WEBSOCKET_THROTTLE_MS,
-    telegram: env.NOTIFICATION_TELEGRAM_THROTTLE_MS,
+    telegram: 60000, // Default 1 minute (Telegram integration moved to plugin)
     email: env.NOTIFICATION_EMAIL_THROTTLE_MS
   }
 };

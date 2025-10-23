@@ -1,64 +1,51 @@
-import type { IFrontendPlugin, IPageConfig, IMenuItemConfig } from '@tronrelic/types';
-import { telegramBotManifest } from '../manifest.js';
-import { TelegramBotSettingsPage } from './TelegramBotSettingsPage.js';
+import { definePlugin } from '@tronrelic/types';
+import { telegramBotManifest } from '../manifest';
+import { TelegramBotSettingsPage } from './TelegramBotSettingsPage';
 
 /**
- * Telegram Bot plugin frontend.
- * Registers admin settings page and navigation menu item.
+ * Telegram Bot plugin frontend definition.
  *
- * This frontend provides:
- * - Admin settings page at /system/plugins/telegram-bot/settings
- * - Webhook configuration display and copy functionality
+ * Registers admin settings page for webhook configuration, user statistics,
+ * and bot monitoring. The page is available at /system/plugins/telegram-bot/settings
+ * and requires admin authentication.
+ *
+ * This plugin provides:
+ * - Webhook URL display and copy functionality
  * - User statistics and activity monitoring
  * - Test notification form for verification
  * - Future: Subscription type management
  */
-
-/**
- * Menu item configuration.
- * Adds "Telegram Bot" to System > Plugins navigation.
- */
-const menuItem: IMenuItemConfig = {
-    id: 'telegram-bot',
-    label: 'Telegram Bot',
-    category: 'System',
-    url: '/system/plugins/telegram-bot/settings',
-    icon: 'MessageSquare', // Lucide React icon name
-    order: 100,
-    requiresAdmin: true // Only visible to authenticated admins
-};
-
-/**
- * Page configuration.
- * Registers settings page with dynamic routing system.
- */
-const settingsPage: IPageConfig = {
-    id: 'telegram-bot-settings',
-    path: '/system/plugins/telegram-bot/settings',
-    title: 'Telegram Bot Settings',
-    component: TelegramBotSettingsPage,
-    requiresAdmin: true // Requires admin authentication
-};
-
-/**
- * Frontend plugin export.
- * Must match structure expected by plugin loader.
- */
-export const telegramBotFrontendPlugin: IFrontendPlugin = {
+export const telegramBotFrontendPlugin = definePlugin({
     manifest: telegramBotManifest,
 
     /**
      * Navigation menu items.
-     * These appear in the main navigation sidebar.
+     * Adds "Telegram Bot" to System > Plugins navigation.
      */
-    menuItems: [menuItem],
+    menuItems: [
+        {
+            label: 'Telegram Bot',
+            href: '/system/plugins/telegram-bot/settings',
+            icon: 'MessageSquare',
+            category: 'System',
+            order: 100,
+            adminOnly: true
+        }
+    ],
 
     /**
-     * Page components.
-     * These are rendered via dynamic routing based on URL path.
+     * Admin pages.
+     * Registered under /system/plugins/ namespace with admin authentication.
      */
-    pages: [settingsPage]
-};
+    adminPages: [
+        {
+            path: '/system/plugins/telegram-bot/settings',
+            component: TelegramBotSettingsPage,
+            title: 'Telegram Bot Settings',
+            requiresAdmin: true
+        }
+    ]
+});
 
 /**
  * Default export for plugin loader.
