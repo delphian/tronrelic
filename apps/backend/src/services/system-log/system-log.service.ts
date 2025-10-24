@@ -115,14 +115,22 @@ export class SystemLogService implements ISystemLogService {
     /**
      * Initialize the system log service with a configured Pino logger.
      *
-     * Sets up the Pino logger instance for file/console output. After initialization,
-     * error/warn logs will also be saved to MongoDB.
+     * Sets up the Pino logger instance for file/console output and applies the log level
+     * from SystemConfig stored in the database. After initialization, error/warn logs
+     * will also be saved to MongoDB.
      *
      * **Dependency Injection:**
      *
      * This method accepts a Pino logger via dependency injection instead of importing
      * it directly. This prevents circular dependencies and allows proper initialization
      * order (database connection → logger creation → SystemLogService initialization).
+     *
+     * **Log level configuration:**
+     *
+     * The log level is read from SystemConfig.logLevel in MongoDB and applied to the
+     * Pino logger. This allows runtime log level changes through the admin UI without
+     * requiring service restarts. If the database is unavailable or config is missing,
+     * defaults to 'info' level.
      *
      * @param pinoLogger - Configured Pino logger instance (required)
      * @throws Error if pinoLogger is not provided
@@ -138,7 +146,43 @@ export class SystemLogService implements ISystemLogService {
 
         this.pino = pinoLogger;
         this.initialized = true;
+
+        // Apply log level from SystemConfig
+        await this.applyLogLevelFromConfig();
+
         this.pino.info('SystemLogService initialized');
+    }
+
+    /**
+     * Reads the log level from SystemConfig and applies it to the Pino logger.
+     *
+     * This method is called during initialization and can also be called manually
+     * after updating the log level in SystemConfig to apply the change immediately.
+     *
+     * **Why this is async:**
+     *
+     * The method queries MongoDB to retrieve the SystemConfig document. To avoid
+     * blocking initialization, we fetch the config asynchronously. If the query fails,
+     * we log a warning but don't prevent initialization (the logger keeps its
+     * current level, which defaults to 'info' from Pino's initial config).
+     *
+     * @returns Promise that resolves when log level has been applied
+     */
+    public async applyLogLevelFromConfig(): Promise<void> {
+        try {
+            // Import SystemConfigService dynamically to avoid circular dependencies
+            const { SystemConfigService } = await import('../system-config/system-config.service.js');
+            const systemConfigService = SystemConfigService.getInstance();
+            const config = await systemConfigService.getConfig();
+
+            if (config.logLevel && this.pino) {
+                this.pino.level = config.logLevel;
+                this.pino.info({ logLevel: config.logLevel }, 'Log level applied from SystemConfig');
+            }
+        } catch (error) {
+            // Log to stderr to avoid infinite loops if this fails
+            console.warn('Failed to apply log level from SystemConfig, using default:', error);
+        }
     }
 
     // ========================================================================

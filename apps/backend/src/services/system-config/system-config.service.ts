@@ -101,6 +101,7 @@ export class SystemConfigService implements ISystemConfigService {
                     siteUrl: process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000',
                     systemLogsMaxCount: 1000000,
                     systemLogsRetentionDays: 30,
+                    logLevel: 'info',
                     updatedAt: new Date()
                 });
             }
@@ -119,6 +120,7 @@ export class SystemConfigService implements ISystemConfigService {
                 siteUrl: process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000',
                 systemLogsMaxCount: 1000000,
                 systemLogsRetentionDays: 30,
+                logLevel: 'info' as const,
                 updatedAt: new Date()
             };
         }
@@ -154,7 +156,7 @@ export class SystemConfigService implements ISystemConfigService {
      * @returns Updated configuration object
      */
     async updateConfig(
-        updates: Partial<Pick<ISystemConfig, 'siteUrl' | 'systemLogsMaxCount' | 'systemLogsRetentionDays'>>,
+        updates: Partial<Pick<ISystemConfig, 'siteUrl' | 'systemLogsMaxCount' | 'systemLogsRetentionDays' | 'logLevel'>>,
         updatedBy?: string
     ): Promise<ISystemConfig> {
         try {
