@@ -1,13 +1,12 @@
 import type { NotificationChannel } from '@tronrelic/shared';
 import { env } from './env.js';
 
-export const supportedChannels: NotificationChannel[] = ['websocket', 'telegram', 'email'];
+export const supportedChannels: NotificationChannel[] = ['websocket', 'email'];
 
 export const notificationConfig = {
   defaultChannels: ['websocket'] as NotificationChannel[],
   throttleMs: {
     websocket: env.NOTIFICATION_WEBSOCKET_THROTTLE_MS,
-    telegram: 60000, // Default 1 minute (Telegram integration moved to plugin)
     email: env.NOTIFICATION_EMAIL_THROTTLE_MS
   }
 };

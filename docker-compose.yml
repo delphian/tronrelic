@@ -68,7 +68,6 @@ services:
             - TRONGRID_API_KEY_3=${TRONGRID_API_KEY_3}
 
             # Optional: Telegram Integration
-            - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
             - TELEGRAM_WEBHOOK_SECRET=${TELEGRAM_WEBHOOK_SECRET:-}
         depends_on:
             mongodb:

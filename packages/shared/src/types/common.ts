@@ -31,7 +31,7 @@ export interface CacheEntry<T> {
   tags?: string[];
 }
 
-export type NotificationChannel = 'websocket' | 'telegram' | 'email';
+export type NotificationChannel = 'websocket' | 'email';
 
 export interface AddressMetadata {
   address: string;

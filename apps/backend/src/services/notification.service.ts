@@ -9,7 +9,6 @@ import {
 } from '../database/models/index.js';
 import { logger } from '../lib/logger.js';
 import { resolveChannels, resolveThrottleMs } from '../config/notifications.js';
-import { TelegramService } from './telegram.service.js';
 import { EmailService } from './email.service.js';
 
 const TRONSCAN_TX_URL = 'https://tronscan.org/#/transaction/';
@@ -24,7 +23,6 @@ interface UpdatePreferencesPayload {
 export class NotificationService {
   constructor(
     private readonly websocket = WebSocketService.getInstance(),
-    private readonly telegram = new TelegramService(),
     private readonly email = new EmailService()
   ) {}
 
@@ -130,9 +128,6 @@ export class NotificationService {
         this.websocket.emitToWallet(wallet, event);
         delivered = true;
         break;
-      case 'telegram':
-        delivered = await this.deliverViaTelegram(subscription, event);
-        break;
       case 'email':
         delivered = await this.deliverViaEmail(subscription, event);
         break;
@@ -156,35 +151,6 @@ export class NotificationService {
       },
       { upsert: true }
     );
-  }
-
-  private async deliverViaTelegram(
-    subscription: NotificationSubscriptionDoc,
-    event: TronRelicSocketEvent
-  ): Promise<boolean> {
-    const prefs = this.getTelegramPreferences(subscription);
-    if (!prefs) {
-      logger.debug({ wallet: subscription.wallet }, 'Skipping Telegram notification; preferences missing');
-      return false;
-    }
-
-    const message = this.buildTelegramMessage(event);
-    if (!message) {
-      logger.debug({ event: event.event }, 'Skipping Telegram notification; unsupported event type');
-      return false;
-    }
-
-    try {
-      await this.telegram.sendMessage(prefs.chatId, message, {
-        threadId: prefs.threadId,
-        disablePreview: prefs.disablePreview,
-        parseMode: prefs.parseMode
-      });
-      return true;
-    } catch (error) {
-      logger.error({ error, wallet: subscription.wallet, event: event.event }, 'Failed to deliver Telegram notification');
-      return false;
-    }
   }
 
   private async deliverViaEmail(
@@ -222,47 +188,6 @@ export class NotificationService {
     }
   }
 
-  private getTelegramPreferences(
-    subscription: NotificationSubscriptionDoc
-  ): { chatId: string; threadId?: number; parseMode: 'MarkdownV2' | 'HTML' | null; disablePreview: boolean } | null {
-    const prefs = (subscription.preferences ?? {}) as Record<string, unknown>;
-    const channelPrefs = this.extractRecord(prefs.telegram ?? prefs.telegramPreferences ?? null);
-
-    let chatId: string | undefined;
-    let threadId: number | undefined;
-    let parseMode: 'MarkdownV2' | 'HTML' | null = null;
-    let disablePreview = true;
-
-    if (channelPrefs) {
-      chatId = this.stringify(channelPrefs.chatId ?? channelPrefs.chat_id ?? channelPrefs.chatID);
-      threadId = this.parseNumber(channelPrefs.threadId ?? channelPrefs.topicId ?? channelPrefs.thread_id);
-      const rawParseMode = this.stringify(channelPrefs.parseMode ?? channelPrefs.parse_mode ?? null);
-      if (rawParseMode === 'MarkdownV2' || rawParseMode === 'HTML') {
-        parseMode = rawParseMode;
-      } else if (rawParseMode === 'text') {
-        parseMode = null;
-      }
-      if (typeof channelPrefs.disablePreview === 'boolean') {
-        disablePreview = channelPrefs.disablePreview;
-      }
-    }
-
-    if (!chatId) {
-      chatId = this.stringify(prefs.telegramChatId ?? prefs.telegram_chat_id);
-    }
-
-    if (!chatId) {
-      return null;
-    }
-
-    return {
-      chatId,
-      threadId,
-      parseMode,
-      disablePreview
-    };
-  }
-
   private getEmailPreferences(
     subscription: NotificationSubscriptionDoc
   ): { address: string } | null {
@@ -284,14 +209,6 @@ export class NotificationService {
     }
 
     return { address };
-  }
-
-  private buildTelegramMessage(event: TronRelicSocketEvent): string | null {
-    const lines = this.buildNotificationLines(event);
-    if (!lines?.length) {
-      return null;
-    }
-    return lines.join('\n');
   }
 
   private buildEmailContent(event: TronRelicSocketEvent): { subject: string; text: string; html?: string } | null {

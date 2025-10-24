@@ -14,10 +14,10 @@ const TRONSCAN_TX_URL = 'https://tronscan.org/#/transaction/';
  * HTTP API approach. This keeps the plugin independent of Telegram SDK libraries.
  *
  * Migration path:
- * 1. Install and enable telegram-bot plugin
+ * 1. Install and enable telegram-bot plugin (configure bot token via /system/plugins admin UI)
  * 2. Wait for plugin-to-plugin service registry to be implemented
  * 3. Replace this class with calls to ITelegramBotService from context
- * 4. Remove TELEGRAM_TOKEN environment variable (use TELEGRAM_BOT_TOKEN instead)
+ * 4. Remove TELEGRAM_TOKEN environment variable (bot tokens are now database-backed)
  */
 export class TelegramNotifier {
     private readonly database: IPluginDatabase;
