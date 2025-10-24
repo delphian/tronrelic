@@ -8,6 +8,8 @@ import styles from './WebhookConfigCard.module.css';
  */
 interface IWebhookConfigCardProps {
     context: IFrontendPluginContext;
+    webhookSecretConfigured?: boolean;
+    onWebhookSecretConfiguredChange?: (configured: boolean) => void;
 }
 
 /**
@@ -18,17 +20,20 @@ interface IWebhookConfigCardProps {
  * Setting up a Telegram bot webhook requires copying a specific URL to Telegram's BotFather.
  * This card makes the URL easily accessible and provides setup instructions.
  */
-export function WebhookConfigCard({ context }: IWebhookConfigCardProps) {
+export function WebhookConfigCard({ context, webhookSecretConfigured: externalWebhookSecretConfigured, onWebhookSecretConfiguredChange }: IWebhookConfigCardProps) {
     const { ui, api } = context;
     const [webhookUrl, setWebhookUrl] = React.useState<string>('');
     const [loading, setLoading] = React.useState(true);
     const [copied, setCopied] = React.useState(false);
     const [botTokenConfigured, setBotTokenConfigured] = React.useState(true);
-    const [webhookSecretConfigured, setWebhookSecretConfigured] = React.useState(true);
+    const [internalWebhookSecretConfigured, setInternalWebhookSecretConfigured] = React.useState(true);
     const [configuring, setConfiguring] = React.useState(false);
     const [configureResult, setConfigureResult] = React.useState<{ success: boolean; message: string } | null>(null);
     const [verifying, setVerifying] = React.useState(false);
     const [verifyResult, setVerifyResult] = React.useState<{ success: boolean; message: string; details?: any } | null>(null);
+
+    // Use external prop if provided, otherwise use internal state
+    const webhookSecretConfigured = externalWebhookSecretConfigured ?? internalWebhookSecretConfigured;
 
     /**
      * Fetches webhook URL and configuration status from both config and settings endpoints.
@@ -53,13 +58,19 @@ export function WebhookConfigCard({ context }: IWebhookConfigCardProps) {
                     setBotTokenConfigured(configResponse.config.botTokenConfigured ?? true);
                 }
 
-                // Fetch webhook secret configuration status from settings endpoint
-                const settingsResponse = await api.get<{ success: boolean; settings: { webhookSecretConfigured: boolean } }>(
-                    '/plugins/telegram-bot/system/settings'
-                );
+                // Fetch webhook secret configuration status from settings endpoint (only if not provided by parent)
+                if (externalWebhookSecretConfigured === undefined) {
+                    const settingsResponse = await api.get<{ success: boolean; settings: { webhookSecretConfigured: boolean } }>(
+                        '/plugins/telegram-bot/system/settings'
+                    );
 
-                if (settingsResponse.success) {
-                    setWebhookSecretConfigured(settingsResponse.settings.webhookSecretConfigured ?? false);
+                    if (settingsResponse.success) {
+                        const configured = settingsResponse.settings.webhookSecretConfigured ?? false;
+                        setInternalWebhookSecretConfigured(configured);
+                        if (onWebhookSecretConfiguredChange) {
+                            onWebhookSecretConfiguredChange(configured);
+                        }
+                    }
                 }
             } catch (err) {
                 console.error('Error fetching webhook config:', err);
@@ -251,32 +262,30 @@ export function WebhookConfigCard({ context }: IWebhookConfigCardProps) {
                     </div>
                 </div>
 
-                {/* Warning if webhook secret is not configured */}
-                {botTokenConfigured && !webhookSecretConfigured && (
-                    <div className={styles.warning_card}>
-                        <h3 className={styles.warning_title}>
-                            <AlertCircle size={16} />
-                            Webhook Secret Not Configured
-                        </h3>
-                        <p className={styles.warning_text}>
-                            You must configure a webhook secret before deploying the webhook. The secret ensures that
-                            incoming webhook requests are actually from Telegram's servers.
-                        </p>
-                        <p className={styles.warning_text}>
-                            Please scroll up to the "Bot Settings" card above and generate/save a webhook secret, then return here to configure the webhook.
-                        </p>
-                    </div>
-                )}
-
                 {/* Webhook setup instructions - show if token is configured */}
                 {botTokenConfigured && (
                     <div className={styles.config_section}>
                         <h3 className={styles.section_title}>
-                            Configure Webhook
+                            Register Webhook with Telegram
                         </h3>
-                        <p className={styles.section_description}>
-                            Click the button below to automatically configure the webhook with Telegram:
-                        </p>
+
+                        {/* Warning if webhook secret is not configured - moved here */}
+                        {!webhookSecretConfigured && (
+                            <div className={styles.warning_card} style={{ marginBottom: '1rem' }}>
+                                <h3 className={styles.warning_title}>
+                                    <AlertCircle size={16} />
+                                    Webhook Secret Not Configured
+                                </h3>
+                                <p className={styles.warning_text}>
+                                    You must configure a webhook secret before deploying the webhook. The secret ensures that
+                                    incoming webhook requests are actually from Telegram's servers.
+                                </p>
+                                <p className={styles.warning_text}>
+                                    Please scroll up to the "Bot Settings" card above and generate/save a webhook secret, then return here to register the webhook.
+                                </p>
+                            </div>
+                        )}
+
                         <div className={styles.button_row}>
                             <ui.Button
                                 onClick={handleConfigureWebhook}
@@ -284,7 +293,7 @@ export function WebhookConfigCard({ context }: IWebhookConfigCardProps) {
                                 size="md"
                                 disabled={configuring || !webhookSecretConfigured}
                             >
-                                {configuring ? 'Configuring...' : 'Configure Webhook'}
+                                {configuring ? 'Updating...' : 'Update Registration'}
                             </ui.Button>
                             <ui.Button
                                 onClick={handleVerifyWebhook}
@@ -292,7 +301,7 @@ export function WebhookConfigCard({ context }: IWebhookConfigCardProps) {
                                 size="md"
                                 disabled={verifying}
                             >
-                                {verifying ? 'Verifying...' : 'Verify Webhook'}
+                                {verifying ? 'Verifying...' : 'Verify Registration'}
                             </ui.Button>
                         </div>
 
@@ -341,7 +350,7 @@ export function WebhookConfigCard({ context }: IWebhookConfigCardProps) {
 
                         <details className={styles.advanced_instructions}>
                             <summary className={styles.instructions_summary}>
-                                Advanced: Manual Configuration
+                                Advanced: Manual Registration
                             </summary>
                             <div className={styles.instructions_content}>
                                 <p className={styles.instructions_text}>
