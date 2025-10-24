@@ -122,7 +122,7 @@ export class CommandHandler {
 
     /**
      * Handles /start command.
-     * Sends welcome message explaining bot capabilities.
+     * Sends welcome message explaining bot capabilities with HTML formatting.
      *
      * @param update - Telegram update with message data
      * @returns Response object for webhook handler to send
@@ -138,18 +138,22 @@ export class CommandHandler {
             message.from?.last_name
         );
 
-        const text = `🤖 *Welcome to TronRelic Bot\\!*\\n\\n` +
-            `I can help you with:\\n\\n` +
-            `💰 *Market Prices*\\n` +
-            `• \`/price\` \\- Get cheapest USDT transfer cost\\n` +
-            `• \`/price 100\` \\- Cost for 100 transfers\\n` +
-            `• \`/price 100 30\` \\- Cost for 100 transfers over 30 days\\n\\n` +
-            `🔔 *Notifications* \\(coming soon\\)\\n` +
-            `• \`/subscribe <type>\` \\- Subscribe to alerts\\n` +
-            `• \`/unsubscribe <type>\` \\- Unsubscribe\\n\\n` +
-            `Need help\\? Just send me a message\\!`;
+        const text = `🤖 <b>Welcome to TronRelic Bot!</b>
 
-        return { chatId, text, parseMode: 'MarkdownV2' };
+I can help you with:
+
+💰 <b>Market Prices</b>
+• <code>/price</code> - Get cheapest USDT transfer cost
+• <code>/price 100</code> - Cost for 100 transfers
+• <code>/price 100 30</code> - Cost for 100 transfers over 30 days
+
+🔔 <b>Notifications</b> <i>(coming soon)</i>
+• <code>/subscribe &lt;type&gt;</code> - Subscribe to alerts
+• <code>/unsubscribe &lt;type&gt;</code> - Unsubscribe
+
+Need help? Just send me a message!`;
+
+        return { chatId, text, parseMode: 'HTML' };
     }
 
     /**
@@ -170,14 +174,16 @@ export class CommandHandler {
             message.from?.last_name
         );
 
-        const text = `🔔 Subscription feature coming soon\\!\n\n` +
-            `Available subscription types will include:\n` +
-            `• Whale alerts \\(large transfers\\)\n` +
-            `• Market updates \\(price changes\\)\n` +
-            `• Price alerts \\(threshold notifications\\)\n\n` +
-            `Stay tuned\\!`;
+        const text = `🔔 <b>Subscription feature coming soon!</b>
 
-        return { chatId, text, parseMode: 'MarkdownV2' };
+Available subscription types will include:
+• Whale alerts (large transfers)
+• Market updates (price changes)
+• Price alerts (threshold notifications)
+
+Stay tuned!`;
+
+        return { chatId, text, parseMode: 'HTML' };
     }
 
     /**
@@ -198,10 +204,11 @@ export class CommandHandler {
             message.from?.last_name
         );
 
-        const text = `🔕 Unsubscribe feature coming soon\\!\n\n` +
-            `You will be able to manage your subscriptions from this bot\\.`;
+        const text = `🔕 <b>Unsubscribe feature coming soon!</b>
 
-        return { chatId, text, parseMode: 'MarkdownV2' };
+You will be able to manage your subscriptions from this bot.`;
+
+        return { chatId, text, parseMode: 'HTML' };
     }
 
     /**
@@ -241,8 +248,8 @@ export class CommandHandler {
             if (isNaN(parsed) || parsed <= 0) {
                 return {
                     chatId,
-                    text: '⚠️ Invalid transfer count\\. Please use a positive number\\.',
-                    parseMode: 'MarkdownV2'
+                    text: '⚠️ Invalid transfer count. Please use a positive number.',
+                    parseMode: 'HTML'
                 };
             }
             transferCount = parsed;
@@ -254,8 +261,8 @@ export class CommandHandler {
             if (isNaN(parsed) || parsed <= 0) {
                 return {
                     chatId,
-                    text: '⚠️ Invalid days\\. Please use a positive number\\.',
-                    parseMode: 'MarkdownV2'
+                    text: '⚠️ Invalid days. Please use a positive number.',
+                    parseMode: 'HTML'
                 };
             }
             days = parsed;
@@ -269,13 +276,13 @@ export class CommandHandler {
                 chatId
             });
 
-            return { chatId, text: responseText, parseMode: 'MarkdownV2' };
+            return { chatId, text: responseText, parseMode: 'HTML' };
         } catch (error) {
             this.logger.error({ error }, 'Failed to query markets');
             return {
                 chatId,
-                text: '⚠️ Failed to fetch market data\\. Please try again later\\.',
-                parseMode: 'MarkdownV2'
+                text: '⚠️ Failed to fetch market data. Please try again later.',
+                parseMode: 'HTML'
             };
         }
     }
@@ -327,8 +334,8 @@ export class CommandHandler {
             const chatId = String(message.chat.id);
             return {
                 chatId,
-                text: `❓ Unknown command\\. Try /start to see available commands\\.`,
-                parseMode: 'MarkdownV2'
+                text: `❓ Unknown command. Try /start to see available commands.`,
+                parseMode: 'HTML'
             };
         }
     }
