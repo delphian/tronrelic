@@ -1,11 +1,11 @@
-import type { Logger } from 'pino';
+import type { ISystemLogService } from '@tronrelic/types';
 import { marketMetrics } from '../../market-metrics.service.js';
 
 export interface RetryOptions {
   attempts?: number;
   backoffMs?: number;
   backoffMultiplier?: number;
-  logger?: Logger;
+  logger?: ISystemLogService;
   fetcher?: string;
   requestLabel?: string;
   marketGuid?: string;

@@ -1,6 +1,5 @@
 import { SystemConfigModel } from '../../database/models/system-config-model.js';
-import type { ISystemConfig, ISystemConfigService } from '@tronrelic/types';
-import type { Logger } from 'pino';
+import type { ISystemConfig, ISystemConfigService, ISystemLogService } from '@tronrelic/types';
 
 /**
  * SystemConfigService
@@ -34,7 +33,7 @@ export class SystemConfigService implements ISystemConfigService {
     private readonly CACHE_TTL_MS = 60000; // 1 minute cache
 
     private constructor(
-        private readonly logger: Logger
+        private readonly logger: ISystemLogService
     ) {}
 
     /**
@@ -62,9 +61,9 @@ export class SystemConfigService implements ISystemConfigService {
      * Allows dependency injection of the logger at application startup
      * while maintaining singleton pattern throughout the application lifecycle.
      *
-     * @param logger - Pino logger instance for structured logging
+     * @param logger - SystemLogService instance for structured logging
      */
-    public static initialize(logger: Logger): void {
+    public static initialize(logger: ISystemLogService): void {
         if (SystemConfigService.instance) {
             throw new Error('SystemConfigService already initialized');
         }

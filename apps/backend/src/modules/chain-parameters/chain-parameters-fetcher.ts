@@ -1,6 +1,5 @@
 import type { AxiosInstance } from 'axios';
-import type { Logger } from 'pino';
-import type { IChainParametersFetcher, IChainParameters } from '@tronrelic/types';
+import type { IChainParametersFetcher, IChainParameters, ISystemLogService } from '@tronrelic/types';
 import { ChainParametersModel } from '../../database/models/chain-parameters-model.js';
 
 /**
@@ -25,7 +24,7 @@ interface TronGridChainParametersResponse {
 export class ChainParametersFetcher implements IChainParametersFetcher {
     private readonly TRONGRID_ENDPOINT = 'https://api.trongrid.io/wallet/getchainparameters';
 
-    constructor(private readonly http: AxiosInstance, private readonly logger: Logger) {}
+    constructor(private readonly http: AxiosInstance, private readonly logger: ISystemLogService) {}
 
     /**
      * Fetch current chain parameters and save to database

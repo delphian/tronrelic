@@ -1,6 +1,5 @@
 import type { AxiosInstance } from 'axios';
-import type { Logger } from 'pino';
-import type { IUsdtParametersFetcher, IUsdtParameters } from '@tronrelic/types';
+import type { IUsdtParametersFetcher, IUsdtParameters, ISystemLogService } from '@tronrelic/types';
 import { UsdtParametersModel } from '../../database/models/usdt-parameters-model.js';
 
 /**
@@ -44,7 +43,7 @@ interface TronGridConstantContractResponse {
 export class UsdtParametersFetcher implements IUsdtParametersFetcher {
     private readonly TRONGRID_ENDPOINT = 'https://api.trongrid.io/wallet/triggerconstantcontract';
 
-    constructor(private readonly http: AxiosInstance, private readonly logger: Logger) {}
+    constructor(private readonly http: AxiosInstance, private readonly logger: ISystemLogService) {}
 
     /**
      * Fetch current USDT transfer energy costs and save to database

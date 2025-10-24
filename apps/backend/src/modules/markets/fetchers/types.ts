@@ -1,11 +1,10 @@
 import type { AxiosInstance } from 'axios';
-import type { Logger } from 'pino';
 import type { MarketSnapshot } from '../dtos/market-snapshot.dto.js';
-import type { IChainParametersService } from '@tronrelic/types';
+import type { IChainParametersService, ISystemLogService } from '@tronrelic/types';
 
 export interface MarketFetcherContext {
     http: AxiosInstance;
-    logger: Logger;
+    logger: ISystemLogService;
     cacheTtlSeconds: number;
     chainParameters: IChainParametersService | null;
 }

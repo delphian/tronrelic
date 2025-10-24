@@ -1,5 +1,5 @@
 import { ZodError } from 'zod';
-import type { Logger } from 'pino';
+import type { ISystemLogService } from '@tronrelic/types';
 import type { MarketSnapshot } from '../../dtos/market-snapshot.dto.js';
 import { MarketSnapshotSchema } from '../../dtos/market-snapshot.dto.js';
 import type { MarketFetcher, MarketFetcherContext } from '../types.js';
@@ -94,7 +94,7 @@ export abstract class BaseMarketFetcher implements MarketFetcher {
         }
     }
 
-    protected handleError(error: unknown, logger: Logger) {
+    protected handleError(error: unknown, logger: ISystemLogService) {
         if (error instanceof ZodError) {
             logger.warn({ error, fetcher: this.name }, 'Market snapshot validation failed');
         } else {
