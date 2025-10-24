@@ -1,5 +1,6 @@
 import React from 'react';
 import type { IFrontendPluginContext } from '@tronrelic/types';
+import { BotSettingsCard } from './components/BotSettingsCard';
 import { UserStatsCard } from './components/UserStatsCard';
 import { WebhookConfigCard } from './components/WebhookConfigCard';
 
@@ -90,6 +91,9 @@ export function TelegramBotSettingsPage({ context }: ITelegramBotSettingsPagePro
                 gap: '2rem',
                 marginBottom: '3rem'
             }}>
+                {/* Bot settings */}
+                <BotSettingsCard context={context} />
+
                 {/* Webhook configuration */}
                 <WebhookConfigCard context={context} />
 

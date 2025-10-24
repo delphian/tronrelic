@@ -1,13 +1,14 @@
 import { definePlugin, type IPluginContext, type IApiRouteConfig, type IHttpRequest, type IHttpResponse, type IHttpNext } from '@tronrelic/types';
 import { telegramBotManifest } from '../manifest.js';
-import type { ITelegramUser, ITelegramSubscription } from '../shared/index.js';
+import type { ITelegramUser, ITelegramSubscription, IPluginTelegramBotConfig } from '../shared/index.js';
 import { CommandHandler } from './command-handlers.js';
 import { MarketQueryService } from './market-query.service.js';
 import { createWebhookHandler } from './webhook-handler.js';
-import { TelegramBotService } from './telegram-bot.service.js';
+import { BotConfigService } from './bot-config.service.js';
 
-// Store context for API handlers
+// Store context and config service for API handlers
 let pluginContext: IPluginContext;
+let botConfigService: BotConfigService;
 
 /**
  * Telegram Bot plugin for TronRelic.
@@ -168,10 +169,19 @@ export const telegramBotBackendPlugin = definePlugin({
         pluginContext = context;
         context.logger.info('Initializing telegram-bot plugin');
 
-        // Create Telegram client
-        const botToken = process.env.TELEGRAM_BOT_TOKEN;
+        // Create bot configuration service
+        botConfigService = new BotConfigService(context.database, context.logger);
+
+        // Load bot token from database (with environment variable fallback)
+        const botToken = await botConfigService.getBotToken();
         if (!botToken) {
-            context.logger.warn('TELEGRAM_BOT_TOKEN not set, bot functionality will be limited');
+            context.logger.warn('Bot token not configured (neither database nor environment variable), bot functionality will be limited');
+        } else {
+            const maskedConfig = await botConfigService.getMaskedConfig();
+            context.logger.info(
+                { maskedToken: maskedConfig.botToken, source: process.env.TELEGRAM_BOT_TOKEN ? 'database (migrated from env)' : 'database' },
+                'Bot token loaded successfully'
+            );
         }
 
         const { TelegramClient } = await import('./telegram-client.js');
@@ -201,14 +211,14 @@ export const telegramBotBackendPlugin = definePlugin({
         );
 
         // Create a wrapper handler that supports both GET (health check) and POST (webhook events)
-        const webhookRouteHandler = async (req: IHttpRequest, res: IHttpResponse, next: IHttpNext) => {
+        const webhookRouteHandler = async (req: IHttpRequest, res: IHttpResponse, _next: IHttpNext) => {
             if (req.method === 'GET') {
                 // Telegram health check - just return 200 OK
                 res.status(200).json({ ok: true, status: 'ready' });
                 return;
             }
-            // POST request - pass to webhook handler
-            await webhookHandler(req, res, next);
+            // POST request - pass to webhook handler (webhook handler only takes req, res)
+            await webhookHandler(req, res);
         };
 
         // Register webhook routes (POST for events, GET for health checks)
@@ -226,33 +236,31 @@ export const telegramBotBackendPlugin = definePlugin({
             description: 'Telegram bot webhook health check endpoint'
         };
 
-        // Register config route
+        // Register config route (returns masked configuration)
         const configRoute: IApiRouteConfig = {
             method: 'GET',
             path: '/config',
-            handler: async (req: IHttpRequest, res: IHttpResponse, next: IHttpNext) => {
+            handler: async (_req: IHttpRequest, res: IHttpResponse, next: IHttpNext) => {
                 try {
-                    const config = await pluginContext.database.get('config');
-                    const botTokenConfigured = !!botToken && botToken.length > 0;
+                    // Get masked configuration from service
+                    const maskedConfig = await botConfigService.getMaskedConfig();
 
                     // Always construct webhook URL dynamically from current system config
-                    // (don't use stale cached value from plugin storage)
                     const siteUrl = await pluginContext.systemConfig.getSiteUrl();
                     const webhookUrl = `${siteUrl}/api/plugins/telegram-bot/webhook`;
 
                     res.json({
                         success: true,
                         config: {
-                            ...(config || {}),
-                            webhookUrl,
-                            botTokenConfigured
+                            ...maskedConfig,
+                            webhookUrl
                         }
                     });
                 } catch (error) {
                     next(error);
                 }
             },
-            description: 'Get plugin configuration'
+            description: 'Get plugin configuration (with masked bot token)'
         };
 
         // Add routes to plugin (will be mounted at /api/plugins/telegram-bot/*)
@@ -304,13 +312,14 @@ export const telegramBotBackendPlugin = definePlugin({
         {
             method: 'POST',
             path: '/configure-webhook',
-            handler: async (req: IHttpRequest, res: IHttpResponse, next: IHttpNext) => {
+            handler: async (_req: IHttpRequest, res: IHttpResponse, _next: IHttpNext) => {
                 try {
-                    const botToken = process.env.TELEGRAM_BOT_TOKEN;
+                    // Get bot token from configuration service
+                    const botToken = await botConfigService.getBotToken();
                     if (!botToken) {
                         res.status(503).json({
                             success: false,
-                            error: 'TELEGRAM_BOT_TOKEN not configured'
+                            error: 'Bot token not configured. Please configure it in the settings first.'
                         });
                         return;
                     }
@@ -319,7 +328,7 @@ export const telegramBotBackendPlugin = definePlugin({
                     if (!webhookSecret) {
                         res.status(503).json({
                             success: false,
-                            error: 'TELEGRAM_WEBHOOK_SECRET not configured'
+                            error: 'TELEGRAM_WEBHOOK_SECRET not configured in environment variables'
                         });
                         return;
                     }
@@ -367,13 +376,14 @@ export const telegramBotBackendPlugin = definePlugin({
         {
             method: 'GET',
             path: '/verify-webhook',
-            handler: async (req: IHttpRequest, res: IHttpResponse, next: IHttpNext) => {
+            handler: async (_req: IHttpRequest, res: IHttpResponse, _next: IHttpNext) => {
                 try {
-                    const botToken = process.env.TELEGRAM_BOT_TOKEN;
+                    // Get bot token from configuration service
+                    const botToken = await botConfigService.getBotToken();
                     if (!botToken) {
                         res.status(503).json({
                             success: false,
-                            error: 'TELEGRAM_BOT_TOKEN not configured'
+                            error: 'Bot token not configured. Please configure it in the settings first.'
                         });
                         return;
                     }
@@ -432,7 +442,7 @@ export const telegramBotBackendPlugin = definePlugin({
         {
             method: 'POST',
             path: '/test',
-            handler: async (req: IHttpRequest, res: IHttpResponse, next: IHttpNext) => {
+            handler: async (req: IHttpRequest, res: IHttpResponse, _next: IHttpNext) => {
                 try {
                     const { chatId, message, threadId } = req.body;
 
@@ -444,11 +454,12 @@ export const telegramBotBackendPlugin = definePlugin({
                         return;
                     }
 
-                    const botToken = process.env.TELEGRAM_BOT_TOKEN;
+                    // Get bot token from configuration service
+                    const botToken = await botConfigService.getBotToken();
                     if (!botToken) {
                         res.status(503).json({
                             success: false,
-                            error: 'TELEGRAM_BOT_TOKEN not configured'
+                            error: 'Bot token not configured. Please configure it in the settings first.'
                         });
                         return;
                     }
@@ -486,7 +497,7 @@ export const telegramBotBackendPlugin = definePlugin({
         {
             method: 'GET',
             path: '/stats',
-            handler: async (req: IHttpRequest, res: IHttpResponse, next: IHttpNext) => {
+            handler: async (_req: IHttpRequest, res: IHttpResponse, next: IHttpNext) => {
                 try {
                     const usersCollection = pluginContext.database.getCollection<ITelegramUser>('users');
 
@@ -543,6 +554,184 @@ export const telegramBotBackendPlugin = definePlugin({
                 }
             },
             description: 'Get Telegram bot usage statistics'
+        },
+        {
+            method: 'GET',
+            path: '/settings',
+            handler: async (_req: IHttpRequest, res: IHttpResponse, next: IHttpNext) => {
+                try {
+                    // Get masked configuration (bot token is masked for security)
+                    const maskedConfig = await botConfigService.getMaskedConfig();
+
+                    res.json({
+                        success: true,
+                        settings: maskedConfig
+                    });
+                } catch (error) {
+                    next(error);
+                }
+            },
+            description: 'Get bot settings with masked sensitive values'
+        },
+        {
+            method: 'PUT',
+            path: '/settings',
+            handler: async (req: IHttpRequest, res: IHttpResponse, _next: IHttpNext) => {
+                try {
+                    const { botToken, rateLimitPerUser, rateLimitWindowMs } = req.body;
+
+                    // Validate request body
+                    if (!botToken && rateLimitPerUser === undefined && rateLimitWindowMs === undefined) {
+                        res.status(400).json({
+                            success: false,
+                            error: 'At least one setting must be provided (botToken, rateLimitPerUser, rateLimitWindowMs)'
+                        });
+                        return;
+                    }
+
+                    // Build update object with only provided fields
+                    const updates: Partial<IPluginTelegramBotConfig> = {};
+
+                    if (botToken !== undefined) {
+                        updates.botToken = botToken;
+                    }
+
+                    if (rateLimitPerUser !== undefined) {
+                        if (typeof rateLimitPerUser !== 'number' || rateLimitPerUser < 1) {
+                            res.status(400).json({
+                                success: false,
+                                error: 'rateLimitPerUser must be a positive number'
+                            });
+                            return;
+                        }
+                        updates.rateLimitPerUser = rateLimitPerUser;
+                    }
+
+                    if (rateLimitWindowMs !== undefined) {
+                        if (typeof rateLimitWindowMs !== 'number' || rateLimitWindowMs < 1000) {
+                            res.status(400).json({
+                                success: false,
+                                error: 'rateLimitWindowMs must be at least 1000 (1 second)'
+                            });
+                            return;
+                        }
+                        updates.rateLimitWindowMs = rateLimitWindowMs;
+                    }
+
+                    // Save configuration (this validates bot token format if provided)
+                    try {
+                        await botConfigService.saveConfig(updates);
+                    } catch (error: any) {
+                        res.status(400).json({
+                            success: false,
+                            error: error.message || 'Invalid configuration'
+                        });
+                        return;
+                    }
+
+                    // Get updated masked configuration
+                    const maskedConfig = await botConfigService.getMaskedConfig();
+
+                    pluginContext.logger.info(
+                        { updates: Object.keys(updates) },
+                        'Bot settings updated successfully'
+                    );
+
+                    res.json({
+                        success: true,
+                        message: 'Settings updated successfully',
+                        settings: maskedConfig
+                    });
+                } catch (error: any) {
+                    pluginContext.logger.error({ error }, 'Failed to update bot settings');
+
+                    res.status(500).json({
+                        success: false,
+                        error: error.message || 'Failed to update settings'
+                    });
+                }
+            },
+            description: 'Update bot settings (bot token, rate limits, etc.) - PUT variant for frontend compatibility'
+        },
+        {
+            method: 'PATCH',
+            path: '/settings',
+            handler: async (req: IHttpRequest, res: IHttpResponse, _next: IHttpNext) => {
+                try {
+                    const { botToken, rateLimitPerUser, rateLimitWindowMs } = req.body;
+
+                    // Validate request body
+                    if (!botToken && rateLimitPerUser === undefined && rateLimitWindowMs === undefined) {
+                        res.status(400).json({
+                            success: false,
+                            error: 'At least one setting must be provided (botToken, rateLimitPerUser, rateLimitWindowMs)'
+                        });
+                        return;
+                    }
+
+                    // Build update object with only provided fields
+                    const updates: Partial<IPluginTelegramBotConfig> = {};
+
+                    if (botToken !== undefined) {
+                        updates.botToken = botToken;
+                    }
+
+                    if (rateLimitPerUser !== undefined) {
+                        if (typeof rateLimitPerUser !== 'number' || rateLimitPerUser < 1) {
+                            res.status(400).json({
+                                success: false,
+                                error: 'rateLimitPerUser must be a positive number'
+                            });
+                            return;
+                        }
+                        updates.rateLimitPerUser = rateLimitPerUser;
+                    }
+
+                    if (rateLimitWindowMs !== undefined) {
+                        if (typeof rateLimitWindowMs !== 'number' || rateLimitWindowMs < 1000) {
+                            res.status(400).json({
+                                success: false,
+                                error: 'rateLimitWindowMs must be at least 1000 (1 second)'
+                            });
+                            return;
+                        }
+                        updates.rateLimitWindowMs = rateLimitWindowMs;
+                    }
+
+                    // Save configuration (this validates bot token format if provided)
+                    try {
+                        await botConfigService.saveConfig(updates);
+                    } catch (error: any) {
+                        res.status(400).json({
+                            success: false,
+                            error: error.message || 'Invalid configuration'
+                        });
+                        return;
+                    }
+
+                    // Get updated masked configuration
+                    const maskedConfig = await botConfigService.getMaskedConfig();
+
+                    pluginContext.logger.info(
+                        { updates: Object.keys(updates) },
+                        'Bot settings updated successfully'
+                    );
+
+                    res.json({
+                        success: true,
+                        message: 'Settings updated successfully',
+                        settings: maskedConfig
+                    });
+                } catch (error: any) {
+                    pluginContext.logger.error({ error }, 'Failed to update bot settings');
+
+                    res.status(500).json({
+                        success: false,
+                        error: error.message || 'Failed to update settings'
+                    });
+                }
+            },
+            description: 'Update bot settings (bot token, rate limits, etc.)'
         }
     ]
 });
