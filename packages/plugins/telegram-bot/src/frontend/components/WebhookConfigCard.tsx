@@ -1,6 +1,6 @@
 import React from 'react';
 import type { IFrontendPluginContext } from '@tronrelic/types';
-import { Copy, Check, AlertCircle } from 'lucide-react';
+import { Copy, Check, AlertCircle, X } from 'lucide-react';
 import styles from './WebhookConfigCard.module.css';
 
 /**
@@ -177,7 +177,7 @@ export function WebhookConfigCard({ context, webhookSecretConfigured: externalWe
                         success: false,
                         message: response.webhookInfo.url
                             ? `✗ Webhook URL mismatch. Expected: ${response.expectedUrl}, Got: ${response.webhookInfo.url}`
-                            : '✗ Webhook is not configured in Telegram. Click "Configure Webhook" to set it up.',
+                            : '✗ Webhook is not configured in Telegram. Click "Register Webhook" to set it up.',
                         details: response.webhookInfo
                     });
                 }
@@ -195,9 +195,6 @@ export function WebhookConfigCard({ context, webhookSecretConfigured: externalWe
             });
         } finally {
             setVerifying(false);
-
-            // Clear result message after 10 seconds (longer for verification details)
-            setTimeout(() => setVerifyResult(null), 10000);
         }
     };
 
@@ -277,11 +274,11 @@ export function WebhookConfigCard({ context, webhookSecretConfigured: externalWe
                                     Webhook Secret Not Configured
                                 </h3>
                                 <p className={styles.warning_text}>
-                                    You must configure a webhook secret before deploying the webhook. The secret ensures that
+                                    You must configure a webhook secret before registering the webhook. The secret ensures that
                                     incoming webhook requests are actually from Telegram's servers.
                                 </p>
                                 <p className={styles.warning_text}>
-                                    Please scroll up to the "Bot Settings" card above and generate/save a webhook secret, then return here to register the webhook.
+                                    See the "Bot Settings" card and generate/save a webhook secret, then return here to register the webhook.
                                 </p>
                             </div>
                         )}
@@ -293,7 +290,7 @@ export function WebhookConfigCard({ context, webhookSecretConfigured: externalWe
                                 size="md"
                                 disabled={configuring || !webhookSecretConfigured}
                             >
-                                {configuring ? 'Updating...' : 'Update Registration'}
+                                {configuring ? 'Registering...' : 'Register Webhook'}
                             </ui.Button>
                             <ui.Button
                                 onClick={handleVerifyWebhook}
@@ -301,13 +298,13 @@ export function WebhookConfigCard({ context, webhookSecretConfigured: externalWe
                                 size="md"
                                 disabled={verifying}
                             >
-                                {verifying ? 'Verifying...' : 'Verify Registration'}
+                                {verifying ? 'Verifying...' : 'Verify'}
                             </ui.Button>
                         </div>
 
                         {/* Show configure result message */}
                         {configureResult && (
-                            <div className={`${styles.feedback_message} ${configureResult.success ? styles['feedback_message--success'] : styles['feedback_message--error']}`}>
+                            <div className={`${styles.feedback_message} ${configureResult.success ? (styles as any)['feedback_message--success'] : (styles as any)['feedback_message--error']}`}>
                                 <span className={styles.feedback_text}>
                                     {configureResult.success ? '✓ ' : '✗ '}
                                     {configureResult.message}
@@ -317,8 +314,16 @@ export function WebhookConfigCard({ context, webhookSecretConfigured: externalWe
 
                         {/* Show verify result message with details */}
                         {verifyResult && (
-                            <div className={`${styles.feedback_message} ${verifyResult.success ? styles['feedback_message--success'] : styles['feedback_message--error']}`}>
+                            <div className={`${styles.feedback_message} ${verifyResult.success ? (styles as any)['feedback_message--success'] : (styles as any)['feedback_message--error']}`}>
                                 <span className={styles.feedback_text}>{verifyResult.message}</span>
+                                <button
+                                    type="button"
+                                    onClick={() => setVerifyResult(null)}
+                                    className={styles.close_button}
+                                    aria-label="Close message"
+                                >
+                                    <X size={16} />
+                                </button>
                                 {verifyResult.details && (
                                     <details className={styles.feedback_details}>
                                         <summary className={styles.details_summary}>

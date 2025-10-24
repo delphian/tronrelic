@@ -26,7 +26,7 @@ export function TelegramBotSettingsPage({ context }: ITelegramBotSettingsPagePro
     const [testMessage, setTestMessage] = React.useState('');
     const [testStatus, setTestStatus] = React.useState<{ type: 'success' | 'error'; message: string } | null>(null);
     const [isSending, setIsSending] = React.useState(false);
-    const [webhookSecretConfigured, setWebhookSecretConfigured] = React.useState(false);
+    const [webhookSecretConfigured, setWebhookSecretConfigured] = React.useState<boolean | undefined>(undefined);
 
     /**
      * Sends a test notification via Telegram bot.
@@ -74,7 +74,7 @@ export function TelegramBotSettingsPage({ context }: ITelegramBotSettingsPagePro
     };
 
     return (
-        <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '2rem' }}>
+        <div>
             {/* Page header */}
             <div style={{ marginBottom: '3rem' }}>
                 <h1 style={{ fontSize: '1.875rem', fontWeight: 700, marginBottom: '0.5rem' }}>
@@ -83,6 +83,16 @@ export function TelegramBotSettingsPage({ context }: ITelegramBotSettingsPagePro
                 <p style={{ color: 'var(--color-text-muted)', fontSize: '1rem' }}>
                     Configure and monitor your Telegram bot integration
                 </p>
+            </div>
+
+            {/* User statistics - Top row with individual stat cards */}
+            <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+                gap: '1.5rem',
+                marginBottom: '3rem'
+            }}>
+                <UserStatsCard context={context} />
             </div>
 
             {/* Main content grid */}
@@ -108,9 +118,6 @@ export function TelegramBotSettingsPage({ context }: ITelegramBotSettingsPagePro
                     webhookSecretConfigured={webhookSecretConfigured}
                     onWebhookSecretConfiguredChange={setWebhookSecretConfigured}
                 />
-
-                {/* User statistics */}
-                <UserStatsCard context={context} />
             </div>
 
             {/* Test notification form */}
