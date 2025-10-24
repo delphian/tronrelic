@@ -8,6 +8,7 @@ import styles from './BotSettingsCard.module.css';
  */
 interface IBotSettingsCardProps {
     context: IFrontendPluginContext;
+    onSettingsSaved?: (settings: ISettingsResponse) => void;
 }
 
 /**
@@ -38,7 +39,7 @@ interface ISettingsResponse {
  * @param props - Component properties
  * @param props.context - Plugin context providing API client and UI components
  */
-export function BotSettingsCard({ context }: IBotSettingsCardProps) {
+export function BotSettingsCard({ context, onSettingsSaved }: IBotSettingsCardProps) {
     const { ui, api } = context;
 
     // State management
@@ -163,6 +164,11 @@ export function BotSettingsCard({ context }: IBotSettingsCardProps) {
             const response = await api.get<{ success: boolean; settings: ISettingsResponse }>('/plugins/telegram-bot/system/settings');
             setSettings(response.settings);
 
+            // Notify parent component of settings update
+            if (onSettingsSaved) {
+                onSettingsSaved(response.settings);
+            }
+
             setFeedback({
                 type: 'success',
                 message: 'Settings updated successfully!'
@@ -249,16 +255,20 @@ export function BotSettingsCard({ context }: IBotSettingsCardProps) {
 
                     <div className={styles.input_group}>
                         <ui.Input
-                            type={showToken ? 'text' : 'password'}
-                            value={tokenInput}
+                            type="text"
+                            value={showToken && settings?.botToken ? settings.botToken : tokenInput}
                             onChange={(e) => setTokenInput(e.target.value)}
                             placeholder={
                                 showToken
                                     ? (settings?.botToken || '123456789:ABCdefGHIjklMNOpqrsTUVwxyz')
                                     : '••••••••••••••••••••••••'
                             }
-                            disabled={isSaving}
+                            disabled={isSaving || (showToken && settings?.botToken !== undefined)}
                             aria-label="Bot token"
+                            style={{
+                                WebkitTextSecurity: showToken ? 'none' : 'disc',
+                                textSecurity: showToken ? 'none' : 'disc'
+                            }}
                         />
                         <button
                             type="button"
@@ -300,16 +310,20 @@ export function BotSettingsCard({ context }: IBotSettingsCardProps) {
 
                     <div className={styles.input_group}>
                         <ui.Input
-                            type={showSecret ? 'text' : 'password'}
-                            value={secretInput}
+                            type="text"
+                            value={showSecret && settings?.webhookSecret ? settings.webhookSecret : secretInput}
                             onChange={(e) => setSecretInput(e.target.value)}
                             placeholder={
                                 showSecret
                                     ? (settings?.webhookSecret || 'abc123def456...')
                                     : '••••••••••••••••••••••••'
                             }
-                            disabled={isSaving}
+                            disabled={isSaving || (showSecret && settings?.webhookSecret !== undefined)}
                             aria-label="Webhook secret"
+                            style={{
+                                WebkitTextSecurity: showSecret ? 'none' : 'disc',
+                                textSecurity: showSecret ? 'none' : 'disc'
+                            }}
                         />
                         <button
                             type="button"
