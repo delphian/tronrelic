@@ -2,7 +2,7 @@ import type { Request, Response } from 'express';
 import { z } from 'zod';
 import { NotificationService } from '../../services/notification.service.js';
 
-const channelEnum = z.enum(['websocket', 'telegram', 'email']);
+const channelEnum = z.enum(['websocket', 'email']);
 
 const preferencesSchema = z.object({
   wallet: z.string().min(34),
