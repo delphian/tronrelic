@@ -19,9 +19,9 @@ interface IMarket {
     lastUpdated: Date;
     pricingDetail?: {
         minUsdtTransferCost?: number;
-        costsByDuration?: Array<{
-            minutes: number;
-            costTRX: number;
+        usdtTransferCosts?: Array<{
+            durationMinutes: number;
+            costTrx: number;
         }>;
     };
 }
@@ -87,29 +87,6 @@ export class MarketQueryService {
     }
 
     /**
-     * Calculates energy cost for multiple USDT transfers over multiple days.
-     * Accounts for TRON's 24-hour energy regeneration.
-     *
-     * @param baseEnergyCost - Energy cost for one USDT transfer (~65,000)
-     * @param transferCount - Number of transfers
-     * @param days - Number of days
-     * @returns Total energy required
-     *
-     * Why regeneration matters:
-     * TRON energy refills every 24 hours. A 7-day rental provides 7x the energy because
-     * it regenerates daily. This calculation ensures accurate cost estimates.
-     */
-    private calculateTotalEnergy(baseEnergyCost: number, transferCount: number, days: number): number {
-        // For multi-day rentals, energy regenerates daily
-        // Total energy available = base energy * days
-        // Energy needed per day = base energy * transfers per day
-        // If spreading transfers over multiple days: transferCount / days per day
-        // But typically users want: "cost for X transfers within Y days"
-        // Simplest interpretation: cost for X transfers using Y days of regeneration
-        return (baseEnergyCost * transferCount) / days;
-    }
-
-    /**
      * Finds the market with the lowest cost for the given duration.
      *
      * @param markets - Array of markets to search
@@ -128,18 +105,18 @@ export class MarketQueryService {
         let bestCost = Infinity;
 
         for (const market of markets) {
-            if (!market.isActive || !market.pricingDetail?.costsByDuration) {
+            if (!market.isActive || !market.pricingDetail?.usdtTransferCosts) {
                 continue;
             }
 
             // Find exact duration match
-            const matchingCost = market.pricingDetail.costsByDuration.find(
-                c => c.minutes === targetMinutes
+            const matchingCost = market.pricingDetail.usdtTransferCosts.find(
+                c => c.durationMinutes === targetMinutes
             );
 
-            if (matchingCost && matchingCost.costTRX < bestCost) {
+            if (matchingCost && matchingCost.costTrx < bestCost) {
                 bestMarket = market;
-                bestCost = matchingCost.costTRX;
+                bestCost = matchingCost.costTrx;
             }
         }
 
@@ -164,7 +141,7 @@ export class MarketQueryService {
         const markets = await this.fetchMarkets();
 
         if (markets.length === 0) {
-            return '⚠️ No market data available\\. Please try again later\\.';
+            return '⚠️ No market data available. Please try again later.';
         }
 
         // Calculate target duration in minutes
@@ -174,34 +151,20 @@ export class MarketQueryService {
         const result = this.findBestMarket(markets, targetMinutes);
 
         if (!result) {
-            return `⚠️ No markets found for ${days} day rental\\.`;
+            return `⚠️ No markets found for ${days} day rental.`;
         }
 
-        // Format response
+        // Format response with HTML formatting
         const costPerTransfer = result.costTRX;
         const totalCost = costPerTransfer * transferCount;
 
-        let message = `💰 *Cheapest Market Price*\\n\\n`;
-        message += `*Provider:* ${this.escapeMarkdown(result.market.name)}\\n`;
-        message += `*Duration:* ${days} day${days > 1 ? 's' : ''}\\n`;
-        message += `*Transfers:* ${transferCount}\\n`;
-        message += `*Cost per transfer:* ${costPerTransfer.toFixed(6)} TRX\\n`;
-        message += `*Total cost:* ${totalCost.toFixed(6)} TRX\\n`;
+        let message = `💰 <b>Cheapest Market Price</b>\n\n`;
+        message += `<b>Provider:</b> ${result.market.name}\n`;
+        message += `<b>Duration:</b> ${days} day${days > 1 ? 's' : ''}\n`;
+        message += `<b>Transfers:</b> ${transferCount}\n`;
+        message += `<b>Cost per transfer:</b> ${costPerTransfer.toFixed(6)} TRX\n`;
+        message += `<b>Total cost:</b> ${totalCost.toFixed(6)} TRX`;
 
         return message;
-    }
-
-    /**
-     * Escapes special characters for Telegram MarkdownV2 format.
-     *
-     * @param text - Plain text string
-     * @returns Escaped string safe for MarkdownV2
-     *
-     * Why escaping is critical:
-     * MarkdownV2 treats certain characters as formatting (_, *, [, ], etc.).
-     * Unescaped characters cause parse errors and message delivery failure.
-     */
-    private escapeMarkdown(text: string): string {
-        return text.replace(/([_*\[\]()~`>#+\-=|{}.!])/g, '\\$1');
     }
 }
