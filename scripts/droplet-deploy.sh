@@ -368,9 +368,6 @@ REDIS_PASSWORD=$REDIS_PASSWORD
 NEXT_PUBLIC_API_URL=http://$DROPLET_IP/api
 NEXT_PUBLIC_SOCKET_URL=http://$DROPLET_IP
 NEXT_PUBLIC_SITE_URL=http://$DROPLET_IP
-
-# Optional: Telegram Integration (bot token configured via /system/settings UI)
-TELEGRAM_WEBHOOK_SECRET=
 EOF"
 
 remote_exec "chmod 600 $DEPLOY_DIR/.env"
@@ -443,7 +440,6 @@ services:
             - TRONGRID_API_KEY=\${TRONGRID_API_KEY}
             - TRONGRID_API_KEY_2=\${TRONGRID_API_KEY_2}
             - TRONGRID_API_KEY_3=\${TRONGRID_API_KEY_3}
-            - TELEGRAM_WEBHOOK_SECRET=\${TELEGRAM_WEBHOOK_SECRET:-}
             - NODE_OPTIONS=--max-old-space-size=2048
         depends_on:
             mongodb:

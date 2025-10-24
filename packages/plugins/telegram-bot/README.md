@@ -35,14 +35,11 @@ Complete Telegram bot integration for TronRelic. Handles webhook callbacks, comm
 npm run build --workspace packages/plugins/telegram-bot
 ```
 
-### 2. Configure Environment Variables
+### 2. Configure Environment Variables (Optional)
 
-Add these to your `.env` file:
+Add optional settings to your `.env` file:
 
 ```bash
-# Optional - Generate with: openssl rand -hex 32
-TELEGRAM_WEBHOOK_SECRET=your-generated-secret-here
-
 # Optional - Telegram's official IPs (defaults provided)
 TELEGRAM_IP_ALLOWLIST=149.154.160.0/20,91.108.4.0/22
 
@@ -53,7 +50,7 @@ BACKEND_API_URL=http://localhost:4000/api
 NEXT_PUBLIC_SITE_URL=http://localhost:3000
 ```
 
-**Note:** Bot token is now configured via the admin UI at `/system/settings` (stored in database). Get your token from [@BotFather](https://t.me/botfather) on Telegram.
+**Note:** Bot token and webhook secret are configured via the admin UI at `/system/plugins/telegram-bot/settings` (stored in database, not environment variables).
 
 ### 3. Install and Enable Plugin
 
@@ -63,15 +60,23 @@ NEXT_PUBLIC_SITE_URL=http://localhost:3000
 4. Click "Enable"
 5. Plugin is now active
 
-### 4. Configure Telegram Webhook
+### 4. Configure Bot Token and Webhook Secret
 
-1. Navigate to `http://localhost:3000/system/plugins/telegram-bot/settings`
-2. Copy the webhook URL displayed
-3. Open Telegram and message `@BotFather`
-4. Send `/setwebhook` command
-5. Select your bot
-6. Paste the webhook URL
-7. BotFather confirms setup
+1. Get your bot token from [@BotFather](https://t.me/botfather) on Telegram
+2. Navigate to `http://localhost:3000/system/plugins/telegram-bot/settings`
+3. Enter your bot token in the "Bot Token" field
+4. Click "Generate New Secret" to create a webhook secret (or enter your own, minimum 16 characters)
+5. Click "Save Settings"
+6. Configuration is stored securely in MongoDB
+
+### 5. Configure Telegram Webhook
+
+1. Still on the settings page, copy the webhook URL displayed
+2. Open Telegram and message `@BotFather`
+3. Send `/setwebhook` command
+4. Select your bot
+5. Paste the webhook URL
+6. BotFather confirms setup
 
 ## Usage
 

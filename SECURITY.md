@@ -98,11 +98,11 @@ openssl rand -hex 32
 #### Environment Checklist
 - [ ] `ADMIN_API_TOKEN` - Strong random token for admin endpoints
 - [ ] `TRONGRID_API_KEY` - Obtained from https://www.trongrid.io/
-- [ ] `TELEGRAM_WEBHOOK_SECRET` - Random token for webhook validation
 - [ ] `GRAFANA_ADMIN_PASSWORD` - Strong password for Grafana UI
 - [ ] All `.env` files excluded from version control
 - [ ] HTTPS enabled for production deployments
 - [ ] CORS origins restricted to known domains
+- [ ] Telegram bot token and webhook secret configured via admin UI at `/system/plugins/telegram-bot/settings`
 
 #### Production Security
 

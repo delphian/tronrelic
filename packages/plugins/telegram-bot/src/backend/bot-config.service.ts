@@ -56,9 +56,14 @@ export class BotConfigService {
      * @returns Bot configuration with all fields populated
      *
      * Why this method exists:
-     * Loads bot token and settings from the database. If no configuration exists,
-     * returns defaults with undefined bot token. Admins must configure the token
-     * through the /system/settings UI.
+     * Loads bot token and webhook secret from the database. Configuration is managed
+     * entirely through the admin UI at /system/plugins/telegram-bot/settings, with
+     * no environment variable fallbacks.
+     *
+     * Loading logic:
+     * 1. Check cache first (performance optimization)
+     * 2. Load from database
+     * 3. Return merged config with defaults
      *
      * The method logs which source is being used for transparency and debugging.
      */
@@ -72,17 +77,23 @@ export class BotConfigService {
         const dbConfig = await this.database.get<IPluginTelegramBotConfig>('bot-config');
 
         // If database config exists, use it
-        if (dbConfig && dbConfig.botToken) {
+        if (dbConfig && (dbConfig.botToken || dbConfig.webhookSecret)) {
             this.logger.info('Loaded bot configuration from database');
             this.cachedConfig = { ...BotConfigService.DEFAULTS, ...dbConfig };
             return this.cachedConfig;
         }
 
-        // No database config - use defaults (bot token must be configured via UI)
-        this.logger.warn('No bot token configured in database');
+        // No database config - use defaults and warn
+        if (!dbConfig?.botToken) {
+            this.logger.warn('No bot token configured in database');
+        }
+        if (!dbConfig?.webhookSecret) {
+            this.logger.warn('No webhook secret configured in database');
+        }
 
         const defaultConfig: IPluginTelegramBotConfig = {
-            ...BotConfigService.DEFAULTS
+            ...BotConfigService.DEFAULTS,
+            ...(dbConfig || {})
         };
 
         this.cachedConfig = defaultConfig;
@@ -124,9 +135,10 @@ export class BotConfigService {
      * @returns Configuration with sensitive values masked
      *
      * Why masking:
-     * Bot token is a secret credential. Exposing it in API responses would allow
-     * attackers to impersonate the bot. We show only the last 6 characters so
-     * admins can verify which token is configured without revealing the secret.
+     * Bot token and webhook secret are secret credentials. Exposing them in API responses
+     * would allow attackers to impersonate the bot or bypass webhook security. We show
+     * only the last 6 characters so admins can verify which values are configured without
+     * revealing the secrets.
      */
     async getMaskedConfig(): Promise<IPluginTelegramBotConfigMasked> {
         const config = await this.loadConfig();
@@ -135,6 +147,8 @@ export class BotConfigService {
             botToken: config.botToken ? this.maskToken(config.botToken) : undefined,
             botTokenConfigured: !!config.botToken && config.botToken.length > 0,
             webhookUrl: config.webhookUrl,
+            webhookSecret: config.webhookSecret ? this.maskToken(config.webhookSecret) : undefined,
+            webhookSecretConfigured: !!config.webhookSecret && config.webhookSecret.length > 0,
             rateLimitPerUser: config.rateLimitPerUser,
             rateLimitWindowMs: config.rateLimitWindowMs
         };
@@ -168,6 +182,42 @@ export class BotConfigService {
     async updateBotToken(botToken: string): Promise<void> {
         await this.saveConfig({ botToken });
         this.logger.info({ maskedToken: this.maskToken(botToken) }, 'Bot token updated');
+    }
+
+    /**
+     * Gets the webhook secret from configuration.
+     *
+     * @returns Webhook secret or undefined if not configured
+     *
+     * Why a dedicated method:
+     * The webhook secret is used by security middleware to validate incoming webhook
+     * requests. Having a dedicated method makes the calling code cleaner and more
+     * explicit about intent.
+     */
+    async getWebhookSecret(): Promise<string | undefined> {
+        const config = await this.loadConfig();
+        return config.webhookSecret;
+    }
+
+    /**
+     * Updates the webhook secret in configuration.
+     *
+     * @param webhookSecret - New webhook secret (recommended: 32+ character hex string)
+     * @throws Error if secret format is invalid
+     *
+     * Why dedicated setter:
+     * Webhook secret rotation is a security best practice (especially after suspected
+     * compromise). This method makes it easy to update just the secret without
+     * touching other configuration fields.
+     */
+    async updateWebhookSecret(webhookSecret: string): Promise<void> {
+        // Validate secret format
+        if (webhookSecret.length < 16) {
+            throw new Error('Webhook secret must be at least 16 characters long');
+        }
+
+        await this.saveConfig({ webhookSecret });
+        this.logger.info({ maskedSecret: this.maskToken(webhookSecret) }, 'Webhook secret updated');
     }
 
     /**
