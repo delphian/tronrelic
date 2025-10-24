@@ -19,12 +19,14 @@ interface IUserStatsCardProps {
 }
 
 /**
- * Displays Telegram bot user statistics.
- * Shows total users, activity metrics, and subscription breakdown.
+ * Displays Telegram bot user statistics as individual metric cards.
+ * Shows total users, active users (24h), and total commands as separate cards
+ * in a horizontal row for at-a-glance monitoring.
  *
- * Why this component exists:
- * Admin needs visibility into bot usage to monitor adoption and identify issues.
- * This card provides at-a-glance metrics without overwhelming detail.
+ * Why individual cards instead of grouped:
+ * Separating metrics into individual cards makes each stat more prominent and
+ * scannable at a glance. This pattern is common in dashboard UIs where quick
+ * metric comparison is important.
  */
 export function UserStatsCard({ context }: IUserStatsCardProps) {
     const { ui, api } = context;
@@ -67,71 +69,68 @@ export function UserStatsCard({ context }: IUserStatsCardProps) {
 
     if (loading) {
         return (
-            <ui.Card>
-                <h3 style={{ fontSize: '1.125rem', fontWeight: 600, marginBottom: '1rem' }}>User Statistics</h3>
-                <div>Loading...</div>
-            </ui.Card>
+            <>
+                <ui.Card>
+                    <div style={{ fontSize: '0.875rem', color: 'var(--color-text-muted)', marginBottom: '0.5rem' }}>
+                        Total Users
+                    </div>
+                    <div style={{ fontSize: '1.75rem', fontWeight: 600 }}>--</div>
+                </ui.Card>
+                <ui.Card>
+                    <div style={{ fontSize: '0.875rem', color: 'var(--color-text-muted)', marginBottom: '0.5rem' }}>
+                        Active (24h)
+                    </div>
+                    <div style={{ fontSize: '1.75rem', fontWeight: 600 }}>--</div>
+                </ui.Card>
+                <ui.Card>
+                    <div style={{ fontSize: '0.875rem', color: 'var(--color-text-muted)', marginBottom: '0.5rem' }}>
+                        Total Commands
+                    </div>
+                    <div style={{ fontSize: '1.75rem', fontWeight: 600 }}>--</div>
+                </ui.Card>
+            </>
         );
     }
 
     if (error || !stats) {
         return (
-            <ui.Card>
-                <h3 style={{ fontSize: '1.125rem', fontWeight: 600, marginBottom: '1rem' }}>User Statistics</h3>
-                <p style={{ color: 'var(--color-danger)' }}>{error || 'No statistics available'}</p>
+            <ui.Card style={{ gridColumn: '1 / -1' }}>
+                <p style={{ color: 'var(--color-danger)', margin: 0 }}>{error || 'No statistics available'}</p>
             </ui.Card>
         );
     }
 
     return (
-        <ui.Card>
-            <h3 style={{ fontSize: '1.125rem', fontWeight: 600, marginBottom: '1.5rem' }}>User Statistics</h3>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-                {/* Total users */}
-                <div>
-                    <div style={{ fontSize: '0.875rem', color: 'var(--color-text-muted)' }}>
-                        Total Users
-                    </div>
-                    <div style={{ fontSize: '1.5rem', fontWeight: 600 }}>
-                        {stats.totalUsers.toLocaleString()}
-                    </div>
+        <>
+            {/* Total users card */}
+            <ui.Card>
+                <div style={{ fontSize: '0.875rem', color: 'var(--color-text-muted)', marginBottom: '0.5rem' }}>
+                    Total Users
                 </div>
-
-                {/* Active users (24h) */}
-                <div>
-                    <div style={{ fontSize: '0.875rem', color: 'var(--color-text-muted)' }}>
-                        Active Users (24h)
-                    </div>
-                    <div style={{ fontSize: '1.5rem', fontWeight: 600 }}>
-                        {stats.activeUsers24h.toLocaleString()}
-                    </div>
+                <div style={{ fontSize: '1.75rem', fontWeight: 600 }}>
+                    {stats.totalUsers.toLocaleString()}
                 </div>
+            </ui.Card>
 
-                {/* Total commands */}
-                <div>
-                    <div style={{ fontSize: '0.875rem', color: 'var(--color-text-muted)' }}>
-                        Total Commands
-                    </div>
-                    <div style={{ fontSize: '1.5rem', fontWeight: 600 }}>
-                        {stats.totalCommands.toLocaleString()}
-                    </div>
+            {/* Active users (24h) card */}
+            <ui.Card>
+                <div style={{ fontSize: '0.875rem', color: 'var(--color-text-muted)', marginBottom: '0.5rem' }}>
+                    Active (24h)
                 </div>
+                <div style={{ fontSize: '1.75rem', fontWeight: 600 }}>
+                    {stats.activeUsers24h.toLocaleString()}
+                </div>
+            </ui.Card>
 
-                {/* Subscription breakdown */}
-                {Object.keys(stats.subscriptionCounts).length > 0 && (
-                    <div>
-                        <div style={{ fontSize: '0.875rem', color: 'var(--color-text-muted)', marginBottom: '0.75rem' }}>
-                            Subscriptions
-                        </div>
-                        {Object.entries(stats.subscriptionCounts).map(([type, count]) => (
-                            <div key={type} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
-                                <span>{type}</span>
-                                <ui.Badge tone="neutral">{count}</ui.Badge>
-                            </div>
-                        ))}
-                    </div>
-                )}
-            </div>
-        </ui.Card>
+            {/* Total commands card */}
+            <ui.Card>
+                <div style={{ fontSize: '0.875rem', color: 'var(--color-text-muted)', marginBottom: '0.5rem' }}>
+                    Total Commands
+                </div>
+                <div style={{ fontSize: '1.75rem', fontWeight: 600 }}>
+                    {stats.totalCommands.toLocaleString()}
+                </div>
+            </ui.Card>
+        </>
     );
 }
