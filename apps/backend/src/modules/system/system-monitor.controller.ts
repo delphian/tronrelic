@@ -141,26 +141,74 @@ export class SystemMonitorController {
 
   updateSystemConfig = async (req: Request, res: Response) => {
     const configService = SystemConfigService.getInstance();
-    const { siteUrl } = req.body;
+    const { siteUrl, logLevel, systemLogsMaxCount, systemLogsRetentionDays } = req.body;
 
-    if (!siteUrl) {
+    // Build updates object with only provided fields
+    const updates: any = {};
+
+    if (siteUrl !== undefined) {
+      // Validate URL format
+      try {
+        new URL(siteUrl);
+        updates.siteUrl = siteUrl;
+      } catch (err) {
+        return res.status(400).json({
+          success: false,
+          error: 'Invalid URL format. Must include protocol (http:// or https://)'
+        });
+      }
+    }
+
+    if (logLevel !== undefined) {
+      const validLevels = ['trace', 'debug', 'info', 'warn', 'error', 'fatal', 'silent'];
+      if (!validLevels.includes(logLevel)) {
+        return res.status(400).json({
+          success: false,
+          error: `Invalid log level. Must be one of: ${validLevels.join(', ')}`
+        });
+      }
+      updates.logLevel = logLevel;
+    }
+
+    if (systemLogsMaxCount !== undefined) {
+      const count = Number(systemLogsMaxCount);
+      if (isNaN(count) || count < 0) {
+        return res.status(400).json({
+          success: false,
+          error: 'systemLogsMaxCount must be a non-negative number'
+        });
+      }
+      updates.systemLogsMaxCount = count;
+    }
+
+    if (systemLogsRetentionDays !== undefined) {
+      const days = Number(systemLogsRetentionDays);
+      if (isNaN(days) || days < 0) {
+        return res.status(400).json({
+          success: false,
+          error: 'systemLogsRetentionDays must be a non-negative number'
+        });
+      }
+      updates.systemLogsRetentionDays = days;
+    }
+
+    // Require at least one field to update
+    if (Object.keys(updates).length === 0) {
       return res.status(400).json({
         success: false,
-        error: 'siteUrl is required'
+        error: 'At least one field must be provided (siteUrl, logLevel, systemLogsMaxCount, systemLogsRetentionDays)'
       });
     }
 
-    // Validate URL format
-    try {
-      new URL(siteUrl);
-    } catch (err) {
-      return res.status(400).json({
-        success: false,
-        error: 'Invalid URL format. Must include protocol (http:// or https://)'
-      });
+    const config = await configService.updateConfig(updates);
+
+    // If log level was updated, apply it immediately to SystemLogService
+    if (updates.logLevel !== undefined) {
+      const { SystemLogService } = await import('../../services/system-log/system-log.service.js');
+      const logService = SystemLogService.getInstance();
+      await logService.applyLogLevelFromConfig();
     }
 
-    const config = await configService.updateConfig({ siteUrl });
     res.json({ success: true, config });
   };
 

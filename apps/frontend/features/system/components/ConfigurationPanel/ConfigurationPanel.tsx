@@ -19,6 +19,7 @@ interface SystemConfig {
     siteUrl: string;
     systemLogsMaxCount: number;
     systemLogsRetentionDays: number;
+    logLevel: 'trace' | 'debug' | 'info' | 'warn' | 'error' | 'fatal' | 'silent';
     updatedAt: string;
     updatedBy?: string;
 }
@@ -60,6 +61,7 @@ export function ConfigurationPanel({ token }: Props) {
     const [editedSiteUrl, setEditedSiteUrl] = useState('');
     const [editedLogsMaxCount, setEditedLogsMaxCount] = useState(1000000);
     const [editedLogsRetentionDays, setEditedLogsRetentionDays] = useState(30);
+    const [editedLogLevel, setEditedLogLevel] = useState<'trace' | 'debug' | 'info' | 'warn' | 'error' | 'fatal' | 'silent'>('info');
     const [saving, setSaving] = useState(false);
     const [saveMessage, setSaveMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
@@ -88,6 +90,7 @@ export function ConfigurationPanel({ token }: Props) {
             setEditedSiteUrl(systemConfigData.config?.siteUrl || '');
             setEditedLogsMaxCount(systemConfigData.config?.systemLogsMaxCount || 1000000);
             setEditedLogsRetentionDays(systemConfigData.config?.systemLogsRetentionDays || 30);
+            setEditedLogLevel(systemConfigData.config?.logLevel || 'info');
         } catch (error) {
             console.error('Failed to fetch configuration:', error);
         } finally {
@@ -115,7 +118,8 @@ export function ConfigurationPanel({ token }: Props) {
                 body: JSON.stringify({
                     siteUrl: editedSiteUrl,
                     systemLogsMaxCount: editedLogsMaxCount,
-                    systemLogsRetentionDays: editedLogsRetentionDays
+                    systemLogsRetentionDays: editedLogsRetentionDays,
+                    logLevel: editedLogLevel
                 })
             });
 
@@ -203,6 +207,23 @@ export function ConfigurationPanel({ token }: Props) {
                             className={styles.input}
                         />
                         <div className={styles.metric_card__hint}>Number of days to keep logs before deletion</div>
+                    </div>
+                    <div className={styles.metric_card}>
+                        <div className={styles.metric_card__label}>Log Level</div>
+                        <select
+                            value={editedLogLevel}
+                            onChange={(e) => setEditedLogLevel(e.target.value as SystemConfig['logLevel'])}
+                            className={styles.input}
+                        >
+                            <option value="trace">Trace (Most Verbose)</option>
+                            <option value="debug">Debug</option>
+                            <option value="info">Info (Default)</option>
+                            <option value="warn">Warn</option>
+                            <option value="error">Error</option>
+                            <option value="fatal">Fatal</option>
+                            <option value="silent">Silent</option>
+                        </select>
+                        <div className={styles.metric_card__hint}>Minimum log level for file and console output (changes apply immediately)</div>
                     </div>
                 </div>
 
