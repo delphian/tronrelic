@@ -172,15 +172,15 @@ export const telegramBotBackendPlugin = definePlugin({
         // Create bot configuration service
         botConfigService = new BotConfigService(context.database, context.logger);
 
-        // Load bot token from database (with environment variable fallback)
+        // Load bot token from database
         const botToken = await botConfigService.getBotToken();
         if (!botToken) {
-            context.logger.warn('Bot token not configured (neither database nor environment variable), bot functionality will be limited');
+            context.logger.warn('Bot token not configured in database, bot functionality will be limited. Configure via /system/settings UI.');
         } else {
             const maskedConfig = await botConfigService.getMaskedConfig();
             context.logger.info(
-                { maskedToken: maskedConfig.botToken, source: process.env.TELEGRAM_BOT_TOKEN ? 'database (migrated from env)' : 'database' },
-                'Bot token loaded successfully'
+                { maskedToken: maskedConfig.botToken },
+                'Bot token loaded successfully from database'
             );
         }
 

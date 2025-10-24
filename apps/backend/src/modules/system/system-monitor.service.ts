@@ -767,7 +767,6 @@ export class SystemMonitorService {
       limits: {},
       integrations: {
         hasTronGridKey: !!env.TRONGRID_API_KEY,
-        hasTelegramBot: !!env.TELEGRAM_BOT_TOKEN,
         hasStorageConfigured: !!(env.STORAGE_BUCKET && env.STORAGE_ACCESS_KEY_ID)
       }
     };

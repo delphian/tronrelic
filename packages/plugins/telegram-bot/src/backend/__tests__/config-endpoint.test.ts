@@ -62,7 +62,8 @@ describe('Telegram Bot Plugin - /config endpoint', () => {
 
         // Simulate the /config endpoint handler logic
         const config = await mockDatabase.get('config');
-        const botTokenConfigured = !!process.env.TELEGRAM_BOT_TOKEN || false;
+        const botConfig = await mockDatabase.get('bot-config');
+        const botTokenConfigured = !!(botConfig && botConfig.botToken);
         const siteUrl = await mockSystemConfig.getSiteUrl();
         const webhookUrl = `${siteUrl}/api/plugins/telegram-bot/webhook`;
 

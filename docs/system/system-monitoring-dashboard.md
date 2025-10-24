@@ -115,13 +115,14 @@ The dashboard surfaces these issues immediately and provides point-and-click con
 1. **Open the Config tab**
 2. **Check integrations section:**
    - **TronGrid API Key** - Must show "Configured" for blockchain sync to work
-   - **Telegram Bot** - Shows "Configured" if `TELEGRAM_BOT_TOKEN` is set
+   - **Telegram Bot** - Shows "Configured" if bot token is set via `/system/plugins` admin UI
    - **Storage** - Shows "Configured" if storage credentials are present
 3. **Review feature flags:**
    - **Scheduler Enabled** - Must be "true" for jobs to run
    - **WebSockets Enabled** - Must be "true" for real-time updates
 4. **Take action:**
    - If TronGrid key not configured: Add `TRONGRID_API_KEY` to backend `.env` and restart
+   - If Telegram Bot not configured: Navigate to `/system/plugins`, enable telegram-bot plugin, configure bot token in settings
    - If scheduler disabled: Set `ENABLE_SCHEDULER=true` and restart
    - If WebSockets disabled: Set `ENABLE_WEBSOCKETS=true` and restart
 

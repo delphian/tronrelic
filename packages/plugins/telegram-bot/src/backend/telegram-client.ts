@@ -30,7 +30,7 @@ export class TelegramClient {
      *
      * Why token is required:
      * All Telegram API calls require authentication. Token is obtained from @BotFather
-     * and should be stored in TELEGRAM_BOT_TOKEN environment variable.
+     * and is configured via the /system/settings admin UI (stored in database).
      */
     constructor(token: string) {
         this.token = token;

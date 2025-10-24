@@ -40,9 +40,6 @@ npm run build --workspace packages/plugins/telegram-bot
 Add these to your `.env` file:
 
 ```bash
-# Required - Get from @BotFather on Telegram
-TELEGRAM_BOT_TOKEN=123456789:ABCdefGHIjklMNOpqrsTUVwxyz
-
 # Optional - Generate with: openssl rand -hex 32
 TELEGRAM_WEBHOOK_SECRET=your-generated-secret-here
 
@@ -55,6 +52,8 @@ BACKEND_API_URL=http://localhost:4000/api
 # Required - Site URL for webhook generation
 NEXT_PUBLIC_SITE_URL=http://localhost:3000
 ```
+
+**Note:** Bot token is now configured via the admin UI at `/system/settings` (stored in database). Get your token from [@BotFather](https://t.me/botfather) on Telegram.
 
 ### 3. Install and Enable Plugin
 
@@ -177,7 +176,7 @@ if (telegramService) {
 ### Webhook not receiving updates
 
 1. Check webhook URL is configured in BotFather
-2. Verify `TELEGRAM_BOT_TOKEN` is correct
+2. Verify bot token is configured correctly via `/system/settings` admin UI
 3. Check backend logs for security validation failures
 4. Ensure site is publicly accessible (not localhost in production)
 
