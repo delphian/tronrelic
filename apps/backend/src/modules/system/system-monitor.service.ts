@@ -193,14 +193,9 @@ export interface ConfigurationValues {
     websockets: boolean;
     telemetry: boolean;
   };
-  thresholds: {
-    delegationAmountTRX: number;
-    stakeAmountTRX: number;
-  };
   limits: Record<string, never>;
   integrations: {
     hasTronGridKey: boolean;
-    hasTelegramBot: boolean;
     hasStorageConfigured: boolean;
   };
 }
@@ -759,10 +754,6 @@ export class SystemMonitorService {
         scheduler: env.ENABLE_SCHEDULER,
         websockets: env.ENABLE_WEBSOCKETS,
         telemetry: env.ENABLE_TELEMETRY
-      },
-      thresholds: {
-        delegationAmountTRX: blockchainConfig.thresholds.delegationAmountTRX,
-        stakeAmountTRX: blockchainConfig.thresholds.stakeAmountTRX
       },
       limits: {},
       integrations: {
