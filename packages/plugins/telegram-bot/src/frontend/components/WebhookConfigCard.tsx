@@ -229,7 +229,7 @@ export function WebhookConfigCard({ context, webhookSecretConfigured: externalWe
                             <li>Open Telegram and message <code>@BotFather</code></li>
                             <li>Send <code>/newbot</code> command and follow the prompts</li>
                             <li>Copy the bot token (format: <code>123456789:ABCdefGHIjklMNOpqrsTUVwxyz</code>)</li>
-                            <li>Navigate to the "Bot Settings" card below</li>
+                            <li>Navigate to the "Bot Authorization" card below</li>
                             <li>Paste the token and click "Save Settings"</li>
                         </ol>
                     </div>
@@ -278,7 +278,7 @@ export function WebhookConfigCard({ context, webhookSecretConfigured: externalWe
                                     incoming webhook requests are actually from Telegram's servers.
                                 </p>
                                 <p className={styles.warning_text}>
-                                    See the "Bot Settings" card and generate/save a webhook secret, then return here to register the webhook.
+                                    See the "Bot Authorization" card above and generate/save a webhook secret, then return here to register the webhook.
                                 </p>
                             </div>
                         )}

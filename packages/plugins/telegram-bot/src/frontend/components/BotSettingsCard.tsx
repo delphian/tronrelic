@@ -25,16 +25,16 @@ interface ISettingsResponse {
 }
 
 /**
- * Bot Settings Card Component
+ * Bot Authorization Card Component
  *
- * Provides configuration interface for the Telegram bot token and related settings.
- * Allows administrators to view, edit, and update the bot token without requiring
- * backend server restarts or direct environment variable access.
+ * Provides configuration interface for the Telegram bot token and webhook secret.
+ * Allows administrators to view, edit, and update authorization credentials without
+ * requiring backend server restarts or direct environment variable access.
  *
  * Why this component exists:
- * Administrators need a way to configure the bot token through the UI instead of
- * editing environment files and restarting services. This card provides a secure
- * interface for token management with proper masking, validation, and feedback.
+ * Administrators need a way to configure bot authorization credentials through the UI
+ * instead of editing environment files and restarting services. This card provides a
+ * secure interface for credential management with proper masking, validation, and feedback.
  *
  * @param props - Component properties
  * @param props.context - Plugin context providing API client and UI components
@@ -105,6 +105,11 @@ export function BotSettingsCard({ context, onSettingsSaved }: IBotSettingsCardPr
      * Why generate on client:
      * Generating the secret client-side prevents it from being transmitted to the
      * backend before the user explicitly saves it. This reduces attack surface.
+     *
+     * Why toggle visibility:
+     * After generating a new secret, we want to show it to the user so they can
+     * see what was generated. This provides immediate visual feedback and allows
+     * the user to verify the generated secret before saving.
      */
     const handleGenerateSecret = () => {
         // Generate 16 random bytes and convert to hex (32 characters)
@@ -112,6 +117,7 @@ export function BotSettingsCard({ context, onSettingsSaved }: IBotSettingsCardPr
         crypto.getRandomValues(array);
         const hexString = Array.from(array, byte => byte.toString(16).padStart(2, '0')).join('');
         setSecretInput(hexString);
+        setShowSecret(true); // Show the newly generated secret
     };
 
     /**
@@ -221,7 +227,7 @@ export function BotSettingsCard({ context, onSettingsSaved }: IBotSettingsCardPr
             <ui.Card>
                 <h2 className={styles.card_title}>
                     <Settings size={18} />
-                    Bot Settings
+                    Bot Authorization
                 </h2>
                 <div className={styles.loading}>Loading...</div>
             </ui.Card>
@@ -233,7 +239,7 @@ export function BotSettingsCard({ context, onSettingsSaved }: IBotSettingsCardPr
             {/* Card header */}
             <h2 className={styles.card_title}>
                 <Settings size={18} />
-                Bot Settings
+                Bot Authorization
             </h2>
 
             <div className={styles.content}>
@@ -256,19 +262,15 @@ export function BotSettingsCard({ context, onSettingsSaved }: IBotSettingsCardPr
                     <div className={styles.input_group}>
                         <ui.Input
                             type="text"
-                            value={showToken && settings?.botToken ? settings.botToken : tokenInput}
+                            value={tokenInput || (showToken && settings?.botToken ? settings.botToken : '')}
                             onChange={(e) => setTokenInput(e.target.value)}
                             placeholder={
                                 showToken
                                     ? (settings?.botToken || '123456789:ABCdefGHIjklMNOpqrsTUVwxyz')
                                     : '••••••••••••••••••••••••'
                             }
-                            disabled={isSaving || (showToken && settings?.botToken !== undefined)}
+                            disabled={isSaving || (showToken && settings?.botToken !== undefined && !tokenInput)}
                             aria-label="Bot token"
-                            style={{
-                                WebkitTextSecurity: showToken ? 'none' : 'disc',
-                                textSecurity: showToken ? 'none' : 'disc'
-                            }}
                         />
                         <button
                             type="button"
@@ -295,7 +297,7 @@ export function BotSettingsCard({ context, onSettingsSaved }: IBotSettingsCardPr
                                     <li>Paste it in the field above and click Save Settings</li>
                                 </ol>
                                 <p className={styles.instructions_note}>
-                                    After configuring the token, don't forget to set up the webhook in the Webhook Configuration card.
+                                    After configuring the token, don't forget to set up the webhook in the Webhook Configuration card below.
                                 </p>
                             </div>
                         </details>
@@ -311,19 +313,15 @@ export function BotSettingsCard({ context, onSettingsSaved }: IBotSettingsCardPr
                     <div className={styles.input_group}>
                         <ui.Input
                             type="text"
-                            value={showSecret && settings?.webhookSecret ? settings.webhookSecret : secretInput}
+                            value={secretInput || (showSecret && settings?.webhookSecret ? settings.webhookSecret : '')}
                             onChange={(e) => setSecretInput(e.target.value)}
                             placeholder={
                                 showSecret
                                     ? (settings?.webhookSecret || 'abc123def456...')
                                     : '••••••••••••••••••••••••'
                             }
-                            disabled={isSaving || (showSecret && settings?.webhookSecret !== undefined)}
+                            disabled={isSaving || (showSecret && settings?.webhookSecret !== undefined && !secretInput)}
                             aria-label="Webhook secret"
-                            style={{
-                                WebkitTextSecurity: showSecret ? 'none' : 'disc',
-                                textSecurity: showSecret ? 'none' : 'disc'
-                            }}
                         />
                         <button
                             type="button"
