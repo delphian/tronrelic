@@ -1,4 +1,4 @@
-import type { IHttpRequest, IHttpResponse, IHttpNext, ILogger } from '@tronrelic/types';
+import type { IHttpRequest, IHttpResponse, ILogger } from '@tronrelic/types';
 import { validateTelegramWebhook } from './security.js';
 import { CommandHandler, type ITelegramUpdate } from './command-handlers.js';
 
@@ -27,7 +27,10 @@ export function createWebhookHandler(
         webhookSecret?: string;
     }
 ) {
-    return async (req: IHttpRequest, res: IHttpResponse, next: IHttpNext): Promise<void> => {
+    return async (req: IHttpRequest, res: IHttpResponse): Promise<void> => {
+        // Parse update first so it's available in catch block
+        let update: ITelegramUpdate | undefined;
+
         try {
             // Security validation
             const isValid = await validateTelegramWebhook(req, securityOptions);
@@ -55,7 +58,7 @@ export function createWebhookHandler(
             }
 
             // Parse update
-            const update = req.body as ITelegramUpdate;
+            update = req.body as ITelegramUpdate;
 
             logger.debug(
                 {
@@ -90,6 +93,21 @@ export function createWebhookHandler(
             res.status(200).json({ ok: true });
         } catch (error) {
             logger.error({ error }, 'Failed to process Telegram webhook');
+
+            // Try to send an error message to the user instead of silently failing
+            try {
+                const chatId = update?.message?.chat?.id || update?.callback_query?.from?.id;
+                if (chatId) {
+                    await telegramClient.sendMessage(
+                        String(chatId),
+                        '⚠️ Sorry, something went wrong processing your request. Please try again later.',
+                        { parseMode: null }
+                    );
+                    logger.info({ chatId }, 'Sent error notification to user');
+                }
+            } catch (notifyError) {
+                logger.error({ notifyError }, 'Failed to send error notification to user');
+            }
 
             // Still acknowledge to Telegram to prevent retries
             res.status(200).json({ ok: true });

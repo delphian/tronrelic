@@ -1,0 +1,181 @@
+/**
+ * Bot Settings Card CSS Module
+ *
+ * Scoped styles for the BotSettingsCard component that provides bot token
+ * configuration and management interface within the Telegram bot plugin.
+ *
+ * Uses design tokens from globals.css for consistent visual language.
+ */
+
+.card_title {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 1.125rem;
+    font-weight: 600;
+    margin-bottom: 1.5rem;
+    color: var(--color-primary);
+}
+
+.content {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+.loading {
+    color: var(--color-text-muted);
+    font-size: 0.875rem;
+}
+
+/* Status Indicator */
+.status_indicator {
+    padding: 0.75rem 1rem;
+    border-radius: var(--radius-md);
+    font-size: 0.875rem;
+}
+
+.status_success,
+.status_warning {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.status_success {
+    color: var(--color-success);
+    background: rgba(87, 212, 140, 0.1);
+    border: 1px solid var(--color-success);
+}
+
+.status_warning {
+    color: var(--color-warning);
+    background: rgba(255, 200, 87, 0.1);
+    border: 1px solid var(--color-warning);
+}
+
+/* Field Container */
+.field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.label {
+    display: block;
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--color-text);
+}
+
+/* Input Group - Input with visibility toggle */
+.input_group {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+}
+
+.visibility_toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.75rem;
+    background: rgba(79, 140, 255, 0.14);
+    border: 1px solid rgba(79, 140, 255, 0.4);
+    border-radius: var(--radius-sm);
+    color: var(--color-primary);
+    cursor: pointer;
+    transition: background-color var(--transition-base), border-color var(--transition-base);
+}
+
+.visibility_toggle:hover {
+    background: rgba(79, 140, 255, 0.22);
+}
+
+.visibility_toggle:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.visibility_toggle:focus-visible {
+    outline: 2px solid rgba(124, 155, 255, 0.95);
+    outline-offset: 3px;
+    box-shadow: 0 0 0 4px rgba(124, 155, 255, 0.24);
+}
+
+/* Save Button Container */
+.save_button_container {
+    display: flex;
+    justify-content: center;
+    margin-top: 0.5rem;
+}
+
+/* Feedback Messages */
+.feedback_success,
+.feedback_error {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1rem;
+    border-radius: var(--radius-md);
+    font-size: 0.875rem;
+    line-height: 1.5;
+}
+
+.feedback_success {
+    background: rgba(87, 212, 140, 0.1);
+    border: 1px solid var(--color-success);
+    color: var(--color-success);
+}
+
+.feedback_error {
+    background: rgba(255, 111, 125, 0.1);
+    border: 1px solid var(--color-danger);
+    color: var(--color-danger);
+}
+
+/* Setup Instructions - styled as plain text collapsible (matches WebhookConfigCard) */
+.instructions {
+    margin-top: 0.5rem;
+    font-size: 0.875rem;
+    line-height: 1.6;
+}
+
+.instructions_header {
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+    color: var(--color-text-muted);
+    user-select: none;
+}
+
+.instructions_header:hover {
+    color: var(--color-text);
+}
+
+.instructions_content {
+    margin-top: 0.75rem;
+}
+
+.instructions_list {
+    margin: 0 0 1rem 0;
+    padding-left: 1.5rem;
+}
+
+.instructions_list li {
+    margin-bottom: 0.5rem;
+}
+
+.instructions_list code {
+    padding: 0.125rem 0.375rem;
+    background: rgba(79, 140, 255, 0.14);
+    border-radius: 4px;
+    font-family: monospace;
+    font-size: 0.8125rem;
+}
+
+.instructions_note {
+    margin: 0;
+    color: var(--color-text-muted);
+    font-style: italic;
+}
