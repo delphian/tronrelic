@@ -208,14 +208,14 @@ export function WebhookConfigCard({ context }: IWebhookConfigCardProps) {
                             ⚠️ Bot Token Not Configured
                         </h3>
                         <p style={{ marginBottom: '0.75rem', lineHeight: 1.5 }}>
-                            To enable the Telegram bot, you need to obtain a bot token from BotFather and configure it in your environment.
+                            To enable the Telegram bot, you need to obtain a bot token from BotFather and configure it via the admin interface.
                         </p>
                         <ol style={{ paddingLeft: '2rem', margin: 0, lineHeight: 1.8 }}>
                             <li>Open Telegram and message <code>@BotFather</code></li>
                             <li>Send <code>/newbot</code> command and follow the prompts</li>
                             <li>Copy the bot token (format: <code>123456789:ABCdefGHIjklMNOpqrsTUVwxyz</code>)</li>
-                            <li>Add to your <code>.env</code> file: <code>TELEGRAM_BOT_TOKEN=your-token-here</code></li>
-                            <li>Restart the backend: <code>./scripts/start.sh</code></li>
+                            <li>Navigate to the "Bot Settings" card below</li>
+                            <li>Paste the token and click "Save Settings"</li>
                         </ol>
                     </div>
                 )}

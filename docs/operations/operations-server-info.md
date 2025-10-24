@@ -227,10 +227,10 @@ REDIS_PASSWORD=<REDIS_PASSWORD>
 # Purpose: Redis authentication in production
 
 # Optional - Telegram Integration
-TELEGRAM_BOT_TOKEN=<BOT_TOKEN>
 TELEGRAM_WEBHOOK_SECRET=<WEBHOOK_SECRET>
-# Obtain from: @BotFather on Telegram
-# Purpose: Telegram bot notifications (optional feature)
+# Generate with: openssl rand -hex 32
+# Purpose: Webhook security validation for Telegram bot
+# Note: Bot token is now configured via admin UI at /system/plugins, not environment variables
 ```
 
 **Environment-specific URLs:**

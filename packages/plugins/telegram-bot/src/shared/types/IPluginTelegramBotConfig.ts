@@ -9,7 +9,7 @@
  * - Enables admin UI control without requiring SSH access to server
  * - Allows runtime configuration changes (bot token rotation, rate limit adjustments)
  * - Provides audit trail of configuration changes through database timestamps
- * - Maintains backward compatibility with environment variable fallbacks during migration
+ * - Eliminates need for environment variables and server restarts for bot token changes
  */
 export interface IPluginTelegramBotConfig {
     /**
@@ -21,10 +21,10 @@ export interface IPluginTelegramBotConfig {
      *
      * Format: `<bot-id>:<random-token>` (e.g., `123456789:ABCdefGHIjklMNOpqrsTUVwxyz`)
      *
-     * Migration path:
-     * - During initial setup, this will be copied from TELEGRAM_BOT_TOKEN environment variable
-     * - Once stored in database, the database value takes precedence
-     * - Environment variable remains as fallback for backward compatibility
+     * Configuration:
+     * - Set via /system/settings admin UI
+     * - Stored in MongoDB plugin database
+     * - No environment variable fallback (database is source of truth)
      */
     botToken?: string;
 

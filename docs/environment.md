@@ -453,29 +453,37 @@ https://s3.amazonaws.com/bucket-name/file.jpg
 
 ## Telegram Integration
 
-All Telegram variables are optional. Required only if using Telegram bot features.
+The Telegram bot uses database-backed configuration for runtime management without requiring backend restarts.
 
-### TELEGRAM_BOT_TOKEN
-- **Type:** `string`
-- **Default:** None
-- **Required:** No (required for Telegram features)
-- **⚠️ Security:** Keep secret
+### Bot Token Configuration
 
-**Description:** Telegram bot API token from BotFather.
+**⚠️ Bot tokens are NO LONGER configured via environment variables.**
 
-**How to Get:**
-1. Message [@BotFather](https://t.me/botfather) on Telegram
-2. Send `/newbot` and follow instructions
-3. Copy the token: `123456789:ABCdefGHIjklMNOpqrsTUVwxyz`
-4. Add to `.env`:
-   ```bash
-   TELEGRAM_BOT_TOKEN=123456789:ABCdefGHIjklMNOpqrsTUVwxyz
-   ```
+The Telegram bot token is now managed through the admin UI:
+
+1. **Obtain token from BotFather:**
+   - Message [@BotFather](https://t.me/botfather) on Telegram
+   - Send `/newbot` and follow instructions
+   - Copy the token: `123456789:ABCdefGHIjklMNOpqrsTUVwxyz`
+
+2. **Configure via admin UI:**
+   - Navigate to `/system/plugins` in your TronRelic instance
+   - Locate the "telegram-bot" plugin
+   - Click "Settings" to access the configuration panel
+   - Enter your bot token in the secure settings form
+   - Token is stored in MongoDB with automatic migration from legacy environment variables
+
+3. **Benefits of database-backed configuration:**
+   - Change bot token without restarting backend
+   - Automatic token masking in API responses (shows `***...xyz` instead of full token)
+   - Centralized management alongside other plugin settings
+   - Secure storage with encrypted database connections
 
 **Features Enabled:**
-- Whale transaction alerts to Telegram channels
-- Memo transaction notifications
-- SunPump token alerts
+- Real-time market price queries via `/price` command
+- Whale transaction alerts to Telegram channels (via whale-alerts plugin)
+- Memo transaction notifications (via whale-alerts plugin)
+- SunPump token alerts (via whale-alerts plugin)
 - Telegram mini-app integration
 
 ---

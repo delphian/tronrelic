@@ -5,20 +5,18 @@ import type { IPluginTelegramBotConfig, IPluginTelegramBotConfigMasked } from '.
  * Configuration service for Telegram bot plugin.
  *
  * This service manages bot configuration stored in the plugin database, providing
- * methods to load, save, and validate settings. It handles migration from environment
- * variables to database-backed configuration.
+ * methods to load, save, and validate settings.
  *
  * Why a dedicated service:
- * - Centralizes configuration logic (migration, validation, masking)
+ * - Centralizes configuration logic (validation, masking)
  * - Provides type-safe access to settings
- * - Handles environment variable fallback during migration
  * - Ensures bot token is never logged in plain text
  *
  * Architecture:
  * - Uses plugin database key-value storage for persistence
- * - Automatically migrates TELEGRAM_BOT_TOKEN on first load
  * - Validates bot token format before saving
  * - Provides masked configuration for API responses
+ * - Bot token must be configured via admin UI at /system/settings
  */
 export class BotConfigService {
     private readonly database: IPluginDatabase;
@@ -53,16 +51,14 @@ export class BotConfigService {
     }
 
     /**
-     * Loads bot configuration from database with environment variable fallback.
+     * Loads bot configuration from database.
      *
      * @returns Bot configuration with all fields populated
      *
      * Why this method exists:
-     * During migration period, bot token may exist in environment variable but not
-     * database. This method handles three scenarios:
-     * 1. Database has config → use it
-     * 2. Database empty, env var set → migrate to database
-     * 3. Database empty, no env var → use defaults
+     * Loads bot token and settings from the database. If no configuration exists,
+     * returns defaults with undefined bot token. Admins must configure the token
+     * through the /system/settings UI.
      *
      * The method logs which source is being used for transparency and debugging.
      */
@@ -82,28 +78,8 @@ export class BotConfigService {
             return this.cachedConfig;
         }
 
-        // Check environment variable for migration
-        const envToken = process.env.TELEGRAM_BOT_TOKEN;
-
-        if (envToken) {
-            // Migrate environment variable to database
-            this.logger.info('Migrating bot token from environment variable to database');
-
-            const migratedConfig: IPluginTelegramBotConfig = {
-                ...BotConfigService.DEFAULTS,
-                botToken: envToken
-            };
-
-            // Save to database
-            await this.database.set('bot-config', migratedConfig);
-
-            this.logger.info('Bot token migrated successfully (using database value going forward)');
-            this.cachedConfig = migratedConfig;
-            return migratedConfig;
-        }
-
-        // No database config and no environment variable - use defaults
-        this.logger.warn('No bot token configured (neither database nor environment variable)');
+        // No database config - use defaults (bot token must be configured via UI)
+        this.logger.warn('No bot token configured in database');
 
         const defaultConfig: IPluginTelegramBotConfig = {
             ...BotConfigService.DEFAULTS
