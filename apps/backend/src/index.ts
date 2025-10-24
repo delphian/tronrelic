@@ -3,7 +3,7 @@ import { env } from './config/env.js';
 import { createExpressApp } from './loaders/express.js';
 import { connectDatabase } from './loaders/database.js';
 import { createRedisClient, disconnectRedis } from './loaders/redis.js';
-import { logger } from './lib/logger.js';
+import { logger, createLogger } from './lib/logger.js';
 import { WebSocketService } from './services/websocket.service.js';
 import { initializeJobs, stopJobs } from './jobs/index.js';
 import { loadPlugins } from './loaders/plugins.js';
@@ -11,7 +11,6 @@ import { MenuService } from './modules/menu/menu.service.js';
 import { PluginDatabaseService } from './services/plugin-database.service.js';
 import { BlockchainObserverService } from './services/blockchain-observer/index.js';
 import { SystemConfigService } from './services/system-config/index.js';
-import { SystemLogsService } from './services/system-logs/index.js';
 
 async function bootstrap() {
     try {
@@ -19,17 +18,18 @@ async function bootstrap() {
         const redis = createRedisClient();
         await redis.connect();
 
+        // Initialize the logger with production Pino instance
+        // After this, error/warn logs will save to MongoDB automatically
+        logger.info({}, 'Initializing logger with MongoDB persistence...');
+        const pinoLogger = createLogger();
+        await logger.initialize(pinoLogger);
+        logger.info({}, 'Logger initialized - errors/warnings will be saved to MongoDB');
+
         // Initialize system configuration service
         logger.info({}, 'Initializing system configuration service...');
         const configLogger = logger.child({ module: 'system-config' });
         SystemConfigService.initialize(configLogger);
         logger.info({}, 'System configuration service initialized');
-
-        // Initialize system logs service to capture ERROR and WARN logs
-        logger.info({}, 'Initializing system logs service...');
-        const systemLogsService = SystemLogsService.getInstance();
-        await systemLogsService.initialize();
-        logger.info({}, 'System logs service initialized');
 
         // Initialize blockchain observer service explicitly before plugins load
         logger.info({}, 'Initializing blockchain observer service...');
