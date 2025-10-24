@@ -199,14 +199,20 @@ export const telegramBotBackendPlugin = definePlugin({
             context.logger
         );
 
-        // Create webhook handler with security options from environment
+        // Get webhook secret from configuration service (with automatic migration from environment variable)
+        const webhookSecret = await botConfigService.getWebhookSecret();
+        if (!webhookSecret) {
+            context.logger.warn('Webhook secret not configured in database. Webhook requests will be rejected. Configure via /system/plugins/telegram-bot/settings UI.');
+        }
+
+        // Create webhook handler with security options
         const webhookHandler = createWebhookHandler(
             commandHandler,
             telegramClient,
             context.logger,
             {
                 allowedIps: process.env.TELEGRAM_IP_ALLOWLIST,
-                webhookSecret: process.env.TELEGRAM_WEBHOOK_SECRET
+                webhookSecret: webhookSecret
             }
         );
 
@@ -324,11 +330,12 @@ export const telegramBotBackendPlugin = definePlugin({
                         return;
                     }
 
-                    const webhookSecret = process.env.TELEGRAM_WEBHOOK_SECRET;
+                    // Get webhook secret from configuration service
+                    const webhookSecret = await botConfigService.getWebhookSecret();
                     if (!webhookSecret) {
                         res.status(503).json({
                             success: false,
-                            error: 'TELEGRAM_WEBHOOK_SECRET not configured in environment variables'
+                            error: 'Webhook secret must be configured before deploying webhook. Please set the webhook secret in /system/plugins/telegram-bot/settings'
                         });
                         return;
                     }
@@ -578,13 +585,13 @@ export const telegramBotBackendPlugin = definePlugin({
             path: '/settings',
             handler: async (req: IHttpRequest, res: IHttpResponse, _next: IHttpNext) => {
                 try {
-                    const { botToken, rateLimitPerUser, rateLimitWindowMs } = req.body;
+                    const { botToken, webhookSecret, rateLimitPerUser, rateLimitWindowMs } = req.body;
 
                     // Validate request body
-                    if (!botToken && rateLimitPerUser === undefined && rateLimitWindowMs === undefined) {
+                    if (!botToken && !webhookSecret && rateLimitPerUser === undefined && rateLimitWindowMs === undefined) {
                         res.status(400).json({
                             success: false,
-                            error: 'At least one setting must be provided (botToken, rateLimitPerUser, rateLimitWindowMs)'
+                            error: 'At least one setting must be provided (botToken, webhookSecret, rateLimitPerUser, rateLimitWindowMs)'
                         });
                         return;
                     }
@@ -594,6 +601,17 @@ export const telegramBotBackendPlugin = definePlugin({
 
                     if (botToken !== undefined) {
                         updates.botToken = botToken;
+                    }
+
+                    if (webhookSecret !== undefined) {
+                        if (typeof webhookSecret !== 'string' || webhookSecret.length < 16) {
+                            res.status(400).json({
+                                success: false,
+                                error: 'webhookSecret must be a string with at least 16 characters'
+                            });
+                            return;
+                        }
+                        updates.webhookSecret = webhookSecret;
                     }
 
                     if (rateLimitPerUser !== undefined) {
@@ -651,20 +669,20 @@ export const telegramBotBackendPlugin = definePlugin({
                     });
                 }
             },
-            description: 'Update bot settings (bot token, rate limits, etc.) - PUT variant for frontend compatibility'
+            description: 'Update bot settings (bot token, webhook secret, rate limits, etc.) - PUT variant for frontend compatibility'
         },
         {
             method: 'PATCH',
             path: '/settings',
             handler: async (req: IHttpRequest, res: IHttpResponse, _next: IHttpNext) => {
                 try {
-                    const { botToken, rateLimitPerUser, rateLimitWindowMs } = req.body;
+                    const { botToken, webhookSecret, rateLimitPerUser, rateLimitWindowMs } = req.body;
 
                     // Validate request body
-                    if (!botToken && rateLimitPerUser === undefined && rateLimitWindowMs === undefined) {
+                    if (!botToken && !webhookSecret && rateLimitPerUser === undefined && rateLimitWindowMs === undefined) {
                         res.status(400).json({
                             success: false,
-                            error: 'At least one setting must be provided (botToken, rateLimitPerUser, rateLimitWindowMs)'
+                            error: 'At least one setting must be provided (botToken, webhookSecret, rateLimitPerUser, rateLimitWindowMs)'
                         });
                         return;
                     }
@@ -674,6 +692,17 @@ export const telegramBotBackendPlugin = definePlugin({
 
                     if (botToken !== undefined) {
                         updates.botToken = botToken;
+                    }
+
+                    if (webhookSecret !== undefined) {
+                        if (typeof webhookSecret !== 'string' || webhookSecret.length < 16) {
+                            res.status(400).json({
+                                success: false,
+                                error: 'webhookSecret must be a string with at least 16 characters'
+                            });
+                            return;
+                        }
+                        updates.webhookSecret = webhookSecret;
                     }
 
                     if (rateLimitPerUser !== undefined) {
@@ -731,7 +760,7 @@ export const telegramBotBackendPlugin = definePlugin({
                     });
                 }
             },
-            description: 'Update bot settings (bot token, rate limits, etc.)'
+            description: 'Update bot settings (bot token, webhook secret, rate limits, etc.)'
         }
     ]
 });

@@ -39,6 +39,27 @@ export interface IPluginTelegramBotConfig {
     webhookUrl?: string;
 
     /**
+     * Webhook secret token for validating incoming webhook requests from Telegram.
+     *
+     * This secret is sent by Telegram with every webhook request in the
+     * `X-Telegram-Bot-Api-Secret-Token` header. The backend validates this token
+     * to ensure the request actually came from Telegram's servers.
+     *
+     * Format: Any secure random string (recommended: 32+ character hex string)
+     *
+     * Configuration:
+     * - Set via /system/plugins/telegram-bot/settings admin UI
+     * - Stored in MongoDB plugin database
+     * - Generate new secret using "Generate New Secret" button in admin UI
+     *
+     * Security:
+     * - Used alongside IP allowlist for defense-in-depth
+     * - Must be kept secret and never logged in plain text
+     * - Admin UI will mask this value, showing only last 6 characters
+     */
+    webhookSecret?: string;
+
+    /**
      * Maximum number of commands a user can issue within the rate limit window.
      *
      * Default: 10 commands
@@ -87,6 +108,21 @@ export interface IPluginTelegramBotConfigMasked {
      * Webhook URL (not sensitive, shown in full).
      */
     webhookUrl?: string;
+
+    /**
+     * Masked webhook secret showing only last 6 characters.
+     *
+     * Example: `******abc123` (for secret ending in `abc123`)
+     */
+    webhookSecret?: string;
+
+    /**
+     * Flag indicating whether a webhook secret is configured.
+     *
+     * This lets the UI know if the webhook can be deployed, without exposing
+     * the actual secret value.
+     */
+    webhookSecretConfigured: boolean;
 
     /**
      * Rate limiting settings (not sensitive).

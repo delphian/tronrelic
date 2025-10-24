@@ -1,6 +1,7 @@
 import React from 'react';
 import type { IFrontendPluginContext } from '@tronrelic/types';
-import { Copy, Check } from 'lucide-react';
+import { Copy, Check, AlertCircle } from 'lucide-react';
+import styles from './WebhookConfigCard.module.css';
 
 /**
  * Props for WebhookConfigCard component.
@@ -23,31 +24,42 @@ export function WebhookConfigCard({ context }: IWebhookConfigCardProps) {
     const [loading, setLoading] = React.useState(true);
     const [copied, setCopied] = React.useState(false);
     const [botTokenConfigured, setBotTokenConfigured] = React.useState(true);
+    const [webhookSecretConfigured, setWebhookSecretConfigured] = React.useState(true);
     const [configuring, setConfiguring] = React.useState(false);
     const [configureResult, setConfigureResult] = React.useState<{ success: boolean; message: string } | null>(null);
     const [verifying, setVerifying] = React.useState(false);
     const [verifyResult, setVerifyResult] = React.useState<{ success: boolean; message: string; details?: any } | null>(null);
 
     /**
-     * Fetches webhook URL and token configuration status from plugin configuration.
+     * Fetches webhook URL and configuration status from both config and settings endpoints.
      *
      * Why fetch instead of hardcode:
      * Webhook URL depends on deployment environment (localhost, dev, prod).
      * Backend stores the correct URL based on environment variables.
-     * Token status determines whether to show setup instructions.
+     * Token and secret status determine whether to show setup instructions and enable webhook deployment.
      */
     React.useEffect(() => {
         async function fetchConfig() {
             try {
                 setLoading(true);
 
-                const response = await api.get<{ success: boolean; config: { webhookUrl: string; botTokenConfigured?: boolean } }>(
+                // Fetch webhook URL from config endpoint
+                const configResponse = await api.get<{ success: boolean; config: { webhookUrl: string; botTokenConfigured?: boolean } }>(
                     '/plugins/telegram-bot/config'
                 );
 
-                if (response.success && response.config.webhookUrl) {
-                    setWebhookUrl(response.config.webhookUrl);
-                    setBotTokenConfigured(response.config.botTokenConfigured ?? true);
+                if (configResponse.success && configResponse.config.webhookUrl) {
+                    setWebhookUrl(configResponse.config.webhookUrl);
+                    setBotTokenConfigured(configResponse.config.botTokenConfigured ?? true);
+                }
+
+                // Fetch webhook secret configuration status from settings endpoint
+                const settingsResponse = await api.get<{ success: boolean; settings: { webhookSecretConfigured: boolean } }>(
+                    '/plugins/telegram-bot/system/settings'
+                );
+
+                if (settingsResponse.success) {
+                    setWebhookSecretConfigured(settingsResponse.settings.webhookSecretConfigured ?? false);
                 }
             } catch (err) {
                 console.error('Error fetching webhook config:', err);
@@ -181,36 +193,31 @@ export function WebhookConfigCard({ context }: IWebhookConfigCardProps) {
     if (loading) {
         return (
             <ui.Card>
-                <h2 style={{ fontSize: '1.125rem', fontWeight: 600, marginBottom: '1.5rem' }}>
+                <h2 className={styles.card_title}>
                     Webhook Configuration
                 </h2>
-                <div>Loading...</div>
+                <div className={styles.loading}>Loading...</div>
             </ui.Card>
         );
     }
 
     return (
         <ui.Card>
-            <h2 style={{ fontSize: '1.125rem', fontWeight: 600, marginBottom: '1.5rem' }}>
+            <h2 className={styles.card_title}>
                 Webhook Configuration
             </h2>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+            <div className={styles.content}>
                 {/* Show setup instructions if bot token is not configured */}
                 {!botTokenConfigured && (
-                    <div style={{
-                        padding: '1rem',
-                        backgroundColor: 'rgba(255, 200, 87, 0.1)',
-                        border: '1px solid var(--color-warning)',
-                        borderRadius: 'var(--radius-md)',
-                        fontSize: '0.875rem'
-                    }}>
-                        <h3 style={{ fontSize: '0.875rem', fontWeight: 600, marginBottom: '0.75rem', color: 'var(--color-warning)' }}>
-                            ⚠️ Bot Token Not Configured
+                    <div className={styles.warning_card}>
+                        <h3 className={styles.warning_title}>
+                            <AlertCircle size={16} />
+                            Bot Token Not Configured
                         </h3>
-                        <p style={{ marginBottom: '0.75rem', lineHeight: 1.5 }}>
+                        <p className={styles.warning_text}>
                             To enable the Telegram bot, you need to obtain a bot token from BotFather and configure it via the admin interface.
                         </p>
-                        <ol style={{ paddingLeft: '2rem', margin: 0, lineHeight: 1.8 }}>
+                        <ol className={styles.warning_list}>
                             <li>Open Telegram and message <code>@BotFather</code></li>
                             <li>Send <code>/newbot</code> command and follow the prompts</li>
                             <li>Copy the bot token (format: <code>123456789:ABCdefGHIjklMNOpqrsTUVwxyz</code>)</li>
@@ -221,26 +228,17 @@ export function WebhookConfigCard({ context }: IWebhookConfigCardProps) {
                 )}
 
                 {/* Webhook URL - always show */}
-                <div>
-                    <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 500, marginBottom: '0.5rem' }}>
+                <div className={styles.field}>
+                    <label className={styles.label}>
                         Webhook URL
                     </label>
-                    <div style={{ display: 'flex', gap: '0.75rem' }}>
+                    <div className={styles.url_input_group}>
                         <input
                             type="text"
                             value={webhookUrl}
                             readOnly
-                            style={{
-                                flex: 1,
-                                fontFamily: 'monospace',
-                                fontSize: '0.875rem',
-                                padding: '0.5rem 0.75rem',
-                                border: '1px solid var(--color-border)',
-                                borderRadius: 'var(--radius-md)',
-                                backgroundColor: 'var(--color-surface-muted)',
-                                color: 'var(--color-text)',
-                                cursor: 'text'
-                            }}
+                            className={styles.url_input}
+                            aria-label="Webhook URL"
                         />
                         <ui.Button
                             onClick={handleCopy}
@@ -253,21 +251,38 @@ export function WebhookConfigCard({ context }: IWebhookConfigCardProps) {
                     </div>
                 </div>
 
+                {/* Warning if webhook secret is not configured */}
+                {botTokenConfigured && !webhookSecretConfigured && (
+                    <div className={styles.warning_card}>
+                        <h3 className={styles.warning_title}>
+                            <AlertCircle size={16} />
+                            Webhook Secret Not Configured
+                        </h3>
+                        <p className={styles.warning_text}>
+                            You must configure a webhook secret before deploying the webhook. The secret ensures that
+                            incoming webhook requests are actually from Telegram's servers.
+                        </p>
+                        <p className={styles.warning_text}>
+                            Please scroll up to the "Bot Settings" card above and generate/save a webhook secret, then return here to configure the webhook.
+                        </p>
+                    </div>
+                )}
+
                 {/* Webhook setup instructions - show if token is configured */}
                 {botTokenConfigured && (
-                    <div>
-                        <h3 style={{ fontSize: '0.875rem', fontWeight: 600, marginBottom: '0.75rem' }}>
+                    <div className={styles.config_section}>
+                        <h3 className={styles.section_title}>
                             Configure Webhook
                         </h3>
-                        <p style={{ fontSize: '0.875rem', color: 'var(--color-text-muted)', marginBottom: '0.75rem', lineHeight: 1.5 }}>
+                        <p className={styles.section_description}>
                             Click the button below to automatically configure the webhook with Telegram:
                         </p>
-                        <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+                        <div className={styles.button_row}>
                             <ui.Button
                                 onClick={handleConfigureWebhook}
                                 variant="secondary"
                                 size="md"
-                                disabled={configuring}
+                                disabled={configuring || !webhookSecretConfigured}
                             >
                                 {configuring ? 'Configuring...' : 'Configure Webhook'}
                             </ui.Button>
@@ -283,52 +298,24 @@ export function WebhookConfigCard({ context }: IWebhookConfigCardProps) {
 
                         {/* Show configure result message */}
                         {configureResult && (
-                            <div style={{
-                                marginTop: '0.75rem',
-                                padding: '0.75rem',
-                                backgroundColor: configureResult.success
-                                    ? 'rgba(34, 197, 94, 0.1)'
-                                    : 'rgba(239, 68, 68, 0.1)',
-                                border: `1px solid ${configureResult.success ? 'var(--color-success)' : 'var(--color-error)'}`,
-                                borderRadius: 'var(--radius-md)',
-                                fontSize: '0.875rem',
-                                color: configureResult.success ? 'var(--color-success)' : 'var(--color-error)'
-                            }}>
-                                {configureResult.success ? '✓ ' : '✗ '}
-                                {configureResult.message}
+                            <div className={`${styles.feedback_message} ${configureResult.success ? styles['feedback_message--success'] : styles['feedback_message--error']}`}>
+                                <span className={styles.feedback_text}>
+                                    {configureResult.success ? '✓ ' : '✗ '}
+                                    {configureResult.message}
+                                </span>
                             </div>
                         )}
 
                         {/* Show verify result message with details */}
                         {verifyResult && (
-                            <div style={{
-                                marginTop: '0.75rem',
-                                padding: '0.75rem',
-                                backgroundColor: verifyResult.success
-                                    ? 'rgba(34, 197, 94, 0.1)'
-                                    : 'rgba(239, 68, 68, 0.1)',
-                                border: `1px solid ${verifyResult.success ? 'var(--color-success)' : 'var(--color-error)'}`,
-                                borderRadius: 'var(--radius-md)',
-                                fontSize: '0.875rem',
-                                color: verifyResult.success ? 'var(--color-success)' : 'var(--color-error)'
-                            }}>
-                                <div>{verifyResult.message}</div>
+                            <div className={`${styles.feedback_message} ${verifyResult.success ? styles['feedback_message--success'] : styles['feedback_message--error']}`}>
+                                <span className={styles.feedback_text}>{verifyResult.message}</span>
                                 {verifyResult.details && (
-                                    <details style={{ marginTop: '0.5rem' }}>
-                                        <summary style={{
-                                            cursor: 'pointer',
-                                            fontSize: '0.75rem',
-                                            opacity: 0.8,
-                                            userSelect: 'none'
-                                        }}>
+                                    <details className={styles.feedback_details}>
+                                        <summary className={styles.details_summary}>
                                             View Details
                                         </summary>
-                                        <div style={{
-                                            marginTop: '0.5rem',
-                                            fontSize: '0.75rem',
-                                            fontFamily: 'monospace',
-                                            opacity: 0.9
-                                        }}>
+                                        <div className={styles.details_content}>
                                             {verifyResult.details.url && (
                                                 <div>URL: {verifyResult.details.url}</div>
                                             )}
@@ -342,7 +329,7 @@ export function WebhookConfigCard({ context }: IWebhookConfigCardProps) {
                                                 <div>IP Address: {verifyResult.details.ipAddress}</div>
                                             )}
                                             {verifyResult.details.lastErrorMessage && (
-                                                <div style={{ color: 'var(--color-error)' }}>
+                                                <div className={styles.error_text}>
                                                     Last Error: {verifyResult.details.lastErrorMessage}
                                                 </div>
                                             )}
@@ -352,28 +339,15 @@ export function WebhookConfigCard({ context }: IWebhookConfigCardProps) {
                             </div>
                         )}
 
-                        <details style={{ marginTop: '1rem' }}>
-                            <summary style={{
-                                fontSize: '0.875rem',
-                                fontWeight: 500,
-                                cursor: 'pointer',
-                                color: 'var(--color-text-muted)',
-                                userSelect: 'none'
-                            }}>
+                        <details className={styles.advanced_instructions}>
+                            <summary className={styles.instructions_summary}>
                                 Advanced: Manual Configuration
                             </summary>
-                            <div style={{ marginTop: '0.75rem' }}>
-                                <p style={{ fontSize: '0.875rem', color: 'var(--color-text-muted)', marginBottom: '0.75rem', lineHeight: 1.5 }}>
+                            <div className={styles.instructions_content}>
+                                <p className={styles.instructions_text}>
                                     Alternatively, run this command in your terminal:
                                 </p>
-                                <pre style={{
-                                    padding: '0.75rem',
-                                    backgroundColor: 'var(--color-surface-muted)',
-                                    borderRadius: 'var(--radius-md)',
-                                    fontSize: '0.75rem',
-                                    overflowX: 'auto',
-                                    border: '1px solid var(--color-border)'
-                                }}>
+                                <pre className={styles.code_block}>
 {`curl -X POST "https://api.telegram.org/bot<YOUR_BOT_TOKEN>/setWebhook" \\
   -H "Content-Type: application/json" \\
   -d '{
@@ -381,8 +355,8 @@ export function WebhookConfigCard({ context }: IWebhookConfigCardProps) {
     "secret_token": "<YOUR_WEBHOOK_SECRET>"
   }'`}
                                 </pre>
-                                <p style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: '0.5rem', lineHeight: 1.5 }}>
-                                    Replace <code>&lt;YOUR_BOT_TOKEN&gt;</code> with your bot token and <code>&lt;YOUR_WEBHOOK_SECRET&gt;</code> with the value from <code>TELEGRAM_WEBHOOK_SECRET</code> environment variable.
+                                <p className={styles.code_note}>
+                                    Replace <code>&lt;YOUR_BOT_TOKEN&gt;</code> with your bot token and <code>&lt;YOUR_WEBHOOK_SECRET&gt;</code> with the webhook secret configured in the settings above.
                                 </p>
                             </div>
                         </details>
@@ -390,12 +364,7 @@ export function WebhookConfigCard({ context }: IWebhookConfigCardProps) {
                 )}
 
                 {/* Security note */}
-                <div style={{
-                    padding: '0.75rem',
-                    backgroundColor: 'var(--color-surface-muted)',
-                    borderRadius: 'var(--radius-md)',
-                    fontSize: '0.875rem'
-                }}>
+                <div className={styles.security_note}>
                     <strong>Security Note:</strong> This webhook is protected by IP allowlist and webhook secret.
                     Only Telegram's servers can send updates to this endpoint.
                 </div>

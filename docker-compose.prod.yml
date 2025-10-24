@@ -89,9 +89,6 @@ services:
             - TRONGRID_API_KEY_2=${TRONGRID_API_KEY_2}
             - TRONGRID_API_KEY_3=${TRONGRID_API_KEY_3}
 
-            # Optional: Telegram Integration
-            - TELEGRAM_WEBHOOK_SECRET=${TELEGRAM_WEBHOOK_SECRET:-}
-
             # Performance Tuning
             - NODE_OPTIONS=--max-old-space-size=2048
         depends_on:
