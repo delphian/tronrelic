@@ -96,6 +96,11 @@ export class MarketQueryService {
      * Why duration matching:
      * Markets offer different rental periods (1h, 1d, 7d, 30d). Users might ask for 7 days,
      * so we need to find the best price for that specific duration.
+     *
+     * Algorithm explanation:
+     * Initializes bestCost to Infinity, then iterates through all markets. For each active market
+     * with matching duration, compares its cost against the current best. Uses < comparison to find
+     * the MINIMUM (cheapest) cost. Returns the market with the lowest cost, or null if no matches found.
      */
     private findBestMarket(
         markets: IMarket[],
@@ -104,8 +109,25 @@ export class MarketQueryService {
         let bestMarket: IMarket | null = null;
         let bestCost = Infinity;
 
+        this.logger.debug(
+            {
+                targetMinutes,
+                totalMarkets: markets.length,
+                activeMarkets: markets.filter(m => m.isActive).length
+            },
+            'Finding best market for duration'
+        );
+
         for (const market of markets) {
             if (!market.isActive || !market.pricingDetail?.usdtTransferCosts) {
+                this.logger.debug(
+                    {
+                        marketName: market.name,
+                        isActive: market.isActive,
+                        hasPricing: !!market.pricingDetail?.usdtTransferCosts
+                    },
+                    'Skipping market (inactive or no pricing)'
+                );
                 continue;
             }
 
@@ -114,10 +136,46 @@ export class MarketQueryService {
                 c => c.durationMinutes === targetMinutes
             );
 
-            if (matchingCost && matchingCost.costTrx < bestCost) {
-                bestMarket = market;
-                bestCost = matchingCost.costTrx;
+            if (matchingCost) {
+                this.logger.debug(
+                    {
+                        marketName: market.name,
+                        cost: matchingCost.costTrx,
+                        currentBest: bestCost,
+                        willUpdate: matchingCost.costTrx < bestCost
+                    },
+                    'Found matching duration'
+                );
+
+                if (matchingCost.costTrx < bestCost) {
+                    bestMarket = market;
+                    bestCost = matchingCost.costTrx;
+                }
+            } else {
+                this.logger.debug(
+                    {
+                        marketName: market.name,
+                        availableDurations: market.pricingDetail.usdtTransferCosts.map(c => c.durationMinutes)
+                    },
+                    'Market does not offer requested duration'
+                );
             }
+        }
+
+        if (bestMarket) {
+            this.logger.info(
+                {
+                    marketName: bestMarket.name,
+                    cost: bestCost,
+                    targetMinutes
+                },
+                'Selected cheapest market'
+            );
+        } else {
+            this.logger.warn(
+                { targetMinutes },
+                'No markets found for requested duration'
+            );
         }
 
         return bestMarket ? { market: bestMarket, costTRX: bestCost } : null;

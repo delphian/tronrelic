@@ -704,4 +704,62 @@ describe('MarketQueryService - Multi-Market Comparison Tests', () => {
 
         expect(result).toContain('No markets found for 7 day rental');
     });
+
+    /**
+     * Test: Should find cheapest price when /price called without arguments (default behavior).
+     *
+     * This reproduces Bug #1 - user expects cheapest 1-day price but gets most expensive.
+     * Default behavior: transferCount=1, days=1
+     */
+    it('should return cheapest 1-day price when called with defaults', async () => {
+        const expensiveMarket = createMockMarket({
+            guid: 'expensive-market',
+            name: 'Expensive Market',
+            pricingDetail: {
+                usdtTransferCosts: [
+                    { durationMinutes: 1440, costTrx: 0.010 } // Most expensive
+                ]
+            }
+        });
+
+        const cheapMarket = createMockMarket({
+            guid: 'cheap-market',
+            name: 'Cheap Market',
+            pricingDetail: {
+                usdtTransferCosts: [
+                    { durationMinutes: 1440, costTrx: 0.002 } // Cheapest
+                ]
+            }
+        });
+
+        const mediumMarket = createMockMarket({
+            guid: 'medium-market',
+            name: 'Medium Market',
+            pricingDetail: {
+                usdtTransferCosts: [
+                    { durationMinutes: 1440, costTrx: 0.005 } // Medium
+                ]
+            }
+        });
+
+        vi.doMock('axios', () => ({
+            default: {
+                get: vi.fn().mockResolvedValue({
+                    data: {
+                        success: true,
+                        markets: [expensiveMarket, cheapMarket, mediumMarket]
+                    }
+                })
+            }
+        }));
+
+        // Call with no arguments (defaults to transferCount=1, days=1)
+        const result = await service.queryMarkets({ chatId: "test-chat" });
+
+        // Should return the CHEAPEST market
+        expect(result).toContain('Cheap Market');
+        expect(result).toContain('0.002000 TRX');
+        expect(result).not.toContain('Expensive Market');
+        expect(result).not.toContain('Medium Market');
+    });
 });
