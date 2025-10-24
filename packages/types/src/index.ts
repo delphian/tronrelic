@@ -15,3 +15,4 @@ export type { IUsdtParametersFetcher } from './usdt-parameters/IUsdtParametersFe
 export type { ICacheService } from './services/ICacheService.js';
 export type { IMenuNode, IMenuNodeWithChildren, IMenuTree, IMenuValidation, MenuEventType, IMenuEvent, MenuEventSubscriber, IMenuService } from './menu/index.js';
 export type { ISystemConfig, ISystemConfigService } from './system-config/index.js';
+export type { ISystemLogService, ISystemLogQuery, ISystemLogPaginatedResponse, ISaveLogData, LogLevel } from './system-log/index.js';

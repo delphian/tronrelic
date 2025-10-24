@@ -7,7 +7,7 @@ import { logger } from '../lib/logger.js';
 import { CacheModel } from '../database/models/cache-model.js';
 import { ChainParametersFetcher } from '../modules/chain-parameters/chain-parameters-fetcher.js';
 import { UsdtParametersFetcher } from '../modules/usdt-parameters/usdt-parameters-fetcher.js';
-import { SystemLogsService } from '../services/system-logs/index.js';
+import { SystemLogService } from '../services/system-log/index.js';
 import { SystemConfigService } from '../services/system-config/index.js';
 import axios from 'axios';
 
@@ -79,17 +79,17 @@ export async function initializeJobs(): Promise<SchedulerService | null> {
 
     // System logs cleanup: every hour
     scheduler.register('system-logs:cleanup', '0 * * * *', async () => {
-        const systemLogsService = SystemLogsService.getInstance();
+        const systemLogService = SystemLogService.getInstance();
         const systemConfigService = SystemConfigService.getInstance();
         const config = await systemConfigService.getConfig();
 
         // Delete logs older than retention days
         const retentionDate = new Date();
         retentionDate.setDate(retentionDate.getDate() - config.systemLogsRetentionDays);
-        const deletedByAge = await systemLogsService.deleteOldLogs(retentionDate);
+        const deletedByAge = await systemLogService.deleteOldLogs(retentionDate);
 
         // Delete excess logs beyond maxCount
-        const deletedByCount = await systemLogsService.deleteExcessLogs(config.systemLogsMaxCount);
+        const deletedByCount = await systemLogService.deleteExcessLogs(config.systemLogsMaxCount);
 
         const totalDeleted = deletedByAge + deletedByCount;
         if (totalDeleted > 0) {
