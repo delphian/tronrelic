@@ -226,11 +226,8 @@ REDIS_PASSWORD=<REDIS_PASSWORD>
 # Generate with: openssl rand -hex 32
 # Purpose: Redis authentication in production
 
-# Optional - Telegram Integration
-TELEGRAM_WEBHOOK_SECRET=<WEBHOOK_SECRET>
-# Generate with: openssl rand -hex 32
-# Purpose: Webhook security validation for Telegram bot
-# Note: Bot token is now configured via admin UI at /system/plugins, not environment variables
+# Note: Telegram bot token and webhook secret are configured via admin UI
+# at /system/plugins/telegram-bot/settings, not environment variables
 ```
 
 **Environment-specific URLs:**

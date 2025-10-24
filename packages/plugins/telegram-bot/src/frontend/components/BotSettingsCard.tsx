@@ -12,11 +12,13 @@ interface IBotSettingsCardProps {
 
 /**
  * Response from GET /plugins/telegram-bot/system/settings endpoint.
- * Contains current bot configuration including masked token and rate limit settings.
+ * Contains current bot configuration including masked token, webhook secret, and rate limit settings.
  */
 interface ISettingsResponse {
     botToken: string;
     botTokenConfigured: boolean;
+    webhookSecret: string;
+    webhookSecretConfigured: boolean;
     rateLimitPerUser: number;
     rateLimitWindowMs: number;
 }
@@ -42,8 +44,10 @@ export function BotSettingsCard({ context }: IBotSettingsCardProps) {
     // State management
     const [loading, setLoading] = React.useState(true);
     const [showToken, setShowToken] = React.useState(false);
+    const [showSecret, setShowSecret] = React.useState(false);
     const [settings, setSettings] = React.useState<ISettingsResponse | null>(null);
     const [tokenInput, setTokenInput] = React.useState('');
+    const [secretInput, setSecretInput] = React.useState('');
     const [isSaving, setIsSaving] = React.useState(false);
     const [feedback, setFeedback] = React.useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
@@ -95,19 +99,51 @@ export function BotSettingsCard({ context }: IBotSettingsCardProps) {
 
 
     /**
-     * Saves the new bot token to the backend.
+     * Generates a secure random webhook secret (32-character hex string).
+     *
+     * Why generate on client:
+     * Generating the secret client-side prevents it from being transmitted to the
+     * backend before the user explicitly saves it. This reduces attack surface.
+     */
+    const handleGenerateSecret = () => {
+        // Generate 16 random bytes and convert to hex (32 characters)
+        const array = new Uint8Array(16);
+        crypto.getRandomValues(array);
+        const hexString = Array.from(array, byte => byte.toString(16).padStart(2, '0')).join('');
+        setSecretInput(hexString);
+    };
+
+    /**
+     * Saves the bot token and/or webhook secret to the backend.
      *
      * Why async API call:
-     * The backend stores the token securely and validates it with Telegram's API.
-     * After a successful save, the webhook configuration may need to be updated,
-     * and the backend handles that automatically.
+     * The backend stores these values securely and validates formats before saving.
+     * After a successful save, the webhook configuration can be updated with the
+     * new secret.
      */
     const handleSaveClick = async () => {
-        // Validate token format
-        if (!validateTokenFormat(tokenInput)) {
+        // Validate inputs if provided
+        if (tokenInput && !validateTokenFormat(tokenInput)) {
             setFeedback({
                 type: 'error',
                 message: 'Invalid token format. Expected format: 123456789:ABCdefGHIjklMNOpqrsTUVwxyz'
+            });
+            return;
+        }
+
+        if (secretInput && secretInput.length < 16) {
+            setFeedback({
+                type: 'error',
+                message: 'Webhook secret must be at least 16 characters long'
+            });
+            return;
+        }
+
+        // Must provide at least one value
+        if (!tokenInput && !secretInput) {
+            setFeedback({
+                type: 'error',
+                message: 'Please provide at least one value to save'
             });
             return;
         }
@@ -116,29 +152,34 @@ export function BotSettingsCard({ context }: IBotSettingsCardProps) {
             setIsSaving(true);
             setFeedback(null);
 
-            await api.put('/plugins/telegram-bot/system/settings', {
-                botToken: tokenInput
-            });
+            // Build update object with only provided fields
+            const updates: { botToken?: string; webhookSecret?: string } = {};
+            if (tokenInput) updates.botToken = tokenInput;
+            if (secretInput) updates.webhookSecret = secretInput;
 
-            // Refresh settings to get the new masked token
+            await api.put('/plugins/telegram-bot/system/settings', updates);
+
+            // Refresh settings to get the new masked values
             const response = await api.get<{ success: boolean; settings: ISettingsResponse }>('/plugins/telegram-bot/system/settings');
             setSettings(response.settings);
 
             setFeedback({
                 type: 'success',
-                message: 'Bot token updated successfully!'
+                message: 'Settings updated successfully!'
             });
 
             setTokenInput('');
+            setSecretInput('');
             setShowToken(false);
+            setShowSecret(false);
 
             // Clear success message after 5 seconds
             setTimeout(() => setFeedback(null), 5000);
         } catch (err: any) {
-            console.error('Error saving bot token:', err);
+            console.error('Error saving settings:', err);
             setFeedback({
                 type: 'error',
-                message: err.response?.data?.error || err.message || 'Failed to save bot token'
+                message: err.response?.data?.error || err.message || 'Failed to save settings'
             });
         } finally {
             setIsSaving(false);
@@ -153,8 +194,20 @@ export function BotSettingsCard({ context }: IBotSettingsCardProps) {
      * prevents shoulder surfing and accidental exposure in screenshots or
      * screen shares. Only reveal when explicitly requested.
      */
-    const handleToggleVisibility = () => {
+    const handleToggleTokenVisibility = () => {
         setShowToken(!showToken);
+    };
+
+    /**
+     * Toggles webhook secret visibility between masked and revealed states.
+     *
+     * Why toggle instead of always showing:
+     * Webhook secrets are sensitive credentials. Keeping them masked by default
+     * prevents shoulder surfing and accidental exposure. Only reveal when
+     * explicitly requested.
+     */
+    const handleToggleSecretVisibility = () => {
+        setShowSecret(!showSecret);
     };
 
     if (loading) {
@@ -209,7 +262,7 @@ export function BotSettingsCard({ context }: IBotSettingsCardProps) {
                         />
                         <button
                             type="button"
-                            onClick={handleToggleVisibility}
+                            onClick={handleToggleTokenVisibility}
                             className={styles.visibility_toggle}
                             disabled={isSaving}
                             aria-label={showToken ? 'Hide token' : 'Show token'}
@@ -237,19 +290,81 @@ export function BotSettingsCard({ context }: IBotSettingsCardProps) {
                             </div>
                         </details>
                     )}
+                </div>
 
-                    {/* Save button - always visible */}
-                    <div className={styles.save_button_container}>
-                        <ui.Button
-                            onClick={handleSaveClick}
-                            variant="primary"
-                            size="md"
-                            disabled={isSaving || !tokenInput.trim() || !validateTokenFormat(tokenInput)}
-                            loading={isSaving}
+                {/* Webhook secret field */}
+                <div className={styles.field}>
+                    <label className={styles.label}>
+                        Webhook Secret
+                    </label>
+
+                    <div className={styles.input_group}>
+                        <ui.Input
+                            type={showSecret ? 'text' : 'password'}
+                            value={secretInput}
+                            onChange={(e) => setSecretInput(e.target.value)}
+                            placeholder={
+                                showSecret
+                                    ? (settings?.webhookSecret || 'abc123def456...')
+                                    : '••••••••••••••••••••••••'
+                            }
+                            disabled={isSaving}
+                            aria-label="Webhook secret"
+                        />
+                        <button
+                            type="button"
+                            onClick={handleToggleSecretVisibility}
+                            className={styles.visibility_toggle}
+                            disabled={isSaving}
+                            aria-label={showSecret ? 'Hide secret' : 'Show secret'}
                         >
-                            Save Settings
+                            {showSecret ? <EyeOff size={18} /> : <Eye size={18} />}
+                        </button>
+                    </div>
+
+                    {/* Generate button and instructions */}
+                    <div className="stack stack--sm">
+                        <ui.Button
+                            onClick={handleGenerateSecret}
+                            variant="secondary"
+                            size="sm"
+                            disabled={isSaving}
+                        >
+                            Generate New Secret
                         </ui.Button>
                     </div>
+
+                    {/* Webhook secret instructions - collapsible section */}
+                    {!settings?.webhookSecretConfigured && (
+                        <details className={styles.instructions}>
+                            <summary className={styles.instructions_header}>
+                                What is a webhook secret?
+                            </summary>
+                            <div className={styles.instructions_content}>
+                                <p className={styles.instructions_note}>
+                                    The webhook secret is a security token that Telegram sends with every webhook request.
+                                    It ensures that incoming requests are actually from Telegram's servers and not malicious actors.
+                                </p>
+                                <p className={styles.instructions_note}>
+                                    Click "Generate New Secret" to create a secure random string, then save it below.
+                                    You must configure this secret before the webhook can be deployed.
+                                </p>
+                            </div>
+                        </details>
+                    )}
+                </div>
+
+                {/* Save button - always visible */}
+                <div className={styles.save_button_container}>
+                    <ui.Button
+                        onClick={handleSaveClick}
+                        variant="primary"
+                        size="md"
+                        disabled={isSaving || (!tokenInput.trim() && !secretInput.trim())}
+                        loading={isSaving}
+                    >
+                        Save Settings
+                    </ui.Button>
                 </div>
 
                 {/* Feedback message (success or error) */}

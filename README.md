@@ -117,13 +117,12 @@ Before running the application, generate secure secrets:
 # Generate ADMIN_API_TOKEN (required for system monitoring)
 openssl rand -hex 32
 
-# Generate TELEGRAM_WEBHOOK_SECRET (if using Telegram integration)
-openssl rand -hex 32
-
 # For production Docker deployments, also generate:
 openssl rand -hex 32  # MONGO_ROOT_PASSWORD
 openssl rand -hex 32  # REDIS_PASSWORD
 ```
+
+**Note:** Telegram bot token and webhook secret are configured via the admin UI at `/system/plugins/telegram-bot/settings`, not environment variables.
 
 **IMPORTANT:** Never commit `.env` files to version control. The `.gitignore` is configured to exclude them, but always verify before pushing.
 

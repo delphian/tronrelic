@@ -488,18 +488,31 @@ The Telegram bot token is now managed through the admin UI:
 
 ---
 
-### TELEGRAM_WEBHOOK_SECRET
-- **Type:** `string`
-- **Default:** None
-- **Required:** No
-- **⚠️ Security:** Must be random and secret
+### Webhook Secret Configuration
 
-**Description:** Secret token for validating Telegram webhook requests. Prevents unauthorized webhook calls.
+Telegram webhook secrets are managed entirely through the database-backed admin UI. There is no environment variable for webhook secrets.
 
-**Generate:**
-```bash
-openssl rand -hex 32
-```
+**Configuration Method:**
+
+1. Navigate to `/system/plugins` in your TronRelic instance
+2. Click "Settings" on the telegram-bot plugin card
+3. Scroll to "Webhook Secret" field
+4. Click "Generate New Secret" to create a secure 32-character hex string, or enter your own (minimum 16 characters)
+5. Click "Save Settings"
+6. The webhook secret is stored securely in MongoDB
+
+**Benefits of database-backed configuration:**
+- No server restart required for secret rotation
+- Secure storage with automatic masking in API responses (shows only last 6 characters)
+- Runtime configuration changes via web interface
+- Audit trail through database timestamps
+- Centralized management alongside bot token
+
+**Security:**
+- Webhook secret must be at least 16 characters long
+- Recommended: Use the "Generate New Secret" button to create a cryptographically secure 32-character hex string
+- Secret is validated on every incoming webhook request
+- Used alongside IP allowlist for defense-in-depth
 
 ---
 
@@ -788,10 +801,11 @@ STORAGE_SECRET_ACCESS_KEY=<your-secret>
 Before deploying to production, review the security checklist in [README.md - Security Checklist](../README.md#security-checklist) and [operations-workflows.md - Production Setup](./operations/operations-workflows.md#production-setup-tronreliccom).
 
 **Critical environment variable security practices:**
-- Generate secure tokens with `openssl rand -hex 32` (ADMIN_API_TOKEN, TELEGRAM_WEBHOOK_SECRET, database passwords)
+- Generate secure tokens with `openssl rand -hex 32` (ADMIN_API_TOKEN, database passwords)
 - Never commit `.env` files to version control
 - Use TLS/SSL connection strings for MongoDB and Redis in production
 - Rotate API keys and credentials periodically
+- Use database-backed configuration for sensitive plugin settings (Telegram bot token and webhook secret are now managed via `/system/plugins/telegram-bot/settings` UI)
 
 ---
 

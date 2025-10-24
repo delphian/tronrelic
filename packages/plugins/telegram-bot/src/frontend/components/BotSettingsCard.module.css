@@ -75,6 +75,9 @@
     align-items: center;
 }
 
+/* Input Actions - Action buttons below input field (uses built-in stack utility) */
+/* Removed - use .stack utility class from globals.css instead */
+
 .visibility_toggle {
     display: inline-flex;
     align-items: center;
