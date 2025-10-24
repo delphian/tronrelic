@@ -78,6 +78,18 @@ stop_npm_processes() {
     fi
 }
 
+cleanup_orphaned_tsx() {
+    # Kill any orphaned tsx watch processes from previous runs
+    log INFO "Checking for orphaned tsx watch processes..."
+    local tsx_pids=$(pgrep -f "tsx watch src/index.ts" 2>/dev/null || true)
+
+    if [[ -n "$tsx_pids" ]]; then
+        log WARN "Found orphaned tsx watch processes, cleaning up"
+        pkill -9 -f "tsx watch src/index.ts" 2>/dev/null || true
+        log SUCCESS "Orphaned tsx processes cleaned up"
+    fi
+}
+
 cleanup_ports() {
     # Kill any processes still running on ports 3000 and 4000 (failsafe)
     log INFO "Checking for processes on ports 3000 and 4000..."
@@ -143,6 +155,9 @@ cd "${MONO_ROOT}"
 
 # Stop npm processes first (if running in npm mode)
 stop_npm_processes
+
+# Clean up any orphaned tsx processes from previous runs
+cleanup_orphaned_tsx
 
 # Determine which docker-compose files to try
 COMPOSE_FILES=()
