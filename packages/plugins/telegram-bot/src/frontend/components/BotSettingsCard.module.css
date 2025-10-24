@@ -1,8 +1,8 @@
 /**
- * Bot Settings Card CSS Module
+ * Bot Authorization Card CSS Module
  *
- * Scoped styles for the BotSettingsCard component that provides bot token
- * configuration and management interface within the Telegram bot plugin.
+ * Scoped styles for the BotSettingsCard component that provides bot authorization
+ * credential configuration (token and webhook secret) within the Telegram bot plugin.
  *
  * Uses design tokens from globals.css for consistent visual language.
  */

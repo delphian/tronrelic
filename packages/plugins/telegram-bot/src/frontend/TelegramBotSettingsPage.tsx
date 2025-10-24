@@ -3,6 +3,7 @@ import type { IFrontendPluginContext } from '@tronrelic/types';
 import { BotSettingsCard } from './components/BotSettingsCard';
 import { UserStatsCard } from './components/UserStatsCard';
 import { WebhookConfigCard } from './components/WebhookConfigCard';
+import { SettingsCard } from './components/SettingsCard';
 
 /**
  * Props for TelegramBotSettingsPage component.
@@ -118,6 +119,11 @@ export function TelegramBotSettingsPage({ context }: ITelegramBotSettingsPagePro
                     webhookSecretConfigured={webhookSecretConfigured}
                     onWebhookSecretConfiguredChange={setWebhookSecretConfigured}
                 />
+            </div>
+
+            {/* Settings card - full width */}
+            <div style={{ marginBottom: '3rem' }}>
+                <SettingsCard context={context} />
             </div>
 
             {/* Test notification form */}

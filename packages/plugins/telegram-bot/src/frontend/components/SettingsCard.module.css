@@ -1,0 +1,144 @@
+/**
+ * Settings Card CSS Module
+ *
+ * Scoped styles for the SettingsCard component that provides bot behavior
+ * configuration including rate limiting settings.
+ *
+ * Uses design tokens from globals.css for consistent visual language.
+ */
+
+.card_title {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    margin: 0;
+    font-size: var(--font-size-lg);
+    font-weight: 600;
+    color: var(--color-text-primary);
+}
+
+.loading {
+    padding: var(--spacing-lg);
+    text-align: center;
+    color: var(--color-text-secondary);
+}
+
+.content {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-lg);
+}
+
+/* Section styles */
+.section {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+}
+
+.section_title {
+    margin: 0;
+    font-size: var(--font-size-md);
+    font-weight: 600;
+    color: var(--color-text-primary);
+}
+
+.section_description {
+    margin: 0;
+    font-size: var(--font-size-sm);
+    color: var(--color-text-secondary);
+    line-height: 1.5;
+}
+
+/* Form field styles */
+.field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-xs);
+}
+
+.label {
+    font-size: var(--font-size-sm);
+    font-weight: 500;
+    color: var(--color-text-primary);
+}
+
+.input_with_unit {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+}
+
+.unit {
+    font-size: var(--font-size-sm);
+    color: var(--color-text-secondary);
+    white-space: nowrap;
+}
+
+.help_text {
+    margin: 0;
+    font-size: var(--font-size-xs);
+    color: var(--color-text-secondary);
+    line-height: 1.4;
+}
+
+/* Example configuration display */
+.example {
+    padding: var(--spacing-md);
+    background: var(--color-surface-secondary);
+    border-radius: var(--radius-md);
+    font-size: var(--font-size-sm);
+    color: var(--color-text-secondary);
+    line-height: 1.5;
+}
+
+.example strong {
+    color: var(--color-text-primary);
+}
+
+/* Button row */
+.button_row {
+    display: flex;
+    gap: var(--spacing-sm);
+    justify-content: flex-end;
+    padding-top: var(--spacing-md);
+}
+
+/* Feedback messages */
+.feedback_success,
+.feedback_error {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    padding: var(--spacing-md);
+    border-radius: var(--radius-md);
+    font-size: var(--font-size-sm);
+}
+
+.feedback_success {
+    background: var(--color-success-bg);
+    color: var(--color-success-text);
+    border: 1px solid var(--color-success-border);
+}
+
+.feedback_error {
+    background: var(--color-error-bg);
+    color: var(--color-error-text);
+    border: 1px solid var(--color-error-border);
+}
+
+/* Responsive adjustments */
+@container (max-width: 480px) {
+    .button_row {
+        flex-direction: column;
+    }
+
+    .input_with_unit {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .unit {
+        text-align: center;
+    }
+}
