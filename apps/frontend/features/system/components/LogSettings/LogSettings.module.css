@@ -1,0 +1,137 @@
+/**
+ * LogSettings Component Styles
+ *
+ * Provides scoped styling for the log level configuration card.
+ * Uses design tokens from globals.css for consistency.
+ */
+
+.container {
+    container-type: inline-size;
+    container-name: log-settings;
+}
+
+.title {
+    margin: 0 0 var(--spacing-sm) 0;
+    font-size: var(--font-size-lg);
+    font-weight: 600;
+    color: var(--color-text-primary);
+}
+
+.description {
+    margin: 0 0 var(--spacing-md) 0;
+    font-size: var(--font-size-sm);
+    color: var(--color-text-secondary);
+    line-height: 1.5;
+}
+
+.error {
+    padding: var(--spacing-sm) var(--spacing-md);
+    margin-bottom: var(--spacing-md);
+    background-color: var(--color-error-bg);
+    border: 1px solid var(--color-error);
+    border-radius: var(--radius-sm);
+    color: var(--color-error);
+    font-size: var(--font-size-sm);
+}
+
+.success {
+    padding: var(--spacing-sm) var(--spacing-md);
+    margin-bottom: var(--spacing-md);
+    background-color: var(--color-success-bg);
+    border: 1px solid var(--color-success);
+    border-radius: var(--radius-sm);
+    color: var(--color-success);
+    font-size: var(--font-size-sm);
+}
+
+.form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+}
+
+.field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-xs);
+}
+
+.label {
+    font-size: var(--font-size-sm);
+    font-weight: 500;
+    color: var(--color-text-primary);
+}
+
+.select {
+    padding: var(--spacing-sm) var(--spacing-md);
+    font-size: var(--font-size-base);
+    color: var(--color-text-primary);
+    background-color: var(--color-surface-secondary);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: border-color 0.2s ease;
+}
+
+.select:hover:not(:disabled) {
+    border-color: var(--color-primary);
+}
+
+.select:focus {
+    outline: none;
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 3px var(--color-primary-alpha);
+}
+
+.select:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.help_text {
+    margin: 0;
+    font-size: var(--font-size-sm);
+    color: var(--color-text-secondary);
+    line-height: 1.4;
+}
+
+.actions {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-md);
+    padding-top: var(--spacing-sm);
+}
+
+.unsaved_indicator {
+    font-size: var(--font-size-sm);
+    color: var(--color-warning);
+    font-style: italic;
+}
+
+/**
+ * Container queries for responsive behavior.
+ *
+ * On wider containers, display form fields horizontally.
+ */
+@container log-settings (min-width: 600px) {
+    .field {
+        flex-direction: row;
+        align-items: flex-start;
+        gap: var(--spacing-md);
+    }
+
+    .label {
+        min-width: 120px;
+        padding-top: var(--spacing-sm);
+    }
+
+    .select {
+        flex: 1;
+        max-width: 400px;
+    }
+
+    .help_text {
+        flex: 1;
+        max-width: 400px;
+    }
+}

@@ -235,6 +235,108 @@ describe('SystemLogService', () => {
                 service.level = 'warn';
             }).not.toThrow();
         });
+
+        /**
+         * Test: Should apply log level from SystemConfig during initialization.
+         *
+         * Verifies that initialize() reads logLevel from SystemConfig and applies it
+         * to the Pino logger, enabling runtime log level configuration.
+         */
+        it('should apply log level from SystemConfig during initialization', async () => {
+            // Mock SystemConfigService.getConfig() to return a config with logLevel 'debug'
+            const mockSystemConfigService = {
+                getConfig: vi.fn().mockResolvedValue({
+                    key: 'system',
+                    siteUrl: 'http://localhost:3000',
+                    systemLogsMaxCount: 1000000,
+                    systemLogsRetentionDays: 30,
+                    logLevel: 'debug',
+                    updatedAt: new Date()
+                })
+            };
+
+            // Mock the dynamic import of SystemConfigService
+            vi.doMock('../../system-config/system-config.service.js', () => ({
+                SystemConfigService: {
+                    getInstance: vi.fn().mockReturnValue(mockSystemConfigService)
+                }
+            }));
+
+            mockPino.level = 'info'; // Start with 'info'
+            await service.initialize(mockPino as any);
+
+            // Wait for async applyLogLevelFromConfig to complete
+            await new Promise(resolve => setTimeout(resolve, 50));
+
+            // Verify level was changed to 'debug' from SystemConfig
+            expect(mockPino.level).toBe('debug');
+        });
+
+        /**
+         * Test: applyLogLevelFromConfig() should update logger level.
+         *
+         * Verifies that calling applyLogLevelFromConfig() manually updates the
+         * Pino logger level based on the current SystemConfig value.
+         */
+        it('should update logger level when applyLogLevelFromConfig is called', async () => {
+            // Mock SystemConfigService.getConfig() to return a config with logLevel 'warn'
+            const mockSystemConfigService = {
+                getConfig: vi.fn().mockResolvedValue({
+                    key: 'system',
+                    siteUrl: 'http://localhost:3000',
+                    systemLogsMaxCount: 1000000,
+                    systemLogsRetentionDays: 30,
+                    logLevel: 'warn',
+                    updatedAt: new Date()
+                })
+            };
+
+            // Mock the dynamic import of SystemConfigService
+            vi.doMock('../../system-config/system-config.service.js', () => ({
+                SystemConfigService: {
+                    getInstance: vi.fn().mockReturnValue(mockSystemConfigService)
+                }
+            }));
+
+            await service.initialize(mockPino as any);
+            mockPino.level = 'info'; // Set to 'info' after initialization
+
+            // Manually call applyLogLevelFromConfig
+            await service.applyLogLevelFromConfig();
+
+            // Verify level was updated to 'warn' from SystemConfig
+            expect(mockPino.level).toBe('warn');
+        });
+
+        /**
+         * Test: applyLogLevelFromConfig() should handle missing SystemConfig gracefully.
+         *
+         * Verifies that if SystemConfig is unavailable or fails to load, the method
+         * logs a warning but doesn't throw an error or crash the application.
+         */
+        it('should handle SystemConfig errors gracefully', async () => {
+            // Mock SystemConfigService to throw an error
+            const mockSystemConfigService = {
+                getConfig: vi.fn().mockRejectedValue(new Error('Database unavailable'))
+            };
+
+            vi.doMock('../../system-config/system-config.service.js', () => ({
+                SystemConfigService: {
+                    getInstance: vi.fn().mockReturnValue(mockSystemConfigService)
+                }
+            }));
+
+            await service.initialize(mockPino as any);
+
+            // Should not throw
+            await expect(service.applyLogLevelFromConfig()).resolves.toBeUndefined();
+
+            // Should log warning to stderr
+            expect(consoleWarnSpy).toHaveBeenCalledWith(
+                'Failed to apply log level from SystemConfig, using default:',
+                expect.any(Error)
+            );
+        });
     });
 
     // ========================================================================

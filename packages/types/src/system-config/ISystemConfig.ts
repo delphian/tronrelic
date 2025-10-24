@@ -104,6 +104,39 @@ export interface ISystemConfig {
     systemLogsRetentionDays: number;
 
     /**
+     * Minimum log level for output to files and console.
+     *
+     * Controls which log messages are written to `.run/backend.log` and console output.
+     * MongoDB persistence of error/warn/fatal logs is UNAFFECTED by this setting
+     * (those severity levels are always saved to the database).
+     *
+     * Default: 'info'
+     *
+     * Available levels (from most verbose to least):
+     * - 'trace' (10) - Most verbose, includes all internal debug traces
+     * - 'debug' (20) - Development debugging information
+     * - 'info' (30) - Normal operational messages (default)
+     * - 'warn' (40) - Warning conditions that need attention
+     * - 'error' (50) - Error conditions that affect functionality
+     * - 'fatal' (60) - Critical failures that may crash the application
+     * - 'silent' (Infinity) - Suppresses all file/console output (MongoDB saving still works)
+     *
+     * Common use cases:
+     * - Development: 'debug' or 'trace' for verbose diagnostic output
+     * - Production: 'info' for normal operations
+     * - Debugging incidents: Temporarily set to 'debug' or 'trace'
+     * - Reducing noise: Set to 'warn' or 'error' to suppress routine logs
+     * - Log analysis only: Set to 'silent' to disable file output entirely
+     *
+     * Why configurable at runtime:
+     * Changing log verbosity shouldn't require redeploying the application.
+     * When debugging production issues, admins need the ability to increase
+     * log detail temporarily through the UI, then revert to normal levels
+     * once the issue is resolved.
+     */
+    logLevel: 'trace' | 'debug' | 'info' | 'warn' | 'error' | 'fatal' | 'silent';
+
+    /**
      * Timestamp of last configuration update.
      * Used for audit trails and cache invalidation.
      */
