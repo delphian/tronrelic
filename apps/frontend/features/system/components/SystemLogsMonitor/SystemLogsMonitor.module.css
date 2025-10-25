@@ -187,7 +187,7 @@
 }
 
 .log_row_new {
-    animation: flash-in 1s ease-out;
+    animation: flash-in 2s ease-out;
 }
 
 .timestamp {
