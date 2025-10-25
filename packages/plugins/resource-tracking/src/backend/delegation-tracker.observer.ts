@@ -3,7 +3,7 @@ import type {
     IBaseObserver,
     IBlockchainObserverService,
     IPluginDatabase,
-    ILogger
+    ISystemLogService
 } from '@tronrelic/types';
 import type { IDelegationTransaction } from '../shared/types/index.js';
 
