@@ -105,6 +105,28 @@ The web-based monitoring dashboard provides real-time visibility into all system
 - Manual sync and refresh trigger buttons
 - Visual status indicators and error displays
 
+### Navigation Menu System
+
+The navigation menu system manages application-wide navigation through a centralized service that coordinates menu items from core features and plugins. Each menu item (called a "menu node") represents a navigation link with ordering, icons, access control, and hierarchical relationships.
+
+**Key architectural decisions:**
+
+- **Centralized menu management** - Single source of truth for all navigation across the application
+- **Plugin integration** - Plugins register menu items through lifecycle hooks without modifying core code
+- **Event-driven updates** - Real-time WebSocket notifications when menu structure changes
+- **Dual persistence modes** - Database-backed entries and memory-only runtime entries
+- **Multiple namespaces** - Independent navigation contexts for different UI areas
+
+**See [system-menu.md](./system-menu.md) for complete details on:**
+- Menu service architecture and singleton pattern
+- Menu node lifecycle (create, update, delete, reorder)
+- REST API endpoints for menu management
+- WebSocket real-time update events
+- Plugin integration patterns
+- Event-driven validation system
+- Namespace isolation and container nodes
+- Testing patterns with MockPluginDatabase
+
 ## Quick Reference
 
 ### Monitoring System Health
@@ -161,6 +183,7 @@ curl -X PATCH \
 - [system-api.md](./system-api.md) - Complete API reference with all endpoints, authentication, request/response formats, and usage examples
 - [system-monitoring-dashboard.md](./system-monitoring-dashboard.md) - Web dashboard UI guide with tab-by-tab feature documentation
 - [system-logging.md](./system-logging.md) - Logging system architecture, log levels, MongoDB persistence, and accessing historical logs
+- [system-menu.md](./system-menu.md) - Navigation menu system architecture, API reference, plugin integration, and event-driven updates
 
 **Related topics:**
 - [plugins/plugins-blockchain-observers.md](../plugins/plugins-blockchain-observers.md) - How to build observers that react to transactions
