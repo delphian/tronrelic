@@ -448,13 +448,15 @@ export class SystemLogService implements ISystemLogService {
             const { level, message, metadata, timestamp } = data;
 
             // Extract service identifier from metadata
-            let service = 'tronrelic-backend';
+            let service = 'tronrelic';
             if (metadata.service) {
                 service = metadata.service;
             } else if (metadata.pluginId) {
-                service = metadata.pluginId;
+                // Prefix plugin logs with 'plugin:' to distinguish from core services
+                service = `plugin:${metadata.pluginId}`;
             } else if (metadata.pluginTitle) {
-                service = metadata.pluginTitle;
+                // Fallback to pluginTitle if pluginId not available
+                service = `plugin:${metadata.pluginTitle}`;
             } else if (metadata.module) {
                 service = `${service}:${metadata.module}`;
             }

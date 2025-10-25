@@ -369,7 +369,7 @@ export function SystemLogsMonitor({ token }: Props) {
                 <div className={styles.filter_group}>
                     <label className={styles.filter_label}>Severity Levels:</label>
                     <div className={styles.checkbox_group}>
-                        {(['trace', 'error', 'warn', 'info', 'debug'] as LogLevel[]).map(level => (
+                        {(['error', 'warn', 'info', 'debug', 'trace'] as LogLevel[]).map(level => (
                             <label key={level} className={styles.checkbox_label}>
                                 <input
                                     type="checkbox"
