@@ -503,7 +503,7 @@ describe('SystemLogService', () => {
                 expect.objectContaining({
                     level: 'warn',
                     message: 'Test warning',
-                    service: 'tronrelic-backend',
+                    service: 'tronrelic',
                     context: { component: 'test' },
                     resolved: false
                 })
@@ -524,7 +524,7 @@ describe('SystemLogService', () => {
                 expect.objectContaining({
                     level: 'error',
                     message: 'Test error',
-                    service: 'tronrelic-backend',
+                    service: 'tronrelic',
                     resolved: false
                 })
             );
@@ -606,7 +606,7 @@ describe('SystemLogService', () => {
 
             expect(SystemLog.create).toHaveBeenCalledWith(
                 expect.objectContaining({
-                    service: 'whale-alerts'
+                    service: 'plugin:whale-alerts'
                 })
             );
         });
@@ -621,7 +621,7 @@ describe('SystemLogService', () => {
 
             expect(SystemLog.create).toHaveBeenCalledWith(
                 expect.objectContaining({
-                    service: 'Whale Alerts'
+                    service: 'plugin:Whale Alerts'
                 })
             );
         });
@@ -636,7 +636,7 @@ describe('SystemLogService', () => {
 
             expect(SystemLog.create).toHaveBeenCalledWith(
                 expect.objectContaining({
-                    service: 'tronrelic-backend:blockchain'
+                    service: 'tronrelic:blockchain'
                 })
             );
         });
@@ -714,10 +714,10 @@ describe('SystemLogService', () => {
 
             await new Promise(resolve => setTimeout(resolve, 10));
 
-            // Should save with child bindings
+            // Should save with child bindings (plugin logs prefixed with 'plugin:')
             expect(SystemLog.create).toHaveBeenCalledWith(
                 expect.objectContaining({
-                    service: 'whale-alerts',
+                    service: 'plugin:whale-alerts',
                     context: expect.objectContaining({
                         pluginId: 'whale-alerts',
                         pluginTitle: 'Whale Alerts'
@@ -743,7 +743,7 @@ describe('SystemLogService', () => {
             // Call-time metadata should take precedence
             expect(SystemLog.create).toHaveBeenCalledWith(
                 expect.objectContaining({
-                    service: 'tronrelic-backend:markets',
+                    service: 'tronrelic:markets',
                     context: expect.objectContaining({
                         module: 'markets',
                         extra: 'data'
@@ -804,7 +804,7 @@ describe('SystemLogService', () => {
                 timestamp: logData.timestamp,
                 level: 'error',
                 message: 'Test error message',
-                service: 'tronrelic-backend',
+                service: 'tronrelic',
                 context: { userId: 123, action: 'login' },
                 resolved: false
             } as any);
@@ -1114,7 +1114,7 @@ describe('SystemLogService', () => {
                 { _id: 'warn', count: 30 }
             ]);
             const serviceAggregateExecMock = vi.fn().mockResolvedValue([
-                { _id: 'tronrelic-backend', count: 50 },
+                { _id: 'tronrelic', count: 50 },
                 { _id: 'whale-alerts', count: 30 }
             ]);
             const unresolvedExecMock = vi.fn().mockResolvedValue(25);
@@ -1146,7 +1146,7 @@ describe('SystemLogService', () => {
                     fatal: 0
                 },
                 byService: {
-                    'tronrelic-backend': 50,
+                    'tronrelic': 50,
                     'whale-alerts': 30
                 },
                 unresolved: 25
