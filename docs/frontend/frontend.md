@@ -176,6 +176,7 @@ Before committing any UI component or plugin page, verify:
 **Detailed documentation:**
 - [frontend-architecture.md](./frontend-architecture.md) - Complete file organization and feature module patterns
 - [frontend-component-guide.md](./frontend-component-guide.md) - Comprehensive styling guide with code examples
+- [design-token-layers.md](./design-token-layers.md) - Industry-standard token hierarchy and theming system
 - [documentation-guidance.md](../documentation-guidance.md) - Documentation standards and writing style
 
 **Related topics:**

@@ -1,0 +1,302 @@
+/**
+ * TronRelic Semantic Tokens (Layer 2)
+ *
+ * Semantic tokens composed from primitives.css foundation values.
+ * These tokens add meaning to primitive values (e.g., --color-primary instead of --blue-600).
+ * They provide consistent theming and can be changed globally to affect all components.
+ *
+ * Derived from analyzing actual usage patterns in Button.module.css, Card.module.css,
+ * Badge.module.css, Input.module.css, and globals.css utility classes.
+ *
+ * See docs/frontend/design-token-layers.md for usage guidelines.
+ */
+
+:root {
+    /* ========================================================================
+     * BUTTON COMPONENT TOKENS
+     * ======================================================================== */
+
+    /* Button - Base Properties */
+    --button-gap: var(--spacing-4);                    /* 0.5rem - icon spacing */
+    --button-border-radius: var(--radius-full);        /* 999px - pill shape */
+    --button-border-width: var(--border-width-thin);   /* 1px */
+    --button-font-weight: var(--font-weight-semibold); /* 600 */
+    --button-letter-spacing: var(--letter-spacing-normal); /* 0.01em */
+    --button-transition: background-color var(--transition-base),
+                         transform var(--transition-base),
+                         box-shadow var(--transition-base),
+                         border-color var(--transition-base);
+
+    /* Button - Size Variants */
+    --button-height-sm: 34px;
+    --button-padding-sm: var(--spacing-3) var(--spacing-6);  /* 0.4rem 0.85rem */
+    --button-font-size-sm: var(--font-size-sm);              /* 0.85rem */
+
+    --button-height-md: 42px;
+    --button-padding-md: 0.55rem var(--spacing-9);           /* 0.55rem 1.25rem */
+    --button-font-size-md: var(--font-size-base);            /* 0.95rem */
+
+    --button-height-lg: 50px;
+    --button-padding-lg: var(--spacing-5) 1.75rem;           /* 0.75rem 1.75rem */
+    --button-font-size-lg: var(--font-size-lg);              /* 1.05rem */
+
+    /* Button - Primary Variant */
+    --button-primary-background: linear-gradient(135deg, var(--color-primary), #6da3ff);
+    --button-primary-color: #0b1020;
+    --button-primary-shadow: 0 20px 36px rgba(58, 110, 255, 0.25);
+    --button-primary-shadow-hover: 0 28px 52px rgba(58, 110, 255, 0.32);
+
+    /* Button - Secondary Variant */
+    --button-secondary-background: rgba(79, 140, 255, 0.14);
+    --button-secondary-background-hover: rgba(79, 140, 255, 0.22);
+    --button-secondary-color: #eaf0ff;
+    --button-secondary-border: rgba(79, 140, 255, 0.4);
+
+    /* Button - Ghost Variant */
+    --button-ghost-background: transparent;
+    --button-ghost-background-hover: rgba(255, 255, 255, 0.05);
+    --button-ghost-color: #f5f7ff;
+    --button-ghost-border: rgba(255, 255, 255, 0.12);
+    --button-ghost-border-hover: rgba(255, 255, 255, 0.24);
+
+    /* Button - Danger Variant */
+    --button-danger-background: rgba(255, 111, 125, 0.14);
+    --button-danger-background-hover: rgba(255, 111, 125, 0.2);
+    --button-danger-color: #ffb3bb;
+    --button-danger-border: rgba(255, 111, 125, 0.5);
+
+    /* Button - State Modifiers */
+    --button-loading-opacity: var(--opacity-75);
+    --button-disabled-opacity: var(--opacity-55);
+
+    /* ========================================================================
+     * CARD COMPONENT TOKENS
+     * ======================================================================== */
+
+    /* Card - Base Properties */
+    --card-background: var(--color-surface);
+    --card-border: var(--border-width-thin) solid var(--color-border);
+    --card-border-radius: var(--radius-lg);
+    --card-shadow: var(--shadow-sm);
+    --card-backdrop-filter: blur(18px);
+    --card-transition: transform var(--transition-base),
+                       border-color var(--transition-base),
+                       box-shadow var(--transition-base);
+
+    /* Card - Hover State */
+    --card-border-hover: var(--color-border-strong);
+    --card-shadow-hover: var(--shadow-md);
+
+    /* Card - Tone Variants */
+    --card-background-muted: var(--color-surface-muted);
+    --card-background-accent: var(--color-surface-accent);
+    --card-shadow-elevated: var(--shadow-lg);
+
+    /* Card - Padding Variants */
+    --card-padding-sm: var(--spacing-7) var(--spacing-9);  /* 1rem 1.25rem */
+    --card-padding-md: var(--spacing-10);                  /* 1.5rem */
+    --card-padding-lg: var(--spacing-12);                  /* 2rem */
+
+    /* ========================================================================
+     * BADGE COMPONENT TOKENS
+     * ======================================================================== */
+
+    /* Badge - Base Properties */
+    --badge-gap: var(--spacing-2);                     /* 0.35rem */
+    --badge-border-radius: var(--radius-full);         /* 999px */
+    --badge-padding: var(--spacing-2) var(--spacing-5);/* 0.35rem 0.75rem */
+    --badge-font-size: var(--font-size-xs);            /* 0.72rem */
+    --badge-letter-spacing: var(--letter-spacing-wide);/* 0.08em */
+    --badge-border-width: var(--border-width-thin);    /* 1px */
+
+    /* Badge - Neutral Variant */
+    --badge-neutral-background: rgba(118, 164, 255, 0.22);
+    --badge-neutral-color: #bcd7ff;
+    --badge-neutral-border: rgba(118, 164, 255, 0.4);
+
+    /* Badge - Success Variant */
+    --badge-success-background: rgba(87, 212, 140, 0.18);
+    --badge-success-color: #9df5c1;
+    --badge-success-border: rgba(87, 212, 140, 0.4);
+
+    /* Badge - Warning Variant */
+    --badge-warning-background: rgba(255, 200, 87, 0.15);
+    --badge-warning-color: #ffe2a6;
+    --badge-warning-border: rgba(255, 200, 87, 0.4);
+
+    /* Badge - Danger Variant */
+    --badge-danger-background: rgba(255, 111, 125, 0.15);
+    --badge-danger-color: #ffc1c8;
+    --badge-danger-border: rgba(255, 111, 125, 0.45);
+
+    /* ========================================================================
+     * INPUT COMPONENT TOKENS
+     * ======================================================================== */
+
+    /* Input - Base Properties */
+    --input-background: rgba(10, 15, 26, 0.85);
+    --input-border: var(--border-width-thin) solid rgba(110, 160, 255, 0.18);
+    --input-border-radius: var(--radius-sm);
+    --input-padding: var(--spacing-5) var(--spacing-7); /* 0.75rem 1rem */
+    --input-font-size: 0.98rem;
+    --input-transition: border-color var(--transition-base),
+                        box-shadow var(--transition-base);
+
+    /* Input - Focus State */
+    --input-border-focus: rgba(110, 160, 255, 0.48);
+    --input-shadow-focus: 0 0 0 3px rgba(79, 140, 255, 0.24);
+
+    /* Input - Ghost Variant */
+    --input-ghost-background: transparent;
+    --input-ghost-border: rgba(255, 255, 255, 0.12);
+
+    /* ========================================================================
+     * MODAL COMPONENT TOKENS
+     * ======================================================================== */
+
+    /* Modal - Backdrop */
+    --modal-backdrop-background: rgba(3, 6, 15, 0.78);
+    --modal-backdrop-blur: blur(14px);
+    --modal-backdrop-padding: var(--spacing-12) var(--spacing-10); /* 2rem 1.5rem */
+    --modal-z-index: var(--z-index-modal);
+
+    /* Modal - Dialog */
+    --modal-dialog-background: rgba(10, 15, 26, 0.96);
+    --modal-dialog-border: var(--border-width-thin) solid rgba(120, 180, 255, 0.16);
+    --modal-dialog-border-radius: var(--radius-lg);
+    --modal-dialog-shadow: var(--shadow-lg);
+    --modal-dialog-max-height: min(90vh, 720px);
+
+    /* Modal - Size Variants */
+    --modal-width-sm: min(var(--max-width-sm), 100%);   /* 420px */
+    --modal-width-md: min(var(--max-width-md), 100%);   /* 640px */
+    --modal-width-lg: min(var(--max-width-lg), 100%);   /* 820px */
+    --modal-width-xl: min(var(--max-width-xl), 100%);   /* 1080px */
+
+    /* Modal - Header/Body */
+    --modal-header-padding: var(--spacing-9) var(--spacing-10); /* 1.25rem 1.5rem */
+    --modal-body-padding: var(--spacing-10);                    /* 1.5rem */
+    --modal-header-border: var(--border-width-thin) solid rgba(255, 255, 255, 0.06);
+
+    /* Modal - Close Button */
+    --modal-close-background: rgba(255, 255, 255, 0.08);
+    --modal-close-background-hover: rgba(255, 255, 255, 0.18);
+    --modal-close-size: 32px;
+    --modal-close-font-size: 1.25rem;
+
+    /* ========================================================================
+     * TOAST COMPONENT TOKENS
+     * ======================================================================== */
+
+    /* Toast - Viewport */
+    --toast-viewport-position-bottom: var(--spacing-10);   /* 1.5rem */
+    --toast-viewport-position-right: var(--spacing-10);    /* 1.5rem */
+    --toast-viewport-gap: var(--spacing-5);                /* 0.75rem */
+    --toast-viewport-z-index: var(--z-index-toast);
+    --toast-viewport-max-width: min(420px, calc(100vw - 3rem));
+
+    /* Toast - Item */
+    --toast-item-gap: var(--spacing-7);                    /* 1rem */
+    --toast-item-padding: var(--spacing-7) var(--spacing-8);/* 1rem 1.1rem */
+    --toast-item-border-radius: var(--radius-md);
+    --toast-item-background: rgba(10, 15, 26, 0.96);
+    --toast-item-border-width: var(--border-width-thin);
+    --toast-item-shadow: var(--shadow-lg);
+    --toast-item-backdrop-filter: blur(18px);
+
+    /* Toast - Tone Variants */
+    --toast-success-border: rgba(87, 212, 140, 0.4);
+    --toast-warning-border: rgba(255, 200, 87, 0.45);
+    --toast-danger-border: rgba(255, 111, 125, 0.45);
+    --toast-info-border: rgba(120, 180, 255, 0.35);
+
+    /* Toast - Actions */
+    --toast-action-background: rgba(255, 255, 255, 0.08);
+    --toast-action-background-hover: rgba(255, 255, 255, 0.16);
+    --toast-action-padding: var(--spacing-2) 0.6rem;      /* 0.35rem 0.6rem */
+    --toast-action-font-size: var(--font-size-sm);        /* 0.85rem */
+    --toast-dismiss-size: 28px;
+
+    /* ========================================================================
+     * LAYOUT UTILITY TOKENS
+     * ======================================================================== */
+
+    /* Stack Layout */
+    --stack-gap-default: var(--spacing-7);      /* 1rem */
+    --stack-gap-sm: var(--spacing-4);           /* 0.5rem */
+    --stack-gap-lg: var(--spacing-10);          /* 1.5rem */
+
+    /* Grid Layout */
+    --grid-gap-default: var(--spacing-10);      /* 1.5rem */
+    --grid-gap-sm: var(--spacing-9);            /* 1.25rem - stat-grid */
+
+    /* Page Layout */
+    --page-gap: var(--spacing-14);              /* 2.5rem */
+    --page-header-gap: var(--spacing-5);        /* 0.75rem */
+
+    /* Input Group */
+    --input-group-gap: var(--spacing-5);        /* 0.75rem */
+
+    /* ========================================================================
+     * TABLE COMPONENT TOKENS
+     * ======================================================================== */
+
+    /* Table - Base */
+    --table-background: rgba(6, 11, 20, 0.55);
+    --table-border-radius: var(--radius-md);
+
+    /* Table - Header */
+    --table-header-background: rgba(255, 255, 255, 0.05);
+    --table-header-font-size: var(--font-size-xs);        /* 0.72rem */
+    --table-header-letter-spacing: var(--letter-spacing-wide); /* 0.08em */
+
+    /* Table - Cells */
+    --table-cell-padding: var(--spacing-6) var(--spacing-8); /* 0.85rem 1.1rem */
+    --table-cell-border: var(--border-width-thin) solid rgba(255, 255, 255, 0.05);
+
+    /* Table - Row Hover */
+    --table-row-background-hover: rgba(79, 140, 255, 0.08);
+    --table-row-transition: background-color var(--transition-base);
+
+    /* ========================================================================
+     * FOCUS STATE TOKENS (Global)
+     * ======================================================================== */
+
+    --focus-outline-color: rgba(124, 155, 255, 0.95);
+    --focus-outline-width: 2px;
+    --focus-outline-offset: 3px;
+    --focus-shadow: 0 0 0 4px rgba(124, 155, 255, 0.24);
+
+    /* ========================================================================
+     * DIVIDER TOKENS
+     * ======================================================================== */
+
+    --divider-height: 1px;
+    --divider-background: rgba(255, 255, 255, 0.06);
+
+    /* ========================================================================
+     * ALERT COMPONENT TOKENS
+     * ======================================================================== */
+
+    /* Alert - Base */
+    --alert-padding: var(--spacing-8) 1.4rem;     /* 1.1rem 1.4rem */
+    --alert-border-radius: var(--radius-md);
+    --alert-border-width: var(--border-width-thin);
+    --alert-font-size: var(--font-size-sm);       /* 0.85rem */
+    --alert-background: rgba(10, 15, 26, 0.88);
+
+    /* Alert - Warning */
+    --alert-warning-background: rgba(255, 200, 87, 0.15);
+    --alert-warning-border: rgba(255, 200, 87, 0.4);
+    --alert-warning-color: #ffe2a6;
+
+    /* Alert - Danger */
+    --alert-danger-background: rgba(255, 111, 125, 0.18);
+    --alert-danger-border: rgba(255, 111, 125, 0.5);
+    --alert-danger-color: #ffc1c8;
+
+    /* Alert - Success */
+    --alert-success-background: rgba(87, 212, 140, 0.18);
+    --alert-success-border: rgba(87, 212, 140, 0.45);
+    --alert-success-color: #9df5c1;
+}
