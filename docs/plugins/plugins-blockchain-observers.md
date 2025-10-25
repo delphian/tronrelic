@@ -181,7 +181,7 @@ import type {
  * @param BaseObserver - Base observer class providing queue management and error isolation, needed to extend functionality for delegation tracking
  * @param observerRegistry - Registry for subscribing to specific transaction types, allows this observer to receive relevant blockchain events
  * @param websocket - Plugin-scoped WebSocket manager for room-based event emission with automatic namespacing
- * @param logger - Structured logger scoped to the plugin so delegation logs stay contextualized
+ * @param logger - Structured logger scoped to the plugin so delegation logs stay contextualized (ERROR and WARN logs are automatically persisted to MongoDB, see [system-logging.md](../../system/system-logging.md))
  * @returns Instantiated delegation tracker observer ready to process transactions
  */
 export function createDelegationTrackerObserver(

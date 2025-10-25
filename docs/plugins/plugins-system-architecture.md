@@ -269,7 +269,7 @@ Plugins never reach into `apps/backend/src` directly. Instead they rely on the i
 - `websocketService` exposes `emit` and `emitToWallet` so plugins can broadcast real-time events.
 - `BaseObserver` gives plugins the queueing, back-pressure, and telemetry scaffolding used throughout the blockchain pipeline (injected as a constructor, not imported directly).
 - `database` provides scoped MongoDB access with automatic collection prefixing for data persistence (see [Plugin Database Access](./plugins-database.md)).
-- `logger` delivers a plugin-scoped child logger so every log line includes plugin metadata without manual bindings.
+- `logger` delivers a plugin-scoped child logger so every log line includes plugin metadata without manual bindings (see [system-logging.md](../system/system-logging.md) for logging best practices).
 
 This contract keeps plugins decoupled from implementation details while still giving them powerful capabilities.
 
