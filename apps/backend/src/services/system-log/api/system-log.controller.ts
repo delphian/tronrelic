@@ -1,6 +1,5 @@
 import type { Request, Response, NextFunction } from 'express';
-import type { ISystemLogService } from '@tronrelic/types';
-import type { LogLevel } from '../database/index.js';
+import type { ISystemLogService, LogLevel } from '@tronrelic/types';
 
 /**
  * System Log Controller

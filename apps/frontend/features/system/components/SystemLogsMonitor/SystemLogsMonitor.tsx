@@ -1,11 +1,10 @@
 'use client';
 
 import React, { useEffect, useState, useRef } from 'react';
+import type { LogLevel } from '@tronrelic/types';
 import { config as runtimeConfig } from '../../../../lib/config';
 import { Button } from '../../../../components/ui/Button';
 import styles from './SystemLogsMonitor.module.css';
-
-type LogLevel = 'error' | 'warn' | 'info' | 'debug';
 
 interface SystemLog {
     _id: string;
@@ -81,7 +80,7 @@ export function SystemLogsMonitor({ token }: Props) {
     const [serviceFilter, setServiceFilter] = useState('');
 
     // Live polling (interval in milliseconds, 0 means disabled)
-    const [pollingInterval, setPollingInterval] = useState(0);
+    const [pollingInterval, setPollingInterval] = useState(10000);
 
     // Expandable log details
     const [expandedLogId, setExpandedLogId] = useState<string | null>(null);
@@ -314,6 +313,8 @@ export function SystemLogsMonitor({ token }: Props) {
      */
     const getLevelClass = (level: LogLevel) => {
         switch (level) {
+            case 'trace':
+                return styles.level_trace;
             case 'error':
                 return styles.level_error;
             case 'warn':
@@ -356,6 +357,10 @@ export function SystemLogsMonitor({ token }: Props) {
                         <div className={styles.stat_label}>Debug</div>
                         <div className={styles.stat_value}>{stats.byLevel.debug.toLocaleString()}</div>
                     </div>
+                    <div className={styles.stat_card}>
+                        <div className={styles.stat_label}>Trace</div>
+                        <div className={styles.stat_value}>{stats.byLevel.trace?.toLocaleString() ?? '0'}</div>
+                    </div>
                 </div>
             )}
 
@@ -364,7 +369,7 @@ export function SystemLogsMonitor({ token }: Props) {
                 <div className={styles.filter_group}>
                     <label className={styles.filter_label}>Severity Levels:</label>
                     <div className={styles.checkbox_group}>
-                        {(['error', 'warn', 'info', 'debug'] as LogLevel[]).map(level => (
+                        {(['trace', 'error', 'warn', 'info', 'debug'] as LogLevel[]).map(level => (
                             <label key={level} className={styles.checkbox_label}>
                                 <input
                                     type="checkbox"

@@ -240,6 +240,11 @@
     color: var(--color-text-muted);
 }
 
+.level_trace {
+    background: rgba(120, 120, 120, 0.1);
+    color: rgba(160, 160, 160, 0.9);
+}
+
 .status_resolved {
     color: var(--color-success);
     font-weight: 500;
