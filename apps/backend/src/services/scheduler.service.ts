@@ -127,7 +127,7 @@ export class SchedulerService {
                 this.scheduleJob(job);
                 logger.info(
                     { jobName: name, schedule: job.currentSchedule },
-                    'Scheduler job started'
+                    `Scheduler job started: ${name}`
                 );
             } else {
                 logger.info({ jobName: name }, 'Scheduler job disabled (skipped)');
@@ -158,7 +158,7 @@ export class SchedulerService {
             });
 
             const started = Date.now();
-            logger.info({ job: job.name }, 'Scheduler job started');
+            logger.info({ job: job.name }, `Scheduler job started: ${job.name}`);
 
             try {
                 await job.handler();
@@ -266,12 +266,20 @@ export class SchedulerService {
             // Start new task if enabled
             if (job.enabled) {
                 this.scheduleJob(job);
-                logger.info(
-                    { jobName, schedule: job.currentSchedule },
-                    'Rescheduled job with new configuration'
-                );
+                if (enabledChanged) {
+                    logger.warn({ jobName, schedule: job.currentSchedule }, `Scheduler job enabled: ${jobName}`);
+                } else {
+                    logger.info(
+                        { jobName, schedule: job.currentSchedule },
+                        'Rescheduled job with new configuration'
+                    );
+                }
             } else {
-                logger.info({ jobName }, 'Job disabled, not scheduling');
+                if (enabledChanged) {
+                    logger.warn({ jobName }, `Scheduler job disabled: ${jobName}`);
+                } else {
+                    logger.info({ jobName }, 'Job disabled, not scheduling');
+                }
             }
         }
     }
