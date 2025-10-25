@@ -11,7 +11,7 @@
 
 /* Full-width subtitle - override global max-width constraint */
 .subtitle {
-    font-size: 1rem;
+    font-size: var(--font-size-md);
     color: var(--color-text-muted);
     max-width: 100%;
 }
@@ -20,7 +20,7 @@
 .title_row {
     display: flex;
     align-items: center;
-    gap: 2rem;
+    gap: var(--spacing-12);
 }
 
 /* Bright red lightning icon next to title */
@@ -46,15 +46,15 @@
 .bot_cta_link {
     display: inline-flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--spacing-4);
     padding: 0.625rem 1.25rem;
     background: linear-gradient(135deg, rgba(79, 140, 255, 0.15) 0%, rgba(79, 140, 255, 0.08) 100%);
     border: 1.5px solid rgba(79, 140, 255, 0.3);
     border-radius: var(--radius-md);
     color: var(--color-primary);
     text-decoration: none;
-    font-size: 0.9rem;
-    font-weight: 600;
+    font-size: var(--font-size-base);
+    font-weight: var(--font-weight-semibold);
     white-space: nowrap;
     transition: all var(--transition-base);
     box-shadow: 0 2px 8px rgba(79, 140, 255, 0.1);
@@ -82,11 +82,11 @@
     .title_row {
         flex-direction: column;
         align-items: flex-start;
-        gap: 1rem;
+        gap: var(--spacing-7);
     }
 
     .bot_cta_link {
-        font-size: 0.85rem;
-        padding: 0.5rem 1rem;
+        font-size: var(--font-size-sm);
+        padding: var(--spacing-4) 1rem;
     }
 }

@@ -9,19 +9,19 @@
     justify-content: space-between;
     align-items: center;
     flex-wrap: wrap;
-    gap: 1rem;
+    gap: var(--spacing-7);
 }
 
 .header__content {
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
+    gap: var(--spacing-1);
 }
 
 .header__title {
     margin: 0;
-    font-size: 1.5rem;
-    font-weight: 600;
+    font-size: var(--font-size-2xl);
+    font-weight: var(--font-weight-semibold);
 }
 
 .header__description {
@@ -30,9 +30,9 @@
 
 /* Transaction Grid */
 .transactions {
-    margin-top: 1.25rem;
+    margin-top: var(--spacing-9);
     display: grid;
-    gap: 0.9rem;
+    gap: var(--spacing-6);
 }
 
 /* Transaction Card */
@@ -45,38 +45,38 @@
 .transaction__header {
     display: flex;
     justify-content: space-between;
-    gap: 1rem;
+    gap: var(--spacing-7);
     flex-wrap: wrap;
     align-items: center;
 }
 
 .transaction__amount {
-    font-size: 1.1rem;
-    font-weight: 600;
+    font-size: var(--font-size-lg);
+    font-weight: var(--font-weight-semibold);
 }
 
 .transaction__timestamp {
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
 }
 
 .transaction__badge {
-    margin-top: 0.4rem;
+    margin-top: var(--spacing-3);
 }
 
 .transaction__addresses {
-    margin-top: 0.5rem;
+    margin-top: var(--spacing-4);
     font-size: 0.82rem;
     color: rgba(220, 228, 255, 0.78);
     word-break: break-all;
 }
 
 .transaction__pattern {
-    margin-top: 0.4rem;
-    font-size: 0.78rem;
+    margin-top: var(--spacing-3);
+    font-size: var(--chip-font-size);
 }
 
 /* Empty State */
 .empty {
-    padding: 2rem 1rem;
+    padding: var(--spacing-12) var(--spacing-7);
     text-align: center;
 }

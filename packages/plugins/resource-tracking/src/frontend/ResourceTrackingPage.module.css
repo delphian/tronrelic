@@ -3,7 +3,7 @@
 .page {
     container-type: inline-size;
     container-name: resource-tracking-page;
-    padding: 1.5rem;
+    padding: var(--spacing-10);
 }
 
 /**
@@ -16,18 +16,18 @@
 
 .title {
     font-size: 1.875rem;
-    font-weight: 700;
+    font-weight: var(--font-weight-bold);
     color: inherit;
     margin: 0 0 0.5rem 0;
 }
 
 .subtitle {
-    font-size: 1rem;
+    font-size: var(--font-size-md);
     color: var(--color-text-muted);
     margin: 0;
     display: inline-flex;
     align-items: center;
-    gap: 0.25rem;
+    gap: var(--spacing-1);
 }
 
 .helpIcon {
@@ -50,91 +50,91 @@
 .cardHeader {
     margin-bottom: 1.5rem;
     padding-bottom: 1rem;
-    border-bottom: 1px solid var(--color-border);
+    border-bottom: var(--border-width-thin) solid var(--color-border);
 }
 
 .cardTitle {
-    font-size: 1.5rem;
-    font-weight: 700;
+    font-size: var(--font-size-2xl);
+    font-weight: var(--font-weight-bold);
     color: inherit;
     margin: 0 0 0.5rem 0;
 }
 
 .cardSubtitle {
-    font-size: 0.875rem;
+    font-size: var(--font-size-sm);
     color: var(--color-text-muted);
     margin: 0;
     display: inline-flex;
     align-items: center;
-    gap: 0.25rem;
+    gap: var(--spacing-1);
 }
 
 .summary {
     display: flex;
     flex-wrap: wrap;
-    gap: 1.5rem;
+    gap: var(--spacing-10);
     margin-bottom: 2rem;
     padding-bottom: 1.5rem;
-    border-bottom: 1px solid var(--color-border);
+    border-bottom: var(--border-width-thin) solid var(--color-border);
 }
 
 .summaryItem {
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
+    gap: var(--spacing-1);
 }
 
 .summaryLabel {
-    font-size: 0.875rem;
+    font-size: var(--font-size-sm);
     color: var(--color-text-muted);
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
 }
 
 .summaryValue {
     font-size: 1.25rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     color: inherit;
 }
 
 .controls {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: var(--spacing-4);
     margin-bottom: 2rem;
 }
 
 .controlRow {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--spacing-4);
     flex-wrap: wrap;
 }
 
 .label {
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     color: inherit;
     white-space: nowrap;
 }
 
 .buttonGroup {
     display: flex;
-    gap: 0.5rem;
+    gap: var(--spacing-4);
     background: rgba(255, 255, 255, 0.03);
     padding: 0.25rem;
     border-radius: 6px;
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    border: var(--border-width-thin) solid rgba(255, 255, 255, 0.08);
 }
 
 .periodButton {
     padding: 0.35rem 0.75rem;
-    font-size: 0.75rem;
-    font-weight: 500;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
     background: transparent;
     color: rgba(255, 255, 255, 0.6);
     border: none;
     border-radius: 4px;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all var(--transition-base);
 }
 
 .periodButton:hover {
@@ -154,13 +154,13 @@
 .toggleGroup {
     display: flex;
     flex-wrap: wrap;
-    gap: 1rem 1.5rem;
+    gap: var(--spacing-7) 1.5rem;
 }
 
 .toggle {
     display: flex;
     align-items: center;
-    gap: 0.25rem;
+    gap: var(--spacing-1);
     cursor: pointer;
     user-select: none;
 }
@@ -172,8 +172,8 @@
 }
 
 .toggleLabel {
-    font-size: 0.875rem;
-    font-weight: 500;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
 }
 
 .chartContainer {
@@ -196,7 +196,7 @@
 }
 
 .noDataHint {
-    font-size: 0.875rem;
+    font-size: var(--font-size-sm);
     color: var(--color-text-subtle);
 }
 
@@ -234,11 +234,11 @@
     min-height: 400px;
     color: var(--color-text-subtle);
     text-align: center;
-    gap: 1rem;
+    gap: var(--spacing-7);
 }
 
 .errorText {
-    font-size: 1rem;
+    font-size: var(--font-size-md);
     color: inherit;
     margin: 0;
     max-width: 500px;

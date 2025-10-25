@@ -7,15 +7,15 @@
 
 .filter_grid {
     display: grid;
-    gap: 1rem;
+    gap: var(--spacing-7);
     grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
 }
 
 .field {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
-    font-size: 0.85rem;
+    gap: var(--spacing-4);
+    font-size: var(--font-size-sm);
 }
 
 .field__label {

@@ -7,13 +7,13 @@
 .header {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: var(--spacing-4);
 }
 
 .header__title {
     margin: 0;
-    font-size: 1.5rem;
-    font-weight: 600;
+    font-size: var(--font-size-2xl);
+    font-weight: var(--font-weight-semibold);
 }
 
 .header__description {
@@ -24,12 +24,12 @@
 .form_section {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: var(--spacing-4);
 }
 
 .form_grid {
     display: grid;
-    gap: 0.85rem;
+    gap: var(--spacing-6);
     grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
 }
 
@@ -47,13 +47,13 @@
 
 .results__title {
     margin: 0;
-    font-size: 1.25rem;
-    font-weight: 600;
+    font-size: var(--font-size-xl);
+    font-weight: var(--font-weight-semibold);
 }
 
 .results__grid {
     display: grid;
-    gap: 0.75rem;
+    gap: var(--spacing-5);
     grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
 }
 
@@ -62,56 +62,56 @@
     background: rgba(8, 12, 24, 0.72);
     border-radius: var(--radius-md);
     padding: var(--spacing-3);
-    border-left: 3px solid;
+    border-left: var(--border-width-thick) solid;
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
+    gap: var(--spacing-1);
 }
 
 .metric--success {
-    border-left-color: #57D48C;
+    border-left-color: var(--color-success);
 }
 
 .metric--warning {
-    border-left-color: #FFC857;
+    border-left-color: var(--color-warning);
 }
 
 .metric--danger {
-    border-left-color: #FF6F7D;
+    border-left-color: var(--color-danger);
 }
 
 .metric__label {
-    font-size: 0.78rem;
-    opacity: 0.75;
+    font-size: var(--chip-font-size);
+    opacity: var(--opacity-75);
 }
 
 .metric__value {
     font-size: 1.3rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
 }
 
 .metric__helper {
     margin: 0;
-    font-size: 0.78rem;
-    opacity: 0.75;
+    font-size: var(--chip-font-size);
+    opacity: var(--opacity-75);
 }
 
 /* Footer Section */
 .footer {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: var(--spacing-4);
 }
 
 .footer__title {
-    margin: 0 0 0.25rem 0;
-    font-size: 1rem;
-    font-weight: 500;
+    margin: 0 0 var(--spacing-1) 0;
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-medium);
 }
 
 .shortcuts_grid {
     display: grid;
-    gap: 0.5rem;
+    gap: var(--spacing-4);
     grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
 }
 
@@ -123,6 +123,6 @@
 }
 
 .shortcut__address {
-    font-size: 0.72rem;
-    opacity: 0.7;
+    font-size: var(--font-size-xs);
+    opacity: var(--opacity-70);
 }

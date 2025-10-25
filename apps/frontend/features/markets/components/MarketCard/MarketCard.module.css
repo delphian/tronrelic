@@ -9,7 +9,7 @@
 .header {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.75rem;
+    gap: var(--spacing-5);
     justify-content: space-between;
     align-items: center;
 }
@@ -24,34 +24,34 @@
 
 .header__badges {
     display: flex;
-    gap: 0.5rem;
+    gap: var(--spacing-4);
     flex-wrap: wrap;
 }
 
 /* Metrics Grid */
 .metrics {
     display: grid;
-    gap: 1rem;
+    gap: var(--spacing-7);
     grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
 }
 
 .metric__label {
-    font-size: 0.78rem;
+    font-size: var(--chip-font-size);
     text-transform: uppercase;
-    letter-spacing: 0.08em;
+    letter-spacing: var(--letter-spacing-wide);
     color: var(--color-text-subtle);
 }
 
 .metric__value {
-    font-size: 1.1rem;
-    font-weight: 600;
+    font-size: var(--font-size-lg);
+    font-weight: var(--font-weight-semibold);
 }
 
 /* Info Sections */
 .section {
     background: rgba(11, 16, 28, 0.6);
     border-radius: var(--radius-md);
-    padding: 1rem 1.25rem;
+    padding: var(--spacing-7) var(--spacing-9);
 }
 
 .section--secondary {
@@ -60,14 +60,14 @@
 
 .section__title {
     margin-top: 0;
-    margin-bottom: 0.5rem;
-    font-size: 1rem;
-    font-weight: 600;
+    margin-bottom: var(--spacing-4);
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-semibold);
 }
 
 .section__description {
     margin-top: 0;
-    margin-bottom: 0.75rem;
+    margin-bottom: var(--spacing-5);
 }
 
 .section__list {
@@ -75,11 +75,11 @@
     padding: 0;
     margin: 0;
     display: grid;
-    gap: 0.35rem;
+    gap: var(--spacing-2);
 }
 
 .section__list_item {
-    font-size: 0.9rem;
+    font-size: var(--font-size-base);
 }
 
 /* Footer */
@@ -101,11 +101,11 @@
     }
 
     .metric__label {
-        font-size: 0.72rem;
+        font-size: var(--font-size-xs);
     }
 
     .metric__value {
-        font-size: 1rem;
+        font-size: var(--font-size-md);
     }
 }
 
@@ -115,11 +115,11 @@
     }
 
     .section {
-        padding: 0.75rem 1rem;
+        padding: var(--spacing-5) var(--spacing-7);
     }
 
     .section__title {
-        font-size: 0.9rem;
-        margin-bottom: 0.4rem;
+        font-size: var(--font-size-base);
+        margin-bottom: var(--spacing-3);
     }
 }

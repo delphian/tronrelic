@@ -9,35 +9,35 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 1.25rem 3rem;
+    padding: var(--spacing-9) var(--container-padding-desktop);
     width: min(var(--breakpoint-desktop), 100%);
     margin: 0 auto;
 }
 
 .logo {
-    font-weight: 700;
-    font-size: 1.3rem;
-    letter-spacing: -0.02em;
+    font-weight: var(--font-weight-bold);
+    font-size: var(--font-size-lg);
+    letter-spacing: var(--letter-spacing-tight);
 }
 
 .links {
     display: flex;
-    gap: 1.1rem;
+    gap: var(--spacing-8);
     align-items: center;
-    font-size: 0.95rem;
+    font-size: var(--font-size-base);
     color: var(--color-text-muted);
 }
 
 .link {
-    padding: 0.4rem 0.6rem;
-    border-radius: 999px;
+    padding: var(--spacing-3) var(--spacing-5);
+    border-radius: var(--radius-full);
     transition: color var(--transition-base), background-color var(--transition-base);
 }
 
 .link:hover,
 .link--active {
-    color: #f7fbff;
-    background: rgba(79, 140, 255, 0.14);
+    color: var(--color-text);
+    background: var(--button-secondary-background);
 }
 
 /* Dropdown Navigation */
@@ -48,14 +48,14 @@
 .dropdown__trigger {
     display: inline-flex;
     align-items: center;
-    gap: 0.35rem;
-    padding: 0.4rem 0.6rem;
-    border-radius: 999px;
+    gap: var(--spacing-2);
+    padding: var(--spacing-3) var(--spacing-5);
+    border-radius: var(--radius-full);
     border: none;
     background: transparent;
     color: var(--color-text-muted);
-    font-size: 0.95rem;
-    font-weight: 500;
+    font-size: var(--font-size-base);
+    font-weight: var(--font-weight-medium);
     text-transform: capitalize;
     cursor: pointer;
     transition: color var(--transition-base), background-color var(--transition-base);
@@ -63,13 +63,13 @@
 
 .dropdown__trigger:hover,
 .dropdown__trigger--active {
-    color: #f7fbff;
-    background: rgba(79, 140, 255, 0.14);
+    color: var(--color-text);
+    background: var(--button-secondary-background);
 }
 
 .dropdown__arrow {
     display: inline-flex;
-    font-size: 0.7rem;
+    font-size: var(--font-size-xs);
     transition: transform var(--transition-base);
 }
 
@@ -79,17 +79,17 @@
 
 .dropdown__menu {
     position: absolute;
-    top: calc(100% + 0.5rem);
+    top: calc(100% + var(--spacing-4));
     left: 0;
     min-width: 180px;
-    background: rgba(10, 15, 26, 0.96);
-    border: 1px solid rgba(120, 180, 255, 0.16);
+    background: var(--modal-dialog-background);
+    border: var(--modal-dialog-border);
     border-radius: var(--radius-md);
     box-shadow: var(--shadow-lg);
     backdrop-filter: blur(18px);
-    padding: 0.5rem;
-    z-index: 100;
-    animation: dropdownSlideIn 0.2s ease-out;
+    padding: var(--spacing-4);
+    z-index: var(--z-index-dropdown);
+    animation: dropdownSlideIn var(--transition-slow) ease-out;
 }
 
 @keyframes dropdownSlideIn {
@@ -105,18 +105,18 @@
 
 .dropdown__item {
     display: block;
-    padding: 0.6rem 0.8rem;
+    padding: var(--spacing-5) var(--spacing-6);
     border-radius: var(--radius-sm);
     color: var(--color-text-muted);
-    font-size: 0.95rem;
+    font-size: var(--font-size-base);
     transition: color var(--transition-base), background-color var(--transition-base);
     white-space: nowrap;
 }
 
 .dropdown__item:hover,
 .dropdown__item--active {
-    color: #f7fbff;
-    background: rgba(79, 140, 255, 0.14);
+    color: var(--color-text);
+    background: var(--button-secondary-background);
 }
 
 /* Wallet Container and Connect Wallet Button Styles */
@@ -142,21 +142,21 @@
 .connect_wallet_btn {
     position: relative;
     background: linear-gradient(135deg, rgba(75, 140, 255, 0.28), rgba(109, 163, 255, 0.22));
-    border: 2px solid rgba(75, 140, 255, 0.6);
-    color: #f0f4ff;
-    font-weight: 600;
-    font-size: 0.95rem;
-    padding: 0.6rem 1.3rem 0.6rem 1.1rem;
-    border-radius: 999px;
+    border: var(--border-width-medium) solid rgba(75, 140, 255, 0.6);
+    color: var(--color-text);
+    font-weight: var(--font-weight-semibold);
+    font-size: var(--font-size-base);
+    padding: var(--spacing-5) var(--spacing-9) var(--spacing-5) var(--spacing-8);
+    border-radius: var(--radius-full);
     display: inline-flex;
     align-items: center;
-    gap: 0.6rem;
+    gap: var(--spacing-5);
     cursor: not-allowed;
     transition: all var(--transition-base);
     box-shadow: 0 4px 16px rgba(75, 140, 255, 0.2),
                 0 2px 8px rgba(0, 0, 0, 0.3);
     backdrop-filter: blur(12px);
-    opacity: 0.7;
+    opacity: var(--opacity-70);
 }
 
 .connect_wallet_btn:hover {
@@ -164,15 +164,15 @@
     box-shadow: 0 6px 20px rgba(75, 140, 255, 0.28),
                 0 3px 10px rgba(0, 0, 0, 0.35);
     transform: translateY(-1px);
-    opacity: 0.8;
+    opacity: var(--opacity-80);
 }
 
 .connect_wallet_btn:focus-visible {
-    outline: 2px solid rgba(124, 155, 255, 0.95);
-    outline-offset: 3px;
-    box-shadow: 0 0 0 4px rgba(124, 155, 255, 0.24),
+    outline: var(--focus-outline-width) solid var(--focus-outline-color);
+    outline-offset: var(--focus-outline-offset);
+    box-shadow: var(--focus-shadow),
                 0 6px 20px rgba(75, 140, 255, 0.28);
-    opacity: 0.85;
+    opacity: var(--opacity-85);
 }
 
 /**
@@ -200,14 +200,14 @@
 .coming_soon_badge {
     display: inline-flex;
     align-items: center;
-    padding: 0.15rem 0.45rem;
+    padding: var(--spacing-1) var(--spacing-4);
     background: rgba(150, 190, 255, 0.14);
-    border: 1px solid rgba(150, 190, 255, 0.25);
-    border-radius: 999px;
-    font-size: 0.6rem;
-    font-weight: 700;
+    border: var(--border-width-thin) solid rgba(150, 190, 255, 0.25);
+    border-radius: var(--radius-full);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-bold);
     letter-spacing: 0.06em;
     color: rgba(200, 220, 255, 0.8);
     text-transform: uppercase;
-    margin-left: 0.3rem;
+    margin-left: var(--spacing-3);
 }

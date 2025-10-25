@@ -13,22 +13,22 @@
 }
 
 .toggle_row:hover {
-    background: rgba(79, 140, 255, 0.08);
+    background: var(--color-primary-alpha-10);
 }
 
 .toggle_cell {
-    padding: 0.75rem 1rem !important;
-    border-bottom: 1px solid rgba(120, 180, 255, 0.12);
+    padding: var(--spacing-5) var(--spacing-7) !important;
+    border-bottom: var(--border-width-thin) solid rgba(120, 180, 255, 0.12);
 }
 
 .toggle_content {
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 0.5rem;
+    gap: var(--spacing-4);
     color: var(--color-primary);
-    font-size: 0.85rem;
-    font-weight: 500;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
 }
 
 .toggle_label {
@@ -42,7 +42,7 @@
 
 .details_cell {
     padding: 0 !important;
-    border-bottom: 1px solid rgba(120, 180, 255, 0.16);
+    border-bottom: var(--border-width-thin) solid rgba(120, 180, 255, 0.16);
 }
 
 .details_container {
@@ -56,14 +56,14 @@
 .details_grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 2rem;
-    padding: 2rem;
+    gap: var(--spacing-12);
+    padding: var(--spacing-12);
 }
 
 @container market-details (max-width: 900px) {
     .details_grid {
         grid-template-columns: 1fr;
-        gap: 2rem;
+        gap: var(--spacing-12);
     }
 }
 
@@ -75,8 +75,8 @@
 
 .section_title {
     margin: 0;
-    font-size: 1.25rem;
-    font-weight: 600;
+    font-size: var(--font-size-xl);
+    font-weight: var(--font-weight-semibold);
     color: #f7fbff;
 }
 
@@ -84,7 +84,7 @@
 .market_link {
     display: inline-flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--spacing-4);
     color: var(--color-primary);
     text-decoration: none;
     transition: color var(--transition-base);
@@ -96,25 +96,25 @@
 }
 
 .market_link:focus-visible {
-    outline: 2px solid var(--color-primary);
-    outline-offset: 2px;
-    border-radius: 2px;
+    outline: var(--border-width-medium) solid var(--color-primary);
+    outline-offset: var(--border-width-medium);
+    border-radius: var(--border-width-medium);
 }
 
 .external_icon {
     flex-shrink: 0;
-    opacity: 0.7;
+    opacity: var(--opacity-70);
     transition: opacity var(--transition-base);
 }
 
 .market_link:hover .external_icon {
-    opacity: 1;
+    opacity: var(--opacity-100);
 }
 
 .subsection_title {
-    margin: 0 0 0.75rem;
-    font-size: 1rem;
-    font-weight: 600;
+    margin: 0 0 var(--spacing-5);
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-semibold);
     color: #f7fbff;
 }
 
@@ -122,7 +122,7 @@
 .stat_grid {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
-    gap: 0.75rem;
+    gap: var(--spacing-5);
 }
 
 @container market-details (max-width: 600px) {
@@ -136,26 +136,26 @@
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
-    gap: 1rem;
+    gap: var(--spacing-7);
 }
 
 /* Social icons container */
 .social_icons {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--spacing-4);
     flex-shrink: 0;
-    margin-top: 0.25rem;
+    margin-top: var(--spacing-1);
 }
 
 .social_icon {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 32px;
-    height: 32px;
-    background: rgba(79, 140, 255, 0.1);
-    border: 1px solid rgba(79, 140, 255, 0.2);
+    width: var(--icon-size-xl);
+    height: var(--icon-size-xl);
+    background: var(--color-primary-alpha-10);
+    border: var(--border-width-thin) solid rgba(79, 140, 255, 0.2);
     border-radius: var(--radius-sm);
     color: var(--color-primary);
     text-decoration: none;
@@ -163,25 +163,25 @@
 }
 
 .social_icon:hover {
-    background: rgba(79, 140, 255, 0.18);
+    background: var(--color-primary-alpha-18);
     border-color: rgba(79, 140, 255, 0.35);
     color: #6DA3FF;
     transform: translateY(-1px);
 }
 
 .social_icon:focus-visible {
-    outline: 2px solid var(--color-primary);
-    outline-offset: 2px;
+    outline: var(--border-width-medium) solid var(--color-primary);
+    outline-offset: var(--border-width-medium);
 }
 
 .social_icon svg {
-    width: 16px;
-    height: 16px;
-    opacity: 0.85;
+    width: var(--icon-size-sm);
+    height: var(--icon-size-sm);
+    opacity: var(--opacity-85);
 }
 
 .social_icon:hover svg {
-    opacity: 1;
+    opacity: var(--opacity-100);
 }
 
 @container market-details (max-width: 600px) {
@@ -190,7 +190,7 @@
     }
 
     .social_icons {
-        gap: 0.4rem;
+        gap: var(--spacing-3);
     }
 
     .social_icon {
