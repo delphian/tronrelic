@@ -197,32 +197,40 @@ Mix CSS Module classes with global utility classes when appropriate:
 
 ### Step 5: Use CSS Variables for Theming
 
-Always reference design tokens from `globals.css` in your CSS Module:
+Always reference design tokens from `semantic-tokens.css` in your CSS Module:
 
 ```css
 /* MarketCard.module.css */
 .card {
     background: var(--color-surface);
-    border: 1px solid var(--color-border);
+    border: var(--border-width-thin) solid var(--color-border);
     border-radius: var(--radius-md);
-    padding: 1.5rem;
+    padding: var(--spacing-10);
     transition: all var(--transition-base);
 }
 
 .title {
     color: var(--color-primary);
-    font-size: 1.2rem;
+    font-size: var(--font-size-lg);
+    font-weight: var(--font-weight-semibold);
 }
 ```
 
 **Never hardcode values:**
 
 ```css
-/* ❌ Bad - hardcoded values break consistency */
+/* ❌ Bad - hardcoded values break consistency and theming */
 .card {
     background: rgba(12, 18, 34, 0.88);
+    border: 1px solid rgba(120, 180, 255, 0.14);
     border-radius: 16px;
+    padding: 1.5rem;  /* Should be var(--spacing-10) */
     color: #4b8cff;
+}
+
+.title {
+    font-size: 1.2rem;  /* Should be var(--font-size-lg) */
+    font-weight: 600;   /* Should be var(--font-weight-semibold) */
 }
 ```
 
@@ -275,6 +283,7 @@ export function MarketCard({ name, price, availability }: MarketCardProps) {
  *
  * Responsive card layout using container queries to adapt to available space.
  * Combines global .surface utility with component-specific layout and typography.
+ * All values use design tokens from semantic-tokens.css for consistency.
  */
 
 .card {
@@ -286,19 +295,19 @@ export function MarketCard({ name, price, availability }: MarketCardProps) {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin-bottom: 1rem;
+    margin-bottom: var(--spacing-7);
 }
 
 .title {
-    font-size: 1.2rem;
-    font-weight: 600;
+    font-size: var(--font-size-lg);
+    font-weight: var(--font-weight-semibold);
     color: var(--color-primary);
 }
 
 .price {
-    font-size: 1.8rem;
-    font-weight: 700;
-    color: #f5f7ff;
+    font-size: var(--font-size-2xl);
+    font-weight: var(--font-weight-bold);
+    color: var(--color-text);
 }
 
 /* Container query for responsive behavior */
@@ -306,11 +315,11 @@ export function MarketCard({ name, price, availability }: MarketCardProps) {
     .header {
         flex-direction: column;
         align-items: flex-start;
-        gap: 0.5rem;
+        gap: var(--spacing-4);
     }
 
     .price {
-        font-size: 1.4rem;
+        font-size: var(--font-size-xl);
     }
 }
 ```
@@ -318,31 +327,43 @@ export function MarketCard({ name, price, availability }: MarketCardProps) {
 **Key points:**
 - `.surface` and `.badge` are utility classes from `globals.css`
 - `.card`, `.header`, `.title`, `.price` are scoped to this component via CSS Modules
-- CSS variables like `var(--color-primary)` ensure design system consistency
+- **All values use design tokens** - spacing (`--spacing-*`), typography (`--font-size-*`, `--font-weight-*`), colors (`--color-*`)
 - Container queries adapt the component to its available space
 - JSDoc comments explain the "why" before showing the "how"
 
 ## Design System Reference
 
-### Core CSS Variables
+### Core CSS Variables (Semantic Tokens)
 
-These variables form the foundation of TronRelic's visual language:
+TronRelic uses a **3-layer design token system**. Component styles should reference **semantic tokens** from `semantic-tokens.css`, which compose primitive values from `primitives.css`.
 
-| Variable | Purpose | Example Value |
-|----------|---------|---------------|
-| `--color-background` | Page background | `#03060f` |
-| `--color-surface` | Card/panel backgrounds | `rgba(12, 18, 34, 0.88)` |
-| `--color-border` | Default borders | `rgba(120, 180, 255, 0.14)` |
-| `--color-primary` | Primary actions/links | `#4b8cff` |
-| `--color-success` | Success states | `#57d48c` |
-| `--color-warning` | Warning states | `#ffc857` |
-| `--color-danger` | Error/danger states | `#ff6f7d` |
-| `--color-text-muted` | Secondary text | `rgba(226, 234, 255, 0.64)` |
-| `--radius-sm`, `--radius-md`, `--radius-lg` | Border radii | `10px`, `16px`, `24px` |
-| `--shadow-sm`, `--shadow-md`, `--shadow-lg` | Elevation shadows | Various rgba values |
-| `--transition-base` | Standard transitions | `160ms ease` |
+**Key semantic tokens for component styling:**
 
-**Always use these variables instead of hardcoding colors or values.** This ensures consistency and makes theme updates trivial.
+| Category | Token | Purpose |
+|----------|-------|---------|
+| **Colors** | `--color-text` | Primary text color |
+| | `--color-text-muted` | Secondary/muted text |
+| | `--color-text-subtle` | Tertiary/subtle text |
+| | `--color-primary` | Primary brand color |
+| | `--color-secondary` | Secondary brand color |
+| | `--color-success` | Success state |
+| | `--color-warning` | Warning state |
+| | `--color-danger` | Error/danger state |
+| | `--color-surface` | Card/panel backgrounds |
+| | `--color-background` | Page background |
+| | `--color-border` | Default borders |
+| **Spacing** | `--spacing-1` through `--spacing-20` | Consistent spacing scale (0.25rem to 5rem) |
+| **Typography** | `--font-size-xs` through `--font-size-3xl` | Font size scale |
+| | `--font-weight-normal`, `--font-weight-medium`, `--font-weight-semibold`, `--font-weight-bold` | Font weights |
+| | `--line-height-tight`, `--line-height-normal`, `--line-height-relaxed` | Line heights |
+| **Borders** | `--border-width-thin`, `--border-width-medium` | Border widths |
+| | `--radius-sm`, `--radius-md`, `--radius-lg`, `--radius-full` | Border radii |
+| **Shadows** | `--shadow-sm`, `--shadow-md`, `--shadow-lg` | Elevation shadows |
+| **Transitions** | `--transition-base` | Standard transition timing |
+
+**Always use semantic tokens instead of hardcoding values.** This ensures consistency, enables theming, and makes global design updates trivial.
+
+**See [frontend-design-token-layers.md](./frontend-design-token-layers.md) for complete token reference and usage guidelines.**
 
 ### Available Utility Classes
 
@@ -545,7 +566,7 @@ export function TransactionCard({ transaction }: { transaction: ITransaction }) 
 .transaction-card__grid {
     display: grid;
     grid-template-columns: 1fr; /* Single column by default */
-    gap: 1rem;
+    gap: var(--spacing-7);
 }
 
 /* When container is 480px+ wide, show 2 columns */
@@ -789,12 +810,12 @@ Plugins render in various contexts (full pages, cards, modals, slideouts). **Nev
 Plugins should reference the same CSS variables as the core application:
 
 ```tsx
-// In plugin component
+// In plugin component - inline styles (prefer CSS Modules when possible)
 <div style={{
     background: 'var(--color-surface)',
-    border: '1px solid var(--color-border)',
+    border: 'var(--border-width-thin) solid var(--color-border)',
     borderRadius: 'var(--radius-md)',
-    padding: '1.5rem'
+    padding: 'var(--spacing-10)'
 }}>
     Plugin content
 </div>
@@ -820,7 +841,7 @@ import styles from './MyPlugin.module.css';
 ```css
 .pluginGrid {
     display: grid;
-    gap: 1.5rem;
+    gap: var(--spacing-10);
     container-type: inline-size;
 }
 
@@ -831,17 +852,25 @@ import styles from './MyPlugin.module.css';
 }
 ```
 
-**Avoid - inline styles that duplicate design tokens:**
+**Avoid - inline styles with hardcoded values:**
 ```tsx
-// Bad - hardcoded values and inline styles
+// ❌ Bad - hardcoded values instead of design tokens
 <div style={{
-    background: 'rgba(12, 18, 34, 0.88)',
-    padding: '1.5rem',
-    borderRadius: '16px'
+    background: 'rgba(12, 18, 34, 0.88)',  /* Should be var(--color-surface) */
+    padding: '1.5rem',                      /* Should be var(--spacing-10) */
+    borderRadius: '16px'                    /* Should be var(--radius-lg) */
 }}>
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+    <div style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '1.5rem'                       /* Should be var(--spacing-10) */
+    }}>
         <h2>Plugin Title</h2>
-        <p style={{ color: 'rgba(226, 234, 255, 0.64)' }}>Description</p>
+        <p style={{
+            color: 'rgba(226, 234, 255, 0.64)' /* Should be var(--color-text-muted) */
+        }}>
+            Description
+        </p>
     </div>
 </div>
 ```
@@ -1026,7 +1055,11 @@ The `ClientTime` component renders a placeholder (`—`) during SSR, then shows 
 
 Before shipping any UI component or plugin page, verify:
 
-- [ ] Uses CSS variables from `globals.css` (no hardcoded colors or sizes)
+- [ ] **Uses design tokens exclusively** - No hardcoded colors, spacing, font sizes, or weights
+  - [ ] Spacing: `var(--spacing-*)` instead of `1rem`, `10px`, etc.
+  - [ ] Colors: `var(--color-*)` instead of `#fff`, `rgba(...)`, etc.
+  - [ ] Typography: `var(--font-size-*)`, `var(--font-weight-*)`, `var(--line-height-*)` instead of `1.2rem`, `600`, `1.5`, etc.
+  - [ ] Borders: `var(--border-width-*)`, `var(--radius-*)` instead of `1px`, `16px`, etc.
 - [ ] Component-specific styles are in a colocated CSS Module file (`ComponentName.module.css`)
 - [ ] CSS Module is imported using `import styles from './ComponentName.module.css'`
 - [ ] Uses container queries in CSS Modules for component-level responsiveness
