@@ -11,13 +11,17 @@
  * - Reset/normalization specific to plugin components
  */
 
-/* Plugin-specific CSS variables (if needed in the future) */
+/* Plugin-specific CSS variables
+ *
+ * These colors extend the semantic token system for resource-tracking-specific use cases.
+ * They use semantic color tokens as their base values to maintain consistency with the design system.
+ */
 :root {
-    /* Resource tracking color palette */
-    --resource-tracking-energy-delegated: #22c55e;
-    --resource-tracking-energy-reclaimed: #ef4444;
-    --resource-tracking-net-energy: #3b82f6;
-    --resource-tracking-bandwidth-delegated: #a855f7;
-    --resource-tracking-bandwidth-reclaimed: #f97316;
-    --resource-tracking-net-bandwidth: #06b6d4;
+    /* Resource tracking color palette - using semantic tokens */
+    --resource-tracking-energy-delegated: var(--color-success);
+    --resource-tracking-energy-reclaimed: var(--color-danger);
+    --resource-tracking-net-energy: var(--color-primary);
+    --resource-tracking-bandwidth-delegated: var(--color-primary);
+    --resource-tracking-bandwidth-reclaimed: var(--color-warning);
+    --resource-tracking-net-bandwidth: var(--color-info);
 }

@@ -54,26 +54,26 @@
         right: 0;
         bottom: 0;
         width: 45%;
-        background: rgba(10, 15, 26, 0.98);
-        border-left: 1px solid rgba(120, 180, 255, 0.16);
-        box-shadow: -8px 0 48px rgba(5, 12, 28, 0.65);
-        backdrop-filter: blur(18px);
-        z-index: 10;
+        background: var(--modal-background);
+        border-left: var(--border-width-thin) solid var(--color-border);
+        box-shadow: var(--shadow-xl);
+        backdrop-filter: var(--backdrop-blur);
+        z-index: var(--z-index-modal-low);
         container-type: inline-size;
         display: flex;
         flex-direction: column;
-        animation: slideout-slide-in 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+        animation: slideout-slide-in var(--transition-slow) var(--transition-timing-smooth);
     }
 
     /* Table container adjusts width when slideout is open */
     .dashboard_container.slideout-open :global(.market-table-container) {
         width: 55%;
-        transition: width 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+        transition: width var(--transition-slow) var(--transition-timing-smooth);
     }
 
     .dashboard_container :global(.market-table-container) {
         width: 100%;
-        transition: width 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+        transition: width var(--transition-slow) var(--transition-timing-smooth);
     }
 
     /* Hide Availability and Updated columns when slideout is open */
@@ -84,7 +84,7 @@
 
     .dashboard_container :global(.table-col-availability),
     .dashboard_container :global(.table-col-updated) {
-        transition: opacity 0.2s ease;
+        transition: opacity var(--transition-base);
     }
 }
 
@@ -93,9 +93,9 @@
     .dashboard_container :global(.slideout-backdrop) {
         position: fixed;
         inset: 0;
-        background: rgba(3, 6, 15, 0.78);
-        z-index: 1100;
-        animation: slideout-fade-in 0.25s ease-out;
+        background: var(--modal-backdrop);
+        z-index: var(--z-index-modal-backdrop);
+        animation: slideout-fade-in var(--transition-fast) ease-out;
     }
 
     .dashboard_container :global(.slideout-panel) {
@@ -105,14 +105,14 @@
         bottom: 0;
         left: 0;
         width: 100vw;
-        background: rgba(10, 15, 26, 0.98);
+        background: var(--modal-background);
         border: none;
         box-shadow: none;
-        backdrop-filter: blur(18px);
-        z-index: 1110;
+        backdrop-filter: var(--backdrop-blur);
+        z-index: var(--z-index-modal);
         display: flex;
         flex-direction: column;
-        animation: slideout-scale-in 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+        animation: slideout-scale-in var(--transition-slow) var(--transition-timing-smooth);
     }
 }
 
@@ -123,7 +123,7 @@
     justify-content: space-between;
     padding: var(--modal-header-padding);
     border-bottom: var(--modal-header-border);
-    background: rgba(12, 18, 34, 0.6);
+    background: var(--surface-secondary);
 }
 
 /* Slideout Tabs */
@@ -168,12 +168,12 @@
 }
 
 .dashboard_container :global(.slideout-tab:hover) {
-    background: rgba(79, 140, 255, 0.08);
+    background: var(--segmented-control-button-background-hover);
 }
 
 .dashboard_container :global(.slideout-tab--active) {
-    background: linear-gradient(135deg, rgba(79, 140, 255, 0.38), rgba(79, 140, 255, 0.18));
-    color: #f7fbff;
+    background: var(--segmented-control-button-background-active);
+    color: var(--color-text);
 }
 
 /* Close Button */
@@ -215,20 +215,20 @@
 }
 
 .dashboard_container :global(.slideout-body::-webkit-scrollbar) {
-    width: 8px;
+    width: var(--scrollbar-width);
 }
 
 .dashboard_container :global(.slideout-body::-webkit-scrollbar-track) {
-    background: rgba(255, 255, 255, 0.03);
+    background: var(--scrollbar-track-background);
 }
 
 .dashboard_container :global(.slideout-body::-webkit-scrollbar-thumb) {
-    background: rgba(120, 180, 255, 0.2);
+    background: var(--scrollbar-thumb-background);
     border-radius: var(--radius-full);
 }
 
 .dashboard_container :global(.slideout-body::-webkit-scrollbar-thumb:hover) {
-    background: rgba(120, 180, 255, 0.35);
+    background: var(--scrollbar-thumb-background-hover);
 }
 
 /* Animations */
@@ -265,7 +265,7 @@
 @container (max-width: 800px) {
     /* Reduce stat-grid items to 60% size in 2-column layout */
     .dashboard_container :global(.slideout-body) .stat_grid {
-        gap: 0.6rem;
+        gap: var(--spacing-3);
         grid-template-columns: repeat(2, 1fr);
     }
 
@@ -275,14 +275,14 @@
 
     /* Reduce stat-grid card padding */
     .dashboard_container :global(.slideout-body) .stat_grid :global(.surface--padding-sm) {
-        padding: 0.6rem 0.75rem;
+        padding: var(--spacing-3) var(--spacing-4);
     }
 
     .dashboard_container :global(.slideout-body) .stat_grid :global(.surface--padding-md) {
-        padding: 0.9rem;
+        padding: var(--spacing-5);
     }
 
     .dashboard_container :global(.slideout-body) .stat_grid :global(.surface--padding-lg) {
-        padding: 1.2rem;
+        padding: var(--spacing-6);
     }
 }

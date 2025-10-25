@@ -49,13 +49,13 @@
 
 /* Info Sections */
 .section {
-    background: rgba(11, 16, 28, 0.6);
+    background: var(--surface-secondary);
     border-radius: var(--radius-md);
     padding: var(--spacing-7) var(--spacing-9);
 }
 
 .section--secondary {
-    background: rgba(11, 16, 28, 0.45);
+    background: var(--surface-tertiary);
 }
 
 .section__title {
