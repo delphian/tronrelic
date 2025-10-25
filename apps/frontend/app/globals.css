@@ -1,35 +1,18 @@
-:root {
-  color-scheme: dark;
-  font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
-  background-color: #03060f;
-  color: #f6f7fb;
-  --font-body: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
-  --color-background: #03060f;
-  --color-surface: rgba(12, 18, 34, 0.88);
-  --color-surface-muted: rgba(9, 14, 26, 0.78);
-  --color-surface-accent: linear-gradient(135deg, rgba(44, 123, 255, 0.22), rgba(78, 47, 255, 0.18));
-  --color-border: rgba(120, 180, 255, 0.14);
-  --color-border-strong: rgba(120, 180, 255, 0.25);
-  --color-primary: #4b8cff;
-  --color-primary-strong: #246bff;
-  --color-secondary: #3fd1ff;
-  --color-success: #57d48c;
-  --color-warning: #ffc857;
-  --color-danger: #ff6f7d;
-  --color-text-muted: rgba(226, 234, 255, 0.64);
-  --color-text-subtle: rgba(226, 234, 255, 0.44);
-  --shadow-sm: 0 8px 18px rgba(7, 15, 30, 0.35);
-  --shadow-md: 0 18px 36px rgba(10, 20, 45, 0.42);
-  --shadow-lg: 0 28px 48px rgba(5, 12, 28, 0.55);
-  --radius-sm: 10px;
-  --radius-md: 16px;
-  --radius-lg: 24px;
-  --transition-base: 160ms ease;
-  --breakpoint-mobile: 768px;
-  --breakpoint-tablet: 1200px;
-  --breakpoint-desktop: 1440px;
-}
+/**
+ * TronRelic Global Styles
+ *
+ * This file contains global resets, base element styles, and utility classes.
+ * Foundation tokens (primitives) are defined in primitives.css.
+ * Semantic tokens (composed meaning) are defined in semantic-tokens.css.
+ *
+ * See docs/frontend/design-token-layers.md for design token reference.
+ * See docs/frontend/frontend-component-guide.md for component styling patterns.
+ */
 
+@import './primitives.css';
+@import './semantic-tokens.css';
+
+/* Global Resets */
 * {
   box-sizing: border-box;
 }
