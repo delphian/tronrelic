@@ -484,12 +484,21 @@ export class SystemLogService implements ISystemLogService {
      * - logger.error(obj, message)
      * - logger.error(obj, message, ...interpolationValues)
      *
+     * **Defensive parsing:**
+     *
+     * Pino accepts various argument patterns. This method defensively extracts
+     * the message and context from any valid combination:
+     * - String only: message is the string, context is empty
+     * - Object only: message extracted from obj.msg/message, or stringified object as fallback
+     * - Object + String: context is object, message is string
+     * - Object + String + args: same as above, additional args ignored for MongoDB
+     *
      * **Metadata merging:**
      *
      * Combines child logger bindings (pluginId, pluginTitle, module, etc.)
      * with call-time metadata. Call-time metadata takes precedence.
      *
-     * @param level - Log level (error or warn)
+     * @param level - Log level (trace, debug, info, warn, error, fatal)
      * @param args - Arguments passed to logging method
      */
     private async saveLogFromArgs(level: LogLevel, args: any[]): Promise<void> {
@@ -497,21 +506,50 @@ export class SystemLogService implements ISystemLogService {
             let message = 'No message provided';
             let context: Record<string, any> = {};
 
-            // Parse Pino arguments
-            if (args.length === 1) {
+            // Defensive argument parsing to handle all Pino call patterns
+            if (args.length === 0) {
+                // No arguments - use default message
+                message = 'No message provided';
+            } else if (args.length === 1) {
+                // Single argument - could be string or object
                 if (typeof args[0] === 'string') {
                     message = args[0];
                 } else if (typeof args[0] === 'object' && args[0] !== null) {
                     context = args[0];
-                    message = args[0].msg || args[0].message || JSON.stringify(args[0]);
+                    // Try to extract message from object properties
+                    message = args[0].msg || args[0].message || 'No message provided';
                 }
-            } else if (args.length >= 2) {
-                if (typeof args[0] === 'object' && args[0] !== null) {
-                    context = args[0];
+            } else {
+                // Multiple arguments - most common pattern is (object, string, ...args)
+                const firstArg = args[0];
+                const secondArg = args[1];
+
+                // First argument is typically the context object
+                if (typeof firstArg === 'object' && firstArg !== null) {
+                    context = firstArg;
+                } else if (typeof firstArg === 'string') {
+                    // Edge case: first arg is string, second might be interpolation value
+                    message = firstArg;
+                    // Don't process further args for MongoDB (Pino handles interpolation)
+                    return await this.saveLog({
+                        level,
+                        message,
+                        metadata: { ...this.bindings },
+                        timestamp: new Date()
+                    });
                 }
-                if (typeof args[1] === 'string') {
-                    message = args[1];
+
+                // Second argument is typically the message string
+                if (typeof secondArg === 'string') {
+                    message = secondArg;
+                } else if (typeof secondArg === 'object' && secondArg !== null) {
+                    // Edge case: both args are objects (unusual but defensive)
+                    context = { ...context, ...secondArg };
+                    message = secondArg.msg || secondArg.message || 'No message provided';
                 }
+
+                // Additional args (args[2+]) are typically interpolation values for Pino's
+                // format strings. We don't need them for MongoDB since we store the raw message.
             }
 
             // Merge child logger bindings with call-time metadata
