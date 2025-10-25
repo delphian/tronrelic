@@ -53,6 +53,7 @@ export class SystemLogService implements ISystemLogService {
     private static instance: SystemLogService;
     private initialized = false;
     private pino: pino.Logger | null = null;
+    private bindings: pino.Bindings = {};
 
     /**
      * Private constructor enforces singleton pattern.
@@ -404,6 +405,12 @@ export class SystemLogService implements ISystemLogService {
      * Child loggers must wrap Pino children to ensure MongoDB logging works.
      * If we returned raw Pino children, they would bypass MongoDB persistence.
      *
+     * **Bindings inheritance:**
+     *
+     * Child loggers inherit parent bindings and merge them with new bindings.
+     * These bindings are stored on the SystemLogService instance and used
+     * when saving logs to MongoDB.
+     *
      * @param bindings - Metadata to include in all child logger messages
      * @returns A new SystemLogService wrapping the Pino child logger
      */
@@ -412,6 +419,7 @@ export class SystemLogService implements ISystemLogService {
             // Return a child that will also use console fallback
             const childLogger = new SystemLogService();
             childLogger.initialized = this.initialized;
+            childLogger.bindings = { ...this.bindings, ...bindings };
             return childLogger;
         }
 
@@ -419,6 +427,7 @@ export class SystemLogService implements ISystemLogService {
         const childLogger = new SystemLogService();
         childLogger.pino = pinoChild;
         childLogger.initialized = this.initialized;
+        childLogger.bindings = { ...this.bindings, ...bindings };
         return childLogger;
     }
 
@@ -473,6 +482,11 @@ export class SystemLogService implements ISystemLogService {
      * - logger.error(obj, message)
      * - logger.error(obj, message, ...interpolationValues)
      *
+     * **Metadata merging:**
+     *
+     * Combines child logger bindings (pluginId, pluginTitle, module, etc.)
+     * with call-time metadata. Call-time metadata takes precedence.
+     *
      * @param level - Log level (error or warn)
      * @param args - Arguments passed to logging method
      */
@@ -498,10 +512,14 @@ export class SystemLogService implements ISystemLogService {
                 }
             }
 
+            // Merge child logger bindings with call-time metadata
+            // Call-time metadata takes precedence over bindings
+            const mergedMetadata = { ...this.bindings, ...context };
+
             await this.saveLog({
                 level,
                 message,
-                metadata: context,
+                metadata: mergedMetadata,
                 timestamp: new Date()
             });
         } catch (error) {

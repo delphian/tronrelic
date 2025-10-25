@@ -1,4 +1,4 @@
-import type { IPluginDatabase, ILogger } from '@tronrelic/types';
+import type { IPluginDatabase, ISystemLogService } from '@tronrelic/types';
 import type { IResourceTrackingConfig } from '../shared/types/index.js';
 
 /**
@@ -15,7 +15,7 @@ import type { IResourceTrackingConfig } from '../shared/types/index.js';
  * @param database - Plugin-scoped database service for deleting expired records
  * @param logger - Scoped logger for job execution tracking
  */
-export async function runPurgeJob(database: IPluginDatabase, logger: ILogger): Promise<void> {
+export async function runPurgeJob(database: IPluginDatabase, logger: ISystemLogService): Promise<void> {
     logger.debug('Starting purge job');
 
     try {

@@ -132,7 +132,7 @@
  * - Service discovery API (query available services)
  */
 
-import type { ILogger, IPluginDatabase } from '@tronrelic/types';
+import type { ISystemLogService, IPluginDatabase } from '@tronrelic/types';
 
 /**
  * Public interface for Telegram bot service.
@@ -208,7 +208,7 @@ export interface ITelegramBotService {
 export class TelegramBotService implements ITelegramBotService {
     constructor(
         private readonly database: IPluginDatabase,
-        private readonly logger: ILogger
+        private readonly logger: ISystemLogService
     ) {}
 
     async sendMessage(chatId: string, text: string, options?: {
