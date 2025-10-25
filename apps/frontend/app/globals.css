@@ -22,9 +22,7 @@ body {
   min-height: 100vh;
   font-family: var(--font-body);
   background-color: var(--color-background);
-  background-image: radial-gradient(circle at 0% -20%, var(--color-primary-alpha-18), transparent 45%),
-    radial-gradient(circle at 90% 0%, rgba(63, 209, 255, 0.14), transparent 60%),
-    linear-gradient(140deg, rgba(14, 21, 38, 0.85), rgba(6, 10, 20, 0.96));
+  background-image: var(--gradient-body-background);
   color: var(--color-text);
 }
 
@@ -40,30 +38,30 @@ a:hover {
 main {
   width: min(var(--breakpoint-desktop), 100%);
   margin: 0 auto;
-  padding: 2.5rem 3rem 3.5rem;
+  padding: var(--spacing-14) var(--spacing-15) var(--spacing-16);
 }
 
 .page {
   display: grid;
-  gap: 2.5rem;
+  gap: var(--page-gap);
 }
 
 .page-header {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: var(--page-header-gap);
 }
 
 .page-title {
-  font-size: clamp(1.8rem, 3vw, 2.6rem);
-  font-weight: 700;
-  letter-spacing: -0.02em;
+  font-size: clamp(var(--font-size-2xl), 3vw, var(--font-size-3xl));
+  font-weight: var(--font-weight-bold);
+  letter-spacing: var(--letter-spacing-tight);
 }
 
 .page-subtitle {
-  font-size: 1rem;
+  font-size: var(--font-size-md);
   color: var(--color-text-muted);
-  max-width: 64ch;
+  max-width: var(--max-width-prose);
 }
 
 /* Card/Surface styles removed - migrated to Card.module.css */
@@ -90,27 +88,27 @@ main {
 
 .input-group {
   display: flex;
-  gap: 0.75rem;
+  gap: var(--input-group-gap);
   align-items: center;
 }
 
 .stack {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: var(--stack-gap-default);
 }
 
 .stack--sm {
-  gap: 0.5rem;
+  gap: var(--stack-gap-sm);
 }
 
 .stack--lg {
-  gap: 1.5rem;
+  gap: var(--stack-gap-lg);
 }
 
 .grid {
   display: grid;
-  gap: 1.5rem;
+  gap: var(--grid-gap-default);
 }
 
 .grid--cols-2 {
@@ -127,24 +125,24 @@ main {
 
 .stat-grid {
   display: grid;
-  gap: 1.25rem;
+  gap: var(--grid-gap-sm);
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
 }
 
 .stat-card__label {
   color: var(--color-text-muted);
-  font-size: 0.85rem;
-  letter-spacing: 0.08em;
+  font-size: var(--font-size-sm);
+  letter-spacing: var(--letter-spacing-wide);
   text-transform: uppercase;
 }
 
 .stat-card__value {
-  font-size: 1.6rem;
-  font-weight: 700;
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-bold);
 }
 
 .stat-card__delta {
-  font-size: 0.85rem;
+  font-size: var(--font-size-sm);
   color: var(--color-text-muted);
 }
 
@@ -180,32 +178,6 @@ main {
 /* Pagination styles removed - migrated to Pagination.module.css */
 
 /* Toast styles removed - migrated to ToastProvider.module.css */
-
-.alert {
-  padding: 0.85rem 1.1rem;
-  border-radius: var(--radius-md);
-  border: 1px solid transparent;
-  font-size: 0.9rem;
-  background: var(--color-surface);
-}
-
-.alert--warning {
-  background: var(--color-warning-alpha-15);
-  border-color: var(--color-warning-alpha-40);
-  color: var(--color-warning-text);
-}
-
-.alert--danger {
-  background: var(--color-danger-alpha-18);
-  border-color: var(--color-danger-alpha-50);
-  color: var(--color-danger-text);
-}
-
-.alert--success {
-  background: var(--color-success-alpha-18);
-  border-color: var(--color-success-alpha-45);
-  color: var(--color-success-text);
-}
 
 /* Modal styles removed - migrated to ModalProvider.module.css */
 
@@ -303,8 +275,8 @@ button:focus-visible {
 .form-footer {
   display: flex;
   justify-content: flex-end;
-  gap: 0.75rem;
-  margin-top: 1.5rem;
+  gap: var(--spacing-5);
+  margin-top: var(--spacing-10);
 }
 
 .table-scroll {
@@ -333,11 +305,11 @@ button:focus-visible {
 /* Market Dashboard Slideout styles removed - migrated to MarketDashboard.module.css */
 @media (max-width: 1024px) {
   .layout-nav {
-    padding: 1.1rem 1.5rem;
+    padding: var(--spacing-8) var(--spacing-10);
   }
 
   main {
-    padding: 2rem 1.5rem 3rem;
+    padding: var(--spacing-12) var(--spacing-10) var(--spacing-15);
   }
 
   .grid--cols-2,
@@ -349,7 +321,7 @@ button:focus-visible {
 @media (max-width: 640px) {
   .layout-nav {
     flex-direction: column;
-    gap: 0.85rem;
+    gap: var(--spacing-6);
     align-items: flex-start;
   }
 
@@ -358,7 +330,7 @@ button:focus-visible {
   }
 
   main {
-    padding: 1.5rem 1.25rem 2.5rem;
+    padding: var(--spacing-10) var(--spacing-9) var(--spacing-14);
   }
 
   .input-group {

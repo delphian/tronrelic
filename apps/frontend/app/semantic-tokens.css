@@ -356,6 +356,9 @@
 
     --gradient-primary: linear-gradient(135deg, rgba(79, 140, 255, 0.38), rgba(79, 140, 255, 0.18));
     --gradient-meter: linear-gradient(90deg, rgba(124, 155, 255, 0.9), rgba(101, 217, 165, 0.9));
+    --gradient-body-background: radial-gradient(circle at 0% -20%, var(--color-primary-alpha-18), transparent 45%),
+                                radial-gradient(circle at 90% 0%, rgba(63, 209, 255, 0.14), transparent 60%),
+                                linear-gradient(140deg, rgba(14, 21, 38, 0.85), rgba(6, 10, 20, 0.96));
 
     /* ========================================================================
      * CHIP/PILL TOKENS
