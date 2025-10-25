@@ -834,7 +834,7 @@ export class BlockchainService {
         const timings: Record<string, number> = {};
         const startTotal = Date.now();
 
-        logger.info({ blockNumber }, 'Processing blockchain block');
+        logger.info({ blockNumber }, `Processing block ${blockNumber}`);
 
         try {
             // Stage 1: Fetch block from TronGrid first to get its timestamp for calculations
