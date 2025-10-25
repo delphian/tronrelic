@@ -11,76 +11,76 @@
 /* Whale Dashboard Layout */
 .whale-dashboard {
     display: grid;
-    gap: 2rem;
+    gap: var(--spacing-10);
 }
 
 .whale-dashboard__header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    gap: 1rem;
+    gap: var(--spacing-5);
     flex-wrap: wrap;
 }
 
 .whale-dashboard__title-group {
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
+    gap: var(--spacing-1);
 }
 
 .whale-dashboard__title {
     margin: 0;
-    font-size: 1.2rem;
-    font-weight: 600;
+    font-size: var(--font-size-lg);
+    font-weight: var(--font-weight-semibold);
 }
 
 .whale-dashboard__subtitle {
     margin: 0;
     color: var(--color-text-subtle);
-    font-size: 0.85rem;
+    font-size: var(--font-size-sm);
 }
 
 /* Whale Stats Grid */
 .whale-stats-grid {
     display: grid;
-    gap: 1.25rem;
+    gap: var(--spacing-6);
     grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-    margin-top: 0.75rem;
+    margin-top: var(--spacing-4);
 }
 
 .whale-stat-card {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: var(--spacing-2);
 }
 
 .whale-stat-card__label {
     color: var(--color-text-muted);
-    font-size: 0.85rem;
-    letter-spacing: 0.08em;
+    font-size: var(--font-size-sm);
+    letter-spacing: var(--letter-spacing-wide);
     text-transform: uppercase;
 }
 
 .whale-stat-card__value {
-    font-size: 1.6rem;
-    font-weight: 700;
+    font-size: var(--font-size-xl);
+    font-weight: var(--font-weight-bold);
 }
 
 .whale-stat-card__delta {
-    font-size: 0.85rem;
+    font-size: var(--font-size-sm);
     color: var(--color-text-muted);
 }
 
 /* Whale Chart Container */
 .whale-chart-container {
-    margin-top: 1.5rem;
+    margin-top: var(--spacing-7);
 }
 
 /* Whale Highlights List */
 .whale-highlights {
     display: flex;
     flex-direction: column;
-    gap: 1rem;
+    gap: var(--spacing-5);
 }
 
 .whale-highlights__header {
@@ -91,19 +91,19 @@
 
 .whale-highlights__title {
     margin: 0;
-    font-size: 1.1rem;
-    font-weight: 600;
+    font-size: var(--font-size-lg);
+    font-weight: var(--font-weight-semibold);
 }
 
 .whale-highlights__count {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
 }
 
 .whale-highlights__list {
     display: flex;
     flex-direction: column;
-    gap: 1rem;
-    margin-top: 0.75rem;
+    gap: var(--spacing-5);
+    margin-top: var(--spacing-4);
 }
 
 .whale-highlights__empty {
@@ -115,11 +115,11 @@
 .whale-highlight-item {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
-    padding: 1rem 1.25rem;
+    gap: var(--spacing-2);
+    padding: var(--spacing-5) var(--spacing-6);
     border-radius: var(--radius-md);
-    background: rgba(9, 15, 28, 0.6);
-    border: 1px solid var(--color-border);
+    background: var(--surface-secondary);
+    border: var(--border-width-thin) solid var(--color-border);
     transition: border-color var(--transition-base), transform var(--transition-base);
 }
 
@@ -131,52 +131,52 @@
 .whale-highlight-item__header {
     display: flex;
     justify-content: space-between;
-    gap: 1rem;
+    gap: var(--spacing-5);
     flex-wrap: wrap;
 }
 
 .whale-highlight-item__amount {
-    font-weight: 600;
-    font-size: 1rem;
+    font-weight: var(--font-weight-semibold);
+    font-size: var(--font-size-base);
 }
 
 .whale-highlight-item__timestamp {
     color: var(--color-text-subtle);
-    font-size: 0.78rem;
+    font-size: var(--font-size-sm);
 }
 
 .whale-highlight-item__addresses {
     color: var(--color-text-subtle);
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
 }
 
 .whale-highlight-item__memo {
     color: var(--color-text-subtle);
-    font-size: 0.75rem;
-    margin-top: 0.4rem;
+    font-size: var(--font-size-xs);
+    margin-top: var(--spacing-2);
 }
 
 /* Whale Page Layout */
 .whale-page {
     display: grid;
-    gap: 2.5rem;
+    gap: var(--spacing-11);
 }
 
 .whale-page__header {
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
+    gap: var(--spacing-4);
 }
 
 .whale-page__title {
-    font-size: clamp(1.8rem, 3vw, 2.6rem);
-    font-weight: 700;
-    letter-spacing: -0.02em;
+    font-size: clamp(var(--font-size-2xl), 3vw, var(--font-size-3xl));
+    font-weight: var(--font-weight-bold);
+    letter-spacing: var(--letter-spacing-tight);
     margin: 0;
 }
 
 .whale-page__subtitle {
-    font-size: 1rem;
+    font-size: var(--font-size-base);
     color: var(--color-text-muted);
     max-width: 64ch;
     margin: 0;
@@ -198,8 +198,8 @@
 /* Error State */
 .whale-error {
     color: var(--color-danger);
-    font-size: 0.9rem;
-    margin-top: 1rem;
+    font-size: var(--font-size-base);
+    margin-top: var(--spacing-5);
 }
 
 /* Responsive adjustments */
