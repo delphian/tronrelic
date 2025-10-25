@@ -160,6 +160,7 @@ curl -X PATCH \
 - [system-scheduler-operations.md](./system-scheduler-operations.md) - Scheduler control, job management, troubleshooting, and configuration persistence
 - [system-api.md](./system-api.md) - Complete API reference with all endpoints, authentication, request/response formats, and usage examples
 - [system-monitoring-dashboard.md](./system-monitoring-dashboard.md) - Web dashboard UI guide with tab-by-tab feature documentation
+- [system-logging.md](./system-logging.md) - Logging system architecture, log levels, MongoDB persistence, and accessing historical logs
 
 **Related topics:**
 - [plugins/plugins-blockchain-observers.md](../plugins/plugins-blockchain-observers.md) - How to build observers that react to transactions
