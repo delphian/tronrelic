@@ -294,7 +294,7 @@ import type {
     IBaseObserver,
     IObserverRegistry,
     IWebSocketService,
-    ILogger
+    ISystemLogService
 } from "@tronrelic/types";
 
 /**
@@ -311,10 +311,10 @@ import type {
  * @returns Instantiated hello world observer ready to process transactions
  */
 export function createHelloWorldObserver(
-    BaseObserver: abstract new (logger: ILogger) => IBaseObserver,
+    BaseObserver: abstract new (logger: ISystemLogService) => IBaseObserver,
     observerRegistry: IObserverRegistry,
     websocketService: IWebSocketService,
-    logger: ILogger
+    logger: ISystemLogService
 ): IBaseObserver {
     const scopedLogger = logger.child({ observer: "HelloWorldObserver" });
 

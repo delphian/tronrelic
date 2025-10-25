@@ -5,7 +5,7 @@ export { definePlugin } from './plugin/index.js';
 export type { ITransaction, ITransactionPersistencePayload, ITransactionCategoryFlags } from './transaction/index.js';
 export { ProcessedTransaction } from './transaction/index.js';
 export type { IHttpRequest, IHttpResponse, IHttpNext } from './http/index.js';
-export type { ILogger } from './logging/index.js';
+// ILogger removed - use ISystemLogService instead (exported from './system-log/index.js')
 export type { IChainParameters } from './chain-parameters/IChainParameters.js';
 export type { IChainParametersService } from './chain-parameters/IChainParametersService.js';
 export type { IChainParametersFetcher } from './chain-parameters/IChainParametersFetcher.js';

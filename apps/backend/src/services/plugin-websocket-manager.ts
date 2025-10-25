@@ -3,7 +3,7 @@ import type {
     IPluginWebSocketManager,
     PluginSubscriptionHandler,
     PluginUnsubscribeHandler,
-    ILogger
+    ISystemLogService
 } from '@tronrelic/types';
 
 /**
@@ -41,7 +41,7 @@ export class PluginWebSocketManager implements IPluginWebSocketManager {
     constructor(
         private readonly pluginId: string,
         private readonly io: SocketIOServer,
-        private readonly logger: ILogger
+        private readonly logger: ISystemLogService
     ) {}
 
     /**

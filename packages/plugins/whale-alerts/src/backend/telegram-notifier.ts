@@ -1,4 +1,4 @@
-import type { IPluginDatabase, ILogger } from '@tronrelic/types';
+import type { IPluginDatabase, ISystemLogService } from '@tronrelic/types';
 import type { IWhaleTransaction, IWhaleAlertsConfig } from '../shared/types/index.js';
 
 const TRONSCAN_TX_URL = 'https://tronscan.org/#/transaction/';
@@ -21,10 +21,10 @@ const TRONSCAN_TX_URL = 'https://tronscan.org/#/transaction/';
  */
 export class TelegramNotifier {
     private readonly database: IPluginDatabase;
-    private readonly logger: ILogger;
+    private readonly logger: ISystemLogService;
     private readonly telegramToken?: string;
 
-    constructor(database: IPluginDatabase, logger: ILogger, telegramToken?: string) {
+    constructor(database: IPluginDatabase, logger: ISystemLogService, telegramToken?: string) {
         this.database = database;
         this.logger = logger.child({ service: 'telegram-notifier' });
         this.telegramToken = telegramToken;

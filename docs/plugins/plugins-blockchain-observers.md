@@ -169,7 +169,7 @@ import type {
     IBaseObserver,
     IObserverRegistry,
     IPluginWebSocketManager,
-    ILogger
+    ISystemLogService
 } from '@tronrelic/types';
 
 /**
@@ -185,10 +185,10 @@ import type {
  * @returns Instantiated delegation tracker observer ready to process transactions
  */
 export function createDelegationTrackerObserver(
-    BaseObserver: abstract new (logger: ILogger) => IBaseObserver,
+    BaseObserver: abstract new (logger: ISystemLogService) => IBaseObserver,
     observerRegistry: IObserverRegistry,
     websocket: IPluginWebSocketManager,
-    logger: ILogger
+    logger: ISystemLogService
 ): IBaseObserver {
     const scopedLogger = logger.child({ observer: 'DelegationTrackerObserver' });
 

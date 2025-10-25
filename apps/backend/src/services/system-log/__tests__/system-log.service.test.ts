@@ -699,6 +699,87 @@ describe('SystemLogService', () => {
             // Should have called child() on parent Pino
             expect(mockPino.child).toHaveBeenCalled();
         });
+
+        /**
+         * Test: Child logger bindings should be preserved in MongoDB logs.
+         */
+        it('should preserve child logger bindings in MongoDB logs', async () => {
+            await service.initialize(mockPino as any);
+
+            // Create child logger with pluginId
+            const childLogger = service.child({ pluginId: 'whale-alerts', pluginTitle: 'Whale Alerts' });
+
+            // Log an error without additional metadata
+            childLogger.error('Plugin error occurred');
+
+            await new Promise(resolve => setTimeout(resolve, 10));
+
+            // Should save with child bindings
+            expect(SystemLog.create).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    service: 'whale-alerts',
+                    context: expect.objectContaining({
+                        pluginId: 'whale-alerts',
+                        pluginTitle: 'Whale Alerts'
+                    })
+                })
+            );
+        });
+
+        /**
+         * Test: Call-time metadata should override child logger bindings.
+         */
+        it('should allow call-time metadata to override child bindings', async () => {
+            await service.initialize(mockPino as any);
+
+            // Create child logger with module binding
+            const childLogger = service.child({ module: 'blockchain' });
+
+            // Log with call-time override
+            childLogger.error({ module: 'markets', extra: 'data' }, 'Override test');
+
+            await new Promise(resolve => setTimeout(resolve, 10));
+
+            // Call-time metadata should take precedence
+            expect(SystemLog.create).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    service: 'tronrelic-backend:markets',
+                    context: expect.objectContaining({
+                        module: 'markets',
+                        extra: 'data'
+                    })
+                })
+            );
+        });
+
+        /**
+         * Test: Nested child loggers should merge bindings.
+         */
+        it('should merge bindings in nested child loggers', async () => {
+            await service.initialize(mockPino as any);
+
+            // Create parent child logger
+            const parentChild = service.child({ pluginId: 'test-plugin' });
+
+            // Create nested child
+            const nestedChild = parentChild.child({ service: 'observer' });
+
+            // Log from nested child
+            nestedChild.error('Nested error');
+
+            await new Promise(resolve => setTimeout(resolve, 10));
+
+            // Should have both parent and child bindings, child takes precedence
+            expect(SystemLog.create).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    service: 'observer',
+                    context: expect.objectContaining({
+                        pluginId: 'test-plugin',
+                        service: 'observer'
+                    })
+                })
+            );
+        });
     });
 
     // ========================================================================

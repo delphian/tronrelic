@@ -1,4 +1,4 @@
-import type { IBaseObserver, IObserverStats, ILogger, ITransaction } from '@tronrelic/types';
+import type { IBaseObserver, IObserverStats, ISystemLogService, ITransaction } from '@tronrelic/types';
 
 /**
  * Base class for blockchain transaction observers.
@@ -16,7 +16,7 @@ export abstract class BaseObserver implements IBaseObserver {
     private isProcessing = false;
 
     protected abstract readonly name: string;
-    protected readonly logger: ILogger;
+    protected readonly logger: ISystemLogService;
 
     // Statistics tracking
     private totalProcessed = 0;
@@ -32,12 +32,12 @@ export abstract class BaseObserver implements IBaseObserver {
      * Create a new observer with injected logging.
      *
      * Observers rely on structured logging to surface queue backpressure and processing
-     * failures. Injecting an ILogger keeps the base class decoupled from the concrete
+     * failures. Injecting an ISystemLogService keeps the base class decoupled from the concrete
      * logging implementation while ensuring every observer shares consistent metadata.
      *
      * @param logger - Structured logger scoped to the observer instance for consistent telemetry
      */
-    public constructor(logger: ILogger) {
+    public constructor(logger: ISystemLogService) {
         this.logger = logger;
     }
 

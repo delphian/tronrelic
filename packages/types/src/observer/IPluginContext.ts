@@ -2,10 +2,10 @@ import type { IBlockchainObserverService } from './IBlockchainObserverService.js
 import type { IWebSocketService } from './IWebSocketService.js';
 import type { IBaseObserver } from './IBaseObserver.js';
 import type { IPluginDatabase } from '../plugin/IPluginDatabase.js';
-import type { ILogger } from '../logging/ILogger.js';
 import type { IPluginWebSocketManager } from './IPluginWebSocketManager.js';
 import type { ICacheService } from '../services/ICacheService.js';
 import type { ISystemConfigService } from '../system-config/ISystemConfigService.js';
+import { ISystemLogService } from '../system-log/ISystemLogService.js';
 
 /**
  * Plugin context provided to backend plugins during initialization.
@@ -31,7 +31,7 @@ export interface IPluginContext {
      * Receives a scoped logger so each observer instance emits structured logs
      * with plugin metadata baked in.
      */
-    BaseObserver: abstract new (logger: ILogger) => IBaseObserver;
+    BaseObserver: abstract new (logger: ISystemLogService) => IBaseObserver;
 
     /** Plugin-scoped database access with automatic collection prefixing */
     database: IPluginDatabase;
@@ -43,5 +43,5 @@ export interface IPluginContext {
     systemConfig: ISystemConfigService;
 
     /** Structured logger scoped to the plugin for consistent telemetry */
-    logger: ILogger;
+    logger: ISystemLogService;
 }

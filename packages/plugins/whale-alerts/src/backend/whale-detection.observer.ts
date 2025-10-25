@@ -1,4 +1,4 @@
-import type { ITransaction, IBaseObserver, IBlockchainObserverService, IPluginWebSocketManager, ILogger, IPluginDatabase } from '@tronrelic/types';
+import type { ITransaction, IBaseObserver, IBlockchainObserverService, IPluginWebSocketManager, ISystemLogService, IPluginDatabase } from '@tronrelic/types';
 import type { IWhaleTransaction, IWhaleAlertsConfig } from '../shared/types/index.js';
 
 /**
@@ -24,11 +24,11 @@ import type { IWhaleTransaction, IWhaleAlertsConfig } from '../shared/types/inde
  * @returns Instantiated whale detection observer ready to process transactions
  */
 export function createWhaleDetectionObserver(
-    BaseObserver: abstract new (logger: ILogger) => IBaseObserver,
+    BaseObserver: abstract new (logger: ISystemLogService) => IBaseObserver,
     observerRegistry: IBlockchainObserverService,
     websocket: IPluginWebSocketManager,
     database: IPluginDatabase,
-    logger: ILogger
+    logger: ISystemLogService
 ): IBaseObserver {
     const scopedLogger = logger.child({ observer: 'WhaleDetectionObserver' });
 
