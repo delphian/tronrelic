@@ -22,10 +22,10 @@ body {
   min-height: 100vh;
   font-family: var(--font-body);
   background-color: var(--color-background);
-  background-image: radial-gradient(circle at 0% -20%, rgba(79, 140, 255, 0.18), transparent 45%),
+  background-image: radial-gradient(circle at 0% -20%, var(--color-primary-alpha-18), transparent 45%),
     radial-gradient(circle at 90% 0%, rgba(63, 209, 255, 0.14), transparent 60%),
     linear-gradient(140deg, rgba(14, 21, 38, 0.85), rgba(6, 10, 20, 0.96));
-  color: #f5f7ff;
+  color: var(--color-text);
 }
 
 a {
@@ -71,7 +71,7 @@ main {
 
 @keyframes rowFlash {
   0% {
-    background-color: rgba(79, 140, 255, 0.28);
+    background-color: var(--color-primary-alpha-30);
   }
   100% {
     background-color: inherit;
@@ -151,30 +151,30 @@ main {
 .table {
   width: 100%;
   border-collapse: collapse;
-  border-radius: var(--radius-md);
+  border-radius: var(--table-border-radius);
   overflow: hidden;
-  background: rgba(6, 11, 20, 0.55);
+  background: var(--table-background);
 }
 
 .table thead {
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--table-header-background);
   text-transform: uppercase;
-  letter-spacing: 0.08em;
-  font-size: 0.72rem;
+  letter-spacing: var(--table-header-letter-spacing);
+  font-size: var(--table-header-font-size);
 }
 
 .table th,
 .table td {
-  padding: 0.85rem 1.1rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  padding: var(--table-cell-padding);
+  border-bottom: var(--table-cell-border);
 }
 
 .table tbody tr {
-  transition: background-color var(--transition-base);
+  transition: var(--table-row-transition);
 }
 
 .table tbody tr:hover {
-  background: rgba(79, 140, 255, 0.08);
+  background: var(--table-row-background-hover);
 }
 
 /* Pagination styles removed - migrated to Pagination.module.css */
@@ -186,33 +186,33 @@ main {
   border-radius: var(--radius-md);
   border: 1px solid transparent;
   font-size: 0.9rem;
-  background: rgba(10, 15, 26, 0.88);
+  background: var(--color-surface);
 }
 
 .alert--warning {
-  background: rgba(255, 200, 87, 0.15);
-  border-color: rgba(255, 200, 87, 0.4);
-  color: #ffe2a6;
+  background: var(--color-warning-alpha-15);
+  border-color: var(--color-warning-alpha-40);
+  color: var(--color-warning-text);
 }
 
 .alert--danger {
-  background: rgba(255, 111, 125, 0.18);
-  border-color: rgba(255, 111, 125, 0.5);
-  color: #ffc1c8;
+  background: var(--color-danger-alpha-18);
+  border-color: var(--color-danger-alpha-50);
+  color: var(--color-danger-text);
 }
 
 .alert--success {
-  background: rgba(87, 212, 140, 0.18);
-  border-color: rgba(87, 212, 140, 0.45);
-  color: #9df5c1;
+  background: var(--color-success-alpha-18);
+  border-color: var(--color-success-alpha-45);
+  color: var(--color-success-text);
 }
 
 /* Modal styles removed - migrated to ModalProvider.module.css */
 
 .divider {
   width: 100%;
-  height: 1px;
-  background: rgba(255, 255, 255, 0.06);
+  height: var(--divider-height);
+  background: var(--divider-background);
 }
 
 .text-muted {
@@ -227,21 +227,21 @@ main {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0.4rem;
-  padding: 0.35rem 0.7rem;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  font-size: 0.78rem;
+  gap: var(--chip-gap);
+  padding: var(--chip-padding);
+  border-radius: var(--chip-border-radius);
+  border: var(--chip-border);
+  font-size: var(--chip-font-size);
   color: var(--color-text-muted);
-  transition: background-color var(--transition-base), border-color var(--transition-base), color var(--transition-base);
+  transition: var(--chip-transition);
 }
 
 .chip:focus-visible,
 a:focus-visible,
 button:focus-visible {
-  outline: 2px solid rgba(124, 155, 255, 0.95);
-  outline-offset: 3px;
-  box-shadow: 0 0 0 4px rgba(124, 155, 255, 0.24);
+  outline: var(--focus-outline-width) solid var(--color-focus);
+  outline-offset: var(--focus-outline-offset);
+  box-shadow: var(--focus-shadow);
 }
 
 /* Navigation styles removed - migrated to NavBar.module.css */
@@ -250,32 +250,32 @@ button:focus-visible {
 
 .segmented-control {
   display: inline-flex;
-  background: rgba(11, 16, 28, 0.6);
-  border-radius: 999px;
-  padding: 0.25rem;
-  border: 1px solid rgba(120, 180, 255, 0.18);
+  background: var(--segmented-control-background);
+  border-radius: var(--radius-full);
+  padding: var(--segmented-control-padding);
+  border: var(--segmented-control-border);
 }
 
 .segmented-control button {
   border: none;
   background: transparent;
   color: var(--color-text-muted);
-  font-size: 0.85rem;
-  padding: 0.45rem 0.9rem;
-  border-radius: 999px;
+  font-size: var(--segmented-control-button-font-size);
+  padding: var(--segmented-control-button-padding);
+  border-radius: var(--radius-full);
   cursor: pointer;
   transition: background-color var(--transition-base), color var(--transition-base);
 }
 
 .segmented-control button.is-active {
-  background: linear-gradient(135deg, rgba(79, 140, 255, 0.38), rgba(79, 140, 255, 0.18));
-  color: #f7fbff;
+  background: var(--segmented-control-active-background);
+  color: var(--segmented-control-active-color);
 }
 
 .pill {
-  border-radius: 999px;
-  padding: 0.4rem 0.75rem;
-  background: rgba(255, 255, 255, 0.05);
+  border-radius: var(--radius-full);
+  padding: var(--pill-padding);
+  background: var(--color-surface-elevated);
 }
 
 .list--plain {
@@ -285,7 +285,7 @@ button:focus-visible {
 }
 
 .list--bordered li + li {
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  border-top: var(--border-width-thin) solid var(--color-border);
 }
 
 /* Skeleton styles removed - migrated to Skeleton.module.css */
@@ -293,10 +293,10 @@ button:focus-visible {
 /* Chart styles removed - migrated to LineChart.module.css */
 
 .alert {
-  border-radius: var(--radius-md);
-  padding: 1.1rem 1.4rem;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.05);
+  border-radius: var(--alert-border-radius);
+  padding: var(--alert-padding);
+  border: var(--alert-border-width) solid var(--color-border-strong);
+  background: var(--color-surface-elevated);
   color: var(--color-text-muted);
 }
 
@@ -315,18 +315,18 @@ button:focus-visible {
 .meter {
   position: relative;
   width: 100%;
-  height: 8px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.12);
+  height: var(--meter-height);
+  border-radius: var(--radius-full);
+  background: var(--meter-background);
   overflow: hidden;
-  margin-top: 0.75rem;
+  margin-top: var(--meter-margin-top);
 }
 
 .meter__value {
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  background: linear-gradient(90deg, rgba(124, 155, 255, 0.9), rgba(101, 217, 165, 0.9));
+  background: var(--meter-value-background);
   transform-origin: left center;
 }
 
