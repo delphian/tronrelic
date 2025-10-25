@@ -1,0 +1,157 @@
+/**
+ * TronRelic Foundation Tokens (Layer 1 - Primitives)
+ *
+ * Context-free, reusable primitive values implemented as CSS custom properties.
+ * These are raw values with no semantic meaning (e.g., --spacing-4, --blue-600).
+ * Never reference these directly in components - use semantic tokens instead.
+ *
+ * Values derived from analyzing existing patterns across globals.css and
+ * component CSS modules to ensure consistency with the current design.
+ *
+ * See docs/frontend/design-token-layers.md for usage guidelines.
+ */
+
+:root {
+    /* Color Scheme */
+    color-scheme: dark;
+
+    /* Typography - Font Family */
+    --font-body: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+
+    /* Typography - Font Sizes (based on actual usage) */
+    --font-size-xs: 0.72rem;     /* 11.52px - table headers, tiny labels */
+    --font-size-sm: 0.85rem;     /* 13.6px - most common small text */
+    --font-size-base: 0.95rem;   /* 15.2px - default body, buttons */
+    --font-size-md: 1rem;        /* 16px - standard paragraphs */
+    --font-size-lg: 1.05rem;     /* 16.8px - large buttons */
+    --font-size-xl: 1.6rem;      /* 25.6px - stat values */
+    --font-size-2xl: 1.8rem;     /* 28.8px - page titles (min) */
+    --font-size-3xl: 2.6rem;     /* 41.6px - page titles (max) */
+
+    /* Typography - Font Weights (from actual usage) */
+    --font-weight-normal: 400;
+    --font-weight-medium: 500;
+    --font-weight-semibold: 600;
+    --font-weight-bold: 700;
+
+    /* Typography - Line Heights (from actual usage) */
+    --line-height-tight: 1.25;
+    --line-height-normal: 1.4;
+    --line-height-relaxed: 1.5;
+
+    /* Typography - Letter Spacing (from actual usage) */
+    --letter-spacing-tight: -0.02em;  /* Headings */
+    --letter-spacing-normal: 0.01em;  /* Body text */
+    --letter-spacing-wide: 0.08em;    /* Uppercase labels */
+
+    /* Spacing Scale (derived from gap/padding/margin patterns) */
+    --spacing-1: 0.25rem;   /* 4px */
+    --spacing-2: 0.35rem;   /* 5.6px - chips, badges */
+    --spacing-3: 0.4rem;    /* 6.4px - pills */
+    --spacing-4: 0.5rem;    /* 8px - stack-sm, common gaps */
+    --spacing-5: 0.75rem;   /* 12px - very common gap, input groups */
+    --spacing-6: 0.85rem;   /* 13.6px - table cells, alerts */
+    --spacing-7: 1rem;      /* 16px - default stack, card padding */
+    --spacing-8: 1.1rem;    /* 17.6px - table cells, alerts */
+    --spacing-9: 1.25rem;   /* 20px - card padding sm, stat grids */
+    --spacing-10: 1.5rem;   /* 24px - stack-lg, common grid gaps */
+    --spacing-12: 2rem;     /* 32px - large card padding */
+    --spacing-14: 2.5rem;   /* 40px - page gaps */
+    --spacing-16: 3rem;     /* 48px - main padding */
+
+    /* Container Padding (responsive) */
+    --container-padding-mobile: 1.25rem;   /* 20px */
+    --container-padding-tablet: 1.5rem;    /* 24px */
+    --container-padding-desktop: 3rem;     /* 48px */
+
+    /* Color Tokens - Background & Surfaces */
+    --color-background: #03060f;
+    --color-surface: rgba(12, 18, 34, 0.88);
+    --color-surface-muted: rgba(9, 14, 26, 0.78);
+    --color-surface-accent: linear-gradient(135deg, rgba(44, 123, 255, 0.22), rgba(78, 47, 255, 0.18));
+
+    /* Color Tokens - Borders */
+    --color-border: rgba(120, 180, 255, 0.14);
+    --color-border-strong: rgba(120, 180, 255, 0.25);
+
+    /* Color Tokens - Brand & Semantic */
+    --color-primary: #4b8cff;
+    --color-primary-strong: #246bff;
+    --color-secondary: #3fd1ff;
+    --color-success: #57d48c;
+    --color-warning: #ffc857;
+    --color-danger: #ff6f7d;
+
+    /* Color Tokens - Text */
+    --color-text-muted: rgba(226, 234, 255, 0.64);
+    --color-text-subtle: rgba(226, 234, 255, 0.44);
+
+    /* Shadow Tokens */
+    --shadow-sm: 0 8px 18px rgba(7, 15, 30, 0.35);
+    --shadow-md: 0 18px 36px rgba(10, 20, 45, 0.42);
+    --shadow-lg: 0 28px 48px rgba(5, 12, 28, 0.55);
+
+    /* Border Radius Tokens */
+    --radius-sm: 10px;
+    --radius-md: 16px;
+    --radius-lg: 24px;
+    --radius-full: 999px;   /* Pills, badges, circular buttons */
+
+    /* Border Width Tokens */
+    --border-width-thin: 1px;
+    --border-width-medium: 2px;
+    --border-width-thick: 3px;
+
+    /* Opacity Scale (from actual usage patterns) */
+    --opacity-0: 0;
+    --opacity-35: 0.35;
+    --opacity-50: 0.5;
+    --opacity-55: 0.55;   /* Disabled state */
+    --opacity-60: 0.6;
+    --opacity-70: 0.7;
+    --opacity-75: 0.75;   /* Loading state */
+    --opacity-80: 0.8;
+    --opacity-85: 0.85;
+    --opacity-90: 0.9;
+    --opacity-100: 1;
+
+    /* Z-Index Scale (from actual usage) */
+    --z-index-base: 0;
+    --z-index-dropdown: 10;
+    --z-index-sticky: 100;
+    --z-index-fixed: 1000;
+    --z-index-modal-backdrop: 1100;
+    --z-index-modal: 1110;
+    --z-index-toast: 1200;
+
+    /* Transition Tokens */
+    --transition-base: 160ms ease;
+    --transition-fast: 100ms ease;
+    --transition-slow: 250ms ease;
+
+    /* Animation Durations (from actual keyframes) */
+    --duration-flash: 2.4s;      /* Row flash animation */
+    --duration-pulse: 2s;        /* Live indicator pulse */
+    --duration-slide: 0.25s;     /* Toast slide-in */
+
+    /* Breakpoint Tokens */
+    --breakpoint-mobile: 768px;
+    --breakpoint-tablet: 1200px;
+    --breakpoint-desktop: 1440px;
+
+    /* Component Size Tokens */
+    --button-height-sm: 34px;
+    --button-height-md: 42px;
+    --button-height-lg: 50px;
+    --icon-size-sm: 16px;
+    --icon-size-md: 20px;
+    --icon-size-lg: 24px;
+    --icon-size-xl: 32px;
+
+    /* Max Width Tokens (for layout containers) */
+    --max-width-prose: 64ch;     /* Readable text width */
+    --max-width-sm: 420px;       /* Small modal */
+    --max-width-md: 640px;       /* Medium modal */
+    --max-width-lg: 820px;       /* Large modal */
+    --max-width-xl: 1080px;      /* Extra large modal */
+}
