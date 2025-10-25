@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import type { LogLevelName } from '@tronrelic/types';
 import { config as runtimeConfig } from '../../../../lib/config';
 import styles from './ConfigurationPanel.module.css';
 
@@ -19,7 +20,7 @@ interface SystemConfig {
     siteUrl: string;
     systemLogsMaxCount: number;
     systemLogsRetentionDays: number;
-    logLevel: 'trace' | 'debug' | 'info' | 'warn' | 'error' | 'fatal' | 'silent';
+    logLevel: LogLevelName;
     updatedAt: string;
     updatedBy?: string;
 }
@@ -61,7 +62,7 @@ export function ConfigurationPanel({ token }: Props) {
     const [editedSiteUrl, setEditedSiteUrl] = useState('');
     const [editedLogsMaxCount, setEditedLogsMaxCount] = useState(1000000);
     const [editedLogsRetentionDays, setEditedLogsRetentionDays] = useState(30);
-    const [editedLogLevel, setEditedLogLevel] = useState<'trace' | 'debug' | 'info' | 'warn' | 'error' | 'fatal' | 'silent'>('info');
+    const [editedLogLevel, setEditedLogLevel] = useState<LogLevelName>('info');
     const [saving, setSaving] = useState(false);
     const [saveMessage, setSaveMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 

@@ -1,17 +1,10 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
+import type { LogLevelName } from '@tronrelic/types';
 import { config as runtimeConfig } from '../../../../lib/config';
 import { Button } from '../../../../components/ui/Button';
 import styles from './LogSettings.module.css';
-
-/**
- * Type for valid Pino log levels.
- *
- * These levels control which messages are written to backend log files
- * and console output. MongoDB persistence of error/warn/fatal is unaffected.
- */
-type LogLevel = 'trace' | 'debug' | 'info' | 'warn' | 'error' | 'fatal' | 'silent';
 
 /**
  * System configuration interface matching backend ISystemConfig.
@@ -21,7 +14,7 @@ interface SystemConfig {
     siteUrl: string;
     systemLogsMaxCount: number;
     systemLogsRetentionDays: number;
-    logLevel: LogLevel;
+    logLevel: LogLevelName;
     updatedAt: string;
     updatedBy?: string;
 }
@@ -63,7 +56,7 @@ interface Props {
  */
 export function LogSettings({ token }: Props) {
     const [config, setConfig] = useState<SystemConfig | null>(null);
-    const [selectedLevel, setSelectedLevel] = useState<LogLevel>('info');
+    const [selectedLevel, setSelectedLevel] = useState<LogLevelName>('info');
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -190,7 +183,7 @@ export function LogSettings({ token }: Props) {
                         id="log-level"
                         className={styles.select}
                         value={selectedLevel}
-                        onChange={e => setSelectedLevel(e.target.value as LogLevel)}
+                        onChange={e => setSelectedLevel(e.target.value as LogLevelName)}
                         disabled={loading || saving}
                     >
                         <option value="trace">Trace (Most Verbose)</option>

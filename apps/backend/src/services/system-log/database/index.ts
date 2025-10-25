@@ -6,4 +6,4 @@
  */
 
 export { SystemLog } from './SystemLog.js';
-export type { ISystemLogDocument, LogLevel } from './SystemLog.js';
+export type { ISystemLogDocument } from './SystemLog.js';

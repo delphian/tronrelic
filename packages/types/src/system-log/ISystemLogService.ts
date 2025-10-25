@@ -1,10 +1,21 @@
 /**
  * Log level type for system logs.
  *
- * Represents the severity of a log entry. TronRelic captures ERROR and WARN
- * levels by default via Pino transport.
+ * Represents the severity of a log entry. Includes all Pino log levels from
+ * most verbose (trace) to least verbose (fatal).
+ *
+ * **Available levels (from most verbose to least):**
+ * - `trace` (10) - Most verbose, detailed execution traces
+ * - `debug` (20) - Debugging information for development
+ * - `info` (30) - General informational messages
+ * - `warn` (40) - Warning messages that don't prevent operation
+ * - `error` (50) - Error messages indicating failures
+ * - `fatal` (60) - Fatal errors that may crash the application
+ *
+ * **Note:** The `silent` level is not included here as it's used for configuration
+ * only (to suppress all logs) and is never assigned to actual log entries.
  */
-export type LogLevel = 'error' | 'warn' | 'info' | 'debug';
+export type LogLevel = 'trace' | 'debug' | 'info' | 'warn' | 'error' | 'fatal';
 
 /**
  * Query options for fetching system logs with pagination and filtering.

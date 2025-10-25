@@ -1,12 +1,5 @@
 import { Schema, model, Document } from 'mongoose';
-
-/**
- * Log level type for system logs.
- *
- * Represents the severity of a log entry. TronRelic captures ERROR and WARN
- * levels by default, with optional support for INFO and DEBUG in future iterations.
- */
-export type LogLevel = 'error' | 'warn' | 'info' | 'debug';
+import type { LogLevel } from '@tronrelic/types';
 
 /**
  * MongoDB document interface for system logs.
@@ -15,6 +8,11 @@ export type LogLevel = 'error' | 'warn' | 'info' | 'debug';
  * and stored in MongoDB for historical analysis, troubleshooting, and admin visibility.
  * This schema supports filtering by severity, service, time range, and provides
  * metadata for error context.
+ *
+ * **Log levels supported:**
+ * All Pino log levels are stored: trace, debug, info, warn, error, fatal.
+ * Which levels are actually persisted depends on the configured log level
+ * in SystemConfig (logs are only saved if they meet the minimum level threshold).
  */
 export interface ISystemLogDocument extends Document {
     /**
@@ -26,8 +24,9 @@ export interface ISystemLogDocument extends Document {
     timestamp: Date;
 
     /**
-     * Log severity level (error, warn, info, debug).
+     * Log severity level.
      *
+     * Supports all Pino log levels: trace, debug, info, warn, error, fatal.
      * Indexed for efficient filtering by severity. Admin UI provides checkboxes
      * to filter displayed logs by selected severity types.
      */
@@ -87,9 +86,14 @@ export interface ISystemLogDocument extends Document {
 /**
  * Mongoose schema for system logs collection.
  *
- * Stores ERROR and WARN log entries from Pino logger instances across the application.
- * Provides indexes for efficient querying by timestamp, level, and service.
- * Supports automatic cleanup via scheduler job based on retention policy.
+ * Stores log entries from Pino logger instances across the application based on
+ * the configured log level threshold. Provides indexes for efficient querying
+ * by timestamp, level, and service. Supports automatic cleanup via scheduler
+ * job based on retention policy.
+ *
+ * **Schema evolution:**
+ * Previously limited to error/warn/info/debug. Now supports all Pino levels
+ * including trace and fatal to provide complete visibility into application behavior.
  */
 const systemLogSchema = new Schema<ISystemLogDocument>(
     {
@@ -101,7 +105,7 @@ const systemLogSchema = new Schema<ISystemLogDocument>(
         level: {
             type: String,
             required: true,
-            enum: ['error', 'warn', 'info', 'debug'],
+            enum: ['trace', 'debug', 'info', 'warn', 'error', 'fatal'],
             index: true
         },
         message: {

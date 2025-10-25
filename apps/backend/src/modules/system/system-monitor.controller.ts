@@ -1,5 +1,6 @@
 import type { Request, Response } from 'express';
 import type { Redis as RedisClient } from 'ioredis';
+import { LOG_LEVELS, type LogLevelName } from '@tronrelic/types';
 import { SystemMonitorService } from './system-monitor.service.js';
 import { BlockchainService } from '../blockchain/blockchain.service.js';
 import { MarketService } from '../markets/market.service.js';
@@ -160,14 +161,14 @@ export class SystemMonitorController {
     }
 
     if (logLevel !== undefined) {
-      const validLevels = ['trace', 'debug', 'info', 'warn', 'error', 'fatal', 'silent'];
-      if (!validLevels.includes(logLevel)) {
+      const validLevels = Object.keys(LOG_LEVELS) as LogLevelName[];
+      if (!validLevels.includes(logLevel as LogLevelName)) {
         return res.status(400).json({
           success: false,
           error: `Invalid log level. Must be one of: ${validLevels.join(', ')}`
         });
       }
-      updates.logLevel = logLevel;
+      updates.logLevel = logLevel as LogLevelName;
     }
 
     if (systemLogsMaxCount !== undefined) {
