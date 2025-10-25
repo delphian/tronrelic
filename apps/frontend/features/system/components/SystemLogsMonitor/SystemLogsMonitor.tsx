@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import type { LogLevel } from '@tronrelic/types';
 import { config as runtimeConfig } from '../../../../lib/config';
 import { Button } from '../../../../components/ui/Button';
@@ -88,9 +88,22 @@ export function SystemLogsMonitor({ token }: Props) {
     // Track new logs for flash animation
     const [newLogIds, setNewLogIds] = useState<Set<string>>(new Set());
     const [isInitialLoad, setIsInitialLoad] = useState(true);
+    const logsRef = useRef<SystemLog[]>([]);
+    const isInitialLoadRef = useRef(true);
     const flashedLogsRef = useRef<Set<string>>(new Set()); // Track logs that have already been flashed
     const flashTimeoutRef = useRef<NodeJS.Timeout | null>(null);
     const pendingFlashIdsRef = useRef<Set<string> | null>(null); // IDs waiting to flash on next render
+
+    /**
+     * Synchronises the initial-load flag between state and ref so polling callbacks
+     * always read the latest value when determining whether to flash new rows.
+     *
+     * @param next - Updated initial load flag
+     */
+    const setInitialLoadState = useCallback((next: boolean) => {
+        isInitialLoadRef.current = next;
+        setIsInitialLoad(next);
+    }, []);
 
     /**
      * Fetches logs from the admin API with current filters and pagination.
@@ -98,7 +111,7 @@ export function SystemLogsMonitor({ token }: Props) {
      * Constructs query parameters based on selected filters and page state.
      * Updates component state with fresh data or logs errors on failure.
      */
-    const fetchLogs = async () => {
+    const fetchLogs = useCallback(async () => {
         try {
             const params = new URLSearchParams();
 
@@ -123,9 +136,12 @@ export function SystemLogsMonitor({ token }: Props) {
             const data: LogsResponse = await response.json();
 
             if (data.success) {
+                const currentLogs = logsRef.current;
+                const initialLoad = isInitialLoadRef.current;
+
                 // Detect new logs if not initial load and we have existing logs
-                if (!isInitialLoad && logs.length > 0) {
-                    const currentIds = new Set(logs.map(log => log._id));
+                if (!initialLoad && currentLogs.length > 0) {
+                    const currentIds = new Set(currentLogs.map(log => log._id));
                     const incomingIds = new Set(data.logs.map(log => log._id));
 
                     // Find truly new logs that haven't been flashed before
@@ -148,25 +164,26 @@ export function SystemLogsMonitor({ token }: Props) {
 
                 // Update logs state
                 setLogs(data.logs);
+                logsRef.current = data.logs;
                 setTotal(data.total);
                 setTotalPages(data.totalPages);
                 setHasNextPage(data.hasNextPage);
                 setHasPrevPage(data.hasPrevPage);
-                setIsInitialLoad(false);
+                setInitialLoadState(false);
             }
         } catch (error) {
             console.error('Failed to fetch logs:', error);
         } finally {
             setLoading(false);
         }
-    };
+    }, [limit, page, selectedLevels, serviceFilter, setInitialLoadState, token]);
 
     /**
      * Fetches log statistics from the admin API.
      *
      * Provides counts by severity level and resolved status for dashboard metrics.
      */
-    const fetchStats = async () => {
+    const fetchStats = useCallback(async () => {
         try {
             const response = await fetch(
                 `${runtimeConfig.apiBaseUrl}/admin/system/logs/stats`,
@@ -183,7 +200,7 @@ export function SystemLogsMonitor({ token }: Props) {
         } catch (error) {
             console.error('Failed to fetch log stats:', error);
         }
-    };
+    }, [token]);
 
     /**
      * Clears all logs after user confirmation.
@@ -237,29 +254,35 @@ export function SystemLogsMonitor({ token }: Props) {
             }
         });
         setPage(1);
-        setIsInitialLoad(true); // Treat filter changes as initial load to prevent flash
+        setInitialLoadState(true); // Treat filter changes as initial load to prevent flash
         flashedLogsRef.current.clear(); // Clear flash history when filters change
     };
 
+    useEffect(() => {
+        logsRef.current = logs;
+    }, [logs]);
+
+    useEffect(() => {
+        isInitialLoadRef.current = isInitialLoad;
+    }, [isInitialLoad]);
+
     // Initial fetch
     useEffect(() => {
-        fetchLogs();
-        fetchStats();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [token, page, limit, selectedLevels, serviceFilter]);
+        void fetchLogs();
+        void fetchStats();
+    }, [fetchLogs, fetchStats]);
 
     // Live polling interval
     useEffect(() => {
         if (pollingInterval === 0) return;
 
         const interval = setInterval(() => {
-            fetchLogs();
-            fetchStats();
+            void fetchLogs();
+            void fetchStats();
         }, pollingInterval);
 
         return () => clearInterval(interval);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [pollingInterval, token, page, limit, selectedLevels, serviceFilter]);
+    }, [fetchLogs, fetchStats, pollingInterval]);
 
     // Apply flash animation AFTER logs are rendered (two-phase commit)
     useEffect(() => {
@@ -395,7 +418,7 @@ export function SystemLogsMonitor({ token }: Props) {
                         onChange={e => {
                             setServiceFilter(e.target.value);
                             setPage(1);
-                            setIsInitialLoad(true); // Treat filter changes as initial load
+                            setInitialLoadState(true); // Treat filter changes as initial load
                             flashedLogsRef.current.clear(); // Clear flash history when filter changes
                         }}
                     />
@@ -412,7 +435,7 @@ export function SystemLogsMonitor({ token }: Props) {
                         onChange={e => {
                             setLimit(Number(e.target.value));
                             setPage(1);
-                            setIsInitialLoad(true); // Treat limit changes as initial load
+                            setInitialLoadState(true); // Treat limit changes as initial load
                             flashedLogsRef.current.clear(); // Clear flash history when page size changes
                         }}
                     >
@@ -525,7 +548,7 @@ export function SystemLogsMonitor({ token }: Props) {
                             size="sm"
                             onClick={() => {
                                 setPage(1);
-                                setIsInitialLoad(true); // Treat page changes as initial load
+                                setInitialLoadState(true); // Treat page changes as initial load
                                 flashedLogsRef.current.clear(); // Clear flash history when changing pages
                             }}
                             disabled={!hasPrevPage}
@@ -537,7 +560,7 @@ export function SystemLogsMonitor({ token }: Props) {
                             size="sm"
                             onClick={() => {
                                 setPage(p => p - 1);
-                                setIsInitialLoad(true); // Treat page changes as initial load
+                                setInitialLoadState(true); // Treat page changes as initial load
                                 flashedLogsRef.current.clear(); // Clear flash history when changing pages
                             }}
                             disabled={!hasPrevPage}
@@ -552,7 +575,7 @@ export function SystemLogsMonitor({ token }: Props) {
                             size="sm"
                             onClick={() => {
                                 setPage(p => p + 1);
-                                setIsInitialLoad(true); // Treat page changes as initial load
+                                setInitialLoadState(true); // Treat page changes as initial load
                                 flashedLogsRef.current.clear(); // Clear flash history when changing pages
                             }}
                             disabled={!hasNextPage}
@@ -564,7 +587,7 @@ export function SystemLogsMonitor({ token }: Props) {
                             size="sm"
                             onClick={() => {
                                 setPage(totalPages);
-                                setIsInitialLoad(true); // Treat page changes as initial load
+                                setInitialLoadState(true); // Treat page changes as initial load
                                 flashedLogsRef.current.clear(); // Clear flash history when changing pages
                             }}
                             disabled={!hasNextPage}
