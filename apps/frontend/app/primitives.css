@@ -57,7 +57,8 @@
     --spacing-10: 1.5rem;   /* 24px - stack-lg, common grid gaps */
     --spacing-12: 2rem;     /* 32px - large card padding */
     --spacing-14: 2.5rem;   /* 40px - page gaps */
-    --spacing-16: 3rem;     /* 48px - main padding */
+    --spacing-15: 3rem;     /* 48px - main padding horizontal */
+    --spacing-16: 3.5rem;   /* 56px - main padding bottom */
 
     /* Container Padding (responsive) */
     --container-padding-mobile: 1.25rem;   /* 20px */
