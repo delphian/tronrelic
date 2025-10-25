@@ -32,10 +32,10 @@ import type { IDelegationTransaction } from '../shared/types/index.js';
  * @returns Instantiated delegation tracker observer ready to process transactions
  */
 export function createDelegationTrackerObserver(
-    BaseObserver: abstract new (logger: ILogger) => IBaseObserver,
+    BaseObserver: abstract new (logger: ISystemLogService) => IBaseObserver,
     observerRegistry: IBlockchainObserverService,
     database: IPluginDatabase,
-    logger: ILogger
+    logger: ISystemLogService
 ): IBaseObserver {
     const scopedLogger = logger.child({ observer: 'DelegationTrackerObserver' });
 

@@ -1,4 +1,4 @@
-import type { IHttpRequest, IHttpResponse, ILogger } from '@tronrelic/types';
+import type { IHttpRequest, IHttpResponse, ISystemLogService } from '@tronrelic/types';
 import { validateTelegramWebhook } from './security.js';
 import { CommandHandler, type ITelegramUpdate } from './command-handlers.js';
 
@@ -21,7 +21,7 @@ import type { TelegramClient } from './telegram-client.js';
 export function createWebhookHandler(
     commandHandler: CommandHandler,
     telegramClient: TelegramClient,
-    logger: ILogger,
+    logger: ISystemLogService,
     securityOptions: {
         allowedIps?: string;
         webhookSecret?: string;

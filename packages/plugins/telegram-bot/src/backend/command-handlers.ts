@@ -1,4 +1,4 @@
-import type { ILogger, IPluginDatabase } from '@tronrelic/types';
+import type { ISystemLogService, IPluginDatabase } from '@tronrelic/types';
 import type { ITelegramUser } from '../shared/index.js';
 import { MarketQueryService } from './market-query.service.js';
 
@@ -66,7 +66,7 @@ export class CommandHandler {
     constructor(
         private readonly database: IPluginDatabase,
         private readonly marketQueryService: MarketQueryService,
-        private readonly logger: ILogger
+        private readonly logger: ISystemLogService
     ) {}
 
     /**

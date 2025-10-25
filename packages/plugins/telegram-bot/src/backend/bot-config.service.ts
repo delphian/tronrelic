@@ -1,4 +1,4 @@
-import type { IPluginDatabase, ILogger } from '@tronrelic/types';
+import type { IPluginDatabase, ISystemLogService } from '@tronrelic/types';
 import type { IPluginTelegramBotConfig, IPluginTelegramBotConfigMasked } from '../shared/index.js';
 
 /**
@@ -20,7 +20,7 @@ import type { IPluginTelegramBotConfig, IPluginTelegramBotConfigMasked } from '.
  */
 export class BotConfigService {
     private readonly database: IPluginDatabase;
-    private readonly logger: ILogger;
+    private readonly logger: ISystemLogService;
     private cachedConfig: IPluginTelegramBotConfig | null = null;
 
     /**
@@ -45,7 +45,7 @@ export class BotConfigService {
      * The service doesn't need to know about Mongoose models or concrete database
      * implementations—it only depends on the IPluginDatabase interface.
      */
-    constructor(database: IPluginDatabase, logger: ILogger) {
+    constructor(database: IPluginDatabase, logger: ISystemLogService) {
         this.database = database;
         this.logger = logger;
     }

@@ -1,4 +1,4 @@
-import type { ILogger } from '@tronrelic/types';
+import type { ISystemLogService } from '@tronrelic/types';
 import type { IMarketQueryOptions } from '../shared/index.js';
 
 /**
@@ -50,7 +50,7 @@ export class MarketQueryService {
      */
     constructor(
         apiBaseUrl: string,
-        private readonly logger: ILogger
+        private readonly logger: ISystemLogService
     ) {
         this.apiBaseUrl = apiBaseUrl;
     }

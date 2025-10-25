@@ -1,4 +1,4 @@
-import type { IBlockchainObserverService, IBaseObserver, IObserverStats, ILogger, ITransaction } from '@tronrelic/types';
+import type { IBlockchainObserverService, IBaseObserver, IObserverStats, ISystemLogService, ITransaction } from '@tronrelic/types';
 
 type TransactionType = ITransaction['payload']['type'];
 
@@ -30,7 +30,7 @@ type TransactionType = ITransaction['payload']['type'];
  */
 export class BlockchainObserverService implements IBlockchainObserverService {
     private static instance: BlockchainObserverService | null = null;
-    private logger: ILogger;
+    private logger: ISystemLogService;
 
     private transactionTypeSubscribers = new Map<TransactionType, Set<IBaseObserver>>();
 
@@ -42,7 +42,7 @@ export class BlockchainObserverService implements IBlockchainObserverService {
      *
      * @param logger - Structured logger for service telemetry and observer activity tracking
      */
-    private constructor(logger: ILogger) {
+    private constructor(logger: ISystemLogService) {
         this.logger = logger;
         this.logger.info('Blockchain observer service initialized');
     }
@@ -81,7 +81,7 @@ export class BlockchainObserverService implements IBlockchainObserverService {
      * @param logger - Structured logger for service telemetry
      * @returns The singleton service instance
      */
-    public static initialize(logger: ILogger): BlockchainObserverService {
+    public static initialize(logger: ISystemLogService): BlockchainObserverService {
         if (!BlockchainObserverService.instance) {
             BlockchainObserverService.instance = new BlockchainObserverService(logger);
         } else {

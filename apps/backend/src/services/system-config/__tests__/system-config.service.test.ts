@@ -1,28 +1,38 @@
 /// <reference types="vitest" />
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import type { ILogger } from '@tronrelic/types';
+import type { ISystemLogService } from '@tronrelic/types';
 import { SystemConfigService } from '../system-config.service.js';
 
 /**
  * Mock logger implementation for testing.
  *
- * Provides a complete ILogger interface with spy functions to verify
+ * Provides a complete ISystemLogService interface with spy functions to verify
  * that the service logs appropriate messages during operation.
  */
-class MockLogger implements ILogger {
+class MockLogger implements ISystemLogService {
     public level = 'info';
-    public silent = vi.fn();
-    public msgPrefix = '';
     public fatal = vi.fn();
     public error = vi.fn();
     public warn = vi.fn();
     public info = vi.fn();
     public debug = vi.fn();
     public trace = vi.fn();
-    public child = vi.fn((_bindings: Record<string, unknown>, _options?: Record<string, unknown>): ILogger => {
+    public child = vi.fn((_bindings: Record<string, unknown>): ISystemLogService => {
         return this;
     });
+
+    // Additional ISystemLogService properties (not used in tests, so just return dummy values)
+    public async initialize() {}
+    public async saveLog() {}
+    public async getLogs() { return { logs: [], total: 0, page: 1, limit: 50, totalPages: 0, hasNextPage: false, hasPrevPage: false }; }
+    public async markAsResolved() {}
+    public async cleanup() { return 0; }
+    public async getStatistics() { return { total: 0, byLevel: {} as any, byService: {}, unresolved: 0 }; }
+    public async getLogById() { return null; }
+    public async markAsUnresolved() { return null; }
+    public async deleteAllLogs() { return 0; }
+    public async getStats() { return { total: 0, byLevel: {} as any, resolved: 0, unresolved: 0 }; }
 }
 
 describe('SystemConfigService', () => {

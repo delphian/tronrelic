@@ -1,4 +1,4 @@
-import type { IPluginDatabase, ILogger, IPluginWebSocketManager } from '@tronrelic/types';
+import type { IPluginDatabase, ISystemLogService, IPluginWebSocketManager } from '@tronrelic/types';
 import type { IDelegationTransaction, ISummationData, IResourceTrackingConfig, IAggregationState } from '../shared/types/index.js';
 
 /**
@@ -29,7 +29,7 @@ import type { IDelegationTransaction, ISummationData, IResourceTrackingConfig, I
  */
 export async function runSummationJob(
     database: IPluginDatabase,
-    logger: ILogger,
+    logger: ISystemLogService,
     websocket: IPluginWebSocketManager
 ): Promise<void> {
     const jobStartTime = new Date();

@@ -1,1 +1,1 @@
-export type { ILogger } from './ILogger.js';
+// ILogger removed - use ISystemLogService instead

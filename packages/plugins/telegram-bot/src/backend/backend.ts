@@ -1,4 +1,4 @@
-import { definePlugin, type IPluginContext, type IApiRouteConfig, type IHttpRequest, type IHttpResponse, type IHttpNext } from '@tronrelic/types';
+import { definePlugin, type IPluginContext, type IApiRouteConfig, type IHttpRequest, type IHttpResponse, type IHttpNext, type ISystemLogService } from '@tronrelic/types';
 import { telegramBotManifest } from '../manifest.js';
 import type { ITelegramUser, ITelegramSubscription, IPluginTelegramBotConfig } from '../shared/index.js';
 import { CommandHandler } from './command-handlers.js';
@@ -9,6 +9,7 @@ import { BotConfigService } from './bot-config.service.js';
 // Store context and config service for API handlers
 let pluginContext: IPluginContext;
 let botConfigService: BotConfigService;
+let scopedLogger: ISystemLogService;
 
 /**
  * Telegram Bot plugin for TronRelic.
@@ -167,6 +168,8 @@ export const telegramBotBackendPlugin = definePlugin({
      */
     init: async (context: IPluginContext) => {
         pluginContext = context;
+        scopedLogger = pluginContext.logger.child({ component: 'plugin:TelegramBot' });
+
         context.logger.info('Initializing telegram-bot plugin');
 
         // Create bot configuration service
