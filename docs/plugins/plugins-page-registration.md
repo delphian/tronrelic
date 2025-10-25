@@ -821,3 +821,17 @@ For developers working on the plugin system itself, here are the key files:
 The plugin menu and page system transforms UI extension from a multi-file manual process to a single-file declarative configuration. Plugins declare their navigation and routes, and the system handles discovery, registration, rendering, and routing automatically.
 
 This keeps the codebase modular, enables rapid feature development, and ensures plugins remain self-contained and easy to maintain.
+
+## Related Documentation
+
+**System documentation:**
+- [system-menu.md](../system/system-menu.md) - Backend menu service architecture, REST API endpoints, and WebSocket events
+
+**Plugin documentation:**
+- [plugins.md](./plugins.md) - Plugin system overview
+- [plugins-system-architecture.md](./plugins-system-architecture.md) - Plugin package structure and lifecycle hooks
+- [plugins-frontend-context.md](./plugins-frontend-context.md) - Frontend dependency injection and UI components
+
+**Frontend documentation:**
+- [frontend.md](../frontend/frontend.md) - Frontend architecture overview
+- [frontend-component-guide.md](../frontend/frontend-component-guide.md) - Component styling and design system

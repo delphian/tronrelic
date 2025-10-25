@@ -76,7 +76,7 @@ export function SystemLogsMonitor({ token }: Props) {
     const [hasPrevPage, setHasPrevPage] = useState(false);
 
     // Filters
-    const [selectedLevels, setSelectedLevels] = useState<LogLevel[]>(['error', 'warn']);
+    const [selectedLevels, setSelectedLevels] = useState<LogLevel[]>(['error', 'warn', 'info']);
     const [serviceFilter, setServiceFilter] = useState('');
 
     // Live polling (interval in milliseconds, 0 means disabled)
@@ -319,13 +319,20 @@ export function SystemLogsMonitor({ token }: Props) {
     }, []);
 
     /**
-     * Formats timestamp to localized date/time string.
+     * Formats timestamp to compact military time format.
      *
      * @param timestamp - ISO 8601 timestamp string
-     * @returns Formatted date/time string
+     * @returns Formatted date/time string (MM/DD/YY HH:mm:ss)
      */
     const formatTimestamp = (timestamp: string) => {
-        return new Date(timestamp).toLocaleString();
+        const date = new Date(timestamp);
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        const year = String(date.getFullYear()).slice(-2);
+        const hours = String(date.getHours()).padStart(2, '0');
+        const minutes = String(date.getMinutes()).padStart(2, '0');
+        const seconds = String(date.getSeconds()).padStart(2, '0');
+        return `${month}/${day}/${year} ${hours}:${minutes}:${seconds}`;
     };
 
     /**
