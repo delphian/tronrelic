@@ -531,9 +531,9 @@ describe('SystemLogService', () => {
         });
 
         /**
-         * Test: fatal() should save log to MongoDB as error level with structured logging.
+         * Test: fatal() should save log to MongoDB as fatal level with structured logging.
          */
-        it('should save fatal() logs to MongoDB as error level with structured logging', async () => {
+        it('should save fatal() logs to MongoDB as fatal level with structured logging', async () => {
             service.fatal({ critical: true }, 'Test fatal');
 
             // Wait for async saveLog call
@@ -541,7 +541,7 @@ describe('SystemLogService', () => {
 
             expect(SystemLog.create).toHaveBeenCalledWith(
                 expect.objectContaining({
-                    level: 'error',
+                    level: 'fatal',
                     message: 'Test fatal',
                     context: { critical: true },
                     resolved: false
@@ -550,15 +550,23 @@ describe('SystemLogService', () => {
         });
 
         /**
-         * Test: info() should NOT save log to MongoDB.
+         * Test: info() should save log to MongoDB when log level permits.
          */
-        it('should NOT save info() logs to MongoDB', async () => {
-            service.info('Test info');
+        it('should save info() logs to MongoDB when log level permits', async () => {
+            service.info({ metadata: 'test' }, 'Test info');
 
-            // Wait to ensure no async call is made
+            // Wait for async saveLog call
             await new Promise(resolve => setTimeout(resolve, 10));
 
-            expect(SystemLog.create).not.toHaveBeenCalled();
+            // Info logs are now saved to database when level permits (default is 'info')
+            expect(SystemLog.create).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    level: 'info',
+                    message: 'Test info',
+                    context: { metadata: 'test' },
+                    resolved: false
+                })
+            );
         });
 
         /**
@@ -1049,10 +1057,12 @@ describe('SystemLogService', () => {
             expect(stats).toEqual({
                 total: 100,
                 byLevel: {
-                    error: 40,
-                    warn: 30,
+                    trace: 0,
+                    debug: 0,
                     info: 0,
-                    debug: 0
+                    warn: 30,
+                    error: 40,
+                    fatal: 0
                 },
                 byService: {
                     'tronrelic-backend': 50,
