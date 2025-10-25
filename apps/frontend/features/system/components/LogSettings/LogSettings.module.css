@@ -2,7 +2,7 @@
  * LogSettings Component Styles
  *
  * Provides scoped styling for the log level configuration card.
- * Uses design tokens from globals.css for consistency.
+ * Uses design tokens from semantic-tokens.css for consistency.
  */
 
 .container {
@@ -11,66 +11,66 @@
 }
 
 .title {
-    margin: 0 0 var(--spacing-sm) 0;
+    margin: 0 0 var(--spacing-4) 0;
     font-size: var(--font-size-lg);
-    font-weight: 600;
-    color: var(--color-text-primary);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text);
 }
 
 .description {
-    margin: 0 0 var(--spacing-md) 0;
+    margin: 0 0 var(--spacing-7) 0;
     font-size: var(--font-size-sm);
-    color: var(--color-text-secondary);
-    line-height: 1.5;
+    color: var(--color-text-muted);
+    line-height: var(--line-height-relaxed);
 }
 
 .error {
-    padding: var(--spacing-sm) var(--spacing-md);
-    margin-bottom: var(--spacing-md);
-    background-color: var(--color-error-bg);
-    border: 1px solid var(--color-error);
+    padding: var(--spacing-4) var(--spacing-7);
+    margin-bottom: var(--spacing-7);
+    background-color: var(--alert-danger-background);
+    border: var(--border-width-thin) solid var(--alert-danger-border);
     border-radius: var(--radius-sm);
-    color: var(--color-error);
+    color: var(--alert-danger-color);
     font-size: var(--font-size-sm);
 }
 
 .success {
-    padding: var(--spacing-sm) var(--spacing-md);
-    margin-bottom: var(--spacing-md);
-    background-color: var(--color-success-bg);
-    border: 1px solid var(--color-success);
+    padding: var(--spacing-4) var(--spacing-7);
+    margin-bottom: var(--spacing-7);
+    background-color: var(--alert-success-background);
+    border: var(--border-width-thin) solid var(--alert-success-border);
     border-radius: var(--radius-sm);
-    color: var(--color-success);
+    color: var(--alert-success-color);
     font-size: var(--font-size-sm);
 }
 
 .form {
     display: flex;
     flex-direction: column;
-    gap: var(--spacing-md);
+    gap: var(--spacing-7);
 }
 
 .field {
     display: flex;
     flex-direction: column;
-    gap: var(--spacing-xs);
+    gap: var(--spacing-2);
 }
 
 .label {
     font-size: var(--font-size-sm);
-    font-weight: 500;
-    color: var(--color-text-primary);
+    font-weight: var(--font-weight-medium);
+    color: var(--color-text);
 }
 
 .select {
-    padding: var(--spacing-sm) var(--spacing-md);
-    font-size: var(--font-size-base);
-    color: var(--color-text-primary);
-    background-color: var(--color-surface-secondary);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-sm);
+    padding: var(--input-padding);
+    font-size: var(--input-font-size);
+    color: var(--color-text);
+    background-color: var(--input-background);
+    border: var(--input-border);
+    border-radius: var(--input-border-radius);
     cursor: pointer;
-    transition: border-color 0.2s ease;
+    transition: var(--input-transition);
 }
 
 .select:hover:not(:disabled) {
@@ -79,27 +79,27 @@
 
 .select:focus {
     outline: none;
-    border-color: var(--color-primary);
-    box-shadow: 0 0 0 3px var(--color-primary-alpha);
+    border-color: var(--input-border-focus);
+    box-shadow: var(--input-shadow-focus);
 }
 
 .select:disabled {
-    opacity: 0.5;
+    opacity: var(--button-disabled-opacity);
     cursor: not-allowed;
 }
 
 .help_text {
     margin: 0;
     font-size: var(--font-size-sm);
-    color: var(--color-text-secondary);
-    line-height: 1.4;
+    color: var(--color-text-muted);
+    line-height: var(--line-height-normal);
 }
 
 .actions {
     display: flex;
     align-items: center;
-    gap: var(--spacing-md);
-    padding-top: var(--spacing-sm);
+    gap: var(--spacing-7);
+    padding-top: var(--spacing-4);
 }
 
 .unsaved_indicator {
@@ -117,12 +117,12 @@
     .field {
         flex-direction: row;
         align-items: flex-start;
-        gap: var(--spacing-md);
+        gap: var(--spacing-7);
     }
 
     .label {
         min-width: 120px;
-        padding-top: var(--spacing-sm);
+        padding-top: var(--spacing-4);
     }
 
     .select {
