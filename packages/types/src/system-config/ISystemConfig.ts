@@ -1,3 +1,5 @@
+import type { LogLevelName } from '../system-log/LogLevels.js';
+
 /**
  * ISystemConfig
  *
@@ -134,7 +136,7 @@ export interface ISystemConfig {
      * log detail temporarily through the UI, then revert to normal levels
      * once the issue is resolved.
      */
-    logLevel: 'trace' | 'debug' | 'info' | 'warn' | 'error' | 'fatal' | 'silent';
+    logLevel: LogLevelName;
 
     /**
      * Timestamp of last configuration update.

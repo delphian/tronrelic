@@ -1,4 +1,5 @@
 import type { ISystemLogService, ISystemLogQuery, ISystemLogPaginatedResponse, ISaveLogData, LogLevel } from '@tronrelic/types';
+import { shouldLog } from '@tronrelic/types';
 import { SystemLog, ISystemLogDocument } from './database/index.js';
 import type pino from 'pino';
 
@@ -6,16 +7,24 @@ import type pino from 'pino';
  * Unified logging and system log storage service.
  *
  * This service serves dual purposes:
- * 1. **Application logger** - Provides logging methods (info, warn, error, debug, child) used throughout the codebase
- * 2. **MongoDB storage** - Automatically persists error/warn logs to MongoDB for admin visibility
+ * 1. **Application logger** - Provides logging methods (trace, debug, info, warn, error, fatal) used throughout the codebase
+ * 2. **MongoDB storage** - Automatically persists logs to MongoDB based on configured log level
  *
  * **How it works:**
  *
  * - Wraps a Pino logger instance for file/console output
- * - Intercepts `error()` and `warn()` calls before passing to Pino
- * - Saves those logs to MongoDB asynchronously
- * - Then delegates to Pino for file/console logging
- * - Other levels (info, debug) go straight to Pino
+ * - ALL log methods check if the message level meets the configured threshold
+ * - If the level permits, saves the log to MongoDB asynchronously BEFORE delegating to Pino
+ * - Then delegates to Pino for file/console logging (Pino has its own level check)
+ * - This ensures database persistence matches what appears in log files
+ *
+ * **Log level filtering:**
+ *
+ * The configured log level (from SystemConfig) controls BOTH file/console output AND
+ * database persistence. For example:
+ * - Level set to 'info': trace and debug are NOT saved to database or files
+ * - Level set to 'debug': trace is NOT saved, but debug/info/warn/error/fatal ARE saved
+ * - Level set to 'warn': only warn/error/fatal are saved to database and files
  *
  * **Usage:**
  *
@@ -26,9 +35,13 @@ import type pino from 'pino';
  * // After database connection, initialize with Pino instance
  * await logger.initialize(pinoLogger);
  *
- * // Use like any logger
- * logger.info('Server started');
- * logger.error({ error }, 'Database connection failed'); // Also saved to MongoDB
+ * // Use like any logger - database persistence based on configured level
+ * logger.trace('Detailed trace'); // Saved only if level <= 'trace'
+ * logger.debug('Debug info');     // Saved only if level <= 'debug'
+ * logger.info('Server started');  // Saved only if level <= 'info'
+ * logger.warn('Warning');         // Saved only if level <= 'warn'
+ * logger.error('Error occurred'); // Saved only if level <= 'error'
+ * logger.fatal('Fatal error');    // Saved only if level <= 'fatal'
  *
  * // Create child loggers
  * const moduleLogger = logger.child({ module: 'blockchain' });
@@ -74,22 +87,22 @@ export class SystemLogService implements ISystemLogService {
     /**
      * Set the log level at runtime.
      *
-     * Changes the minimum severity level for logs to be output. This affects
-     * both file/console output (via Pino) and has no effect on MongoDB persistence
-     * (warn/error/fatal are always saved regardless of level).
+     * Changes the minimum severity level for logs to be output AND persisted to MongoDB.
+     * This affects both file/console output (via Pino) and database persistence.
      *
      * **Common use cases:**
      *
-     * - Debugging: Set to 'debug' or 'trace' for verbose output
-     * - Production quieting: Set to 'warn' to reduce noise
-     * - Temporary silence: Set to 'silent' to suppress all output
+     * - Debugging: Set to 'debug' or 'trace' for verbose output and full database logs
+     * - Production normal: Set to 'info' for standard operational logging
+     * - Production quieting: Set to 'warn' to reduce noise and only capture issues
+     * - Temporary silence: Set to 'silent' to suppress all file/console output (MongoDB saving also stops)
      *
      * **Example:**
      *
      * ```typescript
-     * logger.level = 'warn';  // Only warn, error, fatal appear
-     * logger.level = 'debug'; // Debug, info, warn, error, fatal appear
-     * logger.level = 'silent'; // No logs appear (but MongoDB saving still works)
+     * logger.level = 'warn';   // Only warn, error, fatal appear in files AND database
+     * logger.level = 'debug';  // Debug, info, warn, error, fatal appear in files AND database
+     * logger.level = 'silent'; // Nothing appears in files or database
      * ```
      *
      * @param level - New log level (trace, debug, info, warn, error, fatal, silent)
@@ -192,6 +205,9 @@ export class SystemLogService implements ISystemLogService {
     /**
      * Log an informational message.
      *
+     * **MongoDB integration:** This method saves the log to MongoDB if the configured
+     * log level permits info messages (level must be 'trace', 'debug', or 'info').
+     *
      * Supports two signatures:
      * - `info(message, ...args)` - Simple message
      * - `info(obj, message, ...args)` - Structured logging with metadata
@@ -203,6 +219,12 @@ export class SystemLogService implements ISystemLogService {
      * @param args - Additional formatting args
      */
     public info(objOrMessage: string | object, messageOrArgs?: string | any, ...args: any[]): void {
+        // Save to MongoDB if level permits (only if initialized)
+        if (this.initialized && shouldLog('info', this.level)) {
+            void this.saveLogFromArgs('info', [objOrMessage, messageOrArgs, ...args]);
+        }
+
+        // Delegate to Pino for file/console logging
         if (!this.pino) {
             console.log('[INFO]', objOrMessage, messageOrArgs, ...args);
             return;
@@ -218,8 +240,8 @@ export class SystemLogService implements ISystemLogService {
     /**
      * Log a warning message.
      *
-     * **MongoDB integration:** This method automatically saves the log to MongoDB
-     * before delegating to Pino for file/console output.
+     * **MongoDB integration:** This method saves the log to MongoDB if the configured
+     * log level permits warning messages (level must be 'trace', 'debug', 'info', or 'warn').
      *
      * Falls back to console.warn if Pino is not initialized yet.
      *
@@ -228,8 +250,8 @@ export class SystemLogService implements ISystemLogService {
      * @param args - Additional formatting args
      */
     public warn(objOrMessage: string | object, messageOrArgs?: string | any, ...args: any[]): void {
-        // Save to MongoDB before logging (only if initialized)
-        if (this.initialized) {
+        // Save to MongoDB if level permits (only if initialized)
+        if (this.initialized && shouldLog('warn', this.level)) {
             void this.saveLogFromArgs('warn', [objOrMessage, messageOrArgs, ...args]);
         }
 
@@ -249,8 +271,8 @@ export class SystemLogService implements ISystemLogService {
     /**
      * Log an error message.
      *
-     * **MongoDB integration:** This method automatically saves the log to MongoDB
-     * before delegating to Pino for file/console output.
+     * **MongoDB integration:** This method saves the log to MongoDB if the configured
+     * log level permits error messages (level must be anything except 'silent' or 'fatal').
      *
      * Falls back to console.error if Pino is not initialized yet.
      *
@@ -259,8 +281,8 @@ export class SystemLogService implements ISystemLogService {
      * @param args - Additional formatting args
      */
     public error(objOrMessage: string | object, messageOrArgs?: string | any, ...args: any[]): void {
-        // Save to MongoDB before logging (only if initialized)
-        if (this.initialized) {
+        // Save to MongoDB if level permits (only if initialized)
+        if (this.initialized && shouldLog('error', this.level)) {
             void this.saveLogFromArgs('error', [objOrMessage, messageOrArgs, ...args]);
         }
 
@@ -280,6 +302,9 @@ export class SystemLogService implements ISystemLogService {
     /**
      * Log a debug message.
      *
+     * **MongoDB integration:** This method saves the log to MongoDB if the configured
+     * log level permits debug messages (level must be 'trace' or 'debug').
+     *
      * Falls back to console.debug if Pino is not initialized yet.
      *
      * @param objOrMessage - Metadata object or message string
@@ -287,6 +312,12 @@ export class SystemLogService implements ISystemLogService {
      * @param args - Additional formatting args
      */
     public debug(objOrMessage: string | object, messageOrArgs?: string | any, ...args: any[]): void {
+        // Save to MongoDB if level permits (only if initialized)
+        if (this.initialized && shouldLog('debug', this.level)) {
+            void this.saveLogFromArgs('debug', [objOrMessage, messageOrArgs, ...args]);
+        }
+
+        // Delegate to Pino for file/console logging
         if (!this.pino) {
             console.debug('[DEBUG]', objOrMessage, messageOrArgs, ...args);
             return;
@@ -302,6 +333,9 @@ export class SystemLogService implements ISystemLogService {
     /**
      * Log a trace message (lowest severity).
      *
+     * **MongoDB integration:** This method saves the log to MongoDB if the configured
+     * log level permits trace messages (level must be set to 'trace').
+     *
      * Falls back to console.debug if Pino is not initialized yet.
      *
      * @param objOrMessage - Metadata object or message string
@@ -309,6 +343,12 @@ export class SystemLogService implements ISystemLogService {
      * @param args - Additional formatting args
      */
     public trace(objOrMessage: string | object, messageOrArgs?: string | any, ...args: any[]): void {
+        // Save to MongoDB if level permits (only if initialized)
+        if (this.initialized && shouldLog('trace', this.level)) {
+            void this.saveLogFromArgs('trace', [objOrMessage, messageOrArgs, ...args]);
+        }
+
+        // Delegate to Pino for file/console logging
         if (!this.pino) {
             console.debug('[TRACE]', objOrMessage, messageOrArgs, ...args);
             return;
@@ -324,8 +364,8 @@ export class SystemLogService implements ISystemLogService {
     /**
      * Log a fatal error message (highest severity).
      *
-     * **MongoDB integration:** This method automatically saves the log to MongoDB
-     * before delegating to Pino for file/console output.
+     * **MongoDB integration:** This method saves the log to MongoDB with level 'fatal'
+     * if the configured log level permits (only 'silent' would prevent this).
      *
      * Falls back to console.error if Pino is not initialized yet.
      *
@@ -334,9 +374,10 @@ export class SystemLogService implements ISystemLogService {
      * @param args - Additional formatting args
      */
     public fatal(objOrMessage: string | object, messageOrArgs?: string | any, ...args: any[]): void {
-        // Save to MongoDB before logging (only if initialized)
-        if (this.initialized) {
-            void this.saveLogFromArgs('error', [objOrMessage, messageOrArgs, ...args]);
+        // Save to MongoDB if level permits (only if initialized)
+        // Note: Fatal logs are saved with level 'fatal' (not 'error' as before)
+        if (this.initialized && shouldLog('fatal', this.level)) {
+            void this.saveLogFromArgs('fatal', [objOrMessage, messageOrArgs, ...args]);
         }
 
         // Delegate to Pino for file/console logging
@@ -588,10 +629,12 @@ export class SystemLogService implements ISystemLogService {
         ]);
 
         const levelCounts: Record<LogLevel, number> = {
-            error: 0,
-            warn: 0,
+            trace: 0,
+            debug: 0,
             info: 0,
-            debug: 0
+            warn: 0,
+            error: 0,
+            fatal: 0
         };
 
         for (const item of byLevel) {
@@ -713,10 +756,12 @@ export class SystemLogService implements ISystemLogService {
         ]);
 
         const levelCounts: Record<LogLevel, number> = {
-            error: 0,
-            warn: 0,
+            trace: 0,
+            debug: 0,
             info: 0,
-            debug: 0
+            warn: 0,
+            error: 0,
+            fatal: 0
         };
 
         for (const item of byLevel) {

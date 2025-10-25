@@ -1,4 +1,5 @@
 import mongoose, { Schema, Document } from 'mongoose';
+import type { LogLevelName } from '@tronrelic/types';
 
 /**
  * SystemConfigDoc
@@ -44,7 +45,7 @@ export interface ISystemConfig {
     siteUrl: string;
     systemLogsMaxCount: number;
     systemLogsRetentionDays: number;
-    logLevel: 'trace' | 'debug' | 'info' | 'warn' | 'error' | 'fatal' | 'silent';
+    logLevel: LogLevelName;
     updatedAt: Date;
     updatedBy?: string;
 }
