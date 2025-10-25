@@ -299,4 +299,97 @@
     --alert-success-background: rgba(87, 212, 140, 0.18);
     --alert-success-border: rgba(87, 212, 140, 0.45);
     --alert-success-color: #9df5c1;
+
+    /* ========================================================================
+     * GENERAL COLOR TOKENS (Used across globals.css utilities)
+     * ======================================================================== */
+
+    /* Text Colors */
+    --color-text: #f5f7ff;                        /* Body text */
+    --color-text-muted: #a9b4d1;                  /* Secondary text */
+    --color-text-subtle: #7a8499;                 /* Tertiary text */
+
+    /* Primary Color Alphas */
+    --color-primary-alpha-10: rgba(79, 140, 255, 0.08);
+    --color-primary-alpha-15: rgba(79, 140, 255, 0.15);
+    --color-primary-alpha-18: rgba(79, 140, 255, 0.18);
+    --color-primary-alpha-30: rgba(79, 140, 255, 0.28);
+    --color-primary-alpha-38: rgba(79, 140, 255, 0.38);
+
+    /* Surface Colors */
+    --color-surface: rgba(10, 15, 26, 0.88);      /* Card/surface background */
+    --color-surface-base: rgba(6, 11, 20, 0.55);  /* Table base background */
+    --color-surface-elevated: rgba(255, 255, 255, 0.05); /* Elevated surfaces */
+    --color-surface-muted: rgba(11, 16, 28, 0.6); /* Muted backgrounds */
+    --color-surface-accent: rgba(10, 15, 26, 0.96); /* High contrast surfaces */
+
+    /* Border Colors */
+    --color-border: rgba(255, 255, 255, 0.06);    /* Default border */
+    --color-border-subtle: rgba(255, 255, 255, 0.05);
+    --color-border-strong: rgba(255, 255, 255, 0.12);
+
+    /* Focus Colors */
+    --color-focus: rgba(124, 155, 255, 0.95);
+    --color-focus-alpha-25: rgba(124, 155, 255, 0.24);
+
+    /* Warning Color Alphas */
+    --color-warning-alpha-15: rgba(255, 200, 87, 0.15);
+    --color-warning-alpha-40: rgba(255, 200, 87, 0.4);
+    --color-warning-text: #ffe2a6;
+
+    /* Danger Color Alphas */
+    --color-danger-alpha-18: rgba(255, 111, 125, 0.18);
+    --color-danger-alpha-50: rgba(255, 111, 125, 0.5);
+    --color-danger-text: #ffc1c8;
+
+    /* Success Color Alphas */
+    --color-success-alpha-18: rgba(87, 212, 140, 0.18);
+    --color-success-alpha-45: rgba(87, 212, 140, 0.45);
+    --color-success-text: #9df5c1;
+
+    /* Secondary Color */
+    --color-secondary: #3fd1ff;                   /* Link hover color */
+
+    /* ========================================================================
+     * GRADIENT TOKENS
+     * ======================================================================== */
+
+    --gradient-primary: linear-gradient(135deg, rgba(79, 140, 255, 0.38), rgba(79, 140, 255, 0.18));
+    --gradient-meter: linear-gradient(90deg, rgba(124, 155, 255, 0.9), rgba(101, 217, 165, 0.9));
+
+    /* ========================================================================
+     * CHIP/PILL TOKENS
+     * ======================================================================== */
+
+    --chip-gap: var(--spacing-3);                 /* 0.4rem */
+    --chip-padding: var(--spacing-2) var(--spacing-5); /* 0.35rem 0.7rem */
+    --chip-border-radius: var(--radius-full);
+    --chip-font-size: 0.78rem;
+    --chip-border: var(--border-width-thin) solid var(--color-border-strong);
+    --chip-transition: background-color var(--transition-base),
+                       border-color var(--transition-base),
+                       color var(--transition-base);
+
+    --pill-padding: var(--spacing-3) var(--spacing-5); /* 0.4rem 0.75rem */
+
+    /* ========================================================================
+     * SEGMENTED CONTROL TOKENS
+     * ======================================================================== */
+
+    --segmented-control-background: var(--color-surface-muted);
+    --segmented-control-border: var(--border-width-thin) solid var(--color-primary-alpha-18);
+    --segmented-control-padding: var(--spacing-1);  /* 0.25rem */
+    --segmented-control-button-padding: var(--spacing-3) var(--spacing-7); /* 0.45rem 0.9rem */
+    --segmented-control-button-font-size: var(--font-size-sm);
+    --segmented-control-active-background: var(--gradient-primary);
+    --segmented-control-active-color: #f7fbff;
+
+    /* ========================================================================
+     * METER/PROGRESS TOKENS
+     * ======================================================================== */
+
+    --meter-height: 8px;
+    --meter-background: var(--color-border-strong);
+    --meter-value-background: var(--gradient-meter);
+    --meter-margin-top: var(--spacing-5);         /* 0.75rem */
 }
