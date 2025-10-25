@@ -303,7 +303,7 @@ export function SystemLogsMonitor({ token }: Props) {
                     flashTimeoutRef.current = setTimeout(() => {
                         setNewLogIds(new Set());
                         flashTimeoutRef.current = null;
-                    }, 1000);
+                    }, 2000);
                 }
             });
         }
