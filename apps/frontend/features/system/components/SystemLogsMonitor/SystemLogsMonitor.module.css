@@ -146,15 +146,15 @@
 
 /* Column width allocation */
 .table th:nth-child(1), .table td:nth-child(1) { /* Timestamp */
-    width: 130px;
+    width: 155px;
 }
 
 .table th:nth-child(2), .table td:nth-child(2) { /* Level */
-    width: 90px;
+    width: 85px;
 }
 
 .table th:nth-child(3), .table td:nth-child(3) { /* Service */
-    width: 140px;
+    width: 160px;
 }
 
 .table th:nth-child(4), .table td:nth-child(4) { /* Message */
@@ -162,7 +162,7 @@
 }
 
 .table th:nth-child(5), .table td:nth-child(5) { /* Actions */
-    width: 100px;
+    width: 95px;
 }
 
 .table thead {
