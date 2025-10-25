@@ -7,14 +7,14 @@
 
 .container {
     display: grid;
-    gap: 2rem;
+    gap: var(--spacing-12);
 }
 
 .header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    gap: 1rem;
+    gap: var(--spacing-7);
     flex-wrap: wrap;
 }
 
@@ -24,8 +24,8 @@
 
 .header__title {
     margin: 0;
-    font-size: 1.5rem;
-    font-weight: 600;
+    font-size: var(--font-size-2xl);
+    font-weight: var(--font-weight-semibold);
 }
 
 .header__description {
@@ -34,11 +34,11 @@
 }
 
 .metrics {
-    margin-top: 0.75rem;
+    margin-top: var(--spacing-5);
 }
 
 .chart_container {
-    margin-top: 1.5rem;
+    margin-top: var(--spacing-10);
 }
 
 .highlights_header {
@@ -49,8 +49,8 @@
 
 .highlights_header__title {
     margin: 0;
-    font-size: 1.1rem;
-    font-weight: 600;
+    font-size: var(--font-size-lg);
+    font-weight: var(--font-weight-semibold);
 }
 
 .highlights_header__description {
@@ -61,43 +61,43 @@
 .highlights_list {
     display: flex;
     flex-direction: column;
-    gap: 1rem;
-    margin-top: 0.75rem;
+    gap: var(--spacing-7);
+    margin-top: var(--spacing-5);
 }
 
 .highlight {
     background: rgba(9, 15, 28, 0.6);
-    padding: 0.85rem 1.1rem;
+    padding: var(--spacing-6) 1.1rem;
     border-radius: var(--radius-md);
 }
 
 .highlight__header {
     display: flex;
     justify-content: space-between;
-    gap: 1rem;
+    gap: var(--spacing-7);
     flex-wrap: wrap;
 }
 
 .highlight__amount {
-    font-weight: 600;
-    font-size: 1rem;
+    font-weight: var(--font-weight-semibold);
+    font-size: var(--font-size-md);
 }
 
 .highlight__timestamp {
     color: var(--color-text-subtle);
-    font-size: 0.78rem;
+    font-size: var(--chip-font-size);
 }
 
 .highlight__addresses {
-    margin-top: 0.5rem;
-    font-size: 0.8rem;
+    margin-top: var(--spacing-4);
+    font-size: var(--font-size-sm);
     color: var(--color-text-subtle);
     word-break: break-all;
 }
 
 .highlight__memo {
     margin-top: 0.4rem;
-    font-size: 0.75rem;
+    font-size: var(--font-size-sm);
     color: var(--color-text-subtle);
 }
 

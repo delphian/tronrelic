@@ -8,19 +8,19 @@
 .container {
     display: flex;
     flex-direction: column;
-    gap: 1.5rem;
+    gap: var(--spacing-10);
 }
 
 .header {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: var(--spacing-4);
 }
 
 .header__title {
     margin: 0;
-    font-size: 1.5rem;
-    font-weight: 600;
+    font-size: var(--font-size-2xl);
+    font-weight: var(--font-weight-semibold);
 }
 
 .header__description {
@@ -31,58 +31,58 @@
 .transactions {
     display: flex;
     flex-direction: column;
-    gap: 0.9rem;
+    gap: var(--spacing-6);
 }
 
 .transaction {
     background: rgba(8, 12, 24, 0.68);
     border-radius: var(--radius-lg);
-    padding: 0.85rem 1.1rem;
+    padding: var(--spacing-6) var(--spacing-8);
 }
 
 .transaction__header {
     display: flex;
     justify-content: space-between;
-    gap: 1rem;
+    gap: var(--spacing-7);
     flex-wrap: wrap;
     align-items: center;
 }
 
 .transaction__amount {
-    font-weight: 600;
-    font-size: 1rem;
+    font-weight: var(--font-weight-semibold);
+    font-size: var(--font-size-md);
 }
 
 .transaction__timestamp {
     color: var(--color-text-subtle);
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
 }
 
 .transaction__addresses {
-    margin-top: 0.35rem;
-    font-size: 0.78rem;
+    margin-top: var(--spacing-2);
+    font-size: var(--chip-font-size);
     color: var(--color-text-subtle);
     word-break: break-all;
 }
 
 .transaction__footer {
     display: flex;
-    gap: 1rem;
+    gap: var(--spacing-7);
     flex-wrap: wrap;
-    margin-top: 0.5rem;
-    font-size: 0.75rem;
+    margin-top: var(--spacing-4);
+    font-size: var(--font-size-sm);
     color: rgba(226, 234, 255, 0.68);
 }
 
 .loading_state {
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
+    gap: var(--spacing-5);
 }
 
 .empty_state {
     color: var(--color-text-subtle);
-    padding: 2rem;
+    padding: var(--spacing-12);
     text-align: center;
 }
 

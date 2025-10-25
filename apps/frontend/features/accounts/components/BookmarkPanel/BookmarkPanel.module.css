@@ -8,21 +8,21 @@
 .header {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: var(--spacing-4);
 }
 
 .header__row {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    gap: 1rem;
+    gap: var(--spacing-7);
     flex-wrap: wrap;
 }
 
 .header__title {
     margin: 0;
-    font-size: 1.5rem;
-    font-weight: 600;
+    font-size: var(--font-size-2xl);
+    font-weight: var(--font-weight-semibold);
 }
 
 .header__description {
@@ -33,14 +33,14 @@
 .add_bookmark {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
-    margin-top: 0.5rem;
+    gap: var(--spacing-4);
+    margin-top: var(--spacing-4);
 }
 
 .add_bookmark__actions {
     display: flex;
     justify-content: space-between;
-    gap: 1rem;
+    gap: var(--spacing-7);
     flex-wrap: wrap;
 }
 
@@ -51,19 +51,19 @@
 
 .add_bookmark__target strong {
     color: var(--color-text-muted);
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
 }
 
 .bookmark_list {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: var(--spacing-4);
 }
 
 .bookmark_list__title {
     margin: 0;
-    font-size: 1.1rem;
-    font-weight: 600;
+    font-size: var(--font-size-lg);
+    font-weight: var(--font-weight-semibold);
 }
 
 .bookmark_list__empty {
@@ -73,12 +73,12 @@
 .bookmarks {
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
+    gap: var(--spacing-5);
 }
 
 .bookmark_item {
     background: rgba(10, 16, 28, 0.65);
-    padding: 0.85rem 1.1rem;
+    padding: var(--spacing-6) var(--spacing-8);
     border-radius: var(--radius-md);
 }
 
@@ -86,25 +86,25 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    gap: 1rem;
+    gap: var(--spacing-7);
     flex-wrap: wrap;
 }
 
 .bookmark_item__info {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: var(--spacing-4);
     margin: 0;
 }
 
 .bookmark_item__label {
-    font-weight: 600;
-    font-size: 1rem;
+    font-weight: var(--font-weight-semibold);
+    font-size: var(--font-size-md);
 }
 
 .bookmark_item__address {
     color: var(--color-text-subtle);
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     word-break: break-all;
 }
 

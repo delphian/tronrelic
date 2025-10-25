@@ -9,92 +9,92 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 0.5rem;
-    border-radius: 999px;
-    border: 1px solid transparent;
-    font-weight: 600;
-    letter-spacing: 0.01em;
+    gap: var(--button-gap);
+    border-radius: var(--button-border-radius);
+    border: var(--button-border-width) solid transparent;
+    font-weight: var(--button-font-weight);
+    letter-spacing: var(--button-letter-spacing);
     cursor: pointer;
-    transition: background-color var(--transition-base), transform var(--transition-base), box-shadow var(--transition-base), border-color var(--transition-base);
+    transition: var(--button-transition);
 }
 
 /* Variant Styles */
 .btn--primary {
-    background: linear-gradient(135deg, var(--color-primary), #6da3ff);
-    color: #0b1020;
-    box-shadow: 0 20px 36px rgba(58, 110, 255, 0.25);
+    background: var(--button-primary-background);
+    color: var(--button-primary-color);
+    box-shadow: var(--button-primary-shadow);
 }
 
 .btn--primary:hover {
     transform: translateY(-1px);
-    box-shadow: 0 28px 52px rgba(58, 110, 255, 0.32);
+    box-shadow: var(--button-primary-shadow-hover);
 }
 
 .btn--secondary {
-    background: rgba(79, 140, 255, 0.14);
-    color: #eaf0ff;
-    border-color: rgba(79, 140, 255, 0.4);
+    background: var(--button-secondary-background);
+    color: var(--button-secondary-color);
+    border-color: var(--button-secondary-border);
 }
 
 .btn--secondary:hover {
-    background: rgba(79, 140, 255, 0.22);
+    background: var(--button-secondary-background-hover);
 }
 
 .btn--ghost {
-    background: transparent;
-    color: #f5f7ff;
-    border-color: rgba(255, 255, 255, 0.12);
+    background: var(--button-ghost-background);
+    color: var(--button-ghost-color);
+    border-color: var(--button-ghost-border);
 }
 
 .btn--ghost:hover {
-    border-color: rgba(255, 255, 255, 0.24);
-    background: rgba(255, 255, 255, 0.05);
+    border-color: var(--button-ghost-border-hover);
+    background: var(--button-ghost-background-hover);
 }
 
 .btn--danger {
-    background: rgba(255, 111, 125, 0.14);
-    color: #ffb3bb;
-    border-color: rgba(255, 111, 125, 0.5);
+    background: var(--button-danger-background);
+    color: var(--button-danger-color);
+    border-color: var(--button-danger-border);
 }
 
 .btn--danger:hover {
-    background: rgba(255, 111, 125, 0.2);
+    background: var(--button-danger-background-hover);
 }
 
 /* Focus State */
 .btn:focus-visible {
-    outline: 2px solid rgba(124, 155, 255, 0.95);
-    outline-offset: 3px;
-    box-shadow: 0 0 0 4px rgba(124, 155, 255, 0.2);
+    outline: var(--focus-outline-width) solid var(--focus-outline-color);
+    outline-offset: var(--focus-outline-offset);
+    box-shadow: var(--focus-shadow);
 }
 
 /* Size Variants */
 .btn--sm {
-    min-height: 34px;
-    padding: 0.4rem 0.9rem;
-    font-size: 0.85rem;
+    min-height: var(--button-height-sm);
+    padding: var(--button-padding-sm);
+    font-size: var(--button-font-size-sm);
 }
 
 .btn--md {
-    min-height: 42px;
-    padding: 0.55rem 1.3rem;
-    font-size: 0.95rem;
+    min-height: var(--button-height-md);
+    padding: var(--button-padding-md);
+    font-size: var(--button-font-size-md);
 }
 
 .btn--lg {
-    min-height: 50px;
-    padding: 0.75rem 1.75rem;
-    font-size: 1.05rem;
+    min-height: var(--button-height-lg);
+    padding: var(--button-padding-lg);
+    font-size: var(--button-font-size-lg);
 }
 
 /* State Modifiers */
 .btn--loading {
-    opacity: 0.75;
+    opacity: var(--button-loading-opacity);
     cursor: progress;
 }
 
 .btn:disabled {
-    opacity: 0.55;
+    opacity: var(--button-disabled-opacity);
     cursor: not-allowed;
 }
 
