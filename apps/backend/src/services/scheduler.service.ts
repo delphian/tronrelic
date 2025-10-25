@@ -158,7 +158,7 @@ export class SchedulerService {
             });
 
             const started = Date.now();
-            logger.info({ job: job.name }, `Scheduler job started: ${job.name}`);
+            logger.debug({ job: job.name }, `Scheduled Job Start: ${job.name}`);
 
             try {
                 await job.handler();
@@ -170,7 +170,14 @@ export class SchedulerService {
                     status: 'success'
                 });
 
-                logger.info({ job: job.name, durationMs: duration }, 'Scheduler job finished');
+                logger.info(
+                    {
+                        job: job.name,
+                        durationMs: duration,
+                        status: 'success'
+                    },
+                    `Scheduled Job Complete: ${job.name}`
+                );
             } catch (error) {
                 const duration = Date.now() - started;
                 const errorMessage = error instanceof Error ? error.message : String(error);
@@ -182,7 +189,15 @@ export class SchedulerService {
                     error: errorMessage
                 });
 
-                logger.error({ job: job.name, error }, 'Scheduler job failed');
+                logger.error(
+                    {
+                        job: job.name,
+                        durationMs: duration,
+                        status: 'failed',
+                        error: errorMessage
+                    },
+                    `Scheduled Job Failed: ${job.name}`
+                );
             }
         });
 

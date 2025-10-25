@@ -221,3 +221,4 @@ context.websocket.onSubscribe(async (socket, roomName, payload) => {
 - [Frontend Architecture](../frontend/frontend.md) - Frontend system overview and patterns
 - [Market System](../markets/markets.md) - Market fetcher plugin examples
 - [Chain Parameters](../tron/tron-chain-parameters.md) - Blockchain data enrichment used by observers
+- [Navigation Menu System](../system/system-menu.md) - Backend menu service that manages plugin navigation items

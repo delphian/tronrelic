@@ -141,6 +141,28 @@
     width: 100%;
     min-width: 800px;
     border-collapse: collapse;
+    table-layout: fixed;
+}
+
+/* Column width allocation */
+.table th:nth-child(1), .table td:nth-child(1) { /* Timestamp */
+    width: 130px;
+}
+
+.table th:nth-child(2), .table td:nth-child(2) { /* Level */
+    width: 90px;
+}
+
+.table th:nth-child(3), .table td:nth-child(3) { /* Service */
+    width: 140px;
+}
+
+.table th:nth-child(4), .table td:nth-child(4) { /* Message */
+    width: auto; /* Takes remaining space */
+}
+
+.table th:nth-child(5), .table td:nth-child(5) { /* Actions */
+    width: 100px;
 }
 
 .table thead {
@@ -203,11 +225,9 @@
 }
 
 .message {
-    max-width: 500px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    word-break: break-word;
 }
 
 .level_badge {
