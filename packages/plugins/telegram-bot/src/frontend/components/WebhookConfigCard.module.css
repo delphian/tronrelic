@@ -10,9 +10,9 @@
 .card_title {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--spacing-4);
     font-size: 1.125rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     margin-bottom: 1.5rem;
     color: var(--color-primary);
 }
@@ -20,35 +20,35 @@
 .content {
     display: flex;
     flex-direction: column;
-    gap: 1.5rem;
+    gap: var(--spacing-10);
 }
 
 .loading {
     color: var(--color-text-muted);
-    font-size: 0.875rem;
+    font-size: var(--font-size-sm);
 }
 
 /* Warning Messages */
 .warning_card {
-    padding: 1rem;
+    padding: var(--spacing-7);
     background: rgba(255, 200, 87, 0.1);
-    border: 1px solid var(--color-warning);
+    border: var(--border-width-thin) solid var(--color-warning);
     border-radius: var(--radius-md);
-    font-size: 0.875rem;
+    font-size: var(--font-size-sm);
 }
 
 .warning_title {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    font-size: 0.875rem;
-    font-weight: 600;
-    margin-bottom: 0.75rem;
+    gap: var(--spacing-4);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
+    margin-bottom: var(--spacing-5);
     color: var(--color-warning);
 }
 
 .warning_text {
-    margin-bottom: 0.75rem;
+    margin-bottom: var(--spacing-5);
     line-height: 1.5;
 }
 
@@ -59,7 +59,7 @@
 }
 
 .warning_list li {
-    margin-bottom: 0.5rem;
+    margin-bottom: var(--spacing-4);
 }
 
 .warning_list code {
@@ -74,27 +74,27 @@
 .field {
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
+    gap: var(--spacing-5);
 }
 
 .label {
     display: block;
-    font-size: 0.875rem;
-    font-weight: 500;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
     color: var(--color-text);
 }
 
 .url_input_group {
     display: flex;
-    gap: 0.75rem;
+    gap: var(--spacing-5);
 }
 
 .url_input {
     flex: 1;
     font-family: monospace;
-    font-size: 0.875rem;
-    padding: 0.5rem 0.75rem;
-    border: 1px solid var(--color-border);
+    font-size: var(--font-size-sm);
+    padding: var(--spacing-4) 0.75rem;
+    border: var(--border-width-thin) solid var(--color-border);
     border-radius: var(--radius-md);
     background: var(--color-surface-muted);
     color: var(--color-text);
@@ -110,17 +110,17 @@
 .config_section {
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
+    gap: var(--spacing-5);
 }
 
 .section_title {
-    font-size: 0.875rem;
-    font-weight: 600;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
     margin-bottom: 0;
 }
 
 .section_description {
-    font-size: 0.875rem;
+    font-size: var(--font-size-sm);
     color: var(--color-text-muted);
     margin: 0 0 0.75rem 0;
     line-height: 1.5;
@@ -128,31 +128,31 @@
 
 .button_row {
     display: flex;
-    gap: 0.75rem;
+    gap: var(--spacing-5);
     flex-wrap: wrap;
 }
 
 /* Feedback Messages */
 .feedback_message {
-    margin-top: 0.75rem;
-    padding: 0.75rem;
+    margin-top: var(--spacing-5);
+    padding: var(--spacing-5);
     border-radius: var(--radius-md);
-    font-size: 0.875rem;
+    font-size: var(--font-size-sm);
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: var(--spacing-4);
     position: relative;
 }
 
 .feedback_message--success {
     background: rgba(87, 212, 140, 0.1);
-    border: 1px solid var(--color-success);
+    border: var(--border-width-thin) solid var(--color-success);
     color: var(--color-success);
 }
 
 .feedback_message--error {
     background: rgba(255, 111, 125, 0.1);
-    border: 1px solid var(--color-danger);
+    border: var(--border-width-thin) solid var(--color-danger);
     color: var(--color-danger);
 }
 
@@ -174,7 +174,7 @@
     align-items: center;
     justify-content: center;
     border-radius: var(--radius-sm);
-    opacity: 0.7;
+    opacity: var(--opacity-70);
     transition: opacity 0.2s ease;
 }
 
@@ -189,25 +189,25 @@
 }
 
 .feedback_details {
-    margin-top: 0.5rem;
+    margin-top: var(--spacing-4);
 }
 
 .details_summary {
     cursor: pointer;
-    font-size: 0.75rem;
+    font-size: var(--font-size-sm);
     opacity: 0.8;
     user-select: none;
 }
 
 .details_content {
-    margin-top: 0.5rem;
-    font-size: 0.75rem;
+    margin-top: var(--spacing-4);
+    font-size: var(--font-size-sm);
     font-family: monospace;
     opacity: 0.9;
 }
 
 .details_content div {
-    margin-bottom: 0.25rem;
+    margin-bottom: var(--spacing-1);
 }
 
 .details_content .error_text {
@@ -216,12 +216,12 @@
 
 /* Collapsible Instructions */
 .advanced_instructions {
-    margin-top: 1rem;
+    margin-top: var(--spacing-7);
 }
 
 .instructions_summary {
-    font-size: 0.875rem;
-    font-weight: 500;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
     cursor: pointer;
     color: var(--color-text-muted);
     user-select: none;
@@ -232,32 +232,32 @@
 }
 
 .instructions_content {
-    margin-top: 0.75rem;
+    margin-top: var(--spacing-5);
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
+    gap: var(--spacing-5);
 }
 
 .instructions_text {
-    font-size: 0.875rem;
+    font-size: var(--font-size-sm);
     color: var(--color-text-muted);
     margin: 0;
     line-height: 1.5;
 }
 
 .code_block {
-    padding: 0.75rem;
+    padding: var(--spacing-5);
     background: var(--color-surface-muted);
     border-radius: var(--radius-md);
-    font-size: 0.75rem;
+    font-size: var(--font-size-sm);
     overflow-x: auto;
-    border: 1px solid var(--color-border);
+    border: var(--border-width-thin) solid var(--color-border);
     font-family: monospace;
     white-space: pre;
 }
 
 .code_note {
-    font-size: 0.75rem;
+    font-size: var(--font-size-sm);
     color: var(--color-text-muted);
     margin: 0;
     line-height: 1.5;
@@ -272,12 +272,12 @@
 
 /* Security Note */
 .security_note {
-    padding: 0.75rem;
+    padding: var(--spacing-5);
     background: var(--color-surface-muted);
     border-radius: var(--radius-md);
-    font-size: 0.875rem;
+    font-size: var(--font-size-sm);
 }
 
 .security_note strong {
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
 }

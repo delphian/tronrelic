@@ -28,37 +28,37 @@
     position: absolute;
     display: inline-flex;
     flex-direction: column;
-    gap: 0.35rem;
+    gap: var(--spacing-2);
     min-width: 160px;
     padding: 0.6rem 0.8rem;
     border-radius: var(--radius-md);
     background: rgba(7, 12, 24, 0.95);
-    border: 1px solid rgba(124, 155, 255, 0.32);
+    border: var(--border-width-thin) solid rgba(124, 155, 255, 0.32);
     box-shadow: 0 18px 38px rgba(5, 9, 18, 0.45);
     color: #f5f7ff;
-    font-size: 0.85rem;
+    font-size: var(--font-size-sm);
     pointer-events: none;
     transform: translate(-50%, -110%);
     z-index: 2;
 }
 
 .tooltip__label {
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
 }
 
 .tooltip__meta {
     display: flex;
     justify-content: space-between;
-    gap: 0.75rem;
-    font-size: 0.78rem;
+    gap: var(--spacing-5);
+    font-size: var(--chip-font-size);
     color: rgba(226, 234, 255, 0.75);
 }
 
 .tooltip__footer {
-    margin-top: 0.5rem;
+    margin-top: var(--spacing-4);
     padding-top: 0.5rem;
     border-top: 1px solid rgba(226, 234, 255, 0.15);
-    font-size: 0.75rem;
+    font-size: var(--font-size-sm);
     color: rgba(226, 234, 255, 0.6);
     text-align: left;
 }
@@ -68,29 +68,29 @@
    ======================================== */
 
 .legend {
-    margin-top: 0.75rem;
+    margin-top: var(--spacing-5);
 }
 
 .legend__items {
     display: flex;
-    gap: 1rem;
+    gap: var(--spacing-7);
     flex-wrap: wrap;
 }
 
 .legend__item {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--spacing-4);
 }
 
 .legend__dot {
     display: inline-flex;
     width: 12px;
     height: 12px;
-    border-radius: 999px;
+    border-radius: var(--radius-full);
 }
 
 .legend__label {
     color: var(--color-text-subtle);
-    font-size: 0.85rem;
+    font-size: var(--font-size-sm);
 }

@@ -7,23 +7,23 @@
 
 .input {
     width: 100%;
-    border-radius: var(--radius-sm);
-    background: rgba(10, 15, 26, 0.85);
-    border: 1px solid rgba(110, 160, 255, 0.18);
+    border-radius: var(--input-border-radius);
+    background: var(--input-background);
+    border: var(--input-border);
     color: inherit;
-    padding: 0.75rem 1rem;
-    font-size: 0.98rem;
-    transition: border-color var(--transition-base), box-shadow var(--transition-base);
+    padding: var(--input-padding);
+    font-size: var(--input-font-size);
+    transition: var(--input-transition);
 }
 
 .input:focus {
     outline: none;
-    border-color: rgba(110, 160, 255, 0.48);
-    box-shadow: 0 0 0 3px rgba(79, 140, 255, 0.24);
+    border-color: var(--input-border-focus);
+    box-shadow: var(--input-shadow-focus);
 }
 
 /* Variant: Ghost */
 .input--ghost {
-    background: transparent;
-    border-color: rgba(255, 255, 255, 0.12);
+    background: var(--input-ghost-background);
+    border-color: var(--input-ghost-border);
 }

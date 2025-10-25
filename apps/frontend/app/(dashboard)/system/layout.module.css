@@ -10,55 +10,55 @@
 .login_container {
     max-width: 400px;
     margin: 4rem auto;
-    padding: 2rem;
+    padding: var(--spacing-12);
 }
 
 .login_content {
     display: grid;
-    gap: 1.5rem;
+    gap: var(--spacing-10);
 }
 
 .login_header {
     display: grid;
-    gap: 0.5rem;
+    gap: var(--spacing-4);
 }
 
 .login_title {
-    font-size: 1.75rem;
-    font-weight: 700;
+    font-size: var(--font-size-2xl);
+    font-weight: var(--font-weight-bold);
     margin: 0;
 }
 
 .login_subtitle {
     color: var(--color-text-muted);
     margin: 0;
-    font-size: 0.95rem;
+    font-size: var(--font-size-base);
 }
 
 .login_form {
     display: grid;
-    gap: 1rem;
+    gap: var(--spacing-7);
 }
 
 .login_label {
     display: grid;
-    gap: 0.5rem;
+    gap: var(--spacing-4);
 }
 
 .login_label_text {
-    font-size: 0.9rem;
-    font-weight: 500;
+    font-size: var(--font-size-base);
+    font-weight: var(--font-weight-medium);
     color: var(--color-text-muted);
 }
 
 /* Authenticated layout container */
 .layout_container {
-    padding: 2rem;
+    padding: var(--spacing-12);
 }
 
 .layout_content {
     display: grid;
-    gap: 2rem;
+    gap: var(--spacing-12);
 }
 
 .layout_header {
@@ -66,24 +66,24 @@
     justify-content: space-between;
     align-items: center;
     flex-wrap: wrap;
-    gap: 1.5rem;
+    gap: var(--spacing-10);
 }
 
 .layout_header_text {
     display: grid;
-    gap: 0.5rem;
+    gap: var(--spacing-4);
 }
 
 .layout_title {
-    font-size: 1.85rem;
-    font-weight: 700;
+    font-size: var(--font-size-2xl);
+    font-weight: var(--font-weight-bold);
     margin: 0;
 }
 
 .layout_subtitle {
     color: var(--color-text-muted);
     margin: 0;
-    font-size: 0.95rem;
+    font-size: var(--font-size-base);
 }
 
 .layout_section {
@@ -93,13 +93,13 @@
 
 /* Error message styling */
 .error_message {
-    padding: 0.75rem 1rem;
+    padding: var(--spacing-5) 1rem;
     background: rgba(255, 111, 125, 0.1);
-    border: 1px solid rgba(255, 111, 125, 0.3);
+    border: var(--border-width-thin) solid rgba(255, 111, 125, 0.3);
     border-radius: var(--radius-sm);
     color: var(--color-danger);
-    font-size: 0.9rem;
-    margin-top: 0.5rem;
+    font-size: var(--font-size-base);
+    margin-top: var(--spacing-4);
 }
 
 /* Responsive adjustments */

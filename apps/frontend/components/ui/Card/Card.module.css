@@ -6,41 +6,41 @@
  */
 
 .card {
-    background: var(--color-surface);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-lg);
-    backdrop-filter: blur(18px);
-    box-shadow: var(--shadow-sm);
-    transition: transform var(--transition-base), border-color var(--transition-base), box-shadow var(--transition-base);
+    background: var(--card-background);
+    border: var(--card-border);
+    border-radius: var(--card-border-radius);
+    backdrop-filter: var(--card-backdrop-filter);
+    box-shadow: var(--card-shadow);
+    transition: var(--card-transition);
 }
 
 .card:hover {
-    border-color: var(--color-border-strong);
-    box-shadow: var(--shadow-md);
+    border-color: var(--card-border-hover);
+    box-shadow: var(--card-shadow-hover);
 }
 
 /* Tone Variants */
 .card--muted {
-    background: var(--color-surface-muted);
+    background: var(--card-background-muted);
 }
 
 .card--accent {
-    background: var(--color-surface-accent);
+    background: var(--card-background-accent);
 }
 
 .card--elevated {
-    box-shadow: var(--shadow-lg);
+    box-shadow: var(--card-shadow-elevated);
 }
 
 /* Padding Variants */
 .card--padding-sm {
-    padding: 1rem 1.25rem;
+    padding: var(--card-padding-sm);
 }
 
 .card--padding-md {
-    padding: 1.5rem;
+    padding: var(--card-padding-md);
 }
 
 .card--padding-lg {
-    padding: 2rem;
+    padding: var(--card-padding-lg);
 }

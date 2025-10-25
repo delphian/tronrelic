@@ -10,9 +10,9 @@
 .card_title {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--spacing-4);
     font-size: 1.125rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     margin-bottom: 1.5rem;
     color: var(--color-primary);
 }
@@ -20,58 +20,58 @@
 .content {
     display: flex;
     flex-direction: column;
-    gap: 1.5rem;
+    gap: var(--spacing-10);
 }
 
 .loading {
     color: var(--color-text-muted);
-    font-size: 0.875rem;
+    font-size: var(--font-size-sm);
 }
 
 /* Status Indicator */
 .status_indicator {
-    padding: 0.75rem 1rem;
+    padding: var(--spacing-5) 1rem;
     border-radius: var(--radius-md);
-    font-size: 0.875rem;
+    font-size: var(--font-size-sm);
 }
 
 .status_success,
 .status_warning {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--spacing-4);
 }
 
 .status_success {
     color: var(--color-success);
     background: rgba(87, 212, 140, 0.1);
-    border: 1px solid var(--color-success);
+    border: var(--border-width-thin) solid var(--color-success);
 }
 
 .status_warning {
     color: var(--color-warning);
     background: rgba(255, 200, 87, 0.1);
-    border: 1px solid var(--color-warning);
+    border: var(--border-width-thin) solid var(--color-warning);
 }
 
 /* Field Container */
 .field {
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
+    gap: var(--spacing-5);
 }
 
 .label {
     display: block;
-    font-size: 0.875rem;
-    font-weight: 500;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
     color: var(--color-text);
 }
 
 /* Input Group - Input with visibility toggle */
 .input_group {
     display: flex;
-    gap: 0.5rem;
+    gap: var(--spacing-4);
     align-items: center;
 }
 
@@ -82,9 +82,9 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    padding: 0.75rem;
+    padding: var(--spacing-5);
     background: rgba(79, 140, 255, 0.14);
-    border: 1px solid rgba(79, 140, 255, 0.4);
+    border: var(--border-width-thin) solid rgba(79, 140, 255, 0.4);
     border-radius: var(--radius-sm);
     color: var(--color-primary);
     cursor: pointer;
@@ -110,7 +110,7 @@
 .save_button_container {
     display: flex;
     justify-content: center;
-    margin-top: 0.5rem;
+    margin-top: var(--spacing-4);
 }
 
 /* Feedback Messages */
@@ -118,35 +118,35 @@
 .feedback_error {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.75rem 1rem;
+    gap: var(--spacing-4);
+    padding: var(--spacing-5) 1rem;
     border-radius: var(--radius-md);
-    font-size: 0.875rem;
+    font-size: var(--font-size-sm);
     line-height: 1.5;
 }
 
 .feedback_success {
     background: rgba(87, 212, 140, 0.1);
-    border: 1px solid var(--color-success);
+    border: var(--border-width-thin) solid var(--color-success);
     color: var(--color-success);
 }
 
 .feedback_error {
     background: rgba(255, 111, 125, 0.1);
-    border: 1px solid var(--color-danger);
+    border: var(--border-width-thin) solid var(--color-danger);
     color: var(--color-danger);
 }
 
 /* Setup Instructions - styled as plain text collapsible (matches WebhookConfigCard) */
 .instructions {
-    margin-top: 0.5rem;
-    font-size: 0.875rem;
+    margin-top: var(--spacing-4);
+    font-size: var(--font-size-sm);
     line-height: 1.6;
 }
 
 .instructions_header {
-    font-size: 0.875rem;
-    font-weight: 500;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
     cursor: pointer;
     color: var(--color-text-muted);
     user-select: none;
@@ -157,7 +157,7 @@
 }
 
 .instructions_content {
-    margin-top: 0.75rem;
+    margin-top: var(--spacing-5);
 }
 
 .instructions_list {
@@ -166,7 +166,7 @@
 }
 
 .instructions_list li {
-    margin-bottom: 0.5rem;
+    margin-bottom: var(--spacing-4);
 }
 
 .instructions_list code {
