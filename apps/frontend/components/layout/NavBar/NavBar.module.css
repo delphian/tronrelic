@@ -121,7 +121,9 @@
 
 /* Wallet Container and Connect Wallet Button Styles */
 .wallet_container {
-    position: relative;
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-5);
 }
 
 /**
