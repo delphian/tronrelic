@@ -1,6 +1,6 @@
 import { connectDatabase } from '../../../loaders/database.js';
 import { logger } from '../../../lib/logger.js';
-import { PluginDatabaseService } from '../../../services/plugin-database.service.js';
+import { PluginDatabaseService } from '../../../services/database/index.js';
 
 /**
  * Migration: Add namespace field to existing menu nodes.

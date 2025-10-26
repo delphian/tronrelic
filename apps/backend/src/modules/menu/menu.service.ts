@@ -7,7 +7,7 @@ import type {
     IMenuValidation,
     MenuEventType,
     MenuEventSubscriber,
-    IPluginDatabase
+    IDatabaseService
 } from '@tronrelic/types';
 import { logger } from '../../lib/logger.js';
 import { WebSocketService } from '../../services/websocket.service.js';
@@ -65,7 +65,7 @@ export class MenuService implements IMenuService {
     private menuTree: Map<string, Map<string, IMenuNode>> = new Map(); // namespace -> node map
     private subscribers: Map<MenuEventType, MenuEventSubscriber[]> = new Map();
     private initialized = false;
-    private database: IPluginDatabase;
+    private database: IDatabaseService;
     private readonly DEFAULT_NAMESPACE = 'main';
 
     /**
@@ -76,7 +76,7 @@ export class MenuService implements IMenuService {
      *
      * @param database - Database service for menu node storage
      */
-    private constructor(database: IPluginDatabase) {
+    private constructor(database: IDatabaseService) {
         this.database = database;
     }
 
@@ -88,7 +88,7 @@ export class MenuService implements IMenuService {
      *
      * @param database - Database service for menu node storage
      */
-    public static setDatabase(database: IPluginDatabase): void {
+    public static setDatabase(database: IDatabaseService): void {
         if (!MenuService.instance) {
             MenuService.instance = new MenuService(database);
         }

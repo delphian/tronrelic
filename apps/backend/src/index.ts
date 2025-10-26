@@ -8,7 +8,7 @@ import { WebSocketService } from './services/websocket.service.js';
 import { initializeJobs, stopJobs } from './jobs/index.js';
 import { loadPlugins } from './loaders/plugins.js';
 import { MenuService } from './modules/menu/menu.service.js';
-import { PluginDatabaseService } from './services/plugin-database.service.js';
+import { PluginDatabaseService, DatabaseService } from './services/database/index.js';
 import { BlockchainObserverService } from './services/blockchain-observer/index.js';
 import { SystemConfigService } from './services/system-config/index.js';
 
@@ -25,10 +25,11 @@ async function bootstrap() {
         await logger.initialize(pinoLogger);
         logger.info({}, 'Logger initialized - errors/warnings will be saved to MongoDB');
 
-        // Initialize system configuration service
+        // Initialize system configuration service with database dependency
         logger.info({}, 'Initializing system configuration service...');
         const configLogger = logger.child({ module: 'system-config' });
-        SystemConfigService.initialize(configLogger);
+        const coreDatabase = new DatabaseService(); // No prefix for core services
+        SystemConfigService.initialize(configLogger, coreDatabase);
         logger.info({}, 'System configuration service initialized');
 
         // Initialize blockchain observer service explicitly before plugins load
@@ -53,7 +54,7 @@ async function bootstrap() {
         // Initialize MenuService with database dependency injection
         // Use 'core' as the namespace to distinguish from plugin collections
         try {
-            const menuDatabase = new PluginDatabaseService('core');
+            const menuDatabase = new DatabaseService({ prefix: 'core_' });
             MenuService.setDatabase(menuDatabase);
             await MenuService.getInstance().initialize();
         } catch (menuError) {

@@ -6,7 +6,7 @@ import { logger } from '../lib/logger.js';
 import { BlockchainObserverService } from '../services/blockchain-observer/index.js';
 import { BaseObserver } from '../modules/blockchain/observers/BaseObserver.js';
 import { WebSocketService } from '../services/websocket.service.js';
-import { PluginDatabaseService } from '../services/plugin-database.service.js';
+import { PluginDatabaseService } from '../services/database/index.js';
 import { PluginApiService } from '../services/plugin-api.service.js';
 import { PluginMetadataService } from '../services/plugin-metadata.service.js';
 import { PluginManagerService } from '../services/plugin-manager.service.js';

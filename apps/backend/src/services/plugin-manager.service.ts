@@ -1,6 +1,6 @@
 import type { IPlugin, IPluginContext, IPluginManifest } from '@tronrelic/types';
 import { PluginMetadataService } from './plugin-metadata.service.js';
-import { PluginDatabaseService } from './plugin-database.service.js';
+import { PluginDatabaseService } from './database/index.js';
 import { PluginApiService } from './plugin-api.service.js';
 import { BlockchainObserverService } from './blockchain-observer/index.js';
 import { BaseObserver } from '../modules/blockchain/observers/BaseObserver.js';

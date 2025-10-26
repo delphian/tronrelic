@@ -1,7 +1,7 @@
 /// <reference types="vitest" />
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import type { ISystemLogService } from '@tronrelic/types';
+import type { ISystemLogService, IDatabaseService } from '@tronrelic/types';
 import { SystemConfigService } from '../system-config.service.js';
 
 /**
@@ -35,20 +35,41 @@ class MockLogger implements ISystemLogService {
     public async getStats() { return { total: 0, byLevel: {} as any, resolved: 0, unresolved: 0 }; }
 }
 
+/**
+ * Mock database implementation for testing.
+ */
+class MockDatabase implements IDatabaseService {
+    getCollection() { return {} as any; }
+    registerModel() {}
+    getModel() { return undefined; }
+    async get() { return undefined; }
+    async set() {}
+    async delete() { return false; }
+    async createIndex() {}
+    async count() { return 0; }
+    async find() { return []; }
+    async findOne() { return null; }
+    async insertOne() { return null; }
+    async updateMany() { return 0; }
+    async deleteMany() { return 0; }
+}
+
 describe('SystemConfigService', () => {
     let service: SystemConfigService;
     let mockLogger: MockLogger;
+    let mockDatabase: MockDatabase;
 
     beforeEach(() => {
         // Clear all mocks before each test
         vi.clearAllMocks();
 
-        // Create fresh mock logger
+        // Create fresh mock logger and database
         mockLogger = new MockLogger();
+        mockDatabase = new MockDatabase();
 
-        // Reset singleton and initialize with mock logger
+        // Reset singleton and initialize with mock logger and database
         (SystemConfigService as any).instance = undefined;
-        SystemConfigService.initialize(mockLogger as any);
+        SystemConfigService.initialize(mockLogger as any, mockDatabase);
         service = SystemConfigService.getInstance();
     });
 
@@ -100,7 +121,7 @@ describe('SystemConfigService', () => {
          * to prevent accidental re-initialization and loss of cached state.
          */
         it('should throw error if initialized twice', () => {
-            expect(() => SystemConfigService.initialize(mockLogger as any)).toThrow(
+            expect(() => SystemConfigService.initialize(mockLogger as any, mockDatabase)).toThrow(
                 'SystemConfigService already initialized'
             );
         });
