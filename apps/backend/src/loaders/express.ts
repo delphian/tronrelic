@@ -46,6 +46,10 @@ export function createExpressApp(database?: IDatabaseService): Express {
   app.use(express.urlencoded({ extended: true }));
   app.use(morgan(env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 
+  // Serve uploaded files from /public/uploads directory
+  // Files are accessible at /uploads/* routes
+  app.use('/uploads', express.static('public/uploads'));
+
   app.get('/api/health', (_req, res) => {
     res.json({ status: 'ok', timestamp: Date.now() });
   });

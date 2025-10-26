@@ -117,6 +117,10 @@ const nextConfig = {
                 source: '/api/:path*',
                 destination: `${resolveInternalApiOrigin()}/api/:path*`,
             },
+            {
+                source: '/uploads/:path*',
+                destination: `${resolveInternalApiOrigin()}/uploads/:path*`,
+            },
         ];
     },
     async redirects() {
