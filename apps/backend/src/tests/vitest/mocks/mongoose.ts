@@ -638,32 +638,105 @@ export function createMockCollection(name: string) {
 }
 
 /**
+ * Mock MongoDB session for transaction support.
+ *
+ * Provides minimal session API to enable transaction-aware testing without
+ * requiring a real MongoDB replica set. The withTransaction() method executes
+ * the callback directly and handles errors appropriately.
+ */
+class MockMongooseSession {
+    private _ended = false;
+
+    /**
+     * Execute a function within a transaction context.
+     *
+     * In the mock implementation, simply executes the callback and handles
+     * errors. Real transaction commit/rollback is not simulated.
+     *
+     * @param fn - Async function to execute
+     * @returns Promise that resolves when transaction completes
+     * @throws Error if callback throws
+     */
+    public async withTransaction(fn: () => Promise<void>): Promise<void> {
+        try {
+            await fn();
+            // Transaction committed successfully (mock)
+        } catch (error) {
+            // Transaction rolled back (mock)
+            throw error;
+        }
+    }
+
+    /**
+     * End the session.
+     *
+     * Marks the session as ended. No actual cleanup needed in mock.
+     */
+    public async endSession(): Promise<void> {
+        this._ended = true;
+    }
+
+    /**
+     * Check if session has been ended.
+     */
+    public get ended(): boolean {
+        return this._ended;
+    }
+}
+
+/**
  * Create a complete Mongoose module mock.
  *
- * Returns a mock that can be passed directly to vi.mock('mongoose').
- * Includes full connection, database, and Schema support.
+ * Returns a factory function that can be used with vi.mock('mongoose').
+ * Includes full connection, database, Schema support, and transaction mocking.
  *
- * @returns Mongoose module mock
+ * @returns Factory function for Vitest module mocking
  *
  * @example
  * ```typescript
+ * // Option 1: With importOriginal (for partial mocking)
+ * vi.mock('mongoose', async (importOriginal) => {
+ *     const { createMockMongooseModule } = await import('./mocks/mongoose.js');
+ *     return createMockMongooseModule()(importOriginal);
+ * });
+ *
+ * // Option 2: Direct usage (full mock)
  * vi.mock('mongoose', () => createMockMongooseModule());
  * ```
  */
 export function createMockMongooseModule() {
-    return async (importOriginal: () => Promise<any>) => {
-        const actual = await importOriginal();
-        return {
-            ...actual,
-            default: {
-                connection: {
-                    db: {
-                        collection: createMockCollection
+    // Return a factory that optionally accepts importOriginal
+    return (importOriginal?: () => Promise<any>) => ({
+        default: {
+            /**
+             * Start a new MongoDB session for transactions.
+             *
+             * Returns a mock session that supports withTransaction() and endSession().
+             */
+            startSession: vi.fn(async () => new MockMongooseSession()),
+
+            connection: {
+                readyState: 1, // 1 = connected
+                db: {
+                    collection: createMockCollection,
+                    admin: vi.fn(() => ({
+                        serverStatus: vi.fn().mockResolvedValue({})
+                    }))
+                },
+                // Mock replica set topology for transaction support detection
+                topology: {
+                    description: {
+                        type: 'ReplicaSetWithPrimary'
+                    },
+                    s: {
+                        options: {
+                            replicaSet: 'rs0'
+                        }
                     }
                 }
             }
-        };
-    };
+        }
+    });
 }
 
 /**

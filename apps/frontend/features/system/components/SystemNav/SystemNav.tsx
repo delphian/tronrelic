@@ -21,6 +21,7 @@ export function SystemNav() {
         { id: 'blockchain', label: 'Blockchain', href: '/system/blockchain' },
         { id: 'scheduler', label: 'Scheduler', href: '/system/scheduler' },
         { id: 'markets', label: 'Markets', href: '/system/markets' },
+        { id: 'database', label: 'Database', href: '/system/database' },
         { id: 'health', label: 'Health', href: '/system/health' },
         { id: 'config', label: 'Config', href: '/system/config' },
         { id: 'plugins', label: 'Plugins', href: '/system/plugins' },

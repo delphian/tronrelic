@@ -32,15 +32,25 @@ async function bootstrap() {
         SystemConfigService.initialize(configLogger, coreDatabase);
         logger.info({}, 'System configuration service initialized');
 
+        // Initialize migration system
+        logger.info({}, 'Initializing database migration system...');
+        try {
+            await coreDatabase.initializeMigrations();
+            logger.info({}, 'Database migration system initialized');
+        } catch (migrationError) {
+            logger.error({ migrationError, stack: migrationError instanceof Error ? migrationError.stack : undefined }, 'Migration system initialization failed');
+            // Continue startup - migration system failure should not prevent app from running
+        }
+
         // Initialize blockchain observer service explicitly before plugins load
         logger.info({}, 'Initializing blockchain observer service...');
         const observerLogger = logger.child({ module: 'blockchain-observer' });
         BlockchainObserverService.initialize(observerLogger);
         logger.info({}, 'Blockchain observer service initialized');
 
-        // Create Express app and HTTP server first
+        // Create Express app with database service and HTTP server
         logger.info({}, 'Creating Express app...');
-        const app = createExpressApp();
+        const app = createExpressApp(coreDatabase);
         logger.info({}, 'Creating HTTP server...');
         const server = http.createServer(app);
         logger.info({}, 'ExpressApp initialized');

@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import type { IDatabaseService } from '@tronrelic/types';
 import { marketsRouter } from './markets.router.js';
 import { blockchainRouter } from './blockchain.router.js';
 import { accountsRouter } from './accounts.router.js';
@@ -19,8 +20,9 @@ import { menuRouter } from './menu.router.js';
 import pluginsRouter from './plugins.routes.js';
 import pluginManagementRouter from './plugin-management.routes.js';
 import { PluginApiService } from '../../services/plugin-api.service.js';
+import { createMigrationsRouter } from '../../modules/migrations/index.js';
 
-export function createApiRouter() {
+export function createApiRouter(database?: IDatabaseService) {
   const router = Router();
 
   router.use('/markets', marketsRouter());
@@ -42,6 +44,11 @@ export function createApiRouter() {
   router.use('/menu', menuRouter());
   router.use('/plugins', pluginsRouter);
   router.use('/plugin-management', pluginManagementRouter);
+
+  // Mount migrations router if database service is available
+  if (database) {
+    router.use('/admin/migrations', createMigrationsRouter(database));
+  }
 
   // Mount plugin API routes (dynamic plugins)
   const pluginApiService = PluginApiService.getInstance();
