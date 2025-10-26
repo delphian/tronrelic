@@ -127,6 +127,26 @@ The navigation menu system manages application-wide navigation through a central
 - Namespace isolation and container nodes
 - Testing patterns with MockPluginDatabase
 
+### Testing Framework
+
+TronRelic uses Vitest for unit testing with comprehensive Mongoose mocking utilities that enable full database service testing without requiring a live MongoDB instance. The shared mock system provides complete implementations of MongoDB collections, Mongoose models, and chainable query builders.
+
+**Key testing capabilities:**
+
+- **Isolated test environments** - Each test runs with clean state using in-memory collections
+- **Complete MongoDB API coverage** - CRUD operations, chainable queries, index creation
+- **Error injection** - Simulate database failures to validate error handling
+- **Test fixtures** - Pre-populate mock data for complex scenarios
+- **Operation spying** - Verify service behavior with Vitest spies
+
+**See [system-testing.md](./system-testing.md) for complete details on:**
+- Vitest test runner configuration and commands
+- Mongoose mocking system architecture and usage
+- Available mock helpers (clearMockCollections, injectCollectionError, etc.)
+- Common testing patterns with code examples
+- Real-world usage in database service tests
+- Pre-test checklist for proper mock setup
+
 ## Quick Reference
 
 ### Monitoring System Health
@@ -184,6 +204,7 @@ curl -X PATCH \
 - [system-monitoring-dashboard.md](./system-monitoring-dashboard.md) - Web dashboard UI guide with tab-by-tab feature documentation
 - [system-logging.md](./system-logging.md) - Logging system architecture, log levels, MongoDB persistence, and accessing historical logs
 - [system-menu.md](./system-menu.md) - Navigation menu system architecture, API reference, plugin integration, and event-driven updates
+- [system-testing.md](./system-testing.md) - Testing framework guide with Vitest setup, Mongoose mocking utilities, and testing patterns
 
 **Related topics:**
 - [plugins/plugins-blockchain-observers.md](../plugins/plugins-blockchain-observers.md) - How to build observers that react to transactions

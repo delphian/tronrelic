@@ -17,3 +17,4 @@ export type { IMenuNode, IMenuNodeWithChildren, IMenuTree, IMenuValidation, Menu
 export type { ISystemConfig, ISystemConfigService } from './system-config/index.js';
 export type { ISystemLogService, ISystemLogQuery, ISystemLogPaginatedResponse, ISaveLogData, LogLevel } from './system-log/index.js';
 export { LOG_LEVELS, shouldLog, type LogLevelName } from './system-log/index.js';
+export type { IDatabaseService } from './database/IDatabaseService.js';
