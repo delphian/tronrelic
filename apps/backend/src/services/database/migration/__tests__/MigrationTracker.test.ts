@@ -18,6 +18,24 @@ vi.mock('../../../../lib/logger.js', () => ({
 import { MigrationTracker } from '../MigrationTracker.js';
 
 /**
+ * Helper function to create migration test fixtures with qualified IDs.
+ */
+function createMigrationMetadata(id: string, source: string = 'system', options: Partial<IMigrationMetadata> = {}): IMigrationMetadata {
+    const qualifiedId = source === 'system' ? id : `${source}:${id}`;
+    return {
+        id,
+        qualifiedId,
+        description: `Migration ${id}`,
+        source,
+        filePath: `/test/${id}.ts`,
+        timestamp: new Date(),
+        dependencies: [],
+        up: vi.fn(),
+        ...options
+    };
+}
+
+/**
  * Mock IDatabaseService for testing MigrationTracker.
  *
  * Provides in-memory storage for migration records and simulates MongoDB operations.
@@ -169,6 +187,7 @@ describe('MigrationTracker', () => {
         it('should record successful migration execution', async () => {
             const metadata: IMigrationMetadata = {
                 id: '001_test',
+                qualifiedId: '001_test', // System migration uses plain ID
                 description: 'Test migration',
                 source: 'system',
                 filePath: '/test/001_test.ts',
@@ -197,6 +216,7 @@ describe('MigrationTracker', () => {
         it('should include execution timestamp', async () => {
             const metadata: IMigrationMetadata = {
                 id: '001_test',
+                qualifiedId: '001_test',
                 description: 'Test migration',
                 source: 'system',
                 filePath: '/test/001_test.ts',
@@ -225,6 +245,7 @@ describe('MigrationTracker', () => {
         it('should record failed migration execution', async () => {
             const metadata: IMigrationMetadata = {
                 id: '001_test',
+                qualifiedId: '001_test',
                 description: 'Test migration',
                 source: 'system',
                 filePath: '/test/001_test.ts',
@@ -253,6 +274,7 @@ describe('MigrationTracker', () => {
         it('should handle non-Error objects', async () => {
             const metadata: IMigrationMetadata = {
                 id: '001_test',
+                qualifiedId: '001_test',
                 description: 'Test migration',
                 source: 'system',
                 filePath: '/test/001_test.ts',
@@ -347,6 +369,7 @@ describe('MigrationTracker', () => {
             const discovered: IMigrationMetadata[] = [
                 {
                     id: '001_completed',
+                    qualifiedId: '001_completed',
                     description: 'Already done',
                     source: 'system',
                     filePath: '/test/001.ts',
@@ -356,6 +379,7 @@ describe('MigrationTracker', () => {
                 },
                 {
                     id: '002_pending',
+                    qualifiedId: '002_pending',
                     description: 'Not done yet',
                     source: 'system',
                     filePath: '/test/002.ts',
@@ -380,6 +404,7 @@ describe('MigrationTracker', () => {
             const discovered: IMigrationMetadata[] = [
                 {
                     id: '001_first',
+                qualifiedId: '001_first',
                     description: 'First',
                     source: 'system',
                     filePath: '/test/001.ts',
@@ -389,6 +414,7 @@ describe('MigrationTracker', () => {
                 },
                 {
                     id: '002_second',
+                qualifiedId: '002_second',
                     description: 'Second',
                     source: 'system',
                     filePath: '/test/002.ts',
@@ -420,6 +446,7 @@ describe('MigrationTracker', () => {
             const discovered: IMigrationMetadata[] = [
                 {
                     id: '001_failed',
+                qualifiedId: '001_failed',
                     description: 'Failed migration',
                     source: 'system',
                     filePath: '/test/001.ts',
@@ -458,6 +485,7 @@ describe('MigrationTracker', () => {
             const discovered: IMigrationMetadata[] = [
                 {
                     id: '001_exists',
+                qualifiedId: '001_exists',
                     description: 'Still exists',
                     source: 'system',
                     filePath: '/test/001.ts',
@@ -492,6 +520,7 @@ describe('MigrationTracker', () => {
             const discovered: IMigrationMetadata[] = [
                 {
                     id: '001_exists',
+                qualifiedId: '001_exists',
                     description: 'Still exists',
                     source: 'system',
                     filePath: '/test/001.ts',

@@ -333,13 +333,24 @@ Scanner builds dependency graph and sorts topologically:
 
 ```typescript
 // Example with dependencies:
-// 001_create_users (no deps)
-// 002_create_roles (depends on 001)
-// 003_assign_roles (depends on 001, 002)
+// 001_create_users (system migration, no deps)
+// 002_create_roles (system migration, depends on 001_create_users)
+// 003_assign_roles (system migration, depends on 001_create_users, 002_create_roles)
+
+// System-to-system dependencies use plain IDs
+dependencies: ['001_create_users', '002_create_roles']
 
 const sorted = scanner.topologicalSort(discovered);
 // Execution order: [001, 002, 003]
 ```
+
+**Critical:** Dependency format depends on the target migration's source:
+
+- **System migrations** - Use plain ID: `'001_create_users'` (system `qualifiedId` IS the plain ID)
+- **Module migrations** - Use qualified ID: `'module:menu:001_add_namespace'`
+- **Plugin migrations** - Use qualified ID: `'plugin:whale-alerts:001_init'`
+
+The scanner builds a lookup map keyed by `qualifiedId`. System migrations have `qualifiedId = id`, but module/plugin migrations have prefixed qualified IDs.
 
 **Circular dependency detection:**
 ```typescript

@@ -29,6 +29,24 @@ vi.spyOn(process, 'exit').mockImplementation((code?: string | number | null | un
 import { MigrationExecutor } from '../MigrationExecutor.js';
 
 /**
+ * Helper function to create migration test fixtures with qualified IDs.
+ */
+function createMigrationMetadata(id: string, source: string = 'system', options: Partial<IMigrationMetadata> = {}): IMigrationMetadata {
+    const qualifiedId = source === 'system' ? id : `${source}:${id}`;
+    return {
+        id,
+        qualifiedId,
+        description: `Migration ${id}`,
+        source,
+        filePath: `/test/${id}.ts`,
+        timestamp: new Date(),
+        dependencies: [],
+        up: vi.fn(),
+        ...options
+    };
+}
+
+/**
  * Mock IDatabaseService for testing MigrationExecutor.
  */
 class MockDatabase implements IDatabaseService {
@@ -122,6 +140,7 @@ describe('MigrationExecutor', () => {
 
             const migration: IMigrationMetadata = {
                 id: '001_test',
+                qualifiedId: '001_test',
                 description: 'Test migration',
                 source: 'system',
                 filePath: '/test/001.ts',
@@ -146,6 +165,7 @@ describe('MigrationExecutor', () => {
         it('should prevent concurrent execution', async () => {
             const slowMigration: IMigrationMetadata = {
                 id: '001_slow',
+                qualifiedId: '001_slow',
                 description: 'Slow migration',
                 source: 'system',
                 filePath: '/test/001.ts',
@@ -158,6 +178,7 @@ describe('MigrationExecutor', () => {
 
             const fastMigration: IMigrationMetadata = {
                 id: '002_fast',
+                qualifiedId: '002_fast',
                 description: 'Fast migration',
                 source: 'system',
                 filePath: '/test/002.ts',
@@ -190,6 +211,7 @@ describe('MigrationExecutor', () => {
             const upFunction = vi.fn();
             const migration: IMigrationMetadata = {
                 id: '001_test',
+                qualifiedId: '001_test',
                 description: 'Test migration',
                 source: 'system',
                 filePath: '/test/001.ts',
@@ -212,6 +234,7 @@ describe('MigrationExecutor', () => {
         it('should record success after execution', async () => {
             const migration: IMigrationMetadata = {
                 id: '001_test',
+                qualifiedId: '001_test',
                 description: 'Test migration',
                 source: 'system',
                 filePath: '/test/001.ts',
@@ -236,6 +259,7 @@ describe('MigrationExecutor', () => {
         it('should measure execution duration', async () => {
             const migration: IMigrationMetadata = {
                 id: '001_test',
+                qualifiedId: '001_test',
                 description: 'Test migration',
                 source: 'system',
                 filePath: '/test/001.ts',
@@ -263,6 +287,7 @@ describe('MigrationExecutor', () => {
             const error = new Error('Migration failed');
             const migration: IMigrationMetadata = {
                 id: '001_test',
+                qualifiedId: '001_test',
                 description: 'Test migration',
                 source: 'system',
                 filePath: '/test/001.ts',
@@ -290,6 +315,7 @@ describe('MigrationExecutor', () => {
         it('should reset running state after failure', async () => {
             const failingMigration: IMigrationMetadata = {
                 id: '001_fail',
+                qualifiedId: '001_fail',
                 description: 'Failing migration',
                 source: 'system',
                 filePath: '/test/001.ts',
@@ -309,6 +335,7 @@ describe('MigrationExecutor', () => {
             // Should be able to execute another migration
             const successMigration: IMigrationMetadata = {
                 id: '002_success',
+                qualifiedId: '002_success',
                 description: 'Success migration',
                 source: 'system',
                 filePath: '/test/002.ts',
@@ -334,6 +361,7 @@ describe('MigrationExecutor', () => {
             const migrations: IMigrationMetadata[] = [
                 {
                     id: '001_first',
+                qualifiedId: '001_first',
                     description: 'First',
                     source: 'system',
                     filePath: '/test/001.ts',
@@ -345,6 +373,7 @@ describe('MigrationExecutor', () => {
                 },
                 {
                     id: '002_second',
+                qualifiedId: '002_second',
                     description: 'Second',
                     source: 'system',
                     filePath: '/test/002.ts',
@@ -356,6 +385,7 @@ describe('MigrationExecutor', () => {
                 },
                 {
                     id: '003_third',
+                qualifiedId: '003_third',
                     description: 'Third',
                     source: 'system',
                     filePath: '/test/003.ts',
@@ -384,6 +414,7 @@ describe('MigrationExecutor', () => {
             const migrations: IMigrationMetadata[] = [
                 {
                     id: '001_success',
+                qualifiedId: '001_success',
                     description: 'Success',
                     source: 'system',
                     filePath: '/test/001.ts',
@@ -395,6 +426,7 @@ describe('MigrationExecutor', () => {
                 },
                 {
                     id: '002_failure',
+                qualifiedId: '002_failure',
                     description: 'Failure',
                     source: 'system',
                     filePath: '/test/002.ts',
@@ -407,6 +439,7 @@ describe('MigrationExecutor', () => {
                 },
                 {
                     id: '003_skipped',
+                qualifiedId: '003_skipped',
                     description: 'Skipped',
                     source: 'system',
                     filePath: '/test/003.ts',
@@ -439,6 +472,7 @@ describe('MigrationExecutor', () => {
 
             const migration: IMigrationMetadata = {
                 id: '001_test',
+                qualifiedId: '001_test',
                 description: 'Test migration',
                 source: 'system',
                 filePath: '/test/001.ts',
@@ -466,6 +500,7 @@ describe('MigrationExecutor', () => {
 
             const migration: IMigrationMetadata = {
                 id: '001_test',
+                qualifiedId: '001_test',
                 description: 'Test migration',
                 source: 'system',
                 filePath: '/test/001.ts',
@@ -495,6 +530,7 @@ describe('MigrationExecutor', () => {
         it('should handle async errors correctly', async () => {
             const migration: IMigrationMetadata = {
                 id: '001_test',
+                qualifiedId: '001_test',
                 description: 'Test migration',
                 source: 'system',
                 filePath: '/test/001.ts',
@@ -520,6 +556,7 @@ describe('MigrationExecutor', () => {
         it('should handle synchronous errors correctly', async () => {
             const migration: IMigrationMetadata = {
                 id: '001_test',
+                qualifiedId: '001_test',
                 description: 'Test migration',
                 source: 'system',
                 filePath: '/test/001.ts',
