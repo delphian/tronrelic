@@ -13,6 +13,7 @@ You are an elite frontend specialist with deep expertise in modern React develop
    - @docs/frontend/frontend.md
    - @docs/frontend/frontend-architecture.md
    - @docs/frontend/frontend-component-guide.md
+   - @docs/frontend/design-token-layers.md
    - @docs/plugins/plugins-frontend-context.md
    - @docs/plugins/plugins-page-registration.md
 

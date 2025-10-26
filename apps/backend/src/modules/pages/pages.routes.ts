@@ -23,6 +23,55 @@ export function createPagesRouter(controller: PagesController): Router {
      */
     router.get('/', controller.listPages.bind(controller));
 
+    // ============================================================================
+    // File Routes
+    // ============================================================================
+    // NOTE: These routes must come BEFORE /:id to avoid "files" being treated as an ID
+
+    /**
+     * GET /api/admin/pages/files
+     * List uploaded files
+     */
+    router.get('/files', controller.listFiles.bind(controller));
+
+    /**
+     * POST /api/admin/pages/files
+     * Upload file
+     */
+    router.post(
+        '/files',
+        controller.getUploadMiddleware(),
+        controller.uploadFile.bind(controller)
+    );
+
+    /**
+     * DELETE /api/admin/pages/files/:id
+     * Delete file
+     */
+    router.delete('/files/:id', controller.deleteFile.bind(controller));
+
+    // ============================================================================
+    // Settings Routes
+    // ============================================================================
+    // NOTE: These routes must come BEFORE /:id to avoid "settings" being treated as an ID
+
+    /**
+     * GET /api/admin/pages/settings
+     * Get configuration settings
+     */
+    router.get('/settings', controller.getSettings.bind(controller));
+
+    /**
+     * PATCH /api/admin/pages/settings
+     * Update configuration settings
+     */
+    router.patch('/settings', controller.updateSettings.bind(controller));
+
+    // ============================================================================
+    // Page-Specific Routes (with :id parameter)
+    // ============================================================================
+    // NOTE: These routes must come LAST to avoid capturing static routes like /files or /settings
+
     /**
      * GET /api/admin/pages/:id
      * Get single page by ID
@@ -46,51 +95,6 @@ export function createPagesRouter(controller: PagesController): Router {
      * Delete page
      */
     router.delete('/:id', controller.deletePage.bind(controller));
-
-    // ============================================================================
-    // File Routes
-    // ============================================================================
-
-    /**
-     * GET /api/admin/pages/files
-     * List uploaded files
-     *
-     * Note: This route must come before /:id to avoid conflicts
-     * (otherwise "files" would be interpreted as an ID)
-     */
-    router.get('/files', controller.listFiles.bind(controller));
-
-    /**
-     * POST /api/admin/pages/files
-     * Upload file
-     */
-    router.post(
-        '/files',
-        controller.getUploadMiddleware(),
-        controller.uploadFile.bind(controller)
-    );
-
-    /**
-     * DELETE /api/admin/pages/files/:id
-     * Delete file
-     */
-    router.delete('/files/:id', controller.deleteFile.bind(controller));
-
-    // ============================================================================
-    // Settings Routes
-    // ============================================================================
-
-    /**
-     * GET /api/admin/pages/settings
-     * Get configuration settings
-     */
-    router.get('/settings', controller.getSettings.bind(controller));
-
-    /**
-     * PATCH /api/admin/pages/settings
-     * Update configuration settings
-     */
-    router.patch('/settings', controller.updateSettings.bind(controller));
 
     return router;
 }

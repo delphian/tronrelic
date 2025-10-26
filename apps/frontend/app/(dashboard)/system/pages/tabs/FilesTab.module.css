@@ -1,7 +1,7 @@
 .container {
     display: flex;
     flex-direction: column;
-    gap: 1rem;
+    gap: var(--spacing-7);
 }
 
 .error {
@@ -11,7 +11,7 @@
 
 .controls {
     display: flex;
-    gap: 0.75rem;
+    gap: var(--spacing-5);
     align-items: center;
 }
 
@@ -20,14 +20,14 @@
 }
 
 .filter_select {
-    padding: 0.5rem 0.75rem;
+    padding: var(--spacing-4) var(--spacing-5);
     border: 1px solid var(--color-border);
     border-radius: var(--radius-md);
     background: var(--color-surface);
-    color: var(--color-text-primary);
+    color: var(--color-text);
     font-size: var(--font-size-sm);
     cursor: pointer;
-    transition: border-color var(--transition-default);
+    transition: border-color var(--transition-base);
 }
 
 .filter_select:hover {
@@ -41,12 +41,12 @@
 
 .empty {
     text-align: center;
-    padding: 3rem 1rem;
+    padding: var(--spacing-14) var(--spacing-7);
     color: var(--color-text-muted);
 }
 
 .empty p {
-    margin: 0 0 0.5rem 0;
+    margin: 0 0 var(--spacing-4) 0;
     font-size: var(--font-size-lg);
 }
 
@@ -57,30 +57,30 @@
 .files_grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-    gap: 1rem;
+    gap: var(--spacing-7);
 }
 
 .file_card {
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
-    padding: 1rem;
+    gap: var(--spacing-5);
+    padding: var(--spacing-7);
     border: 1px solid var(--color-border);
     border-radius: var(--radius-md);
     background: var(--color-surface);
-    transition: border-color var(--transition-default), box-shadow var(--transition-default);
+    transition: border-color var(--transition-base), box-shadow var(--transition-base);
 }
 
 .file_card:hover {
     border-color: var(--color-primary-alpha-30);
-    box-shadow: 0 2px 8px var(--color-shadow);
+    box-shadow: var(--shadow-sm);
 }
 
 .file_preview {
     aspect-ratio: 16 / 9;
     border-radius: var(--radius-sm);
     overflow: hidden;
-    background: var(--color-surface-secondary);
+    background: var(--color-surface-muted);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -99,21 +99,21 @@
 .file_info {
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
+    gap: var(--spacing-2);
 }
 
 .file_name {
     margin: 0;
     font-size: var(--font-size-sm);
     font-weight: var(--font-weight-medium);
-    color: var(--color-text-primary);
+    color: var(--color-text);
     word-break: break-word;
 }
 
 .file_path {
     margin: 0;
     font-size: var(--font-size-xs);
-    font-family: var(--font-mono);
+    font-family: 'Monaco', 'Courier New', monospace;
     color: var(--color-primary);
     word-break: break-all;
 }
@@ -121,7 +121,7 @@
 .file_meta {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--spacing-4);
 }
 
 .file_date {
@@ -131,6 +131,6 @@
 
 .file_actions {
     display: flex;
-    gap: 0.5rem;
+    gap: var(--spacing-4);
     justify-content: flex-end;
 }
