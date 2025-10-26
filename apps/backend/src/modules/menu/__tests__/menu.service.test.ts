@@ -1,7 +1,7 @@
 /// <reference types="vitest" />
 
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
-import type { IPluginDatabase } from '@tronrelic/types';
+import type { IDatabaseService } from '@tronrelic/types';
 import { ObjectId } from 'mongodb';
 
 /**
@@ -20,13 +20,22 @@ vi.mock('../../../services/websocket.service.js', () => ({
 import { MenuService } from '../menu.service.js';
 
 /**
- * Mock IPluginDatabase implementation for testing MenuService.
+ * Mock IDatabaseService implementation for testing MenuService.
  *
  * Provides in-memory storage for menu nodes and tracks method calls
- * for verification in tests. Implements the full IPluginDatabase interface
+ * for verification in tests. Implements the full IDatabaseService interface
  * but only the methods used by MenuService are actively implemented.
  */
-class MockPluginDatabase implements IPluginDatabase {
+class MockPluginDatabase implements IDatabaseService {
+    // Model registry (not used by MenuService but required by interface)
+    registerModel(collectionName: string, model: any): void {
+        // No-op for tests
+    }
+
+    getModel(collectionName: string): any | undefined {
+        // No-op for tests
+        return undefined;
+    }
     private collections = new Map<string, any[]>();
 
     getCollection<T extends Document = Document>(name: string) {

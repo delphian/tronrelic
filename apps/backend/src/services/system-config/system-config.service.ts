@@ -1,5 +1,6 @@
 import { SystemConfigModel } from '../../database/models/system-config-model.js';
-import type { ISystemConfig, ISystemConfigService, ISystemLogService } from '@tronrelic/types';
+import type { ISystemConfig, ISystemConfigService, ISystemLogService, IDatabaseService } from '@tronrelic/types';
+import type { SystemConfigDoc } from '../../database/models/system-config-model.js';
 
 /**
  * SystemConfigService
@@ -19,6 +20,7 @@ import type { ISystemConfig, ISystemConfigService, ISystemLogService } from '@tr
  * - In-memory cache: reduces database queries for frequently-accessed values
  * - Cache invalidation: updates clear cache to ensure fresh reads
  * - Fallback defaults: returns sensible defaults when database is empty
+ * - Mongoose model registration: Preserves schema validation and defaults
  *
  * **Usage:**
  * ```typescript
@@ -33,8 +35,12 @@ export class SystemConfigService implements ISystemConfigService {
     private readonly CACHE_TTL_MS = 60000; // 1 minute cache
 
     private constructor(
-        private readonly logger: ISystemLogService
-    ) {}
+        private readonly logger: ISystemLogService,
+        private readonly database: IDatabaseService
+    ) {
+        // Register Mongoose model for schema validation and defaults
+        this.database.registerModel('system_config', SystemConfigModel);
+    }
 
     /**
      * Get singleton instance of the system config service.
@@ -58,16 +64,17 @@ export class SystemConfigService implements ISystemConfigService {
      * Must be called once during application bootstrap before any getInstance() calls.
      *
      * Why separate initialization:
-     * Allows dependency injection of the logger at application startup
+     * Allows dependency injection of logger and database at application startup
      * while maintaining singleton pattern throughout the application lifecycle.
      *
      * @param logger - SystemLogService instance for structured logging
+     * @param database - IDatabaseService instance for data access
      */
-    public static initialize(logger: ISystemLogService): void {
+    public static initialize(logger: ISystemLogService, database: IDatabaseService): void {
         if (SystemConfigService.instance) {
             throw new Error('SystemConfigService already initialized');
         }
-        SystemConfigService.instance = new SystemConfigService(logger);
+        SystemConfigService.instance = new SystemConfigService(logger, database);
     }
 
     /**
@@ -90,24 +97,29 @@ export class SystemConfigService implements ISystemConfigService {
         }
 
         try {
-            // Fetch from database
-            let config = await SystemConfigModel.findOne({ key: 'system' });
+            // Fetch from database (automatically uses registered Mongoose model)
+            let config = await this.database.findOne<SystemConfigDoc>('system_config', { key: 'system' });
 
             // Initialize with defaults if not found
             if (!config) {
                 this.logger.info('System config not found, creating with defaults');
-                config = await SystemConfigModel.create({
+                const defaultConfig = {
                     key: 'system',
                     siteUrl: process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000',
                     systemLogsMaxCount: 1000000,
                     systemLogsRetentionDays: 30,
-                    logLevel: 'info',
+                    logLevel: 'info' as const,
                     updatedAt: new Date()
-                });
+                };
+
+                // Use Mongoose model directly for create (applies defaults and validation)
+                const model = this.database.getModel<SystemConfigDoc>('system_config');
+                const created = await model!.create(defaultConfig);
+                config = created.toObject();
             }
 
             // Update cache
-            this.cache = config.toObject();
+            this.cache = config as ISystemConfig;
             this.cacheTime = now;
 
             return this.cache;
@@ -160,7 +172,13 @@ export class SystemConfigService implements ISystemConfigService {
         updatedBy?: string
     ): Promise<ISystemConfig> {
         try {
-            const config = await SystemConfigModel.findOneAndUpdate(
+            // Use Mongoose model directly for findOneAndUpdate (applies validation)
+            const model = this.database.getModel<SystemConfigDoc>('system_config');
+            if (!model) {
+                throw new Error('SystemConfig model not registered');
+            }
+
+            const config = await model.findOneAndUpdate(
                 { key: 'system' },
                 {
                     $set: {
@@ -186,7 +204,7 @@ export class SystemConfigService implements ISystemConfigService {
 
             this.logger.info({ updates, updatedBy }, 'System config updated');
 
-            return config.toObject();
+            return config.toObject() as ISystemConfig;
         } catch (error) {
             this.logger.error({ error, updates }, 'Failed to update system config');
             throw error;

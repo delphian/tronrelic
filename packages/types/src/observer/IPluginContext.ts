@@ -1,7 +1,7 @@
 import type { IBlockchainObserverService } from './IBlockchainObserverService.js';
 import type { IWebSocketService } from './IWebSocketService.js';
 import type { IBaseObserver } from './IBaseObserver.js';
-import type { IPluginDatabase } from '../plugin/IPluginDatabase.js';
+import type { IDatabaseService } from '../database/IDatabaseService.js';
 import type { IPluginWebSocketManager } from './IPluginWebSocketManager.js';
 import type { ICacheService } from '../services/ICacheService.js';
 import type { ISystemConfigService } from '../system-config/ISystemConfigService.js';
@@ -34,7 +34,7 @@ export interface IPluginContext {
     BaseObserver: abstract new (logger: ISystemLogService) => IBaseObserver;
 
     /** Plugin-scoped database access with automatic collection prefixing */
-    database: IPluginDatabase;
+    database: IDatabaseService;
 
     /** Cache service for Redis-backed key-value storage with TTL and tagging */
     cache: ICacheService;
