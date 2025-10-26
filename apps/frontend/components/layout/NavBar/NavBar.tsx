@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import { useEffect, useState, useRef } from 'react';
 import { Wallet } from 'lucide-react';
 import { Button } from '../../ui/Button';
+import { ThemeToggle } from '../../ThemeToggle';
 import { useWallet } from '../../../features/accounts';
 import { pluginRegistry } from '../../../lib/pluginRegistry';
 import type { IMenuItemConfig } from '@tronrelic/types';
@@ -233,6 +234,7 @@ export function NavBar() {
                 })}
             </nav>
             <div className={styles.wallet_container}>
+                <ThemeToggle />
                 {address ? (
                     <Button variant="secondary" size="sm" onClick={disconnect}>
                         {truncateWallet(address)}
