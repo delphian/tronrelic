@@ -29,6 +29,15 @@ import { MenuService } from '../menu.service.js';
 class MockPluginDatabase implements IDatabaseService {
     registerModel(collectionName: string, model: any): void {}
     getModel(collectionName: string): any | undefined { return undefined; }
+
+    // Migration methods (required by interface)
+    async initializeMigrations(): Promise<void> {}
+    async getMigrationsPending(): Promise<Array<{ id: string; description: string; source: string; filePath: string; timestamp: Date; dependencies: string[]; checksum?: string }>> { return []; }
+    async getMigrationsCompleted(limit?: number): Promise<Array<{ migrationId: string; status: 'completed' | 'failed'; source: string; executedAt: Date; executionDuration: number; error?: string; errorStack?: string; checksum?: string }>> { return []; }
+    async executeMigration(migrationId: string): Promise<void> {}
+    async executeMigrationsAll(): Promise<void> {}
+    isMigrationRunning(): boolean { return false; }
+
     private collections = new Map<string, any[]>();
 
     getCollection<T extends Document = Document>(name: string) {

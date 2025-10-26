@@ -36,6 +36,32 @@ class MockPluginDatabase implements IDatabaseService {
         // No-op for tests
         return undefined;
     }
+
+    // Migration methods (not used by MenuService but required by interface)
+    async initializeMigrations(): Promise<void> {
+        // No-op for tests
+    }
+
+    async getMigrationsPending(): Promise<Array<{ id: string; description: string; source: string; filePath: string; timestamp: Date; dependencies: string[]; checksum?: string }>> {
+        return [];
+    }
+
+    async getMigrationsCompleted(limit?: number): Promise<Array<{ migrationId: string; status: 'completed' | 'failed'; source: string; executedAt: Date; executionDuration: number; error?: string; errorStack?: string; checksum?: string }>> {
+        return [];
+    }
+
+    async executeMigration(migrationId: string): Promise<void> {
+        // No-op for tests
+    }
+
+    async executeMigrationsAll(): Promise<void> {
+        // No-op for tests
+    }
+
+    isMigrationRunning(): boolean {
+        return false;
+    }
+
     private collections = new Map<string, any[]>();
 
     getCollection<T extends Document = Document>(name: string) {

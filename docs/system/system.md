@@ -127,6 +127,29 @@ The navigation menu system manages application-wide navigation through a central
 - Namespace isolation and container nodes
 - Testing patterns with MockPluginDatabase
 
+### Database Migration System
+
+The database migration system enables safe, repeatable schema evolution across development, staging, and production environments. Migrations are discovered automatically from system, module, and plugin directories, executed serially with transaction support, and tracked in MongoDB for audit trails.
+
+**Key architectural decisions:**
+
+- **Automatic discovery** - Migrations discovered from three predefined locations without manual registration
+- **Dependency resolution** - Topological sorting ensures migrations execute in dependency order
+- **Transaction wrapping** - Atomic execution with automatic rollback on failure (replica set required)
+- **State tracking** - Complete execution history with timestamps, duration, and error details
+- **Admin UI** - Web-based interface for viewing pending migrations and triggering execution
+
+**See [system-database-migrations.md](./system-database-migrations.md) for complete details on:**
+- Migration discovery and scanning workflow
+- Transaction execution and rollback behavior
+- State tracking and MongoDB persistence
+- REST API reference with all 4 endpoints
+- Admin UI guide at `/system/database`
+- Complete migration lifecycle walkthrough
+- Troubleshooting common failure scenarios
+
+**For practical guidance on writing migrations, see [Migration Authoring Guide](../../apps/backend/src/services/database/migrations/README.md).**
+
 ### Testing Framework
 
 TronRelic uses Vitest for unit testing with comprehensive Mongoose mocking utilities that enable full database service testing without requiring a live MongoDB instance. The shared mock system provides complete implementations of MongoDB collections, Mongoose models, and chainable query builders.
@@ -202,6 +225,7 @@ curl -X PATCH \
 - [system-scheduler-operations.md](./system-scheduler-operations.md) - Scheduler control, job management, troubleshooting, and configuration persistence
 - [system-api.md](./system-api.md) - Complete API reference with all endpoints, authentication, request/response formats, and usage examples
 - [system-monitoring-dashboard.md](./system-monitoring-dashboard.md) - Web dashboard UI guide with tab-by-tab feature documentation
+- [system-database-migrations.md](./system-database-migrations.md) - Database migration system architecture, REST API, admin UI, lifecycle documentation, and troubleshooting
 - [system-logging.md](./system-logging.md) - Logging system architecture, log levels, MongoDB persistence, and accessing historical logs
 - [system-menu.md](./system-menu.md) - Navigation menu system architecture, API reference, plugin integration, and event-driven updates
 - [system-testing.md](./system-testing.md) - Testing framework guide with Vitest setup, Mongoose mocking utilities, and testing patterns

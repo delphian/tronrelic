@@ -4,13 +4,14 @@ import express from 'express';
 import helmet from 'helmet';
 import morgan from 'morgan';
 import type { Express } from 'express';
+import type { IDatabaseService } from '@tronrelic/types';
 import { requestContext } from '../api/middleware/request-context.js';
 import { errorHandler } from '../api/middleware/error-handler.js';
 import { createApiRouter } from '../api/routes/index.js';
 import { env } from '../config/env.js';
 import { marketMetrics } from '../modules/markets/market-metrics.service.js';
 
-export function createExpressApp(): Express {
+export function createExpressApp(database?: IDatabaseService): Express {
   const app = express();
 
   app.set('trust proxy', true);
@@ -73,7 +74,7 @@ export function createExpressApp(): Express {
     }
   });
 
-  app.use('/api', createApiRouter());
+  app.use('/api', createApiRouter(database));
 
   app.use(errorHandler);
   return app;

@@ -202,8 +202,8 @@ export interface IDatabaseService {
      */
     createIndex(
         collectionName: string,
-        indexSpec: IndexDescription,
-        options?: { unique?: boolean; sparse?: boolean; expireAfterSeconds?: number }
+        indexSpec: Record<string, 1 | -1>,
+        options?: { unique?: boolean; sparse?: boolean; expireAfterSeconds?: number; name?: string }
     ): Promise<void>;
 
     /**
@@ -377,4 +377,114 @@ export interface IDatabaseService {
         collectionName: string,
         filter: Filter<T>
     ): Promise<number>;
+
+    /**
+     * Initialize the migration system by scanning filesystem and tracking database state.
+     *
+     * This method should be called once during application startup after the database
+     * connection is established. It discovers all migration files from system, modules,
+     * and plugins, validates them, builds dependency graphs, and prepares the migration
+     * system for execution.
+     *
+     * Why this exists:
+     * - Discovers pending migrations for admin UI display
+     * - Removes orphaned migration records (code deleted but record remains)
+     * - Validates migration structure and dependencies at startup
+     * - Logs migration status for operator visibility
+     *
+     * **Execution flow:**
+     * 1. Scan filesystem for migration files (system, modules, plugins)
+     * 2. Validate naming conventions and required fields
+     * 3. Build dependency graph and detect circular dependencies
+     * 4. Query database for completed/failed migrations
+     * 5. Remove orphaned pending records
+     * 6. Log summary of pending/completed migrations
+     *
+     * Subsequent calls are no-ops (idempotent).
+     *
+     * @returns Promise that resolves when initialization is complete
+     * @throws Error if filesystem scan fails or circular dependencies detected
+     */
+    initializeMigrations(): Promise<void>;
+
+    /**
+     * Get list of pending migrations discovered at startup.
+     *
+     * Returns migrations that have been discovered from the filesystem but have
+     * not yet executed successfully. Includes failed migrations (allowing retry).
+     *
+     * Migrations are returned in topological order (dependencies first), ready
+     * for execution.
+     *
+     * @returns Promise resolving to array of pending migration metadata in execution order
+     */
+    getMigrationsPending(): Promise<Array<{
+        id: string;
+        description: string;
+        source: string;
+        filePath: string;
+        timestamp: Date;
+        dependencies: string[];
+        checksum?: string;
+    }>>;
+
+    /**
+     * Get list of completed migrations from database.
+     *
+     * Returns execution records for all migrations that have been attempted,
+     * including both successful and failed executions. Sorted by execution
+     * time descending (newest first).
+     *
+     * @param limit - Maximum number of records to return (default: 100)
+     * @returns Promise resolving to array of migration execution records
+     */
+    getMigrationsCompleted(limit?: number): Promise<Array<{
+        migrationId: string;
+        status: 'completed' | 'failed';
+        source: string;
+        executedAt: Date;
+        executionDuration: number;
+        error?: string;
+        errorStack?: string;
+        checksum?: string;
+        environment?: string;
+        codebaseVersion?: string;
+    }>>;
+
+    /**
+     * Execute a specific migration by ID.
+     *
+     * Validates that the migration exists, its dependencies have been met, and
+     * no other migration is currently executing. Executes the migration within
+     * a MongoDB transaction (if supported), records success/failure, and updates
+     * the migration tracker.
+     *
+     * @param migrationId - Unique ID of migration to execute
+     * @returns Promise that resolves when migration completes successfully
+     * @throws Error if migration not found, dependencies unmet, or execution fails
+     */
+    executeMigration(migrationId: string): Promise<void>;
+
+    /**
+     * Execute all pending migrations in dependency order.
+     *
+     * Executes migrations serially, stopping on first failure. Migrations are
+     * executed in topological order determined by the dependency graph, ensuring
+     * dependencies complete before dependents.
+     *
+     * @returns Promise that resolves when all pending migrations complete successfully
+     * @throws Error if any migration fails (remaining migrations are not executed)
+     */
+    executeMigrationsAll(): Promise<void>;
+
+    /**
+     * Check if any migration is currently executing.
+     *
+     * Used by admin UI to prevent concurrent execution and display progress indicator.
+     * The migration system enforces serial execution (no concurrency) to prevent
+     * race conditions and ensure predictable execution order.
+     *
+     * @returns True if a migration is currently running
+     */
+    isMigrationRunning(): boolean;
 }
