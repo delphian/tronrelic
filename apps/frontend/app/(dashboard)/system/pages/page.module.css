@@ -1,20 +1,22 @@
 .container {
     display: flex;
     flex-direction: column;
-    gap: var(--spacing-lg);
-    padding: var(--spacing-lg);
+    gap: var(--spacing-10);
+    padding: var(--spacing-10);
+    container-type: inline-size;
+    container-name: pages-admin;
 }
 
 .header {
     display: flex;
     flex-direction: column;
-    gap: var(--spacing-xs);
+    gap: var(--spacing-4);
 }
 
 .title {
     font-size: var(--font-size-2xl);
     font-weight: var(--font-weight-semibold);
-    color: var(--color-text-primary);
+    color: var(--color-text);
     margin: 0;
 }
 
@@ -26,25 +28,31 @@
 
 .tabs {
     display: flex;
-    gap: var(--spacing-xs);
+    gap: var(--spacing-4);
     border-bottom: 1px solid var(--color-border);
 }
 
 .tab,
 .tabActive {
-    padding: var(--spacing-sm) var(--spacing-md);
+    padding: var(--spacing-4) var(--spacing-7);
     background: none;
     border: none;
     border-bottom: 2px solid transparent;
     cursor: pointer;
     font-size: var(--font-size-md);
     font-weight: var(--font-weight-medium);
-    color: var(--color-text-secondary);
-    transition: color var(--transition-default), border-color var(--transition-default);
+    color: var(--color-text-muted);
+    transition: color var(--transition-base), border-color var(--transition-base);
 }
 
 .tab:hover {
-    color: var(--color-text-primary);
+    color: var(--color-text);
+}
+
+.tab:focus-visible,
+.tabActive:focus-visible {
+    outline: var(--focus-outline-width) solid var(--color-focus);
+    outline-offset: var(--focus-outline-offset);
 }
 
 .tabActive {
@@ -59,34 +67,34 @@
 .section {
     display: flex;
     flex-direction: column;
-    gap: var(--spacing-md);
+    gap: var(--spacing-7);
 }
 
 .section h2 {
     font-size: var(--font-size-xl);
     font-weight: var(--font-weight-semibold);
-    color: var(--color-text-primary);
+    color: var(--color-text);
     margin: 0;
 }
 
 .placeholder {
-    padding: var(--spacing-xl);
-    background: var(--color-surface-secondary);
+    padding: var(--spacing-12);
+    background: var(--color-surface-muted);
     border: 1px dashed var(--color-border);
     border-radius: var(--radius-md);
     color: var(--color-text-muted);
 }
 
 .placeholder p {
-    margin: 0 0 var(--spacing-md) 0;
+    margin: 0 0 var(--spacing-7) 0;
     font-weight: var(--font-weight-medium);
 }
 
 .placeholder ul {
     margin: 0;
-    padding-left: var(--spacing-lg);
+    padding-left: var(--spacing-10);
 }
 
 .placeholder li {
-    margin-bottom: var(--spacing-xs);
+    margin-bottom: var(--spacing-4);
 }

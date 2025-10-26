@@ -1,26 +1,28 @@
 .editor {
     display: flex;
     flex-direction: column;
-    gap: 1rem;
+    gap: var(--spacing-7);
+    container-type: inline-size;
+    container-name: page-editor;
 }
 
 .header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    gap: 1rem;
+    gap: var(--spacing-7);
 }
 
 .title {
     margin: 0;
     font-size: var(--font-size-xl);
     font-weight: var(--font-weight-semibold);
-    color: var(--color-text-primary);
+    color: var(--color-text);
 }
 
 .actions {
     display: flex;
-    gap: 0.5rem;
+    gap: var(--spacing-4);
 }
 
 .error {
@@ -31,7 +33,7 @@
 .panes {
     display: grid;
     grid-template-columns: 1fr;
-    gap: 1rem;
+    gap: var(--spacing-7);
     min-height: 500px;
 }
 
@@ -42,7 +44,7 @@
 .pane {
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
+    gap: var(--spacing-5);
     height: 100%;
 }
 
@@ -50,23 +52,23 @@
     margin: 0;
     font-size: var(--font-size-md);
     font-weight: var(--font-weight-semibold);
-    color: var(--color-text-primary);
+    color: var(--color-text);
 }
 
 .textarea {
     flex: 1;
     width: 100%;
     min-height: 500px;
-    padding: 0.75rem;
+    padding: var(--spacing-5);
     border: 1px solid var(--color-border);
     border-radius: var(--radius-md);
     background: var(--color-surface);
-    color: var(--color-text-primary);
-    font-family: var(--font-mono);
+    color: var(--color-text);
+    font-family: 'Monaco', 'Courier New', monospace;
     font-size: var(--font-size-sm);
     line-height: 1.6;
     resize: vertical;
-    transition: border-color var(--transition-default);
+    transition: border-color var(--transition-base);
 }
 
 .textarea:focus {
@@ -76,7 +78,7 @@
 
 .preview {
     flex: 1;
-    padding: 1rem;
+    padding: var(--spacing-7);
     border: 1px solid var(--color-border);
     border-radius: var(--radius-md);
     background: var(--color-background);
@@ -90,8 +92,8 @@
 .preview h4,
 .preview h5,
 .preview h6 {
-    margin: 1.5rem 0 0.75rem 0;
-    color: var(--color-text-primary);
+    margin: var(--spacing-10) 0 var(--spacing-5) 0;
+    color: var(--color-text);
 }
 
 .preview h1:first-child,
@@ -101,27 +103,27 @@
 }
 
 .preview p {
-    margin: 0.75rem 0;
-    color: var(--color-text-secondary);
+    margin: var(--spacing-5) 0;
+    color: var(--color-text-muted);
 }
 
 .preview ul,
 .preview ol {
-    margin: 0.75rem 0;
-    padding-left: 2rem;
+    margin: var(--spacing-5) 0;
+    padding-left: var(--spacing-12);
 }
 
 .preview code {
-    padding: 0.125rem 0.25rem;
-    background: var(--color-surface-secondary);
+    padding: var(--spacing-1) var(--spacing-2);
+    background: var(--color-surface-muted);
     border-radius: var(--radius-sm);
-    font-family: var(--font-mono);
+    font-family: 'Monaco', 'Courier New', monospace;
     font-size: 0.9em;
 }
 
 .preview pre {
-    padding: 1rem;
-    background: var(--color-surface-secondary);
+    padding: var(--spacing-7);
+    background: var(--color-surface-muted);
     border-radius: var(--radius-md);
     overflow-x: auto;
 }
@@ -145,10 +147,22 @@
 }
 
 .help code {
-    padding: 0.125rem 0.25rem;
-    background: var(--color-surface-secondary);
+    padding: var(--spacing-1) var(--spacing-2);
+    background: var(--color-surface-muted);
     border-radius: var(--radius-sm);
-    font-family: var(--font-mono);
+    font-family: 'Monaco', 'Courier New', monospace;
     font-size: 0.9em;
     color: var(--color-primary);
+}
+
+/* Responsive behavior with container queries */
+@container page-editor (max-width: 768px) {
+    .panes:has(.pane:nth-child(2)) {
+        grid-template-columns: 1fr;
+    }
+
+    .header {
+        flex-direction: column;
+        align-items: stretch;
+    }
 }

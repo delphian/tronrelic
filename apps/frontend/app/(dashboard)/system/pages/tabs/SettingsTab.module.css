@@ -1,7 +1,7 @@
 .container {
     display: flex;
     flex-direction: column;
-    gap: 1rem;
+    gap: var(--spacing-7);
 }
 
 .error {
@@ -17,19 +17,19 @@
 .form {
     display: flex;
     flex-direction: column;
-    gap: 1.5rem;
+    gap: var(--spacing-10);
 }
 
 .field {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: var(--spacing-4);
 }
 
 .label {
     font-size: var(--font-size-md);
     font-weight: var(--font-weight-semibold);
-    color: var(--color-text-primary);
+    color: var(--color-text);
 }
 
 .description {
@@ -41,16 +41,16 @@
 
 .textarea {
     width: 100%;
-    padding: 0.75rem;
+    padding: var(--spacing-5);
     border: 1px solid var(--color-border);
     border-radius: var(--radius-md);
     background: var(--color-surface);
-    color: var(--color-text-primary);
-    font-family: var(--font-mono);
+    color: var(--color-text);
+    font-family: 'Monaco', 'Courier New', monospace;
     font-size: var(--font-size-sm);
     line-height: 1.6;
     resize: vertical;
-    transition: border-color var(--transition-default);
+    transition: border-color var(--transition-base);
 }
 
 .textarea:focus {
@@ -59,19 +59,19 @@
 }
 
 .code_input {
-    font-family: var(--font-mono);
+    font-family: 'Monaco', 'Courier New', monospace;
     font-size: var(--font-size-sm);
 }
 
 .select {
-    padding: 0.5rem 0.75rem;
+    padding: var(--spacing-4) var(--spacing-5);
     border: 1px solid var(--color-border);
     border-radius: var(--radius-md);
     background: var(--color-surface);
-    color: var(--color-text-primary);
+    color: var(--color-text);
     font-size: var(--font-size-sm);
     cursor: pointer;
-    transition: border-color var(--transition-default);
+    transition: border-color var(--transition-base);
 }
 
 .select:not(:disabled):hover {
@@ -91,28 +91,28 @@
 .actions {
     display: flex;
     justify-content: flex-start;
-    padding-top: 1rem;
+    padding-top: var(--spacing-7);
     border-top: 1px solid var(--color-border);
 }
 
 .section_title {
-    margin: 0 0 1rem 0;
+    margin: 0 0 var(--spacing-7) 0;
     font-size: var(--font-size-md);
     font-weight: var(--font-weight-semibold);
-    color: var(--color-text-primary);
+    color: var(--color-text);
 }
 
 .settings_display {
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
+    gap: var(--spacing-5);
 }
 
 .setting_row {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 0.5rem 0;
+    padding: var(--spacing-4) 0;
     border-bottom: 1px solid var(--color-border);
 }
 
@@ -128,5 +128,5 @@
 .setting_value {
     font-size: var(--font-size-sm);
     font-weight: var(--font-weight-medium);
-    color: var(--color-text-primary);
+    color: var(--color-text);
 }
