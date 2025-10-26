@@ -21,6 +21,9 @@ import pluginsRouter from './plugins.routes.js';
 import pluginManagementRouter from './plugin-management.routes.js';
 import { PluginApiService } from '../../services/plugin-api.service.js';
 import { createMigrationsRouter } from '../../modules/migrations/index.js';
+import { createPagesModuleRouter, createPublicPagesModuleRouter } from '../../modules/pages/index.js';
+import { CacheService } from '../../services/cache.service.js';
+import { getRedisClient } from '../../loaders/redis.js';
 
 export function createApiRouter(database?: IDatabaseService) {
   const router = Router();
@@ -49,6 +52,12 @@ export function createApiRouter(database?: IDatabaseService) {
   if (database) {
     router.use('/admin/migrations', createMigrationsRouter(database));
   }
+
+  // Mount pages routers with cache service
+  const redis = getRedisClient();
+  const cacheService = new CacheService(redis);
+  router.use('/admin/pages', createPagesModuleRouter(cacheService));
+  router.use('/pages', createPublicPagesModuleRouter(cacheService));
 
   // Mount plugin API routes (dynamic plugins)
   const pluginApiService = PluginApiService.getInstance();
