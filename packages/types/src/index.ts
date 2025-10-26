@@ -18,3 +18,4 @@ export type { ISystemConfig, ISystemConfigService } from './system-config/index.
 export type { ISystemLogService, ISystemLogQuery, ISystemLogPaginatedResponse, ISaveLogData, LogLevel } from './system-log/index.js';
 export { LOG_LEVELS, shouldLog, type LogLevelName } from './system-log/index.js';
 export type { IDatabaseService } from './database/IDatabaseService.js';
+export type { IMigration } from './database/IMigration.js';

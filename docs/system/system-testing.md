@@ -1,25 +1,25 @@
 # Testing Framework
 
-TronRelic uses Vitest for unit testing with comprehensive Mongoose mocking utilities that enable full database service testing without requiring a live MongoDB instance.
+TronRelic uses Vitest for unit testing with comprehensive mocking utilities for database (Mongoose) and filesystem (fs/promises) operations, enabling full service testing without requiring external dependencies.
 
 ## Who This Document Is For
 
-Backend developers writing unit tests for database services, plugin authors testing plugin storage implementations, and maintainers ensuring test coverage for IDatabaseService implementations.
+Backend developers writing unit tests for database services, filesystem operations, migration scanners, plugin authors testing storage implementations, and maintainers ensuring test coverage.
 
 ## Why This Matters
 
-Testing database logic without real MongoDB provides:
+Testing with proper mocks provides:
 
-- **Faster test execution** - No network overhead or database startup time
+- **Faster test execution** - No network overhead, database startup, or filesystem I/O
 - **Isolated test environments** - Each test runs with clean state, no cross-test interference
-- **Error injection capabilities** - Simulate database failures to validate error handling
+- **Error injection capabilities** - Simulate database and filesystem failures to validate error handling
 - **CI/CD compatibility** - No external dependencies required for automated testing
 
 Without proper mocking infrastructure:
 
-- Tests require MongoDB containers (slow startup, resource-intensive)
-- Test isolation is difficult (shared database state causes flaky tests)
-- Error scenarios are hard to reproduce (database failures are non-deterministic)
+- Tests require MongoDB containers and filesystem access (slow, resource-intensive)
+- Test isolation is difficult (shared state causes flaky tests)
+- Error scenarios are hard to reproduce (failures are non-deterministic)
 - CI/CD pipelines need additional infrastructure complexity
 
 ## Vitest Test Runner
@@ -52,9 +52,22 @@ The shared Mongoose mocking utilities provide complete mock implementations of:
 - **Query builders** - Full support for `find().sort().skip().limit()` chains
 - **Error injection** - Simulate database failures for testing error paths
 
-**Location:** `/home/delphian/projects/tronrelic.com-beta/apps/backend/src/tests/vitest/mocks/mongoose.ts`
+**Location:** `apps/backend/src/tests/vitest/mocks/mongoose.ts`
 
-## Quick Start Example
+## Filesystem Mocking System
+
+The shared filesystem mocking utilities provide complete mock implementations of Node.js `fs/promises` operations:
+
+- **In-memory filesystem** - Fast, isolated file operations without touching real disk
+- **Full fs/promises API** - readFile, writeFile, stat, readdir, mkdir, unlink, rmdir, access
+- **Automatic directory creation** - Parent directories created automatically when setting files
+- **ENOENT error simulation** - Proper error codes for missing files/directories
+
+**Location:** `apps/backend/src/tests/vitest/mocks/fs.ts`
+
+## Quick Start Examples
+
+### Mongoose Mock Example
 
 ```typescript
 import { describe, it, expect, beforeEach, vi } from 'vitest';
@@ -99,7 +112,32 @@ describe('MyDatabaseService', () => {
 });
 ```
 
+### Filesystem Mock Example
+
+```typescript
+import { createMockFsModule, clearMockFilesystem, setMockFile } from '../../../tests/vitest/mocks/fs.js';
+
+vi.mock('fs/promises', () => createMockFsModule()());
+import { MigrationScanner } from '../MigrationScanner.js';
+
+beforeEach(() => clearMockFilesystem());
+
+it('should validate filenames', () => {
+    const scanner = new MigrationScanner();
+    expect(scanner.isValidFilename('001_test.ts')).toBe(true);
+    expect(scanner.isValidFilename('invalid.ts')).toBe(false);
+});
+
+it('should calculate checksums', () => {
+    const scanner = new MigrationScanner();
+    const checksum = scanner.calculateChecksum('file content');
+    expect(checksum).toHaveLength(64); // SHA-256 hex
+});
+```
+
 ## Available Mock Helpers
+
+### Mongoose Helpers
 
 **Collection Management:**
 - `clearMockCollections()` - Clear all mock data (use in `beforeEach`)
@@ -112,7 +150,19 @@ describe('MyDatabaseService', () => {
 **Spying:**
 - `spyOnCollectionOperation(collection, operation)` - Verify operation calls
 
-**See the source file for complete API documentation:** [mongoose.ts](../../apps/backend/src/tests/vitest/mocks/mongoose.ts)
+**[Complete API →](../../apps/backend/src/tests/vitest/mocks/mongoose.ts)**
+
+### Filesystem Helpers
+
+**Filesystem Management:**
+- `clearMockFilesystem()` - Clear all mock files/dirs (use in `beforeEach`)
+- `setMockFile(path, content, mtime?)` - Create a file with content
+- `setMockDirectory(path, mtime?)` - Create a directory
+- `removeMockPath(path)` - Delete a file or directory
+- `getMockPaths()` - List all paths (for debugging)
+- `mockPathExists(path)` - Check if path exists
+
+**[Complete API →](../../apps/backend/src/tests/vitest/mocks/fs.ts)**
 
 ## Supported MongoDB Operations
 

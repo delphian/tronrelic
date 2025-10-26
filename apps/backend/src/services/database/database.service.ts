@@ -2,6 +2,10 @@ import mongoose from 'mongoose';
 import type { Collection, Document, Filter, UpdateFilter, IndexDescription, CreateIndexesOptions } from 'mongodb';
 import type { IDatabaseService } from '@tronrelic/types';
 import { logger } from '../../lib/logger.js';
+import { MigrationScanner } from './migration/MigrationScanner.js';
+import { MigrationTracker } from './migration/MigrationTracker.js';
+import { MigrationExecutor } from './migration/MigrationExecutor.js';
+import type { IMigrationMetadata } from './migration/types.js';
 
 /**
  * Database service providing unified database access across the application.
@@ -48,6 +52,14 @@ import { logger } from '../../lib/logger.js';
 export class DatabaseService implements IDatabaseService {
     private readonly collectionPrefix: string;
     private readonly models: Map<string, any> = new Map();
+
+    // Migration system components
+    private migrationScanner?: MigrationScanner;
+    private migrationTracker?: MigrationTracker;
+    private migrationExecutor?: MigrationExecutor;
+    private discoveredMigrations: IMigrationMetadata[] = [];
+    private pendingMigrations: IMigrationMetadata[] = [];
+    private migrationsInitialized = false;
 
     /**
      * Create a database service instance.
@@ -101,12 +113,30 @@ export class DatabaseService implements IDatabaseService {
      * full control over queries, aggregations, and bulk operations. Collection
      * names are automatically prefixed if configured.
      *
+     * **Plugin collection restriction:**
+     * If this DatabaseService instance has a collection prefix (plugin databases),
+     * it can only access collections with that prefix. Attempting to access
+     * non-prefixed collections will throw an error.
+     *
      * @param name - Logical collection name
      * @returns MongoDB native collection
-     * @throws Error if MongoDB connection not established
+     * @throws Error if MongoDB connection not established or plugin tries to access non-prefixed collection
      */
     public getCollection<T extends Document = Document>(name: string): Collection<T> {
         const physicalName = this.getPhysicalCollectionName(name);
+
+        // Plugin collection access restriction
+        // If this DatabaseService has a prefix (plugin database), enforce that it can
+        // only access collections with that prefix. This prevents plugin migrations
+        // from accessing system or other plugin collections.
+        if (this.collectionPrefix && !physicalName.startsWith(this.collectionPrefix)) {
+            throw new Error(
+                `Plugin database cannot access collection '${name}'. ` +
+                `Plugins can only access collections with prefix '${this.collectionPrefix}'. ` +
+                `Physical collection name '${physicalName}' does not start with required prefix.`
+            );
+        }
+
         const db = mongoose.connection.db;
         if (!db) {
             throw new Error('MongoDB connection not established');
@@ -235,8 +265,8 @@ export class DatabaseService implements IDatabaseService {
      */
     public async createIndex(
         collectionName: string,
-        indexSpec: IndexDescription,
-        options?: CreateIndexesOptions
+        indexSpec: Record<string, 1 | -1>,
+        options?: { unique?: boolean; sparse?: boolean; expireAfterSeconds?: number; name?: string }
     ): Promise<void> {
         const collection = this.getCollection(collectionName);
         await collection.createIndex(indexSpec as any, options);
@@ -426,5 +456,196 @@ export class DatabaseService implements IDatabaseService {
         const collection = this.getCollection<T>(collectionName);
         const result = await collection.deleteMany(filter);
         return result.deletedCount;
+    }
+
+    /**
+     * Initialize the migration system.
+     *
+     * Discovers migrations from filesystem, builds dependency graph, removes orphaned
+     * records, and prepares migration system for execution. Idempotent - subsequent
+     * calls are no-ops.
+     *
+     * @returns Promise that resolves when initialization complete
+     */
+    public async initializeMigrations(): Promise<void> {
+        if (this.migrationsInitialized) {
+            logger.debug('Migration system already initialized, skipping');
+            return;
+        }
+
+        logger.info('Initializing migration system...');
+
+        try {
+            // Initialize migration components
+            this.migrationScanner = new MigrationScanner();
+            this.migrationTracker = new MigrationTracker(this);
+            this.migrationExecutor = new MigrationExecutor(this, this.migrationTracker);
+
+            // Ensure migration tracker indexes exist
+            await this.migrationTracker.ensureIndexes();
+
+            // Scan filesystem for migrations
+            this.discoveredMigrations = await this.migrationScanner.scan();
+
+            // Remove orphaned pending migrations (code deleted but record exists)
+            await this.migrationTracker.removeOrphanedPending(this.discoveredMigrations);
+
+            // Determine which migrations are pending execution
+            this.pendingMigrations = await this.migrationTracker.getPendingMigrations(this.discoveredMigrations);
+
+            this.migrationsInitialized = true;
+
+            logger.info({
+                discovered: this.discoveredMigrations.length,
+                pending: this.pendingMigrations.length
+            }, 'Migration system initialized');
+
+        } catch (error) {
+            logger.error({ error }, 'Failed to initialize migration system');
+            throw error;
+        }
+    }
+
+    /**
+     * Get list of pending migrations.
+     *
+     * Returns migrations that have been discovered but not yet executed successfully.
+     * Migrations are in topological order (dependencies first).
+     *
+     * @returns Promise resolving to array of pending migration metadata
+     */
+    public async getMigrationsPending(): Promise<Array<{
+        id: string;
+        description: string;
+        source: string;
+        filePath: string;
+        timestamp: Date;
+        dependencies: string[];
+        checksum?: string;
+    }>> {
+        if (!this.migrationsInitialized) {
+            throw new Error('Migration system not initialized. Call initializeMigrations() first.');
+        }
+
+        // Map to exclude the 'up' function for serialization
+        return this.pendingMigrations.map(m => ({
+            id: m.id,
+            description: m.description,
+            source: m.source,
+            filePath: m.filePath,
+            timestamp: m.timestamp,
+            dependencies: m.dependencies || [],
+            checksum: m.checksum
+        }));
+    }
+
+    /**
+     * Get list of completed migrations from database.
+     *
+     * @param limit - Maximum records to return (default: 100)
+     * @returns Promise resolving to array of migration execution records
+     */
+    public async getMigrationsCompleted(limit = 100): Promise<Array<{
+        migrationId: string;
+        status: 'completed' | 'failed';
+        source: string;
+        executedAt: Date;
+        executionDuration: number;
+        error?: string;
+        errorStack?: string;
+        checksum?: string;
+        environment?: string;
+        codebaseVersion?: string;
+    }>> {
+        if (!this.migrationTracker) {
+            throw new Error('Migration system not initialized. Call initializeMigrations() first.');
+        }
+
+        return await this.migrationTracker.getCompletedMigrations(limit);
+    }
+
+    /**
+     * Execute a specific migration by ID.
+     *
+     * Validates migration exists and dependencies are met before execution.
+     *
+     * @param migrationId - Unique ID of migration to execute
+     * @returns Promise that resolves when migration completes successfully
+     * @throws Error if migration not found, dependencies unmet, or execution fails
+     */
+    public async executeMigration(migrationId: string): Promise<void> {
+        if (!this.migrationExecutor) {
+            throw new Error('Migration system not initialized. Call initializeMigrations() first.');
+        }
+
+        // Find the migration in discovered migrations
+        const migration = this.discoveredMigrations.find(m => m.id === migrationId);
+
+        if (!migration) {
+            throw new Error(
+                `Migration '${migrationId}' not found. ` +
+                `Available migrations: ${this.discoveredMigrations.map(m => m.id).join(', ')}`
+            );
+        }
+
+        // Validate dependencies are met
+        const completedIds = await this.migrationTracker!.getCompletedMigrationIds();
+        const completedSet = new Set(completedIds);
+
+        for (const depId of migration.dependencies || []) {
+            if (!completedSet.has(depId)) {
+                throw new Error(
+                    `Cannot execute migration '${migrationId}': ` +
+                    `dependency '${depId}' has not been executed yet.`
+                );
+            }
+        }
+
+        // Execute the migration
+        await this.migrationExecutor.executeMigration(migration);
+
+        // Update pending migrations list after successful execution
+        this.pendingMigrations = await this.migrationTracker!.getPendingMigrations(this.discoveredMigrations);
+    }
+
+    /**
+     * Execute all pending migrations in dependency order.
+     *
+     * Executes migrations serially, stopping on first failure.
+     *
+     * @returns Promise that resolves when all migrations complete successfully
+     * @throws Error if any migration fails
+     */
+    public async executeMigrationsAll(): Promise<void> {
+        if (!this.migrationExecutor) {
+            throw new Error('Migration system not initialized. Call initializeMigrations() first.');
+        }
+
+        if (this.pendingMigrations.length === 0) {
+            logger.info('No pending migrations to execute');
+            return;
+        }
+
+        logger.info({ count: this.pendingMigrations.length }, 'Executing all pending migrations...');
+
+        await this.migrationExecutor.executeMigrations(this.pendingMigrations);
+
+        // Update pending migrations list after successful execution
+        this.pendingMigrations = await this.migrationTracker!.getPendingMigrations(this.discoveredMigrations);
+
+        logger.info('All pending migrations executed successfully');
+    }
+
+    /**
+     * Check if a migration is currently executing.
+     *
+     * @returns True if a migration is running
+     */
+    public isMigrationRunning(): boolean {
+        if (!this.migrationExecutor) {
+            return false;
+        }
+
+        return this.migrationExecutor.isRunning();
     }
 }

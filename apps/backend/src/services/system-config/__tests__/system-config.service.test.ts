@@ -52,6 +52,14 @@ class MockDatabase implements IDatabaseService {
     async insertOne() { return null; }
     async updateMany() { return 0; }
     async deleteMany() { return 0; }
+
+    // Migration methods (required by interface)
+    async initializeMigrations() {}
+    async getMigrationsPending() { return []; }
+    async getMigrationsCompleted() { return []; }
+    async executeMigration() {}
+    async executeMigrationsAll() {}
+    isMigrationRunning() { return false; }
 }
 
 describe('SystemConfigService', () => {

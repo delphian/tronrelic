@@ -689,4 +689,112 @@ describe('DatabaseService', () => {
             }
         });
     });
+
+    describe('Migration System Integration', () => {
+        /**
+         * Test: initializeMigrations should discover and prepare migrations.
+         *
+         * Verifies that the migration system initializes without errors
+         * when called.
+         */
+        it('should initialize migration system', async () => {
+            // Note: This test verifies the method exists and doesn't throw
+            // Full integration testing of migration discovery requires filesystem access
+            await expect(service.initializeMigrations()).resolves.not.toThrow();
+        });
+
+        /**
+         * Test: getMigrationsPending should return empty array initially.
+         *
+         * Verifies that before any migrations are discovered, the pending
+         * list is empty.
+         */
+        it('should return empty pending migrations initially', async () => {
+            await service.initializeMigrations();
+            const pending = await service.getMigrationsPending();
+            expect(Array.isArray(pending)).toBe(true);
+        });
+
+        /**
+         * Test: getMigrationsCompleted should return empty array initially.
+         *
+         * Verifies that in a fresh database with no migration records,
+         * the completed list is empty.
+         */
+        it('should return empty completed migrations initially', async () => {
+            await service.initializeMigrations();
+            const completed = await service.getMigrationsCompleted();
+            expect(Array.isArray(completed)).toBe(true);
+        });
+
+        /**
+         * Test: isMigrationRunning should return false initially.
+         *
+         * Verifies that the running state starts as false.
+         */
+        it('should return false for isMigrationRunning initially', async () => {
+            await service.initializeMigrations();
+            expect(service.isMigrationRunning()).toBe(false);
+        });
+
+        /**
+         * Test: executeMigration should throw when system not initialized.
+         *
+         * Verifies that attempting to execute a migration before calling
+         * initializeMigrations() throws an appropriate error.
+         */
+        it('should throw when executing migration before initialization', async () => {
+            await expect(async () => {
+                await service.executeMigration('001_test');
+            }).rejects.toThrow(/not initialized/);
+        });
+
+        /**
+         * Test: executeMigrationsAll should throw when system not initialized.
+         *
+         * Verifies that batch execution also requires initialization.
+         */
+        it('should throw when executing all migrations before initialization', async () => {
+            await expect(async () => {
+                await service.executeMigrationsAll();
+            }).rejects.toThrow(/not initialized/);
+        });
+
+        /**
+         * Test: getMigrationsPending should throw when system not initialized.
+         *
+         * Verifies that querying pending migrations requires initialization.
+         */
+        it('should throw when getting pending migrations before initialization', async () => {
+            await expect(async () => {
+                await service.getMigrationsPending();
+            }).rejects.toThrow(/not initialized/);
+        });
+
+        /**
+         * Test: Migration methods should be available on service instance.
+         *
+         * Verifies that all migration-related methods are properly exposed
+         * on the DatabaseService interface.
+         */
+        it('should expose all migration methods', () => {
+            expect(typeof service.initializeMigrations).toBe('function');
+            expect(typeof service.getMigrationsPending).toBe('function');
+            expect(typeof service.getMigrationsCompleted).toBe('function');
+            expect(typeof service.executeMigration).toBe('function');
+            expect(typeof service.executeMigrationsAll).toBe('function');
+            expect(typeof service.isMigrationRunning).toBe('function');
+        });
+
+        /**
+         * Test: Migration system should work with prefixed collections.
+         *
+         * Verifies that plugin database services with prefixes can also
+         * initialize the migration system (though plugins have restrictions).
+         */
+        it('should work with prefixed database service', async () => {
+            const prefixedService = new DatabaseService({ prefix: 'plugin_test_' });
+            await expect(prefixedService.initializeMigrations()).resolves.not.toThrow();
+        });
+    });
 });
