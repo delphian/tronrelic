@@ -192,7 +192,7 @@ export class MigrationTracker {
         const completedIds = await this.getCompletedMigrationIds();
         const completedSet = new Set(completedIds);
 
-        return discovered.filter(m => !completedSet.has(m.id));
+        return discovered.filter(m => !completedSet.has(m.qualifiedId));
     }
 
     /**
@@ -224,7 +224,7 @@ export class MigrationTracker {
         const collection = this.getCollection();
 
         const record: IMigrationRecord = {
-            migrationId: metadata.id,
+            migrationId: metadata.qualifiedId,
             status: 'completed',
             source: metadata.source,
             executedAt: new Date(),
@@ -237,12 +237,12 @@ export class MigrationTracker {
         try {
             await collection.insertOne(record as any);
             logger.info({
-                migrationId: metadata.id,
+                migrationId: metadata.qualifiedId,
                 duration,
                 source: metadata.source
             }, 'Migration execution recorded as successful');
         } catch (error) {
-            logger.error({ error, migrationId: metadata.id }, 'Failed to record migration success');
+            logger.error({ error, migrationId: metadata.qualifiedId }, 'Failed to record migration success');
             throw error;
         }
     }
@@ -281,7 +281,7 @@ export class MigrationTracker {
         const collection = this.getCollection();
 
         const record: IMigrationRecord = {
-            migrationId: metadata.id,
+            migrationId: metadata.qualifiedId,
             status: 'failed',
             source: metadata.source,
             executedAt: new Date(),
@@ -296,13 +296,13 @@ export class MigrationTracker {
         try {
             await collection.insertOne(record as any);
             logger.error({
-                migrationId: metadata.id,
+                migrationId: metadata.qualifiedId,
                 error: error.message,
                 duration,
                 source: metadata.source
             }, 'Migration execution recorded as failed');
         } catch (insertError) {
-            logger.error({ error: insertError, migrationId: metadata.id }, 'Failed to record migration failure');
+            logger.error({ error: insertError, migrationId: metadata.qualifiedId }, 'Failed to record migration failure');
             throw insertError;
         }
     }
@@ -336,8 +336,8 @@ export class MigrationTracker {
     public async removeOrphanedPending(discovered: IMigrationMetadata[]): Promise<number> {
         const collection = this.getCollection();
 
-        // Build set of discovered migration IDs
-        const discoveredIds = new Set(discovered.map(m => m.id));
+        // Build set of discovered migration qualified IDs
+        const discoveredIds = new Set(discovered.map(m => m.qualifiedId));
 
         // Find all records in database
         const allRecords = await collection.find({}).toArray();

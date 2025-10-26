@@ -67,11 +67,6 @@ export interface IMigration {
      * - `042_add_menu_namespace_index`
      * - `123_migrate_legacy_transaction_format`
      *
-     * **Cross-source references:**
-     * When declaring dependencies on migrations from other sources, use the full qualified ID:
-     * - System migration dependency: `'042_add_menu_namespace_index'`
-     * - Plugin migration dependency: `'whale-alerts:003_add_threshold_index'`
-     *
      * @example
      * ```typescript
      * // Good IDs
@@ -126,31 +121,38 @@ export interface IMigration {
      * - Missing dependencies cause migration to be skipped with error
      * - Execution stops if any dependency fails
      *
-     * **Cross-boundary dependencies:**
-     * Plugins can depend on system migrations, system can depend on module migrations,
-     * and plugins can depend on other plugins. Use fully qualified IDs when referencing
-     * migrations from other sources.
+     * **Dependency ID format:**
+     * The format depends on which source owns the target migration. The scanner looks up
+     * migrations by their `qualifiedId`, which differs by source:
      *
-     * **Qualified ID format:**
-     * - System migration: `'042_add_menu_index'`
-     * - Module migration: `'module:menu:005_add_container_nodes'`
-     * - Plugin migration: `'plugin:whale-alerts:003_create_subscriptions'`
+     * - **System migrations** - Use plain ID: `'001_create_users'` (system qualifiedId IS the plain ID)
+     * - **Module migrations** - Use qualified ID: `'module:menu:001_add_namespace'`
+     * - **Plugin migrations** - Use qualified ID: `'plugin:whale-alerts:001_init'`
+     *
+     * **Why this matters:**
+     * System migrations have `qualifiedId = id`, so plain IDs work. Module and plugin migrations
+     * have prefixed qualified IDs, so you must include the prefix or the dependency won't be found.
      *
      * @example
      * ```typescript
      * // No dependencies (independent migration)
      * dependencies: []
      *
-     * // Depends on single system migration
-     * dependencies: ['001_create_config']
+     * // Depends on single system migration (plain ID works)
+     * dependencies: ['001_create_users']
      *
-     * // Depends on multiple migrations from same source
+     * // Depends on multiple system migrations (plain IDs work)
      * dependencies: ['001_create_users', '002_create_roles']
      *
-     * // Cross-source dependencies (plugin depends on system and another plugin)
+     * // Cross-source dependencies (plugin depends on system and module)
      * dependencies: [
-     *     '001_create_users',                           // System migration
-     *     'plugin:whale-alerts:002_create_alerts'       // Another plugin
+     *     '001_create_users',                    // System migration (plain ID)
+     *     'module:menu:001_add_namespace'        // Module migration (qualified ID required)
+     * ]
+     *
+     * // Plugin depending on another plugin
+     * dependencies: [
+     *     'plugin:whale-alerts:001_init'         // Plugin migration (qualified ID required)
      * ]
      * ```
      */

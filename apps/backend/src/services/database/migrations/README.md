@@ -24,7 +24,7 @@ Without migrations:
 
 Create a migration in three steps:
 
-1. **Create file** in appropriate migrations directory:
+1. **Create file** - Migrations are automatically discovered from these predefined locations:
    - System: `apps/backend/src/services/database/migrations/`
    - Module: `apps/backend/src/modules/{module-name}/migrations/`
    - Plugin: `packages/plugins/{plugin-id}/src/backend/migrations/`
@@ -95,7 +95,9 @@ export const migration: IMigration = {
 
 ## File Structure
 
-### Where to Place Migrations
+### Where Migrations Are Discovered
+
+Migrations are automatically discovered from three predefined locations at backend startup:
 
 **System migrations** (unrestricted access to all collections):
 ```
@@ -122,6 +124,8 @@ packages/plugins/whale-alerts/src/backend/migrations/
 └── 002_add_threshold_config.ts
 ```
 
+The scanner recursively scans ALL subdirectories in these locations. You don't choose where to place migrations—the directory structure determines the source category automatically.
+
 ### Migration Contract
 
 Every migration file exports a `migration` object implementing `IMigration`:
@@ -143,7 +147,7 @@ export const migration: IMigration = {
 
     /**
      * Optional array of migration IDs that must execute before this one.
-     * Use fully qualified IDs for cross-source dependencies.
+     * Use PLAIN migration IDs only (no source prefixes).
      */
     dependencies: [],
 
@@ -295,7 +299,7 @@ export const migration: IMigration = {
 
 ### Cross-Source Dependencies
 
-Migrations can depend on migrations from other sources:
+Migrations can depend on migrations from other sources. Dependency format depends on the target migration's source:
 
 ```typescript
 // Plugin migration depending on system migration
@@ -303,8 +307,21 @@ export const migration: IMigration = {
     id: '001_create_plugin_data',
     description: 'Create plugin data collection',
 
-    // Qualified ID references system migration
+    // System migration dependency uses plain ID
     dependencies: ['001_create_system_config'],
+
+    async up(database: IDatabaseService): Promise<void> {
+        // Plugin logic here
+    }
+};
+
+// Plugin migration depending on module migration
+export const migration: IMigration = {
+    id: '002_extend_menu',
+    description: 'Add plugin menu items',
+
+    // Module migration dependency uses qualified ID
+    dependencies: ['module:menu:001_add_namespace'],
 
     async up(database: IDatabaseService): Promise<void> {
         // Plugin logic here
@@ -312,10 +329,12 @@ export const migration: IMigration = {
 };
 ```
 
-**Qualified ID formats:**
-- System migration: `'001_create_users'`
-- Module migration: `'module:markets:001_create_markets'`
-- Plugin migration: `'plugin:whale-alerts:001_create_subscriptions'`
+**Critical:** The scanner builds a lookup map keyed by `qualifiedId`:
+- **System migrations**: `qualifiedId = id` (plain ID works)
+- **Module migrations**: `qualifiedId = 'module:name:id'` (must use qualified format)
+- **Plugin migrations**: `qualifiedId = 'plugin:name:id'` (must use qualified format)
+
+Using plain IDs for module/plugin dependencies will cause "migration not found" errors.
 
 ### Dependency Resolution
 

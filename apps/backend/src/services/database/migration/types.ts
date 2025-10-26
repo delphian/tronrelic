@@ -35,6 +35,34 @@ export interface IMigrationMetadata extends IMigration {
     source: string;
 
     /**
+     * Fully qualified migration ID including source namespace.
+     *
+     * This is the globally unique identifier used for dependency resolution,
+     * database tracking, and preventing ID collisions across different sources.
+     *
+     * Format:
+     * - System migrations: Plain ID (no prefix) - `'001_create_users'`
+     * - Module migrations: `'module:{name}:{id}'` - `'module:menu:001_add_namespace'`
+     * - Plugin migrations: `'plugin:{id}:{migration-id}'` - `'plugin:whale-alerts:001_create_subscriptions'`
+     *
+     * Why this matters:
+     * The scanner builds a lookup map keyed by `qualifiedId`. When validating dependencies,
+     * it looks them up in this map. System migrations can be referenced with plain IDs because
+     * their `qualifiedId` IS the plain ID. Module/plugin migrations require qualified IDs in
+     * the dependencies array because their `qualifiedId` includes the source prefix.
+     *
+     * Prevents collisions when multiple sources use the same numeric prefix.
+     * For example, `plugin:whale-alerts:001_init` and `plugin:markets:001_init`
+     * are distinct migrations even though both use `001_init` as their base ID.
+     *
+     * @example
+     * '001_create_users'                          // System migration
+     * 'module:menu:001_add_namespace'              // Module migration
+     * 'plugin:whale-alerts:001_create_subscriptions' // Plugin migration
+     */
+    qualifiedId: string;
+
+    /**
      * Absolute filesystem path to the migration file.
      *
      * Used for:
@@ -48,17 +76,19 @@ export interface IMigrationMetadata extends IMigration {
     filePath: string;
 
     /**
-     * Timestamp when the migration was created.
+     * File modification timestamp from filesystem.
      *
-     * Extracted from:
-     * 1. Filename timestamp if present (YYYYMMDDHHMMSS format)
-     * 2. File creation time from filesystem
-     * 3. Current time as fallback
+     * Extracted from `fileStats.mtime` during migration scanning. This reflects
+     * when the migration file was last modified, not when it was created.
      *
      * Used for:
-     * - Sorting migrations chronologically
-     * - Admin UI display (show creation date)
+     * - Sorting migrations chronologically (when using 'timestamp' sort strategy)
+     * - Admin UI display (show last modified date)
      * - History tracking
+     *
+     * Note: In cloned repositories or Docker builds, this may not reflect the
+     * original creation time. Use numeric ID prefixes (001, 002, 003) for
+     * reliable ordering instead.
      *
      * @example
      * new Date('2025-01-15T10:30:00Z')
