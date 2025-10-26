@@ -25,6 +25,7 @@ export function SystemNav() {
         { id: 'health', label: 'Health', href: '/system/health' },
         { id: 'config', label: 'Config', href: '/system/config' },
         { id: 'plugins', label: 'Plugins', href: '/system/plugins' },
+        { id: 'pages', label: 'Pages', href: '/system/pages' },
         { id: 'websockets', label: 'WebSockets', href: '/system/websockets' },
         { id: 'logs', label: 'Logs', href: '/system/logs' }
     ];
