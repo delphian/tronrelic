@@ -22,6 +22,28 @@ vi.mock('fs/promises', () => createMockFsModule()());
 // Import MigrationScanner AFTER mocking dependencies
 import { MigrationScanner } from '../MigrationScanner.js';
 
+/**
+ * Helper function to create migration test fixtures with qualified IDs.
+ * Simulates what the scanner does during validation.
+ */
+function createMigrationFixture(id: string, options: {
+    source?: string;
+    description?: string;
+    dependencies?: string[];
+} = {}) {
+    const source = options.source || 'system';
+    const qualifiedId = source === 'system' ? id : `${source}:${id}`;
+
+    return {
+        id,
+        qualifiedId,
+        description: options.description || `Migration ${id}`,
+        source,
+        dependencies: options.dependencies || [],
+        up: vi.fn()
+    };
+}
+
 describe('MigrationScanner', () => {
     let scanner: MigrationScanner;
 
@@ -87,12 +109,14 @@ describe('MigrationScanner', () => {
             const migrations = [
                 {
                     id: '001_base',
+                    qualifiedId: '001_base',
                     description: 'Base migration',
                     dependencies: [],
                     up: vi.fn()
                 },
                 {
                     id: '002_dependent',
+                    qualifiedId: '002_dependent',
                     description: 'Dependent migration',
                     dependencies: ['999_nonexistent'],  // This doesn't exist
                     up: vi.fn()
@@ -112,18 +136,8 @@ describe('MigrationScanner', () => {
          */
         it('should accept valid dependencies', async () => {
             const migrations = [
-                {
-                    id: '001_base',
-                    description: 'Base migration',
-                    dependencies: [],
-                    up: vi.fn()
-                },
-                {
-                    id: '002_dependent',
-                    description: 'Dependent migration',
-                    dependencies: ['001_base'],
-                    up: vi.fn()
-                }
+                createMigrationFixture('001_base'),
+                createMigrationFixture('002_dependent', { dependencies: ['001_base'] })
             ];
 
             const sorted = await (scanner as any).topologicalSort(migrations);
@@ -142,18 +156,8 @@ describe('MigrationScanner', () => {
          */
         it('should detect direct circular dependencies', async () => {
             const migrations = [
-                {
-                    id: 'A',
-                    description: 'Migration A',
-                    dependencies: ['B'],
-                    up: vi.fn()
-                },
-                {
-                    id: 'B',
-                    description: 'Migration B',
-                    dependencies: ['A'],
-                    up: vi.fn()
-                }
+                createMigrationFixture('A', { dependencies: ['B'] }),
+                createMigrationFixture('B', { dependencies: ['A'] })
             ];
 
             await expect(async () => {
@@ -169,24 +173,9 @@ describe('MigrationScanner', () => {
          */
         it('should detect indirect circular dependencies', async () => {
             const migrations = [
-                {
-                    id: 'A',
-                    description: 'Migration A',
-                    dependencies: ['B'],
-                    up: vi.fn()
-                },
-                {
-                    id: 'B',
-                    description: 'Migration B',
-                    dependencies: ['C'],
-                    up: vi.fn()
-                },
-                {
-                    id: 'C',
-                    description: 'Migration C',
-                    dependencies: ['A'],  // Creates cycle
-                    up: vi.fn()
-                }
+                createMigrationFixture('A', { dependencies: ['B'] }),
+                createMigrationFixture('B', { dependencies: ['C'] }),
+                createMigrationFixture('C', { dependencies: ['A'] })  // Creates cycle
             ];
 
             await expect(async () => {
@@ -202,30 +191,10 @@ describe('MigrationScanner', () => {
          */
         it('should handle complex dependency graphs without cycles', async () => {
             const migrations = [
-                {
-                    id: '001',
-                    description: 'Base',
-                    dependencies: [],
-                    up: vi.fn()
-                },
-                {
-                    id: '002',
-                    description: 'Depends on 001',
-                    dependencies: ['001'],
-                    up: vi.fn()
-                },
-                {
-                    id: '003',
-                    description: 'Depends on 001',
-                    dependencies: ['001'],
-                    up: vi.fn()
-                },
-                {
-                    id: '004',
-                    description: 'Depends on 002 and 003',
-                    dependencies: ['002', '003'],
-                    up: vi.fn()
-                }
+                createMigrationFixture('001'),
+                createMigrationFixture('002', { dependencies: ['001'] }),
+                createMigrationFixture('003', { dependencies: ['001'] }),
+                createMigrationFixture('004', { dependencies: ['002', '003'] })
             ];
 
             const sorted = await (scanner as any).topologicalSort(migrations);
@@ -251,24 +220,9 @@ describe('MigrationScanner', () => {
          */
         it('should sort migrations in dependency order', async () => {
             const migrations = [
-                {
-                    id: '003_third',
-                    description: 'Third',
-                    dependencies: ['001_first', '002_second'],
-                    up: vi.fn()
-                },
-                {
-                    id: '002_second',
-                    description: 'Second',
-                    dependencies: ['001_first'],
-                    up: vi.fn()
-                },
-                {
-                    id: '001_first',
-                    description: 'First',
-                    dependencies: [],
-                    up: vi.fn()
-                }
+                createMigrationFixture('003_third', { dependencies: ['001_first', '002_second'] }),
+                createMigrationFixture('002_second', { dependencies: ['001_first'] }),
+                createMigrationFixture('001_first')
             ];
 
             const sorted = await (scanner as any).topologicalSort(migrations);
@@ -286,24 +240,9 @@ describe('MigrationScanner', () => {
          */
         it('should handle migrations with no dependencies', async () => {
             const migrations = [
-                {
-                    id: '003_third',
-                    description: 'Third',
-                    dependencies: [],
-                    up: vi.fn()
-                },
-                {
-                    id: '001_first',
-                    description: 'First',
-                    dependencies: [],
-                    up: vi.fn()
-                },
-                {
-                    id: '002_second',
-                    description: 'Second',
-                    dependencies: [],
-                    up: vi.fn()
-                }
+                createMigrationFixture('003_third'),
+                createMigrationFixture('001_first'),
+                createMigrationFixture('002_second')
             ];
 
             const sorted = await (scanner as any).topologicalSort(migrations);
@@ -370,6 +309,7 @@ describe('MigrationScanner', () => {
             );
 
             expect(metadata.id).toBe('001_test');
+            expect(metadata.qualifiedId).toBe('001_test'); // System migrations use plain ID
             expect(metadata.description).toBe('Test migration');
             expect(metadata.source).toBe('system');
             expect(metadata.dependencies).toEqual([]);
@@ -450,6 +390,58 @@ describe('MigrationScanner', () => {
                     new Date()
                 );
             }).toThrow(/must export 'migration' object/);
+        });
+
+        /**
+         * Test: Scanner should generate qualified IDs for module migrations.
+         */
+        it('should generate qualified ID for module migration', () => {
+            const mockModule = {
+                migration: {
+                    id: '001_add_namespace',
+                    description: 'Add namespace field',
+                    dependencies: [],
+                    up: vi.fn()
+                }
+            };
+
+            const metadata = scanner.validateMigrationObject(
+                mockModule,
+                '/test/path/001_add_namespace.ts',
+                'module:menu',
+                'abc123',
+                new Date()
+            );
+
+            expect(metadata.id).toBe('001_add_namespace');
+            expect(metadata.qualifiedId).toBe('module:menu:001_add_namespace');
+            expect(metadata.source).toBe('module:menu');
+        });
+
+        /**
+         * Test: Scanner should generate qualified IDs for plugin migrations.
+         */
+        it('should generate qualified ID for plugin migration', () => {
+            const mockModule = {
+                migration: {
+                    id: '001_create_subscriptions',
+                    description: 'Create subscriptions collection',
+                    dependencies: [],
+                    up: vi.fn()
+                }
+            };
+
+            const metadata = scanner.validateMigrationObject(
+                mockModule,
+                '/test/path/001_create_subscriptions.ts',
+                'plugin:whale-alerts',
+                'abc123',
+                new Date()
+            );
+
+            expect(metadata.id).toBe('001_create_subscriptions');
+            expect(metadata.qualifiedId).toBe('plugin:whale-alerts:001_create_subscriptions');
+            expect(metadata.source).toBe('plugin:whale-alerts');
         });
     });
 });

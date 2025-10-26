@@ -226,10 +226,17 @@ export class MigrationScanner {
         // Validate ID matches filename (prevents copy-paste errors)
         this.validateIdMatchesFilename(filePath, migration);
 
+        // Build qualified ID based on source
+        // System migrations use plain ID, modules/plugins get source prefix
+        const qualifiedId = source === 'system'
+            ? migration.id
+            : `${source}:${migration.id}`;
+
         // Build complete metadata
         const metadata: IMigrationMetadata = {
             ...migration,
             source,
+            qualifiedId,
             filePath,
             timestamp,
             checksum,
@@ -238,6 +245,7 @@ export class MigrationScanner {
 
         logger.debug({
             id: metadata.id,
+            qualifiedId: metadata.qualifiedId,
             source: metadata.source,
             dependencies: metadata.dependencies?.length || 0
         }, 'Loaded migration');
@@ -577,18 +585,24 @@ export class MigrationScanner {
      * @throws Error if circular dependencies detected or dependency not found
      */
     private topologicalSort(migrations: IMigrationMetadata[]): IMigrationMetadata[] {
-        // Build map for fast lookup
+        // Build map for fast lookup using qualified IDs
         const migrationMap = new Map<string, IMigrationMetadata>();
         for (const migration of migrations) {
-            migrationMap.set(migration.id, migration);
+            migrationMap.set(migration.qualifiedId, migration);
         }
 
         // Validate all dependencies exist
         for (const migration of migrations) {
             for (const depId of migration.dependencies || []) {
-                if (!migrationMap.has(depId)) {
+                // Support both plain IDs (resolve to system) and qualified IDs
+                // Plain dependency ID like '001_create_users' means system migration
+                // Qualified dependency ID like 'module:menu:001_add_namespace' is explicit
+                const lookupId = depId.includes(':') ? depId : depId; // Plain ID assumes system
+
+                if (!migrationMap.has(lookupId)) {
                     throw new Error(
-                        `Migration '${migration.id}' depends on '${depId}', but that migration was not found. ` +
+                        `Migration '${migration.qualifiedId}' depends on '${depId}', but that migration was not found. ` +
+                        `Available migrations: ${Array.from(migrationMap.keys()).join(', ')}. ` +
                         `Ensure the dependency exists or remove it from the dependencies array.`
                     );
                 }
@@ -601,30 +615,32 @@ export class MigrationScanner {
         const visiting = new Set<string>(); // Track nodes currently in DFS path (for cycle detection)
 
         const visit = (migration: IMigrationMetadata, path: string[] = []): void => {
-            if (visited.has(migration.id)) {
+            if (visited.has(migration.qualifiedId)) {
                 return; // Already processed
             }
 
-            if (visiting.has(migration.id)) {
+            if (visiting.has(migration.qualifiedId)) {
                 // Circular dependency detected
-                const cycle = [...path, migration.id].join(' -> ');
+                const cycle = [...path, migration.qualifiedId].join(' -> ');
                 throw new Error(
                     `Circular dependency detected: ${cycle}. ` +
                     `Remove one of these dependencies to break the cycle.`
                 );
             }
 
-            visiting.add(migration.id);
-            path.push(migration.id);
+            visiting.add(migration.qualifiedId);
+            path.push(migration.qualifiedId);
 
             // Visit all dependencies first (DFS)
             for (const depId of migration.dependencies || []) {
-                const dep = migrationMap.get(depId)!;
+                // Support both plain and qualified dependency IDs
+                const lookupId = depId.includes(':') ? depId : depId;
+                const dep = migrationMap.get(lookupId)!;
                 visit(dep, [...path]);
             }
 
-            visiting.delete(migration.id);
-            visited.add(migration.id);
+            visiting.delete(migration.qualifiedId);
+            visited.add(migration.qualifiedId);
             sorted.push(migration);
         };
 
