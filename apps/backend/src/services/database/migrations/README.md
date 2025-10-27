@@ -20,6 +20,44 @@ Without migrations:
 - ❌ No audit trail of what changed, when, or why
 - ❌ Breaking changes can silently corrupt data
 
+## When to Use Migrations
+
+**Migrations are for changing EXISTING production databases, not initial setup.**
+
+### Use migrations for:
+
+- ✅ **Adding indexes to EXISTING deployed collections** - Production already has data, need to add performance indexes
+- ✅ **Modifying data in production databases** - Transform document structure, add default values, migrate formats
+- ✅ **Restructuring documents across environments** - Split fields, combine collections, normalize data
+- ✅ **Schema changes to deployed collections** - Add fields, rename fields, change types
+
+### Do NOT use migrations for:
+
+- ❌ **Initial setup of new modules** - Mongoose handles this automatically via schema definitions
+- ❌ **Creating indexes defined in schema** - Mongoose auto-creates these on first model load
+- ❌ **Collections that don't exist in production yet** - No migration needed for new features
+
+### Rule of thumb:
+
+**If your module has never been deployed to production, don't create migrations.** Let Mongoose handle initial schema setup through:
+
+```typescript
+// Mongoose schema - handles initial setup automatically
+const PageSchema = new Schema({
+    slug: { type: String, unique: true, index: true }, // Auto-creates index
+    title: { type: String, index: true }               // Auto-creates index
+});
+```
+
+**Only create migrations when you need to modify schemas/data that already exist in production.**
+
+**Example scenarios:**
+
+- ✅ **Migration needed**: Production has `users` collection without `emailVerified` field. Create migration to add default value.
+- ❌ **Migration NOT needed**: Building new `pages` module that's never been deployed. Mongoose will create indexes from schema.
+- ✅ **Migration needed**: Production has `transactions` collection. Need to add compound index for performance. Create migration.
+- ❌ **Migration NOT needed**: New plugin with new collection. Schema definitions handle all initial setup.
+
 ## Quick Start
 
 Create a migration in three steps:
