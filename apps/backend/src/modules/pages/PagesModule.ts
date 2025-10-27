@@ -8,6 +8,8 @@
 
 import type { Express } from 'express';
 import type { ICacheService, IDatabaseService, IMenuService, IModule, IModuleMetadata } from '@tronrelic/types';
+import path from 'path';
+import fs from 'fs/promises';
 import { logger } from '../../lib/logger.js';
 import { PageService } from './services/page.service.js';
 import { LocalStorageProvider } from './services/storage/LocalStorageProvider.js';
@@ -120,6 +122,32 @@ export class PagesModule implements IModule<IPagesModuleDependencies> {
     private readonly logger = logger.child({ module: 'pages' });
 
     /**
+     * Ensure the uploads directory exists before Express static middleware starts.
+     *
+     * Creates /public/uploads directory structure if missing. This prevents
+     * Express static middleware from failing with 500 errors when trying to
+     * serve uploaded files.
+     *
+     * The directory is created at {cwd}/public/uploads where cwd is the project
+     * root (/home/delphian/projects/tronrelic.com-beta).
+     *
+     * @throws {Error} If directory creation fails due to permissions or disk issues
+     */
+    private async ensureUploadsDirectoryExists(): Promise<void> {
+        const uploadsDir = path.join(process.cwd(), 'public', 'uploads');
+
+        try {
+            await fs.mkdir(uploadsDir, { recursive: true });
+            this.logger.info({ uploadsDir }, 'Uploads directory created or already exists');
+        } catch (error) {
+            this.logger.error({ error, uploadsDir }, 'Failed to create uploads directory');
+            throw new Error(
+                `Failed to create uploads directory: ${error instanceof Error ? error.message : 'Unknown error'}`
+            );
+        }
+    }
+
+    /**
      * Initialize the pages module with injected dependencies.
      *
      * This phase prepares the module by creating service instances and storing
@@ -137,6 +165,10 @@ export class PagesModule implements IModule<IPagesModuleDependencies> {
         this.cacheService = dependencies.cacheService;
         this.menuService = dependencies.menuService;
         this.app = dependencies.app;
+
+        // Ensure uploads directory exists before Express static middleware tries to serve from it
+        // This prevents 500 errors when accessing uploaded files
+        await this.ensureUploadsDirectoryExists();
 
         // Create storage provider (default: local filesystem)
         const storageProvider = new LocalStorageProvider();
