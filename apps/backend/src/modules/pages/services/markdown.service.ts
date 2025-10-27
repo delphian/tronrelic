@@ -5,37 +5,17 @@ import remarkHtml from 'remark-html';
 import { rehype } from 'rehype';
 import rehypeSanitize from 'rehype-sanitize';
 import rehypeStringify from 'rehype-stringify';
-import type { ICacheService } from '@tronrelic/types';
-
-/**
- * Frontmatter data extracted from markdown content.
- *
- * Maps to IPage fields that are updated when parsing frontmatter.
- * The frontmatter is the authoritative source for these fields.
- */
-export interface IFrontmatterData {
-    title?: string;
-    slug?: string;
-    description?: string;
-    keywords?: string[];
-    published?: boolean;
-    ogImage?: string;
-}
-
-/**
- * Result of parsing markdown content.
- *
- * Contains both extracted frontmatter metadata and the raw markdown body.
- */
-export interface IParsedMarkdown {
-    frontmatter: IFrontmatterData;
-    body: string;
-}
+import type {
+    ICacheService,
+    IMarkdownService,
+    IFrontmatterData,
+    IParsedMarkdown
+} from '@tronrelic/types';
 
 /**
  * Service for parsing markdown frontmatter and rendering to HTML.
  *
- * Handles:
+ * Implements the IMarkdownService contract providing:
  * - Frontmatter extraction using gray-matter
  * - Markdown to HTML conversion using remark/rehype pipeline
  * - HTML sanitization for security
@@ -47,7 +27,7 @@ export interface IParsedMarkdown {
  * 3. Sanitize HTML to prevent XSS attacks
  * 4. Stringify to final HTML output
  */
-export class MarkdownService {
+export class MarkdownService implements IMarkdownService {
     /**
      * Redis cache key prefix for rendered HTML.
      * Full key format: "page:html:{slug}"
@@ -87,7 +67,7 @@ export class MarkdownService {
      * @throws Error if frontmatter parsing fails (invalid YAML syntax)
      *
      * @example
-     * const { frontmatter, body } = service.parseMarkdown(content);
+     * const { frontmatter, body } = renderer.parseMarkdown(content);
      * console.log(frontmatter.title); // "My Page"
      * console.log(body); // "# Page Content\nMarkdown body here..."
      */
@@ -128,7 +108,7 @@ export class MarkdownService {
      * @throws Error if markdown processing fails
      *
      * @example
-     * const html = await service.renderMarkdown("# Hello\n\nThis is **bold** text.");
+     * const html = await renderer.renderMarkdown("# Hello\n\nThis is **bold** text.");
      * // Returns: "<h1>Hello</h1>\n<p>This is <strong>bold</strong> text.</p>"
      */
     async renderMarkdown(markdown: string): Promise<string> {

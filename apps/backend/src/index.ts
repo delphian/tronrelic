@@ -2,15 +2,17 @@ import http from 'node:http';
 import { env } from './config/env.js';
 import { createExpressApp } from './loaders/express.js';
 import { connectDatabase } from './loaders/database.js';
-import { createRedisClient, disconnectRedis } from './loaders/redis.js';
+import { createRedisClient, disconnectRedis, getRedisClient } from './loaders/redis.js';
 import { logger, createLogger } from './lib/logger.js';
 import { WebSocketService } from './services/websocket.service.js';
 import { initializeJobs, stopJobs } from './jobs/index.js';
 import { loadPlugins } from './loaders/plugins.js';
 import { MenuService } from './modules/menu/menu.service.js';
 import { PluginDatabaseService, DatabaseService } from './services/database/index.js';
+import { initPagesModule } from './modules/pages/index.js';
 import { BlockchainObserverService } from './services/blockchain-observer/index.js';
 import { SystemConfigService } from './services/system-config/index.js';
+import { CacheService } from './services/cache.service.js';
 
 async function bootstrap() {
     try {
@@ -66,7 +68,22 @@ async function bootstrap() {
         try {
             const menuDatabase = new DatabaseService({ prefix: 'core_' });
             MenuService.setDatabase(menuDatabase);
-            await MenuService.getInstance().initialize();
+            const menuService = MenuService.getInstance();
+            await menuService.initialize();
+
+            // Initialize pages module with all dependencies (database, cache, menu)
+            // This registers the menu item and creates routers
+            const redis = getRedisClient();
+            const cacheService = new CacheService(redis);
+            const { adminRouter, publicRouter } = initPagesModule({
+                database: coreDatabase,
+                cacheService,
+                menuService
+            });
+
+            // Mount pages routers on the Express app (already created above)
+            app.use('/api/admin/pages', adminRouter);
+            app.use('/api/pages', publicRouter);
         } catch (menuError) {
             logger.error({ menuError, stack: menuError instanceof Error ? menuError.stack : undefined }, 'MenuService initialization failed');
             throw menuError;
