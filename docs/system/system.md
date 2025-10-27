@@ -26,6 +26,28 @@ Understanding these components helps you diagnose sync stalls, optimize performa
 
 ## Core System Components
 
+### Backend Module System
+
+The backend module system provides a structured pattern for permanent, core backend components that initialize during application bootstrap. Modules are essential infrastructure that follow a two-phase lifecycle (init/run) with dependency injection and inversion of control patterns.
+
+**Key architectural principles:**
+
+- **Two-phase lifecycle** - Explicit `init()` and `run()` phases ensure proper dependency resolution
+- **Dependency injection** - Modules receive typed dependencies enabling testability and decoupling
+- **Inversion of Control** - Modules attach themselves to the application (mount routes, register menu items)
+- **Colocated organization** - All module code lives in a single `modules/<name>/` directory
+- **Fail-fast error handling** - Module initialization failures cause application shutdown (no degraded mode)
+
+**See [system-modules.md](./system-modules.md) for complete details on:**
+- Module system architecture and `IModule` interface contract
+- Two-phase lifecycle (init/run) and dependency injection patterns
+- Creating new modules with step-by-step guide
+- Pages module as reference implementation
+- Service composition and storage provider abstraction
+- Testing strategies and mock patterns
+- Module vs plugin decision matrix
+- Best practices and pre-implementation checklist
+
 ### Blockchain Sync Architecture
 
 The blockchain sync service retrieves blocks from TronGrid, enriches transactions with market data and energy costs, and notifies all subscribed observers asynchronously. The architecture prioritizes consistency and error isolation over throughput, using serial requests with 200ms throttling to avoid overwhelming the network.
@@ -221,6 +243,7 @@ curl -X PATCH \
 ## Further Reading
 
 **Detailed documentation:**
+- [system-modules.md](./system-modules.md) - Backend module system architecture, lifecycle patterns, dependency injection, and creating new modules
 - [system-blockchain-sync-architecture.md](./system-blockchain-sync-architecture.md) - Complete technical overview of block retrieval, transaction enrichment, observer notification, and performance characteristics
 - [system-scheduler-operations.md](./system-scheduler-operations.md) - Scheduler control, job management, troubleshooting, and configuration persistence
 - [system-api.md](./system-api.md) - Complete API reference with all endpoints, authentication, request/response formats, and usage examples
