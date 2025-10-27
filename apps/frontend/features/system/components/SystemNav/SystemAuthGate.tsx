@@ -53,7 +53,7 @@ function LoginForm() {
     };
 
     return (
-        <div className={`page ${styles.login_container}`}>
+        <div className={styles.login_container}>
             <div className={styles.login_content}>
                 <header className={styles.login_header}>
                     <h1 className={styles.login_title}>System Monitoring</h1>
@@ -105,7 +105,7 @@ function AuthenticatedLayout({ navigation, children }: { navigation?: ReactNode;
     const { logout } = useSystemAuth();
 
     return (
-        <div className={`page ${styles.layout_container}`}>
+        <div className={styles.layout_container}>
             <div className={styles.layout_content}>
                 <header className={styles.layout_header}>
                     <div className={styles.layout_header_text}>
