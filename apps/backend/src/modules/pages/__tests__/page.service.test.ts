@@ -20,8 +20,13 @@ class MockCacheService implements ICacheService {
         this.cache.set(key, { value, ttl });
     }
 
-    async del(key: string): Promise<void> {
-        this.cache.delete(key);
+    async del(key: string): Promise<number> {
+        const deleted = this.cache.delete(key);
+        return deleted ? 1 : 0;
+    }
+
+    async invalidate(tag: string): Promise<void> {
+        // No-op for testing
     }
 
     async keys(pattern: string): Promise<string[]> {

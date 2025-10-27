@@ -317,71 +317,105 @@ interface IPageSettingsDocument {
 
 ## Module Initialization
 
-The pages module exports a single `initPagesModule()` function that coordinates all setup:
+The pages module implements the `IModule` interface with two-phase initialization:
+
+**Phase 1: init()** - Prepare module without starting
+**Phase 2: run()** - Activate and integrate with application
 
 ```typescript
-export function initPagesModule(dependencies: IPagesModuleDependencies): IPagesModuleResult {
-    const { database, cacheService, menuService } = dependencies;
+// PagesModule implements IModule<IPagesModuleDependencies>
+class PagesModule implements IModule {
+    readonly metadata = {
+        id: 'pages',
+        name: 'Pages',
+        version: '1.0.0',
+        description: 'Custom page creation and markdown rendering'
+    };
 
-    // Register menu item in 'system' namespace
-    initializePagesMenu(menuService);
+    async init(dependencies: IPagesModuleDependencies): Promise<void> {
+        // Store dependencies
+        this.database = dependencies.database;
+        this.app = dependencies.app;
+        // Create services
+        this.pageService = new PageService(...);
+    }
 
-    // Create routers with shared dependencies
-    const adminRouter = createPagesModuleRouter(database, cacheService);
-    const publicRouter = createPublicPagesModuleRouter(database, cacheService);
+    async run(): Promise<void> {
+        // Register menu item (MenuService is guaranteed ready)
+        await this.menuService.create({ ... });
 
-    return { adminRouter, publicRouter };
+        // Mount routers (IoC - module attaches itself)
+        this.app.use('/api/admin/pages', this.createAdminRouter());
+        this.app.use('/api/pages', this.createPublicRouter());
+    }
 }
 ```
 
 **Integration in backend bootstrap:**
 ```typescript
 // apps/backend/src/index.ts
-import { initPagesModule } from './modules/pages/index.js';
+import { PagesModule } from './modules/pages/index.js';
 
-const { adminRouter, publicRouter } = initPagesModule({
+// Instantiate module
+const pagesModule = new PagesModule();
+
+// Phase 1: Initialize (create services, prepare resources)
+await pagesModule.init({
     database: coreDatabase,
     cacheService: cacheService,
-    menuService: MenuService.getInstance()
+    menuService: MenuService.getInstance(),
+    app: app  // Module mounts its own routes via IoC
 });
 
-app.use('/api/admin/pages', adminAuthMiddleware, adminRouter);
-app.use('/api/pages', publicRouter);
+// Phase 2: Run (mount routes, register menu items)
+await pagesModule.run();
 ```
 
+**Key architectural patterns:**
+
+1. **Two-phase lifecycle**: `init()` prepares, `run()` activates
+2. **Inversion of Control**: Module mounts its own routes using injected `app`
+3. **Dependency injection**: All services injected as typed dependencies object
+4. **No return values**: Module uses IoC to attach itself (no routers returned)
+5. **Metadata**: Module exposes `id`, `name`, `version` for introspection
+
 **Menu registration:**
-The module automatically creates a navigation entry in the `system` namespace at `/system/pages` for the admin UI. The menu item persists only in memory (disappears on backend restart) following the plugin pattern.
+The module creates a navigation entry in the `system` namespace at `/system/pages` during the `run()` phase. By this point, MenuService is guaranteed to be initialized (no need for 'ready' event subscriptions). The menu item persists only in memory (disappears on backend restart) following the plugin pattern.
 
 ## Public API Exports
 
-The module exposes only necessary types and functions via `index.ts`:
+The module exposes only necessary types and classes via `index.ts`:
 
 ```typescript
-// Services
+// Primary module export (implements IModule)
+export { PagesModule } from './PagesModule.js';
+export type { IPagesModuleDependencies } from './PagesModule.js';
+
+// Services (for external consumers if needed)
 export { PageService } from './services/page.service.js';
 export { MarkdownService } from './services/markdown.service.js';
 
-// Providers
+// Storage providers (for external consumers or custom configurations)
 export { StorageProvider } from './services/storage/StorageProvider.js';
 export { LocalStorageProvider } from './services/storage/LocalStorageProvider.js';
 
-// HTTP layer
+// HTTP layer (for testing or custom router configurations)
 export { PagesController } from './api/pages.controller.js';
 export { createPagesRouter } from './api/pages.routes.js';
 export { createPublicPagesRouter } from './api/pages.public-routes.js';
 
-// Database types
+// Database types (for external consumers working with page data)
 export type { IPageDocument, IPageFileDocument, IPageSettingsDocument } from './database/index.js';
 export { DEFAULT_PAGE_SETTINGS } from './database/index.js';
-
-// Initialization
-export { initPagesModule } from './index.js';
-export type { IPagesModuleDependencies, IPagesModuleResult } from './index.js';
 ```
 
 **Import pattern for consuming code:**
 ```typescript
-// Good - uses public API
+// Good - uses public API for module initialization
+import { PagesModule } from './modules/pages/index.js';
+const pagesModule = new PagesModule();
+
+// Good - uses public API for services
 import { PageService, LocalStorageProvider } from './modules/pages/index.js';
 
 // Bad - bypasses public API
