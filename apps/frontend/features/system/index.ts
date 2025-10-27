@@ -14,7 +14,8 @@ export { ConfigurationPanel } from './components/ConfigurationPanel';
 export { MarketMonitor } from './components/MarketMonitor';
 export { SchedulerMonitor } from './components/SchedulerMonitor';
 export { SystemHealthMonitor } from './components/SystemHealthMonitor';
-export { SystemNav } from './components/SystemNav';
+export { SystemNavSSR, SystemNavClient } from './components/SystemNav';
+export { SystemAuthGate } from './components/SystemNav/SystemAuthGate';
 export { SystemOverview } from './components/SystemOverview';
 export { SystemLogsMonitor } from './components/SystemLogsMonitor/SystemLogsMonitor';
 
