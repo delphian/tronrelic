@@ -2,6 +2,15 @@ import { type ReactNode } from 'react';
 import { SystemAuthProvider, SystemAuthGate, SystemNavSSR } from '../../../features/system';
 
 /**
+ * Force dynamic rendering for all system pages.
+ *
+ * Required because SystemNavSSR fetches menu data with cache: 'no-store' to ensure
+ * navigation always reflects current menu structure. This prevents Next.js from
+ * attempting static pre-rendering at build time when the backend isn't available.
+ */
+export const dynamic = 'force-dynamic';
+
+/**
  * System monitoring layout with server-side navigation and authentication.
  *
  * This server component renders the SystemNavSSR component to fetch and display

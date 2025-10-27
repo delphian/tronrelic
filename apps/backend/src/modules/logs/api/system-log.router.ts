@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { SystemLogService } from '../system-log.service.js';
+import { SystemLogService } from '../services/system-log.service.js';
 import { SystemLogController } from './system-log.controller.js';
 
 /**
