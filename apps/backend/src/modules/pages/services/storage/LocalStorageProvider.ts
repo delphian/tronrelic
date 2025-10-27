@@ -82,19 +82,20 @@ export class LocalStorageProvider extends StorageProvider {
      * Converts relative path to absolute filesystem path and removes the file.
      * Does not delete empty parent directories.
      *
-     * Gracefully handles missing files by logging a warning instead of throwing an error.
+     * Gracefully handles missing files by returning false instead of throwing an error.
      * This allows database records to be cleaned up even when physical files are missing
      * (e.g., due to container restarts, manual deletion, or incomplete uploads).
      *
      * @param relativePath - Relative path to the file (e.g., "/uploads/25/10/image.png")
-     * @returns Promise resolving when deletion completes (or file already missing)
+     * @returns Promise resolving to true if file was deleted, false if already missing
      *
      * @throws Error if file deletion fails for reasons other than file not found
      *
      * @example
-     * await provider.delete("/uploads/25/10/my-image.png");
+     * const deleted = await provider.delete("/uploads/25/10/my-image.png");
+     * // Returns: true if file existed and was deleted, false if already missing
      */
-    async delete(relativePath: string): Promise<void> {
+    async delete(relativePath: string): Promise<boolean> {
         // Convert relative path to absolute filesystem path
         // relativePath: "/uploads/25/10/image.png"
         // Remove leading "/uploads" and join with baseDir
@@ -103,13 +104,12 @@ export class LocalStorageProvider extends StorageProvider {
 
         try {
             await fs.unlink(filePath);
+            return true; // File existed and was successfully deleted
         } catch (error) {
             // Gracefully handle file-not-found errors
             if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT') {
-                // File already deleted or never existed - this is OK
-                // Just log a warning and continue (allows DB cleanup)
-                console.warn(`File not found during deletion (already removed): ${filePath}`);
-                return;
+                // File already deleted or never existed - return false but don't throw
+                return false;
             }
 
             // Re-throw other errors (permissions, disk errors, etc.)
