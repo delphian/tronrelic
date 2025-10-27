@@ -93,14 +93,15 @@ function LoginForm() {
 /**
  * Authenticated layout with logout functionality.
  *
- * Shows the logout button in header and wraps child page content. Only rendered
- * when user is authenticated. Uses design system Button component for consistent
+ * Shows the logout button in header, navigation below header, and wraps child page content.
+ * Only rendered when user is authenticated. Uses design system Button component for consistent
  * styling.
  *
  * @param props - Component props
+ * @param props.navigation - Navigation component to render below header
  * @param props.children - Page content to render
  */
-function AuthenticatedLayout({ children }: { children: ReactNode }) {
+function AuthenticatedLayout({ navigation, children }: { navigation?: ReactNode; children: ReactNode }) {
     const { logout } = useSystemAuth();
 
     return (
@@ -118,6 +119,8 @@ function AuthenticatedLayout({ children }: { children: ReactNode }) {
                     </Button>
                 </header>
 
+                {navigation}
+
                 <section className={styles.layout_section}>
                     {children}
                 </section>
@@ -132,19 +135,19 @@ function AuthenticatedLayout({ children }: { children: ReactNode }) {
  * Renders either the login form or authenticated layout based on current auth state.
  * This component must be inside SystemAuthProvider to access the context.
  *
- * The navigation is rendered in the parent server layout, not here, allowing it to
- * be server-side rendered and hydrated immediately without waiting for client-side
- * authentication checks.
+ * The navigation is passed from the parent server layout and rendered inside the
+ * authenticated layout below the header, ensuring proper visual hierarchy.
  *
  * @param props - Component props
+ * @param props.navigation - Navigation component to render below header (server-side rendered)
  * @param props.children - Page content passed from route segments
  */
-export function SystemAuthGate({ children }: { children: ReactNode }) {
+export function SystemAuthGate({ navigation, children }: { navigation?: ReactNode; children: ReactNode }) {
     const { isAuthenticated } = useSystemAuth();
 
     if (!isAuthenticated) {
         return <LoginForm />;
     }
 
-    return <AuthenticatedLayout>{children}</AuthenticatedLayout>;
+    return <AuthenticatedLayout navigation={navigation}>{children}</AuthenticatedLayout>;
 }

@@ -19,7 +19,6 @@ import { systemRouter } from './system.router.js';
 import pluginsRouter from './plugins.routes.js';
 import pluginManagementRouter from './plugin-management.routes.js';
 import { PluginApiService } from '../../services/plugin-api.service.js';
-import { createMigrationsRouter } from '../../modules/migrations/index.js';
 
 export function createApiRouter(database?: IDatabaseService) {
   const router = Router();
@@ -43,14 +42,9 @@ export function createApiRouter(database?: IDatabaseService) {
   router.use('/plugins', pluginsRouter);
   router.use('/plugin-management', pluginManagementRouter);
 
-  // Mount migrations router if database service is available
-  if (database) {
-    router.use('/admin/migrations', createMigrationsRouter(database));
-  }
-
-  // Note: Menu and Pages routers are mounted directly by their respective modules
-  // in bootstrap (apps/backend/src/index.ts) to follow the IModule pattern with
-  // proper dependency injection and lifecycle management
+  // Note: Menu, Pages, and Database (migrations) routers are mounted directly
+  // by their respective modules in bootstrap (apps/backend/src/index.ts) to follow
+  // the IModule pattern with proper dependency injection and lifecycle management
 
   // Mount plugin API routes (dynamic plugins)
   const pluginApiService = PluginApiService.getInstance();

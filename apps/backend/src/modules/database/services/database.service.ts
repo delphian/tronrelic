@@ -1,11 +1,10 @@
 import mongoose from 'mongoose';
 import type { Collection, Document, Filter, UpdateFilter, IndexDescription, CreateIndexesOptions } from 'mongodb';
-import type { IDatabaseService } from '@tronrelic/types';
-import { logger } from '../../lib/logger.js';
-import { MigrationScanner } from './migration/MigrationScanner.js';
-import { MigrationTracker } from './migration/MigrationTracker.js';
-import { MigrationExecutor } from './migration/MigrationExecutor.js';
-import type { IMigrationMetadata } from './migration/types.js';
+import type { IDatabaseService, ISystemLogService } from '@tronrelic/types';
+import { MigrationScanner } from '../migration/MigrationScanner.js';
+import { MigrationTracker } from '../migration/MigrationTracker.js';
+import { MigrationExecutor } from '../migration/MigrationExecutor.js';
+import type { IMigrationMetadata } from '../migration/types.js';
 
 /**
  * Database service providing unified database access across the application.
@@ -51,6 +50,7 @@ import type { IMigrationMetadata } from './migration/types.js';
  */
 export class DatabaseService implements IDatabaseService {
     private readonly collectionPrefix: string;
+    private readonly logger: ISystemLogService;
     private readonly models: Map<string, any> = new Map();
 
     // Migration system components
@@ -64,23 +64,25 @@ export class DatabaseService implements IDatabaseService {
     /**
      * Create a database service instance.
      *
-     * Core services typically pass no options (no prefix), while plugins
+     * Core services typically pass logger and optional prefix. Plugins
      * pass a prefix to isolate their collections from other plugins and
      * core services.
      *
+     * @param logger - System log service for database operation logging
      * @param options - Configuration options
      * @param options.prefix - Optional prefix for all collection names
      *
      * @example
      * ```typescript
-     * // Core service
-     * const db = new DatabaseService();
+     * // Core service (called by DatabaseModule)
+     * const db = new DatabaseService(logger);
      *
      * // Plugin with namespace isolation
-     * const pluginDb = new DatabaseService({ prefix: 'plugin_whale-alerts_' });
+     * const pluginDb = new DatabaseService(logger, { prefix: 'plugin_whale-alerts_' });
      * ```
      */
-    constructor(options?: { prefix?: string }) {
+    constructor(logger: ISystemLogService, options?: { prefix?: string }) {
+        this.logger = logger;
         this.collectionPrefix = options?.prefix || '';
     }
 
@@ -165,7 +167,7 @@ export class DatabaseService implements IDatabaseService {
      */
     public registerModel<T extends Document = Document>(collectionName: string, model: any): void {
         this.models.set(collectionName, model);
-        logger.debug(
+        this.logger.debug(
             { collection: collectionName, modelName: model.modelName },
             'Registered Mongoose model with database service'
         );
@@ -199,7 +201,7 @@ export class DatabaseService implements IDatabaseService {
             const doc = await collection.findOne({ key } as Filter<{ key: string; value: T }>);
             return doc?.value;
         } catch (error) {
-            logger.error({ error, prefix: this.collectionPrefix, key }, 'Failed to get key from KV store');
+            this.logger.error({ error, prefix: this.collectionPrefix, key }, 'Failed to get key from KV store');
             return undefined;
         }
     }
@@ -229,7 +231,7 @@ export class DatabaseService implements IDatabaseService {
 
         // Verify something was actually modified or inserted
         if (result.modifiedCount === 0 && result.upsertedCount === 0) {
-            logger.warn(
+            this.logger.warn(
                 { prefix: this.collectionPrefix, key, result },
                 'updateOne completed but no documents were modified or upserted'
             );
@@ -248,7 +250,7 @@ export class DatabaseService implements IDatabaseService {
             const result = await collection.deleteOne({ key } as Filter<{ key: string; value: any }>);
             return result.deletedCount > 0;
         } catch (error) {
-            logger.error({ error, prefix: this.collectionPrefix, key }, 'Failed to delete key from KV store');
+            this.logger.error({ error, prefix: this.collectionPrefix, key }, 'Failed to delete key from KV store');
             return false;
         }
     }
@@ -270,7 +272,7 @@ export class DatabaseService implements IDatabaseService {
     ): Promise<void> {
         const collection = this.getCollection(collectionName);
         await collection.createIndex(indexSpec as any, options);
-        logger.info(
+        this.logger.info(
             { prefix: this.collectionPrefix, collection: collectionName, indexSpec },
             'Created collection index'
         );
@@ -469,11 +471,11 @@ export class DatabaseService implements IDatabaseService {
      */
     public async initializeMigrations(): Promise<void> {
         if (this.migrationsInitialized) {
-            logger.debug('Migration system already initialized, skipping');
+            this.logger.debug('Migration system already initialized, skipping');
             return;
         }
 
-        logger.info('Initializing migration system...');
+        this.logger.info('Initializing migration system...');
 
         try {
             // Initialize migration components
@@ -495,13 +497,13 @@ export class DatabaseService implements IDatabaseService {
 
             this.migrationsInitialized = true;
 
-            logger.info({
+            this.logger.info({
                 discovered: this.discoveredMigrations.length,
                 pending: this.pendingMigrations.length
             }, 'Migration system initialized');
 
         } catch (error) {
-            logger.error({ error }, 'Failed to initialize migration system');
+            this.logger.error({ error }, 'Failed to initialize migration system');
             throw error;
         }
     }
@@ -622,18 +624,18 @@ export class DatabaseService implements IDatabaseService {
         }
 
         if (this.pendingMigrations.length === 0) {
-            logger.info('No pending migrations to execute');
+            this.logger.info('No pending migrations to execute');
             return;
         }
 
-        logger.info({ count: this.pendingMigrations.length }, 'Executing all pending migrations...');
+        this.logger.info({ count: this.pendingMigrations.length }, 'Executing all pending migrations...');
 
         await this.migrationExecutor.executeMigrations(this.pendingMigrations);
 
         // Update pending migrations list after successful execution
         this.pendingMigrations = await this.migrationTracker!.getPendingMigrations(this.discoveredMigrations);
 
-        logger.info('All pending migrations executed successfully');
+        this.logger.info('All pending migrations executed successfully');
     }
 
     /**

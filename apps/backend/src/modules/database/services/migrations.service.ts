@@ -1,6 +1,5 @@
-import type { IDatabaseService } from '@tronrelic/types';
-import type { IMigrationStatus, IMigrationExecutionResult } from '../../services/database/migration/types.js';
-import { logger } from '../../lib/logger.js';
+import type { IDatabaseService, ISystemLogService } from '@tronrelic/types';
+import type { IMigrationStatus, IMigrationExecutionResult } from '../migration/types.js';
 
 /**
  * Service providing business logic for migration management.
@@ -32,14 +31,17 @@ import { logger } from '../../lib/logger.js';
  */
 export class MigrationsService {
     private readonly database: IDatabaseService;
+    private readonly logger: ISystemLogService;
 
     /**
      * Create a new migrations service.
      *
      * @param database - Database service with migration methods
+     * @param logger - System log service for migration operation logging
      */
-    constructor(database: IDatabaseService) {
+    constructor(database: IDatabaseService, logger: ISystemLogService) {
         this.database = database;
+        this.logger = logger;
     }
 
     /**
@@ -65,7 +67,7 @@ export class MigrationsService {
                 totalCompleted: completed.length
             };
         } catch (error: any) {
-            logger.error({ error }, 'Failed to get migration status');
+            this.logger.error({ error }, 'Failed to get migration status');
             throw new Error(`Failed to get migration status: ${error.message}`);
         }
     }
@@ -93,7 +95,7 @@ export class MigrationsService {
 
             return allRecords.filter(record => record.status === status);
         } catch (error: any) {
-            logger.error({ error, limit, status }, 'Failed to get migration history');
+            this.logger.error({ error, limit, status }, 'Failed to get migration history');
             throw new Error(`Failed to get migration history: ${error.message}`);
         }
     }
@@ -113,19 +115,19 @@ export class MigrationsService {
             throw new Error('Cannot execute migration: Another migration is already running');
         }
 
-        logger.info({ migrationId }, 'Executing single migration via API');
+        this.logger.info({ migrationId }, 'Executing single migration via API');
 
         try {
             await this.database.executeMigration(migrationId);
 
-            logger.info({ migrationId }, 'Migration executed successfully via API');
+            this.logger.info({ migrationId }, 'Migration executed successfully via API');
 
             return {
                 success: true,
                 executed: [migrationId]
             };
         } catch (error: any) {
-            logger.error({ migrationId, error }, 'Migration execution failed via API');
+            this.logger.error({ migrationId, error }, 'Migration execution failed via API');
 
             return {
                 success: false,
@@ -156,14 +158,14 @@ export class MigrationsService {
         const pending = await this.database.getMigrationsPending();
 
         if (pending.length === 0) {
-            logger.info('No pending migrations to execute via API');
+            this.logger.info('No pending migrations to execute via API');
             return {
                 success: true,
                 executed: []
             };
         }
 
-        logger.info({ count: pending.length }, 'Executing all pending migrations via API');
+        this.logger.info({ count: pending.length }, 'Executing all pending migrations via API');
 
         const executed: string[] = [];
 
@@ -176,7 +178,7 @@ export class MigrationsService {
                 executed.push(migration.id);
             }
 
-            logger.info({ count: executed.length }, 'All migrations executed successfully via API');
+            this.logger.info({ count: executed.length }, 'All migrations executed successfully via API');
 
             return {
                 success: true,
@@ -198,7 +200,7 @@ export class MigrationsService {
             // The migration that failed is the first one in stillPending
             const failedMigration = stillPending[0];
 
-            logger.error({
+            this.logger.error({
                 executed: executed.length,
                 failed: failedMigration?.id,
                 error
@@ -251,7 +253,7 @@ export class MigrationsService {
 
             throw new Error(`Migration '${migrationId}' not found`);
         } catch (error: any) {
-            logger.error({ migrationId, error }, 'Failed to get migration details');
+            this.logger.error({ migrationId, error }, 'Failed to get migration details');
             throw new Error(`Failed to get migration details: ${error.message}`);
         }
     }
