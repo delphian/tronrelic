@@ -172,11 +172,11 @@ export class MenuModule implements IModule<IMenuModuleDependencies> {
      * The router is then mounted by the module itself using IoC pattern.
      *
      * Routes:
-     * - GET    /api/menu              - Get complete menu tree
-     * - GET    /api/menu/namespaces   - Get all available menu namespaces
-     * - POST   /api/menu              - Create new menu node
-     * - PATCH  /api/menu/:id          - Update existing menu node
-     * - DELETE /api/menu/:id          - Delete menu node
+     * - GET    /api/menu              - Get complete menu tree (public, no auth)
+     * - GET    /api/menu/namespaces   - Get all available menu namespaces (public, no auth)
+     * - POST   /api/menu              - Create new menu node (requires admin auth)
+     * - PATCH  /api/menu/:id          - Update existing menu node (requires admin auth)
+     * - DELETE /api/menu/:id          - Delete menu node (requires admin auth)
      *
      * @returns Express router with menu endpoints
      * @internal
@@ -184,15 +184,14 @@ export class MenuModule implements IModule<IMenuModuleDependencies> {
     private createRouter(): Router {
         const router = ExpressRouter();
 
-        // Apply admin authentication to all menu routes
-        router.use(requireAdmin);
-
-        // Register routes using controller methods
+        // Public routes (no auth required for reading navigation structure)
         router.get('/namespaces', this.controller.getNamespaces);
         router.get('/', this.controller.getTree);
-        router.post('/', this.controller.create);
-        router.patch('/:id', this.controller.update);
-        router.delete('/:id', this.controller.delete);
+
+        // Admin-only routes (mutating operations require authentication)
+        router.post('/', requireAdmin, this.controller.create);
+        router.patch('/:id', requireAdmin, this.controller.update);
+        router.delete('/:id', requireAdmin, this.controller.delete);
 
         return router;
     }

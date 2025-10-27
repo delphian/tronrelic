@@ -116,7 +116,7 @@ export class MenuController {
      *
      * **Route:** GET /api/menu
      *
-     * **Authentication:** Requires admin token (via requireAdmin middleware)
+     * **Authentication:** Public (no authentication required)
      *
      * **Response:**
      * ```json
@@ -360,7 +360,7 @@ export class MenuController {
      *
      * **Route:** GET /api/menu/namespaces
      *
-     * **Authentication:** Requires admin token (via requireAdmin middleware)
+     * **Authentication:** Public (no authentication required)
      *
      * **Response:**
      * ```json
