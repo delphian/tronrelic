@@ -59,9 +59,14 @@ The storage layer uses "Provider" terminology to distinguish infrastructure abst
 
 **Example from the codebase:**
 ```typescript
-// index.ts - Provider injection into service
+// PagesModule.init() - Provider injection into singleton service
 const storageProvider = new LocalStorageProvider();
-const pageService = new PageService(database, storageProvider, cacheService, logger);
+
+// Configure singleton once during bootstrap
+PageService.setDependencies(database, storageProvider, cacheService, logger);
+
+// All consumers use the same shared instance
+const pageService = PageService.getInstance();
 ```
 
 This pattern enables configuration-based provider switching without changing PageService code. Future S3 or Cloudflare providers can be swapped at module initialization without modifying business logic.
@@ -70,7 +75,13 @@ This pattern enables configuration-based provider switching without changing Pag
 
 ### PageService (Business Logic)
 
-PageService implements `IPageService` and orchestrates all page, file, and settings operations. It depends on abstract interfaces (`IStorageProvider`, `IDatabaseService`, `ICacheService`) to avoid coupling to concrete implementations.
+PageService implements `IPageService` and orchestrates all page, file, and settings operations. **As a service with an `IXxxService` interface, it's a singleton providing a public API with shared single state.** All consumers (modules, plugins, controllers) use the same instance configured once during bootstrap.
+
+**Key characteristics:**
+- **Singleton pattern** - One instance shared across the application
+- **Public API** - Consumers call methods like `createPage()`, `getPageBySlug()` directly
+- **Bootstrap-only configuration** - Dependencies injected once via `setDependencies()`, then immutable
+- **Shared state** - All consumers interact with the same MongoDB collections and cache
 
 **Key responsibilities:**
 - **Page CRUD** - Create, read, update, delete operations with frontmatter parsing
@@ -79,14 +90,21 @@ PageService implements `IPageService` and orchestrates all page, file, and setti
 - **Markdown rendering** - Parse frontmatter, render body to HTML, cache in Redis
 - **Settings management** - Load defaults, merge updates, persist configuration
 
-**Dependency injection pattern:**
+**Singleton dependency injection pattern:**
 ```typescript
-constructor(
+// Private constructor - cannot instantiate directly
+private constructor(
     database: IDatabaseService,          // MongoDB collections
     storageProvider: IStorageProvider,   // File storage (local, S3, etc.)
     cacheService: ICacheService,         // Redis cache for HTML
     logger: ISystemLogService            // Error tracking
 )
+
+// Configure once during bootstrap
+static setDependencies(database, storageProvider, cacheService, logger): void
+
+// All consumers use this shared instance
+static getInstance(): PageService
 ```
 
 ### IStorageProvider Interface (Infrastructure Abstraction)

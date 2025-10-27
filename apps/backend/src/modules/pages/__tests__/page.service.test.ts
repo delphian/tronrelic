@@ -328,10 +328,16 @@ describe('PageService', () => {
         mockDatabase = new MockDatabaseService();
         mockCache = new MockCacheService();
         mockStorage = new MockStorageProvider();
-        pageService = new PageService(mockDatabase, mockStorage, mockCache, mockLogger);
+
+        // Reset singleton and inject mock dependencies
+        (PageService as any).instance = undefined;
+        PageService.setDependencies(mockDatabase, mockStorage, mockCache, mockLogger);
+        pageService = PageService.getInstance();
     });
 
     afterEach(() => {
+        // Reset singleton after each test
+        (PageService as any).instance = undefined;
         mockDatabase.clear();
         mockCache.clear();
         mockStorage.clear();

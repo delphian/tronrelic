@@ -2,6 +2,7 @@
 
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { PagesModule } from '../index.js';
+import { PageService } from '../services/page.service.js';
 import type { IDatabaseService, ICacheService, IMenuService } from '@tronrelic/types';
 import { ObjectId } from 'mongodb';
 import type { Express, Router } from 'express';
@@ -179,6 +180,10 @@ describe('PagesModule', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
+
+        // Reset PageService singleton before each test
+        (PageService as any).instance = undefined;
+
         mockDatabase = new MockDatabaseService();
         mockCache = new MockCacheService();
         mockMenu = new MockMenuService();

@@ -27,24 +27,28 @@ import { ObjectId } from 'mongodb';
  * - Markdown rendering with Redis caching
  * - Blacklist pattern matching for route conflict prevention
  *
- * Uses dependency injection for database, storage providers, and cache service
- * to enable testability and configuration-based provider switching.
+ * This is a singleton service that provides an opinionated API contract.
+ * All consumers use the same instance to ensure consistent page management
+ * behavior across the application.
  */
 export class PageService implements IPageService {
+    private static instance: PageService;
     private readonly markdownService: MarkdownService;
     private readonly pagesCollection;
     private readonly filesCollection;
     private readonly settingsCollection;
 
     /**
-     * Create a page service.
+     * Private constructor enforcing singleton pattern with dependency injection.
+     *
+     * Use setDependencies() to configure the singleton, then getInstance() to access it.
      *
      * @param database - Database service for MongoDB operations
      * @param storageProvider - Storage provider for file uploads (local, S3, etc.)
      * @param cacheService - Redis cache for rendered HTML
      * @param logger - System log service for error tracking
      */
-    constructor(
+    private constructor(
         private readonly database: IDatabaseService,
         private readonly storageProvider: IStorageProvider,
         private readonly cacheService: ICacheService,
@@ -54,6 +58,44 @@ export class PageService implements IPageService {
         this.pagesCollection = database.getCollection<IPageDocument>('pages');
         this.filesCollection = database.getCollection<IPageFileDocument>('page_files');
         this.settingsCollection = database.getCollection<IPageSettingsDocument>('page_settings');
+    }
+
+    /**
+     * Set the dependencies for the singleton instance.
+     *
+     * Must be called once during application bootstrap before getInstance().
+     * This enables dependency injection while maintaining the singleton pattern.
+     *
+     * @param database - Database service for MongoDB operations
+     * @param storageProvider - Storage provider for file uploads
+     * @param cacheService - Redis cache for rendered HTML
+     * @param logger - System log service for error tracking
+     */
+    public static setDependencies(
+        database: IDatabaseService,
+        storageProvider: IStorageProvider,
+        cacheService: ICacheService,
+        logger: ISystemLogService
+    ): void {
+        if (!PageService.instance) {
+            PageService.instance = new PageService(database, storageProvider, cacheService, logger);
+        }
+    }
+
+    /**
+     * Get the singleton instance of PageService.
+     *
+     * Creates the instance on first call and returns the same instance on
+     * subsequent calls, ensuring consistent page management behavior.
+     *
+     * @returns The singleton PageService instance
+     * @throws Error if setDependencies() was not called first
+     */
+    public static getInstance(): PageService {
+        if (!PageService.instance) {
+            throw new Error('PageService.setDependencies() must be called before getInstance()');
+        }
+        return PageService.instance;
     }
 
     // ============================================================================
