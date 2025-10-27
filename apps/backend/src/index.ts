@@ -8,6 +8,7 @@ import { WebSocketService } from './services/websocket.service.js';
 import { initializeJobs, stopJobs } from './jobs/index.js';
 import { loadPlugins } from './loaders/plugins.js';
 import { MenuModule } from './modules/menu/index.js';
+import { LogsModule } from './modules/logs/index.js';
 import { PluginDatabaseService, DatabaseService } from './services/database/index.js';
 import { PagesModule } from './modules/pages/index.js';
 import { BlockchainObserverService } from './services/blockchain-observer/index.js';
@@ -20,17 +21,20 @@ async function bootstrap() {
         const redis = createRedisClient();
         await redis.connect();
 
-        // Initialize the logger with production Pino instance
-        // After this, error/warn logs will save to MongoDB automatically
-        logger.info({}, 'Initializing logger with MongoDB persistence...');
+        // Create database service and Pino logger for logs module
+        const coreDatabase = new DatabaseService(); // No prefix for core services
         const pinoLogger = createLogger();
-        await logger.initialize(pinoLogger);
-        logger.info({}, 'Logger initialized - errors/warnings will be saved to MongoDB');
+
+        // Initialize blockchain observer service BEFORE creating Express app
+        // This must happen early because routes (like blockchain.router.ts) depend on it
+        logger.info({}, 'Initializing blockchain observer service...');
+        const observerLogger = logger.child({ module: 'blockchain-observer' });
+        BlockchainObserverService.initialize(observerLogger);
+        logger.info({}, 'Blockchain observer service initialized');
 
         // Initialize system configuration service with database dependency
         logger.info({}, 'Initializing system configuration service...');
         const configLogger = logger.child({ module: 'system-config' });
-        const coreDatabase = new DatabaseService(); // No prefix for core services
         SystemConfigService.initialize(configLogger, coreDatabase);
         logger.info({}, 'System configuration service initialized');
 
@@ -44,18 +48,27 @@ async function bootstrap() {
             // Continue startup - migration system failure should not prevent app from running
         }
 
-        // Initialize blockchain observer service explicitly before plugins load
-        logger.info({}, 'Initializing blockchain observer service...');
-        const observerLogger = logger.child({ module: 'blockchain-observer' });
-        BlockchainObserverService.initialize(observerLogger);
-        logger.info({}, 'Blockchain observer service initialized');
+        // Initialize logs module FIRST (before other modules need logging)
+        // This configures the logger singleton with MongoDB persistence
+        // Note: We only call init() here, run() happens later after menu module initializes
+        logger.info({}, 'Initializing logs module...');
+        const logsModule = new LogsModule();
 
-        // Create Express app with database service and HTTP server
-        logger.info({}, 'Creating Express app...');
+        // Create Express app AFTER all services it depends on are initialized
+        // Routes created here will have access to BlockchainObserverService
         const app = createExpressApp(coreDatabase);
+
+        await logsModule.init({
+            pinoLogger,
+            database: coreDatabase,
+            app
+        });
+        logger.info({}, 'Logs module initialized - logging with MongoDB persistence active');
+
+        // Create HTTP server (app was already created for logs module)
         logger.info({}, 'Creating HTTP server...');
         const server = http.createServer(app);
-        logger.info({}, 'ExpressApp initialized');
+        logger.info({}, 'HTTP server initialized');
 
         // Initialize WebSocket BEFORE loading plugins so they can use it
         if (env.ENABLE_WEBSOCKETS) {
@@ -77,6 +90,11 @@ async function bootstrap() {
 
             // Phase 2: Run MenuModule (mount routes)
             await menuModule.run();
+
+            // Now run logs module so it can register its menu item
+            // (MenuService is now available via getInstance())
+            await logsModule.run();
+            logger.info({}, 'Logs module menu registration complete');
 
             // Get MenuService instance for other modules to use
             const menuService = menuModule.getMenuService();

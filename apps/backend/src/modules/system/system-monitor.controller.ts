@@ -205,7 +205,7 @@ export class SystemMonitorController {
 
     // If log level was updated, apply it immediately to SystemLogService
     if (updates.logLevel !== undefined) {
-      const { SystemLogService } = await import('../../services/system-log/system-log.service.js');
+      const { SystemLogService } = await import('../logs/index.js');
       const logService = SystemLogService.getInstance();
       await logService.applyLogLevelFromConfig();
     }

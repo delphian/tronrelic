@@ -1,7 +1,7 @@
 import pino from 'pino';
 import { mkdirSync } from 'fs';
 import { env } from '../config/env.js';
-import { SystemLogService } from '../services/system-log/system-log.service.js';
+import { SystemLogService } from '../modules/logs/index.js';
 
 /**
  * Logger utilities for the TronRelic backend.

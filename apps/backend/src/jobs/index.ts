@@ -7,7 +7,7 @@ import { logger } from '../lib/logger.js';
 import { CacheModel } from '../database/models/cache-model.js';
 import { ChainParametersFetcher } from '../modules/chain-parameters/chain-parameters-fetcher.js';
 import { UsdtParametersFetcher } from '../modules/usdt-parameters/usdt-parameters-fetcher.js';
-import { SystemLogService } from '../services/system-log/index.js';
+import { SystemLogService } from '../modules/logs/index.js';
 import { SystemConfigService } from '../services/system-config/index.js';
 import axios from 'axios';
 
