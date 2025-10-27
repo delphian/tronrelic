@@ -6,6 +6,7 @@ import { Card } from '../../../../components/ui/Card';
 import { Button } from '../../../../components/ui/Button';
 import { Badge } from '../../../../components/ui/Badge';
 import { Database, Play, CheckCircle, XCircle, AlertCircle, RefreshCw } from 'lucide-react';
+import { DatabaseHealthCards } from './DatabaseHealthCards';
 import styles from './page.module.css';
 
 /**
@@ -296,6 +297,9 @@ export default function DatabaseMigrationPage() {
 
     return (
         <div className="page">
+            {/* Database Health Cards */}
+            <DatabaseHealthCards token={token} />
+
             {/* Header with System Status */}
             <Card padding="lg">
                 <div className={styles.header}>

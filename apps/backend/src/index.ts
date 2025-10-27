@@ -125,6 +125,134 @@ async function bootstrap() {
             // Phase 2: Run database module (mount migration routes)
             await databaseModule.run();
             logger.info({}, 'Database module running (migration routes mounted)');
+
+            // ============================================================================
+            // TEMPORARY: Register remaining system monitoring menu items
+            // ============================================================================
+            // These menu items are for system monitoring pages that haven't been migrated
+            // to the module system yet. They are registered directly here as a temporary
+            // measure until each corresponding feature is converted to a proper module.
+            //
+            // TODO: As each system monitoring feature is migrated to a module, remove the
+            // corresponding menu registration from this section and add it to the module's
+            // run() phase (following the pattern in LogsModule.ts and PagesModule.ts).
+            //
+            // Pages still needing module migration:
+            // - Overview (system overview dashboard)
+            // - Blockchain (blockchain sync monitoring)
+            // - Scheduler (job scheduler management)
+            // - Markets (market data monitoring)
+            // - Health (system health checks)
+            // - Config (configuration display)
+            // - Plugins (plugin management)
+            // - WebSockets (WebSocket statistics)
+            // ============================================================================
+            try {
+                logger.info({}, 'Registering temporary system monitoring menu items...');
+
+                // Overview - Main dashboard (order: 10)
+                await menuService.create({
+                    namespace: 'system',
+                    label: 'Overview',
+                    url: '/system/overview',
+                    icon: 'LayoutDashboard',
+                    order: 10,
+                    parent: null,
+                    enabled: true
+                    // persist defaults to false (memory-only entry)
+                });
+
+                // Config - Configuration display (order: 15)
+                await menuService.create({
+                    namespace: 'system',
+                    label: 'Config',
+                    url: '/system/config',
+                    icon: 'Settings',
+                    order: 15,
+                    parent: null,
+                    enabled: true
+                });
+
+                // Database menu item already registered by DatabaseModule (order: 20)
+
+                // Logs menu item already registered by LogsModule (order: 30)
+
+                // Scheduler - Job scheduler management (order: 35)
+                await menuService.create({
+                    namespace: 'system',
+                    label: 'Scheduler',
+                    url: '/system/scheduler',
+                    icon: 'Clock',
+                    order: 35,
+                    parent: null,
+                    enabled: true
+                });
+
+                // Blockchain - Blockchain sync status (order: 45)
+                await menuService.create({
+                    namespace: 'system',
+                    label: 'Blockchain',
+                    url: '/system/blockchain',
+                    icon: 'Blocks',
+                    order: 45,
+                    parent: null,
+                    enabled: true
+                });
+
+                // Markets - Market data monitoring (order: 50)
+                await menuService.create({
+                    namespace: 'system',
+                    label: 'Markets',
+                    url: '/system/markets',
+                    icon: 'TrendingUp',
+                    order: 50,
+                    parent: null,
+                    enabled: true
+                });
+
+                // Health - System health checks (order: 55)
+                await menuService.create({
+                    namespace: 'system',
+                    label: 'Health',
+                    url: '/system/health',
+                    icon: 'Activity',
+                    order: 55,
+                    parent: null,
+                    enabled: true
+                });
+
+                // Plugins - Plugin management (order: 65)
+                await menuService.create({
+                    namespace: 'system',
+                    label: 'Plugins',
+                    url: '/system/plugins',
+                    icon: 'Puzzle',
+                    order: 65,
+                    parent: null,
+                    enabled: true
+                });
+
+                // Pages menu item already registered by PagesModule (order: 40)
+
+                // WebSockets - WebSocket statistics (order: 70)
+                await menuService.create({
+                    namespace: 'system',
+                    label: 'WebSockets',
+                    url: '/system/websockets',
+                    icon: 'Radio',
+                    order: 70,
+                    parent: null,
+                    enabled: true
+                });
+
+                logger.info({}, 'Temporary system monitoring menu items registered');
+            } catch (menuError) {
+                logger.error({ menuError }, 'Failed to register temporary system menu items');
+                throw menuError;
+            }
+            // ============================================================================
+            // END TEMPORARY MENU REGISTRATIONS
+            // ============================================================================
         } catch (error) {
             logger.error({ error, stack: error instanceof Error ? error.stack : undefined }, 'Module initialization failed');
             throw error;
