@@ -5,7 +5,8 @@
  * - Page documents with markdown content and frontmatter
  * - File uploads with configurable storage providers
  * - Module configuration settings
- * - Service contract for page/file/settings operations
+ * - Service contracts for page/file/settings operations
+ * - Markdown parsing and rendering with caching
  */
 
 export type { IPage } from './IPage';
@@ -13,3 +14,4 @@ export type { IPageFile } from './IPageFile';
 export type { IPageSettings } from './IPageSettings';
 export type { IStorageProvider } from './IStorageProvider';
 export type { IPageService } from './IPageService';
+export type { IMarkdownService, IFrontmatterData, IParsedMarkdown } from './IMarkdownService';

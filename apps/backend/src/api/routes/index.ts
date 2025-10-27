@@ -21,9 +21,6 @@ import pluginsRouter from './plugins.routes.js';
 import pluginManagementRouter from './plugin-management.routes.js';
 import { PluginApiService } from '../../services/plugin-api.service.js';
 import { createMigrationsRouter } from '../../modules/migrations/index.js';
-import { createPagesModuleRouter, createPublicPagesModuleRouter } from '../../modules/pages/index.js';
-import { CacheService } from '../../services/cache.service.js';
-import { getRedisClient } from '../../loaders/redis.js';
 
 export function createApiRouter(database?: IDatabaseService) {
   const router = Router();
@@ -53,13 +50,8 @@ export function createApiRouter(database?: IDatabaseService) {
     router.use('/admin/migrations', createMigrationsRouter(database));
   }
 
-  // Mount pages routers with database and cache service
-  const redis = getRedisClient();
-  const cacheService = new CacheService(redis);
-  if (database) {
-    router.use('/admin/pages', createPagesModuleRouter(database, cacheService));
-    router.use('/pages', createPublicPagesModuleRouter(database, cacheService));
-  }
+  // Note: Pages routers are mounted directly in bootstrap (apps/backend/src/index.ts)
+  // after MenuService initialization to ensure proper dependency injection
 
   // Mount plugin API routes (dynamic plugins)
   const pluginApiService = PluginApiService.getInstance();
