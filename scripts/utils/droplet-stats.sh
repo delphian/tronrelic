@@ -239,7 +239,7 @@ fi
 
 # Container status
 print_section "CONTAINER STATUS"
-remote_exec "cd $DEPLOY_DIR && docker compose ps --format 'table {{.Name}}\t{{.Status}}' 2>/dev/null" || echo "  Unable to fetch container status"
+remote_exec "cd $DEPLOY_DIR && docker compose -f $COMPOSE_FILE ps --format 'table {{.Name}}\t{{.Status}}' 2>/dev/null" || echo "  Unable to fetch container status"
 
 # Summary & Recommendations
 print_section "RECOMMENDATIONS"

@@ -101,10 +101,12 @@ get_config() {
         export DEPLOY_DIR="/opt/tronrelic"
         export CONTAINER_SUFFIX="-prod"
         export IMAGE_TAG="latest"
+        export COMPOSE_FILE="docker-compose.prod.yml"
     else
         export DEPLOY_DIR="/opt/tronrelic-${env}"
         export CONTAINER_SUFFIX="-${env}"
         export IMAGE_TAG="${env}"
+        export COMPOSE_FILE="docker-compose.${env}.yml"
     fi
 
     # Export container names
