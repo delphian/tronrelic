@@ -124,6 +124,8 @@ services:
             context: .
             target: frontend-prod
             dockerfile: Dockerfile
+            args:
+                - API_URL=http://backend:4000
         container_name: tronrelic-frontend-prod
         restart: always
         ports:
