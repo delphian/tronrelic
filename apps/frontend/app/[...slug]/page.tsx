@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import { PluginPageHandler } from '../../components/PluginPageHandler';
+import { getServerSideApiUrlWithPath } from '../../lib/api-url';
 import styles from './page.module.css';
 
 /**
@@ -49,7 +50,7 @@ interface IPageParams {
  * and let the client-side handler check the plugin registry.
  */
 async function isCustomPage(slug: string): Promise<boolean> {
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api';
+    const apiUrl = getServerSideApiUrlWithPath();
 
     try {
         const response = await fetch(`${apiUrl}/pages/${encodeURIComponent(slug)}`, {
@@ -80,7 +81,7 @@ export async function generateMetadata({ params }: { params: IPageParams }): Pro
         return {}; // Plugin pages handle their own metadata
     }
 
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api';
+    const apiUrl = getServerSideApiUrlWithPath();
 
     try {
         const response = await fetch(`${apiUrl}/pages/${encodeURIComponent(slug)}`, {
@@ -135,7 +136,7 @@ export default async function UnifiedPage({ params }: { params: IPageParams }) {
 
     // If it's a custom page, render it server-side
     if (isCustom) {
-        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api';
+        const apiUrl = getServerSideApiUrlWithPath();
 
         try {
             const response = await fetch(`${apiUrl}/pages/${encodeURIComponent(slug)}/render`, {
