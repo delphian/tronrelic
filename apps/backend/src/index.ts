@@ -142,7 +142,6 @@ async function bootstrap() {
             // - Blockchain (blockchain sync monitoring)
             // - Scheduler (job scheduler management)
             // - Markets (market data monitoring)
-            // - Health (system health checks)
             // - Config (configuration display)
             // - Plugins (plugin management)
             // - WebSockets (WebSocket statistics)
@@ -206,17 +205,6 @@ async function bootstrap() {
                     url: '/system/markets',
                     icon: 'TrendingUp',
                     order: 50,
-                    parent: null,
-                    enabled: true
-                });
-
-                // Health - System health checks (order: 55)
-                await menuService.create({
-                    namespace: 'system',
-                    label: 'Health',
-                    url: '/system/health',
-                    icon: 'Activity',
-                    order: 55,
                     parent: null,
                     enabled: true
                 });

@@ -1,0 +1,136 @@
+/**
+ * SystemHealthCards component styles.
+ *
+ * Provides compact card layout for Redis and Server health metrics at the top of the
+ * configuration page. Uses container queries for responsive behavior and design tokens
+ * for consistent styling matching the DatabaseHealthCards pattern.
+ */
+
+.container {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-xl);
+    margin-bottom: var(--spacing-xl);
+}
+
+.section {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+}
+
+.section_title {
+    font-size: var(--font-size-lg);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text-primary);
+    margin: 0;
+    padding: 0 0 var(--spacing-sm) 0;
+    border-bottom: 1px solid var(--color-border);
+}
+
+.cards {
+    container-type: inline-size;
+    container-name: health-cards;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: var(--spacing-md);
+}
+
+.card {
+    background: var(--color-surface-default);
+    border: 1px solid var(--color-border-subtle);
+    border-radius: var(--radius-md);
+    padding: var(--spacing-md);
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-md);
+    transition: border-color 0.2s ease;
+}
+
+.card:hover {
+    border-color: var(--color-border-default);
+}
+
+.card_icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    background: var(--color-surface-subtle);
+    border-radius: var(--radius-sm);
+    color: var(--color-text-muted);
+    flex-shrink: 0;
+}
+
+.card_content {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-xs);
+    min-width: 0;
+}
+
+.card_label {
+    font-size: var(--font-size-sm);
+    color: var(--color-text-muted);
+    font-weight: 500;
+}
+
+.card_value {
+    font-size: var(--font-size-lg);
+    font-weight: 600;
+    color: var(--color-text-default);
+}
+
+.card_detail {
+    font-size: var(--font-size-sm);
+    color: var(--color-text-muted);
+    font-weight: 400;
+}
+
+.loading {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-sm);
+}
+
+/* Connection status color variants */
+.card_healthy {
+    border-color: var(--color-success-border);
+    background: var(--color-success-surface);
+}
+
+.card_healthy .card_icon {
+    background: var(--color-success-subtle);
+    color: var(--color-success-text);
+}
+
+.card_healthy .card_value {
+    color: var(--color-success-text);
+}
+
+.card_danger {
+    border-color: var(--color-danger-border);
+    background: var(--color-danger-surface);
+}
+
+.card_danger .card_icon {
+    background: var(--color-danger-subtle);
+    color: var(--color-danger-text);
+}
+
+.card_danger .card_value {
+    color: var(--color-danger-text);
+}
+
+/* Responsive adjustments using container queries */
+@container health-cards (max-width: 600px) {
+    .cards {
+        grid-template-columns: 1fr;
+    }
+}
+
+@container health-cards (min-width: 601px) and (max-width: 900px) {
+    .cards {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
