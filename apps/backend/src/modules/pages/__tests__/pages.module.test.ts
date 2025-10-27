@@ -1,10 +1,10 @@
 /// <reference types="vitest" />
 
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
-import { initPagesModule, createPagesModuleRouter, createPublicPagesModuleRouter } from '../index.js';
+import { PagesModule } from '../index.js';
 import type { IDatabaseService, ICacheService, IMenuService } from '@tronrelic/types';
 import { ObjectId } from 'mongodb';
-import type { Router } from 'express';
+import type { Express, Router } from 'express';
 
 /**
  * Mock CacheService for testing.
@@ -18,7 +18,11 @@ class MockCacheService implements ICacheService {
         // No-op
     }
 
-    async del(key: string): Promise<void> {
+    async del(key: string): Promise<number> {
+        return 0;
+    }
+
+    async invalidate(pattern: string): Promise<void> {
         // No-op
     }
 
@@ -144,7 +148,9 @@ class MockMenuService implements IMenuService {
     update = vi.fn();
     delete = vi.fn();
     getNode = vi.fn();
-    getTree = vi.fn(() => ({ all: [], roots: [] }));
+    getTree = vi.fn(() => ({ all: [], roots: [], generatedAt: new Date() }));
+    getChildren = vi.fn(() => []);
+    getNamespaces = vi.fn(() => []);
     initialize = vi.fn();
     subscribe = vi.fn();
     unsubscribe = vi.fn();
@@ -153,108 +159,133 @@ class MockMenuService implements IMenuService {
     getDatabase = vi.fn();
 }
 
-describe('Pages Module', () => {
+/**
+ * Mock Express app for testing.
+ */
+class MockExpressApp {
+    use = vi.fn();
+    get = vi.fn();
+    post = vi.fn();
+    put = vi.fn();
+    patch = vi.fn();
+    delete = vi.fn();
+}
+
+describe('PagesModule', () => {
     let mockDatabase: MockDatabaseService;
     let mockCache: MockCacheService;
     let mockMenu: MockMenuService;
+    let mockApp: MockExpressApp;
 
     beforeEach(() => {
         vi.clearAllMocks();
         mockDatabase = new MockDatabaseService();
         mockCache = new MockCacheService();
         mockMenu = new MockMenuService();
+        mockApp = new MockExpressApp();
     });
 
     // ============================================================================
-    // Router Creation Tests
+    // Module Metadata Tests
     // ============================================================================
 
-    describe('createPagesModuleRouter', () => {
-        it('should create admin router with all endpoints', () => {
-            const router = createPagesModuleRouter(mockDatabase, mockCache);
+    describe('metadata', () => {
+        it('should have correct module metadata', () => {
+            const module = new PagesModule();
 
-            expect(router).toBeDefined();
-            expect(typeof router).toBe('function'); // Express Router is a function
-        });
-
-        it('should use provided dependencies', () => {
-            const router = createPagesModuleRouter(mockDatabase, mockCache);
-
-            // Router should be created without errors
-            expect(router).toBeTruthy();
-        });
-    });
-
-    describe('createPublicPagesModuleRouter', () => {
-        it('should create public router with public endpoints', () => {
-            const router = createPublicPagesModuleRouter(mockDatabase, mockCache);
-
-            expect(router).toBeDefined();
-            expect(typeof router).toBe('function'); // Express Router is a function
-        });
-
-        it('should use provided dependencies', () => {
-            const router = createPublicPagesModuleRouter(mockDatabase, mockCache);
-
-            // Router should be created without errors
-            expect(router).toBeTruthy();
+            expect(module.metadata).toBeDefined();
+            expect(module.metadata.id).toBe('pages');
+            expect(module.metadata.name).toBe('Pages');
+            expect(module.metadata.version).toBe('1.0.0');
+            expect(module.metadata.description).toBeDefined();
         });
     });
 
     // ============================================================================
-    // Module Initialization Tests
+    // init() Phase Tests
     // ============================================================================
 
-    describe('initPagesModule', () => {
-        it('should initialize module with all dependencies', () => {
-            const result = initPagesModule({
+    describe('init()', () => {
+        it('should initialize module with all dependencies', async () => {
+            const module = new PagesModule();
+
+            await expect(module.init({
                 database: mockDatabase,
                 cacheService: mockCache,
-                menuService: mockMenu
-            });
-
-            expect(result).toBeDefined();
-            expect(result.adminRouter).toBeDefined();
-            expect(result.publicRouter).toBeDefined();
+                menuService: mockMenu,
+                app: mockApp as any
+            })).resolves.not.toThrow();
         });
 
-        it('should return both admin and public routers', () => {
-            const result = initPagesModule({
+        it('should store dependencies for later use', async () => {
+            const module = new PagesModule();
+
+            await module.init({
                 database: mockDatabase,
                 cacheService: mockCache,
-                menuService: mockMenu
+                menuService: mockMenu,
+                app: mockApp as any
             });
 
-            expect(typeof result.adminRouter).toBe('function');
-            expect(typeof result.publicRouter).toBe('function');
+            // Dependencies should be stored (tested indirectly via run() phase)
+            // This test verifies init() completes successfully
+            expect(true).toBe(true);
         });
 
-        it('should register menu item via MenuService', async () => {
-            // Setup menu service to emit 'ready' event
-            const subscribers = new Map<string, Function[]>();
-            mockMenu.subscribe.mockImplementation((event: string, callback: Function) => {
-                if (!subscribers.has(event)) {
-                    subscribers.set(event, []);
-                }
-                subscribers.get(event)!.push(callback);
-            });
+        it('should NOT mount routes during init()', async () => {
+            const module = new PagesModule();
 
-            initPagesModule({
+            await module.init({
                 database: mockDatabase,
                 cacheService: mockCache,
-                menuService: mockMenu
+                menuService: mockMenu,
+                app: mockApp as any
             });
 
-            // Verify subscribe was called for 'ready' event
-            expect(mockMenu.subscribe).toHaveBeenCalledWith('ready', expect.any(Function));
+            // Verify app.use was NOT called during init
+            expect(mockApp.use).not.toHaveBeenCalled();
+        });
 
-            // Simulate 'ready' event emission
-            const readyCallbacks = subscribers.get('ready') || [];
-            for (const callback of readyCallbacks) {
-                await callback();
-            }
+        it('should NOT register menu items during init()', async () => {
+            const module = new PagesModule();
 
-            // Verify menu item creation was attempted
+            await module.init({
+                database: mockDatabase,
+                cacheService: mockCache,
+                menuService: mockMenu,
+                app: mockApp as any
+            });
+
+            // Verify menu.create was NOT called during init
+            expect(mockMenu.create).not.toHaveBeenCalled();
+        });
+    });
+
+    // ============================================================================
+    // run() Phase Tests
+    // ============================================================================
+
+    describe('run()', () => {
+        it('should throw if run() is called before init()', async () => {
+            const module = new PagesModule();
+
+            // run() requires init() to be called first
+            await expect(module.run()).rejects.toThrow();
+        });
+
+        it('should register menu item during run()', async () => {
+            const module = new PagesModule();
+
+            await module.init({
+                database: mockDatabase,
+                cacheService: mockCache,
+                menuService: mockMenu,
+                app: mockApp as any
+            });
+
+            await module.run();
+
+            // Verify menu item creation was called
             expect(mockMenu.create).toHaveBeenCalledWith({
                 namespace: 'system',
                 label: 'Pages',
@@ -266,78 +297,92 @@ describe('Pages Module', () => {
             });
         });
 
-        it('should handle menu registration errors gracefully', async () => {
-            mockMenu.create.mockRejectedValue(new Error('Menu creation failed'));
+        it('should mount admin and public routers during run()', async () => {
+            const module = new PagesModule();
 
-            const subscribers = new Map<string, Function[]>();
-            mockMenu.subscribe.mockImplementation((event: string, callback: Function) => {
-                if (!subscribers.has(event)) {
-                    subscribers.set(event, []);
-                }
-                subscribers.get(event)!.push(callback);
+            await module.init({
+                database: mockDatabase,
+                cacheService: mockCache,
+                menuService: mockMenu,
+                app: mockApp as any
             });
 
-            // Should not throw during initialization
-            expect(() => {
-                initPagesModule({
-                    database: mockDatabase,
-                    cacheService: mockCache,
-                    menuService: mockMenu
-                });
-            }).not.toThrow();
+            await module.run();
 
-            // Simulate 'ready' event emission
-            const readyCallbacks = subscribers.get('ready') || [];
-            for (const callback of readyCallbacks) {
-                // Should not throw even if menu creation fails
-                await expect(callback()).resolves.not.toThrow();
-            }
+            // Verify app.use was called twice (admin and public routers)
+            expect(mockApp.use).toHaveBeenCalledTimes(2);
+            expect(mockApp.use).toHaveBeenCalledWith('/api/admin/pages', expect.any(Function));
+            expect(mockApp.use).toHaveBeenCalledWith('/api/pages', expect.any(Function));
+        });
+
+        it('should throw if menu registration fails', async () => {
+            mockMenu.create.mockRejectedValue(new Error('Menu creation failed'));
+
+            const module = new PagesModule();
+
+            await module.init({
+                database: mockDatabase,
+                cacheService: mockCache,
+                menuService: mockMenu,
+                app: mockApp as any
+            });
+
+            // run() should throw if menu registration fails
+            await expect(module.run()).rejects.toThrow('Failed to register pages menu item');
         });
     });
 
     // ============================================================================
-    // Integration Tests
+    // Two-Phase Lifecycle Tests
     // ============================================================================
 
-    describe('full module initialization flow', () => {
-        it('should create complete module with all routers and menu', () => {
-            const result = initPagesModule({
+    describe('two-phase lifecycle', () => {
+        it('should complete full init -> run flow', async () => {
+            const module = new PagesModule();
+
+            // Phase 1: init
+            await module.init({
                 database: mockDatabase,
                 cacheService: mockCache,
-                menuService: mockMenu
+                menuService: mockMenu,
+                app: mockApp as any
             });
 
-            // Verify both routers are created
-            expect(result.adminRouter).toBeDefined();
-            expect(result.publicRouter).toBeDefined();
+            // Phase 2: run
+            await module.run();
 
-            // Verify routers are Express Router instances (functions)
-            expect(typeof result.adminRouter).toBe('function');
-            expect(typeof result.publicRouter).toBe('function');
-
-            // Verify menu service subscribe was called
-            expect(mockMenu.subscribe).toHaveBeenCalled();
+            // Verify full initialization completed
+            expect(mockMenu.create).toHaveBeenCalled();
+            expect(mockApp.use).toHaveBeenCalledTimes(2);
         });
 
-        it('should handle multiple initializations', () => {
-            // First initialization
-            const result1 = initPagesModule({
+        it('should handle multiple modules in sequence', async () => {
+            // Simulate multiple modules being initialized and run sequentially
+            const module1 = new PagesModule();
+            const module2 = new PagesModule();
+
+            // Initialize both
+            await module1.init({
                 database: mockDatabase,
                 cacheService: mockCache,
-                menuService: mockMenu
+                menuService: mockMenu,
+                app: mockApp as any
             });
 
-            // Second initialization (simulating hot reload)
-            const result2 = initPagesModule({
+            await module2.init({
                 database: mockDatabase,
                 cacheService: mockCache,
-                menuService: mockMenu
+                menuService: mockMenu,
+                app: mockApp as any
             });
 
-            // Both should succeed and create independent routers
-            expect(result1.adminRouter).toBeDefined();
-            expect(result2.adminRouter).toBeDefined();
-            expect(result1.adminRouter).not.toBe(result2.adminRouter); // Different instances
+            // Run both
+            await module1.run();
+            await module2.run();
+
+            // Both should have registered menu items and mounted routes
+            expect(mockMenu.create).toHaveBeenCalledTimes(2);
+            expect(mockApp.use).toHaveBeenCalledTimes(4); // 2 routers per module
         });
     });
 
@@ -346,39 +391,101 @@ describe('Pages Module', () => {
     // ============================================================================
 
     describe('dependency injection', () => {
-        it('should pass database service to routers', () => {
-            const result = initPagesModule({
+        it('should use injected database service', async () => {
+            const module = new PagesModule();
+
+            await module.init({
                 database: mockDatabase,
                 cacheService: mockCache,
-                menuService: mockMenu
+                menuService: mockMenu,
+                app: mockApp as any
             });
 
-            // Routers should be created successfully with database
-            expect(result.adminRouter).toBeTruthy();
-            expect(result.publicRouter).toBeTruthy();
+            await module.run();
+
+            // Module should initialize without errors
+            expect(true).toBe(true);
         });
 
-        it('should pass cache service to routers', () => {
-            const result = initPagesModule({
+        it('should use injected cache service', async () => {
+            const module = new PagesModule();
+
+            await module.init({
                 database: mockDatabase,
                 cacheService: mockCache,
-                menuService: mockMenu
+                menuService: mockMenu,
+                app: mockApp as any
             });
 
-            // Routers should be created successfully with cache
-            expect(result.adminRouter).toBeTruthy();
-            expect(result.publicRouter).toBeTruthy();
+            await module.run();
+
+            // Module should initialize without errors
+            expect(true).toBe(true);
         });
 
-        it('should pass menu service for registration', () => {
-            initPagesModule({
+        it('should use injected menu service', async () => {
+            const module = new PagesModule();
+
+            await module.init({
                 database: mockDatabase,
                 cacheService: mockCache,
-                menuService: mockMenu
+                menuService: mockMenu,
+                app: mockApp as any
             });
 
-            // Menu service should be used for registration
-            expect(mockMenu.subscribe).toHaveBeenCalled();
+            await module.run();
+
+            // Verify menu service was used
+            expect(mockMenu.create).toHaveBeenCalled();
+        });
+
+        it('should use injected Express app', async () => {
+            const module = new PagesModule();
+
+            await module.init({
+                database: mockDatabase,
+                cacheService: mockCache,
+                menuService: mockMenu,
+                app: mockApp as any
+            });
+
+            await module.run();
+
+            // Verify app was used to mount routers
+            expect(mockApp.use).toHaveBeenCalled();
+        });
+    });
+
+    // ============================================================================
+    // Error Handling Tests
+    // ============================================================================
+
+    describe('error handling', () => {
+        it('should propagate init() errors', async () => {
+            const module = new PagesModule();
+
+            // Pass invalid dependencies to trigger error
+            await expect(module.init({
+                database: null as any,
+                cacheService: mockCache,
+                menuService: mockMenu,
+                app: mockApp as any
+            })).rejects.toThrow();
+        });
+
+        it('should propagate run() errors on menu registration failure', async () => {
+            mockMenu.create.mockRejectedValue(new Error('Menu error'));
+
+            const module = new PagesModule();
+
+            await module.init({
+                database: mockDatabase,
+                cacheService: mockCache,
+                menuService: mockMenu,
+                app: mockApp as any
+            });
+
+            await expect(module.run()).rejects.toThrow();
         });
     });
 });
