@@ -9,7 +9,7 @@ import { initializeJobs, stopJobs } from './jobs/index.js';
 import { loadPlugins } from './loaders/plugins.js';
 import { MenuService } from './modules/menu/menu.service.js';
 import { PluginDatabaseService, DatabaseService } from './services/database/index.js';
-import { initPagesModule } from './modules/pages/index.js';
+import { PagesModule } from './modules/pages/index.js';
 import { BlockchainObserverService } from './services/blockchain-observer/index.js';
 import { SystemConfigService } from './services/system-config/index.js';
 import { CacheService } from './services/cache.service.js';
@@ -71,24 +71,27 @@ async function bootstrap() {
             const menuService = MenuService.getInstance();
             await menuService.initialize();
 
-            // Initialize pages module with all dependencies (database, cache, menu)
-            // This registers the menu item and creates routers
+            // Initialize pages module with all dependencies (database, cache, menu, app)
+            // Using two-phase initialization pattern: init() then run()
             const redis = getRedisClient();
             const cacheService = new CacheService(redis);
-            const { adminRouter, publicRouter } = initPagesModule({
+            const pagesModule = new PagesModule();
+
+            // Phase 1: Initialize (create services, prepare resources)
+            await pagesModule.init({
                 database: coreDatabase,
                 cacheService,
-                menuService
+                menuService,
+                app
             });
 
-            // Mount pages routers on the Express app (already created above)
-            app.use('/api/admin/pages', adminRouter);
-            app.use('/api/pages', publicRouter);
-        } catch (menuError) {
-            logger.error({ menuError, stack: menuError instanceof Error ? menuError.stack : undefined }, 'MenuService initialization failed');
-            throw menuError;
+            // Phase 2: Run (mount routes, register menu items)
+            await pagesModule.run();
+        } catch (error) {
+            logger.error({ error, stack: error instanceof Error ? error.stack : undefined }, 'MenuService or PagesModule initialization failed');
+            throw error;
         }
-        logger.info({}, 'MenuService initialized');
+        logger.info({}, 'MenuService and PagesModule initialized');
 
         // Load plugins AFTER WebSocket is initialized so they can register handlers
         try {
