@@ -1,1 +1,2 @@
-export { SystemNav } from './SystemNav';
+export { SystemNavSSR } from './SystemNavSSR';
+export { SystemNavClient } from './SystemNavClient';
