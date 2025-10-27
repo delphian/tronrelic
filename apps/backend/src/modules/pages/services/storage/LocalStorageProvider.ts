@@ -82,10 +82,14 @@ export class LocalStorageProvider extends StorageProvider {
      * Converts relative path to absolute filesystem path and removes the file.
      * Does not delete empty parent directories.
      *
-     * @param relativePath - Relative path to the file (e.g., "/uploads/25/10/image.png")
-     * @returns Promise resolving when deletion completes
+     * Gracefully handles missing files by logging a warning instead of throwing an error.
+     * This allows database records to be cleaned up even when physical files are missing
+     * (e.g., due to container restarts, manual deletion, or incomplete uploads).
      *
-     * @throws Error if file deletion fails or file not found
+     * @param relativePath - Relative path to the file (e.g., "/uploads/25/10/image.png")
+     * @returns Promise resolving when deletion completes (or file already missing)
+     *
+     * @throws Error if file deletion fails for reasons other than file not found
      *
      * @example
      * await provider.delete("/uploads/25/10/my-image.png");
@@ -100,6 +104,15 @@ export class LocalStorageProvider extends StorageProvider {
         try {
             await fs.unlink(filePath);
         } catch (error) {
+            // Gracefully handle file-not-found errors
+            if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT') {
+                // File already deleted or never existed - this is OK
+                // Just log a warning and continue (allows DB cleanup)
+                console.warn(`File not found during deletion (already removed): ${filePath}`);
+                return;
+            }
+
+            // Re-throw other errors (permissions, disk errors, etc.)
             throw new Error(
                 `Failed to delete file: ${error instanceof Error ? error.message : 'Unknown error'}`
             );
