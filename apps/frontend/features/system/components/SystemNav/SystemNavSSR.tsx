@@ -10,6 +10,9 @@
  * to retrieve only system-related menu items. No authentication required since menu
  * navigation is public information.
  *
+ * When running in Docker, uses the internal Docker network (http://backend:4000)
+ * for SSR fetches to avoid SSL certificate validation issues and improve performance.
+ *
  * @example
  * ```tsx
  * // In a server component layout
@@ -27,6 +30,7 @@
  */
 
 import { SystemNavClient } from './SystemNavClient';
+import { getServerSideApiUrl } from '../../../../lib/api-url';
 
 /**
  * Menu item structure from backend API response.
@@ -75,8 +79,8 @@ interface IMenuApiResponse {
 export async function SystemNavSSR() {
     try {
         // Fetch menu items from backend API (public endpoint, no auth required)
-        // Use internal backend URL (not public-facing)
-        const apiUrl = process.env.NEXT_PUBLIC_API_URL?.replace('/api', '') || 'http://localhost:4000';
+        // Use internal Docker network when available (avoids SSL cert issues)
+        const apiUrl = getServerSideApiUrl();
         const response = await fetch(`${apiUrl}/api/menu?namespace=system`, {
             cache: 'no-store' // Always get fresh data
         });
