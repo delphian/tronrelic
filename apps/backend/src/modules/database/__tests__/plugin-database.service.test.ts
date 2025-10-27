@@ -247,7 +247,8 @@ describe('PluginDatabaseService', () => {
             expect((subscription as any).userId).toBe('user-456');
 
             // Verify all collections were prefixed
-            const calls = mockDb.collection.mock.calls;
+            const calls = mockDb.collection.mock.calls as unknown as Array<[string, ...any[]]>;
+            expect(calls.length).toBeGreaterThan(0);
             for (const call of calls) {
                 expect(call[0]).toMatch(/^plugin_test-plugin_/);
             }

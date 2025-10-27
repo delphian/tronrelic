@@ -53,7 +53,7 @@
 
 /* Authenticated layout container */
 .layout_container {
-    padding: var(--spacing-12);
+    /* No padding - let individual pages control their own spacing */
 }
 
 .layout_content {
