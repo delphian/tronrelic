@@ -5,12 +5,17 @@ import type {
     IPageSettings,
     IStorageProvider,
     ICacheService,
+    IDatabaseService,
 } from '@tronrelic/types';
-import { PageModel } from '../models/Page.model.js';
-import { PageFileModel } from '../models/PageFile.model.js';
-import { PageSettingsModel, DEFAULT_PAGE_SETTINGS } from '../models/PageSettings.model.js';
+import type {
+    IPageDocument,
+    IPageFileDocument,
+    IPageSettingsDocument,
+} from '../database/index.js';
+import { DEFAULT_PAGE_SETTINGS } from '../database/index.js';
 import { MarkdownService } from './markdown.service.js';
 import type { ISystemLogService } from '@tronrelic/types';
+import { ObjectId } from 'mongodb';
 
 /**
  * Service for managing custom pages, files, and configuration.
@@ -22,25 +27,33 @@ import type { ISystemLogService } from '@tronrelic/types';
  * - Markdown rendering with Redis caching
  * - Blacklist pattern matching for route conflict prevention
  *
- * Uses dependency injection for storage providers and cache service to enable
- * configuration-based provider switching without code changes.
+ * Uses dependency injection for database, storage providers, and cache service
+ * to enable testability and configuration-based provider switching.
  */
 export class PageService implements IPageService {
     private readonly markdownService: MarkdownService;
+    private readonly pagesCollection;
+    private readonly filesCollection;
+    private readonly settingsCollection;
 
     /**
      * Create a page service.
      *
+     * @param database - Database service for MongoDB operations
      * @param storageProvider - Storage provider for file uploads (local, S3, etc.)
      * @param cacheService - Redis cache for rendered HTML
      * @param logger - System log service for error tracking
      */
     constructor(
+        private readonly database: IDatabaseService,
         private readonly storageProvider: IStorageProvider,
         private readonly cacheService: ICacheService,
         private readonly logger: ISystemLogService
     ) {
         this.markdownService = new MarkdownService(cacheService);
+        this.pagesCollection = database.getCollection<IPageDocument>('pages');
+        this.filesCollection = database.getCollection<IPageFileDocument>('page_files');
+        this.settingsCollection = database.getCollection<IPageSettingsDocument>('page_settings');
     }
 
     // ============================================================================
@@ -80,13 +93,15 @@ export class PageService implements IPageService {
         }
 
         // Check if slug already exists
-        const existing = await PageModel.findOne({ slug });
+        const existing = await this.pagesCollection.findOne({ slug });
         if (existing) {
             throw new Error(`A page with slug "${slug}" already exists`);
         }
 
         // Create page document
-        const page = new PageModel({
+        const now = new Date();
+        const pageDoc: IPageDocument = {
+            _id: new ObjectId(),
             title: frontmatter.title,
             slug,
             content, // Store full content including frontmatter
@@ -95,13 +110,15 @@ export class PageService implements IPageService {
             published: frontmatter.published || false,
             ogImage: frontmatter.ogImage || null,
             authorId: null, // Always null for now (admin-created)
-        });
+            createdAt: now,
+            updatedAt: now,
+        };
 
-        await page.save();
+        await this.pagesCollection.insertOne(pageDoc);
 
-        this.logger.info(`Created page: ${page.title} (${page.slug})`);
+        this.logger.info(`Created page: ${pageDoc.title} (${pageDoc.slug})`);
 
-        return this.toIPage(page);
+        return this.toIPage(pageDoc);
     }
 
     /**
@@ -119,7 +136,7 @@ export class PageService implements IPageService {
      * @throws Error if new slug already exists (and different from current)
      */
     async updatePage(id: string, content: string): Promise<IPage> {
-        const page = await PageModel.findById(id);
+        const page = await this.pagesCollection.findOne({ _id: new ObjectId(id) });
         if (!page) {
             throw new Error(`Page with ID ${id} not found`);
         }
@@ -142,8 +159,8 @@ export class PageService implements IPageService {
                 throw new Error(`Slug "${newSlug}" conflicts with a blacklisted route pattern`);
             }
 
-            const existing = await PageModel.findOne({ slug: newSlug });
-            if (existing && String(existing._id) !== id) {
+            const existing = await this.pagesCollection.findOne({ slug: newSlug });
+            if (existing && existing._id.toString() !== id) {
                 throw new Error(`A page with slug "${newSlug}" already exists`);
             }
 
@@ -152,24 +169,39 @@ export class PageService implements IPageService {
         }
 
         // Update page fields from frontmatter
-        page.title = frontmatter.title;
-        page.slug = newSlug;
-        page.content = content;
-        page.description = frontmatter.description || '';
-        page.keywords = frontmatter.keywords || [];
-        page.published = frontmatter.published || false;
-        page.ogImage = frontmatter.ogImage || undefined;
+        const updateResult = await this.pagesCollection.updateOne(
+            { _id: new ObjectId(id) },
+            {
+                $set: {
+                    title: frontmatter.title,
+                    slug: newSlug,
+                    content,
+                    description: frontmatter.description || '',
+                    keywords: frontmatter.keywords || [],
+                    published: frontmatter.published || false,
+                    ogImage: frontmatter.ogImage || null,
+                    updatedAt: new Date(),
+                },
+            }
+        );
 
-        await page.save();
+        if (updateResult.modifiedCount === 0) {
+            throw new Error(`Failed to update page with ID ${id}`);
+        }
 
-        const updatedPage = this.toIPage(page);
+        const updatedPage = await this.pagesCollection.findOne({ _id: new ObjectId(id) });
+        if (!updatedPage) {
+            throw new Error(`Page with ID ${id} not found after update`);
+        }
+
+        const result = this.toIPage(updatedPage);
 
         // Invalidate cache for new slug (even if same, to clear stale HTML)
-        await this.invalidatePageCache(updatedPage);
+        await this.invalidatePageCache(result);
 
-        this.logger.info(`Updated page: ${page.title} (${page.slug})`);
+        this.logger.info(`Updated page: ${result.title} (${result.slug})`);
 
-        return updatedPage;
+        return result;
     }
 
     /**
@@ -179,7 +211,7 @@ export class PageService implements IPageService {
      * @returns Promise resolving to the page document or null if not found
      */
     async getPageById(id: string): Promise<IPage | null> {
-        const page = await PageModel.findById(id);
+        const page = await this.pagesCollection.findOne({ _id: new ObjectId(id) });
         return page ? this.toIPage(page) : null;
     }
 
@@ -190,7 +222,7 @@ export class PageService implements IPageService {
      * @returns Promise resolving to the page document or null if not found
      */
     async getPageBySlug(slug: string): Promise<IPage | null> {
-        const page = await PageModel.findOne({ slug });
+        const page = await this.pagesCollection.findOne({ slug });
         return page ? this.toIPage(page) : null;
     }
 
@@ -220,10 +252,12 @@ export class PageService implements IPageService {
             query.$text = { $search: search };
         }
 
-        const pages = await PageModel.find(query)
+        const pages = await this.pagesCollection
+            .find(query)
             .sort({ createdAt: -1 })
             .limit(limit)
-            .skip(skip);
+            .skip(skip)
+            .toArray();
 
         return pages.map((page) => this.toIPage(page));
     }
@@ -239,13 +273,13 @@ export class PageService implements IPageService {
      * @throws Error if page not found
      */
     async deletePage(id: string): Promise<void> {
-        const page = await PageModel.findById(id);
+        const page = await this.pagesCollection.findOne({ _id: new ObjectId(id) });
         if (!page) {
             throw new Error(`Page with ID ${id} not found`);
         }
 
         await this.invalidatePageCache(this.toIPage(page));
-        await page.deleteOne();
+        await this.pagesCollection.deleteOne({ _id: new ObjectId(id) });
 
         this.logger.info(`Deleted page: ${page.title} (${page.slug})`);
     }
@@ -257,8 +291,8 @@ export class PageService implements IPageService {
      */
     async getPageStats(): Promise<{ total: number; published: number; drafts: number }> {
         const [total, published] = await Promise.all([
-            PageModel.countDocuments(),
-            PageModel.countDocuments({ published: true }),
+            this.pagesCollection.countDocuments(),
+            this.pagesCollection.countDocuments({ published: true }),
         ]);
 
         return {
@@ -319,7 +353,7 @@ export class PageService implements IPageService {
     /**
      * Upload a file with validation.
      *
-     * Validates file size and extension against settings, sanitizes filename,
+     * Validates file size and MIME type against settings, sanitizes filename,
      * uploads via storage provider, and tracks in database.
      *
      * @param file - Buffer containing file data
@@ -328,7 +362,7 @@ export class PageService implements IPageService {
      * @returns Promise resolving to the created file record
      *
      * @throws Error if file exceeds max size
-     * @throws Error if file extension not allowed
+     * @throws Error if MIME type not allowed
      * @throws Error if storage upload fails
      */
     async uploadFile(file: Buffer, originalName: string, mimeType: string): Promise<IPageFile> {
@@ -356,20 +390,22 @@ export class PageService implements IPageService {
         const path = await this.storageProvider.upload(file, sanitizedName, mimeType);
 
         // Track in database
-        const pageFile = new PageFileModel({
+        const fileDoc: IPageFileDocument = {
+            _id: new ObjectId(),
             originalName,
             storedName: sanitizedName,
             mimeType,
             size: file.length,
             path,
             uploadedBy: null, // Always null for now (admin uploads)
-        });
+            uploadedAt: new Date(),
+        };
 
-        await pageFile.save();
+        await this.filesCollection.insertOne(fileDoc);
 
         this.logger.info(`Uploaded file: ${originalName} -> ${path}`);
 
-        return this.toIPageFile(pageFile);
+        return this.toIPageFile(fileDoc);
     }
 
     /**
@@ -393,10 +429,12 @@ export class PageService implements IPageService {
             query.mimeType = new RegExp(`^${mimeType}`);
         }
 
-        const files = await PageFileModel.find(query)
+        const files = await this.filesCollection
+            .find(query)
             .sort({ uploadedAt: -1 })
             .limit(limit)
-            .skip(skip);
+            .skip(skip)
+            .toArray();
 
         return files.map((file) => this.toIPageFile(file));
     }
@@ -413,7 +451,7 @@ export class PageService implements IPageService {
      * @throws Error if storage deletion fails
      */
     async deleteFile(id: string): Promise<void> {
-        const file = await PageFileModel.findById(id);
+        const file = await this.filesCollection.findOne({ _id: new ObjectId(id) });
         if (!file) {
             throw new Error(`File with ID ${id} not found`);
         }
@@ -422,7 +460,7 @@ export class PageService implements IPageService {
         await this.storageProvider.delete(file.path);
 
         // Delete database record
-        await file.deleteOne();
+        await this.filesCollection.deleteOne({ _id: new ObjectId(id) });
 
         this.logger.info(`Deleted file: ${file.originalName} (${file.path})`);
     }
@@ -439,11 +477,15 @@ export class PageService implements IPageService {
      * @returns Promise resolving to settings document
      */
     async getSettings(): Promise<IPageSettings> {
-        let settings = await PageSettingsModel.findOne();
+        let settings = await this.settingsCollection.findOne({});
 
         if (!settings) {
-            settings = new PageSettingsModel(DEFAULT_PAGE_SETTINGS);
-            await settings.save();
+            settings = {
+                _id: new ObjectId(),
+                ...DEFAULT_PAGE_SETTINGS,
+                updatedAt: new Date(),
+            };
+            await this.settingsCollection.insertOne(settings);
             this.logger.info('Created default page settings');
         }
 
@@ -461,10 +503,15 @@ export class PageService implements IPageService {
      * @throws Error if validation fails (e.g., negative max file size)
      */
     async updateSettings(updates: Partial<IPageSettings>): Promise<IPageSettings> {
-        let settings = await PageSettingsModel.findOne();
+        let settings = await this.settingsCollection.findOne({});
 
         if (!settings) {
-            settings = new PageSettingsModel(DEFAULT_PAGE_SETTINGS);
+            settings = {
+                _id: new ObjectId(),
+                ...DEFAULT_PAGE_SETTINGS,
+                updatedAt: new Date(),
+            };
+            await this.settingsCollection.insertOne(settings);
         }
 
         // Validate updates
@@ -472,29 +519,37 @@ export class PageService implements IPageService {
             throw new Error('Maximum file size must be at least 1 byte');
         }
 
-        // Merge updates
+        // Build update object
+        const updateDoc: Record<string, unknown> = {
+            updatedAt: new Date(),
+        };
+
         if (updates.blacklistedRoutes !== undefined) {
-            settings.blacklistedRoutes = updates.blacklistedRoutes;
+            updateDoc.blacklistedRoutes = updates.blacklistedRoutes;
         }
         if (updates.maxFileSize !== undefined) {
-            settings.maxFileSize = updates.maxFileSize;
+            updateDoc.maxFileSize = updates.maxFileSize;
         }
         if (updates.allowedFileExtensions !== undefined) {
-            settings.allowedFileExtensions = updates.allowedFileExtensions;
+            updateDoc.allowedFileExtensions = updates.allowedFileExtensions;
         }
         if (updates.filenameSanitizationPattern !== undefined) {
-            settings.filenameSanitizationPattern = updates.filenameSanitizationPattern;
+            updateDoc.filenameSanitizationPattern = updates.filenameSanitizationPattern;
         }
         if (updates.storageProvider !== undefined) {
-            settings.storageProvider = updates.storageProvider;
+            updateDoc.storageProvider = updates.storageProvider;
         }
 
-        settings.updatedAt = new Date();
-        await settings.save();
+        await this.settingsCollection.updateOne({ _id: settings._id }, { $set: updateDoc });
 
         this.logger.info('Updated page settings');
 
-        return this.toIPageSettings(settings);
+        const updatedSettings = await this.settingsCollection.findOne({ _id: settings._id });
+        if (!updatedSettings) {
+            throw new Error('Failed to retrieve updated settings');
+        }
+
+        return this.toIPageSettings(updatedSettings);
     }
 
     // ============================================================================
@@ -516,8 +571,8 @@ export class PageService implements IPageService {
         // Replace spaces with hyphens
         slug = slug.replace(/\s+/g, '-');
 
-        // Remove special characters (keep only a-z, 0-9, hyphens)
-        slug = slug.replace(/[^a-z0-9-]/g, '');
+        // Remove special characters (keep only a-z, 0-9, hyphens, forward slashes)
+        slug = slug.replace(/[^a-z0-9-/]/g, '');
 
         // Collapse multiple hyphens
         slug = slug.replace(/-+/g, '-');
@@ -536,8 +591,8 @@ export class PageService implements IPageService {
     /**
      * Check if a slug conflicts with blacklisted route patterns.
      *
-     * Compares slug against patterns from settings. Blacklisted patterns are
-     * matched as prefixes (e.g., "/api" blocks "/api/users").
+     * Compares slug against regex patterns from settings. Blacklisted patterns
+     * are matched using regex (e.g., "^/api/.*" blocks "/api/users").
      *
      * @param slug - Slug to validate
      * @returns True if slug conflicts with a blacklisted pattern
@@ -546,7 +601,8 @@ export class PageService implements IPageService {
         const settings = await this.getSettings();
 
         for (const pattern of settings.blacklistedRoutes) {
-            if (slug.startsWith(pattern)) {
+            const regex = new RegExp(pattern);
+            if (regex.test(slug)) {
                 return true;
             }
         }
@@ -559,55 +615,52 @@ export class PageService implements IPageService {
     // ============================================================================
 
     /**
-     * Convert Mongoose document to IPage interface.
+     * Convert database document to IPage interface.
      */
-    private toIPage(doc: unknown): IPage {
-        const obj = doc as Record<string, unknown>;
+    private toIPage(doc: IPageDocument): IPage {
         return {
-            _id: obj._id?.toString(),
-            title: obj.title as string,
-            slug: obj.slug as string,
-            content: obj.content as string,
-            description: obj.description as string,
-            keywords: obj.keywords as string[],
-            published: obj.published as boolean,
-            ogImage: obj.ogImage as string | undefined,
-            authorId: obj.authorId as string | null,
-            createdAt: obj.createdAt as Date,
-            updatedAt: obj.updatedAt as Date,
+            _id: doc._id.toString(),
+            title: doc.title,
+            slug: doc.slug,
+            content: doc.content,
+            description: doc.description,
+            keywords: doc.keywords,
+            published: doc.published,
+            ogImage: doc.ogImage || undefined,
+            authorId: doc.authorId,
+            createdAt: doc.createdAt,
+            updatedAt: doc.updatedAt,
         };
     }
 
     /**
-     * Convert Mongoose document to IPageFile interface.
+     * Convert database document to IPageFile interface.
      */
-    private toIPageFile(doc: unknown): IPageFile {
-        const obj = doc as Record<string, unknown>;
+    private toIPageFile(doc: IPageFileDocument): IPageFile {
         return {
-            _id: obj._id?.toString(),
-            originalName: obj.originalName as string,
-            storedName: obj.storedName as string,
-            mimeType: obj.mimeType as string,
-            size: obj.size as number,
-            path: obj.path as string,
-            uploadedBy: obj.uploadedBy as string | null,
-            uploadedAt: obj.uploadedAt as Date,
+            _id: doc._id.toString(),
+            originalName: doc.originalName,
+            storedName: doc.storedName,
+            mimeType: doc.mimeType,
+            size: doc.size,
+            path: doc.path,
+            uploadedBy: doc.uploadedBy,
+            uploadedAt: doc.uploadedAt,
         };
     }
 
     /**
-     * Convert Mongoose document to IPageSettings interface.
+     * Convert database document to IPageSettings interface.
      */
-    private toIPageSettings(doc: unknown): IPageSettings {
-        const obj = doc as Record<string, unknown>;
+    private toIPageSettings(doc: IPageSettingsDocument): IPageSettings {
         return {
-            _id: obj._id?.toString(),
-            blacklistedRoutes: obj.blacklistedRoutes as string[],
-            maxFileSize: obj.maxFileSize as number,
-            allowedFileExtensions: obj.allowedFileExtensions as string[],
-            filenameSanitizationPattern: obj.filenameSanitizationPattern as string,
-            storageProvider: obj.storageProvider as 'local' | 's3' | 'cloudflare',
-            updatedAt: obj.updatedAt as Date,
+            _id: doc._id.toString(),
+            blacklistedRoutes: doc.blacklistedRoutes,
+            maxFileSize: doc.maxFileSize,
+            allowedFileExtensions: doc.allowedFileExtensions,
+            filenameSanitizationPattern: doc.filenameSanitizationPattern,
+            storageProvider: doc.storageProvider,
+            updatedAt: doc.updatedAt,
         };
     }
 
@@ -620,15 +673,24 @@ export class PageService implements IPageService {
     }
 
     /**
-     * Sanitize filename using pattern from settings.
+     * Sanitize filename for storage.
+     *
+     * Converts to lowercase, replaces spaces with hyphens, applies sanitization pattern,
+     * and preserves file extension.
+     *
+     * @param filename - Original filename from user
+     * @param pattern - Regex pattern for characters to replace (from settings)
      */
     private sanitizeFilename(filename: string, pattern: string): string {
         const ext = this.getFileExtension(filename);
         const nameWithoutExt = filename.slice(0, -ext.length);
 
-        // Apply sanitization pattern
+        // Convert to lowercase and replace spaces
+        let sanitized = nameWithoutExt.toLowerCase().replace(/\s+/g, '-');
+
+        // Apply sanitization pattern from settings
         const regex = new RegExp(pattern, 'g');
-        let sanitized = nameWithoutExt.toLowerCase().replace(regex, '-');
+        sanitized = sanitized.replace(regex, '-');
 
         // Collapse multiple hyphens
         sanitized = sanitized.replace(/-+/g, '-');

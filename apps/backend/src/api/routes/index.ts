@@ -53,11 +53,13 @@ export function createApiRouter(database?: IDatabaseService) {
     router.use('/admin/migrations', createMigrationsRouter(database));
   }
 
-  // Mount pages routers with cache service
+  // Mount pages routers with database and cache service
   const redis = getRedisClient();
   const cacheService = new CacheService(redis);
-  router.use('/admin/pages', createPagesModuleRouter(cacheService));
-  router.use('/pages', createPublicPagesModuleRouter(cacheService));
+  if (database) {
+    router.use('/admin/pages', createPagesModuleRouter(database, cacheService));
+    router.use('/pages', createPublicPagesModuleRouter(database, cacheService));
+  }
 
   // Mount plugin API routes (dynamic plugins)
   const pluginApiService = PluginApiService.getInstance();
