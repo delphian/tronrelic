@@ -436,10 +436,113 @@ export class SystemLogService implements ISystemLogService {
     // ========================================================================
 
     /**
+     * Sanitize metadata object to remove circular references and non-serializable values.
+     *
+     * This prevents BSON serialization errors when saving logs to MongoDB.
+     * Handles:
+     * - Circular references (object references itself)
+     * - Error objects (converts to plain objects with stack, message, name)
+     * - Functions (converts to string representation)
+     * - Undefined values (removes them)
+     * - Deep nesting (limits depth to prevent stack overflow)
+     *
+     * @param obj - Object to sanitize
+     * @param depth - Current recursion depth (prevents infinite loops)
+     * @param seen - WeakSet tracking visited objects (detects circular references)
+     * @returns Sanitized object safe for BSON serialization
+     */
+    private sanitizeMetadata(
+        obj: any,
+        depth: number = 0,
+        seen: WeakSet<object> = new WeakSet()
+    ): any {
+        // Limit recursion depth to prevent stack overflow
+        if (depth > 10) {
+            return '[Max depth exceeded]';
+        }
+
+        // Handle null and undefined
+        if (obj === null || obj === undefined) {
+            return obj;
+        }
+
+        // Handle primitives (string, number, boolean)
+        if (typeof obj !== 'object' && typeof obj !== 'function') {
+            return obj;
+        }
+
+        // Handle functions - convert to string representation
+        if (typeof obj === 'function') {
+            return `[Function: ${obj.name || 'anonymous'}]`;
+        }
+
+        // Handle Date objects
+        if (obj instanceof Date) {
+            return obj;
+        }
+
+        // Handle Error objects - extract serializable properties
+        if (obj instanceof Error) {
+            return {
+                name: obj.name,
+                message: obj.message,
+                stack: obj.stack,
+                // Include any custom properties
+                ...Object.getOwnPropertyNames(obj).reduce((acc: any, key: string) => {
+                    if (!['name', 'message', 'stack'].includes(key)) {
+                        acc[key] = (obj as any)[key];
+                    }
+                    return acc;
+                }, {})
+            };
+        }
+
+        // Detect circular references
+        if (seen.has(obj)) {
+            return '[Circular Reference]';
+        }
+
+        // Mark object as seen
+        seen.add(obj);
+
+        // Handle arrays
+        if (Array.isArray(obj)) {
+            return obj.map((item) => this.sanitizeMetadata(item, depth + 1, seen));
+        }
+
+        // Handle plain objects
+        const sanitized: any = {};
+        for (const key in obj) {
+            if (Object.prototype.hasOwnProperty.call(obj, key)) {
+                const value = obj[key];
+
+                // Skip undefined values
+                if (value === undefined) {
+                    continue;
+                }
+
+                // Recursively sanitize nested objects
+                sanitized[key] = this.sanitizeMetadata(value, depth + 1, seen);
+            }
+        }
+
+        return sanitized;
+    }
+
+    /**
      * Save a log entry to MongoDB.
      *
      * This method is called automatically by `error()` and `warn()` methods,
      * but can also be called manually if needed.
+     *
+     * **BSON serialization safety:**
+     *
+     * Before saving to MongoDB, this method sanitizes the metadata object to remove:
+     * - Circular references (object references that loop back to themselves)
+     * - Non-serializable values (functions, undefined, etc.)
+     * - Deep nested structures (prevents stack overflow)
+     *
+     * This ensures log entries can always be persisted to MongoDB without BSON errors.
      *
      * @param data - Log data to save
      */
@@ -461,13 +564,16 @@ export class SystemLogService implements ISystemLogService {
                 service = `${service}:${metadata.module}`;
             }
 
+            // Sanitize metadata to prevent BSON serialization errors
+            const sanitizedMetadata = this.sanitizeMetadata(metadata);
+
             // Create log entry in MongoDB
             await SystemLog.create({
                 timestamp,
                 level,
                 message,
                 service,
-                context: metadata,
+                context: sanitizedMetadata,
                 resolved: false
             });
         } catch (error) {
