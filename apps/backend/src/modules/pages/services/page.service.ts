@@ -498,13 +498,20 @@ export class PageService implements IPageService {
             throw new Error(`File with ID ${id} not found`);
         }
 
-        // Delete from storage provider
-        await this.storageProvider.delete(file.path);
+        // Delete from storage provider (returns true if file existed, false if already missing)
+        const fileExisted = await this.storageProvider.delete(file.path);
 
         // Delete database record
         await this.filesCollection.deleteOne({ _id: new ObjectId(id) });
 
-        this.logger.info(`Deleted file: ${file.originalName} (${file.path})`);
+        // Log appropriate message based on whether physical file existed
+        if (fileExisted) {
+            this.logger.info(`Deleted file: ${file.originalName} (${file.path})`);
+        } else {
+            this.logger.warn(
+                `Deleted database record for missing file: ${file.originalName} (${file.path})`
+            );
+        }
     }
 
     // ============================================================================

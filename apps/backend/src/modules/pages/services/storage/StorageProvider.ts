@@ -29,13 +29,14 @@ export abstract class StorageProvider implements IStorageProvider {
      * Delete a file from storage.
      *
      * Concrete implementations handle provider-specific deletion logic.
+     * Should gracefully handle missing files by returning false.
      *
      * @param path - Relative path to the file (as returned by upload())
-     * @returns Promise resolving when deletion completes
+     * @returns Promise resolving to true if file was deleted, false if already missing
      *
-     * @throws Error if deletion fails or file not found
+     * @throws Error if deletion fails for reasons other than file not found
      */
-    abstract delete(path: string): Promise<void>;
+    abstract delete(path: string): Promise<boolean>;
 
     /**
      * Get the public URL where a file can be accessed.

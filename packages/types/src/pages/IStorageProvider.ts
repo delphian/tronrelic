@@ -25,15 +25,19 @@ export interface IStorageProvider {
     /**
      * Delete a file from storage.
      *
-     * @param path - Relative path to the file (as returned by upload())
-     * @returns Promise resolving when deletion completes
+     * Implementations should gracefully handle missing files (return false)
+     * rather than throwing errors, to support cleanup of orphaned database records.
      *
-     * @throws Error if deletion fails or file not found
+     * @param path - Relative path to the file (as returned by upload())
+     * @returns Promise resolving to true if file was deleted, false if already missing
+     *
+     * @throws Error if deletion fails for reasons other than file not found
      *
      * @example
-     * await provider.delete("/uploads/25/10/image-2025-10.png");
+     * const deleted = await provider.delete("/uploads/25/10/image-2025-10.png");
+     * // Returns: true if file existed and was deleted, false if already missing
      */
-    delete(path: string): Promise<void>;
+    delete(path: string): Promise<boolean>;
 
     /**
      * Get the public URL where a file can be accessed.
