@@ -6,19 +6,6 @@ import { cn } from '../../../../lib/cn';
 import styles from './SystemHealthMonitor.module.css';
 
 /**
- * MongoDB database status metrics.
- */
-interface DatabaseStatus {
-    connected: boolean;
-    responseTime: number | null;
-    poolSize: number;
-    availableConnections: number;
-    databaseSize: number | null;
-    collectionCount: number;
-    recentErrors: string[];
-}
-
-/**
  * Redis cache status metrics.
  */
 interface RedisStatus {
@@ -60,12 +47,6 @@ interface Props {
  *
  * Provides in-depth health metrics for critical infrastructure components:
  *
- * **MongoDB Database:**
- * - Connection status (connected/disconnected)
- * - Response time (ping latency)
- * - Database size and collection count
- * - Recent error log
- *
  * **Redis Cache:**
  * - Connection status
  * - Response time
@@ -78,9 +59,12 @@ interface Props {
  * - RSS (Resident Set Size) memory
  * - CPU utilization percentage
  *
- * The component fetches data from three separate admin endpoints in parallel
+ * The component fetches data from two separate admin endpoints in parallel
  * for efficiency. It auto-refreshes every 5 seconds (more frequent than
  * SystemOverview) to provide near-real-time monitoring.
+ *
+ * Note: MongoDB database metrics have been moved to the /system/database page
+ * where they appear as compact cards above the migration management interface.
  *
  * Color coding: Green for healthy/connected, red for errors/disconnected.
  *
@@ -88,23 +72,19 @@ interface Props {
  * @returns A grid of detailed health metric sections
  */
 export function SystemHealthMonitor({ token }: Props) {
-    const [database, setDatabase] = useState<DatabaseStatus | null>(null);
     const [redis, setRedis] = useState<RedisStatus | null>(null);
     const [server, setServer] = useState<ServerMetrics | null>(null);
     const [loading, setLoading] = useState(true);
 
     /**
-     * Fetches health data from all three admin endpoints in parallel.
+     * Fetches health data from Redis and server admin endpoints in parallel.
      *
      * Uses Promise.all for concurrent requests to minimize latency.
      * Authenticated using X-Admin-Token header.
      */
     const fetchData = async () => {
         try {
-            const [dbRes, redisRes, serverRes] = await Promise.all([
-                fetch(`${runtimeConfig.apiBaseUrl}/admin/system/health/database`, {
-                    headers: { 'X-Admin-Token': token }
-                }),
+            const [redisRes, serverRes] = await Promise.all([
                 fetch(`${runtimeConfig.apiBaseUrl}/admin/system/health/redis`, {
                     headers: { 'X-Admin-Token': token }
                 }),
@@ -113,8 +93,7 @@ export function SystemHealthMonitor({ token }: Props) {
                 })
             ]);
 
-            const [dbData, redisData, serverData] = await Promise.all([dbRes.json(), redisRes.json(), serverRes.json()]);
-            setDatabase(dbData.status);
+            const [redisData, serverData] = await Promise.all([redisRes.json(), serverRes.json()]);
             setRedis(redisData.status);
             setServer(serverData.metrics);
         } catch (error) {
@@ -141,56 +120,6 @@ export function SystemHealthMonitor({ token }: Props) {
 
     return (
         <div className={styles.container}>
-            {/* MongoDB Status */}
-            <section className={styles.section}>
-                <h2 className={styles.section__title}>MongoDB Database</h2>
-                {database && (
-                    <>
-                        <div className={styles.metrics_grid}>
-                            <div className={cn(
-                                styles.metric_card,
-                                database.connected ? styles['metric-card--healthy'] : styles['metric-card--danger']
-                            )}>
-                                <div className={styles.metric_card__label}>Connection Status</div>
-                                <div className={styles.metric_card__value}>
-                                    {database.connected ? 'Connected' : 'Disconnected'}
-                                </div>
-                            </div>
-
-                            {database.responseTime !== null && (
-                                <div className={cn(styles.metric_card, styles['metric-card--default'])}>
-                                    <div className={styles.metric_card__label}>Response Time</div>
-                                    <div className={styles.metric_card__value}>{database.responseTime}ms</div>
-                                </div>
-                            )}
-
-                            <div className={cn(styles.metric_card, styles['metric-card--default'])}>
-                                <div className={styles.metric_card__label}>Collections</div>
-                                <div className={styles.metric_card__value}>{database.collectionCount}</div>
-                            </div>
-
-                            {database.databaseSize !== null && (
-                                <div className={cn(styles.metric_card, styles['metric-card--default'])}>
-                                    <div className={styles.metric_card__label}>Database Size</div>
-                                    <div className={styles.metric_card__value}>{formatBytes(database.databaseSize)}</div>
-                                </div>
-                            )}
-                        </div>
-
-                        {database.recentErrors.length > 0 && (
-                            <div className={styles.error_panel}>
-                                <div className={styles.error_panel__title}>Recent Errors:</div>
-                                <div className={styles.error_panel__list}>
-                                    {database.recentErrors.map((error, idx) => (
-                                        <div key={idx}>{error}</div>
-                                    ))}
-                                </div>
-                            </div>
-                        )}
-                    </>
-                )}
-            </section>
-
             {/* Redis Status */}
             <section className={styles.section}>
                 <h2 className={styles.section__title}>Redis Cache</h2>

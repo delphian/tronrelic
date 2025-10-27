@@ -28,10 +28,10 @@ export default function WebSocketMonitoringPage() {
     const fetchStats = async () => {
         try {
             const [aggregateRes, statsRes] = await Promise.all([
-                fetch('/api/system/websockets/aggregate', {
+                fetch('/api/admin/system/websockets/aggregate', {
                     headers: { 'Authorization': `Bearer ${token}` }
                 }),
-                fetch('/api/system/websockets/stats', {
+                fetch('/api/admin/system/websockets/stats', {
                     headers: { 'Authorization': `Bearer ${token}` }
                 })
             ]);
