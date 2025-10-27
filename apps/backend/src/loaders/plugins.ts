@@ -6,7 +6,7 @@ import { logger } from '../lib/logger.js';
 import { BlockchainObserverService } from '../services/blockchain-observer/index.js';
 import { BaseObserver } from '../modules/blockchain/observers/BaseObserver.js';
 import { WebSocketService } from '../services/websocket.service.js';
-import { PluginDatabaseService } from '../services/database/index.js';
+import { PluginDatabaseService } from '../modules/database/index.js';
 import { PluginApiService } from '../services/plugin-api.service.js';
 import { PluginMetadataService } from '../services/plugin-metadata.service.js';
 import { PluginManagerService } from '../services/plugin-manager.service.js';
@@ -163,7 +163,7 @@ export async function loadPlugins(): Promise<void> {
             await metadataService.registerPlugin(plugin.manifest);
 
             // Create plugin-scoped database service
-            const database = new PluginDatabaseService(plugin.manifest.id);
+            const database = new PluginDatabaseService(pluginLogger, plugin.manifest.id);
 
             // Create plugin-scoped WebSocket manager if Socket.IO is initialized
             let websocketManager: PluginWebSocketManager | undefined;

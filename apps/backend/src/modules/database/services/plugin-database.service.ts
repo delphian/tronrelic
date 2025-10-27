@@ -1,4 +1,5 @@
 import { DatabaseService } from './database.service.js';
+import type { ISystemLogService } from '@tronrelic/types';
 
 /**
  * Plugin-scoped database access implementation.
@@ -16,7 +17,7 @@ import { DatabaseService } from './database.service.js';
  * @example
  * ```typescript
  * // In plugin init:
- * const db = new PluginDatabaseService('whale-alerts');
+ * const db = new PluginDatabaseService(logger, 'whale-alerts');
  *
  * // Access collection (becomes "plugin_whale-alerts_subscriptions")
  * const subscriptions = db.getCollection('subscriptions');
@@ -34,9 +35,10 @@ export class PluginDatabaseService extends DatabaseService {
      * The plugin ID is used to automatically prefix all collection names, ensuring
      * isolation between plugins and preventing naming conflicts.
      *
+     * @param logger - System log service for database operation logging
      * @param pluginId - The unique plugin identifier (from manifest)
      */
-    constructor(pluginId: string) {
-        super({ prefix: `plugin_${pluginId}_` });
+    constructor(logger: ISystemLogService, pluginId: string) {
+        super(logger, { prefix: `plugin_${pluginId}_` });
     }
 }

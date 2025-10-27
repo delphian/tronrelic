@@ -31,9 +31,9 @@ export const dynamic = 'force-dynamic';
 /**
  * Root system layout component.
  *
- * Wraps all /system routes with authentication provider, server-rendered navigation,
- * and authentication gate. The navigation renders on the server and appears immediately,
- * while the authentication UI (login form, logout button) is client-side for interactivity.
+ * Wraps all /system routes with authentication provider and authentication gate.
+ * The navigation is passed to SystemAuthGate to render below the header, ensuring
+ * proper visual hierarchy (header → navigation → content).
  *
  * All child routes automatically inherit this layout structure. The SystemNavSSR component
  * fetches menu items from the backend IMenuService during server rendering, ensuring
@@ -45,8 +45,7 @@ export const dynamic = 'force-dynamic';
 export default function SystemLayout({ children }: { children: ReactNode }) {
     return (
         <SystemAuthProvider>
-            <SystemNavSSR />
-            <SystemAuthGate>
+            <SystemAuthGate navigation={<SystemNavSSR />}>
                 {children}
             </SystemAuthGate>
         </SystemAuthProvider>
