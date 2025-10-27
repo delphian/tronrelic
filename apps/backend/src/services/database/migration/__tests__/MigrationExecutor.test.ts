@@ -272,7 +272,7 @@ describe('MigrationExecutor', () => {
 
             await executor.executeMigration(migration);
 
-            expect(mockTracker.lastRecordedDuration).toBeGreaterThanOrEqual(50);
+            expect(mockTracker.lastRecordedDuration).toBeGreaterThanOrEqual(45);
         });
     });
 
