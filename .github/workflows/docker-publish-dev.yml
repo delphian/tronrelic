@@ -48,6 +48,15 @@ jobs:
           docker push ghcr.io/${{ github.repository }}/frontend:dev
           docker push ghcr.io/${{ github.repository }}/frontend:dev-${{ github.sha }}
 
+      - name: Deploy docker-compose.dev.yml to dev droplet
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.DEV_DROPLET_HOST }}
+          username: ${{ secrets.DEV_DROPLET_USER }}
+          key: ${{ secrets.DEV_DROPLET_SSH_KEY }}
+          source: "docker-compose.dev.yml"
+          target: "/opt/tronrelic-dev/"
+
       - name: Deploy to dev droplet
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -56,12 +65,12 @@ jobs:
           key: ${{ secrets.DEV_DROPLET_SSH_KEY }}
           script: |
             cd /opt/tronrelic-dev
-            docker compose pull
-            docker compose down
-            docker compose up -d
+            docker compose -f docker-compose.dev.yml pull
+            docker compose -f docker-compose.dev.yml down
+            docker compose -f docker-compose.dev.yml up -d
             echo "Waiting for services to start..."
             sleep 15
-            docker compose ps
+            docker compose -f docker-compose.dev.yml ps
 
       - name: Cleanup old images on dev droplet
         uses: appleboy/ssh-action@v1.0.3

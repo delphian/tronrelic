@@ -107,12 +107,12 @@ echo ""
 
 # Step 1: Check current container status
 log_info "Checking current container status..."
-remote_exec "cd $DEPLOY_DIR && docker compose ps"
+remote_exec "cd $DEPLOY_DIR && docker compose -f $COMPOSE_FILE ps"
 echo ""
 
 # Step 2: Pull latest images
 log_info "Pulling latest :$IMAGE_TAG Docker images from GitHub Container Registry..."
-if remote_exec "cd $DEPLOY_DIR && docker compose pull"; then
+if remote_exec "cd $DEPLOY_DIR && docker compose -f $COMPOSE_FILE pull"; then
     log_success "Images pulled successfully"
 else
     log_error "Failed to pull images"
@@ -124,7 +124,7 @@ echo ""
 log_info "Restarting containers with new images..."
 if [[ "$ENV" == "dev" ]]; then
     # For dev, do a full down/up to ensure clean state
-    if remote_exec "cd $DEPLOY_DIR && docker compose down && docker compose up -d"; then
+    if remote_exec "cd $DEPLOY_DIR && docker compose -f $COMPOSE_FILE down && docker compose -f $COMPOSE_FILE up -d"; then
         log_success "Containers restarted successfully"
     else
         log_error "Failed to restart containers"
@@ -132,7 +132,7 @@ if [[ "$ENV" == "dev" ]]; then
     fi
 else
     # For prod, use rolling restart to minimize downtime
-    if remote_exec "cd $DEPLOY_DIR && docker compose up -d"; then
+    if remote_exec "cd $DEPLOY_DIR && docker compose -f $COMPOSE_FILE up -d"; then
         log_success "Containers restarted successfully"
     else
         log_error "Failed to restart containers"
@@ -156,7 +156,7 @@ sleep 15
 
 # Step 6: Check container health
 log_info "Checking container health..."
-remote_exec "cd $DEPLOY_DIR && docker compose ps"
+remote_exec "cd $DEPLOY_DIR && docker compose -f $COMPOSE_FILE ps"
 echo ""
 
 # Step 7: Verify backend health
@@ -184,5 +184,5 @@ echo "  Backend:  http://$DROPLET_IP/api"
 echo "  System:   http://$DROPLET_IP/system"
 echo ""
 log_info "View logs with:"
-echo "  ssh $DROPLET_HOST 'cd $DEPLOY_DIR && docker compose logs -f'"
+echo "  ssh $DROPLET_HOST 'cd $DEPLOY_DIR && docker compose -f $COMPOSE_FILE logs -f'"
 echo ""
