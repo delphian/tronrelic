@@ -1,7 +1,6 @@
 import type { Request, Response } from 'express';
-import { MigrationsService } from './migrations.service.js';
-import { logger } from '../../lib/logger.js';
-import type { IDatabaseService } from '@tronrelic/types';
+import { MigrationsService } from '../services/migrations.service.js';
+import type { IDatabaseService, ISystemLogService } from '@tronrelic/types';
 
 /**
  * REST API controller for migration management endpoints.
@@ -26,14 +25,17 @@ import type { IDatabaseService } from '@tronrelic/types';
  */
 export class MigrationsController {
     private readonly service: MigrationsService;
+    private readonly logger: ISystemLogService;
 
     /**
      * Create a new migrations controller.
      *
      * @param database - Database service with migration methods
+     * @param logger - System log service for request logging
      */
-    constructor(database: IDatabaseService) {
-        this.service = new MigrationsService(database);
+    constructor(database: IDatabaseService, logger: ISystemLogService) {
+        this.service = new MigrationsService(database, logger);
+        this.logger = logger;
     }
 
     /**
@@ -57,7 +59,7 @@ export class MigrationsController {
             const status = await this.service.getStatus();
             res.json(status);
         } catch (error: any) {
-            logger.error({ error }, 'Failed to get migration status');
+            this.logger.error({ error }, 'Failed to get migration status');
             res.status(500).json({
                 error: 'Failed to get migration status',
                 message: error.message
@@ -94,7 +96,7 @@ export class MigrationsController {
                 total: migrations.length
             });
         } catch (error: any) {
-            logger.error({ error }, 'Failed to get migration history');
+            this.logger.error({ error }, 'Failed to get migration history');
             res.status(500).json({
                 error: 'Failed to get migration history',
                 message: error.message
@@ -142,7 +144,7 @@ export class MigrationsController {
             const statusCode = result.success ? 200 : 500;
             res.status(statusCode).json(result);
         } catch (error: any) {
-            logger.error({ error, body: req.body }, 'Failed to execute migration');
+            this.logger.error({ error, body: req.body }, 'Failed to execute migration');
 
             // Check for specific error types
             if (error.message.includes('already running')) {
@@ -184,7 +186,7 @@ export class MigrationsController {
             const details = await this.service.getMigrationDetails(id);
             res.json(details);
         } catch (error: any) {
-            logger.error({ error, migrationId: req.params.id }, 'Failed to get migration details');
+            this.logger.error({ error, migrationId: req.params.id }, 'Failed to get migration details');
 
             if (error.message.includes('not found')) {
                 res.status(404).json({
