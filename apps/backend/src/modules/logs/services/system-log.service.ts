@@ -1,6 +1,6 @@
 import type { ISystemLogService, ISystemLogQuery, ISystemLogPaginatedResponse, ISaveLogData, LogLevel } from '@tronrelic/types';
 import { shouldLog } from '@tronrelic/types';
-import { SystemLog, ISystemLogDocument } from './database/index.js';
+import { SystemLog, ISystemLogDocument } from '../database/index.js';
 import type pino from 'pino';
 
 /**
@@ -185,7 +185,7 @@ export class SystemLogService implements ISystemLogService {
     public async applyLogLevelFromConfig(): Promise<void> {
         try {
             // Import SystemConfigService dynamically to avoid circular dependencies
-            const { SystemConfigService } = await import('../system-config/system-config.service.js');
+            const { SystemConfigService } = await import('../../../services/system-config/system-config.service.js');
             const systemConfigService = SystemConfigService.getInstance();
             const config = await systemConfigService.getConfig();
 

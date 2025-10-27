@@ -3,7 +3,7 @@ import { requireAdmin } from '../middleware/admin-auth.js';
 import { SystemMonitorController } from '../../modules/system/system-monitor.controller.js';
 import { getRedisClient } from '../../loaders/redis.js';
 import { PluginWebSocketRegistry } from '../../services/plugin-websocket-registry.js';
-import { createSystemLogRouter } from '../../services/system-log/api/system-log.router.js';
+import { createSystemLogRouter } from '../../modules/logs/index.js';
 
 export function systemRouter() {
   const router = Router();

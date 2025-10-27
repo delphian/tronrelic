@@ -128,6 +128,8 @@ Claude MUST automatically use these agents when working with these file paths.
 Good: "Yes, `.run` is mounted (line 84). Use `tail -f .run/*.log` to monitor."
 Avoid: "Let me check the file... After examining... I can see that..."
 
+*** Answer questions with short single paragraph plain engliush, or short multiple paragraph plain english answers. Prefer executive summary paragraphs over long bulleted lists ***
+
 # Project Framework Context
 
 @docs/environment.md            - Environment variable reference
