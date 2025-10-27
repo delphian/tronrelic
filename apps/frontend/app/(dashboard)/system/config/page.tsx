@@ -1,16 +1,24 @@
 'use client';
 
 import { ConfigurationPanel, useSystemAuth } from '../../../../features/system';
+import { SystemHealthCards } from './SystemHealthCards';
 
 /**
  * Configuration panel page.
  *
  * Displays runtime configuration settings including environment variables, feature flags,
- * and system parameters. Provides detailed visibility into current application configuration
- * without exposing sensitive credentials. Requires admin authentication.
+ * and system parameters. Also displays system health metrics (Redis and Server status) at
+ * the top of the page as compact cards. Provides detailed visibility into current application
+ * configuration and infrastructure health without exposing sensitive credentials. Requires
+ * admin authentication.
  */
 export default function ConfigurationPage() {
     const { token } = useSystemAuth();
 
-    return <ConfigurationPanel token={token} />;
+    return (
+        <div className="page">
+            <SystemHealthCards token={token} />
+            <ConfigurationPanel token={token} />
+        </div>
+    );
 }

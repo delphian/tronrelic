@@ -168,7 +168,7 @@ export function ConfigurationPanel({ token }: Props) {
     }
 
     return (
-        <div className={styles.container}>
+        <>
             {/* Editable System Configuration */}
             <section className={styles.section}>
                 <h2 className={styles.section__title}>System Configuration</h2>
@@ -285,6 +285,6 @@ export function ConfigurationPanel({ token }: Props) {
                     ))}
                 </div>
             </section>
-        </div>
+        </>
     );
 }
