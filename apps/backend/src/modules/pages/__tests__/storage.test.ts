@@ -160,12 +160,11 @@ describe('LocalStorageProvider', () => {
             expect(exists).toBe(false);
         });
 
-        it('should throw error if file does not exist', async () => {
+        it('should gracefully handle deleting non-existent files', async () => {
             const nonExistentPath = '/uploads/25/10/non-existent.txt';
 
-            await expect(storageProvider.delete(nonExistentPath)).rejects.toThrow(
-                'Failed to delete file'
-            );
+            // Should not throw - gracefully handles missing files
+            await expect(storageProvider.delete(nonExistentPath)).resolves.not.toThrow();
         });
 
         it('should handle paths with different formats', async () => {
