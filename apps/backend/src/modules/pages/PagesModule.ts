@@ -141,15 +141,18 @@ export class PagesModule implements IModule<IPagesModuleDependencies> {
         // Create storage provider (default: local filesystem)
         const storageProvider = new LocalStorageProvider();
 
-        // Create page service with dependencies
-        this.pageService = new PageService(
+        // Initialize PageService singleton with dependencies
+        PageService.setDependencies(
             this.database,
             storageProvider,
             this.cacheService,
             this.logger
         );
 
-        // Create controller
+        // Get PageService singleton instance
+        this.pageService = PageService.getInstance();
+
+        // Create controller with singleton service
         this.controller = new PagesController(this.pageService, this.logger);
 
         this.logger.info('Pages module initialized');
@@ -226,5 +229,22 @@ export class PagesModule implements IModule<IPagesModuleDependencies> {
      */
     private createPublicRouter(): Router {
         return createPublicPagesRouter(this.controller);
+    }
+
+    /**
+     * Get the PageService singleton instance for external consumers.
+     *
+     * This allows other modules and plugins to access the PageService after
+     * the module has been initialized. Should only be called after init()
+     * completes successfully.
+     *
+     * @returns PageService singleton instance
+     * @throws {Error} If called before init() completes
+     */
+    getPageService(): PageService {
+        if (!this.pageService) {
+            throw new Error('PagesModule not initialized - call init() first');
+        }
+        return this.pageService;
     }
 }
