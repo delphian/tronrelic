@@ -6,23 +6,28 @@
  * in-memory caching for fast tree access.
  *
  * Key exports:
+ * - MenuModule: IModule implementation for bootstrap integration
  * - MenuService: Singleton service managing menu state and operations
  * - MenuController: HTTP request handlers for REST API endpoints
  * - Types: Interfaces and type definitions for menu nodes and events
  *
  * Usage:
  * ```typescript
- * import { MenuService } from './modules/menu/index.js';
+ * import { MenuModule } from './modules/menu/index.js';
  *
- * const menuService = MenuService.getInstance();
- * await menuService.initialize();
+ * const menuModule = new MenuModule();
+ * await menuModule.init({ database, app });
+ * await menuModule.run();
  *
+ * const menuService = menuModule.getMenuService();
  * menuService.subscribe('before:create', async (event) => {
  *   // Validate or modify menu operations
  * });
  * ```
  */
 
+export { MenuModule } from './MenuModule.js';
+export type { IMenuModuleDependencies } from './MenuModule.js';
 export { MenuService } from './menu.service.js';
 export { MenuController } from './menu.controller.js';
 

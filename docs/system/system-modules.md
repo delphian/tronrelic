@@ -448,20 +448,24 @@ export type { IMyFeatureDocument } from './database/index.js';
 
 ### Step 5: Implement Business Logic Layer
 
-Create services that handle domain logic:
+Create services that handle domain logic.
+
+**Design decision**: If you're creating a service with an `IXxxService` interface, it **must be a singleton**. See "Service Types and Singleton Usage" in Best Practices for the complete rule.
 
 ```typescript
 // services/my.service.ts
-import type { IDatabaseService, ICacheService } from '@tronrelic/types';
+import type { IDatabaseService, ICacheService, IMyService } from '@tronrelic/types';
 import type { ISystemLogService } from '@tronrelic/types';
 
 /**
  * Service for managing my-feature domain logic.
  *
- * Implements business rules, orchestrates database operations, and manages
- * caching for performance optimization.
+ * Implements IMyService interface to provide an opinionated API contract.
+ * This is a singleton service ensuring consistent business logic enforcement
+ * across all consumers.
  */
-export class MyService {
+export class MyService implements IMyService {
+    private static instance: MyService;
     private readonly collection;
 
     /**
@@ -755,6 +759,8 @@ this.controller = new PagesController(this.pageService, this.logger);
 - **Markdown rendering** - Handled by `MarkdownService` (caching HTML in Redis)
 - **HTTP interface** - Handled by `PagesController` (request/response formatting)
 
+**Important distinction**: PageService is a **singleton service** that implements `IPageService`, providing an opinionated API contract for page management. Like all services with `IXxxService` interfaces (MenuService, PageService, etc.), it uses the singleton pattern to ensure consistent business logic enforcement across all consumers. External modules and plugins can access it via `PagesModule.getPageService()` to call methods like `pageService.createPage()` directly. See "Service Types and Singleton Usage" in Best Practices for the decision criteria.
+
 This separation enables:
 - Testing services in isolation with mocks
 - Swapping storage providers without changing business logic
@@ -910,8 +916,8 @@ The application cannot function without it (e.g., pages, menus, system logging).
 ✅ **Feature needs application lifecycle control**
 Must initialize early in bootstrap, before plugins load.
 
-✅ **Feature provides shared services**
-Other modules or plugins depend on it (e.g., MenuService, BlockchainObserverService).
+✅ **Feature provides services with IXxxService interfaces**
+Other modules or plugins need to **call methods directly** on services implementing `IXxxService` interfaces (e.g., `IMenuService`, `IPageService`). These services must be singletons to provide consistent opinionated API contracts. See "Service Types and Singleton Usage" in Best Practices for implementation guidance.
 
 ✅ **Feature cannot be disabled**
 No valid use case for turning it off in production.
@@ -1000,7 +1006,121 @@ If a module becomes optional:
 - Create services in `run()` phase (too late)
 - Let services import concrete dependencies directly
 - Mix infrastructure concerns with business logic
-- Create services as singletons (prefer dependency injection)
+- Create module-owned services as singletons (prefer dependency injection)
+
+#### Service Types and Singleton Usage
+
+**Services (with IXxxService interfaces) MUST be singletons.** Services are public APIs that maintain **shared single state**. All consumers use the same instance with the same configuration.
+
+---
+
+**💡 Quick Rule:**
+
+| Pattern | What Is It? | Singleton? | Customizable? |
+|---------|-------------|------------|---------------|
+| **Service** (IXxxService) | Public API with shared single state | ✅ Yes | ❌ No - configured once at bootstrap |
+| **Utility** (no interface) | Tool for consumer's own use | ❌ No | ✅ Yes - each consumer configures their own |
+
+**Key insight:** Services are configured **once during bootstrap**; consumers get the shared instance as-is. Utilities are configured **by each consumer** for their own needs.
+
+---
+
+**The Singleton Rule:**
+
+A service is a **public API with shared single state**:
+- Implements an `IXxxService` interface (e.g., `IPageService`, `IMenuService`)
+- Configuration happens **once during bootstrap** via dependency injection
+- **Consumers cannot customize it** - they get the shared instance as-is
+- All consumers interact with the same state and behavior
+
+**Exception:** `ISystemLogService` gets a "double take" because of its `child()` method, which appears to allow customization. However, `child()` just creates scoped views of the same underlying logging system—it's not true per-consumer customization.
+
+**Services vs Utilities:**
+
+```typescript
+// ✅ CORRECT - Service with IXxxService interface = Singleton
+export class PageService implements IPageService {
+    private static instance: PageService;
+
+    private constructor(
+        private readonly database: IDatabaseService,
+        private readonly storageProvider: IStorageProvider,
+        private readonly cacheService: ICacheService,
+        private readonly logger: ISystemLogService
+    ) { }
+
+    public static setDependencies(...deps): void {
+        if (!PageService.instance) {
+            PageService.instance = new PageService(...deps);
+        }
+    }
+
+    public static getInstance(): PageService {
+        if (!PageService.instance) {
+            throw new Error('setDependencies() must be called first');
+        }
+        return PageService.instance;
+    }
+
+    // Opinionated business logic enforcing rules
+    async createPage(data: IPage): Promise<IPage> {
+        // Validation, slug checking, frontmatter parsing
+        // All consumers get the same behavior
+    }
+}
+```
+
+```typescript
+// ✅ CORRECT - Utility class (NO IXxxService) = Regular instantiation
+export class ValidationHelper {
+    // Flexible utility - calling code uses it however they want
+    constructor(private readonly config: ValidationConfig) { }
+
+    validate(input: string): boolean {
+        // No enforced business rules - customizable behavior
+        return this.config.pattern.test(input);
+    }
+}
+```
+
+**Why Services Must Be Singletons:**
+
+1. **Public API** - Services expose functionality to external consumers (modules, plugins)
+2. **Shared Single State** - Everyone uses the same instance with the same configuration
+3. **Bootstrap-Only Configuration** - Dependencies injected once during app startup, then immutable
+4. **No Consumer Customization** - Consumers get the service as-is; they don't configure it
+
+**Example: MenuService**
+```typescript
+// Bootstrap (apps/backend/src/index.ts) - Configure ONCE
+MenuService.setDatabase(menuDatabase);
+const menuService = MenuService.getInstance();
+
+// Consumer 1 (PagesModule)
+await menuService.create({ label: 'Pages' }); // Uses shared state
+
+// Consumer 2 (Plugin)
+await menuService.create({ label: 'Plugin' }); // Same shared state
+
+// Consumers CANNOT customize MenuService - they all use the same instance
+```
+
+**Utilities are NOT Singletons:**
+
+Utilities/helpers are tools that **each consumer customizes for their own use**:
+```typescript
+// Each consumer creates their own configured instance
+const validator1 = new ValidationHelper({ pattern: /^[a-z]+$/ });
+const validator2 = new ValidationHelper({ pattern: /^[0-9]+$/ });
+
+// Different configurations, different behaviors
+validator1.validate('abc');  // true
+validator2.validate('abc');  // false - different config!
+```
+
+Utilities have no `IXxxService` interface because they're not public APIs—they're configurable tools.
+
+**Note:** Both patterns use dependency injection. The key difference is **when and by whom** configuration happens: services are configured once at bootstrap; utilities are configured by each consumer.
 
 ### Error Handling in Lifecycle Hooks
 

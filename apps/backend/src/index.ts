@@ -7,7 +7,7 @@ import { logger, createLogger } from './lib/logger.js';
 import { WebSocketService } from './services/websocket.service.js';
 import { initializeJobs, stopJobs } from './jobs/index.js';
 import { loadPlugins } from './loaders/plugins.js';
-import { MenuService } from './modules/menu/menu.service.js';
+import { MenuModule } from './modules/menu/index.js';
 import { PluginDatabaseService, DatabaseService } from './services/database/index.js';
 import { PagesModule } from './modules/pages/index.js';
 import { BlockchainObserverService } from './services/blockchain-observer/index.js';
@@ -63,13 +63,23 @@ async function bootstrap() {
         }
         logger.info({}, 'WebSocketService initialized');
 
-        // Initialize MenuService with database dependency injection
-        // Use 'core' as the namespace to distinguish from plugin collections
+        // Initialize menu module with database dependency injection
+        // Use 'core_' as the prefix to distinguish from plugin collections
         try {
             const menuDatabase = new DatabaseService({ prefix: 'core_' });
-            MenuService.setDatabase(menuDatabase);
-            const menuService = MenuService.getInstance();
-            await menuService.initialize();
+            const menuModule = new MenuModule();
+
+            // Phase 1: Initialize MenuModule (create services, load menu tree)
+            await menuModule.init({
+                database: menuDatabase,
+                app
+            });
+
+            // Phase 2: Run MenuModule (mount routes)
+            await menuModule.run();
+
+            // Get MenuService instance for other modules to use
+            const menuService = menuModule.getMenuService();
 
             // Initialize pages module with all dependencies (database, cache, menu, app)
             // Using two-phase initialization pattern: init() then run()
@@ -88,10 +98,10 @@ async function bootstrap() {
             // Phase 2: Run (mount routes, register menu items)
             await pagesModule.run();
         } catch (error) {
-            logger.error({ error, stack: error instanceof Error ? error.stack : undefined }, 'MenuService or PagesModule initialization failed');
+            logger.error({ error, stack: error instanceof Error ? error.stack : undefined }, 'MenuModule or PagesModule initialization failed');
             throw error;
         }
-        logger.info({}, 'MenuService and PagesModule initialized');
+        logger.info({}, 'MenuModule and PagesModule initialized');
 
         // Load plugins AFTER WebSocket is initialized so they can register handlers
         try {

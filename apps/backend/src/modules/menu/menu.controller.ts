@@ -97,16 +97,15 @@ const updateNodeSchema = z.object({
  */
 export class MenuController {
     /**
-     * Get MenuService instance lazily to avoid initialization order issues.
+     * MenuService instance injected via constructor.
      *
-     * MenuService requires database dependency injection before getInstance() can be called.
-     * Since the controller is instantiated during Express router setup (before MenuService is
-     * initialized in bootstrap), we must access the service lazily in each method rather than
-     * eagerly in the constructor.
+     * With the MenuModule pattern, the service is guaranteed to be initialized
+     * before the controller is created, so we can safely store it as a property
+     * instead of using lazy access.
+     *
+     * @param service - MenuService instance for menu operations
      */
-    private get service() {
-        return MenuService.getInstance();
-    }
+    constructor(private readonly service: MenuService) {}
 
     /**
      * Get the complete menu tree structure.

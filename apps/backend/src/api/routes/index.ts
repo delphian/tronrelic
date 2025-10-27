@@ -16,7 +16,6 @@ import { base58checkRouter } from './base58check.router.js';
 import { liveRouter } from './live.router.js';
 import { tokensRouter } from './tokens.router.js';
 import { systemRouter } from './system.router.js';
-import { menuRouter } from './menu.router.js';
 import pluginsRouter from './plugins.routes.js';
 import pluginManagementRouter from './plugin-management.routes.js';
 import { PluginApiService } from '../../services/plugin-api.service.js';
@@ -41,7 +40,6 @@ export function createApiRouter(database?: IDatabaseService) {
   router.use('/admin/markets', adminMarketsRouter());
   router.use('/admin/system', systemRouter());
   router.use('/dashboard', dashboardRouter());
-  router.use('/menu', menuRouter());
   router.use('/plugins', pluginsRouter);
   router.use('/plugin-management', pluginManagementRouter);
 
@@ -50,8 +48,9 @@ export function createApiRouter(database?: IDatabaseService) {
     router.use('/admin/migrations', createMigrationsRouter(database));
   }
 
-  // Note: Pages routers are mounted directly in bootstrap (apps/backend/src/index.ts)
-  // after MenuService initialization to ensure proper dependency injection
+  // Note: Menu and Pages routers are mounted directly by their respective modules
+  // in bootstrap (apps/backend/src/index.ts) to follow the IModule pattern with
+  // proper dependency injection and lifecycle management
 
   // Mount plugin API routes (dynamic plugins)
   const pluginApiService = PluginApiService.getInstance();
