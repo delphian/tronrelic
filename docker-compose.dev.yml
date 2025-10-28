@@ -124,7 +124,7 @@ services:
             - ./.run:/app/.run
 
 networks:
-    tronrelic-dev-network:
+    tronrelic-network:
         driver: bridge
 
 volumes:
