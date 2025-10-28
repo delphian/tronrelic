@@ -71,6 +71,10 @@ preparing-pets-*.zip
 /uploads/
 /wp-content/uploads/
 
+# TronRelic user uploads (keep directory structure, ignore contents)
+/public/uploads/*
+!/public/uploads/.gitkeep
+
 # WordPress cache
 /wp-content/cache/
 /wp-content/advanced-cache.php
