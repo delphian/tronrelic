@@ -16,6 +16,7 @@ import { LocalStorageProvider } from './services/storage/LocalStorageProvider.js
 import { PagesController } from './api/pages.controller.js';
 import { createPagesRouter } from './api/pages.routes.js';
 import { createPublicPagesRouter } from './api/pages.public-routes.js';
+import { requireAdmin } from '../../api/middleware/admin-auth.js';
 import type { Router } from 'express';
 
 /**
@@ -225,8 +226,9 @@ export class PagesModule implements IModule<IPagesModuleDependencies> {
         }
 
         // Create and mount admin router (IoC - module attaches itself to app)
+        // Apply requireAdmin middleware to all admin routes
         const adminRouter = this.createAdminRouter();
-        this.app.use('/api/admin/pages', adminRouter);
+        this.app.use('/api/admin/pages', requireAdmin, adminRouter);
         this.logger.info('Admin pages router mounted at /api/admin/pages');
 
         // Create and mount public router (IoC - module attaches itself to app)
