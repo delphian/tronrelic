@@ -172,6 +172,28 @@ The database migration system enables safe, repeatable schema evolution across d
 
 **For practical guidance on writing migrations, see [Migration Authoring Guide](../../apps/backend/src/services/database/migrations/README.md).**
 
+### Pages Module
+
+The pages module provides custom content management capabilities, allowing administrators to create user-facing pages (articles, documentation, announcements) with markdown authoring, file uploads, and dynamic routing. Pages are rendered from markdown to HTML, cached for performance, and discoverable at URLs matching their configured slugs.
+
+**Key architectural decisions:**
+
+- **Service-Provider separation** - PageService (business logic) depends on IStorageProvider (infrastructure abstraction)
+- **Singleton pattern** - PageService implements `IPageService` interface with shared state across all consumers
+- **Pluggable storage** - LocalStorageProvider, S3StorageProvider, or custom implementations via dependency injection
+- **Redis caching** - Rendered HTML cached for 24 hours with automatic invalidation on updates
+- **Route conflict prevention** - Blacklist patterns prevent pages from overriding core routes
+
+**See [system-pages.md](./system-pages.md) for complete details on:**
+- Pages module architecture and Provider vs Service distinction
+- PageService singleton pattern and dependency injection
+- IStorageProvider interface and adding new storage backends
+- Database schema (pages, page_files, page_settings collections)
+- REST API reference with admin and public endpoints
+- Markdown rendering pipeline with frontmatter extraction
+- File upload validation with two-layer size enforcement
+- Module lifecycle and menu registration patterns
+
 ### Testing Framework
 
 TronRelic uses Vitest for unit testing with comprehensive Mongoose mocking utilities that enable full database service testing without requiring a live MongoDB instance. The shared mock system provides complete implementations of MongoDB collections, Mongoose models, and chainable query builders.
@@ -251,6 +273,7 @@ curl -X PATCH \
 - [system-database-migrations.md](./system-database-migrations.md) - Database migration system architecture, REST API, admin UI, lifecycle documentation, and troubleshooting
 - [system-logging.md](./system-logging.md) - Logging system architecture, log levels, MongoDB persistence, and accessing historical logs
 - [system-menu.md](./system-menu.md) - Navigation menu system architecture, API reference, plugin integration, and event-driven updates
+- [system-pages.md](./system-pages.md) - Pages module for custom content management with markdown authoring, file uploads, and storage provider abstraction
 - [system-testing.md](./system-testing.md) - Testing framework guide with Vitest setup, Mongoose mocking utilities, and testing patterns
 
 **Related topics:**
