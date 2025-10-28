@@ -11,6 +11,7 @@ import { MenuModule } from './modules/menu/index.js';
 import { LogsModule } from './modules/logs/index.js';
 import { DatabaseModule } from './modules/database/index.js';
 import { PagesModule } from './modules/pages/index.js';
+import { ThemeModule } from './modules/theme/index.js';
 import { BlockchainObserverService } from './services/blockchain-observer/index.js';
 import { SystemConfigService } from './services/system-config/index.js';
 import { CacheService } from './services/cache.service.js';
@@ -121,6 +122,20 @@ async function bootstrap() {
 
             // Phase 2: Run (mount routes, register menu items)
             await pagesModule.run();
+
+            // Initialize theme module with dependencies
+            const themeModule = new ThemeModule();
+
+            // Phase 1: Initialize (create services, prepare resources)
+            await themeModule.init({
+                database: coreDatabase,
+                cacheService,
+                menuService,
+                app
+            });
+
+            // Phase 2: Run (mount routes, register menu items)
+            await themeModule.run();
 
             // Phase 2: Run database module (mount migration routes)
             await databaseModule.run();

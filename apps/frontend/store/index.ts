@@ -6,6 +6,7 @@ import { blockchainReducer } from '../features/blockchain';
 import { uiReducer } from '../features/ui-state';
 import { realtimeReducer } from '../features/realtime';
 import { transactionReducer } from '../features/transactions';
+import themeReducer from '../features/system/themeSlice';
 
 declare global {
     interface Window {
@@ -48,7 +49,8 @@ export const store = configureStore({
         blockchain: blockchainReducer,
         ui: uiReducer,
         realtime: realtimeReducer,
-        transactions: transactionReducer
+        transactions: transactionReducer,
+        theme: themeReducer
     },
     devTools: resolveDevToolsConfiguration()
 });
