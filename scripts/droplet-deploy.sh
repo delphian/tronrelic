@@ -312,9 +312,9 @@ log_success "Environment file created"
 
 # Create docker-compose.yml
 log_step "STEP 10: Creating Docker Compose Configuration"
-log_info "Writing docker-compose.yml..."
+log_info "Writing $COMPOSE_FILE..."
 
-remote_exec "cat > $DEPLOY_DIR/docker-compose.yml << 'EOF'
+remote_exec "cat > $DEPLOY_DIR/$COMPOSE_FILE << 'EOF'
 version: \"3.8\"
 
 services:
