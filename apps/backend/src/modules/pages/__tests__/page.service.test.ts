@@ -51,11 +51,12 @@ class MockStorageProvider implements IStorageProvider {
         return path;
     }
 
-    async delete(path: string): Promise<void> {
-        if (!this.files.has(path)) {
-            throw new Error(`File not found: ${path}`);
+    async delete(path: string): Promise<boolean> {
+        const existed = this.files.has(path);
+        if (existed) {
+            this.files.delete(path);
         }
-        this.files.delete(path);
+        return existed;
     }
 
     getUrl(path: string): string {
