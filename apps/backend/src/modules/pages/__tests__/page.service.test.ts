@@ -805,6 +805,35 @@ slug: "/test"
 
             expect(file.storedName).toBe('my-test-file.png');
         });
+
+        it('should collapse multiple spaces and hyphens', async () => {
+            const buffer = Buffer.from('test');
+            const file = await pageService.uploadFile(buffer, 'My    Test---File.png', 'image/png');
+
+            expect(file.storedName).toBe('my-test-file.png');
+        });
+
+        it('should trim leading and trailing hyphens', async () => {
+            const buffer = Buffer.from('test');
+            const file = await pageService.uploadFile(buffer, '---test-file---.png', 'image/png');
+
+            expect(file.storedName).toBe('test-file.png');
+        });
+
+        it('should handle uppercase extension', async () => {
+            const buffer = Buffer.from('test');
+            const file = await pageService.uploadFile(buffer, 'TestFile.PNG', 'image/png');
+
+            expect(file.storedName).toBe('testfile.png');
+        });
+
+        it('should remove unicode characters', async () => {
+            const buffer = Buffer.from('test');
+            const file = await pageService.uploadFile(buffer, 'café-résumé.pdf', 'application/pdf');
+
+            // Pattern [^a-z0-9-.] removes accented chars, replaced with hyphens, then collapsed
+            expect(file.storedName).toBe('caf-r-sum.pdf');
+        });
     });
 
     describe('listFiles', () => {

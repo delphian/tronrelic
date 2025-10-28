@@ -337,13 +337,19 @@ describe('PagesController', () => {
                 path: '/uploads/25/10/test.png'
             };
 
+            mockService.getSettings.mockResolvedValue({
+                maxFileSize: 10 * 1024 * 1024,
+                allowedMimeTypes: []
+            });
+
             mockService.uploadFile.mockResolvedValue(mockFile);
 
             const req = createMockRequest({
                 file: {
                     buffer: Buffer.from('test'),
                     originalname: 'test.png',
-                    mimetype: 'image/png'
+                    mimetype: 'image/png',
+                    size: 1024
                 } as any
             });
             const res = createMockResponse();
@@ -369,14 +375,92 @@ describe('PagesController', () => {
             expect(res.json).toHaveBeenCalledWith({ error: 'No file provided' });
         });
 
+        it('should reject file exceeding configured size limit', async () => {
+            // Mock settings with 10MB limit
+            mockService.getSettings.mockResolvedValue({
+                maxFileSize: 10 * 1024 * 1024, // 10MB
+                allowedMimeTypes: []
+            });
+
+            // Create a file larger than 10MB (15MB)
+            const largeFileSize = 15 * 1024 * 1024;
+            const req = createMockRequest({
+                file: {
+                    buffer: Buffer.alloc(largeFileSize),
+                    originalname: 'large-file.png',
+                    mimetype: 'image/png',
+                    size: largeFileSize
+                } as any
+            });
+            const res = createMockResponse();
+
+            await controller.uploadFile(req, res);
+
+            // Should return 413 Payload Too Large
+            expect(res.status).toHaveBeenCalledWith(413);
+            expect(res.json).toHaveBeenCalledWith({
+                error: 'File too large',
+                message: 'File size 15.00MB exceeds the maximum allowed size of 10.00MB',
+                fileSize: largeFileSize,
+                maxFileSize: 10 * 1024 * 1024
+            });
+
+            // Should NOT call uploadFile service
+            expect(mockService.uploadFile).not.toHaveBeenCalled();
+        });
+
+        it('should accept file within configured size limit', async () => {
+            // Mock settings with 10MB limit
+            mockService.getSettings.mockResolvedValue({
+                maxFileSize: 10 * 1024 * 1024, // 10MB
+                allowedMimeTypes: []
+            });
+
+            const mockFile = {
+                _id: '123',
+                originalName: 'small-file.png',
+                storedName: 'small-file.png',
+                mimeType: 'image/png',
+                size: 5 * 1024 * 1024, // 5MB
+                path: '/uploads/25/10/small-file.png'
+            };
+
+            mockService.uploadFile.mockResolvedValue(mockFile);
+
+            // Create a file smaller than 10MB (5MB)
+            const smallFileSize = 5 * 1024 * 1024;
+            const req = createMockRequest({
+                file: {
+                    buffer: Buffer.alloc(smallFileSize),
+                    originalname: 'small-file.png',
+                    mimetype: 'image/png',
+                    size: smallFileSize
+                } as any
+            });
+            const res = createMockResponse();
+
+            await controller.uploadFile(req, res);
+
+            // Should accept and upload
+            expect(mockService.uploadFile).toHaveBeenCalled();
+            expect(res.status).toHaveBeenCalledWith(201);
+            expect(res.json).toHaveBeenCalledWith(mockFile);
+        });
+
         it('should handle upload errors', async () => {
-            mockService.uploadFile.mockRejectedValue(new Error('File too large'));
+            mockService.getSettings.mockResolvedValue({
+                maxFileSize: 10 * 1024 * 1024,
+                allowedMimeTypes: []
+            });
+
+            mockService.uploadFile.mockRejectedValue(new Error('Storage error'));
 
             const req = createMockRequest({
                 file: {
                     buffer: Buffer.from('test'),
                     originalname: 'test.png',
-                    mimetype: 'image/png'
+                    mimetype: 'image/png',
+                    size: 1024
                 } as any
             });
             const res = createMockResponse();
@@ -386,7 +470,7 @@ describe('PagesController', () => {
             expect(res.status).toHaveBeenCalledWith(400);
             expect(res.json).toHaveBeenCalledWith({
                 error: 'Failed to upload file',
-                message: 'File too large'
+                message: 'Storage error'
             });
         });
     });
