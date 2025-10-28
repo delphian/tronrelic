@@ -316,8 +316,45 @@ describe('PagesModule', () => {
 
             // Verify app.use was called twice (admin and public routers)
             expect(mockApp.use).toHaveBeenCalledTimes(2);
-            expect(mockApp.use).toHaveBeenCalledWith('/api/admin/pages', expect.any(Function));
-            expect(mockApp.use).toHaveBeenCalledWith('/api/pages', expect.any(Function));
+
+            // Get the actual calls
+            const calls = mockApp.use.mock.calls;
+
+            // Admin router should have 3 arguments: path, middleware, router
+            expect(calls[0]).toHaveLength(3);
+            expect(calls[0][0]).toBe('/api/admin/pages');
+            expect(calls[0][1]).toBeTypeOf('function'); // requireAdmin middleware
+            expect(calls[0][2]).toBeTypeOf('function'); // router
+
+            // Public router should have 2 arguments: path, router (no middleware)
+            expect(calls[1]).toHaveLength(2);
+            expect(calls[1][0]).toBe('/api/pages');
+            expect(calls[1][1]).toBeTypeOf('function'); // router
+        });
+
+        it('should apply requireAdmin middleware to admin routes', async () => {
+            const module = new PagesModule();
+
+            await module.init({
+                database: mockDatabase,
+                cacheService: mockCache,
+                menuService: mockMenu,
+                app: mockApp as any
+            });
+
+            await module.run();
+
+            // Get the calls to app.use
+            const useCalls = mockApp.use.mock.calls;
+
+            // Find the admin pages route call
+            const adminCall = useCalls.find(call => call[0] === '/api/admin/pages');
+
+            // Verify admin route has 3 arguments: path, middleware, router
+            expect(adminCall).toBeDefined();
+            expect(adminCall?.length).toBe(3);
+            expect(adminCall?.[1]).toBeTypeOf('function'); // requireAdmin middleware
+            expect(adminCall?.[2]).toBeTypeOf('function'); // router
         });
 
         it('should throw if menu registration fails', async () => {
