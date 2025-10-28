@@ -254,23 +254,54 @@ export class ThemeService {
      * Returns themes in dependency order (dependencies load before dependents)
      * with circular dependency detection and missing dependency warnings.
      *
-     * Results are cached in Redis for 1 hour to avoid repeated database queries
-     * and topological sorting on every page load.
+     * Results are cached in Redis with a two-level strategy:
+     * 1. Active theme IDs list (small, frequently invalidated)
+     * 2. Individual theme data (large, rarely invalidated)
+     *
+     * This allows updating one theme without re-fetching all themes.
      *
      * @returns Ordered array of active themes (id, name, css only)
      * @throws Error if circular dependencies are detected
      */
     async getActiveThemes(): Promise<IOrderedTheme[]> {
-        // Try cache first
-        const cached = await this.cacheService.get<IOrderedTheme[]>(this.CACHE_KEY_ACTIVE);
-        if (cached) {
-            return cached;
+        // Try to get list of active theme IDs from cache
+        const cachedIds = await this.cacheService.get<string[]>(this.CACHE_KEY_ACTIVE);
+
+        if (cachedIds && cachedIds.length > 0) {
+            // Try to fetch individual themes from cache
+            const cachedThemes: IOrderedTheme[] = [];
+            let cacheMiss = false;
+
+            for (const id of cachedIds) {
+                const themeKey = `${this.CACHE_KEY_PREFIX}${id}`;
+                const theme = await this.cacheService.get<IOrderedTheme>(themeKey);
+
+                if (theme) {
+                    cachedThemes.push(theme);
+                } else {
+                    cacheMiss = true;
+                    break;
+                }
+            }
+
+            // If all individual themes found in cache, return them
+            if (!cacheMiss && cachedThemes.length === cachedIds.length) {
+                this.logger.debug('Active themes served from cache (two-level hit)');
+                return cachedThemes;
+            }
         }
 
-        // Fetch active themes from database
+        // Cache miss - fetch from database
         const themes = await this.collection.find({ isActive: true }).toArray();
 
         if (themes.length === 0) {
+            // Cache empty result
+            await this.cacheService.set(
+                this.CACHE_KEY_ACTIVE,
+                [],
+                this.CACHE_TTL,
+                ['themes:active']
+            );
             return [];
         }
 
@@ -284,10 +315,49 @@ export class ThemeService {
             css: t.css
         }));
 
-        // Cache for 1 hour
-        await this.cacheService.set(this.CACHE_KEY_ACTIVE, result, this.CACHE_TTL);
+        // Cache individual themes with proper tags
+        await this.cacheActiveThemes(result);
+
+        this.logger.debug({ count: result.length }, 'Active themes cached (two-level write)');
 
         return result;
+    }
+
+    /**
+     * Cache active themes using two-level strategy.
+     *
+     * Level 1: List of active theme IDs (small, tagged with 'themes:active')
+     * Level 2: Individual theme data (large, tagged with both 'themes:active' and theme UUID)
+     *
+     * This allows:
+     * - Invalidating one theme by UUID without re-fetching others
+     * - Invalidating all active themes with 'themes:active' tag
+     * - Efficient granular updates at scale (10-20+ themes)
+     *
+     * @param themes - Ordered array of active themes to cache
+     */
+    private async cacheActiveThemes(themes: IOrderedTheme[]): Promise<void> {
+        const activeTag = 'themes:active';
+
+        // Cache individual themes
+        for (const theme of themes) {
+            const themeKey = `${this.CACHE_KEY_PREFIX}${theme.id}`;
+            await this.cacheService.set(
+                themeKey,
+                theme,
+                this.CACHE_TTL,
+                [activeTag, theme.id]  // Tag with both 'themes:active' and UUID
+            );
+        }
+
+        // Cache list of active theme IDs (preserves dependency order)
+        const activeIds = themes.map(t => t.id);
+        await this.cacheService.set(
+            this.CACHE_KEY_ACTIVE,
+            activeIds,
+            this.CACHE_TTL,
+            [activeTag]
+        );
     }
 
     /**
@@ -376,22 +446,35 @@ export class ThemeService {
     /**
      * Invalidate Redis cache for a specific theme.
      *
-     * @param id - Theme UUID
+     * Removes all cache entries tagged with this theme's UUID. This clears
+     * the individual theme data but preserves other themes in the cache.
+     *
+     * Granular invalidation - only the updated theme is re-fetched on next
+     * getActiveThemes() call, not the entire list.
+     *
+     * @param id - Theme UUID to invalidate
      */
     private async invalidateThemeCache(id: string): Promise<void> {
-        const cacheKey = `${this.CACHE_KEY_PREFIX}${id}`;
-        await this.cacheService.invalidate(cacheKey);
+        await this.cacheService.invalidate(id);
+        this.logger.debug({ themeId: id }, 'Theme cache invalidated by UUID tag');
     }
 
     /**
-     * Invalidate Redis cache for active themes list.
+     * Invalidate Redis cache for all active themes.
      *
-     * Called whenever any theme's active status changes or when theme
-     * content/dependencies are modified for an active theme.
+     * Removes all cache entries tagged with 'themes:active'. This clears
+     * both the active IDs list and all individual theme data.
+     *
+     * Called whenever:
+     * - Any theme's active status changes (theme added/removed from active list)
+     * - Theme content/dependencies modified for an active theme
+     *
+     * Batch invalidation - all themes must be re-fetched and re-sorted on
+     * next getActiveThemes() call.
      */
     private async invalidateActiveCache(): Promise<void> {
-        await this.cacheService.invalidate(this.CACHE_KEY_ACTIVE);
-        this.logger.debug('Active themes cache invalidated');
+        await this.cacheService.invalidate('themes:active');
+        this.logger.debug('Active themes cache invalidated (batch)');
     }
 
     /**
