@@ -15,8 +15,14 @@ export class PagesController {
     /**
      * Multer middleware for file upload handling.
      * Stores files in memory as Buffer for processing.
+     * Hard limit set to 100MB - actual limit enforced by validation middleware using database settings.
      */
-    private readonly upload = multer({ storage: multer.memoryStorage() });
+    private readonly upload = multer({
+        storage: multer.memoryStorage(),
+        limits: {
+            fileSize: 100 * 1024 * 1024, // 100MB hard limit
+        },
+    });
 
     /**
      * Create a pages controller.
@@ -243,6 +249,24 @@ export class PagesController {
         try {
             if (!req.file) {
                 res.status(400).json({ error: 'No file provided' });
+                return;
+            }
+
+            // Validate against database-configured limit
+            const settings = await this.pageService.getSettings();
+            const fileSizeBytes = req.file.size;
+            const maxFileSizeBytes = settings.maxFileSize;
+
+            if (fileSizeBytes > maxFileSizeBytes) {
+                const fileSizeMB = (fileSizeBytes / (1024 * 1024)).toFixed(2);
+                const maxFileSizeMB = (maxFileSizeBytes / (1024 * 1024)).toFixed(2);
+
+                res.status(413).json({
+                    error: 'File too large',
+                    message: `File size ${fileSizeMB}MB exceeds the maximum allowed size of ${maxFileSizeMB}MB`,
+                    fileSize: fileSizeBytes,
+                    maxFileSize: maxFileSizeBytes,
+                });
                 return;
             }
 

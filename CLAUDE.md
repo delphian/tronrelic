@@ -3,73 +3,74 @@
 
 # Agent Delegation Protocol
 
-## MANDATORY: Check Delegation BEFORE All Else
+## Agent Delegation Guidelines
 
-Claude MUST:
+Claude should consider delegating to specialized agents when:
 
-1. **STOP** - Do not create todo lists, plans, or start implementation
-2. **CHECK** - Scan for agent trigger keywords in the request
-3. **DELEGATE** - If keywords match, delegate immediately
+1. **Task complexity** - Work requires deep domain expertise (e.g., complex plugin architecture, market fetcher debugging, infrastructure troubleshooting)
+2. **Multi-file changes** - Significant changes across multiple files in a specialized domain
+3. **Research-heavy tasks** - Requires exploring unfamiliar codebases or patterns
+4. **Documentation work** - Creating or updating documentation (documentation-writer handles standards compliance)
 
-Response format:
+**Claude has autonomy to:**
+- Analyze tasks before delegating
+- Handle straightforward implementation directly (bug fixes, simple features, configuration changes)
+- Create todo lists and plans
+- Make judgment calls on when delegation adds value vs overhead
 
-"I'm analyzing this task... [brief analysis]
+**When delegation makes sense:**
+- User explicitly requests agent expertise
+- Task requires specialized knowledge you lack context for
+- Work spans multiple subsystems requiring coordination
+- Complex architectural decisions need domain-specific guidance
 
-**Agent delegation check:**
-- Task involves: [market fetchers/plugins/documentation/etc]
-- Appropriate agent: [agent-name]
-- Launching `[agent-name]` agent now..."
-
-[Then use Task tool]
-
-**Only skip agent delegation if:**
+**Skip delegation for:**
 1. User explicitly says "don't use agents" or "do it yourself"
-2. Task is trivial (< 5 lines of code, single file read)
-3. Task is purely conversational
-4. Task has already been delegated to a subagent
-
-**If you skip delegation, explicitly state which condition applies.**
+2. Trivial tasks (simple bug fixes, single-file edits, configuration tweaks)
+3. Conversational questions or explanations
+4. Tasks you have full context for and can complete efficiently
 
 # Subagent Delegation Rules
 
 - Always instruct the subagent to never delegate to another agent.
 
-## Trigger Keywords
+## Specialized Agent Expertise Areas
 
 **market-fetcher-specialist:**
 - Keywords: market, fetcher, pricing, tiers, fees, API data, third-party, normalize, marketplace, exchange, energy rental, sun, TRX rates
-- Use for: ANY work involving market data fetchers, including analysis, investigation, research, creation, updates, troubleshooting, or debugging
+- Best for: Complex market fetcher implementation, debugging API integration issues, normalization pipeline problems, new market source discovery
+- Can skip for: Simple configuration changes, updating existing fetchers with known patterns
 
 **tronrelic-plugin-specialist:**
 - Keywords: plugin, observer, BaseObserver, blockchain observer, WebSocket subscription, plugin page, plugin API, plugin registration, plugin logic, plugin architecture, plugin integration
-- Use for: ANY work involving TronRelic plugin logic, architecture, and integration (analysis, investigation, research, creation, debugging, architecture decisions, code review)
-- Scope: PRIMARY agent for plugin tooling, logic, organization, communication, backend services, and system integration. Defers to frontend-ui-specialist for UX/UI design work
-- Exception: Work on the general plugin system infrastructure should NOT be handled by this subagent
+- Best for: New plugin creation, complex observer logic, plugin architecture decisions, debugging observer behavior
+- Can skip for: Simple observer modifications, configuration changes, straightforward bug fixes
+- Note: Defers to frontend-ui-specialist for UX/UI design work
 
 **frontend-ui-specialist:**
 - Keywords: frontend, React, Next.js, components, UI, styling, TailwindCSS, Redux, Socket.IO client, pages, layouts, hooks, client-side, App Router, server components, client components, forms, validation, routing, navigation, UX, user experience, design, accessibility
-- **Mandatory triggers** (always delegate): URL structure changes, navigation components, routing implementation, layout creation, authentication UI, context providers
-- Use for: ALL UX/UI work across TronRelic (component design, styling, user experience, accessibility, visual design)
-- Scope: PRIMARY agent for user experience and visual design regardless of location (apps/frontend OR packages/plugins/*/frontend). Defers to tronrelic-plugin-specialist for plugin logic, architecture, and system integration
-- Exception: Work on general Next.js infrastructure or build configuration may not require this subagent
+- Best for: Complex UI component design, major routing changes, accessibility improvements, design system work
+- Can skip for: Simple bug fixes, text changes, minor styling tweaks
+- Note: Defers to tronrelic-plugin-specialist for plugin logic and backend integration
 
 **documentation-writer:**
 - Keywords: documentation, docs, README, markdown, .md files, documentation gaps, documentation review, documentation standards
-- Use for: ANY work involving project documentation (analysis, investigation, creation, updates, reviews, improvements)
-- **MANDATORY DELEGATION:** If the conversation involves ANY documentation work (analyzing gaps, reading docs to evaluate changes, creating/updating/reviewing .md files), ALWAYS delegate to documentation-writer BEFORE doing any analysis or file operations yourself. This applies even if the task seems trivial or you're in the middle of other work. Documentation work is never self-handled.
+- Best for: Creating new documentation, major documentation restructuring, standards compliance reviews
+- Can skip for: Minor typo fixes, small clarifications, inline code comments
 
 **operations-specialist:**
 - Keywords: deployment, infrastructure, server, Docker, docker-compose, Nginx, SSL, certificates, CI/CD, GitHub Actions, MongoDB admin, Redis admin, database, SSH, firewall, environment variables, DNS, production, staging, droplet, Digital Ocean, logs, monitoring
-- Use for: Deployment issues, infrastructure setup, server management, CI/CD pipelines, database administration, SSL configuration, troubleshooting production/staging environments
+- Best for: Deployment troubleshooting, infrastructure setup, server configuration changes, CI/CD debugging
+- Can skip for: Local configuration updates (Nginx scripts, docker-compose changes), environment variable additions
 
-## Automatic Agent Delegation by File Path
+## File Path Guidelines for Agent Delegation
 
-Claude MUST automatically use these agents when working with these file paths.
+When working with these file paths, consider delegating to specialized agents for complex work:
 
 **Delegation principles:**
-1. **Task nature determines agent** - UX/UI tasks use frontend specialist regardless of file location; logic/integration tasks use domain specialists
-2. **Plugin work splits by concern** - Plugin logic/architecture uses plugin specialist; plugin UX/UI uses frontend specialist
-3. **When unclear** - Analyze the task description for keywords (styling/UX → frontend; logic/integration → domain specialist)
+1. **Task nature determines agent** - UX/UI tasks may benefit from frontend specialist; complex logic may benefit from domain specialists
+2. **Plugin work splits by concern** - Plugin architecture uses plugin specialist; plugin UI uses frontend specialist
+3. **Use judgment** - Simple edits in specialized areas don't require delegation; complex multi-file changes may benefit
 
 **market-fetcher-specialist:**
 - `**/fetchers/**/*.fetcher.ts`
@@ -109,11 +110,7 @@ Claude MUST automatically use these agents when working with these file paths.
 - `scripts/deploy*.sh`
 - `docs/operations/**`
 
-**Exception:** If the user explicitly says "don't use agents" or "do it yourself", skip delegation.
-
 # Communication Style
-
-**NOTE:** Communication style guidelines apply AFTER agent delegation is resolved. If a task requires delegation, the delegation protocol takes precedence over brevity.
 
 **For questions:**
 - Lead with a direct answer (2-3 sentences max) in plain english
