@@ -27,7 +27,7 @@ interface IOrderedTheme {
  */
 async function fetchActiveThemes(): Promise<IOrderedTheme[]> {
     try {
-        const response = await fetch(`${config.apiUrl}/system/themes/active`, {
+        const response = await fetch(`${config.apiBaseUrl}/system/themes/active`, {
             // Disable Next.js caching - rely on backend Redis cache instead
             cache: 'no-store'
         });

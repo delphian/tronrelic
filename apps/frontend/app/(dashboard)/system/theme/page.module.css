@@ -1,0 +1,317 @@
+/**
+ * Theme Management Page Styles
+ *
+ * Admin interface for custom CSS theme management with dependency resolution,
+ * validation, and activation controls. Uses design tokens exclusively for
+ * consistency with other admin pages.
+ */
+
+.container {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-10);
+    container-type: inline-size;
+    container-name: theme-admin;
+}
+
+.header {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-4);
+}
+
+.title {
+    font-size: var(--font-size-2xl);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text);
+    margin: 0;
+}
+
+.subtitle {
+    font-size: var(--font-size-md);
+    color: var(--color-text-muted);
+    margin: 0;
+}
+
+.error {
+    padding: var(--spacing-7);
+    background: var(--color-danger-background);
+    border: var(--border-width-thin) solid var(--color-danger);
+    border-radius: var(--radius-md);
+    color: var(--color-danger);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: var(--spacing-7);
+}
+
+.error_message {
+    flex: 1;
+    margin: 0;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+}
+
+.content {
+    display: grid;
+    grid-template-columns: 350px 1fr;
+    gap: var(--spacing-10);
+}
+
+/* Responsive layout for narrow containers */
+@container theme-admin (max-width: 900px) {
+    .content {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* Left Panel: Theme List */
+.theme_list_panel {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-7);
+}
+
+.panel_header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: var(--spacing-7);
+}
+
+.panel_title {
+    font-size: var(--font-size-lg);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text);
+    margin: 0;
+}
+
+.theme_list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-5);
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.theme_item {
+    padding: var(--spacing-7);
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-surface);
+    cursor: pointer;
+    transition: border-color var(--transition-base), box-shadow var(--transition-base);
+}
+
+.theme_item:hover {
+    border-color: var(--color-primary-alpha-30);
+    box-shadow: var(--shadow-sm);
+}
+
+.theme_item--selected {
+    border-color: var(--color-primary);
+    border-width: var(--border-width-medium);
+    background: var(--color-surface);
+}
+
+.theme_item_content {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-5);
+}
+
+.theme_item_header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: var(--spacing-5);
+}
+
+.theme_name {
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text);
+    margin: 0;
+}
+
+.theme_toggle {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-4);
+    font-size: var(--font-size-sm);
+    color: var(--color-text-muted);
+}
+
+.theme_meta {
+    font-size: var(--font-size-xs);
+    color: var(--color-text-muted);
+    margin: 0;
+}
+
+.theme_actions {
+    display: flex;
+    gap: var(--spacing-4);
+    margin-top: var(--spacing-4);
+}
+
+/* Right Panel: Editor */
+.editor_panel {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-7);
+}
+
+.editor_header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.editor_title {
+    font-size: var(--font-size-xl);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text);
+    margin: 0;
+}
+
+.form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-7);
+}
+
+.form_group {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-4);
+}
+
+.form_label {
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+    color: var(--color-text);
+}
+
+.form_hint {
+    font-size: var(--font-size-xs);
+    color: var(--color-text-muted);
+    margin: 0;
+}
+
+.css_textarea {
+    width: 100%;
+    min-height: 300px;
+    padding: var(--spacing-5);
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-background);
+    color: var(--color-text);
+    font-family: 'Monaco', 'Courier New', monospace;
+    font-size: var(--font-size-sm);
+    line-height: var(--line-height-relaxed);
+    resize: vertical;
+    transition: border-color var(--transition-base);
+}
+
+.css_textarea:focus {
+    outline: none;
+    border-color: var(--color-primary);
+}
+
+.dependencies_select {
+    width: 100%;
+    min-height: 120px;
+    padding: var(--spacing-5);
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-background);
+    color: var(--color-text);
+    font-size: var(--font-size-sm);
+}
+
+.dependencies_select:focus {
+    outline: none;
+    border-color: var(--color-primary);
+}
+
+.checkbox_group {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-4);
+}
+
+.checkbox_label {
+    font-size: var(--font-size-sm);
+    color: var(--color-text);
+    user-select: none;
+}
+
+.validation_result {
+    padding: var(--spacing-7);
+    border-radius: var(--radius-md);
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-5);
+}
+
+.validation_result--success {
+    background: var(--color-success-background);
+    border: var(--border-width-thin) solid var(--color-success);
+    color: var(--color-success);
+}
+
+.validation_result--error {
+    background: var(--color-warning-background);
+    border: var(--border-width-thin) solid var(--color-warning);
+    color: var(--color-warning);
+}
+
+.validation_header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.validation_message {
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-semibold);
+    margin: 0;
+}
+
+.validation_errors {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-4);
+}
+
+.validation_error_item {
+    font-size: var(--font-size-sm);
+    font-family: 'Monaco', 'Courier New', monospace;
+    padding: var(--spacing-4) var(--spacing-5);
+    background: var(--color-background);
+    border-radius: var(--radius-sm);
+}
+
+.form_actions {
+    display: flex;
+    gap: var(--spacing-5);
+    flex-wrap: wrap;
+}
+
+.empty_state {
+    padding: var(--spacing-12);
+    text-align: center;
+    color: var(--color-text-muted);
+    background: var(--color-surface-muted);
+    border: 1px dashed var(--color-border);
+    border-radius: var(--radius-md);
+}
+
+.empty_state_text {
+    margin: 0;
+    font-size: var(--font-size-md);
+}

@@ -15,6 +15,12 @@ import {
     clearError,
     type ITheme
 } from '../../../../features/system/themeSlice';
+import { Card } from '../../../../components/ui/Card';
+import { Button } from '../../../../components/ui/Button';
+import { Input } from '../../../../components/ui/Input';
+import { Badge } from '../../../../components/ui/Badge';
+import { Plus, Trash2, X, CheckCircle, AlertTriangle } from 'lucide-react';
+import styles from './page.module.css';
 
 /**
  * Theme management page for administrators.
@@ -56,6 +62,7 @@ export default function ThemePage() {
 
     const handleSelectTheme = (theme: ITheme | null) => {
         dispatch(selectTheme(theme));
+        dispatch(clearValidation());
         if (!theme) {
             setFormData({ name: '', css: '', dependencies: [], isActive: false });
         }
@@ -89,97 +96,149 @@ export default function ThemePage() {
     };
 
     return (
-        <div style={{ padding: '2rem' }}>
-            <h1>Theme Management</h1>
+        <div className={styles.container}>
+            {/* Header */}
+            <div className={styles.header}>
+                <h1 className={styles.title}>Theme Management</h1>
+                <p className={styles.subtitle}>Create and manage custom CSS themes with dependency resolution</p>
+            </div>
 
+            {/* Error Alert */}
             {error && (
-                <div style={{ background: 'red', color: 'white', padding: '1rem', marginBottom: '1rem' }}>
-                    {error}
-                    <button onClick={() => dispatch(clearError())}>Clear</button>
+                <div className={styles.error}>
+                    <p className={styles.error_message}>{error}</p>
+                    <Button variant="ghost" size="sm" icon={<X />} onClick={() => dispatch(clearError())}>
+                        Dismiss
+                    </Button>
                 </div>
             )}
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '2rem' }}>
-                {/* Left: Theme List */}
-                <div>
-                    <h2>Themes</h2>
-                    <button onClick={() => handleSelectTheme(null)} disabled={loading}>
-                        Create New Theme
-                    </button>
+            <div className={styles.content}>
+                {/* Left Panel: Theme List */}
+                <Card className={styles.theme_list_panel}>
+                    <div className={styles.panel_header}>
+                        <h2 className={styles.panel_title}>Themes</h2>
+                        <Button
+                            variant="primary"
+                            size="sm"
+                            icon={<Plus />}
+                            onClick={() => handleSelectTheme(null)}
+                            disabled={loading}
+                        >
+                            New
+                        </Button>
+                    </div>
 
-                    <ul style={{ listStyle: 'none', padding: 0 }}>
-                        {themes.map((theme) => (
-                            <li
-                                key={theme.id}
-                                style={{
-                                    padding: '0.5rem',
-                                    margin: '0.5rem 0',
-                                    border: selectedTheme?.id === theme.id ? '2px solid blue' : '1px solid gray',
-                                    cursor: 'pointer'
-                                }}
-                            >
-                                <div onClick={() => handleSelectTheme(theme)}>
-                                    <strong>{theme.name}</strong>
-                                    <div>
-                                        <label>
+                    {themes.length === 0 ? (
+                        <div className={styles.empty_state}>
+                            <p className={styles.empty_state_text}>No themes created yet</p>
+                        </div>
+                    ) : (
+                        <ul className={styles.theme_list}>
+                            {themes.map((theme) => (
+                                <li
+                                    key={theme.id}
+                                    className={`${styles.theme_item} ${
+                                        selectedTheme?.id === theme.id ? styles['theme_item--selected'] : ''
+                                    }`}
+                                >
+                                    <div
+                                        className={styles.theme_item_content}
+                                        onClick={() => handleSelectTheme(theme)}
+                                    >
+                                        <div className={styles.theme_item_header}>
+                                            <h3 className={styles.theme_name}>{theme.name}</h3>
+                                            {theme.isActive && <Badge tone="success">Active</Badge>}
+                                        </div>
+
+                                        <label
+                                            className={styles.theme_toggle}
+                                            onClick={(e) => e.stopPropagation()}
+                                        >
                                             <input
                                                 type="checkbox"
                                                 checked={theme.isActive}
                                                 onChange={(e) => void handleToggle(theme.id, e.target.checked)}
-                                                onClick={(e) => e.stopPropagation()}
                                             />
-                                            Active
+                                            <span>Enable theme</span>
                                         </label>
-                                    </div>
-                                    <div style={{ fontSize: '0.8rem', color: 'gray' }}>
-                                        Dependencies: {theme.dependencies.length}
-                                    </div>
-                                </div>
-                                <button
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        void handleDelete(theme.id);
-                                    }}
-                                    disabled={loading}
-                                >
-                                    Delete
-                                </button>
-                            </li>
-                        ))}
-                    </ul>
-                </div>
 
-                {/* Right: Editor */}
-                <div>
-                    <h2>{selectedTheme ? 'Edit Theme' : 'Create Theme'}</h2>
+                                        <p className={styles.theme_meta}>
+                                            Dependencies: {theme.dependencies.length}
+                                        </p>
+                                    </div>
 
-                    <div style={{ marginBottom: '1rem' }}>
-                        <label>
-                            Name:
-                            <input
+                                    <div className={styles.theme_actions}>
+                                        <Button
+                                            variant="danger"
+                                            size="sm"
+                                            icon={<Trash2 />}
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                void handleDelete(theme.id);
+                                            }}
+                                            disabled={loading}
+                                        >
+                                            Delete
+                                        </Button>
+                                    </div>
+                                </li>
+                            ))}
+                        </ul>
+                    )}
+                </Card>
+
+                {/* Right Panel: Editor */}
+                <Card className={styles.editor_panel}>
+                    <div className={styles.editor_header}>
+                        <h2 className={styles.editor_title}>
+                            {selectedTheme ? 'Edit Theme' : 'Create Theme'}
+                        </h2>
+                    </div>
+
+                    <form className={styles.form} onSubmit={(e) => e.preventDefault()}>
+                        {/* Name Field */}
+                        <div className={styles.form_group}>
+                            <label htmlFor="theme-name" className={styles.form_label}>
+                                Theme Name
+                            </label>
+                            <Input
+                                id="theme-name"
                                 type="text"
                                 value={formData.name}
                                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                                style={{ width: '100%', padding: '0.5rem' }}
+                                placeholder="Enter theme name"
                             />
-                        </label>
-                    </div>
+                        </div>
 
-                    <div style={{ marginBottom: '1rem' }}>
-                        <label>
-                            CSS:
+                        {/* CSS Field */}
+                        <div className={styles.form_group}>
+                            <label htmlFor="theme-css" className={styles.form_label}>
+                                CSS Code
+                            </label>
+                            <p className={styles.form_hint}>
+                                Write custom CSS rules to override design tokens and component styles
+                            </p>
                             <textarea
+                                id="theme-css"
+                                className={styles.css_textarea}
                                 value={formData.css}
                                 onChange={(e) => setFormData({ ...formData, css: e.target.value })}
-                                style={{ width: '100%', height: '300px', fontFamily: 'monospace', padding: '0.5rem' }}
+                                placeholder="/* Enter CSS rules here */"
                             />
-                        </label>
-                    </div>
+                        </div>
 
-                    <div style={{ marginBottom: '1rem' }}>
-                        <label>
-                            Dependencies (select multiple):
+                        {/* Dependencies Field */}
+                        <div className={styles.form_group}>
+                            <label htmlFor="theme-deps" className={styles.form_label}>
+                                Dependencies
+                            </label>
+                            <p className={styles.form_hint}>
+                                Select themes that must load before this theme (Ctrl+Click for multiple)
+                            </p>
                             <select
+                                id="theme-deps"
+                                className={styles.dependencies_select}
                                 multiple
                                 value={formData.dependencies}
                                 onChange={(e) =>
@@ -188,7 +247,6 @@ export default function ThemePage() {
                                         dependencies: Array.from(e.target.selectedOptions, (opt) => opt.value)
                                     })
                                 }
-                                style={{ width: '100%', height: '100px' }}
                             >
                                 {themes
                                     .filter((t) => t.id !== selectedTheme?.id)
@@ -198,57 +256,89 @@ export default function ThemePage() {
                                         </option>
                                     ))}
                             </select>
-                        </label>
-                    </div>
+                        </div>
 
-                    <div style={{ marginBottom: '1rem' }}>
-                        <label>
-                            <input
-                                type="checkbox"
-                                checked={formData.isActive}
-                                onChange={(e) => setFormData({ ...formData, isActive: e.target.checked })}
-                            />
-                            Active
-                        </label>
-                    </div>
+                        {/* Active Checkbox */}
+                        <div className={styles.form_group}>
+                            <label className={styles.checkbox_group}>
+                                <input
+                                    type="checkbox"
+                                    checked={formData.isActive}
+                                    onChange={(e) => setFormData({ ...formData, isActive: e.target.checked })}
+                                />
+                                <span className={styles.checkbox_label}>Enable theme immediately after save</span>
+                            </label>
+                        </div>
 
-                    {validationResult && (
-                        <div
-                            style={{
-                                padding: '1rem',
-                                marginBottom: '1rem',
-                                background: validationResult.valid ? 'green' : 'orange',
-                                color: 'white'
-                            }}
-                        >
-                            {validationResult.valid ? (
-                                <p>CSS is valid!</p>
-                            ) : (
-                                <div>
-                                    <p>CSS errors:</p>
-                                    <ul>
+                        {/* Validation Result */}
+                        {validationResult && (
+                            <div
+                                className={`${styles.validation_result} ${
+                                    validationResult.valid
+                                        ? styles['validation_result--success']
+                                        : styles['validation_result--error']
+                                }`}
+                            >
+                                <div className={styles.validation_header}>
+                                    <p className={styles.validation_message}>
+                                        {validationResult.valid ? (
+                                            <>
+                                                <CheckCircle style={{ display: 'inline', marginRight: '0.5rem' }} />
+                                                CSS is valid!
+                                            </>
+                                        ) : (
+                                            <>
+                                                <AlertTriangle style={{ display: 'inline', marginRight: '0.5rem' }} />
+                                                CSS validation errors:
+                                            </>
+                                        )}
+                                    </p>
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        icon={<X />}
+                                        onClick={() => dispatch(clearValidation())}
+                                    >
+                                        Clear
+                                    </Button>
+                                </div>
+                                {!validationResult.valid && (
+                                    <ul className={styles.validation_errors}>
                                         {validationResult.errors.map((err, i) => (
-                                            <li key={i}>{err}</li>
+                                            <li key={i} className={styles.validation_error_item}>
+                                                {err}
+                                            </li>
                                         ))}
                                     </ul>
-                                </div>
-                            )}
-                            <button onClick={() => dispatch(clearValidation())}>Clear</button>
-                        </div>
-                    )}
-
-                    <div>
-                        <button onClick={handleValidate} disabled={loading || !selectedTheme}>
-                            Validate CSS
-                        </button>
-                        <button onClick={handleSave} disabled={loading || !formData.name || !formData.css}>
-                            {loading ? 'Saving...' : 'Save'}
-                        </button>
-                        {selectedTheme && (
-                            <button onClick={() => handleSelectTheme(null)}>Cancel</button>
+                                )}
+                            </div>
                         )}
-                    </div>
-                </div>
+
+                        {/* Actions */}
+                        <div className={styles.form_actions}>
+                            <Button
+                                variant="secondary"
+                                onClick={handleValidate}
+                                disabled={loading || !selectedTheme}
+                            >
+                                Validate CSS
+                            </Button>
+                            <Button
+                                variant="primary"
+                                onClick={handleSave}
+                                disabled={loading || !formData.name || !formData.css}
+                                loading={loading}
+                            >
+                                Save Theme
+                            </Button>
+                            {selectedTheme && (
+                                <Button variant="ghost" onClick={() => handleSelectTheme(null)}>
+                                    Cancel
+                                </Button>
+                            )}
+                        </div>
+                    </form>
+                </Card>
             </div>
         </div>
     );
