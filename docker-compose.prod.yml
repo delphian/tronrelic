@@ -62,10 +62,7 @@ services:
 
     # Backend API Server
     backend:
-        build:
-            context: .
-            target: backend
-            dockerfile: Dockerfile
+        image: ghcr.io/delphian/tronrelic/backend:latest
         container_name: tronrelic-backend-prod
         restart: always
         ports:
@@ -99,6 +96,8 @@ services:
         networks:
             - tronrelic-network
         volumes:
+            # Mount logs directory for debugging
+            - ./.run:/app/.run
             # Mount uploads directory for file persistence across container restarts
             - ./public/uploads:/app/public/uploads
         healthcheck:
@@ -123,12 +122,7 @@ services:
 
     # Frontend Web Application (Production Mode)
     frontend:
-        build:
-            context: .
-            target: frontend-prod
-            dockerfile: Dockerfile
-            args:
-                - API_URL=http://backend:4000
+        image: ghcr.io/delphian/tronrelic/frontend:latest
         container_name: tronrelic-frontend-prod
         restart: always
         ports:
