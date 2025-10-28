@@ -40,10 +40,7 @@ services:
 
     # Backend API Server
     backend:
-        build:
-            context: .
-            target: backend
-            dockerfile: Dockerfile
+        image: ghcr.io/delphian/tronrelic/backend:dev
         container_name: tronrelic-backend-dev
         restart: unless-stopped
         ports:
@@ -87,10 +84,7 @@ services:
 
     # Frontend Web Application (Development Mode)
     frontend:
-        build:
-            context: .
-            target: frontend-dev
-            dockerfile: Dockerfile
+        image: ghcr.io/delphian/tronrelic/frontend:dev
         container_name: tronrelic-frontend-dev
         restart: unless-stopped
         ports:
@@ -112,15 +106,7 @@ services:
         networks:
             - tronrelic-network
         volumes:
-            # Mount source for hot reloading in dev mode
-            - ./apps/frontend/app:/app/apps/frontend/app
-            - ./apps/frontend/components:/app/apps/frontend/components
-            - ./apps/frontend/features:/app/apps/frontend/features
-            - ./apps/frontend/lib:/app/apps/frontend/lib
-            # Preserve node_modules
-            - /app/node_modules
-            - /app/apps/frontend/node_modules
-            # Mount logs directory for debugging (pre-created via .gitkeep to prevent permission issues)
+            # Mount logs directory for debugging
             - ./.run:/app/.run
 
 networks:
