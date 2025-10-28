@@ -37,6 +37,7 @@ set -e  # Exit on error
 # Source environment configuration
 SCRIPT_DIR="$(dirname "$0")"
 source "$SCRIPT_DIR/droplet-config.sh"
+source "$SCRIPT_DIR/droplet-setup-nginx.sh"
 
 # Colors for output
 RED='\033[0;31m'
@@ -207,78 +208,13 @@ else
     log_success "Nginx installed successfully"
 fi
 
-# Determine Nginx site name
-if [[ "$ENV" == "prod" ]]; then
-    NGINX_SITE="tronrelic"
-else
-    NGINX_SITE="tronrelic-$ENV"
-fi
+log_info "Configuring Nginx for TronRelic ${ENV^^}..."
+update_nginx_config "$ENV" "$DROPLET_IP" "$DEPLOY_DIR"
 
-log_info "Creating Nginx configuration for TronRelic ${ENV^^}..."
-remote_exec "cat > /etc/nginx/sites-available/$NGINX_SITE << 'NGINXEOF'
-server {
-    listen 80;
-    listen [::]:80;
-    server_name $DROPLET_IP;
-
-    # Security headers
-    add_header X-Frame-Options \"SAMEORIGIN\" always;
-    add_header X-Content-Type-Options \"nosniff\" always;
-    add_header X-XSS-Protection \"1; mode=block\" always;
-
-    # Increase timeouts for long-running requests
-    proxy_read_timeout 300s;
-    proxy_connect_timeout 75s;
-
-    # Backend API
-    location /api {
-        proxy_pass http://127.0.0.1:4000;
-        proxy_http_version 1.1;
-        proxy_set_header Host \\\$host;
-        proxy_set_header X-Real-IP \\\$remote_addr;
-        proxy_set_header X-Forwarded-For \\\$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \\\$scheme;
-    }
-
-    # WebSocket connections
-    location /socket.io {
-        proxy_pass http://127.0.0.1:4000;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade \\\$http_upgrade;
-        proxy_set_header Connection \"upgrade\";
-        proxy_set_header Host \\\$host;
-        proxy_set_header X-Real-IP \\\$remote_addr;
-        proxy_set_header X-Forwarded-For \\\$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \\\$scheme;
-        proxy_cache_bypass \\\$http_upgrade;
-    }
-
-    # Frontend (Next.js)
-    location / {
-        proxy_pass http://127.0.0.1:3000;
-        proxy_http_version 1.1;
-        proxy_set_header Host \\\$host;
-        proxy_set_header X-Real-IP \\\$remote_addr;
-        proxy_set_header X-Forwarded-For \\\$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \\\$scheme;
-    }
-}
-NGINXEOF"
-
-log_info "Enabling TronRelic ${ENV^^} Nginx site..."
-remote_exec "rm -f /etc/nginx/sites-enabled/default"
-remote_exec "ln -sf /etc/nginx/sites-available/$NGINX_SITE /etc/nginx/sites-enabled/$NGINX_SITE"
-
-log_info "Testing Nginx configuration..."
-if remote_exec "nginx -t"; then
-    log_success "Nginx configuration is valid"
-    remote_exec "systemctl restart nginx"
-    remote_exec "systemctl enable nginx"
-    log_success "Nginx configured and started"
-else
-    log_error "Nginx configuration test failed"
-    exit 1
-fi
+log_info "Ensuring Nginx is enabled and started..."
+remote_exec "systemctl enable nginx"
+remote_exec "systemctl start nginx || systemctl restart nginx"
+log_success "Nginx configured and started"
 
 # Configure firewall
 log_step "STEP 5: Configuring Firewall"

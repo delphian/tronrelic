@@ -31,6 +31,8 @@ set -euo pipefail  # Exit on error, undefined variables, and pipe failures
 # Source environment configuration
 SCRIPT_DIR="$(dirname "$0")"
 source "$SCRIPT_DIR/droplet-config.sh"
+source "$SCRIPT_DIR/droplet-setup-ssl.sh"
+source "$SCRIPT_DIR/droplet-setup-nginx.sh"
 
 # Colors for output
 RED='\033[0;31m'
@@ -103,6 +105,26 @@ fi
 
 echo ""
 log_info "Starting ${ENV} deployment..."
+echo ""
+
+# Step 0a: Setup SSL certificates (if domain is configured)
+if [[ "$ENV" == "prod" ]]; then
+    DOMAIN="tronrelic.com"
+elif [[ "$ENV" == "dev" ]]; then
+    DOMAIN="dev.tronrelic.com"
+else
+    DOMAIN=""
+fi
+
+if [[ -n "$DOMAIN" ]]; then
+    EMAIL="${SSL_EMAIL:-admin@tronrelic.com}"
+    log_info "Checking SSL certificates for $DOMAIN..."
+    setup_ssl_certificates "$ENV" "$DOMAIN" "$EMAIL" || log_warning "SSL setup skipped (certificates may already exist)"
+    echo ""
+fi
+
+# Step 0b: Update Nginx configuration
+update_nginx_config "$ENV" "$DROPLET_IP" "$DEPLOY_DIR"
 echo ""
 
 # Step 1: Check current container status
