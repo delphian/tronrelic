@@ -1,3 +1,5 @@
+import type { ITelegramSendOptions } from './ITelegramSendOptions.js';
+
 /**
  * Simple Telegram Bot API client for sending messages.
  * This is a lightweight implementation that doesn't depend on apps/backend services.
@@ -6,16 +8,6 @@
  * Plugins should be self-contained and not import from apps/backend at compile time.
  * This client provides the minimal Telegram API functionality needed for the bot plugin.
  */
-
-/**
- * Message sending options.
- */
-export interface ITelegramSendOptions {
-    parseMode?: 'MarkdownV2' | 'HTML' | null;
-    threadId?: number;
-    disablePreview?: boolean;
-    replyMarkup?: unknown;
-}
 
 /**
  * Simple Telegram Bot API client.

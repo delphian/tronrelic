@@ -8,6 +8,7 @@ import styles from './WebhookConfigCard.module.css';
  */
 interface IWebhookConfigCardProps {
     context: IFrontendPluginContext;
+    botTokenConfigured?: boolean;
     webhookSecretConfigured?: boolean;
     onWebhookSecretConfiguredChange?: (configured: boolean) => void;
 }
@@ -20,19 +21,25 @@ interface IWebhookConfigCardProps {
  * Setting up a Telegram bot webhook requires copying a specific URL to Telegram's BotFather.
  * This card makes the URL easily accessible and provides setup instructions.
  */
-export function WebhookConfigCard({ context, webhookSecretConfigured: externalWebhookSecretConfigured, onWebhookSecretConfiguredChange }: IWebhookConfigCardProps) {
+export function WebhookConfigCard({
+    context,
+    botTokenConfigured: externalBotTokenConfigured,
+    webhookSecretConfigured: externalWebhookSecretConfigured,
+    onWebhookSecretConfiguredChange
+}: IWebhookConfigCardProps) {
     const { ui, api } = context;
     const [webhookUrl, setWebhookUrl] = React.useState<string>('');
     const [loading, setLoading] = React.useState(true);
     const [copied, setCopied] = React.useState(false);
-    const [botTokenConfigured, setBotTokenConfigured] = React.useState(true);
+    const [internalBotTokenConfigured, setInternalBotTokenConfigured] = React.useState(true);
     const [internalWebhookSecretConfigured, setInternalWebhookSecretConfigured] = React.useState(true);
     const [configuring, setConfiguring] = React.useState(false);
     const [configureResult, setConfigureResult] = React.useState<{ success: boolean; message: string } | null>(null);
     const [verifying, setVerifying] = React.useState(false);
     const [verifyResult, setVerifyResult] = React.useState<{ success: boolean; message: string; details?: any } | null>(null);
 
-    // Use external prop if provided, otherwise use internal state
+    // Use external props if provided, otherwise use internal state
+    const botTokenConfigured = externalBotTokenConfigured ?? internalBotTokenConfigured;
     const webhookSecretConfigured = externalWebhookSecretConfigured ?? internalWebhookSecretConfigured;
 
     /**
@@ -55,7 +62,10 @@ export function WebhookConfigCard({ context, webhookSecretConfigured: externalWe
 
                 if (configResponse.success && configResponse.config.webhookUrl) {
                     setWebhookUrl(configResponse.config.webhookUrl);
-                    setBotTokenConfigured(configResponse.config.botTokenConfigured ?? true);
+                    // Only update internal state if not provided by parent
+                    if (externalBotTokenConfigured === undefined) {
+                        setInternalBotTokenConfigured(configResponse.config.botTokenConfigured ?? true);
+                    }
                 }
 
                 // Fetch webhook secret configuration status from settings endpoint (only if not provided by parent)
