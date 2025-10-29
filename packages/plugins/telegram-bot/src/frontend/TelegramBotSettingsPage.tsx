@@ -27,6 +27,7 @@ export function TelegramBotSettingsPage({ context }: ITelegramBotSettingsPagePro
     const [testMessage, setTestMessage] = React.useState('');
     const [testStatus, setTestStatus] = React.useState<{ type: 'success' | 'error'; message: string } | null>(null);
     const [isSending, setIsSending] = React.useState(false);
+    const [botTokenConfigured, setBotTokenConfigured] = React.useState<boolean | undefined>(undefined);
     const [webhookSecretConfigured, setWebhookSecretConfigured] = React.useState<boolean | undefined>(undefined);
 
     /**
@@ -107,6 +108,9 @@ export function TelegramBotSettingsPage({ context }: ITelegramBotSettingsPagePro
                 <BotSettingsCard
                     context={context}
                     onSettingsSaved={(settings) => {
+                        if (settings.botTokenConfigured !== undefined) {
+                            setBotTokenConfigured(settings.botTokenConfigured);
+                        }
                         if (settings.webhookSecretConfigured !== undefined) {
                             setWebhookSecretConfigured(settings.webhookSecretConfigured);
                         }
@@ -116,6 +120,7 @@ export function TelegramBotSettingsPage({ context }: ITelegramBotSettingsPagePro
                 {/* Webhook configuration */}
                 <WebhookConfigCard
                     context={context}
+                    botTokenConfigured={botTokenConfigured}
                     webhookSecretConfigured={webhookSecretConfigured}
                     onWebhookSecretConfiguredChange={setWebhookSecretConfigured}
                 />

@@ -1,42 +1,7 @@
 import type { ISystemLogService, IPluginDatabase } from '@tronrelic/types';
 import type { ITelegramUser } from '../shared/index.js';
 import { MarketQueryService } from './market-query.service.js';
-
-/**
- * Telegram message object from webhook update.
- */
-interface ITelegramMessage {
-    message_id: number;
-    from?: {
-        id: number;
-        username?: string;
-        first_name?: string;
-        last_name?: string;
-    };
-    chat: {
-        id: number;
-        type: string;
-    };
-    text?: string;
-}
-
-/**
- * Telegram update from webhook.
- */
-export interface ITelegramUpdate {
-    update_id: number;
-    message?: ITelegramMessage;
-    callback_query?: {
-        id: string;
-        from: {
-            id: number;
-            username?: string;
-            first_name?: string;
-            last_name?: string;
-        };
-        data?: string;
-    };
-}
+import type { ITelegramUpdate } from './ITelegramUpdate.js';
 
 /**
  * Command handler response.
