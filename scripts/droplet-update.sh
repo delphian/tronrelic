@@ -127,6 +127,16 @@ fi
 update_nginx_config "$ENV" "$DROPLET_IP" "$DEPLOY_DIR"
 echo ""
 
+# Step 0c: Update docker-compose configuration
+log_info "Updating docker-compose.$ENV.yml configuration..."
+if scp "docker-compose.$ENV.yml" "$DROPLET_HOST:$DEPLOY_DIR/"; then
+    log_success "Docker compose configuration updated"
+else
+    log_error "Failed to copy docker-compose configuration"
+    exit 1
+fi
+echo ""
+
 # Step 1: Check current container status
 log_info "Checking current container status..."
 remote_exec "cd $DEPLOY_DIR && docker compose -f $COMPOSE_FILE ps"
