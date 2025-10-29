@@ -155,6 +155,46 @@ export class SystemConfigService implements ISystemConfigService {
     }
 
     /**
+     * Gets the API URL derived from the site URL.
+     *
+     * Why this exists:
+     * The API URL is deterministically derived from the site URL by appending /api.
+     * This ensures consistency between what the backend advertises and what clients expect.
+     * Instead of storing a separate API URL in the database, we compute it on demand
+     * to prevent configuration drift between siteUrl and apiUrl.
+     *
+     * Usage by frontend:
+     * - SSR fetches this once at container startup via /api/config/public
+     * - Client receives it injected in HTML via window.__RUNTIME_CONFIG__
+     * - Both SSR and client use the same value for API calls
+     *
+     * @returns API base URL (e.g., "https://tronrelic.com/api")
+     */
+    async getApiUrl(): Promise<string> {
+        const siteUrl = await this.getSiteUrl();
+        return `${siteUrl}/api`;
+    }
+
+    /**
+     * Gets the WebSocket URL derived from the site URL.
+     *
+     * Why this exists:
+     * The WebSocket URL is the same as the site URL (no /api suffix) because Socket.IO
+     * connects to the root origin. Like getApiUrl(), we derive this from siteUrl to ensure
+     * consistency and prevent configuration drift.
+     *
+     * Usage by frontend:
+     * - Client reads from window.__RUNTIME_CONFIG__.socketUrl (injected by SSR)
+     * - Socket.IO client connects to this URL for real-time updates
+     * - Replaces hardcoded NEXT_PUBLIC_SOCKET_URL that was frozen at build time
+     *
+     * @returns WebSocket connection URL (e.g., "https://tronrelic.com")
+     */
+    async getSocketUrl(): Promise<string> {
+        return await this.getSiteUrl();
+    }
+
+    /**
      * Updates system configuration with new values.
      * Invalidates cache to ensure subsequent reads get fresh data.
      *

@@ -1,3 +1,38 @@
+/**
+ * DEPRECATED: This static configuration module uses build-time environment variables.
+ *
+ * ⚠️ DO NOT USE THIS MODULE IN NEW CODE ⚠️
+ *
+ * Problem:
+ * Next.js production builds inline NEXT_PUBLIC_* environment variables at build time,
+ * making Docker images domain-specific. This prevents us from distributing universal
+ * Docker images that work on any domain (tronrelic.com, dev.tronrelic.com, etc.)
+ * without rebuilding.
+ *
+ * Modern replacement:
+ * - For SSR code (server components, generateMetadata): use getServerConfig() from lib/serverConfig.ts
+ * - For client code (client components, hooks, event handlers): use getRuntimeConfig() from lib/runtimeConfig.ts
+ *
+ * Migration guide:
+ * ```typescript
+ * // OLD (deprecated)
+ * import { config } from '@/lib/config';
+ * const url = config.siteUrl;
+ *
+ * // NEW (SSR)
+ * import { getServerConfig } from '@/lib/serverConfig';
+ * const { siteUrl } = await getServerConfig();
+ *
+ * // NEW (Client)
+ * import { getRuntimeConfig } from '@/lib/runtimeConfig';
+ * const { siteUrl } = getRuntimeConfig();
+ * ```
+ *
+ * When will this be removed:
+ * After all existing usages are migrated to runtime config (Phase 2).
+ * Currently kept for backwards compatibility only.
+ */
+
 const defaultSiteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://tronrelic.com';
 const LOCAL_HOSTNAMES = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
 

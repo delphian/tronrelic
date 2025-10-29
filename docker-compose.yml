@@ -66,6 +66,11 @@ services:
             - TRONGRID_API_KEY=${TRONGRID_API_KEY}
             - TRONGRID_API_KEY_2=${TRONGRID_API_KEY_2}
             - TRONGRID_API_KEY_3=${TRONGRID_API_KEY_3}
+
+            # Runtime Configuration (see docs/system/system-runtime-config.md)
+            # Sets initial database default for siteUrl on fresh install
+            # Local dev: Uses .env NEXT_PUBLIC_SITE_URL or defaults to localhost
+            - NEXT_PUBLIC_SITE_URL=${NEXT_PUBLIC_SITE_URL:-http://localhost:3000}
         depends_on:
             mongodb:
                 condition: service_healthy
