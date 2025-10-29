@@ -4,11 +4,11 @@ import type { ITelegramUser, ITelegramSubscription, IPluginTelegramBotConfig } f
 import { CommandHandler } from './command-handlers.js';
 import { MarketQueryService } from './market-query.service.js';
 import { createWebhookHandler } from './webhook-handler.js';
-import { BotConfigService } from './bot-config.service.js';
+import { TelegramBotService } from './telegram-bot.service.js';
 
-// Store context and config service for API handlers
+// Store context and services for API handlers
 let pluginContext: IPluginContext;
-let botConfigService: BotConfigService;
+let telegramBotService: TelegramBotService;
 let scopedLogger: ISystemLogService;
 
 /**
@@ -172,23 +172,20 @@ export const telegramBotBackendPlugin = definePlugin({
 
         context.logger.info('Initializing telegram-bot plugin');
 
-        // Create bot configuration service
-        botConfigService = new BotConfigService(context.database, context.logger);
+        // Create telegram bot service (manages configuration and TelegramClient lifecycle)
+        telegramBotService = new TelegramBotService(context.database, context.logger);
 
-        // Load bot token from database
-        const botToken = await botConfigService.getBotToken();
-        if (!botToken) {
-            context.logger.warn('Bot token not configured in database, bot functionality will be limited. Configure via /system/settings UI.');
+        // Initialize the client with current configuration
+        const initialized = await telegramBotService.initialize();
+        if (!initialized) {
+            context.logger.warn('Bot token not configured in database, bot functionality will be limited. Configure via /system/plugins/telegram-bot/settings UI.');
         } else {
-            const maskedConfig = await botConfigService.getMaskedConfig();
+            const maskedConfig = await telegramBotService.getMaskedConfig();
             context.logger.info(
                 { maskedToken: maskedConfig.botToken },
                 'Bot token loaded successfully from database'
             );
         }
-
-        const { TelegramClient } = await import('./telegram-client.js');
-        const telegramClient = new TelegramClient(botToken || '');
 
         // Create market query service
         // API base URL should point to backend API (adjust for Docker vs local)
@@ -202,8 +199,8 @@ export const telegramBotBackendPlugin = definePlugin({
             context.logger
         );
 
-        // Get webhook secret from configuration service (with automatic migration from environment variable)
-        const webhookSecret = await botConfigService.getWebhookSecret();
+        // Get webhook secret from bot service
+        const webhookSecret = await telegramBotService.getWebhookSecret();
         if (!webhookSecret) {
             context.logger.warn('Webhook secret not configured in database. Webhook requests will be rejected. Configure via /system/plugins/telegram-bot/settings UI.');
         }
@@ -211,7 +208,7 @@ export const telegramBotBackendPlugin = definePlugin({
         // Create webhook handler with security options
         const webhookHandler = createWebhookHandler(
             commandHandler,
-            telegramClient,
+            telegramBotService,
             context.logger,
             {
                 allowedIps: process.env.TELEGRAM_IP_ALLOWLIST,
@@ -251,8 +248,8 @@ export const telegramBotBackendPlugin = definePlugin({
             path: '/config',
             handler: async (_req: IHttpRequest, res: IHttpResponse, next: IHttpNext) => {
                 try {
-                    // Get masked configuration from service
-                    const maskedConfig = await botConfigService.getMaskedConfig();
+                    // Get masked configuration from bot service
+                    const maskedConfig = await telegramBotService.getMaskedConfig();
 
                     // Always construct webhook URL dynamically from current system config
                     const siteUrl = await pluginContext.systemConfig.getSiteUrl();
@@ -323,8 +320,8 @@ export const telegramBotBackendPlugin = definePlugin({
             path: '/configure-webhook',
             handler: async (_req: IHttpRequest, res: IHttpResponse, _next: IHttpNext) => {
                 try {
-                    // Get bot token from configuration service
-                    const botToken = await botConfigService.getBotToken();
+                    // Get bot token from bot service
+                    const botToken = await telegramBotService.getBotToken();
                     if (!botToken) {
                         res.status(503).json({
                             success: false,
@@ -333,8 +330,8 @@ export const telegramBotBackendPlugin = definePlugin({
                         return;
                     }
 
-                    // Get webhook secret from configuration service
-                    const webhookSecret = await botConfigService.getWebhookSecret();
+                    // Get webhook secret from bot service
+                    const webhookSecret = await telegramBotService.getWebhookSecret();
                     if (!webhookSecret) {
                         res.status(503).json({
                             success: false,
@@ -388,8 +385,8 @@ export const telegramBotBackendPlugin = definePlugin({
             path: '/verify-webhook',
             handler: async (_req: IHttpRequest, res: IHttpResponse, _next: IHttpNext) => {
                 try {
-                    // Get bot token from configuration service
-                    const botToken = await botConfigService.getBotToken();
+                    // Get bot token from bot service
+                    const botToken = await telegramBotService.getBotToken();
                     if (!botToken) {
                         res.status(503).json({
                             success: false,
@@ -464,9 +461,8 @@ export const telegramBotBackendPlugin = definePlugin({
                         return;
                     }
 
-                    // Get bot token from configuration service
-                    const botToken = await botConfigService.getBotToken();
-                    if (!botToken) {
+                    // Check if Telegram client is ready
+                    if (!telegramBotService.isReady()) {
                         res.status(503).json({
                             success: false,
                             error: 'Bot token not configured. Please configure it in the settings first.'
@@ -474,12 +470,8 @@ export const telegramBotBackendPlugin = definePlugin({
                         return;
                     }
 
-                    // Import and use TelegramClient
-                    const { TelegramClient } = await import('./telegram-client.js');
-                    const telegramClient = new TelegramClient(botToken);
-
-                    // Send test message with optional thread ID
-                    await telegramClient.sendMessage(
+                    // Send test message with optional thread ID using the service
+                    await telegramBotService.sendMessage(
                         chatId,
                         message,
                         {
@@ -571,7 +563,7 @@ export const telegramBotBackendPlugin = definePlugin({
             handler: async (_req: IHttpRequest, res: IHttpResponse, next: IHttpNext) => {
                 try {
                     // Get masked configuration (bot token is masked for security)
-                    const maskedConfig = await botConfigService.getMaskedConfig();
+                    const maskedConfig = await telegramBotService.getMaskedConfig();
 
                     res.json({
                         success: true,
@@ -641,7 +633,7 @@ export const telegramBotBackendPlugin = definePlugin({
 
                     // Save configuration (this validates bot token format if provided)
                     try {
-                        await botConfigService.saveConfig(updates);
+                        await telegramBotService.saveConfig(updates);
                     } catch (error: any) {
                         res.status(400).json({
                             success: false,
@@ -650,8 +642,18 @@ export const telegramBotBackendPlugin = definePlugin({
                         return;
                     }
 
+                    // Reload the Telegram client with updated configuration (hot-reload without restart)
+                    if (updates.botToken !== undefined) {
+                        const reloaded = await telegramBotService.reloadClient();
+                        if (reloaded) {
+                            pluginContext.logger.info('Telegram client reloaded with new bot token');
+                        } else {
+                            pluginContext.logger.warn('Failed to reload Telegram client (bot token may be invalid or empty)');
+                        }
+                    }
+
                     // Get updated masked configuration
-                    const maskedConfig = await botConfigService.getMaskedConfig();
+                    const maskedConfig = await telegramBotService.getMaskedConfig();
 
                     pluginContext.logger.info(
                         { updates: Object.keys(updates) },
@@ -732,7 +734,7 @@ export const telegramBotBackendPlugin = definePlugin({
 
                     // Save configuration (this validates bot token format if provided)
                     try {
-                        await botConfigService.saveConfig(updates);
+                        await telegramBotService.saveConfig(updates);
                     } catch (error: any) {
                         res.status(400).json({
                             success: false,
@@ -741,8 +743,18 @@ export const telegramBotBackendPlugin = definePlugin({
                         return;
                     }
 
+                    // Reload the Telegram client with updated configuration (hot-reload without restart)
+                    if (updates.botToken !== undefined) {
+                        const reloaded = await telegramBotService.reloadClient();
+                        if (reloaded) {
+                            pluginContext.logger.info('Telegram client reloaded with new bot token');
+                        } else {
+                            pluginContext.logger.warn('Failed to reload Telegram client (bot token may be invalid or empty)');
+                        }
+                    }
+
                     // Get updated masked configuration
-                    const maskedConfig = await botConfigService.getMaskedConfig();
+                    const maskedConfig = await telegramBotService.getMaskedConfig();
 
                     pluginContext.logger.info(
                         { updates: Object.keys(updates) },

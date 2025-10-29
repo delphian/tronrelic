@@ -1,15 +1,15 @@
 import type { IHttpRequest, IHttpResponse, ISystemLogService } from '@tronrelic/types';
 import { validateTelegramWebhook } from './security.js';
-import { CommandHandler, type ITelegramUpdate } from './command-handlers.js';
-
-import type { TelegramClient } from './telegram-client.js';
+import { CommandHandler } from './command-handlers.js';
+import type { ITelegramUpdate } from './ITelegramUpdate.js';
+import type { TelegramBotService } from './telegram-bot.service.js';
 
 /**
  * Creates a webhook handler for processing Telegram bot updates.
  * This handler validates security, routes commands, and sends responses.
  *
  * @param commandHandler - Command handler for processing bot commands
- * @param telegramService - Service for sending Telegram messages
+ * @param telegramBotService - Service for managing Telegram client and sending messages
  * @param logger - Logger for debugging and error tracking
  * @param securityOptions - IP allowlist and webhook secret configuration
  * @returns Express-compatible route handler
@@ -17,10 +17,14 @@ import type { TelegramClient } from './telegram-client.js';
  * Why separate webhook handler:
  * Webhook handling has distinct concerns: HTTP request validation, security checks,
  * JSON parsing, error handling. Separating it from command logic keeps both clean.
+ *
+ * Why use TelegramBotService instead of TelegramClient:
+ * The service manages client lifecycle and allows hot-reload when bot token is updated
+ * via the admin UI, without requiring backend restart.
  */
 export function createWebhookHandler(
     commandHandler: CommandHandler,
-    telegramClient: TelegramClient,
+    telegramBotService: TelegramBotService,
     logger: ISystemLogService,
     securityOptions: {
         allowedIps?: string;
@@ -73,8 +77,8 @@ export function createWebhookHandler(
             const response = await commandHandler.handleUpdate(update);
 
             if (response) {
-                // Send response via Telegram client
-                await telegramClient.sendMessage(response.chatId, response.text, {
+                // Send response via Telegram bot service
+                await telegramBotService.sendMessage(response.chatId, response.text, {
                     parseMode: response.parseMode
                 });
 
@@ -98,7 +102,7 @@ export function createWebhookHandler(
             try {
                 const chatId = update?.message?.chat?.id || update?.callback_query?.from?.id;
                 if (chatId) {
-                    await telegramClient.sendMessage(
+                    await telegramBotService.sendMessage(
                         String(chatId),
                         '⚠️ Sorry, something went wrong processing your request. Please try again later.',
                         { parseMode: null }
