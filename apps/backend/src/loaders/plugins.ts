@@ -139,6 +139,8 @@ async function loadAllPlugins(): Promise<IPlugin[]> {
  * 5. API route registration (expose REST endpoints)
  */
 export async function loadPlugins(): Promise<void> {
+    await logger.waitUntilInitialized();
+
     const pluginList = await loadAllPlugins();
     const apiService = PluginApiService.getInstance();
     const metadataService = PluginMetadataService.getInstance();

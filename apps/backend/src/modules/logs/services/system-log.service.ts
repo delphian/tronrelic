@@ -54,6 +54,8 @@ export class SystemLogService implements ISystemLogService {
     private initialized = false;
     private pino: pino.Logger | null = null;
     private bindings: pino.Bindings = {};
+    private initializationPromise: Promise<void>;
+    private resolveInitialization: (() => void) | null = null;
 
     /**
      * Private constructor enforces singleton pattern.
@@ -63,6 +65,9 @@ export class SystemLogService implements ISystemLogService {
      */
     private constructor() {
         // Logger will be set via initialize()
+        this.initializationPromise = new Promise((resolve) => {
+            this.resolveInitialization = resolve;
+        });
     }
 
     /**
@@ -165,6 +170,11 @@ export class SystemLogService implements ISystemLogService {
         await this.applyLogLevelFromConfig();
 
         this.pino.info('SystemLogService initialized');
+
+        if (this.resolveInitialization) {
+            this.resolveInitialization();
+            this.resolveInitialization = null;
+        }
     }
 
     /**
@@ -420,6 +430,12 @@ export class SystemLogService implements ISystemLogService {
             const childLogger = new SystemLogService();
             childLogger.initialized = this.initialized;
             childLogger.bindings = { ...this.bindings, ...bindings };
+            childLogger.initializationPromise = this.initialized
+                ? Promise.resolve()
+                : this.initializationPromise;
+            childLogger.resolveInitialization = this.initialized
+                ? null
+                : this.resolveInitialization;
             return childLogger;
         }
 
@@ -428,7 +444,27 @@ export class SystemLogService implements ISystemLogService {
         childLogger.pino = pinoChild;
         childLogger.initialized = this.initialized;
         childLogger.bindings = { ...this.bindings, ...bindings };
+        childLogger.initializationPromise = this.initialized
+            ? Promise.resolve()
+            : this.initializationPromise;
+        childLogger.resolveInitialization = this.initialized
+            ? null
+            : this.resolveInitialization;
         return childLogger;
+    }
+
+    /**
+     * Wait until the logger has completed initialization.
+     *
+     * Allows callers to ensure MongoDB persistence is ready before relying on
+     * the logger for critical logging operations.
+     */
+    public async waitUntilInitialized(): Promise<void> {
+        if (this.initialized) {
+            return;
+        }
+
+        await this.initializationPromise;
     }
 
     // ========================================================================
