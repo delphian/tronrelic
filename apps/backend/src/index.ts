@@ -264,6 +264,7 @@ async function bootstrap() {
 
         // Load plugins AFTER WebSocket is initialized so they can register handlers
         try {
+            await logger.waitUntilInitialized();
             await loadPlugins();
         } catch (pluginError) {
             logger.error({ pluginError, stack: pluginError instanceof Error ? pluginError.stack : undefined }, 'Plugin initialization failed')
