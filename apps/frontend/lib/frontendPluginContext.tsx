@@ -58,7 +58,17 @@ class ApiClient implements IApiClient {
         });
 
         if (!response.ok) {
-            throw new Error(`API request failed: ${response.statusText}`);
+            // Try to extract error message from JSON response body
+            let errorMessage = response.statusText;
+            try {
+                const errorData = await response.json();
+                if (errorData.error) {
+                    errorMessage = errorData.error;
+                }
+            } catch {
+                // If JSON parsing fails, use statusText
+            }
+            throw new Error(`API request failed: ${errorMessage}`);
         }
 
         return response.json();
@@ -85,7 +95,17 @@ class ApiClient implements IApiClient {
         });
 
         if (!response.ok) {
-            throw new Error(`API request failed: ${response.statusText}`);
+            // Try to extract error message from JSON response body
+            let errorMessage = response.statusText;
+            try {
+                const errorData = await response.json();
+                if (errorData.error) {
+                    errorMessage = errorData.error;
+                }
+            } catch {
+                // If JSON parsing fails, use statusText
+            }
+            throw new Error(`API request failed: ${errorMessage}`);
         }
 
         return response.json();
@@ -112,7 +132,17 @@ class ApiClient implements IApiClient {
         });
 
         if (!response.ok) {
-            throw new Error(`API request failed: ${response.statusText}`);
+            // Try to extract error message from JSON response body
+            let errorMessage = response.statusText;
+            try {
+                const errorData = await response.json();
+                if (errorData.error) {
+                    errorMessage = errorData.error;
+                }
+            } catch {
+                // If JSON parsing fails, use statusText
+            }
+            throw new Error(`API request failed: ${errorMessage}`);
         }
 
         return response.json();
@@ -138,7 +168,17 @@ class ApiClient implements IApiClient {
         });
 
         if (!response.ok) {
-            throw new Error(`API request failed: ${response.statusText}`);
+            // Try to extract error message from JSON response body
+            let errorMessage = response.statusText;
+            try {
+                const errorData = await response.json();
+                if (errorData.error) {
+                    errorMessage = errorData.error;
+                }
+            } catch {
+                // If JSON parsing fails, use statusText
+            }
+            throw new Error(`API request failed: ${errorMessage}`);
         }
 
         return response.json();
