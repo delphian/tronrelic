@@ -20,14 +20,17 @@ export class WebSocketService implements IWebSocketService {
 
   public initialize(server: Server) {
     this.io = new SocketIOServer(server, {
+      transports: ['websocket', 'polling'],
       cors: {
         origin: '*'
-      }
+      },
+      pingInterval: 25000,
+      pingTimeout: 20000
     });
 
     this.io.on('connection', socket => this.handleConnection(socket));
 
-    logger.info('WebSocket server initialized');
+    logger.info('WebSocket server initialized with transports: websocket, polling');
   }
 
   /**
