@@ -26,6 +26,24 @@ Understanding these components helps you diagnose sync stalls, optimize performa
 
 ## Core System Components
 
+### Runtime Configuration System
+
+TronRelic uses runtime configuration to enable universal Docker images that work on any domain without rebuilding. The system solves Next.js's build-time environment variable inlining by fetching configuration from the backend API and injecting it into HTML during SSR.
+
+**Key architectural decisions:**
+
+- **Backend as source of truth** - SystemConfigService stores siteUrl in MongoDB (editable via admin UI)
+- **SSR fetch and cache** - Frontend fetches config once at container startup, caches in memory
+- **HTML injection** - Config injected as `window.__RUNTIME_CONFIG__` for instant client access
+- **No NEXT_PUBLIC_* in production** - Frontend doesn't rely on build-time variables for client code
+
+**See [system-runtime-config.md](./system-runtime-config.md) for complete details on:**
+- Why Next.js build-time inlining breaks universal Docker images
+- How SSR-injected runtime config solves the problem
+- Backend environment variable configuration (SITE_URL in .env)
+- Deployment workflow for fresh installs
+- Troubleshooting WebSocket connection issues
+
 ### Backend Module System
 
 The backend module system provides a structured pattern for permanent, core backend components that initialize during application bootstrap. Modules are essential infrastructure that follow a two-phase lifecycle (init/run) with dependency injection and inversion of control patterns.

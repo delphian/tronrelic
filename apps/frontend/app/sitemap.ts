@@ -1,5 +1,5 @@
 import type { MetadataRoute } from 'next';
-import { config } from '../lib/config';
+import { getServerConfig } from '../lib/serverConfig';
 
 const staticRoutes: Array<{ path: string; priority: number; changeFrequency: MetadataRoute.Sitemap[number]['changeFrequency'] }> = [
   { path: '/', priority: 1, changeFrequency: 'hourly' },
@@ -10,12 +10,22 @@ const staticRoutes: Array<{ path: string; priority: number; changeFrequency: Met
   { path: '/about', priority: 0.6, changeFrequency: 'monthly' }
 ];
 
-export default function sitemap(): MetadataRoute.Sitemap {
+/**
+ * Generates sitemap using runtime configuration.
+ *
+ * Why async:
+ * Next.js sitemaps can be generated dynamically at request time. This allows us to use
+ * runtime configuration (fetched from backend) instead of build-time environment variables.
+ * The siteUrl is cached after the first fetch, so this has zero overhead after initial call.
+ *
+ * @returns Sitemap array with runtime siteUrl
+ */
+export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const now = new Date();
-  const baseUrl = config.siteUrl;
+  const { siteUrl } = await getServerConfig();
 
   return staticRoutes.map(route => ({
-    url: route.path === '/' ? baseUrl : `${baseUrl}${route.path}`,
+    url: route.path === '/' ? siteUrl : `${siteUrl}${route.path}`,
     lastModified: now,
     changeFrequency: route.changeFrequency,
     priority: route.priority

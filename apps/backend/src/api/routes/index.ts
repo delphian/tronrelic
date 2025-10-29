@@ -16,6 +16,7 @@ import { base58checkRouter } from './base58check.router.js';
 import { liveRouter } from './live.router.js';
 import { tokensRouter } from './tokens.router.js';
 import { systemRouter } from './system.router.js';
+import { configRouter } from './config.router.js';
 import pluginsRouter from './plugins.routes.js';
 import pluginManagementRouter from './plugin-management.routes.js';
 import { PluginApiService } from '../../services/plugin-api.service.js';
@@ -23,6 +24,7 @@ import { PluginApiService } from '../../services/plugin-api.service.js';
 export function createApiRouter(database?: IDatabaseService) {
   const router = Router();
 
+  router.use('/config', configRouter());
   router.use('/markets', marketsRouter());
   router.use('/blockchain', blockchainRouter());
   router.use('/accounts', accountsRouter());
