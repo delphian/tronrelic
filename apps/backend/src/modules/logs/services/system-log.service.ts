@@ -523,10 +523,10 @@ export class SystemLogService implements ISystemLogService {
                 name: obj.name,
                 message: obj.message,
                 stack: obj.stack,
-                // Include any custom properties
+                // Include any custom properties (recursively sanitized)
                 ...Object.getOwnPropertyNames(obj).reduce((acc: any, key: string) => {
                     if (!['name', 'message', 'stack'].includes(key)) {
-                        acc[key] = (obj as any)[key];
+                        acc[key] = this.sanitizeMetadata((obj as any)[key], depth + 1, seen);
                     }
                     return acc;
                 }, {})
@@ -580,7 +580,14 @@ export class SystemLogService implements ISystemLogService {
      *
      * This ensures log entries can always be persisted to MongoDB without BSON errors.
      *
+     * **Error handling:**
+     *
+     * This method throws errors to the caller. The `saveLogFromArgs()` method implements
+     * a two-tier fallback that catches these errors and attempts to save a simplified
+     * error record before falling back to console logging.
+     *
      * @param data - Log data to save
+     * @throws Error if MongoDB save fails (caller should handle with fallback)
      */
     public async saveLog(data: ISaveLogData): Promise<void> {
         try {
@@ -613,8 +620,9 @@ export class SystemLogService implements ISystemLogService {
                 resolved: false
             });
         } catch (error) {
-            // Log to stderr to avoid infinite loops
+            // Log to stderr to avoid infinite loops, then rethrow for caller's fallback handler
             console.error('Failed to save log entry to MongoDB:', error);
+            throw error;
         }
     }
 
