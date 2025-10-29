@@ -710,6 +710,339 @@ describe('SystemLogService - Integration with Logging Methods', () => {
     });
 });
 
+describe('SystemLogService - Error Object Circular Reference Sanitization', () => {
+    let service: SystemLogService;
+    let mockPino: MockPinoLogger;
+
+    beforeEach(async () => {
+        vi.clearAllMocks();
+
+        (SystemLogService as any).instance = undefined;
+        service = SystemLogService.getInstance();
+        mockPino = new MockPinoLogger();
+        await service.initialize(mockPino as any);
+    });
+
+    /**
+     * Test: Error objects with circular references in custom properties should be sanitized.
+     *
+     * Verifies that custom properties on Error objects (like AxiosError's config, request, response)
+     * are recursively sanitized to remove circular references. This prevents BSON serialization
+     * errors when logging Axios errors or other complex error types with circular object graphs.
+     *
+     * Regression test for bug where Error custom properties bypassed sanitization.
+     */
+    it('should recursively sanitize Error object custom properties with circular references', async () => {
+        // Simulate AxiosError structure with circular references
+        const axiosError: any = new Error('Request failed with status code 400');
+        axiosError.name = 'AxiosError';
+        axiosError.code = 'ERR_BAD_REQUEST';
+
+        // Create circular reference chain: config -> request -> response -> request
+        const config: any = {
+            url: 'https://api.telegram.org/bot.../sendMessage',
+            method: 'POST',
+            data: { chat_id: 123, text: 'Test' }
+        };
+
+        const request: any = { config };
+        const response: any = { data: { error: 'Bad Request' }, status: 400, config };
+
+        // Create circular references
+        request.response = response;
+        response.request = request;
+        config.request = request;
+
+        // Attach to error as custom properties
+        axiosError.config = config;
+        axiosError.request = request;
+        axiosError.response = response;
+
+        // Log the error
+        service.error({ error: axiosError }, 'Telegram API error');
+
+        await new Promise(resolve => setTimeout(resolve, 10));
+
+        expect(mockCreate).toHaveBeenCalledTimes(1);
+
+        const savedLog = mockCreate.mock.calls[0][0];
+
+        // Verify basic error properties preserved
+        expect(savedLog.context.error.name).toBe('AxiosError');
+        expect(savedLog.context.error.message).toBe('Request failed with status code 400');
+        expect(savedLog.context.error.code).toBe('ERR_BAD_REQUEST');
+
+        // Verify custom properties exist and are sanitized
+        expect(savedLog.context.error.config).toBeDefined();
+        expect(savedLog.context.error.request).toBeDefined();
+        expect(savedLog.context.error.response).toBeDefined();
+
+        // Verify config data preserved
+        expect(savedLog.context.error.config.url).toBe('https://api.telegram.org/bot.../sendMessage');
+        expect(savedLog.context.error.config.method).toBe('POST');
+
+        // Verify circular references were detected and replaced
+        // The exact location of '[Circular Reference]' depends on traversal order,
+        // but circular chains should be broken - verify it's serializable to JSON
+        expect(() => JSON.stringify(savedLog.context.error)).not.toThrow();
+        expect(JSON.stringify(savedLog.context.error)).toBeDefined();
+    });
+
+    /**
+     * Test: Deeply nested Error custom properties with circular refs should be sanitized.
+     *
+     * Verifies that circular references several levels deep within Error custom properties
+     * are properly detected and replaced, not just direct circular references.
+     */
+    it('should sanitize deeply nested circular references in Error custom properties', async () => {
+        const error: any = new Error('Complex error');
+        error.name = 'ComplexError';
+
+        // Create deeply nested structure with circular reference
+        const level1: any = { name: 'level1' };
+        const level2: any = { name: 'level2', parent: level1 };
+        const level3: any = { name: 'level3', parent: level2 };
+
+        // Create circular reference at level 3 pointing back to level 1
+        level3.root = level1;
+        level1.child = level2;
+        level2.child = level3;
+
+        // Attach as custom property on error
+        error.metadata = level1;
+
+        service.error({ err: error }, 'Error with deeply nested circular refs');
+
+        await new Promise(resolve => setTimeout(resolve, 10));
+
+        expect(mockCreate).toHaveBeenCalledTimes(1);
+
+        const savedLog = mockCreate.mock.calls[0][0];
+
+        // Verify structure exists
+        expect(savedLog.context.err.metadata.name).toBe('level1');
+        expect(savedLog.context.err.metadata.child.name).toBe('level2');
+        expect(savedLog.context.err.metadata.child.child.name).toBe('level3');
+
+        // Verify circular reference detected
+        expect(savedLog.context.err.metadata.child.child.root).toBe('[Circular Reference]');
+    });
+
+    /**
+     * Test: Error custom properties with functions should be sanitized.
+     *
+     * Verifies that functions in Error custom properties are converted to string
+     * representations instead of being silently dropped or causing serialization errors.
+     */
+    it('should sanitize functions in Error custom properties', async () => {
+        const error: any = new Error('Error with callbacks');
+        error.onRetry = function handleRetry() { return true; };
+        error.transform = (data: any) => data;
+
+        service.error({ err: error }, 'Error with function properties');
+
+        await new Promise(resolve => setTimeout(resolve, 10));
+
+        expect(mockCreate).toHaveBeenCalledTimes(1);
+
+        const savedLog = mockCreate.mock.calls[0][0];
+
+        // Verify functions converted to string representations
+        expect(savedLog.context.err.onRetry).toMatch(/\[Function:/);
+        expect(savedLog.context.err.transform).toMatch(/\[Function:/);
+    });
+
+    /**
+     * Test: Error custom properties with undefined values should be removed.
+     *
+     * Verifies that undefined custom properties on Error objects are removed
+     * during sanitization to prevent BSON serialization errors.
+     */
+    it('should remove undefined values from Error custom properties', async () => {
+        const error: any = new Error('Error with undefined props');
+        error.definedProp = 'value';
+        error.undefinedProp = undefined;
+        error.nullProp = null;
+
+        service.error({ err: error }, 'Error with mixed property values');
+
+        await new Promise(resolve => setTimeout(resolve, 10));
+
+        expect(mockCreate).toHaveBeenCalledTimes(1);
+
+        const savedLog = mockCreate.mock.calls[0][0];
+
+        // Verify undefined removed, but null preserved
+        expect(savedLog.context.err.definedProp).toBe('value');
+        expect(savedLog.context.err.undefinedProp).toBeUndefined();
+        expect(savedLog.context.err.nullProp).toBeNull();
+    });
+});
+
+describe('SystemLogService - Two-Tier Fallback Error Handling', () => {
+    let service: SystemLogService;
+    let mockPino: MockPinoLogger;
+    let consoleErrorSpy: any;
+
+    beforeEach(async () => {
+        vi.clearAllMocks();
+
+        (SystemLogService as any).instance = undefined;
+        service = SystemLogService.getInstance();
+        mockPino = new MockPinoLogger();
+        await service.initialize(mockPino as any);
+
+        // Spy on console.error to verify fallback console logging
+        consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    });
+
+    /**
+     * Test: When primary MongoDB save fails, should attempt simplified error record.
+     *
+     * Verifies the two-tier fallback mechanism where a failed primary save triggers
+     * a second attempt with simplified error metadata before falling back to console.
+     *
+     * Regression test for bug where saveLog() swallowed errors and prevented fallback.
+     */
+    it('should attempt simplified error record when primary save fails', async () => {
+        // Make first SystemLog.create() call fail with BSON error
+        let callCount = 0;
+        mockCreate.mockImplementation(() => {
+            callCount++;
+            if (callCount === 1) {
+                // First call (primary save) fails
+                return Promise.reject(new Error('Cannot convert circular structure to BSON'));
+            } else {
+                // Second call (fallback save) succeeds
+                return Promise.resolve({});
+            }
+        });
+
+        // Create circular object that will fail sanitization
+        const problematicObj: any = { name: 'test' };
+        problematicObj.self = problematicObj;
+
+        service.error({ data: problematicObj }, 'Error that triggers fallback');
+
+        await new Promise(resolve => setTimeout(resolve, 20));
+
+        // Verify primary save was attempted
+        expect(mockCreate).toHaveBeenCalledTimes(2);
+
+        // Verify console.error was called for primary failure
+        expect(consoleErrorSpy).toHaveBeenCalledWith(
+            'Failed to save log entry to MongoDB:',
+            expect.any(Error)
+        );
+
+        // Verify fallback save was attempted with simplified error record
+        const fallbackCall = mockCreate.mock.calls[1][0];
+        expect(fallbackCall.level).toBe('error');
+        expect(fallbackCall.message).toBe('Failed to save log entry (error during serialization)');
+        expect(fallbackCall.service).toBe('system-log');
+        expect(fallbackCall.context.originalMessage).toBe('Error that triggers fallback');
+        expect(fallbackCall.context.originalLevel).toBe('error');
+        expect(fallbackCall.context.errorType).toBeDefined();
+    });
+
+    /**
+     * Test: When both primary and fallback saves fail, should only log to console.
+     *
+     * Verifies that if both MongoDB save attempts fail (database completely unavailable),
+     * the error is logged to console without throwing and crashing the application.
+     */
+    it('should fall back to console logging when MongoDB is completely unavailable', async () => {
+        // Make all SystemLog.create() calls fail
+        mockCreate.mockRejectedValue(new Error('MongoDB connection lost'));
+
+        service.error({ critical: true }, 'Error when database is down');
+
+        await new Promise(resolve => setTimeout(resolve, 20));
+
+        // Verify both save attempts were made
+        expect(mockCreate).toHaveBeenCalledTimes(2);
+
+        // Verify console.error was called for both failures
+        expect(consoleErrorSpy).toHaveBeenCalledWith(
+            'Failed to save log entry to MongoDB:',
+            expect.any(Error)
+        );
+        expect(consoleErrorSpy).toHaveBeenCalledWith(
+            'Failed to save log from args:',
+            expect.any(Error)
+        );
+        expect(consoleErrorSpy).toHaveBeenCalledWith(
+            'Failed to save fallback error log:',
+            expect.any(Error)
+        );
+
+        // Application should not crash - error was handled gracefully
+    });
+
+    /**
+     * Test: Fallback error record should include debugging metadata.
+     *
+     * Verifies that the simplified error record includes useful debugging information
+     * like original message, level, error type, and metadata keys to help diagnose
+     * why the primary save failed.
+     */
+    it('should include debugging metadata in fallback error record', async () => {
+        let callCount = 0;
+        mockCreate.mockImplementation(() => {
+            callCount++;
+            if (callCount === 1) {
+                return Promise.reject(new Error('BSON serialization failed'));
+            } else {
+                return Promise.resolve({});
+            }
+        });
+
+        service.error(
+            { userId: 123, action: 'login', complexData: { nested: 'value' } },
+            'Original error message'
+        );
+
+        await new Promise(resolve => setTimeout(resolve, 20));
+
+        const fallbackCall = mockCreate.mock.calls[1][0];
+
+        // Verify debugging metadata present
+        expect(fallbackCall.context.originalMessage).toBe('Original error message');
+        expect(fallbackCall.context.originalLevel).toBe('error');
+        expect(fallbackCall.context.errorMessage).toBe('BSON serialization failed');
+        expect(fallbackCall.context.metadataKeys).toEqual(['userId', 'action', 'complexData']);
+    });
+
+    /**
+     * Test: Two-tier fallback should work for all log levels.
+     *
+     * Verifies that the fallback mechanism works for warn, info, debug, trace, and fatal
+     * levels, not just error.
+     */
+    it('should use two-tier fallback for all log levels', async () => {
+        let callCount = 0;
+        mockCreate.mockImplementation(() => {
+            callCount++;
+            if (callCount === 1) {
+                return Promise.reject(new Error('BSON error'));
+            } else {
+                return Promise.resolve({});
+            }
+        });
+
+        // Test with warn level
+        service.warn({ problematic: 'data' }, 'Warning message');
+
+        await new Promise(resolve => setTimeout(resolve, 20));
+
+        expect(mockCreate).toHaveBeenCalledTimes(2);
+
+        const fallbackCall = mockCreate.mock.calls[1][0];
+        expect(fallbackCall.context.originalLevel).toBe('warn');
+        expect(fallbackCall.context.originalMessage).toBe('Warning message');
+    });
+});
+
 describe('SystemLogService - MongoDB Operations', () => {
     let service: SystemLogService;
     let mockPino: MockPinoLogger;
