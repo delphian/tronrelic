@@ -48,13 +48,22 @@ jobs:
           docker push ghcr.io/${{ github.repository }}/frontend:dev
           docker push ghcr.io/${{ github.repository }}/frontend:dev-${{ github.sha }}
 
-      - name: Deploy docker-compose.dev.yml to dev droplet
+      - name: Create .env file from template with secrets
+        run: |
+          cp .env.dev .env.tmp
+          sed -i 's|__DEV_SITE_URL__|${{ secrets.DEV_SITE_URL }}|g' .env.tmp
+          sed -i 's|__ADMIN_API_TOKEN__|${{ secrets.ADMIN_API_TOKEN }}|g' .env.tmp
+          sed -i 's|__TRONGRID_API_KEY__|${{ secrets.TRONGRID_API_KEY }}|g' .env.tmp
+          sed -i 's|__TRONGRID_API_KEY_2__|${{ secrets.TRONGRID_API_KEY_2 }}|g' .env.tmp
+          sed -i 's|__TRONGRID_API_KEY_3__|${{ secrets.TRONGRID_API_KEY_3 }}|g' .env.tmp
+
+      - name: Deploy files to dev droplet
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.DEV_DROPLET_HOST }}
           username: ${{ secrets.DEV_DROPLET_USER }}
           key: ${{ secrets.DEV_DROPLET_SSH_KEY }}
-          source: "docker-compose.dev.yml"
+          source: "docker-compose.dev.yml,.env.tmp"
           target: "/opt/tronrelic-dev/"
 
       - name: Deploy to dev droplet
@@ -65,6 +74,9 @@ jobs:
           key: ${{ secrets.DEV_DROPLET_SSH_KEY }}
           script: |
             cd /opt/tronrelic-dev
+            # Move .env.tmp to .env (replace old .env with secrets)
+            mv .env.tmp .env
+            # Pull latest images and restart services
             docker compose -f docker-compose.dev.yml pull
             docker compose -f docker-compose.dev.yml down
             docker compose -f docker-compose.dev.yml up -d

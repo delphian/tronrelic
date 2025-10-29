@@ -19,8 +19,9 @@ ftpsync.settings
 .env.staging
 .env.development
 
-# Whitelist .env.example (template file should be tracked)
+# Whitelist template files (should be tracked - no secrets)
 !.env.example
+!.env.dev
 wp-config.php
 wp-config-local.php
 config.php
