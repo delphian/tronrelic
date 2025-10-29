@@ -384,6 +384,9 @@ services:
                 condition: service_healthy
         networks:
             - tronrelic-network
+        volumes:
+            # Mount uploads directory for file persistence across container restarts
+            - ./public/uploads:/app/public/uploads
         healthcheck:
             test: [\"CMD\", \"node\", \"-e\", \"require('http').get('http://localhost:4000/api/health', (r) => { process.exit(r.statusCode === 200 ? 0 : 1); });\"]
             interval: 30s
