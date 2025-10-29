@@ -63,6 +63,11 @@ services:
             - TRONGRID_API_KEY=${TRONGRID_API_KEY}
             - TRONGRID_API_KEY_2=${TRONGRID_API_KEY_2}
             - TRONGRID_API_KEY_3=${TRONGRID_API_KEY_3}
+
+            # Runtime Configuration (see docs/system/system-runtime-config.md)
+            # Sets initial database default for siteUrl on fresh install
+            # Set via .env file: SITE_URL=https://dev.tronrelic.com
+            - NEXT_PUBLIC_SITE_URL=${SITE_URL:-https://dev.tronrelic.com}
         depends_on:
             mongodb:
                 condition: service_healthy
@@ -93,13 +98,24 @@ services:
             # Next.js Environment
             - NODE_ENV=development
 
-            # API URL for Next.js rewrites (SSR uses Docker service name)
+            # API URL for Next.js rewrites (SSR uses Docker service name for backend-to-backend communication)
             - API_URL=http://backend:4000
 
-            # Client-side API URLs (browser accessible)
-            - NEXT_PUBLIC_API_URL=http://localhost:4000/api
-            - NEXT_PUBLIC_SOCKET_URL=http://localhost:4000
-            - NEXT_PUBLIC_SITE_URL=http://localhost:3000
+            # NOTE: NEXT_PUBLIC_* variables have been REMOVED
+            # Runtime configuration is now fetched from backend's SystemConfigService
+            # and injected into HTML by SSR (see lib/serverConfig.ts and lib/runtimeConfig.ts).
+            # Administrators configure the site URL via /system/config admin UI.
+            #
+            # For dev.tronrelic.com deployment:
+            # 1. Deploy this docker-compose.dev.yml
+            # 2. Visit https://dev.tronrelic.com/system/config
+            # 3. Set siteUrl to "https://dev.tronrelic.com"
+            # 4. WebSocket will connect to correct domain automatically
+            #
+            # Benefits:
+            # - Same Docker image works for dev.tronrelic.com and tronrelic.com
+            # - Runtime reconfiguration without redeployment
+            # - Single source of truth (backend database)
         depends_on:
             backend:
                 condition: service_healthy

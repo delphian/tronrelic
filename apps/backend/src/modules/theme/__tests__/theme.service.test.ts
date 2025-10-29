@@ -76,6 +76,7 @@ class MockCacheService implements ICacheService {
  */
 class MockDatabaseService implements IDatabaseService {
     private collections = new Map<string, Map<string, any>>();
+    private kvStore = new Map<string, any>();
 
     registerModel(collectionName: string, model: any): void {
         // No-op for tests
@@ -83,6 +84,66 @@ class MockDatabaseService implements IDatabaseService {
 
     getModel(collectionName: string): any | undefined {
         return undefined;
+    }
+
+    async get<T = any>(key: string): Promise<T | undefined> {
+        return this.kvStore.get(key);
+    }
+
+    async set<T = any>(key: string, value: T): Promise<void> {
+        this.kvStore.set(key, value);
+    }
+
+    async delete(key: string): Promise<boolean> {
+        return this.kvStore.delete(key);
+    }
+
+    async createIndex(
+        collectionName: string,
+        indexSpec: Record<string, 1 | -1>,
+        options?: { unique?: boolean; sparse?: boolean; expireAfterSeconds?: number; name?: string }
+    ): Promise<void> {
+        // No-op for tests
+    }
+
+    async count<T extends any = any>(collectionName: string, filter: any): Promise<number> {
+        const collection = this.getCollection<T>(collectionName);
+        const results = await collection.find(filter).toArray();
+        return results.length;
+    }
+
+    async find<T extends any = any>(
+        collectionName: string,
+        filter: any,
+        options?: { limit?: number; skip?: number; sort?: Record<string, 1 | -1> }
+    ): Promise<T[]> {
+        const collection = this.getCollection<T>(collectionName);
+        return collection.find(filter).toArray();
+    }
+
+    async findOne<T extends any = any>(collectionName: string, filter: any): Promise<T | null> {
+        const collection = this.getCollection<T>(collectionName);
+        return collection.findOne(filter);
+    }
+
+    async insertOne<T extends any = any>(collectionName: string, document: T): Promise<any> {
+        const collection = this.getCollection<T>(collectionName);
+        const result = await collection.insertOne(document);
+        return result.insertedId;
+    }
+
+    async updateMany<T extends any = any>(
+        collectionName: string,
+        filter: any,
+        update: any
+    ): Promise<number> {
+        // Simple implementation for tests
+        return 0;
+    }
+
+    async deleteMany<T extends any = any>(collectionName: string, filter: any): Promise<number> {
+        // Simple implementation for tests
+        return 0;
     }
 
     async initializeMigrations(): Promise<void> {
@@ -101,7 +162,15 @@ class MockDatabaseService implements IDatabaseService {
         // No-op for tests
     }
 
-    getCollection<T = any>(name: string) {
+    async executeMigrationsAll(): Promise<void> {
+        // No-op for tests
+    }
+
+    isMigrationRunning(): boolean {
+        return false;
+    }
+
+    getCollection<T = any>(name: string): any {
         if (!this.collections.has(name)) {
             this.collections.set(name, new Map());
         }
@@ -205,6 +274,7 @@ class MockDatabaseService implements IDatabaseService {
      */
     clear(): void {
         this.collections.clear();
+        this.kvStore.clear();
     }
 }
 
@@ -217,10 +287,7 @@ class MockDatabaseService implements IDatabaseService {
  */
 class MockSystemLogService implements ISystemLogService {
     public logs: Array<{ level: string; message: string; metadata?: any }> = [];
-
-    async log(level: string, message: string, metadata?: any): Promise<void> {
-        this.logs.push({ level, message, metadata });
-    }
+    public level: string = 'info';
 
     info(messageOrMetadata: string | any, metadataOrMessage?: any): void {
         if (typeof messageOrMetadata === 'string') {
@@ -252,6 +319,84 @@ class MockSystemLogService implements ISystemLogService {
         } else {
             this.logs.push({ level: 'debug', message: metadataOrMessage, metadata: messageOrMetadata });
         }
+    }
+
+    trace(messageOrMetadata: string | any, metadataOrMessage?: any): void {
+        if (typeof messageOrMetadata === 'string') {
+            this.logs.push({ level: 'trace', message: messageOrMetadata, metadata: metadataOrMessage });
+        } else {
+            this.logs.push({ level: 'trace', message: metadataOrMessage, metadata: messageOrMetadata });
+        }
+    }
+
+    fatal(messageOrMetadata: string | any, metadataOrMessage?: any): void {
+        if (typeof messageOrMetadata === 'string') {
+            this.logs.push({ level: 'fatal', message: messageOrMetadata, metadata: metadataOrMessage });
+        } else {
+            this.logs.push({ level: 'fatal', message: metadataOrMessage, metadata: messageOrMetadata });
+        }
+    }
+
+    child(bindings: Record<string, any>): ISystemLogService {
+        return this;
+    }
+
+    async initialize(logger?: any): Promise<void> {
+        // No-op for tests
+    }
+
+    async saveLog(data: any): Promise<void> {
+        // No-op for tests
+    }
+
+    async getLogs(query: any): Promise<any> {
+        return {
+            logs: [],
+            total: 0,
+            page: 1,
+            limit: 50,
+            totalPages: 0,
+            hasNextPage: false,
+            hasPrevPage: false
+        };
+    }
+
+    async markAsResolved(logId: string, resolvedBy: string): Promise<void> {
+        // No-op for tests
+    }
+
+    async cleanup(): Promise<number> {
+        return 0;
+    }
+
+    async getStatistics(): Promise<any> {
+        return {
+            total: 0,
+            byLevel: {},
+            byService: {},
+            unresolved: 0
+        };
+    }
+
+    async getLogById(id: string): Promise<any> {
+        return null;
+    }
+
+    async markAsUnresolved(id: string): Promise<any> {
+        return null;
+    }
+
+    async deleteAllLogs(): Promise<number> {
+        return 0;
+    }
+
+    async getStats(): Promise<any> {
+        return {
+            total: 0,
+            byLevel: {},
+            resolved: 0,
+            unresolved: 0
+        };
     }
 
     clear(): void {
