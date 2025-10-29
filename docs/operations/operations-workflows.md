@@ -635,6 +635,79 @@ nano docker-compose.yml  # Change image tag
 docker compose down && docker compose up -d
 ```
 
+## GitHub Repository Secrets
+
+The GitHub Actions CI/CD pipeline requires specific secrets to be configured in the repository settings for automated deployments to work correctly.
+
+### Required Secrets for Development Auto-Deploy
+
+Navigate to **Settings → Secrets and variables → Actions** in the GitHub repository and add the following secrets:
+
+| Secret Name | Purpose | Example Value | Required |
+|------------|---------|---------------|----------|
+| `DEV_DROPLET_HOST` | Dev server IP address | `139.59.222.237` | ✅ Yes |
+| `DEV_DROPLET_USER` | SSH username | `root` | ✅ Yes |
+| `DEV_DROPLET_SSH_KEY` | SSH private key for authentication | `-----BEGIN OPENSSH PRIVATE KEY-----...` | ✅ Yes |
+| `DEV_SITE_URL` | Dev site URL (not actually secret, but avoids hardcoding) | `https://dev.tronrelic.com` | ✅ Yes |
+| `ADMIN_API_TOKEN` | Admin API token for testing/deployment | Generate with `openssl rand -hex 32` | ✅ Yes |
+| `TRONGRID_API_KEY` | TronGrid API key #1 | From https://www.trongrid.io/ | ✅ Yes |
+| `TRONGRID_API_KEY_2` | TronGrid API key #2 | From https://www.trongrid.io/ | ✅ Yes |
+| `TRONGRID_API_KEY_3` | TronGrid API key #3 | From https://www.trongrid.io/ | ✅ Yes |
+
+### How Secrets Are Used
+
+**During GitHub Actions deployment (.github/workflows/docker-publish-dev.yml):**
+
+1. The workflow creates a `.env` file from the `.env.dev` template
+2. Placeholders like `__DEV_SITE_URL__` are replaced with actual secret values using `sed`
+3. The processed `.env` file is deployed to `/opt/tronrelic-dev/.env` on the server
+4. Docker Compose reads the `.env` file and passes values to containers
+
+**Environment variable flow:**
+```
+GitHub Secrets → .env.dev template → sed replacement → .env on server → Docker containers
+```
+
+### Generating SSH Key for CI/CD
+
+If you don't have an SSH key for the dev server:
+
+```bash
+# Generate a new SSH key pair (on your local machine)
+ssh-keygen -t ed25519 -f ~/.ssh/tronrelic-dev -C "github-actions@tronrelic.com"
+
+# Copy public key to dev server
+ssh-copy-id -i ~/.ssh/tronrelic-dev.pub root@139.59.222.237
+
+# Display private key to copy to GitHub secret
+cat ~/.ssh/tronrelic-dev
+```
+
+Copy the **entire private key** (including `-----BEGIN OPENSSH PRIVATE KEY-----` and `-----END OPENSSH PRIVATE KEY-----`) into the `DEV_DROPLET_SSH_KEY` secret.
+
+### Verifying Secrets Configuration
+
+After configuring secrets, push a commit to the `dev` branch to trigger the workflow:
+
+```bash
+git checkout dev
+git commit --allow-empty -m "Test CI/CD deployment"
+git push origin dev
+```
+
+Watch the GitHub Actions workflow run and verify:
+- ✅ .env file is created and deployed
+- ✅ Containers restart with new configuration
+- ✅ WebSocket connects to correct domain (not IP address)
+
+### Security Best Practices
+
+- **Rotate secrets periodically** (especially ADMIN_API_TOKEN and TronGrid API keys)
+- **Never commit .env files** to version control (already in .gitignore)
+- **Use separate secrets for prod and dev** (don't share the same ADMIN_API_TOKEN)
+- **Limit GitHub secret access** to repository administrators only
+- **Audit secret usage** via GitHub Actions workflow run logs (secrets are masked)
+
 ## Further Reading
 
 - [operations-server-info.md](./operations-server-info.md) - Server locations, credentials, authentication
