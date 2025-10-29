@@ -608,8 +608,10 @@ export class SystemLogService implements ISystemLogService {
      * @param args - Arguments passed to logging method
      */
     private async saveLogFromArgs(level: LogLevel, args: any[]): Promise<void> {
+        let message = 'No message provided';
+        let mergedMetadata: Record<string, any> = {};
+
         try {
-            let message = 'No message provided';
             let context: Record<string, any> = {};
 
             // Defensive argument parsing to handle all Pino call patterns
@@ -660,7 +662,7 @@ export class SystemLogService implements ISystemLogService {
 
             // Merge child logger bindings with call-time metadata
             // Call-time metadata takes precedence over bindings
-            const mergedMetadata = { ...this.bindings, ...context };
+            mergedMetadata = { ...this.bindings, ...context };
 
             await this.saveLog({
                 level,
@@ -669,7 +671,28 @@ export class SystemLogService implements ISystemLogService {
                 timestamp: new Date()
             });
         } catch (error) {
-            console.error('Failed to save log from args:', error);
+            // First attempt: Try to save a simplified error to database
+            try {
+                await SystemLog.create({
+                    timestamp: new Date(),
+                    level: 'error',
+                    message: 'Failed to save log entry (error during serialization)',
+                    service: 'system-log',
+                    context: {
+                        originalMessage: message,
+                        originalLevel: level,
+                        errorType: error instanceof Error ? error.name : typeof error,
+                        errorMessage: error instanceof Error ? error.message : String(error),
+                        // Try to surface the problematic metadata keys in a safe way
+                        metadataKeys: mergedMetadata ? Object.keys(mergedMetadata) : []
+                    },
+                    resolved: false
+                });
+            } catch (fallbackError) {
+                // Well this is embarrassing - even our error logger is broken
+                console.error('Failed to save log from args:', error);
+                console.error('Failed to save fallback error log:', fallbackError);
+            }
         }
     }
 
