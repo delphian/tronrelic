@@ -333,4 +333,4 @@ Change via System Config API or `/system/config` admin UI.
 - [system-api.md](./system-api.md) - Complete API reference for logs endpoint
 - [plugins-system-architecture.md](../plugins/plugins-system-architecture.md) - Plugin context and logger injection
 - [plugins-blockchain-observers.md](../plugins/plugins-blockchain-observers.md) - Observer logging patterns
-- [system-monitoring-dashboard.md](./system-monitoring-dashboard.md) - Web UI for log access
+- [system-dashboard.md](./system-dashboard.md) - Web UI for log access
