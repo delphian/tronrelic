@@ -56,9 +56,9 @@ function LoginForm() {
         <div className={styles.login_container}>
             <div className={styles.login_content}>
                 <header className={styles.login_header}>
-                    <h1 className={styles.login_title}>System Monitoring</h1>
+                    <h1 className={styles.login_title}>System Dashboard</h1>
                     <p className={styles.login_subtitle}>
-                        Enter your admin token to access system monitoring tools
+                        Enter your admin token to access system dashboard
                     </p>
                 </header>
                 <form onSubmit={handleLogin} className={styles.login_form} aria-label="Admin authentication form">
@@ -109,12 +109,12 @@ function AuthenticatedLayout({ navigation, children }: { navigation?: ReactNode;
             <div className={styles.layout_content}>
                 <header className={styles.layout_header}>
                     <div className={styles.layout_header_text}>
-                        <h1 className={styles.layout_title}>System Monitoring Dashboard</h1>
+                        <h1 className={styles.layout_title}>System Dashboard</h1>
                         <p className={styles.layout_subtitle}>
                             Real-time visibility into blockchain sync, jobs, markets, and system health
                         </p>
                     </div>
-                    <Button onClick={logout} variant="secondary" size="md" aria-label="Logout from system monitoring">
+                    <Button onClick={logout} variant="secondary" size="md" aria-label="Logout from system dashboard">
                         Logout
                     </Button>
                 </header>

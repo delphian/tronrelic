@@ -1,6 +1,6 @@
 import { definePlugin, type IPluginContext, type IApiRouteConfig, type IHttpRequest, type IHttpResponse, type IHttpNext, type ISystemLogService } from '@tronrelic/types';
 import { telegramBotManifest } from '../manifest.js';
-import type { ITelegramUser, ITelegramSubscription, IPluginTelegramBotConfig } from '../shared/index.js';
+import type { ITelegramUser, ITelegramChannel, ITelegramSubscription, IPluginTelegramBotConfig } from '../shared/index.js';
 import { CommandHandler } from './command-handlers.js';
 import { MarketQueryService } from './market-query.service.js';
 import { createWebhookHandler } from './webhook-handler.js';
@@ -52,6 +52,15 @@ export const telegramBotBackendPlugin = definePlugin({
         await usersCollection.createIndex({ createdAt: -1 });
 
         context.logger.info('Created user collection indexes');
+
+        // Create indexes for channels collection
+        const channelsCollection = context.database.getCollection<ITelegramChannel>('channels');
+        await channelsCollection.createIndex({ chatId: 1 }, { unique: true });
+        await channelsCollection.createIndex({ isActive: 1 });
+        await channelsCollection.createIndex({ joinedAt: -1 });
+        await channelsCollection.createIndex({ lastUpdate: -1 });
+
+        context.logger.info('Created channels collection indexes');
 
         // Seed default subscription types
         const subscriptionsCollection = context.database.getCollection<ITelegramSubscription>('subscriptions');
@@ -120,6 +129,14 @@ export const telegramBotBackendPlugin = definePlugin({
             context.logger.info('Dropped users collection');
         } catch (error) {
             context.logger.warn({ error }, 'Failed to drop users collection (may not exist)');
+        }
+
+        try {
+            const channelsCollection = context.database.getCollection('channels');
+            await channelsCollection.drop();
+            context.logger.info('Dropped channels collection');
+        } catch (error) {
+            context.logger.warn({ error }, 'Failed to drop channels collection (may not exist)');
         }
 
         try {
@@ -209,6 +226,7 @@ export const telegramBotBackendPlugin = definePlugin({
         const webhookHandler = createWebhookHandler(
             commandHandler,
             telegramBotService,
+            context,
             context.logger,
             {
                 allowedIps: process.env.TELEGRAM_IP_ALLOWLIST,
@@ -558,13 +576,20 @@ export const telegramBotBackendPlugin = definePlugin({
                         subscriptionCounts[item._id] = item.count;
                     }
 
+                    // Get channel stats
+                    const channelsCollection = pluginContext.database.getCollection<ITelegramChannel>('channels');
+                    const totalChannels = await channelsCollection.countDocuments();
+                    const activeChannels = await channelsCollection.countDocuments({ isActive: true });
+
                     res.json({
                         success: true,
                         stats: {
                             totalUsers,
                             activeUsers24h,
                             totalCommands,
-                            subscriptionCounts
+                            subscriptionCounts,
+                            totalChannels,
+                            activeChannels
                         }
                     });
                 } catch (error) {
@@ -572,6 +597,38 @@ export const telegramBotBackendPlugin = definePlugin({
                 }
             },
             description: 'Get Telegram bot usage statistics'
+        },
+        {
+            method: 'GET',
+            path: '/channels',
+            handler: async (_req: IHttpRequest, res: IHttpResponse, next: IHttpNext) => {
+                try {
+                    const channelsCollection = pluginContext.database.getCollection<ITelegramChannel>('channels');
+
+                    // Get all channels, sorted by most recently updated
+                    const channels = await channelsCollection
+                        .find()
+                        .sort({ lastUpdate: -1 })
+                        .toArray();
+
+                    res.json({
+                        success: true,
+                        channels: channels.map((channel) => ({
+                            chatId: channel.chatId,
+                            type: channel.type,
+                            title: channel.title,
+                            username: channel.username,
+                            isActive: channel.isActive,
+                            joinedAt: channel.joinedAt,
+                            lastUpdate: channel.lastUpdate,
+                            leftAt: channel.leftAt
+                        }))
+                    });
+                } catch (error) {
+                    next(error);
+                }
+            },
+            description: 'Get list of all channels/groups the bot has been added to'
         },
         {
             method: 'GET',

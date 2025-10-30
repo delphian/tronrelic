@@ -3,7 +3,9 @@
 import { useEffect, useState } from 'react';
 import { config as runtimeConfig } from '../../../../lib/config';
 import { useSystemAuth } from '../../../../features/system';
+import { Badge } from '../../../../components/ui/Badge';
 import type { IPluginInfo } from '@tronrelic/types';
+import styles from './PluginsManagementPage.module.css';
 
 /**
  * Plugin card component for managing individual plugin state.
@@ -73,88 +75,62 @@ function PluginCard({ pluginInfo, onInstall, onUninstall, onEnable, onDisable, i
     const canDisable = metadata.enabled;
 
     return (
-        <div style={{
-            border: '1px solid rgba(255,255,255,0.1)',
-            borderRadius: '8px',
-            padding: '1.5rem',
-            background: 'rgba(255,255,255,0.02)'
-        }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '1rem' }}>
-                <div>
-                    <h3 style={{ fontSize: '1.25rem', fontWeight: 600 }}>{manifest.title}</h3>
-                    <p style={{ opacity: 0.6, fontSize: '0.875rem', marginTop: '0.25rem' }}>
+        <div className={styles.plugin_card}>
+            <div className={styles.plugin_header}>
+                <div className={styles.plugin_info}>
+                    <h3 className={styles.plugin_title}>{manifest.title}</h3>
+                    <p className={styles.plugin_meta}>
                         {manifest.id} • v{manifest.version}
                     </p>
                 </div>
-                <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                    <span style={{
-                        padding: '0.25rem 0.75rem',
-                        borderRadius: '12px',
-                        fontSize: '0.75rem',
-                        fontWeight: 500,
-                        background: metadata.installed ? 'rgba(34, 197, 94, 0.2)' : 'rgba(156, 163, 175, 0.2)',
-                        color: metadata.installed ? '#22c55e' : '#9ca3af'
-                    }}>
+                <div className={styles.plugin_badges}>
+                    <Badge tone={metadata.installed ? 'success' : 'neutral'}>
                         {metadata.installed ? 'Installed' : 'Not Installed'}
-                    </span>
-                    <span style={{
-                        padding: '0.25rem 0.75rem',
-                        borderRadius: '12px',
-                        fontSize: '0.75rem',
-                        fontWeight: 500,
-                        background: metadata.enabled ? 'rgba(59, 130, 246, 0.2)' : 'rgba(156, 163, 175, 0.2)',
-                        color: metadata.enabled ? '#3b82f6' : '#9ca3af'
-                    }}>
+                    </Badge>
+                    <Badge tone={metadata.enabled ? 'neutral' : 'neutral'}>
                         {metadata.enabled ? 'Enabled' : 'Disabled'}
-                    </span>
+                    </Badge>
                 </div>
             </div>
 
             {manifest.description && (
-                <p style={{ opacity: 0.7, marginBottom: '1rem', fontSize: '0.875rem' }}>
+                <p className={styles.plugin_description}>
                     {manifest.description}
                 </p>
             )}
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', fontSize: '0.75rem', opacity: 0.6, marginBottom: '1rem' }}>
+            <div className={styles.plugin_details}>
                 {manifest.author && (
                     <div>
-                        <strong>Author:</strong> {manifest.author}
+                        <span className={styles.plugin_detail_label}>Author:</span> {manifest.author}
                     </div>
                 )}
                 {manifest.license && (
                     <div>
-                        <strong>License:</strong> {manifest.license}
+                        <span className={styles.plugin_detail_label}>License:</span> {manifest.license}
                     </div>
                 )}
                 <div>
-                    <strong>Backend:</strong> {manifest.backend ? 'Yes' : 'No'}
+                    <span className={styles.plugin_detail_label}>Backend:</span> {manifest.backend ? 'Yes' : 'No'}
                 </div>
                 <div>
-                    <strong>Frontend:</strong> {manifest.frontend ? 'Yes' : 'No'}
+                    <span className={styles.plugin_detail_label}>Frontend:</span> {manifest.frontend ? 'Yes' : 'No'}
                 </div>
             </div>
 
             {metadata.lastError && (
-                <div style={{
-                    padding: '0.75rem',
-                    background: 'rgba(239, 68, 68, 0.1)',
-                    border: '1px solid rgba(239, 68, 68, 0.3)',
-                    borderRadius: '4px',
-                    marginBottom: '1rem',
-                    fontSize: '0.875rem'
-                }}>
-                    <strong style={{ color: '#ef4444' }}>Error:</strong>
-                    <p style={{ marginTop: '0.25rem', opacity: 0.9 }}>{metadata.lastError}</p>
+                <div className={styles.plugin_error}>
+                    <div className={styles.plugin_error_title}>Error:</div>
+                    <p className={styles.plugin_error_message}>{metadata.lastError}</p>
                     {metadata.lastErrorAt && (
-                        <p style={{ marginTop: '0.25rem', opacity: 0.6, fontSize: '0.75rem' }}>
+                        <p className={styles.plugin_error_timestamp}>
                             {new Date(metadata.lastErrorAt).toLocaleString()}
                         </p>
                     )}
                 </div>
             )}
 
-            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+            <div className={styles.plugin_actions}>
                 {showConfirm ? (
                     <>
                         <button
@@ -165,31 +141,14 @@ function PluginCard({ pluginInfo, onInstall, onUninstall, onEnable, onDisable, i
                                 if (showConfirm === 'disable') handleDisable();
                             }}
                             disabled={isLoading}
-                            style={{
-                                padding: '0.5rem 1rem',
-                                background: '#ef4444',
-                                border: '1px solid #dc2626',
-                                borderRadius: '4px',
-                                fontSize: '0.875rem',
-                                fontWeight: 500,
-                                cursor: isLoading ? 'not-allowed' : 'pointer',
-                                opacity: isLoading ? 0.5 : 1
-                            }}
+                            className={`${styles.plugin_button} ${styles.plugin_button_confirm}`}
                         >
                             Confirm {showConfirm}
                         </button>
                         <button
                             onClick={() => setShowConfirm(null)}
                             disabled={isLoading}
-                            style={{
-                                padding: '0.5rem 1rem',
-                                background: 'rgba(255,255,255,0.05)',
-                                border: '1px solid rgba(255,255,255,0.1)',
-                                borderRadius: '4px',
-                                fontSize: '0.875rem',
-                                cursor: isLoading ? 'not-allowed' : 'pointer',
-                                opacity: isLoading ? 0.5 : 1
-                            }}
+                            className={`${styles.plugin_button} ${styles.plugin_button_cancel}`}
                         >
                             Cancel
                         </button>
@@ -199,85 +158,35 @@ function PluginCard({ pluginInfo, onInstall, onUninstall, onEnable, onDisable, i
                         <button
                             onClick={handleInstall}
                             disabled={!canInstall || isLoading}
-                            style={{
-                                padding: '0.5rem 1rem',
-                                background: canInstall ? 'rgba(34, 197, 94, 0.2)' : 'rgba(156, 163, 175, 0.1)',
-                                border: `1px solid ${canInstall ? '#22c55e' : 'rgba(156, 163, 175, 0.2)'}`,
-                                borderRadius: '4px',
-                                fontSize: '0.875rem',
-                                fontWeight: 500,
-                                cursor: canInstall && !isLoading ? 'pointer' : 'not-allowed',
-                                opacity: canInstall && !isLoading ? 1 : 0.5,
-                                color: canInstall ? '#22c55e' : '#9ca3af'
-                            }}
+                            className={`${styles.plugin_button} ${canInstall ? styles.plugin_button_install : styles.plugin_button_disabled}`}
                         >
                             Install
                         </button>
                         <button
                             onClick={handleUninstall}
                             disabled={!canUninstall || isLoading}
-                            style={{
-                                padding: '0.5rem 1rem',
-                                background: canUninstall ? 'rgba(239, 68, 68, 0.2)' : 'rgba(156, 163, 175, 0.1)',
-                                border: `1px solid ${canUninstall ? '#ef4444' : 'rgba(156, 163, 175, 0.2)'}`,
-                                borderRadius: '4px',
-                                fontSize: '0.875rem',
-                                fontWeight: 500,
-                                cursor: canUninstall && !isLoading ? 'pointer' : 'not-allowed',
-                                opacity: canUninstall && !isLoading ? 1 : 0.5,
-                                color: canUninstall ? '#ef4444' : '#9ca3af'
-                            }}
+                            className={`${styles.plugin_button} ${canUninstall ? styles.plugin_button_uninstall : styles.plugin_button_disabled}`}
                         >
                             Uninstall
                         </button>
                         <button
                             onClick={handleEnable}
                             disabled={!canEnable || isLoading}
-                            style={{
-                                padding: '0.5rem 1rem',
-                                background: canEnable ? 'rgba(59, 130, 246, 0.2)' : 'rgba(156, 163, 175, 0.1)',
-                                border: `1px solid ${canEnable ? '#3b82f6' : 'rgba(156, 163, 175, 0.2)'}`,
-                                borderRadius: '4px',
-                                fontSize: '0.875rem',
-                                fontWeight: 500,
-                                cursor: canEnable && !isLoading ? 'pointer' : 'not-allowed',
-                                opacity: canEnable && !isLoading ? 1 : 0.5,
-                                color: canEnable ? '#3b82f6' : '#9ca3af'
-                            }}
+                            className={`${styles.plugin_button} ${canEnable ? styles.plugin_button_enable : styles.plugin_button_disabled}`}
                         >
                             Enable
                         </button>
                         <button
                             onClick={handleDisable}
                             disabled={!canDisable || isLoading}
-                            style={{
-                                padding: '0.5rem 1rem',
-                                background: canDisable ? 'rgba(249, 115, 22, 0.2)' : 'rgba(156, 163, 175, 0.1)',
-                                border: `1px solid ${canDisable ? '#f97316' : 'rgba(156, 163, 175, 0.2)'}`,
-                                borderRadius: '4px',
-                                fontSize: '0.875rem',
-                                fontWeight: 500,
-                                cursor: canDisable && !isLoading ? 'pointer' : 'not-allowed',
-                                opacity: canDisable && !isLoading ? 1 : 0.5,
-                                color: canDisable ? '#f97316' : '#9ca3af'
-                            }}
+                            className={`${styles.plugin_button} ${canDisable ? styles.plugin_button_disable : styles.plugin_button_disabled}`}
                         >
                             Disable
                         </button>
                         {manifest.adminUrl && (
                             <a
                                 href={manifest.adminUrl}
-                                style={{
-                                    padding: '0.5rem 1rem',
-                                    background: 'rgba(139, 92, 246, 0.2)',
-                                    border: '1px solid #8b5cf6',
-                                    borderRadius: '4px',
-                                    fontSize: '0.875rem',
-                                    fontWeight: 500,
-                                    color: '#8b5cf6',
-                                    textDecoration: 'none',
-                                    display: 'inline-block'
-                                }}
+                                className={`${styles.plugin_button} ${styles.plugin_button_settings}`}
                             >
                                 Settings
                             </a>
@@ -365,64 +274,45 @@ export default function PluginsManagementPage() {
     };
 
     return (
-        <div style={{ display: 'grid', gap: '2rem', maxWidth: '1200px', margin: '0 auto' }}>
+        <div className={styles.container}>
             {error && (
-                <div style={{
-                    padding: '1rem',
-                    background: 'rgba(239, 68, 68, 0.1)',
-                    border: '1px solid rgba(239, 68, 68, 0.3)',
-                    borderRadius: '4px',
-                    color: '#ef4444'
-                }}>
+                <div className={`${styles.alert} ${styles.alert_error}`}>
                     {error}
                 </div>
             )}
 
             {successMessage && (
-                <div style={{
-                    padding: '1rem',
-                    background: 'rgba(34, 197, 94, 0.1)',
-                    border: '1px solid rgba(34, 197, 94, 0.3)',
-                    borderRadius: '4px',
-                    color: '#22c55e'
-                }}>
+                <div className={`${styles.alert} ${styles.alert_success}`}>
                     {successMessage}
                 </div>
             )}
 
-            <div style={{
-                display: 'flex',
-                gap: '1rem',
-                padding: '1rem',
-                background: 'rgba(255,255,255,0.02)',
-                borderRadius: '8px',
-                border: '1px solid rgba(255,255,255,0.1)'
-            }}>
-                <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: '0.875rem', opacity: 0.6 }}>Total Plugins</div>
-                    <div style={{ fontSize: '2rem', fontWeight: 600 }}>{plugins.length}</div>
+            <div className={styles.stats_grid}>
+                <div className={styles.stat_item}>
+                    <div className={styles.stat_label}>Total Plugins</div>
+                    <div className={styles.stat_value}>{plugins.length}</div>
                 </div>
-                <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: '0.875rem', opacity: 0.6 }}>Installed</div>
-                    <div style={{ fontSize: '2rem', fontWeight: 600, color: '#22c55e' }}>
+                <div className={styles.stat_item}>
+                    <div className={styles.stat_label}>Installed</div>
+                    <div className={`${styles.stat_value} ${styles.stat_value_success}`}>
                         {plugins.filter(p => p.metadata.installed).length}
                     </div>
                 </div>
-                <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: '0.875rem', opacity: 0.6 }}>Enabled</div>
-                    <div style={{ fontSize: '2rem', fontWeight: 600, color: '#3b82f6' }}>
+                <div className={styles.stat_item}>
+                    <div className={styles.stat_label}>Enabled</div>
+                    <div className={`${styles.stat_value} ${styles.stat_value_primary}`}>
                         {plugins.filter(p => p.metadata.enabled).length}
                     </div>
                 </div>
-                <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: '0.875rem', opacity: 0.6 }}>Errors</div>
-                    <div style={{ fontSize: '2rem', fontWeight: 600, color: '#ef4444' }}>
+                <div className={styles.stat_item}>
+                    <div className={styles.stat_label}>Errors</div>
+                    <div className={`${styles.stat_value} ${styles.stat_value_danger}`}>
                         {plugins.filter(p => p.metadata.lastError).length}
                     </div>
                 </div>
             </div>
 
-            <div style={{ display: 'grid', gap: '1rem' }}>
+            <div className={styles.plugins_list}>
                 {plugins.map(pluginInfo => (
                     <PluginCard
                         key={pluginInfo.manifest.id}
@@ -437,13 +327,7 @@ export default function PluginsManagementPage() {
             </div>
 
             {plugins.length === 0 && !isLoading && (
-                <div style={{
-                    padding: '3rem',
-                    textAlign: 'center',
-                    opacity: 0.6,
-                    border: '1px dashed rgba(255,255,255,0.1)',
-                    borderRadius: '8px'
-                }}>
+                <div className={styles.empty_state}>
                     No plugins found
                 </div>
             )}

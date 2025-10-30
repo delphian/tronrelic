@@ -1,6 +1,6 @@
-# System Monitoring Dashboard
+# System Dashboard
 
-The System Monitoring Dashboard provides real-time visibility into all TronRelic operations through a web-based interface. Access it at `/system` to track blockchain sync status, scheduler jobs, market data quality, and infrastructure health.
+The System Dashboard provides real-time visibility into all TronRelic operations through a web-based interface. Access it at `/system` to track blockchain sync status, scheduler jobs, market data quality, and infrastructure health.
 
 ## Why This Matters
 
