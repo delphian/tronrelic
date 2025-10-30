@@ -64,13 +64,24 @@ export function createWebhookHandler(
             // Parse update
             update = req.body as ITelegramUpdate;
 
+            // Determine update type (first key that's not update_id)
+            const updateType = Object.keys(update).find(key => key !== 'update_id') || 'unknown';
+
+            // Log summary at DEBUG level
             logger.debug(
                 {
                     updateId: update.update_id,
+                    updateType,
                     hasMessage: !!update.message,
                     hasCallbackQuery: !!update.callback_query
                 },
                 'Received Telegram webhook'
+            );
+
+            // Log full payload at TRACE level (most verbose)
+            logger.trace(
+                { fullUpdate: update },
+                'Full Telegram webhook payload'
             );
 
             // Route to command handler
