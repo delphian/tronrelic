@@ -81,7 +81,10 @@ export class TelegramClient {
         // Use dynamic import to avoid bundling axios at compile time
         const axios = (await import('axios')).default;
 
-        await axios.post(this.buildUrl('sendMessage'), payload);
+        await axios.post(this.buildUrl('sendMessage'), payload, {
+            // Force IPv4 to avoid timeouts when container lacks IPv6 routing
+            family: 4
+        });
     }
 
     /**
@@ -110,6 +113,9 @@ export class TelegramClient {
 
         const axios = (await import('axios')).default;
 
-        await axios.post(this.buildUrl('answerCallbackQuery'), payload);
+        await axios.post(this.buildUrl('answerCallbackQuery'), payload, {
+            // Force IPv4 to avoid timeouts when container lacks IPv6 routing
+            family: 4
+        });
     }
 }
