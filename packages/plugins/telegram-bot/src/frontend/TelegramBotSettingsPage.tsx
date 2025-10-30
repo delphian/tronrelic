@@ -1,5 +1,6 @@
 import React from 'react';
 import type { IFrontendPluginContext } from '@tronrelic/types';
+import type { ITelegramChannel } from '../shared/index.js';
 import { BotSettingsCard } from './components/BotSettingsCard';
 import { UserStatsCard } from './components/UserStatsCard';
 import { WebhookConfigCard } from './components/WebhookConfigCard';
@@ -23,12 +24,64 @@ interface ITelegramBotSettingsPageProps {
 export function TelegramBotSettingsPage({ context }: ITelegramBotSettingsPageProps) {
     const { ui } = context;
     const [testChatId, setTestChatId] = React.useState('');
+    const [selectedChannelId, setSelectedChannelId] = React.useState('');
     const [testThreadId, setTestThreadId] = React.useState('');
     const [testMessage, setTestMessage] = React.useState('');
     const [testStatus, setTestStatus] = React.useState<{ type: 'success' | 'error'; message: string } | null>(null);
     const [isSending, setIsSending] = React.useState(false);
     const [botTokenConfigured, setBotTokenConfigured] = React.useState<boolean | undefined>(undefined);
     const [webhookSecretConfigured, setWebhookSecretConfigured] = React.useState<boolean | undefined>(undefined);
+    const [channels, setChannels] = React.useState<ITelegramChannel[]>([]);
+    const [isLoadingChannels, setIsLoadingChannels] = React.useState(false);
+
+    /**
+     * Fetches the list of channels the bot is a member of.
+     * Loads channels on component mount.
+     *
+     * Why fetch channels:
+     * Provides a convenient dropdown for admins to select destination channels
+     * without having to manually look up and enter chat IDs.
+     */
+    React.useEffect(() => {
+        async function fetchChannels() {
+            try {
+                setIsLoadingChannels(true);
+                const response = await context.api.get<{ success: boolean; channels: ITelegramChannel[] }>(
+                    '/plugins/telegram-bot/system/channels'
+                );
+
+                if (response.success && response.channels) {
+                    setChannels(response.channels);
+                }
+            } catch (error: any) {
+                console.error('Failed to fetch channels:', error);
+            } finally {
+                setIsLoadingChannels(false);
+            }
+        }
+
+        void fetchChannels();
+    }, [context.api]);
+
+    /**
+     * Handles channel selection from the dropdown.
+     * Auto-populates the chat ID field when a channel is selected.
+     *
+     * @param e - Select change event
+     *
+     * Why auto-populate chat ID:
+     * Saves admins from having to manually copy/paste chat IDs.
+     * Either the dropdown OR manual chat ID entry can be used.
+     */
+    const handleChannelSelect = (e: React.ChangeEvent<HTMLSelectElement>) => {
+        const channelId = e.target.value;
+        setSelectedChannelId(channelId);
+
+        if (channelId) {
+            // Auto-populate chat ID when a channel is selected
+            setTestChatId(channelId);
+        }
+    };
 
     /**
      * Sends a test notification via Telegram bot.
@@ -43,7 +96,10 @@ export function TelegramBotSettingsPage({ context }: ITelegramBotSettingsPagePro
     const handleTestNotification = async (e: React.FormEvent) => {
         e.preventDefault();
 
-        if (!testChatId || !testMessage) {
+        // Use either manually entered chat ID or selected channel
+        const chatId = testChatId;
+
+        if (!chatId || !testMessage) {
             setTestStatus({ type: 'error', message: 'Chat ID and message are required' });
             return;
         }
@@ -55,7 +111,7 @@ export function TelegramBotSettingsPage({ context }: ITelegramBotSettingsPagePro
             const response = await context.api.post<{ success: boolean; message?: string; error?: string }>(
                 '/plugins/telegram-bot/system/test',
                 {
-                    chatId: testChatId,
+                    chatId: chatId,
                     message: testMessage,
                     threadId: testThreadId || undefined
                 }
@@ -137,8 +193,8 @@ export function TelegramBotSettingsPage({ context }: ITelegramBotSettingsPagePro
                     Test Notification
                 </h3>
                 <form onSubmit={handleTestNotification} style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-                    {/* Chat ID and Thread ID - side by side */}
-                    <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '1rem' }}>
+                    {/* Chat ID and Channel Select - side by side */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                         {/* Chat ID input */}
                         <div>
                             <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 500, marginBottom: '0.5rem' }}>
@@ -152,25 +208,67 @@ export function TelegramBotSettingsPage({ context }: ITelegramBotSettingsPagePro
                                 disabled={isSending}
                             />
                             <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: '0.5rem' }}>
-                                Your personal chat ID or channel ID (e.g., -1001234567890)
+                                Enter manually or select from dropdown
                             </div>
                         </div>
 
-                        {/* Thread ID input */}
+                        {/* Channel Select dropdown */}
                         <div>
                             <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 500, marginBottom: '0.5rem' }}>
-                                Thread ID (Optional)
+                                Or Select Channel/Group
                             </label>
-                            <ui.Input
-                                type="text"
-                                value={testThreadId}
-                                onChange={(e) => setTestThreadId(e.target.value)}
-                                placeholder="51"
-                                disabled={isSending}
-                            />
+                            <select
+                                value={selectedChannelId}
+                                onChange={handleChannelSelect}
+                                disabled={isSending || isLoadingChannels}
+                                style={{
+                                    width: '100%',
+                                    padding: '0.5rem 0.75rem',
+                                    borderRadius: 'var(--radius-md)',
+                                    border: '1px solid var(--color-border)',
+                                    backgroundColor: (isSending || isLoadingChannels) ? 'var(--color-surface-secondary)' : 'var(--color-surface)',
+                                    color: 'var(--color-text)',
+                                    fontFamily: 'inherit',
+                                    fontSize: '0.875rem',
+                                    opacity: (isSending || isLoadingChannels) ? 0.6 : 1,
+                                    cursor: (isSending || isLoadingChannels) ? 'not-allowed' : 'pointer'
+                                }}
+                            >
+                                <option value="">
+                                    {isLoadingChannels ? 'Loading channels...' : '-- Select a channel --'}
+                                </option>
+                                {channels
+                                    .filter(channel => channel.isActive)
+                                    .map((channel) => (
+                                        <option key={channel.chatId} value={channel.chatId}>
+                                            {channel.title || `Chat ${channel.chatId}`} ({channel.type})
+                                        </option>
+                                    ))
+                                }
+                            </select>
                             <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: '0.5rem' }}>
-                                Leave empty to post to main channel, or enter a topic/thread ID for organized channels
+                                {channels.filter(c => c.isActive).length > 0
+                                    ? `${channels.filter(c => c.isActive).length} active channel${channels.filter(c => c.isActive).length !== 1 ? 's' : ''}`
+                                    : 'No channels found'
+                                }
                             </div>
+                        </div>
+                    </div>
+
+                    {/* Thread ID input - full width */}
+                    <div>
+                        <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 500, marginBottom: '0.5rem' }}>
+                            Thread ID (Optional)
+                        </label>
+                        <ui.Input
+                            type="text"
+                            value={testThreadId}
+                            onChange={(e) => setTestThreadId(e.target.value)}
+                            placeholder="51"
+                            disabled={isSending}
+                        />
+                        <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: '0.5rem' }}>
+                            Leave empty to post to main channel, or enter a topic/thread ID for organized channels
                         </div>
                     </div>
 

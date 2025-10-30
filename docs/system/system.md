@@ -132,11 +132,11 @@ The system monitoring API provides programmatic access to all operational metric
 - Troubleshooting API issues
 - Building custom monitoring scripts
 
-### System Monitoring Dashboard
+### System Dashboard
 
-The web-based monitoring dashboard provides real-time visibility into all system operations through a tabbed interface. Built on top of the system monitoring API, it offers point-and-click job control, live metric displays, and manual operation triggers.
+The web-based dashboard provides real-time visibility into all system operations through a tabbed interface. Built on top of the system monitoring API, it offers point-and-click job control, live metric displays, and manual operation triggers.
 
-**See [system-monitoring-dashboard.md](./system-monitoring-dashboard.md) for complete details on:**
+**See [system-dashboard.md](./system-dashboard.md) for complete details on:**
 - Accessing the dashboard at `/system` with admin token authentication
 - Overview tab with at-a-glance health indicators
 - Blockchain, Scheduler, Markets, Health, and Config tabs
@@ -287,7 +287,7 @@ curl -X PATCH \
 - [system-blockchain-sync-architecture.md](./system-blockchain-sync-architecture.md) - Complete technical overview of block retrieval, transaction enrichment, observer notification, and performance characteristics
 - [system-scheduler-operations.md](./system-scheduler-operations.md) - Scheduler control, job management, troubleshooting, and configuration persistence
 - [system-api.md](./system-api.md) - Complete API reference with all endpoints, authentication, request/response formats, and usage examples
-- [system-monitoring-dashboard.md](./system-monitoring-dashboard.md) - Web dashboard UI guide with tab-by-tab feature documentation
+- [system-dashboard.md](./system-dashboard.md) - Web dashboard UI guide with tab-by-tab feature documentation
 - [system-database-migrations.md](./system-database-migrations.md) - Database migration system architecture, REST API, admin UI, lifecycle documentation, and troubleshooting
 - [system-logging.md](./system-logging.md) - Logging system architecture, log levels, MongoDB persistence, and accessing historical logs
 - [system-menu.md](./system-menu.md) - Navigation menu system architecture, API reference, plugin integration, and event-driven updates

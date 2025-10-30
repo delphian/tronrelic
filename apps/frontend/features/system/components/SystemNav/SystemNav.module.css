@@ -7,6 +7,7 @@
 
 .nav {
     display: flex;
+    flex-wrap: wrap;
     gap: var(--spacing-4);
     border-bottom: var(--border-width-thin) solid var(--color-border);
     padding-bottom: var(--spacing-4);

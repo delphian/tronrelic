@@ -1,6 +1,6 @@
 # System APIs and Real-Time Events
 
-TronRelic exposes HTTP APIs and WebSocket events for monitoring system health, controlling operations, and subscribing to real-time blockchain data. These endpoints power the System Monitoring Dashboard and enable custom automation workflows.
+TronRelic exposes HTTP APIs and WebSocket events for monitoring system health, controlling operations, and subscribing to real-time blockchain data. These endpoints power the System Dashboard and enable custom automation workflows.
 
 ## Why This Matters
 
@@ -998,7 +998,7 @@ socket.on('subscription:error', (error) => {
 
 ## Related Documentation
 
-- [system-monitoring-dashboard.md](./system-monitoring-dashboard.md) - Web UI for accessing these endpoints
+- [system-dashboard.md](./system-dashboard.md) - Web UI for accessing these endpoints
 - [system-scheduler-operations.md](./system-scheduler-operations.md) - Detailed scheduler control and cron syntax
 - [system-blockchain-sync-architecture.md](./system-blockchain-sync-architecture.md) - Blockchain sync implementation details
 - [system-menu.md](./system-menu.md) - Navigation menu system API endpoints and WebSocket events
