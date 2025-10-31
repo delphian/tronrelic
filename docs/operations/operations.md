@@ -31,7 +31,7 @@ Production (tronrelic.com)
 ├── Deployment: /opt/tronrelic
 ├── Docker Images: ghcr.io/delphian/tronrelic/*:production
 ├── ENV Variable: ENV=production
-└── CI/CD: Auto-deploy on push to 'main' branch
+└── CI/CD: Builds images on push to 'main' (manual deployment required)
 
 Development (dev.tronrelic.com)
 ├── Domain: dev.tronrelic.com
@@ -39,7 +39,7 @@ Development (dev.tronrelic.com)
 ├── Deployment: /opt/tronrelic
 ├── Docker Images: ghcr.io/delphian/tronrelic/*:development
 ├── ENV Variable: ENV=development
-└── CI/CD: Auto-deploy on push to 'dev' branch
+└── CI/CD: Builds images on push to 'dev' (manual deployment required)
 ```
 
 **Key architectural decisions:**
@@ -161,7 +161,7 @@ docker exec -it tronrelic-redis redis-cli
 **Update deployment:**
 - [ ] Push changes to appropriate branch (main or dev)
 - [ ] Wait for GitHub Actions to build and push images
-- [ ] Run manual deployment script (optional, CI/CD auto-deploys)
+- [ ] Run manual deployment script: `./scripts/droplet-update.sh <env>`
 - [ ] Verify containers restarted successfully
 - [ ] Check application health via /api/health endpoint
 
@@ -174,7 +174,7 @@ docker exec -it tronrelic-redis redis-cli
 
 ## CI/CD Pipeline
 
-TronRelic uses GitHub Actions for automated deployment with unified Docker standards:
+TronRelic uses GitHub Actions for automated image building with unified Docker standards:
 
 **Production pipeline (.github/workflows/docker-publish-prod.yml):**
 1. Triggered on push to `main` branch
@@ -189,7 +189,7 @@ TronRelic uses GitHub Actions for automated deployment with unified Docker stand
 2. Builds backend and frontend images
 3. Tags images as `:development` (single tag, no additional tags)
 4. Pushes images to GitHub Container Registry
-5. **Automatically deploys** to dev.tronrelic.com via SSH
+5. Manual deployment required (run `./scripts/droplet-update.sh dev`)
 
 **Image tag convention:**
 - Production uses `:production` tag (not `:latest`)
@@ -205,12 +205,11 @@ TronRelic uses GitHub Actions for automated deployment with unified Docker stand
 - `MONGO_ROOT_PASSWORD` - MongoDB authentication (production only)
 - `REDIS_PASSWORD` - Redis authentication (production only)
 
-**GitHub repository secrets (for CI/CD):**
+**GitHub repository secrets (for CI/CD testing):**
 - `ADMIN_API_TOKEN` - Testing only (not deployed to servers)
 - `TRONGRID_API_KEY`, `TRONGRID_API_KEY_2`, `TRONGRID_API_KEY_3` - Testing only
-- `DEV_DROPLET_HOST` - Development server IP
-- `DEV_DROPLET_USER` - SSH user (root)
-- `DEV_DROPLET_SSH_KEY` - SSH private key for authentication
+
+**Note:** Deployment credentials (SSH keys, droplet IPs) are NOT stored in GitHub secrets since all deployments are manual.
 
 **Best practices:**
 - Never commit .env files or credentials to version control

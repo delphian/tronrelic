@@ -56,7 +56,7 @@ ssh root@<PROD_DROPLET_IP>
 - **Docker Image Tags:** `:development`
 - **ENV Variable:** `ENV=development`
 - **CI/CD Branch:** `dev`
-- **Auto-Deploy:** Yes (GitHub Actions automatically deploys on push to dev branch)
+- **Auto-Deploy:** No (manual deployment required)
 
 **SSH Access:**
 ```bash
@@ -170,21 +170,9 @@ ssh tronrelic-dev
 
 ### SSH Key Management for CI/CD
 
-**GitHub Actions requires SSH private key** for automated deployment to development server.
+**GitHub Actions does not currently perform automated deployments.** Both production and development deployments require manual execution of deployment scripts.
 
-**GitHub repository secrets required:**
-- `DEV_DROPLET_HOST` = <DEV_DROPLET_IP>
-- `DEV_DROPLET_USER` = root
-- `DEV_DROPLET_SSH_KEY` = (full SSH private key content)
-
-**Adding SSH key to GitHub:**
-1. Navigate to repository Settings → Secrets and variables → Actions
-2. Click "New repository secret"
-3. Name: `DEV_DROPLET_SSH_KEY`
-4. Value: Paste entire SSH private key (including `-----BEGIN OPENSSH PRIVATE KEY-----` header)
-5. Save secret
-
-**Security note:** Production server does NOT have automated SSH access from GitHub Actions. Production deployments must be triggered manually for additional safety.
+**Note:** If automated deployment is configured in the future, SSH private keys would need to be added as GitHub repository secrets. Currently, all deployments use `./scripts/droplet-update.sh` from a local machine.
 
 ## Required Credentials
 
@@ -389,7 +377,7 @@ sudo systemctl reload nginx
    - Update IP addresses in server tables and examples
 3. **GitHub Actions workflows:**
    - `.github/workflows/docker-publish-prod.yml` (production builds)
-   - `.github/workflows/docker-publish-dev.yml` (DEV_DROPLET_HOST secret)
+   - `.github/workflows/docker-publish-dev.yml` (development builds)
 4. **Nginx configuration on servers:**
    - `/etc/nginx/sites-available/tronrelic` (server_name directive)
 5. **Server .env files:**
