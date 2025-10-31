@@ -13,9 +13,8 @@
 ## This exports environment-specific variables that scripts can use:
 ##   - DROPLET_IP: IP address of the droplet
 ##   - DROPLET_HOST: SSH connection string (root@IP)
-##   - DEPLOY_DIR: Deployment directory on droplet
-##   - CONTAINER_SUFFIX: Suffix for container names (-prod, -dev)
-##   - IMAGE_TAG: Docker image tag (latest, dev)
+##   - DEPLOY_DIR: Deployment directory on droplet (unified: /opt/tronrelic)
+##   - ENV_TAG: Environment tag for Docker images (production or development)
 ##   - MONGO_CONTAINER: MongoDB container name
 ##   - REDIS_CONTAINER: Redis container name
 ##   - BACKEND_CONTAINER: Backend container name
@@ -96,24 +95,24 @@ get_config() {
     export DROPLET_IP="$ip"
     export DROPLET_HOST="root@$ip"
 
-    # Export environment-specific paths and naming
+    # Unified deployment directory for all environments
+    export DEPLOY_DIR="/opt/tronrelic"
+
+    # Unified Docker compose file
+    export COMPOSE_FILE="docker-compose.yml"
+
+    # Environment-specific Docker image tag
     if [[ "$env" == "prod" ]]; then
-        export DEPLOY_DIR="/opt/tronrelic"
-        export CONTAINER_SUFFIX="-prod"
-        export IMAGE_TAG="latest"
-        export COMPOSE_FILE="docker-compose.prod.yml"
+        export ENV_TAG="production"
     else
-        export DEPLOY_DIR="/opt/tronrelic-${env}"
-        export CONTAINER_SUFFIX="-${env}"
-        export IMAGE_TAG="${env}"
-        export COMPOSE_FILE="docker-compose.${env}.yml"
+        export ENV_TAG="development"
     fi
 
-    # Export container names
-    export MONGO_CONTAINER="tronrelic-mongo${CONTAINER_SUFFIX}"
-    export REDIS_CONTAINER="tronrelic-redis${CONTAINER_SUFFIX}"
-    export BACKEND_CONTAINER="tronrelic-backend${CONTAINER_SUFFIX}"
-    export FRONTEND_CONTAINER="tronrelic-frontend${CONTAINER_SUFFIX}"
+    # Unified container names (no suffixes)
+    export MONGO_CONTAINER="tronrelic-mongo"
+    export REDIS_CONTAINER="tronrelic-redis"
+    export BACKEND_CONTAINER="tronrelic-backend"
+    export FRONTEND_CONTAINER="tronrelic-frontend"
 
     # Export GitHub configuration
     export GITHUB_USERNAME
@@ -187,12 +186,11 @@ show_environments() {
         echo "  $env:"
         echo "    IP:         $ip"
         echo "    SSH:        root@$ip"
+        echo "    Deploy dir: /opt/tronrelic (unified)"
         if [[ "$env" == "prod" ]]; then
-            echo "    Deploy dir: /opt/tronrelic"
-            echo "    Image tag:  latest"
+            echo "    Image tag:  production"
         else
-            echo "    Deploy dir: /opt/tronrelic-$env"
-            echo "    Image tag:  $env"
+            echo "    Image tag:  development"
         fi
         echo ""
     done

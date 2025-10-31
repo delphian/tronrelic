@@ -2,6 +2,7 @@ import type { IDatabaseService } from '@tronrelic/types';
 import type { Collection } from 'mongodb';
 import type { IMigrationMetadata, IMigrationRecord } from './types.js';
 import { logger } from '../../../lib/logger.js';
+import { env } from '../../../config/env.js';
 import { execSync } from 'child_process';
 
 /**
@@ -230,7 +231,7 @@ export class MigrationTracker {
             executedAt: new Date(),
             executionDuration: duration,
             checksum: metadata.checksum,
-            environment: process.env.NODE_ENV,
+            environment: env.ENV,
             codebaseVersion: this.getGitCommitHash()
         };
 
@@ -289,7 +290,7 @@ export class MigrationTracker {
             error: error.message,
             errorStack: error.stack,
             checksum: metadata.checksum,
-            environment: process.env.NODE_ENV,
+            environment: env.ENV,
             codebaseVersion: this.getGitCommitHash()
         };
 

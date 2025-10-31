@@ -1,5 +1,5 @@
 import mongoose, { Schema, Document } from 'mongoose';
-import type { LogLevelName } from '@tronrelic/types';
+import type { ISystemConfig } from '@tronrelic/types';
 
 /**
  * SystemConfigDoc
@@ -17,6 +17,7 @@ import type { LogLevelName } from '@tronrelic/types';
  * **Schema Fields:**
  * - `key` - Unique configuration key (e.g., "system", "email", "notifications")
  * - `siteUrl` - Public-facing URL of the site (e.g., "https://tronrelic.com")
+ * - `siteWs` - WebSocket URL for Socket.IO connections (e.g., "https://tronrelic.com")
  * - `systemLogsMaxCount` - Maximum number of log entries to retain (default: 1000000)
  * - `systemLogsRetentionDays` - Number of days to keep logs before deletion (default: 30)
  * - `logLevel` - Minimum log level for file/console output (default: 'info')
@@ -40,16 +41,6 @@ import type { LogLevelName } from '@tronrelic/types';
  * const siteUrl = config?.siteUrl || 'http://localhost:3000';
  * ```
  */
-export interface ISystemConfig {
-    key: string;
-    siteUrl: string;
-    systemLogsMaxCount: number;
-    systemLogsRetentionDays: number;
-    logLevel: LogLevelName;
-    updatedAt: Date;
-    updatedBy?: string;
-}
-
 export type SystemConfigDoc = Document & ISystemConfig;
 
 const systemConfigSchema = new Schema<SystemConfigDoc>(
@@ -65,6 +56,11 @@ const systemConfigSchema = new Schema<SystemConfigDoc>(
             type: String,
             required: true,
             default: 'http://localhost:3000'
+        },
+        siteWs: {
+            type: String,
+            required: true,
+            default: 'http://localhost:4000'
         },
         systemLogsMaxCount: {
             type: Number,

@@ -12,7 +12,7 @@ jobs:
     uses: ./.github/workflows/test.yml
     secrets: inherit
 
-  build-and-deploy-dev:
+  build-dev:
     runs-on: ubuntu-latest
     needs: test
     permissions:
@@ -30,73 +30,29 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push backend dev image
+      - name: Build and push backend development image
         run: |
           docker build --target backend \
-            -t ghcr.io/${{ github.repository }}/backend:dev \
-            -t ghcr.io/${{ github.repository }}/backend:dev-${{ github.sha }} \
+            -t ghcr.io/${{ github.repository }}/backend:development \
+            -t ghcr.io/${{ github.repository }}/backend:development-${{ github.sha }} \
             .
-          docker push ghcr.io/${{ github.repository }}/backend:dev
-          docker push ghcr.io/${{ github.repository }}/backend:dev-${{ github.sha }}
+          docker push ghcr.io/${{ github.repository }}/backend:development
+          docker push ghcr.io/${{ github.repository }}/backend:development-${{ github.sha }}
 
-      - name: Build and push frontend dev image
+      - name: Build and push frontend development image
         run: |
           docker build --target frontend-prod \
-            -t ghcr.io/${{ github.repository }}/frontend:dev \
-            -t ghcr.io/${{ github.repository }}/frontend:dev-${{ github.sha }} \
+            -t ghcr.io/${{ github.repository }}/frontend:development \
+            -t ghcr.io/${{ github.repository }}/frontend:development-${{ github.sha }} \
             .
-          docker push ghcr.io/${{ github.repository }}/frontend:dev
-          docker push ghcr.io/${{ github.repository }}/frontend:dev-${{ github.sha }}
+          docker push ghcr.io/${{ github.repository }}/frontend:development
+          docker push ghcr.io/${{ github.repository }}/frontend:development-${{ github.sha }}
 
-      - name: Create .env file from template with secrets
+      - name: Development images built
         run: |
-          cp .env.dev .env.tmp
-          sed -i 's|__DEV_SITE_URL__|${{ secrets.DEV_SITE_URL }}|g' .env.tmp
-          sed -i 's|__ADMIN_API_TOKEN__|${{ secrets.ADMIN_API_TOKEN }}|g' .env.tmp
-          sed -i 's|__TRONGRID_API_KEY__|${{ secrets.TRONGRID_API_KEY }}|g' .env.tmp
-          sed -i 's|__TRONGRID_API_KEY_2__|${{ secrets.TRONGRID_API_KEY_2 }}|g' .env.tmp
-          sed -i 's|__TRONGRID_API_KEY_3__|${{ secrets.TRONGRID_API_KEY_3 }}|g' .env.tmp
-
-      - name: Deploy files to dev droplet
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.DEV_DROPLET_HOST }}
-          username: ${{ secrets.DEV_DROPLET_USER }}
-          key: ${{ secrets.DEV_DROPLET_SSH_KEY }}
-          source: "docker-compose.dev.yml,.env.tmp"
-          target: "/opt/tronrelic-dev/"
-
-      - name: Deploy to dev droplet
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.DEV_DROPLET_HOST }}
-          username: ${{ secrets.DEV_DROPLET_USER }}
-          key: ${{ secrets.DEV_DROPLET_SSH_KEY }}
-          script: |
-            cd /opt/tronrelic-dev
-            # Move .env.tmp to .env (replace old .env with secrets)
-            mv .env.tmp .env
-            # Pull latest images and restart services
-            docker compose -f docker-compose.dev.yml pull
-            docker compose -f docker-compose.dev.yml down
-            docker compose -f docker-compose.dev.yml up -d
-            echo "Waiting for services to start..."
-            sleep 15
-            docker compose -f docker-compose.dev.yml ps
-
-      - name: Cleanup old images on dev droplet
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.DEV_DROPLET_HOST }}
-          username: ${{ secrets.DEV_DROPLET_USER }}
-          key: ${{ secrets.DEV_DROPLET_SSH_KEY }}
-          script: |
-            echo "Cleaning up dangling Docker images..."
-            docker image prune -f
-            echo "Cleanup complete"
-
-      - name: Verify deployment
-        run: |
-          echo "Deployment complete! Services should be starting..."
-          echo "Frontend: http://${{ secrets.DEV_DROPLET_HOST }}/"
-          echo "Backend:  http://${{ secrets.DEV_DROPLET_HOST }}/api"
+          echo "✅ Development images built and pushed to GHCR"
+          echo "Backend: ghcr.io/${{ github.repository }}/backend:development"
+          echo "Frontend: ghcr.io/${{ github.repository }}/frontend:development"
+          echo ""
+          echo "To deploy to dev.tronrelic.com, run from your local machine:"
+          echo "  ./scripts/droplet-update.sh dev"

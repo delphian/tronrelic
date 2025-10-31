@@ -65,6 +65,30 @@ export interface ISystemConfig {
     siteUrl: string;
 
     /**
+     * URL where WebSocket (Socket.IO) connections should connect.
+     *
+     * Used for:
+     * - Real-time data updates (whale transactions, market prices)
+     * - Live blockchain sync status
+     * - Plugin event broadcasting
+     *
+     * Format: Must include protocol (http:// or https://)
+     * Examples:
+     * - Production: "https://tronrelic.com" (nginx proxies to backend)
+     * - Staging: "https://staging.tronrelic.com" (nginx proxies to backend)
+     * - Future CDN: "wss://realtime.tronrelic.com" (if WebSocket traffic separated)
+     *
+     * Why separate from siteUrl:
+     * While typically the same as siteUrl in production (nginx proxies everything),
+     * having separate configuration enables future architectures where WebSocket
+     * traffic routes through different infrastructure (CDN, load balancers, or
+     * dedicated real-time servers).
+     *
+     * Initial value set from SITE_WS environment variable on first deployment.
+     */
+    siteWs: string;
+
+    /**
      * Maximum number of system log entries to retain.
      *
      * When the log count exceeds this value, the cleanup scheduler deletes

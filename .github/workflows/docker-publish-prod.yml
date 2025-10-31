@@ -12,7 +12,7 @@ jobs:
     uses: ./.github/workflows/test.yml
     secrets: inherit
 
-  build-and-push:
+  build-prod:
     runs-on: ubuntu-latest
     needs: test
     permissions:
@@ -30,20 +30,29 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push backend image
+      - name: Build and push backend production image
         run: |
           docker build --target backend \
-            -t ghcr.io/${{ github.repository }}/backend:latest \
-            -t ghcr.io/${{ github.repository }}/backend:${{ github.sha }} \
+            -t ghcr.io/${{ github.repository }}/backend:production \
+            -t ghcr.io/${{ github.repository }}/backend:production-${{ github.sha }} \
             .
-          docker push ghcr.io/${{ github.repository }}/backend:latest
-          docker push ghcr.io/${{ github.repository }}/backend:${{ github.sha }}
+          docker push ghcr.io/${{ github.repository }}/backend:production
+          docker push ghcr.io/${{ github.repository }}/backend:production-${{ github.sha }}
 
       - name: Build and push frontend production image
         run: |
           docker build --target frontend-prod \
-            -t ghcr.io/${{ github.repository }}/frontend:latest \
-            -t ghcr.io/${{ github.repository }}/frontend:${{ github.sha }} \
+            -t ghcr.io/${{ github.repository }}/frontend:production \
+            -t ghcr.io/${{ github.repository }}/frontend:production-${{ github.sha }} \
             .
-          docker push ghcr.io/${{ github.repository }}/frontend:latest
-          docker push ghcr.io/${{ github.repository }}/frontend:${{ github.sha }}
+          docker push ghcr.io/${{ github.repository }}/frontend:production
+          docker push ghcr.io/${{ github.repository }}/frontend:production-${{ github.sha }}
+
+      - name: Production images built
+        run: |
+          echo "✅ Production images built and pushed to GHCR"
+          echo "Backend: ghcr.io/${{ github.repository }}/backend:production"
+          echo "Frontend: ghcr.io/${{ github.repository }}/frontend:production"
+          echo ""
+          echo "To deploy to tronrelic.com, run from your local machine:"
+          echo "  ./scripts/droplet-update.sh prod"

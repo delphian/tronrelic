@@ -94,7 +94,7 @@ log_success "SSH connection verified"
 # Confirmation prompt
 if [[ "$FORCE_DEPLOY" != true ]]; then
     echo ""
-    log_warning "This will deploy the latest :$IMAGE_TAG images to ${ENV^^} at $DROPLET_HOST"
+    log_warning "This will deploy the latest :$ENV_TAG images to ${ENV^^} at $DROPLET_HOST"
     read -p "Continue? (y/N) " -n 1 -r
     echo
     if [[ ! $REPLY =~ ^[Yy]$ ]]; then
@@ -128,8 +128,8 @@ update_nginx_config "$ENV" "$DROPLET_IP" "$DEPLOY_DIR"
 echo ""
 
 # Step 0c: Update docker-compose configuration
-log_info "Updating docker-compose.$ENV.yml configuration..."
-if scp "docker-compose.$ENV.yml" "$DROPLET_HOST:$DEPLOY_DIR/"; then
+log_info "Updating docker-compose.yml configuration..."
+if scp "$SCRIPT_DIR/../docker-compose.yml" "$DROPLET_HOST:$DEPLOY_DIR/"; then
     log_success "Docker compose configuration updated"
 else
     log_error "Failed to copy docker-compose configuration"
@@ -143,7 +143,7 @@ remote_exec "cd $DEPLOY_DIR && docker compose -f $COMPOSE_FILE ps"
 echo ""
 
 # Step 2: Pull latest images
-log_info "Pulling latest :$IMAGE_TAG Docker images from GitHub Container Registry..."
+log_info "Pulling latest :$ENV_TAG Docker images from GitHub Container Registry..."
 if remote_exec "cd $DEPLOY_DIR && docker compose -f $COMPOSE_FILE pull"; then
     log_success "Images pulled successfully"
 else

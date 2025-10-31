@@ -256,18 +256,9 @@ if [[ ! -f .env ]]; then
   exit 1
 fi
 
-# Determine which docker-compose file to use
+# Use unified docker-compose.yml for all environments
 COMPOSE_FILE="docker-compose.yml"
-if [[ "${PRODUCTION}" == true ]]; then
-  if [[ -f docker-compose.prod.yml ]]; then
-    COMPOSE_FILE="docker-compose.prod.yml"
-    log INFO "Using production configuration: ${COMPOSE_FILE}"
-  else
-    log WARN "Production compose file not found, using default: ${COMPOSE_FILE}"
-  fi
-else
-  log INFO "Using development configuration: ${COMPOSE_FILE}"
-fi
+log INFO "Using unified docker-compose configuration: ${COMPOSE_FILE}"
 
 # Handle force-docker: stop and remove containers/volumes
 if [[ "${FORCE_DOCKER}" == true ]]; then

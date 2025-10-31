@@ -103,9 +103,19 @@ export class SystemConfigService implements ISystemConfigService {
             // Initialize with defaults if not found
             if (!config) {
                 this.logger.info('System config not found, creating with defaults');
+
+                // Require SITE_URL and SITE_WS to be explicitly configured
+                if (!process.env.SITE_URL) {
+                    throw new Error('SITE_URL environment variable is required');
+                }
+                if (!process.env.SITE_WS) {
+                    throw new Error('SITE_WS environment variable is required');
+                }
+
                 const defaultConfig = {
                     key: 'system',
-                    siteUrl: process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000',
+                    siteUrl: process.env.SITE_URL,
+                    siteWs: process.env.SITE_WS,
                     systemLogsMaxCount: 1000000,
                     systemLogsRetentionDays: 30,
                     logLevel: 'info' as const,
@@ -126,15 +136,8 @@ export class SystemConfigService implements ISystemConfigService {
         } catch (error) {
             this.logger.error({ error }, 'Failed to fetch system config');
 
-            // Return fallback if database fails
-            return {
-                key: 'system',
-                siteUrl: process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000',
-                systemLogsMaxCount: 1000000,
-                systemLogsRetentionDays: 30,
-                logLevel: 'info' as const,
-                updatedAt: new Date()
-            };
+            // No fallback - configuration is required
+            throw error;
         }
     }
 
@@ -176,22 +179,23 @@ export class SystemConfigService implements ISystemConfigService {
     }
 
     /**
-     * Gets the WebSocket URL derived from the site URL.
+     * Gets the WebSocket URL from configuration.
      *
      * Why this exists:
-     * The WebSocket URL is the same as the site URL (no /api suffix) because Socket.IO
-     * connects to the root origin. Like getApiUrl(), we derive this from siteUrl to ensure
-     * consistency and prevent configuration drift.
+     * The WebSocket URL points to where the Socket.IO server runs. This is explicitly
+     * configured via SITE_WS environment variable to handle different deployment scenarios:
+     * - Local development: frontend on :3000, Socket.IO on :4000
+     * - Production/Docker: everything proxied through nginx on same domain
      *
      * Usage by frontend:
      * - Client reads from window.__RUNTIME_CONFIG__.socketUrl (injected by SSR)
      * - Socket.IO client connects to this URL for real-time updates
-     * - Replaces hardcoded NEXT_PUBLIC_SOCKET_URL that was frozen at build time
      *
-     * @returns WebSocket connection URL (e.g., "https://tronrelic.com")
+     * @returns WebSocket connection URL (e.g., "http://localhost:4000" or "https://tronrelic.com")
      */
     async getSocketUrl(): Promise<string> {
-        return await this.getSiteUrl();
+        const config = await this.getConfig();
+        return config.siteWs;
     }
 
     /**
@@ -208,7 +212,7 @@ export class SystemConfigService implements ISystemConfigService {
      * @returns Updated configuration object
      */
     async updateConfig(
-        updates: Partial<Pick<ISystemConfig, 'siteUrl' | 'systemLogsMaxCount' | 'systemLogsRetentionDays' | 'logLevel'>>,
+        updates: Partial<Pick<ISystemConfig, 'siteUrl' | 'siteWs' | 'systemLogsMaxCount' | 'systemLogsRetentionDays' | 'logLevel'>>,
         updatedBy?: string
     ): Promise<ISystemConfig> {
         try {
