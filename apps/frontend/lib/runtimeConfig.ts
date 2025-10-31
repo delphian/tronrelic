@@ -100,16 +100,29 @@ export function getRuntimeConfig(): RuntimeConfig {
         return window.__RUNTIME_CONFIG__;
     }
 
-    // Fallback to environment variables (shouldn't happen in production)
+    // Fallback to dynamic detection (shouldn't happen in production)
     console.warn(
-        '[RuntimeConfig] window.__RUNTIME_CONFIG__ is undefined, using environment fallback. ' +
+        '[RuntimeConfig] window.__RUNTIME_CONFIG__ is undefined, using dynamic fallback. ' +
         'This indicates SSR config injection failed. Check layout.tsx and backend /api/config/public.'
     );
 
+    // Dynamically construct config from window.location
+    const protocol = window.location.protocol;
+    const hostname = window.location.hostname;
+    const isLocalhost = ['localhost', '127.0.0.1', '::1', '[::1]'].includes(hostname);
+
+    const siteUrl = isLocalhost
+        ? `${protocol}//${hostname}:3000`
+        : `${protocol}//${hostname}`;
+
+    const backendUrl = isLocalhost
+        ? `${protocol}//${hostname}:4000`
+        : `${protocol}//${hostname}`;
+
     const fallbackConfig: RuntimeConfig = {
-        siteUrl: process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000',
-        apiUrl: (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api').replace(/\/$/, ''),
-        socketUrl: (process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:4000').replace(/\/$/, '')
+        siteUrl: siteUrl.replace(/\/$/, ''),
+        apiUrl: `${backendUrl}/api`.replace(/\/$/, ''),
+        socketUrl: backendUrl.replace(/\/$/, '')
     };
 
     // Cache the fallback in window for consistency

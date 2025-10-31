@@ -10,6 +10,8 @@ const envSchema = z.object({
   MONGODB_URI: z.string().min(1, 'MONGODB_URI is required'),
   REDIS_URL: z.string().min(1, 'REDIS_URL is required'),
   REDIS_NAMESPACE: z.string().default('tronrelic'),
+  // Site URL for CORS configuration and runtime config
+  SITE_URL: z.string().optional(),
   TRONGRID_API_KEY: z.string().optional(),
   TRONGRID_API_KEY_2: z.string().optional(),
   TRONGRID_API_KEY_3: z.string().optional(),

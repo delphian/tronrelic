@@ -18,14 +18,22 @@ export function createExpressApp(database?: IDatabaseService): Express {
   app.use(requestContext);
   app.use(helmet());
 
-  // CORS: Only allow requests from TronRelic domains
-  const allowedOrigins = [
+  // CORS: Build allowed origins dynamically from environment
+  const allowedOrigins: string[] = [
     'http://localhost:3000',
-    'http://localhost:4000',
-    'https://tronrelic.com',
-    'https://www.tronrelic.com',
-    'https://dev.tronrelic.com'
+    'http://localhost:4000'
   ];
+
+  // Add configured site URL if present
+  if (env.SITE_URL) {
+    allowedOrigins.push(env.SITE_URL);
+
+    // Add www variant for production domains
+    if (env.SITE_URL.startsWith('https://') && !env.SITE_URL.includes('www.')) {
+      const wwwUrl = env.SITE_URL.replace('https://', 'https://www.');
+      allowedOrigins.push(wwwUrl);
+    }
+  }
 
   app.use(cors({
     origin: (origin, callback) => {
