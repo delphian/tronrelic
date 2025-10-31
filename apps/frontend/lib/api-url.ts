@@ -17,7 +17,7 @@
  *
  * ## Environment Variables
  *
- * - `API_URL` (server-only): Internal Docker network URL (http://backend:4000)
+ * - `SITE_BACKEND` (server-only): Internal Docker network URL (http://backend:4000)
  * - `NEXT_PUBLIC_API_URL` (client + server): Public-facing API URL
  *
  * ## Usage Examples
@@ -66,14 +66,12 @@
  * ```
  */
 export function getServerSideApiUrl(): string {
-    // In Docker, use internal network for server-side fetches
-    // This avoids SSL certificate validation issues and is faster
-    if (process.env.API_URL) {
-        return process.env.API_URL;
+    // SITE_BACKEND is required for SSR fetches
+    // Set in .env: http://backend:4000 for Docker, http://localhost:4000 for local
+    if (!process.env.SITE_BACKEND) {
+        throw new Error('SITE_BACKEND environment variable is required for server-side API requests');
     }
-
-    // When running locally via npm, use public API URL or localhost
-    return process.env.NEXT_PUBLIC_API_URL?.replace('/api', '') || 'http://localhost:4000';
+    return process.env.SITE_BACKEND;
 }
 
 /**

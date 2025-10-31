@@ -121,7 +121,7 @@ if [[ "$FORCE_DEPLOY" != true ]]; then
     log_warning "  Host: $DROPLET_HOST"
     log_warning "  Deploy directory: $DEPLOY_DIR"
     log_warning "  Environment: ${ENV^^}"
-    log_warning "  Image tag: $IMAGE_TAG"
+    log_warning "  Image tag: $ENV_TAG"
     echo ""
     read -p "Continue? (y/N) " -n 1 -r
     echo
@@ -284,8 +284,21 @@ fi
 log_step "STEP 9: Creating ${ENV^^} Environment File"
 log_info "Writing .env file..."
 
+# Determine SITE_URL based on environment
+if [[ "$ENV" == "prod" ]]; then
+    SITE_URL="https://tronrelic.com"
+else
+    SITE_URL="https://dev.tronrelic.com"
+fi
+
 remote_exec "cat > $DEPLOY_DIR/.env << 'EOF'
 # TronRelic ${ENV^^} Environment
+
+# Environment Identifier (controls Docker image tag and NODE_ENV)
+ENV=$ENV_TAG
+
+# Site URL
+SITE_URL=$SITE_URL
 
 # Required - API Security
 ADMIN_API_TOKEN=$ADMIN_TOKEN
@@ -295,142 +308,30 @@ TRONGRID_API_KEY=$TRONGRID_KEY_1
 TRONGRID_API_KEY_2=$TRONGRID_KEY_2
 TRONGRID_API_KEY_3=$TRONGRID_KEY_3
 
-# ${ENV^^} - Database Security
+# Database Security
 MONGO_ROOT_USERNAME=admin
 MONGO_ROOT_PASSWORD=$MONGO_PASSWORD
 REDIS_PASSWORD=$REDIS_PASSWORD
 
-# Public URLs (via Nginx on port 80)
-NEXT_PUBLIC_API_URL=http://$DROPLET_IP/api
-NEXT_PUBLIC_SOCKET_URL=http://$DROPLET_IP
-NEXT_PUBLIC_SITE_URL=http://$DROPLET_IP
+# Backend Configuration
+PORT=4000
+ENABLE_SCHEDULER=true
+ENABLE_WEBSOCKETS=true
+REDIS_NAMESPACE=tronrelic
 EOF"
 
 remote_exec "chmod 600 $DEPLOY_DIR/.env"
 
 log_success "Environment file created"
 
-# Create docker-compose.yml
-log_step "STEP 10: Creating Docker Compose Configuration"
-log_info "Writing $COMPOSE_FILE..."
+# Copy docker-compose.yml from repo
+log_step "STEP 10: Copying Docker Compose Configuration"
+log_info "Copying unified $COMPOSE_FILE to server..."
 
-remote_exec "cat > $DEPLOY_DIR/$COMPOSE_FILE << 'EOF'
-version: \"3.8\"
+# Copy the unified docker-compose.yml file from the local repo to the server
+scp "$SCRIPT_DIR/../docker-compose.yml" "$DROPLET_HOST:$DEPLOY_DIR/"
 
-services:
-    mongodb:
-        image: mongo:6
-        container_name: $MONGO_CONTAINER
-        restart: always
-        ports:
-            - \"27017:27017\"
-        environment:
-            - MONGO_INITDB_ROOT_USERNAME=\${MONGO_ROOT_USERNAME:-admin}
-            - MONGO_INITDB_ROOT_PASSWORD=\${MONGO_ROOT_PASSWORD}
-        volumes:
-            - ${ENV}-mongo-data:/data/db
-        networks:
-            - tronrelic-network
-        command: [\"mongod\", \"--auth\"]
-        healthcheck:
-            test: [\"CMD\", \"mongosh\", \"--eval\", \"db.adminCommand('ping')\"]
-            interval: 10s
-            timeout: 5s
-            retries: 5
-            start_period: 10s
-
-    redis:
-        image: redis:7-alpine
-        container_name: $REDIS_CONTAINER
-        restart: always
-        ports:
-            - \"6379:6379\"
-        environment:
-            - REDIS_PASSWORD=\${REDIS_PASSWORD}
-        volumes:
-            - ${ENV}-redis-data:/data
-        networks:
-            - tronrelic-network
-        command: [\"redis-server\", \"--requirepass\", \"\${REDIS_PASSWORD}\", \"--appendonly\", \"yes\"]
-        healthcheck:
-            test: [\"CMD\", \"redis-cli\", \"--no-auth-warning\", \"-a\", \"\${REDIS_PASSWORD}\", \"ping\"]
-            interval: 10s
-            timeout: 5s
-            retries: 5
-            start_period: 5s
-
-    backend:
-        image: ghcr.io/$GITHUB_USERNAME/$GITHUB_REPO/backend:$IMAGE_TAG
-        container_name: $BACKEND_CONTAINER
-        restart: always
-        ports:
-            - \"4000:4000\"
-        environment:
-            - NODE_ENV=production
-            - PORT=4000
-            - MONGODB_URI=mongodb://\${MONGO_ROOT_USERNAME:-admin}:\${MONGO_ROOT_PASSWORD}@mongodb:27017/tronrelic?authSource=admin
-            - REDIS_URL=redis://:\${REDIS_PASSWORD}@redis:6379
-            - ENABLE_SCHEDULER=true
-            - ENABLE_WEBSOCKETS=true
-            - ADMIN_API_TOKEN=\${ADMIN_API_TOKEN}
-            - TRONGRID_API_KEY=\${TRONGRID_API_KEY}
-            - TRONGRID_API_KEY_2=\${TRONGRID_API_KEY_2}
-            - TRONGRID_API_KEY_3=\${TRONGRID_API_KEY_3}
-            - NODE_OPTIONS=--max-old-space-size=2048
-        depends_on:
-            mongodb:
-                condition: service_healthy
-            redis:
-                condition: service_healthy
-        networks:
-            - tronrelic-network
-        volumes:
-            # Mount uploads directory for file persistence across container restarts
-            - ./public/uploads:/app/public/uploads
-        healthcheck:
-            test: [\"CMD\", \"node\", \"-e\", \"require('http').get('http://localhost:4000/api/health', (r) => { process.exit(r.statusCode === 200 ? 0 : 1); });\"]
-            interval: 30s
-            timeout: 10s
-            retries: 3
-            start_period: 40s
-
-    frontend:
-        image: ghcr.io/$GITHUB_USERNAME/$GITHUB_REPO/frontend:$IMAGE_TAG
-        container_name: $FRONTEND_CONTAINER
-        restart: always
-        ports:
-            - \"3000:3000\"
-        environment:
-            - NODE_ENV=production
-            - API_URL=http://backend:4000
-            - NEXT_PUBLIC_API_URL=\${NEXT_PUBLIC_API_URL:-http://localhost:4000/api}
-            - NEXT_PUBLIC_SOCKET_URL=\${NEXT_PUBLIC_SOCKET_URL:-http://localhost:4000}
-            - NEXT_PUBLIC_SITE_URL=\${NEXT_PUBLIC_SITE_URL:-http://localhost:3000}
-            - NODE_OPTIONS=--max-old-space-size=1024
-        depends_on:
-            backend:
-                condition: service_healthy
-        networks:
-            - tronrelic-network
-        healthcheck:
-            test: [\"CMD\", \"node\", \"-e\", \"require('http').get('http://localhost:3000/api/health', (r) => { process.exit(r.statusCode === 200 ? 0 : 1); });\"]
-            interval: 30s
-            timeout: 10s
-            retries: 3
-            start_period: 40s
-
-networks:
-    tronrelic-network:
-        driver: bridge
-
-volumes:
-    ${ENV}-mongo-data:
-        driver: local
-    ${ENV}-redis-data:
-        driver: local
-EOF"
-
-log_success "Docker Compose configuration created"
+log_success "Docker Compose configuration copied"
 
 # Pull Docker images
 log_step "STEP 11: Pulling Docker Images"
@@ -443,7 +344,7 @@ else
     log_error "Please check:"
     log_error "  1. GitHub token has correct permissions"
     log_error "  2. Images exist at ghcr.io/$GITHUB_USERNAME/$GITHUB_REPO"
-    log_error "  3. Images have been pushed with :$IMAGE_TAG tag"
+    log_error "  3. Images have been pushed with :$ENV_TAG tag"
     exit 1
 fi
 
@@ -499,7 +400,7 @@ echo "  ADMIN_API_TOKEN: $ADMIN_TOKEN"
 echo ""
 echo -e "${CYAN}Configuration:${NC}"
 echo "  Environment:  ${ENV^^}"
-echo "  Image tags:   :$IMAGE_TAG"
+echo "  Image tags:   :$ENV_TAG"
 echo "  Nginx:        Reverse proxy on port 80"
 echo "  Frontend:     Internal port 3000 (proxied)"
 echo "  Backend:      Internal port 4000 (proxied)"

@@ -42,36 +42,25 @@ const pluginPackages = discoverPluginPackages();
 /**
  * Resolves the backend origin for server-side rewrites.
  *
- * Why this matters:
- * - Docker mode: Uses API_URL=http://backend:4000 for container-to-container communication
- * - npm mode: Falls back to NEXT_PUBLIC_API_URL or localhost:4000 for local development
- * - This mirrors getBackendBaseUrl() in lib/config.ts to keep rewrites aligned with SSR fetch calls
+ * Requires SITE_BACKEND environment variable:
+ * - Docker: http://backend:4000 for container-to-container communication
+ * - Local npm: http://localhost:4000 for local development
  *
  * The rewrite rule converts client-side /api/* requests into backend API calls:
- * - Browser requests /api/markets → Next.js rewrites to http://localhost:4000/api/markets (npm mode)
- * - Browser requests /api/markets → Next.js rewrites to http://backend:4000/api/markets (Docker mode)
+ * - Browser requests /api/markets → Next.js rewrites to configured SITE_BACKEND/api/markets
  *
  * @returns {string} Backend origin without a trailing slash
  */
 function resolveInternalApiOrigin() {
-    // Docker mode: Use internal service name
-    if (process.env.API_URL) {
-        return process.env.API_URL.replace(/\/$/, '');
+    if (!process.env.SITE_BACKEND) {
+        throw new Error('SITE_BACKEND environment variable is required for API rewrites');
     }
-
-    // npm mode: Use public API URL (works for localhost)
-    if (process.env.NEXT_PUBLIC_API_URL) {
-        return process.env.NEXT_PUBLIC_API_URL.replace(/\/api$/, '').replace(/\/$/, '');
-    }
-
-    // Fallback for npm mode when .env isn't loaded
-    return 'http://localhost:4000';
+    return process.env.SITE_BACKEND.replace(/\/$/, '');
 }
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
     output: 'standalone',
-    swcMinify: true,
     typescript: {
         ignoreBuildErrors: true,
     },
@@ -99,9 +88,6 @@ const nextConfig = {
     experimental: {
         externalDir: true,
         webpackBuildWorker: true,
-        turbotrace: {
-            logLevel: 'error',
-        },
     },
     images: {
         remotePatterns: [

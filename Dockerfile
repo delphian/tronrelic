@@ -148,8 +148,8 @@ CMD ["npm", "run", "dev", "--workspace=apps/frontend"]
 FROM base AS frontend-prod
 WORKDIR /app
 
-# Accept API_URL as build argument for Next.js rewrites
-ARG API_URL=http://backend:4000
+# Accept SITE_BACKEND as build argument for Next.js rewrites
+ARG SITE_BACKEND=http://backend:4000
 
 # Install ALL dependencies first (needed for build)
 RUN npm ci
@@ -170,8 +170,8 @@ COPY apps/frontend ./apps/frontend
 # Generate plugin registry
 RUN npm run generate:plugins --workspace=apps/frontend
 
-# Build Next.js for production with API_URL available
-RUN API_URL=$API_URL npm run build --workspace=apps/frontend
+# Build Next.js for production with SITE_BACKEND available
+RUN SITE_BACKEND=$SITE_BACKEND npm run build --workspace=apps/frontend
 
 # Remove dev dependencies to reduce image size
 RUN npm prune --omit=dev

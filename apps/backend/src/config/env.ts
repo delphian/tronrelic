@@ -2,7 +2,10 @@ import 'dotenv/config';
 import { z } from 'zod';
 
 const envSchema = z.object({
+  // NODE_ENV is automatically set by Node.js/Next.js tooling (don't set in .env)
   NODE_ENV: z.enum(['development', 'test', 'staging', 'production']).default('development'),
+  // ENV is the deployment environment (set in .env: development, staging, production)
+  ENV: z.enum(['development', 'staging', 'production']).default('development'),
   PORT: z.coerce.number().int().positive().default(4000),
   MONGODB_URI: z.string().min(1, 'MONGODB_URI is required'),
   REDIS_URL: z.string().min(1, 'REDIS_URL is required'),

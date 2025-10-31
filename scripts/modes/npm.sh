@@ -66,6 +66,10 @@ if [[ "$FORCE_BUILD" == "true" ]]; then
     # Rebuild all workspaces
     echo -e "\n${GREEN}Rebuilding all workspaces...${NC}"
     cd "${PROJECT_ROOT}"
+    # Load .env file for build process (required by Next.js config)
+    set -a
+    source "${PROJECT_ROOT}/.env" 2>/dev/null || true
+    set +a
     npm run build --workspaces --if-present
     echo -e "${GREEN}✓ All workspaces rebuilt${NC}"
 fi

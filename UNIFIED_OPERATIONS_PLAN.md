@@ -144,7 +144,7 @@ services:
     container_name: tronrelic-frontend
     environment:
       - NODE_ENV=${ENV}
-      - API_URL=http://backend:4000
+      - SITE_BACKEND=${SITE_BACKEND}
       # NOTE: NEXT_PUBLIC_* variables removed
       # Runtime config is fetched from backend API and injected via SSR
       # See docs/system/system-runtime-config.md for details

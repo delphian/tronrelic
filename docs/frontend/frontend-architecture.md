@@ -550,7 +550,7 @@ TronRelic uses different environment variables depending on where code executes:
 
 | Variable | Context | Purpose | Example |
 |----------|---------|---------|---------|
-| `API_URL` | SSR only (server) | Internal Docker service URL for Next.js server | `http://backend:4000` |
+| `SITE_BACKEND` | SSR only (server) | Backend service URL for Next.js server (from .env) | `http://backend:4000` (Docker) or `http://localhost:4000` (local) |
 | `NEXT_PUBLIC_API_URL` | Client only (browser) | Public backend URL for browser requests | `https://tronrelic.com/api` |
 | `NEXT_PUBLIC_SOCKET_URL` | Client only (browser) | Public WebSocket URL for real-time connections | `https://tronrelic.com` |
 | `NEXT_PUBLIC_SITE_URL` | Both contexts | Public site URL for metadata and redirects | `https://tronrelic.com` |
@@ -581,9 +581,12 @@ The `getBackendBaseUrl()` function checks `typeof window` to determine the runti
 
 ```typescript
 function getBackendBaseUrl(): string {
-  // Server-side (SSR): Use internal Docker service name
+  // Server-side (SSR): SITE_BACKEND is required
   if (typeof window === 'undefined') {
-    return process.env.API_URL || 'http://localhost:4000';
+    if (!process.env.SITE_BACKEND) {
+      throw new Error('SITE_BACKEND environment variable is required for server-side rendering');
+    }
+    return process.env.SITE_BACKEND;
   }
 
   // Client-side: Use public URL from environment or detect from window.location
@@ -701,8 +704,8 @@ The same config module works across environments by reading different variable v
 **Development (local):**
 
 ```bash
-# .env.local
-API_URL=http://localhost:4000
+# .env
+SITE_BACKEND=http://localhost:4000
 NEXT_PUBLIC_API_URL=http://localhost:4000/api
 NEXT_PUBLIC_SOCKET_URL=http://localhost:4000
 NEXT_PUBLIC_SITE_URL=http://localhost:3000
@@ -712,7 +715,7 @@ NEXT_PUBLIC_SITE_URL=http://localhost:3000
 
 ```bash
 # .env
-API_URL=http://backend:4000
+SITE_BACKEND=http://backend:4000
 NEXT_PUBLIC_API_URL=https://tronrelic.com/api
 NEXT_PUBLIC_SOCKET_URL=https://tronrelic.com
 NEXT_PUBLIC_SITE_URL=https://tronrelic.com
@@ -724,13 +727,13 @@ Code never changes—only the environment variable values differ.
 
 **Symptom: 502 Bad Gateway errors in production**
 
-- **Cause:** SSR code using `NEXT_PUBLIC_API_URL` (external URL) instead of `API_URL` (internal service URL)
-- **Fix:** Replace direct environment access with `config.apiBaseUrl` or `getApiUrl()`
+- **Cause:** SSR code not using `SITE_BACKEND` (internal service URL)
+- **Fix:** Ensure `SITE_BACKEND` is set in .env and use `config.apiBaseUrl` or `getApiUrl()`
 
 **Symptom: CORS errors in browser**
 
 - **Cause:** Client-side code using internal Docker service name (`http://backend:4000`)
-- **Fix:** Ensure `NEXT_PUBLIC_API_URL` is set correctly in environment and use `config.apiBaseUrl`
+- **Fix:** Use runtime config from `getRuntimeConfig()` which provides correct public URLs
 
 **Symptom: WebSocket connection failures**
 
@@ -761,9 +764,10 @@ getApiUrl('/path');             // For fetch() in SSR pages
 **Never access directly:**
 
 ```typescript
-// ❌ Don't do this
-process.env.NEXT_PUBLIC_API_URL;
-process.env.API_URL;
+// ❌ Don't do this - always use config or getRuntimeConfig()
+process.env.SITE_BACKEND;
+process.env.SITE_URL;
+process.env.SITE_WS;
 ```
 
 **For new API routes:**

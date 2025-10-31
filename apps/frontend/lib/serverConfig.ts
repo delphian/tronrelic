@@ -58,26 +58,17 @@ let cachedConfig: RuntimeConfig | null = null;
 /**
  * Resolves the backend URL for SSR-to-backend communication.
  *
- * Why different from client URLs:
- * - In Docker, SSR runs in the frontend container and needs to reach the backend container
- * - Uses Docker service name "backend:4000" for container-to-container communication
- * - In local npm mode, uses localhost for direct connection
+ * Requires SITE_BACKEND environment variable:
+ * - Docker: http://backend:4000 (container-to-container communication)
+ * - Local npm: http://localhost:4000 (direct localhost connection)
  *
  * @returns Backend URL for SSR fetch calls (e.g., "http://backend:4000")
  */
 function getBackendUrl(): string {
-    // Docker mode: Use internal service name for container-to-container communication
-    if (process.env.API_URL) {
-        return process.env.API_URL.replace(/\/$/, '');
+    if (!process.env.SITE_BACKEND) {
+        throw new Error('SITE_BACKEND environment variable is required for server-side rendering');
     }
-
-    // npm mode: Use localhost for local development
-    if (process.env.NEXT_PUBLIC_API_URL) {
-        return process.env.NEXT_PUBLIC_API_URL.replace(/\/api$/, '').replace(/\/$/, '');
-    }
-
-    // Fallback for npm mode when .env isn't loaded
-    return 'http://localhost:4000';
+    return process.env.SITE_BACKEND.replace(/\/$/, '');
 }
 
 /**
@@ -125,9 +116,9 @@ export async function getServerConfig(): Promise<RuntimeConfig> {
 
         // Cache the config for container lifetime
         cachedConfig = data.config;
-        console.log('[ServerConfig] Fetched and cached runtime config from backend:', cachedConfig.siteUrl);
+        console.log('[ServerConfig] Fetched and cached runtime config from backend:', data.config.siteUrl);
 
-        return cachedConfig;
+        return data.config;
     } catch (error) {
         // Fallback to environment variables (local dev safety)
         console.warn('[ServerConfig] Failed to fetch runtime config, using environment fallback:', error);
