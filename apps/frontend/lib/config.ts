@@ -69,38 +69,24 @@ function normalizeClientEnvUrl(rawUrl: string | undefined): string | null {
  * Gets the appropriate backend base URL for the current runtime context.
  *
  * Server-side (SSR):
- *   - Docker mode: Uses API_URL environment variable (e.g., http://backend:4000) for container-to-container communication
- *   - npm mode: Falls back to NEXT_PUBLIC_API_URL or localhost:4000 for local development
- *   - This allows the Next.js server to communicate with the backend in both deployment modes
+ *   - Requires SITE_BACKEND environment variable (from .env)
+ *   - Docker: http://backend:4000 for container-to-container communication
+ *   - Local: http://localhost:4000 for local development
  *
  * Client-side (browser):
  *   - Uses NEXT_PUBLIC_SOCKET_URL or NEXT_PUBLIC_API_URL from environment
  *   - Falls back to dynamically detecting current hostname with port 4000
  *   - This ensures browsers connect to the publicly accessible backend URL
  *
- * Why the fallback chain matters:
- *   - Docker Compose injects API_URL=http://backend:4000 for service discovery
- *   - npm mode (./scripts/start.sh --npm) doesn't set API_URL, so we fall back to NEXT_PUBLIC_API_URL
- *   - NEXT_PUBLIC_API_URL works in both modes since it's in the root .env file
- *   - Final fallback uses localhost for maximum compatibility with local development
- *
  * @returns The base backend URL without trailing /api path
  */
 function getBackendBaseUrl(): string {
-  // Server-side (SSR): Use environment-specific backend URL
+  // Server-side (SSR): SITE_BACKEND is required
   if (typeof window === 'undefined') {
-    // Docker mode: Use internal service name
-    if (process.env.API_URL) {
-        return process.env.API_URL;
+    if (!process.env.SITE_BACKEND) {
+      throw new Error('SITE_BACKEND environment variable is required for server-side rendering');
     }
-
-    // npm mode: Use public API URL (works for localhost SSR)
-    if (process.env.NEXT_PUBLIC_API_URL) {
-        return process.env.NEXT_PUBLIC_API_URL.replace(/\/api$/, '');
-    }
-
-    // Fallback for npm mode when .env isn't loaded by Next.js
-    return 'http://localhost:4000';
+    return process.env.SITE_BACKEND;
   }
 
   // Client-side: Use public URL or detect from window.location

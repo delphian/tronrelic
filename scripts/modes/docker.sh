@@ -30,7 +30,7 @@ while [[ $# -gt 0 ]]; do
             ;;
         --prod)
             PROD_MODE=true
-            COMPOSE_FILE="docker-compose.prod.yml"
+            export ENV=production
             shift
             ;;
         *)

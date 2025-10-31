@@ -159,20 +159,10 @@ stop_npm_processes
 # Clean up any orphaned tsx processes from previous runs
 cleanup_orphaned_tsx
 
-# Determine which docker-compose files to try
+# Use unified docker-compose.yml
 COMPOSE_FILES=()
-if [[ "${PRODUCTION}" == true ]]; then
-  if [[ -f docker-compose.prod.yml ]]; then
-    COMPOSE_FILES+=("docker-compose.prod.yml")
-  fi
-else
-  # Try both dev and standard compose files (npm mode uses dev, Docker mode uses standard)
-  if [[ -f docker-compose.dev.yml ]]; then
-    COMPOSE_FILES+=("docker-compose.dev.yml")
-  fi
-  if [[ -f docker-compose.yml ]]; then
-    COMPOSE_FILES+=("docker-compose.yml")
-  fi
+if [[ -f docker-compose.yml ]]; then
+  COMPOSE_FILES+=("docker-compose.yml")
 fi
 
 # Stop containers for each compose file

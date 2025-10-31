@@ -748,7 +748,7 @@ export class SystemMonitorService {
 
   async getConfiguration(): Promise<ConfigurationValues> {
     return {
-      environment: env.NODE_ENV,
+      environment: env.ENV,
       port: env.PORT,
       features: {
         scheduler: env.ENABLE_SCHEDULER,
