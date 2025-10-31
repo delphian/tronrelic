@@ -22,26 +22,30 @@ This documentation is for developers and operators who need to deploy, update, o
 
 ## TronRelic Deployment Architecture
 
-TronRelic uses a **dual-environment deployment strategy** with separate production and development servers:
+TronRelic uses a **unified Docker deployment system** where environment differentiation is controlled by a single `ENV` variable in the `.env` file. Both development and production servers use identical container names, deployment directories, and docker-compose.yml configuration.
 
 ```
 Production (tronrelic.com)
 ├── Domain: tronrelic.com
-├── Server: Digital Ocean Droplet
+├── Server: Digital Ocean Droplet (<PROD_DROPLET_IP>)
 ├── Deployment: /opt/tronrelic
-├── Docker Images: ghcr.io/delphian/tronrelic/*:latest
+├── Docker Images: ghcr.io/delphian/tronrelic/*:production
+├── ENV Variable: ENV=production
 └── CI/CD: Auto-deploy on push to 'main' branch
 
 Development (dev.tronrelic.com)
 ├── Domain: dev.tronrelic.com
 ├── Server: Digital Ocean Droplet (<DEV_DROPLET_IP>)
-├── Deployment: /opt/tronrelic-dev
-├── Docker Images: ghcr.io/delphian/tronrelic/*:dev
+├── Deployment: /opt/tronrelic
+├── Docker Images: ghcr.io/delphian/tronrelic/*:development
+├── ENV Variable: ENV=development
 └── CI/CD: Auto-deploy on push to 'dev' branch
 ```
 
 **Key architectural decisions:**
-- **Docker-based deployment**: All services run as containers for consistency and portability
+- **Unified Docker deployment**: Single `ENV` variable controls image tags, Node.js runtime, and all environment behavior (see [operations-docker.md](../system/operations-docker.md))
+- **Identical container names**: All environments use same names (`tronrelic-backend`, `tronrelic-frontend`) without environment suffixes
+- **Runtime configuration**: Frontend fetches config from backend API at SSR time, enabling universal images that work on any domain
 - **Nginx reverse proxy**: Routes traffic to backend (port 4000) and frontend (port 3000)
 - **HTTPS with Let's Encrypt**: Production uses SSL certificates for secure communication
 - **GitHub Container Registry**: Stores Docker images built by GitHub Actions
@@ -49,7 +53,15 @@ Development (dev.tronrelic.com)
 
 ## Detailed Documentation
 
-This directory contains four focused documents covering different aspects of deployment:
+This directory contains comprehensive documentation covering different aspects of deployment:
+
+**See [operations-docker.md](../system/operations-docker.md) for complete details on:**
+- Unified Docker deployment system architecture
+- ENV variable convention (development/production)
+- Image tagging standards (:development/:production)
+- Container naming conventions (unified names, no suffixes)
+- Runtime configuration approach
+- Migration from legacy tag system
 
 **See [operations-server-info.md](./operations-server-info.md) for complete details on:**
 - Production and development server locations
@@ -76,10 +88,10 @@ This directory contains four focused documents covering different aspects of dep
 
 ### Server Information
 
-| Environment | Domain | IP Address | Deploy Directory | Image Tag |
-|-------------|--------|------------|------------------|-----------|
-| **Production** | tronrelic.com | <PROD_DROPLET_IP> | /opt/tronrelic | :latest |
-| **Development** | dev.tronrelic.com | <DEV_DROPLET_IP> | /opt/tronrelic-dev | :dev |
+| Environment | Domain | IP Address | Deploy Directory | Image Tag | ENV Variable |
+|-------------|--------|------------|------------------|-----------|--------------|
+| **Production** | tronrelic.com | <PROD_DROPLET_IP> | /opt/tronrelic | :production | ENV=production |
+| **Development** | dev.tronrelic.com | <DEV_DROPLET_IP> | /opt/tronrelic | :development | ENV=development |
 
 ### Common Commands
 
@@ -103,8 +115,8 @@ ssh root@<DEV_DROPLET_IP>
 
 **View logs:**
 ```bash
-# On remote server
-cd /opt/tronrelic         # or /opt/tronrelic-dev
+# On remote server (same path for all environments)
+cd /opt/tronrelic
 docker compose logs -f
 docker compose logs -f backend
 docker compose logs -f frontend
@@ -124,13 +136,13 @@ docker stats --no-stream
 **Access databases:**
 ```bash
 # MongoDB (remote droplets require authentication)
-# See MongoDB Access section in operations-remote-access.md for full details and dev examples
-ssh root@<DROPLET_IP> 'cd /opt/tronrelic* && \
-  docker exec -i -e MONGO_PASSWORD="<password>" tronrelic-mongo-* sh -c \
+# See MongoDB Access section in operations-remote-access.md for full details
+ssh root@<DROPLET_IP> 'cd /opt/tronrelic && \
+  docker exec -i -e MONGO_PASSWORD="<password>" tronrelic-mongo sh -c \
   "mongosh --username admin --password \"\$MONGO_PASSWORD\" --authenticationDatabase admin <db-name>"'
 
 # Redis (remote droplets may require authentication)
-docker exec -it tronrelic-redis-prod redis-cli
+docker exec -it tronrelic-redis redis-cli
 ```
 
 ### Deployment Checklist
@@ -162,22 +174,28 @@ docker exec -it tronrelic-redis-prod redis-cli
 
 ## CI/CD Pipeline
 
-TronRelic uses GitHub Actions for automated deployment:
+TronRelic uses GitHub Actions for automated deployment with unified Docker standards:
 
 **Production pipeline (.github/workflows/docker-publish-prod.yml):**
 1. Triggered on push to `main` branch
 2. Runs integration tests with Docker Compose
 3. Builds backend and frontend images
-4. Tags images as `:latest` and `:$COMMIT_SHA`
+4. Tags images as `:production` (single tag, no dual-tagging)
 5. Pushes images to GitHub Container Registry
 6. Manual deployment required (run `./scripts/droplet-update.sh prod`)
 
 **Development pipeline (.github/workflows/docker-publish-dev.yml):**
 1. Triggered on push to `dev` branch
 2. Builds backend and frontend images
-3. Tags images as `:dev` and `:dev-$COMMIT_SHA`
+3. Tags images as `:development` (single tag, no additional tags)
 4. Pushes images to GitHub Container Registry
 5. **Automatically deploys** to dev.tronrelic.com via SSH
+
+**Image tag convention:**
+- Production uses `:production` tag (not `:latest`)
+- Development uses `:development` tag (not `:dev`)
+- Single-tag approach eliminates ambiguity and prevents accidental deployments
+- See [operations-docker.md](../system/operations-docker.md) for complete tagging standards
 
 ## Security Considerations
 
@@ -205,11 +223,13 @@ TronRelic uses GitHub Actions for automated deployment:
 ## Further Reading
 
 **Detailed documentation:**
+- [operations-docker.md](../system/operations-docker.md) - Unified Docker deployment system, ENV convention, image tagging standards
 - [operations-server-info.md](./operations-server-info.md) - Server locations, credentials, authentication
 - [operations-workflows.md](./operations-workflows.md) - Setup and update procedures
 - [operations-remote-access.md](./operations-remote-access.md) - SSH, debugging, remote management
 
 **Related topics:**
+- [system-runtime-config.md](../system/system-runtime-config.md) - Runtime configuration system enabling universal Docker images
 - [README.md - Docker Quick Start](../../README.md#option-1-docker-recommended-for-production) - Docker architecture and local development
 - [environment.md](../environment.md) - Environment variable configuration
 - [system-api.md](../system/system-api.md) - API endpoints and health checks

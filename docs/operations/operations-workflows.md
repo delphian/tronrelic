@@ -64,9 +64,9 @@ These workflows take a fresh Ubuntu 22.04 droplet and configure it to run TronRe
 5. **Authenticates with GitHub Container Registry** using your personal access token
 6. **Creates deployment directory** at `/opt/tronrelic`
 7. **Generates secure credentials** (ADMIN_API_TOKEN, MONGO_PASSWORD, REDIS_PASSWORD)
-8. **Creates production .env file** with your TronGrid API keys and generated secrets
-9. **Creates docker-compose.yml** configured for production (image tag `:latest`)
-10. **Pulls Docker images** from ghcr.io/delphian/tronrelic
+8. **Creates production .env file** with your TronGrid API keys and generated secrets (sets `ENV=production`)
+9. **Copies unified docker-compose.yml** to deployment directory
+10. **Pulls Docker images** from ghcr.io/delphian/tronrelic (`:production` tags)
 11. **Starts all containers** (MongoDB, Redis, backend, frontend)
 12. **Verifies deployment** via health checks
 
@@ -140,10 +140,12 @@ curl -I http://tronrelic.com/
 ```
 
 **Differences from production setup:**
-- **Deployment directory:** `/opt/tronrelic-dev` (separate from production)
-- **Docker image tags:** `:dev` instead of `:latest`
+- **Environment variable:** `ENV=development` (production uses `ENV=production`)
+- **Docker image tags:** `:development` instead of `:production`
 - **No SSL setup** (development uses HTTP for faster iteration)
 - **Auto-deployment enabled** via GitHub Actions (pushes to `dev` branch trigger automatic updates)
+
+**Note:** Development and production use identical deployment directory (`/opt/tronrelic`), container names, and docker-compose.yml per the unified Docker standards. Only the `ENV` variable in the .env file differs between environments (see [operations-docker.md](../system/operations-docker.md)).
 
 **Expected output:**
 ```
@@ -155,8 +157,8 @@ Application URLs (via Nginx on port 80):
   System:       http://dev.tronrelic.com/system
 
 Configuration:
-  Environment:  DEVELOPMENT
-  Image tags:   :dev
+  Environment:  DEVELOPMENT (ENV=development)
+  Image tags:   :development
   Nginx:        Reverse proxy on port 80
 
 Next Steps:
@@ -184,7 +186,7 @@ git commit -am "Test auto-deployment"
 git push origin dev
 
 # GitHub Actions will:
-# 1. Build backend:dev and frontend:dev images
+# 1. Build backend:development and frontend:development images
 # 2. Push images to ghcr.io
 # 3. SSH to dev server and run: docker compose pull && docker compose up -d
 ```
@@ -201,7 +203,7 @@ Use these scripts to manually update running deployments with the latest Docker 
 - Manually trigger deployment after pushing to `main` branch
 
 **Prerequisites:**
-- Latest Docker images pushed to ghcr.io with `:latest` tag
+- Latest Docker images pushed to ghcr.io with `:production` tag
 - GitHub Actions workflow completed successfully (check Actions tab)
 
 **Run update script:**
@@ -216,7 +218,7 @@ Use these scripts to manually update running deployments with the latest Docker 
 **What the script does:**
 1. **Verifies SSH connection** to production server
 2. **Shows current container status** (docker compose ps)
-3. **Pulls latest images** from ghcr.io (`:latest` tags)
+3. **Pulls latest images** from ghcr.io (`:production` tags)
 4. **Restarts containers** with new images using rolling restart strategy (docker compose up -d)
 5. **Waits for startup** (15 seconds)
 6. **Checks container health** (docker compose ps)
@@ -268,7 +270,7 @@ ssh root@<PROD_DROPLET_IP> 'cd /opt/tronrelic && docker compose logs --tail=50 b
 **What the script does:**
 1. **Verifies SSH connection** to development server (<DEV_DROPLET_IP>)
 2. **Shows current container status**
-3. **Pulls latest :dev images** from ghcr.io
+3. **Pulls latest :development images** from ghcr.io
 4. **Restarts containers** with new images using full restart strategy (docker compose down && docker compose up -d)
 5. **Waits for startup** (15 seconds)
 6. **Checks container health**
@@ -287,7 +289,7 @@ Application URLs:
   System:   http://<DEV_DROPLET_IP>/system
 
 View logs with:
-  ssh root@<DEV_DROPLET_IP> 'cd /opt/tronrelic-dev && docker compose logs -f'
+  ssh root@<DEV_DROPLET_IP> 'cd /opt/tronrelic && docker compose logs -f'
 ```
 
 ## CI/CD Automated Deployment
@@ -313,9 +315,9 @@ TronRelic uses GitHub Actions for continuous integration and deployment.
 
 2. **Build and Push (only on successful tests):**
    - Log in to GitHub Container Registry (ghcr.io)
-   - Build and tag backend image (`:latest` and `:$COMMIT_SHA`)
+   - Build and tag backend image (`:production` and `:production-$COMMIT_SHA`)
    - Push backend image to ghcr.io
-   - Build and tag frontend image (`:latest` and `:$COMMIT_SHA`)
+   - Build and tag frontend image (`:production` and `:production-$COMMIT_SHA`)
    - Push frontend image to ghcr.io
 
 3. **Manual Deployment:**
@@ -344,14 +346,14 @@ TronRelic uses GitHub Actions for continuous integration and deployment.
 
 1. **Build and Push:**
    - Log in to GitHub Container Registry (ghcr.io)
-   - Build and tag backend image (`:dev` and `:dev-$COMMIT_SHA`)
+   - Build and tag backend image (`:development` and `:development-$COMMIT_SHA`)
    - Push backend image to ghcr.io
-   - Build and tag frontend image (`:dev` and `:dev-$COMMIT_SHA`)
+   - Build and tag frontend image (`:development` and `:development-$COMMIT_SHA`)
    - Push frontend image to ghcr.io
 
 2. **Automatic Deployment:**
    - SSH to dev.tronrelic.com (<DEV_DROPLET_IP>)
-   - Run `cd /opt/tronrelic-dev && docker compose pull`
+   - Run `cd /opt/tronrelic && docker compose pull`
    - Run `docker compose down && docker compose up -d`
    - Wait 15 seconds for startup
    - Show container status
@@ -368,99 +370,140 @@ TronRelic uses GitHub Actions for continuous integration and deployment.
 # Navigate to: https://github.com/delphian/tronrelic/actions
 
 # View deployment logs
-ssh root@<DEV_DROPLET_IP> 'cd /opt/tronrelic-dev && docker compose logs --tail=100 -f'
+ssh root@<DEV_DROPLET_IP> 'cd /opt/tronrelic && docker compose logs --tail=100 -f'
 ```
 
 ## Environment-Specific Configuration
+
+TronRelic uses a **unified deployment system** where all environments share the same docker-compose.yml and container names. Environment differentiation is controlled entirely by the `.env` file.
+
+**See [operations-docker.md](../system/operations-docker.md) for complete Docker standards documentation.**
+
+### Unified docker-compose.yml (all environments)
+
+All servers use the **same docker-compose.yml** located at `/opt/tronrelic/docker-compose.yml`:
+
+```yaml
+services:
+  backend:
+    image: ghcr.io/delphian/tronrelic/backend:${ENV}
+    container_name: tronrelic-backend
+    environment:
+      - NODE_ENV=${ENV}
+
+  frontend:
+    image: ghcr.io/delphian/tronrelic/frontend:${ENV}
+    container_name: tronrelic-frontend
+    environment:
+      - NODE_ENV=${ENV}
+
+  mongodb:
+    container_name: tronrelic-mongo
+    command: ["mongod", "--auth"]
+
+  redis:
+    container_name: tronrelic-redis
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD}"]
+```
+
+**Key principle:** The `${ENV}` variable determines which Docker image tag is pulled (`:production` or `:development`) and sets the Node.js runtime environment.
 
 ### Production Environment
 
 **Configuration file:** `/opt/tronrelic/.env`
 
-**Key differences from development:**
+**Production-specific values:**
 ```bash
-# Database authentication REQUIRED
+# Environment identifier (controls image tags and runtime)
+ENV=production
+
+# Site configuration
+SITE_URL=https://tronrelic.com
+SITE_WS=https://tronrelic.com
+SITE_BACKEND=http://backend:4000
+
+# Database authentication
 MONGO_ROOT_USERNAME=admin
 MONGO_ROOT_PASSWORD=<secure-password>
 REDIS_PASSWORD=<secure-password>
 
-# HTTPS URLs
-NEXT_PUBLIC_API_URL=https://tronrelic.com/api
-NEXT_PUBLIC_SOCKET_URL=https://tronrelic.com
-NEXT_PUBLIC_SITE_URL=https://tronrelic.com
-
-# MongoDB connection with auth
+# Database connections (auto-configured in docker-compose.yml)
 MONGODB_URI=mongodb://admin:<password>@mongodb:27017/tronrelic?authSource=admin
-
-# Redis connection with auth
 REDIS_URL=redis://:<password>@redis:6379
+
+# Feature flags
+ENABLE_SCHEDULER=true
+ENABLE_WEBSOCKETS=true
+
+# API keys
+ADMIN_API_TOKEN=<secure-token>
+TRONGRID_API_KEY=<key1>
+TRONGRID_API_KEY_2=<key2>
+TRONGRID_API_KEY_3=<key3>
 ```
 
-**Docker Compose configuration:** `/opt/tronrelic/docker-compose.yml`
-```yaml
-services:
-  backend:
-    image: ghcr.io/delphian/tronrelic/backend:latest  # Production tag
-    container_name: tronrelic-backend-prod
-  frontend:
-    image: ghcr.io/delphian/tronrelic/frontend:latest  # Production tag
-    container_name: tronrelic-frontend-prod
-  mongodb:
-    container_name: tronrelic-mongo-prod
-    command: ["mongod", "--auth"]  # Authentication enabled
-  redis:
-    container_name: tronrelic-redis-prod
-    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD}"]  # Auth enabled
-```
+**Docker behavior with `ENV=production`:**
+- Pulls `ghcr.io/delphian/tronrelic/backend:production`
+- Pulls `ghcr.io/delphian/tronrelic/frontend:production`
+- Sets `NODE_ENV=production` in containers
+- Uses production-optimized frontend build
 
 ### Development Environment
 
-**Configuration file:** `/opt/tronrelic-dev/.env`
+**Configuration file:** `/opt/tronrelic/.env`
 
-**Key differences from production:**
+**Development-specific values:**
 ```bash
-# Database authentication enabled (same as production)
+# Environment identifier (controls image tags and runtime)
+ENV=development
+
+# Site configuration
+SITE_URL=https://dev.tronrelic.com
+SITE_WS=https://dev.tronrelic.com
+SITE_BACKEND=http://backend:4000
+
+# Database authentication (same as production)
 MONGO_ROOT_USERNAME=admin
 MONGO_ROOT_PASSWORD=<secure-password>
 REDIS_PASSWORD=<secure-password>
 
-# HTTP URLs (no SSL)
-NEXT_PUBLIC_API_URL=http://dev.tronrelic.com/api
-NEXT_PUBLIC_SOCKET_URL=http://dev.tronrelic.com
-NEXT_PUBLIC_SITE_URL=http://dev.tronrelic.com
-
-# MongoDB connection with auth
+# Database connections (same as production)
 MONGODB_URI=mongodb://admin:<password>@mongodb:27017/tronrelic?authSource=admin
-
-# Redis connection with auth
 REDIS_URL=redis://:<password>@redis:6379
+
+# Feature flags (same as production)
+ENABLE_SCHEDULER=true
+ENABLE_WEBSOCKETS=true
+
+# API keys (can use same or different keys)
+ADMIN_API_TOKEN=<dev-token>
+TRONGRID_API_KEY=<key1>
+TRONGRID_API_KEY_2=<key2>
+TRONGRID_API_KEY_3=<key3>
 ```
 
-**Docker Compose configuration:** `/opt/tronrelic-dev/docker-compose.yml`
-```yaml
-services:
-  backend:
-    image: ghcr.io/delphian/tronrelic/backend:dev  # Development tag
-    container_name: tronrelic-backend-dev           # Dev-specific container name
-  frontend:
-    image: ghcr.io/delphian/tronrelic/frontend:dev  # Development tag
-    container_name: tronrelic-frontend-dev          # Dev-specific container name
-  mongodb:
-    container_name: tronrelic-mongo-dev             # Dev-specific container name
-    command: ["mongod", "--auth"]  # Authentication enabled
-  redis:
-    container_name: tronrelic-redis-dev             # Dev-specific container name
-    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD}"]  # Auth enabled
-```
+**Docker behavior with `ENV=development`:**
+- Pulls `ghcr.io/delphian/tronrelic/backend:development`
+- Pulls `ghcr.io/delphian/tronrelic/frontend:development`
+- Sets `NODE_ENV=development` in containers
+- Uses development-optimized frontend build
 
-**Development container naming:**
-All development containers use the `-dev` suffix to distinguish them from production containers:
-- `tronrelic-backend-dev` (instead of `tronrelic-backend-prod`)
-- `tronrelic-frontend-dev` (instead of `tronrelic-frontend-prod`)
-- `tronrelic-mongo-dev` (instead of `tronrelic-mongo-prod`)
-- `tronrelic-redis-dev` (instead of `tronrelic-redis-prod`)
+### Container Names (identical for all environments)
 
-This naming convention allows production and development containers to coexist on the same server if needed, though they typically run on separate droplets.
+All environments use the **same container names** (no `-prod` or `-dev` suffixes):
+
+| Service | Container Name |
+|---------|----------------|
+| Backend | `tronrelic-backend` |
+| Frontend | `tronrelic-frontend` |
+| MongoDB | `tronrelic-mongo` |
+| Redis | `tronrelic-redis` |
+
+**Benefits:**
+- Scripts work across all environments without modification
+- Consistent monitoring and debugging commands
+- No environment-specific container references needed
+- Simplified deployment procedures
 
 ## Deployment Rollback
 
@@ -468,20 +511,23 @@ This naming convention allows production and development containers to coexist o
 
 ### Rollback by Image Tag
 
-**Every deployment is tagged with commit SHA** for easy rollback:
+**Note:** The unified Docker system uses `:production` and `:development` tags. For rollback, you'll need to temporarily modify docker-compose.yml to reference a specific commit SHA tag.
+
 ```bash
 # SSH to server
 ssh root@<DROPLET_IP>
-cd /opt/tronrelic  # or /opt/tronrelic-dev
+cd /opt/tronrelic
 
-# List available image tags
-docker image ls | grep tronrelic
+# List available image tags on GitHub Container Registry
+# Visit: https://github.com/delphian/tronrelic/pkgs/container/tronrelic%2Fbackend
 
-# Update docker-compose.yml to use specific commit SHA
-# Change: ghcr.io/delphian/tronrelic/backend:latest
-# To:     ghcr.io/delphian/tronrelic/backend:<COMMIT_SHA>
+# Edit docker-compose.yml to use specific commit SHA
+nano docker-compose.yml
 
-nano docker-compose.yml  # or vim
+# Change:
+#   image: ghcr.io/delphian/tronrelic/backend:${ENV}
+# To:
+#   image: ghcr.io/delphian/tronrelic/backend:production-<COMMIT_SHA>
 
 # Restart containers with old image
 docker compose down
@@ -490,6 +536,9 @@ docker compose up -d
 # Verify rollback worked
 docker compose ps
 curl http://localhost:4000/api/health
+
+# After verification, restore docker-compose.yml to use ${ENV} again
+git checkout docker-compose.yml  # Or manually revert changes
 ```
 
 ### Rollback by Re-deploying Previous Commit
@@ -537,16 +586,22 @@ docker login ghcr.io -u delphian
 # Re-authenticate with fresh token
 echo '<NEW_GITHUB_TOKEN>' | docker login ghcr.io -u delphian --password-stdin
 
-# Manually pull images
-docker pull ghcr.io/delphian/tronrelic/backend:latest
-docker pull ghcr.io/delphian/tronrelic/frontend:latest
+# Check ENV variable in .env file
+grep ^ENV /opt/tronrelic/.env
+
+# Manually pull images (use correct environment tag from ENV)
+docker pull ghcr.io/delphian/tronrelic/backend:production     # If ENV=production
+docker pull ghcr.io/delphian/tronrelic/frontend:production    # If ENV=production
+# or
+docker pull ghcr.io/delphian/tronrelic/backend:development    # If ENV=development
+docker pull ghcr.io/delphian/tronrelic/frontend:development   # If ENV=development
 ```
 
 **Containers fail health checks:**
 ```bash
 # SSH to server
 ssh root@<DROPLET_IP>
-cd /opt/tronrelic  # or /opt/tronrelic-dev
+cd /opt/tronrelic
 
 # View container logs
 docker compose logs backend
@@ -628,11 +683,12 @@ ssh root@<DROPLET_IP> 'cd /opt/tronrelic && docker compose logs -f'
 
 **Rollback:**
 ```bash
-# Edit docker-compose.yml to use previous commit SHA
+# Edit docker-compose.yml to use previous commit SHA tag
 ssh root@<DROPLET_IP>
 cd /opt/tronrelic
-nano docker-compose.yml  # Change image tag
+nano docker-compose.yml  # Change image: from :${ENV} to :production-<SHA>
 docker compose down && docker compose up -d
+# Restore docker-compose.yml after verification
 ```
 
 ## GitHub Repository Secrets
@@ -710,8 +766,10 @@ Watch the GitHub Actions workflow run and verify:
 
 ## Further Reading
 
+- [operations-docker.md](../system/operations-docker.md) - Unified Docker deployment standards and ENV convention
 - [operations-server-info.md](./operations-server-info.md) - Server locations, credentials, authentication
 - [operations-remote-access.md](./operations-remote-access.md) - SSH usage, debugging, log inspection
 - [operations.md](./operations.md) - Deployment overview and quick reference
+- [system-runtime-config.md](../system/system-runtime-config.md) - Runtime configuration system
 - [README.md - Docker Quick Start](../../README.md#option-1-docker-recommended-for-production) - Docker commands and local development
 - [README.md - Architecture](../../README.md#architecture) - System architecture and directory structure
