@@ -16,3 +16,4 @@ export type {
     MenuEventSubscriber
 } from './IMenuEvent.js';
 export type { IMenuService } from './IMenuService.js';
+export type { IMenuNamespaceConfig } from './IMenuNamespaceConfig.js';
