@@ -24,12 +24,12 @@ TronRelic supports three deployment methods with different use cases:
 |--------|----------|------------|--------|
 | **Initial Setup Scripts** | New server from scratch | Semi-automated | Manual approval |
 | **Manual Update Scripts** | Routine updates, hotfixes | Manual execution | Full control |
-| **CI/CD Auto-Deploy** | Continuous deployment | Fully automated | Dev only |
+| **CI/CD Image Builds** | Automated image building | Fully automated | Both environments |
 
 **Recommendation:**
 - Use **initial setup scripts** when provisioning a new server
-- Use **manual update scripts** for production deployments (requires explicit approval)
-- Use **CI/CD auto-deploy** for development (fast iteration, automatic on push to dev branch)
+- Use **manual update scripts** for all deployments (both production and development)
+- **CI/CD builds Docker images** automatically but does not deploy them to servers
 
 ## Initial Server Setup
 
@@ -143,7 +143,6 @@ curl -I http://tronrelic.com/
 - **Environment variable:** `ENV=development` (production uses `ENV=production`)
 - **Docker image tags:** `:development` instead of `:production`
 - **No SSL setup** (development uses HTTP for faster iteration)
-- **Auto-deployment enabled** via GitHub Actions (pushes to `dev` branch trigger automatic updates)
 
 **Note:** Development and production use identical deployment directory (`/opt/tronrelic`), container names, and docker-compose.yml per the unified Docker standards. Only the `ENV` variable in the .env file differs between environments (see [operations-docker.md](../system/operations-docker.md)).
 
@@ -163,32 +162,8 @@ Configuration:
 
 Next Steps:
   1. Access the frontend at http://dev.tronrelic.com/
-  2. Push to 'dev' branch to trigger automatic deployments
-  3. Use ./scripts/droplet-update.sh dev for manual updates
-```
-
-**Configure GitHub Actions auto-deployment:**
-
-The development environment supports automatic deployment via GitHub Actions. Set up repository secrets:
-
-1. Navigate to repository Settings → Secrets and variables → Actions
-2. Add these secrets:
-   - `DEV_DROPLET_HOST` = <DEV_DROPLET_IP>
-   - `DEV_DROPLET_USER` = root
-   - `DEV_DROPLET_SSH_KEY` = (paste full SSH private key)
-
-**Test auto-deployment:**
-```bash
-# Make a change and push to dev branch
-git checkout dev
-echo "test change" >> README.md
-git commit -am "Test auto-deployment"
-git push origin dev
-
-# GitHub Actions will:
-# 1. Build backend:development and frontend:development images
-# 2. Push images to ghcr.io
-# 3. SSH to dev server and run: docker compose pull && docker compose up -d
+  2. Push to 'dev' branch to trigger CI/CD image builds
+  3. Use ./scripts/droplet-update.sh dev to deploy the new images
 ```
 
 ## Manual Deployment Updates
@@ -254,9 +229,9 @@ ssh root@<PROD_DROPLET_IP> 'cd /opt/tronrelic && docker compose logs --tail=50 b
 ### Update Development
 
 **When to use:**
-- Manual deployment when CI/CD auto-deploy is disabled
-- Force update after failed auto-deployment
+- Deploy new features to development environment
 - Test deployment scripts before using on production
+- Apply updates after pushing to `dev` branch
 
 **Run update script:**
 ```bash
@@ -292,9 +267,9 @@ View logs with:
   ssh root@<DEV_DROPLET_IP> 'cd /opt/tronrelic && docker compose logs -f'
 ```
 
-## CI/CD Automated Deployment
+## CI/CD Image Building
 
-TronRelic uses GitHub Actions for continuous integration and deployment.
+TronRelic uses GitHub Actions for continuous integration and automated Docker image builds. Deployment to servers is always manual.
 
 ### Production CI/CD (main branch)
 
@@ -320,9 +295,9 @@ TronRelic uses GitHub Actions for continuous integration and deployment.
    - Build and tag frontend image (`:production` and `:production-$COMMIT_SHA`)
    - Push frontend image to ghcr.io
 
-3. **Manual Deployment:**
-   - GitHub Actions does NOT automatically deploy to production
-   - Run `./scripts/droplet-update.sh` manually after verifying images
+3. **Manual Deployment Required:**
+   - GitHub Actions builds images but does NOT deploy them
+   - Run `./scripts/droplet-update.sh prod` manually after verifying images
 
 **Why manual production deployment?**
 - Extra safety for production changes
@@ -351,23 +326,20 @@ TronRelic uses GitHub Actions for continuous integration and deployment.
    - Build and tag frontend image (`:development` and `:development-$COMMIT_SHA`)
    - Push frontend image to ghcr.io
 
-2. **Automatic Deployment:**
-   - SSH to dev.tronrelic.com (<DEV_DROPLET_IP>)
-   - Run `cd /opt/tronrelic && docker compose pull`
-   - Run `docker compose down && docker compose up -d`
-   - Wait 15 seconds for startup
-   - Show container status
+2. **Manual Deployment Required:**
+   - GitHub Actions builds images but does NOT deploy them
+   - Run `./scripts/droplet-update.sh dev` manually after images are pushed
 
-**Why automatic dev deployment?**
-- Faster iteration during development
-- Immediate feedback on changes
-- Reduces manual deployment overhead
-- Dev environment is isolated from production
+**Why manual dev deployment?**
+- Consistent deployment workflow across all environments
+- Explicit control over when changes are deployed
+- Easier to troubleshoot deployment issues
+- Prevents unexpected changes from deploying automatically
 
-**Monitor auto-deployment:**
+**Deploy to development:**
 ```bash
-# View GitHub Actions workflow
-# Navigate to: https://github.com/delphian/tronrelic/actions
+# After GitHub Actions completes successfully:
+./scripts/droplet-update.sh dev
 
 # View deployment logs
 ssh root@<DEV_DROPLET_IP> 'cd /opt/tronrelic && docker compose logs --tail=100 -f'
@@ -639,15 +611,16 @@ npm run test:integration
 # - Docker build context too large (check .dockerignore)
 ```
 
-**Auto-deployment fails (dev only):**
+**Manual deployment fails:**
 ```bash
-# View deployment logs in GitHub Actions
-# Navigate to: Actions tab → Failed workflow → deploy to dev droplet step
+# Test SSH connection
+ssh root@<DROPLET_IP>
 
-# Verify SSH key is correct in GitHub secrets
-# Verify dev droplet is accessible from GitHub Actions runners
-# Manually run deployment script to test
-./scripts/droplet-update.sh dev
+# View container status on remote server
+ssh root@<DROPLET_IP> 'cd /opt/tronrelic && docker compose ps'
+
+# Manually deploy with verbose output
+./scripts/droplet-update.sh dev  # or prod
 ```
 
 ## Quick Reference
@@ -693,74 +666,48 @@ docker compose down && docker compose up -d
 
 ## GitHub Repository Secrets
 
-The GitHub Actions CI/CD pipeline requires specific secrets to be configured in the repository settings for automated deployments to work correctly.
+The GitHub Actions CI/CD pipeline requires specific secrets to be configured in the repository settings for running integration tests.
 
-### Required Secrets for Development Auto-Deploy
+### Required Secrets for CI/CD Testing
 
 Navigate to **Settings → Secrets and variables → Actions** in the GitHub repository and add the following secrets:
 
 | Secret Name | Purpose | Example Value | Required |
 |------------|---------|---------------|----------|
-| `DEV_DROPLET_HOST` | Dev server IP address | `139.59.222.237` | ✅ Yes |
-| `DEV_DROPLET_USER` | SSH username | `root` | ✅ Yes |
-| `DEV_DROPLET_SSH_KEY` | SSH private key for authentication | `-----BEGIN OPENSSH PRIVATE KEY-----...` | ✅ Yes |
-| `DEV_SITE_URL` | Dev site URL (not actually secret, but avoids hardcoding) | `https://dev.tronrelic.com` | ✅ Yes |
-| `ADMIN_API_TOKEN` | Admin API token for testing/deployment | Generate with `openssl rand -hex 32` | ✅ Yes |
+| `ADMIN_API_TOKEN` | Admin API token for testing | Generate with `openssl rand -hex 32` | ✅ Yes |
 | `TRONGRID_API_KEY` | TronGrid API key #1 | From https://www.trongrid.io/ | ✅ Yes |
 | `TRONGRID_API_KEY_2` | TronGrid API key #2 | From https://www.trongrid.io/ | ✅ Yes |
 | `TRONGRID_API_KEY_3` | TronGrid API key #3 | From https://www.trongrid.io/ | ✅ Yes |
 
 ### How Secrets Are Used
 
-**During GitHub Actions deployment (.github/workflows/docker-publish-dev.yml):**
+**During GitHub Actions test runs (.github/workflows/test.yml):**
 
-1. The workflow creates a `.env` file from the `.env.dev` template
-2. Placeholders like `__DEV_SITE_URL__` are replaced with actual secret values using `sed`
-3. The processed `.env` file is deployed to `/opt/tronrelic-dev/.env` on the server
-4. Docker Compose reads the `.env` file and passes values to containers
+1. The workflow uses secrets to configure the test environment
+2. Integration tests run against Docker containers with these credentials
+3. Tests validate functionality without requiring deployment to remote servers
 
-**Environment variable flow:**
-```
-GitHub Secrets → .env.dev template → sed replacement → .env on server → Docker containers
-```
+**Note:** Deployment credentials (SSH keys, droplet IPs) are NOT stored in GitHub secrets since deployments are manual. Use `./scripts/droplet-update.sh` from your local machine with SSH keys configured locally.
 
-### Generating SSH Key for CI/CD
+### Verifying Test Configuration
 
-If you don't have an SSH key for the dev server:
+After configuring test secrets, push a commit to trigger the test workflow:
 
 ```bash
-# Generate a new SSH key pair (on your local machine)
-ssh-keygen -t ed25519 -f ~/.ssh/tronrelic-dev -C "github-actions@tronrelic.com"
-
-# Copy public key to dev server
-ssh-copy-id -i ~/.ssh/tronrelic-dev.pub root@139.59.222.237
-
-# Display private key to copy to GitHub secret
-cat ~/.ssh/tronrelic-dev
-```
-
-Copy the **entire private key** (including `-----BEGIN OPENSSH PRIVATE KEY-----` and `-----END OPENSSH PRIVATE KEY-----`) into the `DEV_DROPLET_SSH_KEY` secret.
-
-### Verifying Secrets Configuration
-
-After configuring secrets, push a commit to the `dev` branch to trigger the workflow:
-
-```bash
-git checkout dev
-git commit --allow-empty -m "Test CI/CD deployment"
-git push origin dev
+git commit --allow-empty -m "Test CI/CD pipeline"
+git push origin main  # or dev
 ```
 
 Watch the GitHub Actions workflow run and verify:
-- ✅ .env file is created and deployed
-- ✅ Containers restart with new configuration
-- ✅ WebSocket connects to correct domain (not IP address)
+- ✅ Integration tests execute successfully
+- ✅ Docker images build without errors
+- ✅ Images are pushed to GitHub Container Registry
 
 ### Security Best Practices
 
 - **Rotate secrets periodically** (especially ADMIN_API_TOKEN and TronGrid API keys)
 - **Never commit .env files** to version control (already in .gitignore)
-- **Use separate secrets for prod and dev** (don't share the same ADMIN_API_TOKEN)
+- **Use test-specific credentials** for GitHub Actions (not production credentials)
 - **Limit GitHub secret access** to repository administrators only
 - **Audit secret usage** via GitHub Actions workflow run logs (secrets are masked)
 
