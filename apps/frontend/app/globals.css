@@ -303,7 +303,11 @@ button:focus-visible {
 }
 
 /* Market Dashboard Slideout styles removed - migrated to MarketDashboard.module.css */
-@media (max-width: 1024px) {
+
+/* Tablet and below (matches --breakpoint-tablet: 1200px)
+   Note: CSS custom properties cannot be used in @media queries,
+   so we use literal values that match the token definitions */
+@media (max-width: 1200px) {
   .layout-nav {
     padding: var(--spacing-8) var(--spacing-10);
   }
@@ -318,7 +322,8 @@ button:focus-visible {
   }
 }
 
-@media (max-width: 640px) {
+/* Mobile and below (matches --breakpoint-mobile: 768px) */
+@media (max-width: 768px) {
   .layout-nav {
     flex-direction: column;
     gap: var(--spacing-6);

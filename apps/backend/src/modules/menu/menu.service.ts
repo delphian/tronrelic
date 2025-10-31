@@ -7,12 +7,13 @@ import type {
     IMenuValidation,
     MenuEventType,
     MenuEventSubscriber,
-    IDatabaseService
+    IDatabaseService,
+    IMenuNamespaceConfig
 } from '@tronrelic/types';
 import { logger } from '../../lib/logger.js';
 import { WebSocketService } from '../../services/websocket.service.js';
 import { ObjectId } from 'mongodb';
-import type { IMenuNodeDocument } from './database/index.js';
+import type { IMenuNodeDocument, IMenuNamespaceConfigDocument } from './database/index.js';
 
 /**
  * Singleton service managing the hierarchical menu system.
@@ -619,6 +620,155 @@ export class MenuService implements IMenuService {
     }
 
     /**
+     * Get configuration for a menu namespace.
+     *
+     * Returns the configuration object containing UI rendering preferences for the
+     * specified namespace. If no configuration has been explicitly saved, returns
+     * sensible defaults with hamburger menu enabled at 768px width, icons enabled,
+     * and horizontal layout.
+     *
+     * @param namespace - The menu namespace to retrieve config for (defaults to 'main')
+     * @returns Promise resolving to namespace configuration with defaults if not found
+     */
+    public async getNamespaceConfig(namespace?: string): Promise<IMenuNamespaceConfig> {
+        const ns = namespace || this.DEFAULT_NAMESPACE;
+        const collection = this.database.getCollection<IMenuNamespaceConfigDocument>('menu_namespace_config');
+
+        const doc = await collection.findOne({ namespace: ns });
+
+        if (doc) {
+            return this.normalizeNamespaceConfig(doc);
+        }
+
+        // Return defaults if no config found
+        return {
+            namespace: ns,
+            hamburgerMenu: {
+                enabled: true,
+                triggerWidth: 768
+            },
+            icons: {
+                enabled: true,
+                position: 'left'
+            },
+            layout: {
+                orientation: 'horizontal'
+            },
+            styling: {
+                compact: false,
+                showLabels: true
+            }
+        };
+    }
+
+    /**
+     * Set configuration for a menu namespace.
+     *
+     * Creates or updates the configuration for the specified namespace. If a configuration
+     * already exists, the provided fields are merged with existing values (partial update).
+     * After updating the database, broadcasts a WebSocket event to notify connected clients
+     * of the configuration change.
+     *
+     * @param namespace - The menu namespace to configure
+     * @param config - Partial configuration to apply (only provided fields are updated)
+     * @returns Promise resolving to the complete updated configuration
+     * @throws Error if database operation fails
+     */
+    public async setNamespaceConfig(namespace: string, config: Partial<IMenuNamespaceConfig>): Promise<IMenuNamespaceConfig> {
+        const collection = this.database.getCollection<IMenuNamespaceConfigDocument>('menu_namespace_config');
+        const now = new Date();
+
+        // Check if config already exists
+        const existing = await collection.findOne({ namespace });
+
+        if (existing) {
+            // Update existing config
+            const updateDoc: Partial<IMenuNamespaceConfigDocument> = {
+                ...(config.hamburgerMenu !== undefined && { hamburgerMenu: config.hamburgerMenu }),
+                ...(config.icons !== undefined && { icons: config.icons }),
+                ...(config.layout !== undefined && { layout: config.layout }),
+                ...(config.styling !== undefined && { styling: config.styling }),
+                updatedAt: now
+            };
+
+            await collection.updateOne(
+                { namespace },
+                { $set: updateDoc }
+            );
+
+            const updated = await collection.findOne({ namespace });
+            if (!updated) {
+                throw new Error('Failed to retrieve updated namespace config');
+            }
+
+            const normalized = this.normalizeNamespaceConfig(updated);
+
+            // Broadcast WebSocket update
+            await this.broadcastNamespaceConfigUpdate(normalized);
+
+            logger.info({ namespace }, 'Menu namespace configuration updated');
+            return normalized;
+        } else {
+            // Create new config
+            const docToInsert: Partial<IMenuNamespaceConfigDocument> = {
+                namespace,
+                hamburgerMenu: config.hamburgerMenu,
+                icons: config.icons,
+                layout: config.layout,
+                styling: config.styling,
+                createdAt: now,
+                updatedAt: now
+            };
+
+            const result = await collection.insertOne(docToInsert as IMenuNamespaceConfigDocument);
+            const inserted = await collection.findOne({ _id: result.insertedId });
+
+            if (!inserted) {
+                throw new Error('Failed to retrieve inserted namespace config');
+            }
+
+            const normalized = this.normalizeNamespaceConfig(inserted);
+
+            // Broadcast WebSocket update
+            await this.broadcastNamespaceConfigUpdate(normalized);
+
+            logger.info({ namespace }, 'Menu namespace configuration created');
+            return normalized;
+        }
+    }
+
+    /**
+     * Delete configuration for a menu namespace.
+     *
+     * Removes the stored configuration from the database. After deletion, future calls to
+     * getNamespaceConfig() will return default values instead of persisted settings.
+     * Broadcasts a WebSocket event to notify connected clients that the namespace has
+     * reverted to default configuration.
+     *
+     * @param namespace - The menu namespace to delete configuration for
+     * @returns Promise that resolves when deletion is complete
+     * @throws Error if namespace not found or database operation fails
+     */
+    public async deleteNamespaceConfig(namespace: string): Promise<void> {
+        const collection = this.database.getCollection<IMenuNamespaceConfigDocument>('menu_namespace_config');
+
+        const existing = await collection.findOne({ namespace });
+        if (!existing) {
+            throw new Error(`Namespace configuration not found: ${namespace}`);
+        }
+
+        await collection.deleteOne({ namespace });
+
+        // Get default config to broadcast
+        const defaultConfig = await this.getNamespaceConfig(namespace);
+
+        // Broadcast WebSocket update with defaults
+        await this.broadcastNamespaceConfigUpdate(defaultConfig);
+
+        logger.info({ namespace }, 'Menu namespace configuration deleted');
+    }
+
+    /**
      * Emit an event to all subscribers and collect validation results.
      *
      * Invokes all registered subscribers for the event type in order. For before:*
@@ -809,6 +959,56 @@ export class MenuService implements IMenuService {
             createdAt: doc.createdAt,
             updatedAt: doc.updatedAt
         };
+    }
+
+    /**
+     * Normalize a namespace config database document to IMenuNamespaceConfig interface.
+     *
+     * Converts MongoDB document (with _id as ObjectId) to plain object with
+     * _id as string for framework independence.
+     *
+     * @param doc - MongoDB document from native collection
+     * @returns Normalized namespace config
+     */
+    private normalizeNamespaceConfig(doc: IMenuNamespaceConfigDocument): IMenuNamespaceConfig {
+        return {
+            _id: doc._id.toString(),
+            namespace: doc.namespace,
+            hamburgerMenu: doc.hamburgerMenu,
+            icons: doc.icons,
+            layout: doc.layout,
+            styling: doc.styling,
+            createdAt: doc.createdAt,
+            updatedAt: doc.updatedAt
+        };
+    }
+
+    /**
+     * Broadcast namespace config update via WebSocket to all connected clients.
+     *
+     * Emits a WebSocket event with the namespace configuration. Clients can use
+     * this to update their menu rendering behavior in real-time without page refresh.
+     *
+     * @param config - The updated namespace configuration
+     */
+    private async broadcastNamespaceConfigUpdate(config: IMenuNamespaceConfig): Promise<void> {
+        try {
+            const wsService = WebSocketService.getInstance();
+
+            wsService.emit({
+                type: 'menu:namespace-config:update',
+                payload: {
+                    namespace: config.namespace,
+                    config,
+                    timestamp: new Date()
+                }
+            });
+
+            logger.debug({ namespace: config.namespace }, 'Menu namespace config update broadcast via WebSocket');
+        } catch (error) {
+            logger.error({ error }, 'Failed to broadcast namespace config update');
+            // Don't throw - WebSocket failure shouldn't break config operations
+        }
     }
 
     /**

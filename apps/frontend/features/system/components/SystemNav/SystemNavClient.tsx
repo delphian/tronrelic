@@ -9,6 +9,10 @@
  * menu items to be dynamically managed through the IMenuService without requiring
  * client-side fetching or hardcoded navigation arrays.
  *
+ * Responsive behavior uses container queries to automatically switch between horizontal
+ * tabs (wide containers) and hamburger menu (narrow containers) based on the namespace
+ * configuration from the backend.
+ *
  * @example
  * ```tsx
  * // Used by SystemNavSSR (server component)
@@ -19,6 +23,8 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useMenuConfig } from '../../../../lib/hooks';
+import { HamburgerMenu } from '../../../../components/layout/HamburgerMenu';
 import styles from './SystemNav.module.css';
 
 /**
@@ -79,19 +85,40 @@ interface ISystemNavClientProps {
  * Active state uses startsWith matching to highlight tabs for nested routes
  * (e.g., /system/pages/edit shows "Pages" tab as active).
  *
+ * Responsive behavior uses container queries to automatically switch between horizontal
+ * tabs (wide containers) and hamburger menu (narrow containers) based on the namespace
+ * configuration.
+ *
  * @param props - Component props
  * @param props.items - Menu items from server
  */
 export function SystemNavClient({ items }: ISystemNavClientProps) {
     const pathname = usePathname();
+    const menuConfig = useMenuConfig('system');
 
     // Sort by order and filter enabled items
     const visibleItems = items
         .filter(item => item.enabled)
         .sort((a, b) => a.order - b.order);
 
-    return (
-        <nav className={styles.nav} aria-label="System monitoring navigation">
+    /**
+     * Generates menu items for the hamburger menu.
+     *
+     * Creates simplified link elements for display in the slideout panel.
+     */
+    const hamburgerItems = visibleItems.map(item => (
+        <Link key={item._id} href={item.url}>
+            {item.label}
+        </Link>
+    ));
+
+    /**
+     * Renders the navigation tabs.
+     *
+     * Creates the full tab bar with active state highlighting.
+     */
+    const navContent = (
+        <>
             {visibleItems.map(item => {
                 const isActive = pathname.startsWith(item.url);
                 return (
@@ -105,6 +132,31 @@ export function SystemNavClient({ items }: ISystemNavClientProps) {
                     </Link>
                 );
             })}
+        </>
+    );
+
+    /**
+     * Wraps navigation in HamburgerMenu if enabled.
+     *
+     * Uses container queries to automatically switch between full tabs and
+     * hamburger icon based on available width.
+     */
+    if (menuConfig.hamburgerMenu?.enabled && !menuConfig.loading) {
+        return (
+            <nav className={styles.nav} aria-label="System monitoring navigation">
+                <HamburgerMenu
+                    triggerWidth={menuConfig.hamburgerMenu.triggerWidth}
+                    items={hamburgerItems}
+                >
+                    {navContent}
+                </HamburgerMenu>
+            </nav>
+        );
+    }
+
+    return (
+        <nav className={styles.nav} aria-label="System monitoring navigation">
+            {navContent}
         </nav>
     );
 }

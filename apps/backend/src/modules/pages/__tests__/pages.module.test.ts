@@ -158,6 +158,15 @@ class MockMenuService implements IMenuService {
     emit = vi.fn();
     setDatabase = vi.fn();
     getDatabase = vi.fn();
+    getNamespaceConfig = vi.fn(async () => ({
+        namespace: 'main',
+        hamburgerMenu: { enabled: true, triggerWidth: 768 },
+        icons: { enabled: true, position: 'left' as const },
+        layout: { orientation: 'horizontal' as const },
+        styling: { compact: false, showLabels: true }
+    }));
+    setNamespaceConfig = vi.fn();
+    deleteNamespaceConfig = vi.fn();
 }
 
 /**

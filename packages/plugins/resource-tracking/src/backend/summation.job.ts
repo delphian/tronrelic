@@ -105,23 +105,18 @@ export async function runSummationJob(
             );
 
             // Verify N+1 block exists (ensures all blocks in range are fully indexed)
+            // Check the highest block number in our transactions collection, regardless of
+            // whether that specific block contains delegation transactions
             const verificationBlock = endBlock + 1;
-            const verificationTxs = await database.find<IDelegationTransaction>(
+            const latestTxs = await database.find<IDelegationTransaction>(
                 'transactions',
-                { blockNumber: verificationBlock },
-                { limit: 1 }
+                {},
+                { sort: { blockNumber: -1 }, limit: 1 }
             );
 
-            if (verificationTxs.length === 0) {
-                // Check what the latest indexed block is for better logging
-                const latestTxs = await database.find<IDelegationTransaction>(
-                    'transactions',
-                    {},
-                    { sort: { blockNumber: -1 }, limit: 1 }
-                );
+            const latestIndexedBlock = latestTxs[0]?.blockNumber ?? 0;
 
-                const latestIndexedBlock = latestTxs[0]?.blockNumber ?? 0;
-
+            if (latestIndexedBlock < verificationBlock) {
                 logger.info(
                     {
                         tranche: tranche + 1,

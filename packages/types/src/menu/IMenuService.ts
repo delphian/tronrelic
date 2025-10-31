@@ -1,6 +1,7 @@
 import type { IMenuNode } from './IMenuNode.js';
 import type { IMenuTree } from './IMenuTree.js';
 import type { MenuEventType, MenuEventSubscriber } from './IMenuEvent.js';
+import type { IMenuNamespaceConfig } from './IMenuNamespaceConfig.js';
 
 /**
  * Service interface for managing the hierarchical menu system.
@@ -279,4 +280,108 @@ export interface IMenuService {
      * ```
      */
     getNamespaces(): string[];
+
+    /**
+     * Get configuration for a menu namespace.
+     *
+     * Returns the configuration object containing UI rendering preferences for the
+     * specified namespace. If no configuration has been explicitly saved, returns
+     * sensible defaults with hamburger menu enabled at 768px width, icons enabled,
+     * and horizontal layout.
+     *
+     * The configuration controls how the menu is displayed, including:
+     * - Hamburger menu behavior (enabled, trigger width)
+     * - Icon display (enabled, position)
+     * - Layout orientation (horizontal/vertical)
+     * - Styling hints (compact mode, label visibility)
+     *
+     * @param namespace - The menu namespace to retrieve config for (defaults to 'main')
+     * @returns Promise resolving to namespace configuration with defaults if not found
+     *
+     * @example
+     * ```typescript
+     * // Get main navigation config
+     * const mainConfig = await menuService.getNamespaceConfig('main');
+     * console.log('Hamburger enabled:', mainConfig.hamburgerMenu?.enabled);
+     * console.log('Trigger width:', mainConfig.hamburgerMenu?.triggerWidth);
+     *
+     * // Get footer config with defaults
+     * const footerConfig = await menuService.getNamespaceConfig('footer');
+     * if (!footerConfig._id) {
+     *     console.log('Using default config (not saved to database)');
+     * }
+     * ```
+     */
+    getNamespaceConfig(namespace?: string): Promise<IMenuNamespaceConfig>;
+
+    /**
+     * Set configuration for a menu namespace.
+     *
+     * Creates or updates the configuration for the specified namespace. If a configuration
+     * already exists, the provided fields are merged with existing values (partial update).
+     * After updating the database, broadcasts a WebSocket event to notify connected clients
+     * of the configuration change.
+     *
+     * All timestamps (createdAt, updatedAt) are managed automatically by the service.
+     * The namespace field cannot be changed after creation.
+     *
+     * @param namespace - The menu namespace to configure
+     * @param config - Partial configuration to apply (only provided fields are updated)
+     * @returns Promise resolving to the complete updated configuration
+     * @throws Error if database operation fails
+     *
+     * @example
+     * ```typescript
+     * // Enable hamburger menu for main navigation at 1024px
+     * const updated = await menuService.setNamespaceConfig('main', {
+     *     hamburgerMenu: {
+     *         enabled: true,
+     *         triggerWidth: 1024
+     *     }
+     * });
+     *
+     * // Update only icon settings (hamburger config unchanged)
+     * await menuService.setNamespaceConfig('footer', {
+     *     icons: {
+     *         enabled: false
+     *     }
+     * });
+     *
+     * // Set compact mode for admin sidebar
+     * await menuService.setNamespaceConfig('admin-sidebar', {
+     *     styling: {
+     *         compact: true,
+     *         showLabels: false
+     *     }
+     * });
+     * ```
+     */
+    setNamespaceConfig(namespace: string, config: Partial<IMenuNamespaceConfig>): Promise<IMenuNamespaceConfig>;
+
+    /**
+     * Delete configuration for a menu namespace.
+     *
+     * Removes the stored configuration from the database. After deletion, future calls to
+     * getNamespaceConfig() will return default values instead of persisted settings.
+     * Broadcasts a WebSocket event to notify connected clients that the namespace has
+     * reverted to default configuration.
+     *
+     * This is useful for resetting a namespace to defaults or removing unused configurations.
+     * Does not affect the menu nodes themselves - only the rendering preferences.
+     *
+     * @param namespace - The menu namespace to delete configuration for
+     * @returns Promise that resolves when deletion is complete
+     * @throws Error if namespace not found or database operation fails
+     *
+     * @example
+     * ```typescript
+     * // Reset footer to default configuration
+     * await menuService.deleteNamespaceConfig('footer');
+     *
+     * // After deletion, getNamespaceConfig returns defaults
+     * const config = await menuService.getNamespaceConfig('footer');
+     * console.log('Has ID:', config._id); // undefined - using defaults
+     * ```
+     */
+    deleteNamespaceConfig(namespace: string): Promise<void>;
 }
