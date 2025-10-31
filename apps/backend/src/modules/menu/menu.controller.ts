@@ -73,6 +73,31 @@ const updateNodeSchema = z.object({
 });
 
 /**
+ * Zod schema for setting namespace configuration.
+ *
+ * Validates request body for PUT /api/menu/namespace/:namespace/config endpoint.
+ * All fields are optional to allow partial configuration updates.
+ */
+const namespaceConfigSchema = z.object({
+    hamburgerMenu: z.object({
+        enabled: z.boolean(),
+        triggerWidth: z.number().int().min(320).max(2560)
+    }).optional(),
+    icons: z.object({
+        enabled: z.boolean(),
+        position: z.enum(['left', 'right', 'top']).optional()
+    }).optional(),
+    layout: z.object({
+        orientation: z.enum(['horizontal', 'vertical']),
+        maxItems: z.number().int().min(1).optional()
+    }).optional(),
+    styling: z.object({
+        compact: z.boolean().optional(),
+        showLabels: z.boolean().optional()
+    }).optional()
+});
+
+/**
  * Controller handling HTTP requests for menu system operations.
  *
  * Provides REST API endpoints for CRUD operations on menu nodes and retrieving
@@ -380,6 +405,181 @@ export class MenuController {
         } catch (error) {
             const message = error instanceof Error ? error.message : 'Failed to get namespaces';
             res.status(500).json({ success: false, error: message });
+        }
+    };
+
+    /**
+     * Get configuration for a menu namespace.
+     *
+     * Returns the configuration object containing UI rendering preferences for the
+     * specified namespace. If no configuration has been explicitly saved, returns
+     * sensible defaults with hamburger menu enabled at 768px width, icons enabled,
+     * and horizontal layout.
+     *
+     * **Route:** GET /api/menu/namespace/:namespace/config
+     *
+     * **Authentication:** Public (no authentication required)
+     *
+     * **URL Parameters:**
+     * - `namespace` - The namespace identifier (e.g., 'main', 'footer', 'admin-sidebar')
+     *
+     * **Response:**
+     * ```json
+     * {
+     *   "success": true,
+     *   "config": {
+     *     "namespace": "main",
+     *     "hamburgerMenu": {
+     *       "enabled": true,
+     *       "triggerWidth": 768
+     *     },
+     *     "icons": {
+     *       "enabled": true,
+     *       "position": "left"
+     *     },
+     *     "layout": {
+     *       "orientation": "horizontal"
+     *     },
+     *     "styling": {
+     *       "compact": false,
+     *       "showLabels": true
+     *     }
+     *   }
+     * }
+     * ```
+     *
+     * @param req - Express request object with namespace param
+     * @param res - Express response object
+     */
+    getNamespaceConfig = async (req: Request, res: Response) => {
+        try {
+            const { namespace } = req.params;
+            const config = await this.service.getNamespaceConfig(namespace);
+            res.json({ success: true, config });
+        } catch (error) {
+            const message = error instanceof Error ? error.message : 'Failed to get namespace config';
+            res.status(500).json({ success: false, error: message });
+        }
+    };
+
+    /**
+     * Set configuration for a menu namespace.
+     *
+     * Creates or updates the configuration for the specified namespace. If a configuration
+     * already exists, the provided fields are merged with existing values (partial update).
+     * After updating the database, broadcasts a WebSocket event to notify connected clients
+     * of the configuration change.
+     *
+     * **Route:** PUT /api/menu/namespace/:namespace/config
+     *
+     * **Authentication:** Requires admin token (via requireAdmin middleware)
+     *
+     * **URL Parameters:**
+     * - `namespace` - The namespace identifier to configure
+     *
+     * **Request Body (all fields optional for partial update):**
+     * ```json
+     * {
+     *   "hamburgerMenu": {
+     *     "enabled": true,
+     *     "triggerWidth": 1024
+     *   },
+     *   "icons": {
+     *     "enabled": false
+     *   }
+     * }
+     * ```
+     *
+     * **Response:**
+     * ```json
+     * {
+     *   "success": true,
+     *   "config": {
+     *     "_id": "507f1f77bcf86cd799439011",
+     *     "namespace": "main",
+     *     "hamburgerMenu": {
+     *       "enabled": true,
+     *       "triggerWidth": 1024
+     *     },
+     *     "icons": {
+     *       "enabled": false,
+     *       "position": "left"
+     *     },
+     *     "createdAt": "2025-01-21T12:00:00.000Z",
+     *     "updatedAt": "2025-01-21T12:05:00.000Z"
+     *   }
+     * }
+     * ```
+     *
+     * **Error Response (400 - Validation Failed):**
+     * ```json
+     * {
+     *   "success": false,
+     *   "error": "triggerWidth must be at least 320"
+     * }
+     * ```
+     *
+     * @param req - Express request object with namespace param and validated body
+     * @param res - Express response object
+     */
+    setNamespaceConfig = async (req: Request, res: Response) => {
+        try {
+            const { namespace } = req.params;
+            const configData = namespaceConfigSchema.parse(req.body);
+            const config = await this.service.setNamespaceConfig(namespace, configData);
+            res.json({ success: true, config });
+        } catch (error) {
+            if (error instanceof z.ZodError) {
+                res.status(400).json({ success: false, error: error.errors[0].message });
+            } else {
+                const message = error instanceof Error ? error.message : 'Failed to set namespace config';
+                res.status(400).json({ success: false, error: message });
+            }
+        }
+    };
+
+    /**
+     * Delete configuration for a menu namespace.
+     *
+     * Removes the stored configuration from the database. After deletion, future calls to
+     * getNamespaceConfig() will return default values instead of persisted settings.
+     * Broadcasts a WebSocket event to notify connected clients that the namespace has
+     * reverted to default configuration.
+     *
+     * **Route:** DELETE /api/menu/namespace/:namespace/config
+     *
+     * **Authentication:** Requires admin token (via requireAdmin middleware)
+     *
+     * **URL Parameters:**
+     * - `namespace` - The namespace identifier to delete configuration for
+     *
+     * **Response:**
+     * ```json
+     * {
+     *   "success": true
+     * }
+     * ```
+     *
+     * **Error Response (404 - Not Found):**
+     * ```json
+     * {
+     *   "success": false,
+     *   "error": "Namespace configuration not found: footer"
+     * }
+     * ```
+     *
+     * @param req - Express request object with namespace param
+     * @param res - Express response object
+     */
+    deleteNamespaceConfig = async (req: Request, res: Response) => {
+        try {
+            const { namespace } = req.params;
+            await this.service.deleteNamespaceConfig(namespace);
+            res.json({ success: true });
+        } catch (error) {
+            const message = error instanceof Error ? error.message : 'Failed to delete namespace config';
+            const status = message.includes('not found') ? 404 : 400;
+            res.status(status).json({ success: false, error: message });
         }
     };
 }

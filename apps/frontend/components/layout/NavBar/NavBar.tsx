@@ -8,6 +8,8 @@ import { Button } from '../../ui/Button';
 import { ThemeToggle } from '../../ThemeToggle';
 import { useWallet } from '../../../features/accounts';
 import { pluginRegistry } from '../../../lib/pluginRegistry';
+import { useMenuConfig } from '../../../lib/hooks';
+import { HamburgerMenu } from '../HamburgerMenu';
 import type { IMenuItemConfig } from '@tronrelic/types';
 import styles from './NavBar.module.css';
 
@@ -52,13 +54,17 @@ function truncateWallet(address: string) {
  *
  * Primary navigation header that combines core navigation links with plugin-based
  * menu items. Supports categorized dropdown menus for organizing related links,
- * wallet connection controls, and responsive active state highlighting.
+ * wallet connection controls, responsive hamburger menu, and active state highlighting.
  *
  * Navigation items are automatically sorted by category and order, with uncategorized
  * items appearing as top-level links and categorized items grouped in dropdowns.
  *
  * The component subscribes to the plugin registry for dynamic menu item registration,
  * allowing plugins to contribute navigation items without modifying core code.
+ *
+ * Responsive behavior uses container queries to automatically switch between horizontal
+ * navigation (wide containers) and hamburger menu (narrow containers) based on the
+ * namespace configuration from the backend.
  *
  * @example
  * ```tsx
@@ -72,6 +78,7 @@ export function NavBar() {
     const [allNavLinks, setAllNavLinks] = useState<IMenuItemConfig[]>(coreNavLinks);
     const [openDropdown, setOpenDropdown] = useState<string | null>(null);
     const dropdownRef = useRef<HTMLDivElement>(null);
+    const menuConfig = useMenuConfig('main');
 
     useEffect(() => {
         setIsClient(true);
@@ -181,12 +188,32 @@ export function NavBar() {
         setOpenDropdown(openDropdown === category ? null : category);
     };
 
-    return (
-        <header className={styles.nav}>
-            <Link href="/" className={styles.logo}>
-                TronRelic
-            </Link>
-            <nav className={styles.links} ref={dropdownRef}>
+    /**
+     * Generates menu items for the hamburger menu.
+     *
+     * Flattens all navigation links (uncategorized and categorized) into a single
+     * array for display in the hamburger slideout panel. Each item becomes a
+     * clickable link in the vertical menu.
+     */
+    const hamburgerItems = allNavLinks.map(link => (
+        <Link
+            key={link.href}
+            href={link.href}
+        >
+            {link.label}
+        </Link>
+    ));
+
+    /**
+     * Renders the navigation structure.
+     *
+     * Chooses between regular horizontal navigation and hamburger menu based on
+     * namespace configuration. When hamburger is enabled, wraps navigation in
+     * HamburgerMenu component that uses container queries to auto-switch.
+     */
+    const renderNavigation = () => {
+        const navContent = (
+            <>
                 {/* Render uncategorized links as regular nav items */}
                 {topLevelLinks.map(group =>
                     group.links.map(link => (
@@ -232,6 +259,32 @@ export function NavBar() {
                         </div>
                     );
                 })}
+            </>
+        );
+
+        // If hamburger is enabled and config is loaded, use HamburgerMenu
+        if (menuConfig.hamburgerMenu?.enabled && !menuConfig.loading) {
+            return (
+                <HamburgerMenu
+                    triggerWidth={menuConfig.hamburgerMenu.triggerWidth}
+                    items={hamburgerItems}
+                >
+                    {navContent}
+                </HamburgerMenu>
+            );
+        }
+
+        // Otherwise render regular navigation
+        return navContent;
+    };
+
+    return (
+        <header className={styles.nav}>
+            <Link href="/" className={styles.logo}>
+                TronRelic
+            </Link>
+            <nav className={styles.links} ref={dropdownRef}>
+                {renderNavigation()}
             </nav>
             <div className={styles.wallet_container}>
                 <ThemeToggle />

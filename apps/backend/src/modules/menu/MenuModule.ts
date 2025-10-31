@@ -149,13 +149,35 @@ export class MenuModule implements IModule<IMenuModuleDependencies> {
     /**
      * Run the menu module after all modules have initialized.
      *
-     * This phase activates the module by creating and mounting the admin router.
+     * This phase activates the module by:
+     * - Registering menu item in 'system' namespace
+     * - Creating and mounting the admin router
+     *
      * By this point, all dependencies are guaranteed to be ready.
      *
      * @throws {Error} If runtime setup fails (causes application shutdown)
      */
     async run(): Promise<void> {
         this.logger.info('Running menu module...');
+
+        // Register menu item in 'system' namespace
+        try {
+            await this.menuService.create({
+                namespace: 'system',
+                label: 'Menu',
+                url: '/system/menu',
+                icon: 'Menu',
+                order: 50,
+                parent: null,
+                enabled: true
+                // persist defaults to false (memory-only entry)
+            });
+
+            this.logger.info('Menu management item registered in system namespace');
+        } catch (error) {
+            this.logger.error({ error }, 'Failed to register menu management item');
+            throw new Error(`Failed to register menu management item: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        }
 
         // Create and mount admin router (IoC - module attaches itself to app)
         const router = this.createRouter();
@@ -172,11 +194,14 @@ export class MenuModule implements IModule<IMenuModuleDependencies> {
      * The router is then mounted by the module itself using IoC pattern.
      *
      * Routes:
-     * - GET    /api/menu              - Get complete menu tree (public, no auth)
-     * - GET    /api/menu/namespaces   - Get all available menu namespaces (public, no auth)
-     * - POST   /api/menu              - Create new menu node (requires admin auth)
-     * - PATCH  /api/menu/:id          - Update existing menu node (requires admin auth)
-     * - DELETE /api/menu/:id          - Delete menu node (requires admin auth)
+     * - GET    /api/menu                               - Get complete menu tree (public, no auth)
+     * - GET    /api/menu/namespaces                    - Get all available menu namespaces (public, no auth)
+     * - GET    /api/menu/namespace/:namespace/config   - Get namespace configuration (public, no auth)
+     * - POST   /api/menu                               - Create new menu node (requires admin auth)
+     * - PATCH  /api/menu/:id                           - Update existing menu node (requires admin auth)
+     * - DELETE /api/menu/:id                           - Delete menu node (requires admin auth)
+     * - PUT    /api/menu/namespace/:namespace/config   - Set namespace configuration (requires admin auth)
+     * - DELETE /api/menu/namespace/:namespace/config   - Delete namespace configuration (requires admin auth)
      *
      * @returns Express router with menu endpoints
      * @internal
@@ -186,12 +211,15 @@ export class MenuModule implements IModule<IMenuModuleDependencies> {
 
         // Public routes (no auth required for reading navigation structure)
         router.get('/namespaces', this.controller.getNamespaces);
+        router.get('/namespace/:namespace/config', this.controller.getNamespaceConfig);
         router.get('/', this.controller.getTree);
 
         // Admin-only routes (mutating operations require authentication)
         router.post('/', requireAdmin, this.controller.create);
         router.patch('/:id', requireAdmin, this.controller.update);
         router.delete('/:id', requireAdmin, this.controller.delete);
+        router.put('/namespace/:namespace/config', requireAdmin, this.controller.setNamespaceConfig);
+        router.delete('/namespace/:namespace/config', requireAdmin, this.controller.deleteNamespaceConfig);
 
         return router;
     }
