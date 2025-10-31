@@ -77,9 +77,8 @@ export function getServerSideApiUrl(): string {
 /**
  * Returns the API base URL for client-side fetch requests (browser).
  *
- * This always returns the public-facing API URL from NEXT_PUBLIC_API_URL,
- * which is accessible from the browser. This URL may use HTTPS and must
- * be reachable from the user's browser.
+ * Dynamically detects the backend URL from window.location to avoid build-time inlining.
+ * This enables universal Docker images that work on any domain without rebuilding.
  *
  * This function should ONLY be called from Client Components or browser-side
  * code (useEffect, event handlers, etc.). Server components should use
@@ -94,12 +93,27 @@ export function getServerSideApiUrl(): string {
  * export function MarketDashboard() {
  *     const apiUrl = getClientSideApiUrl();
  *     const response = await fetch(`${apiUrl}/api/markets`);
- *     // Always: http://localhost:4000/api/markets (or configured URL)
+ *     // Localhost: http://localhost:4000/api/markets
+ *     // Production: https://tronrelic.com/api/markets
  * }
  * ```
  */
 export function getClientSideApiUrl(): string {
-    return process.env.NEXT_PUBLIC_API_URL?.replace('/api', '') || 'http://localhost:4000';
+    if (typeof window === 'undefined') {
+        throw new Error('getClientSideApiUrl() can only be called client-side');
+    }
+
+    const protocol = window.location.protocol;
+    const hostname = window.location.hostname;
+    const isLocalhost = ['localhost', '127.0.0.1', '::1', '[::1]'].includes(hostname);
+
+    // Localhost: use port 4000 for backend
+    if (isLocalhost) {
+        return `${protocol}//${hostname}:4000`;
+    }
+
+    // Production: use same hostname (Nginx proxies to backend)
+    return `${protocol}//${hostname}`;
 }
 
 /**
