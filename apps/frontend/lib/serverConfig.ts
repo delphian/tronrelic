@@ -120,13 +120,17 @@ export async function getServerConfig(): Promise<RuntimeConfig> {
 
         return data.config;
     } catch (error) {
-        // Fallback to environment variables (local dev safety)
-        console.warn('[ServerConfig] Failed to fetch runtime config, using environment fallback:', error);
+        // Fallback to localhost defaults (local dev safety)
+        console.warn('[ServerConfig] Failed to fetch runtime config, using localhost fallback:', error);
+
+        // Use SITE_BACKEND if available, otherwise default to localhost
+        const backendUrl = process.env.SITE_BACKEND || 'http://localhost:4000';
+        const siteUrl = process.env.SITE_URL || 'http://localhost:3000';
 
         const fallbackConfig: RuntimeConfig = {
-            siteUrl: process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000',
-            apiUrl: (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api').replace(/\/$/, ''),
-            socketUrl: (process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:4000').replace(/\/$/, '')
+            siteUrl: siteUrl.replace(/\/$/, ''),
+            apiUrl: `${backendUrl}/api`.replace(/\/$/, ''),
+            socketUrl: backendUrl.replace(/\/$/, '')
         };
 
         // Cache the fallback config (don't retry every request)

@@ -33,37 +33,7 @@
  * Currently kept for backwards compatibility only.
  */
 
-const defaultSiteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://tronrelic.com';
 const LOCAL_HOSTNAMES = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
-
-/**
- * Normalizes client-provided backend URLs while avoiding localhost defaults in production.
- *
- * @param rawUrl - The raw environment URL to normalize
- * @returns A normalized origin string or null when the URL should be ignored
- */
-function normalizeClientEnvUrl(rawUrl: string | undefined): string | null {
-    if (!rawUrl) {
-        return null;
-    }
-
-    try {
-        const trimmed = rawUrl.replace(/\/api$/, '').replace(/\/$/, '');
-        const resolved = new URL(trimmed, window.location.origin);
-        const targetHost = resolved.hostname;
-        const currentHost = window.location.hostname;
-        const targetIsLocal = LOCAL_HOSTNAMES.has(targetHost);
-        const currentIsLocal = LOCAL_HOSTNAMES.has(currentHost);
-
-        if (targetIsLocal && !currentIsLocal) {
-            return null;
-        }
-
-        return `${resolved.protocol}//${resolved.host}`;
-    } catch {
-        return null;
-    }
-}
 
 /**
  * Gets the appropriate backend base URL for the current runtime context.
@@ -74,8 +44,7 @@ function normalizeClientEnvUrl(rawUrl: string | undefined): string | null {
  *   - Local: http://localhost:4000 for local development
  *
  * Client-side (browser):
- *   - Uses NEXT_PUBLIC_SOCKET_URL or NEXT_PUBLIC_API_URL from environment
- *   - Falls back to dynamically detecting current hostname with port 4000
+ *   - Dynamically detects from window.location (no NEXT_PUBLIC_* variables)
  *   - This ensures browsers connect to the publicly accessible backend URL
  *
  * @returns The base backend URL without trailing /api path
@@ -89,15 +58,7 @@ function getBackendBaseUrl(): string {
     return process.env.SITE_BACKEND;
   }
 
-  // Client-side: Use public URL or detect from window.location
-  const envUrl =
-    normalizeClientEnvUrl(process.env.NEXT_PUBLIC_SOCKET_URL) ??
-    normalizeClientEnvUrl(process.env.NEXT_PUBLIC_API_URL);
-  if (envUrl) {
-    return envUrl;
-  }
-
-  // Fallback: dynamically detect from current page (distinguish local dev vs production)
+  // Client-side: Dynamically detect from current page (no build-time variables)
   const protocol = window.location.protocol;
   const hostname = window.location.hostname;
   const port = window.location.port;
@@ -114,13 +75,39 @@ function getBackendBaseUrl(): string {
 }
 
 /**
+ * Gets the site URL dynamically from window.location (client-side only).
+ *
+ * @returns The site URL (e.g., "https://tronrelic.com" or "http://localhost:3000")
+ */
+function getSiteUrl(): string {
+  if (typeof window === 'undefined') {
+    // Server-side: use SITE_BACKEND minus port
+    if (!process.env.SITE_BACKEND) {
+      throw new Error('SITE_BACKEND environment variable is required');
+    }
+    return process.env.SITE_BACKEND.replace(':4000', ':3000');
+  }
+
+  // Client-side: detect from window.location
+  const protocol = window.location.protocol;
+  const hostname = window.location.hostname;
+  const port = window.location.port;
+
+  if (port && port !== '80' && port !== '443') {
+    return `${protocol}//${hostname}:${port}`;
+  }
+
+  return `${protocol}//${hostname}`;
+}
+
+/**
  * Configuration object for runtime URLs.
  * Uses getBackendBaseUrl() to ensure SSR and client-side contexts use the correct URLs.
  */
 export const config = {
   apiBaseUrl: `${getBackendBaseUrl()}/api`,
   socketUrl: getBackendBaseUrl(),
-  siteUrl: defaultSiteUrl.replace(/\/$/, '') || 'https://tronrelic.com'
+  siteUrl: getSiteUrl()
 };
 
 /**
