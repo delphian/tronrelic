@@ -33,7 +33,7 @@ cd /opt/tronrelic
 ssh root@<DEV_DROPLET_IP>
 
 # Once connected, navigate to deployment directory
-cd /opt/tronrelic-dev
+cd /opt/tronrelic
 ```
 
 **SSH connection troubleshooting:**
@@ -117,11 +117,11 @@ ssh root@<DROPLET_IP> 'free -h'
 docker compose ps
 
 # Example output:
-# NAME                     STATUS                    PORTS
-# tronrelic-backend-prod   Up 2 hours (healthy)      0.0.0.0:4000->4000/tcp
-# tronrelic-frontend-prod  Up 2 hours (healthy)      0.0.0.0:3000->3000/tcp
-# tronrelic-mongo-prod     Up 2 hours (healthy)      0.0.0.0:27017->27017/tcp
-# tronrelic-redis-prod     Up 2 hours (healthy)      0.0.0.0:6379->6379/tcp
+# NAME                   STATUS                    PORTS
+# tronrelic-backend      Up 2 hours (healthy)      0.0.0.0:4000->4000/tcp
+# tronrelic-frontend     Up 2 hours (healthy)      0.0.0.0:3000->3000/tcp
+# tronrelic-mongo        Up 2 hours (healthy)      0.0.0.0:27017->27017/tcp
+# tronrelic-redis        Up 2 hours (healthy)      0.0.0.0:6379->6379/tcp
 ```
 
 **View container resource usage:**
@@ -133,7 +133,7 @@ docker stats
 docker stats --no-stream
 
 # Specific containers only
-docker stats tronrelic-backend-prod tronrelic-frontend-prod
+docker stats tronrelic-backend tronrelic-frontend
 
 # Example output:
 # CONTAINER           CPU %    MEM USAGE / LIMIT     MEM %    NET I/O
@@ -144,11 +144,11 @@ docker stats tronrelic-backend-prod tronrelic-frontend-prod
 **Check container health status:**
 ```bash
 # View health check details
-docker inspect tronrelic-backend-prod --format='{{.State.Health.Status}}'
+docker inspect tronrelic-backend --format='{{.State.Health.Status}}'
 # Output: healthy | starting | unhealthy
 
 # View full health check logs
-docker inspect tronrelic-backend-prod --format='{{json .State.Health}}' | jq
+docker inspect tronrelic-backend --format='{{json .State.Health}}' | jq
 ```
 
 **Test health endpoints directly:**
@@ -223,16 +223,16 @@ docker compose up -d
 **Interactive shell access:**
 ```bash
 # Backend container shell
-docker exec -it tronrelic-backend-prod sh
+docker exec -it tronrelic-backend sh
 
 # Frontend container shell
-docker exec -it tronrelic-frontend-prod sh
+docker exec -it tronrelic-frontend sh
 
-# MongoDB shell
-docker exec -it tronrelic-mongo-prod mongosh tronrelic
+# MongoDB shell (see MongoDB Access section for authentication)
+docker exec -it tronrelic-mongo mongosh tronrelic
 
 # Redis shell
-docker exec -it tronrelic-redis-prod redis-cli
+docker exec -it tronrelic-redis redis-cli
 
 # Exit container shell
 exit  # or Ctrl+D
@@ -241,17 +241,17 @@ exit  # or Ctrl+D
 **Run single command in container:**
 ```bash
 # Check Node.js version in backend
-docker exec tronrelic-backend-prod node --version
+docker exec tronrelic-backend node --version
 
 # List files in frontend
-docker exec tronrelic-frontend-prod ls -la /app
+docker exec tronrelic-frontend ls -la /app
 
 # Check MongoDB collections (see MongoDB Access section below for full details)
-docker exec -i -e MONGO_PASSWORD='your-password' tronrelic-mongo-prod sh -c \
-  'mongosh --username admin --password "$MONGO_PASSWORD" --authenticationDatabase admin --quiet --eval "db.getCollectionNames()" tronrelic-prod'
+docker exec -i -e MONGO_PASSWORD='your-password' tronrelic-mongo sh -c \
+  'mongosh --username admin --password "$MONGO_PASSWORD" --authenticationDatabase admin --quiet --eval "db.getCollectionNames()" tronrelic'
 
 # Check Redis memory usage
-docker exec tronrelic-redis-prod redis-cli info memory
+docker exec tronrelic-redis redis-cli info memory
 ```
 
 ## Log Inspection and Analysis
@@ -335,7 +335,7 @@ docker compose logs --timestamps backend > /tmp/backend-logs-$(date +%Y%m%d-%H%M
 **Backend debugging:**
 ```bash
 # Check backend environment variables
-docker exec tronrelic-backend-prod env | grep -E "NODE_ENV|MONGODB|REDIS|TRONGRID"
+docker exec tronrelic-backend env | grep -E "NODE_ENV|MONGODB|REDIS|TRONGRID"
 
 # Check backend health endpoint
 curl http://localhost:4000/api/health
@@ -344,25 +344,25 @@ curl http://localhost:4000/api/health
 curl http://localhost:4000/api/transactions?limit=10
 
 # Check backend worker jobs (BullMQ)
-docker exec tronrelic-redis-prod redis-cli KEYS "tronrelic:*"
+docker exec tronrelic-redis redis-cli KEYS "tronrelic:*"
 
 # View backend memory usage
-docker exec tronrelic-backend-prod node -e "console.log(process.memoryUsage())"
+docker exec tronrelic-backend node -e "console.log(process.memoryUsage())"
 ```
 
 **Frontend debugging:**
 ```bash
 # Check frontend environment variables
-docker exec tronrelic-frontend-prod env | grep NEXT_PUBLIC
+docker exec tronrelic-frontend env | grep NEXT_PUBLIC
 
 # Check frontend build info
-docker exec tronrelic-frontend-prod cat /app/.next/BUILD_ID
+docker exec tronrelic-frontend cat /app/.next/BUILD_ID
 
 # Test frontend directly (bypassing Nginx)
 curl http://localhost:3000/
 
 # Check frontend memory usage
-docker exec tronrelic-frontend-prod node -e "console.log(process.memoryUsage())"
+docker exec tronrelic-frontend node -e "console.log(process.memoryUsage())"
 ```
 
 **MongoDB debugging:**
@@ -399,7 +399,7 @@ exit
 **Redis debugging:**
 ```bash
 # Connect to Redis CLI (with authentication)
-docker exec -it tronrelic-redis-prod redis-cli
+docker exec -it tronrelic-redis redis-cli
 
 # Inside redis-cli (authenticate first if password required):
 AUTH <REDIS_PASSWORD>
@@ -437,14 +437,14 @@ ssh root@<PROD_DROPLET_IP> 'grep MONGO_ROOT_PASSWORD /opt/tronrelic/.env'
 
 # Then connect using password in environment variable (prevents exposure in process list)
 ssh root@<PROD_DROPLET_IP> 'cd /opt/tronrelic && \
-  docker exec -i -e MONGO_PASSWORD="<paste-password-here>" tronrelic-mongo-prod sh -c \
-  "mongosh --username admin --password \"\$MONGO_PASSWORD\" --authenticationDatabase admin tronrelic-prod"'
+  docker exec -i -e MONGO_PASSWORD="<paste-password-here>" tronrelic-mongo sh -c \
+  "mongosh --username admin --password \"\$MONGO_PASSWORD\" --authenticationDatabase admin tronrelic"'
 
 # Development - Same pattern
-ssh root@<DEV_DROPLET_IP> 'grep MONGO_ROOT_PASSWORD /opt/tronrelic-dev/.env'
+ssh root@<DEV_DROPLET_IP> 'grep MONGO_ROOT_PASSWORD /opt/tronrelic/.env'
 
-ssh root@<DEV_DROPLET_IP> 'cd /opt/tronrelic-dev && \
-  docker exec -i -e MONGO_PASSWORD="<paste-password-here>" tronrelic-mongo-dev sh -c \
+ssh root@<DEV_DROPLET_IP> 'cd /opt/tronrelic && \
+  docker exec -i -e MONGO_PASSWORD="<paste-password-here>" tronrelic-mongo sh -c \
   "mongosh --username admin --password \"\$MONGO_PASSWORD\" --authenticationDatabase admin tronrelic"'
 ```
 
@@ -485,19 +485,19 @@ Remote droplets require authentication. Authentication flags must be added to mo
 
 ```bash
 # Export entire database (from remote droplet)
-PASS=$(ssh root@<DROPLET_IP> 'grep MONGO_ROOT_PASSWORD /opt/tronrelic*/\.env | cut -d= -f2') && \
-ssh root@<DROPLET_IP> "cd /opt/tronrelic* && \
-  docker exec -i -e MONGO_PASSWORD='$PASS' tronrelic-mongo-* sh -c \
+PASS=$(ssh root@<DROPLET_IP> 'grep MONGO_ROOT_PASSWORD /opt/tronrelic/.env | cut -d= -f2') && \
+ssh root@<DROPLET_IP> "cd /opt/tronrelic && \
+  docker exec -i -e MONGO_PASSWORD='$PASS' tronrelic-mongo sh -c \
   'mongodump --username admin --password \"\\\$MONGO_PASSWORD\" --authenticationDatabase admin --out /tmp/backup'"
 
 # Copy backup to local machine
-ssh root@<DROPLET_IP> 'cd /opt/tronrelic* && docker cp tronrelic-mongo-*:/tmp/backup /tmp/backup-$(date +%Y%m%d)'
+ssh root@<DROPLET_IP> 'cd /opt/tronrelic && docker cp tronrelic-mongo:/tmp/backup /tmp/backup-$(date +%Y%m%d)'
 scp -r root@<DROPLET_IP>:/tmp/backup-* ./mongo-backup-$(date +%Y%m%d)
 
 # Export specific collection (from remote droplet)
-PASS=$(ssh root@<DROPLET_IP> 'grep MONGO_ROOT_PASSWORD /opt/tronrelic*/\.env | cut -d= -f2') && \
-ssh root@<DROPLET_IP> "cd /opt/tronrelic* && \
-  docker exec -i -e MONGO_PASSWORD='$PASS' tronrelic-mongo-* sh -c \
+PASS=$(ssh root@<DROPLET_IP> 'grep MONGO_ROOT_PASSWORD /opt/tronrelic/.env | cut -d= -f2') && \
+ssh root@<DROPLET_IP> "cd /opt/tronrelic && \
+  docker exec -i -e MONGO_PASSWORD='$PASS' tronrelic-mongo sh -c \
   'mongoexport --username admin --password \"\\\$MONGO_PASSWORD\" --authenticationDatabase admin --db=tronrelic --collection=transactions --out=/tmp/transactions.json'"
 ```
 
@@ -508,16 +508,16 @@ ssh root@<DROPLET_IP> "cd /opt/tronrelic* && \
 scp -r ./mongo-backup root@<DROPLET_IP>:/tmp/restore
 
 # Restore database (with authentication)
-PASS=$(ssh root@<DROPLET_IP> 'grep MONGO_ROOT_PASSWORD /opt/tronrelic*/\.env | cut -d= -f2') && \
-ssh root@<DROPLET_IP> "cd /opt/tronrelic* && \
-  docker exec -i -e MONGO_PASSWORD='$PASS' tronrelic-mongo-* sh -c \
+PASS=$(ssh root@<DROPLET_IP> 'grep MONGO_ROOT_PASSWORD /opt/tronrelic/.env | cut -d= -f2') && \
+ssh root@<DROPLET_IP> "cd /opt/tronrelic && \
+  docker exec -i -e MONGO_PASSWORD='$PASS' tronrelic-mongo sh -c \
   'mongorestore --username admin --password \"\\\$MONGO_PASSWORD\" --authenticationDatabase admin /tmp/restore'"
 
 # Import specific collection (with authentication)
-PASS=$(ssh root@<DROPLET_IP> 'grep MONGO_ROOT_PASSWORD /opt/tronrelic*/\.env | cut -d= -f2') && \
-ssh root@<DROPLET_IP> "cd /opt/tronrelic* && \
-  docker cp ./transactions.json tronrelic-mongo-*:/tmp/transactions.json && \
-  docker exec -i -e MONGO_PASSWORD='$PASS' tronrelic-mongo-* sh -c \
+PASS=$(ssh root@<DROPLET_IP> 'grep MONGO_ROOT_PASSWORD /opt/tronrelic/.env | cut -d= -f2') && \
+ssh root@<DROPLET_IP> "cd /opt/tronrelic && \
+  docker cp ./transactions.json tronrelic-mongo:/tmp/transactions.json && \
+  docker exec -i -e MONGO_PASSWORD='$PASS' tronrelic-mongo sh -c \
   'mongoimport --username admin --password \"\\\$MONGO_PASSWORD\" --authenticationDatabase admin --db=tronrelic --collection=transactions --file=/tmp/transactions.json'"
 ```
 
@@ -526,10 +526,10 @@ ssh root@<DROPLET_IP> "cd /opt/tronrelic* && \
 **Connect to Redis CLI:**
 ```bash
 # Connect with authentication
-docker exec -it tronrelic-redis-prod redis-cli -a <REDIS_PASSWORD>
+docker exec -it tronrelic-redis redis-cli -a <REDIS_PASSWORD>
 
 # Or connect first, then authenticate
-docker exec -it tronrelic-redis-prod redis-cli
+docker exec -it tronrelic-redis redis-cli
 # Inside redis-cli: AUTH <REDIS_PASSWORD>
 ```
 
@@ -574,10 +574,10 @@ CLIENT LIST
 **Monitor Redis operations in real-time:**
 ```bash
 # Watch all Redis commands (Ctrl+C to stop)
-docker exec -it tronrelic-redis-prod redis-cli MONITOR
+docker exec -it tronrelic-redis redis-cli MONITOR
 
 # Watch commands matching pattern
-docker exec -it tronrelic-redis-prod redis-cli --ldb MONITOR | grep "tronrelic:"
+docker exec -it tronrelic-redis redis-cli --ldb MONITOR | grep "tronrelic:"
 ```
 
 ## System Monitoring and Diagnostics
@@ -638,16 +638,16 @@ ps aux --sort=-%cpu | head -10
 **Test network connectivity:**
 ```bash
 # Test backend from frontend container
-docker exec tronrelic-frontend-prod curl http://backend:4000/api/health
+docker exec tronrelic-frontend curl http://backend:4000/api/health
 
 # Test MongoDB from backend container
-docker exec tronrelic-backend-prod nc -zv mongodb 27017
+docker exec tronrelic-backend nc -zv mongodb 27017
 
 # Test Redis from backend container
-docker exec tronrelic-backend-prod nc -zv redis 6379
+docker exec tronrelic-backend nc -zv redis 6379
 
 # Test external TronGrid API
-docker exec tronrelic-backend-prod curl -I https://api.trongrid.io/
+docker exec tronrelic-backend curl -I https://api.trongrid.io/
 ```
 
 **Check open ports:**
@@ -731,7 +731,7 @@ docker compose ps
 docker compose logs --tail=100 backend
 
 # Check exit code
-docker inspect tronrelic-backend-prod --format='{{.State.ExitCode}}'
+docker inspect tronrelic-backend --format='{{.State.ExitCode}}'
 ```
 
 **Common causes:**
@@ -808,7 +808,7 @@ top -bn1 | head -20
 docker compose restart backend
 
 # Clear Redis cache (if queue buildup)
-docker exec tronrelic-redis-prod redis-cli FLUSHALL
+docker exec tronrelic-redis redis-cli FLUSHALL
 
 # Clean up Docker resources
 docker system prune -a  # Removes unused images, containers, networks
@@ -890,6 +890,7 @@ curl https://tronrelic.com/system      # System monitor
 
 ## Further Reading
 
+- [operations-docker.md](../system/operations-docker.md) - Unified Docker deployment standards
 - [operations-server-info.md](./operations-server-info.md) - Server locations, credentials, authentication
 - [operations-workflows.md](./operations-workflows.md) - Setup and update procedures
 - [operations.md](./operations.md) - Deployment overview and quick reference

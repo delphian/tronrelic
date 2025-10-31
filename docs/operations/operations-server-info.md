@@ -29,7 +29,8 @@ TronRelic maintains two deployment environments with distinct purposes and confi
 - **Provider:** Digital Ocean Droplet
 - **Region:** (Specify region, e.g., NYC1, SFO3)
 - **Deployment Directory:** `/opt/tronrelic`
-- **Docker Image Tags:** `:latest`, `:$COMMIT_SHA`
+- **Docker Image Tags:** `:production`
+- **ENV Variable:** `ENV=production`
 - **CI/CD Branch:** `main`
 - **Auto-Deploy:** No (manual deployment required)
 
@@ -51,8 +52,9 @@ ssh root@<PROD_DROPLET_IP>
 - **IP Address:** `<DEV_DROPLET_IP>`
 - **Provider:** Digital Ocean Droplet
 - **Region:** (Specify region)
-- **Deployment Directory:** `/opt/tronrelic-dev`
-- **Docker Image Tags:** `:dev`, `:dev-$COMMIT_SHA`
+- **Deployment Directory:** `/opt/tronrelic`
+- **Docker Image Tags:** `:development`
+- **ENV Variable:** `ENV=development`
 - **CI/CD Branch:** `dev`
 - **Auto-Deploy:** Yes (GitHub Actions automatically deploys on push to dev branch)
 
@@ -68,52 +70,45 @@ ssh root@<DEV_DROPLET_IP>
 
 ## Centralized Environment Configuration
 
-TronRelic uses a **centralized configuration system** via `scripts/droplet-config.sh` to eliminate hardcoded IPs and duplicate configuration across deployment scripts.
+TronRelic uses a **unified Docker deployment system** where all environments share identical container names, deployment directories, and docker-compose.yml files. Environment differentiation is controlled by a single `ENV` variable in the `.env` file.
 
-**Purpose:**
-All deployment scripts (`droplet-deploy.sh`, `droplet-update.sh`, `droplet-setup-ssl.sh`, utility scripts) source this central configuration file to retrieve environment-specific settings. This ensures consistency and makes IP address changes require only a single file update.
+**See [operations-docker.md](../system/operations-docker.md) for complete Docker standards documentation.**
+
+**Key principles:**
+- **Single ENV variable:** `ENV=production` or `ENV=development` controls image tags and Node.js runtime
+- **Unified container names:** All environments use `tronrelic-backend`, `tronrelic-frontend`, etc. (no suffixes)
+- **Unified deployment directory:** All environments deploy to `/opt/tronrelic`
+- **Centralized server configuration:** Deployment scripts use `scripts/droplet-config.sh` for IP addresses
 
 **Configuration file:** `/home/delphian/projects/tronrelic.com-beta/scripts/droplet-config.sh`
 
 **What it provides:**
 - `DROPLET_IP` - IP address of the droplet
 - `DROPLET_HOST` - SSH connection string (root@IP)
-- `DEPLOY_DIR` - Deployment directory on droplet
-- `CONTAINER_SUFFIX` - Suffix for container names (-prod, -dev)
-- `IMAGE_TAG` - Docker image tag (latest, dev)
-- `MONGO_CONTAINER` - MongoDB container name
-- `REDIS_CONTAINER` - Redis container name
-- `BACKEND_CONTAINER` - Backend container name
-- `FRONTEND_CONTAINER` - Frontend container name
+- `DEPLOY_DIR` - Deployment directory (always `/opt/tronrelic`)
 - `GITHUB_USERNAME` - GitHub username for container registry
 - `GITHUB_REPO` - GitHub repository name
 
 **Configured environments:**
 ```bash
-prod  -> IP: <defined in droplet-config.sh>
-dev   -> IP: <DEV_DROPLET_IP>
+prod  -> IP: <defined in droplet-config.sh>, ENV=production
+dev   -> IP: <DEV_DROPLET_IP>, ENV=development
 ```
 
-**Usage in scripts:**
-```bash
-# All deployment scripts follow this pattern:
-source "$(dirname "$0")/droplet-config.sh"
-get_config "prod"  # or "dev"
-
-# Now all environment-specific variables are available
-echo "$DROPLET_IP"        # Returns configured IP
-echo "$DEPLOY_DIR"        # Returns /opt/tronrelic or /opt/tronrelic-dev
-echo "$MONGO_CONTAINER"   # Returns tronrelic-mongo-prod or tronrelic-mongo-dev
-```
+**Container names (identical for all environments):**
+- `tronrelic-backend`
+- `tronrelic-frontend`
+- `tronrelic-mongo`
+- `tronrelic-redis`
 
 **Why this matters:**
-- **Single source of truth**: IP address changes require updating only `droplet-config.sh`
-- **Eliminates duplication**: No more hardcoded IPs scattered across multiple scripts
-- **Prevents errors**: Container names, image tags, and paths are always consistent
-- **Simplifies maintenance**: Adding new environments requires only adding entries to the config file
+- **Single source of truth**: One `ENV` variable controls all environment behavior
+- **Eliminates duplication**: Same container names and paths across all environments
+- **Prevents errors**: No environment-specific references needed in scripts
+- **Simplifies maintenance**: Scripts work across all environments without modification
 
 **Updating server information:**
-When IP addresses or configuration changes, update `scripts/droplet-config.sh`:
+When IP addresses change, update `scripts/droplet-config.sh`:
 ```bash
 # Edit the ENVIRONMENTS associative array
 declare -A ENVIRONMENTS=(
@@ -198,12 +193,15 @@ ssh tronrelic-dev
 Each server has an `.env` file in its deployment directory containing runtime configuration and secrets.
 
 **Location:**
-- Production: `/opt/tronrelic/.env`
-- Development: `/opt/tronrelic-dev/.env`
+- Production: `/opt/tronrelic/.env` (with `ENV=production`)
+- Development: `/opt/tronrelic/.env` (with `ENV=development`)
 
 **Required variables:**
 
 ```bash
+# Environment identifier (controls image tags and runtime)
+ENV=production  # or ENV=development
+
 # Required - API Security
 ADMIN_API_TOKEN=<ADMIN_TOKEN>
 # Generate with: openssl rand -hex 32
@@ -216,15 +214,15 @@ TRONGRID_API_KEY_3=<API_KEY_3>
 # Obtain from: https://www.trongrid.io/
 # Purpose: Access TRON blockchain data (rate limit distribution)
 
-# Production Only - Database Security
+# Required - Database Security (both environments)
 MONGO_ROOT_USERNAME=admin
 MONGO_ROOT_PASSWORD=<MONGO_PASSWORD>
 # Generate with: openssl rand -hex 32
-# Purpose: MongoDB authentication in production
+# Purpose: MongoDB authentication
 
 REDIS_PASSWORD=<REDIS_PASSWORD>
 # Generate with: openssl rand -hex 32
-# Purpose: Redis authentication in production
+# Purpose: Redis authentication
 
 # Note: Telegram bot token and webhook secret are configured via admin UI
 # at /system/plugins/telegram-bot/settings, not environment variables
@@ -234,17 +232,19 @@ REDIS_PASSWORD=<REDIS_PASSWORD>
 
 **Production (.env):**
 ```bash
-NEXT_PUBLIC_API_URL=https://tronrelic.com/api
-NEXT_PUBLIC_SOCKET_URL=https://tronrelic.com
-NEXT_PUBLIC_SITE_URL=https://tronrelic.com
+ENV=production
+SITE_URL=https://tronrelic.com
+SITE_WS=https://tronrelic.com
 ```
 
 **Development (.env):**
 ```bash
-NEXT_PUBLIC_API_URL=http://dev.tronrelic.com/api
-NEXT_PUBLIC_SOCKET_URL=http://dev.tronrelic.com
-NEXT_PUBLIC_SITE_URL=http://dev.tronrelic.com
+ENV=development
+SITE_URL=https://dev.tronrelic.com
+SITE_WS=https://dev.tronrelic.com
 ```
+
+**Note:** Frontend fetches runtime configuration from backend API. NEXT_PUBLIC_* variables are deprecated in favor of runtime config (see [system-runtime-config.md](../system/system-runtime-config.md)).
 
 ### GitHub Container Registry Authentication
 
@@ -264,8 +264,9 @@ Docker images are stored in GitHub Container Registry (ghcr.io) as private packa
 # Run on droplet during initial setup
 echo '<GITHUB_TOKEN>' | docker login ghcr.io -u delphian --password-stdin
 
-# Verify authentication
-docker pull ghcr.io/delphian/tronrelic/backend:latest
+# Verify authentication (use correct environment tag)
+docker pull ghcr.io/delphian/tronrelic/backend:production     # For production
+docker pull ghcr.io/delphian/tronrelic/backend:development    # For development
 ```
 
 **Security note:** GitHub Personal Access Tokens grant access to your GitHub account. Use the minimum required scope (read:packages) and rotate tokens regularly.
@@ -391,10 +392,8 @@ sudo systemctl reload nginx
    - `.github/workflows/docker-publish-dev.yml` (DEV_DROPLET_HOST secret)
 4. **Nginx configuration on servers:**
    - `/etc/nginx/sites-available/tronrelic` (server_name directive)
-   - `/etc/nginx/sites-available/tronrelic-dev` (server_name directive)
 5. **Server .env files:**
-   - `/opt/tronrelic/.env` (NEXT_PUBLIC_* URLs)
-   - `/opt/tronrelic-dev/.env` (NEXT_PUBLIC_* URLs)
+   - `/opt/tronrelic/.env` (SITE_URL, SITE_WS values)
 
 **Note:** With the centralized `droplet-config.sh`, you no longer need to update IP addresses in individual deployment scripts. Update only the config file and documentation.
 
@@ -422,7 +421,7 @@ cd /opt/tronrelic
 **Development server access:**
 ```bash
 ssh root@<DEV_DROPLET_IP>
-cd /opt/tronrelic-dev
+cd /opt/tronrelic
 ```
 
 **View credentials on server:**
@@ -433,8 +432,8 @@ grep ADMIN_API_TOKEN .env  # View specific credential
 
 **Test GitHub Container Registry authentication:**
 ```bash
-docker pull ghcr.io/delphian/tronrelic/backend:latest
-docker pull ghcr.io/delphian/tronrelic/backend:dev
+docker pull ghcr.io/delphian/tronrelic/backend:production
+docker pull ghcr.io/delphian/tronrelic/backend:development
 ```
 
 **Check DNS resolution:**
@@ -445,6 +444,8 @@ dig +short dev.tronrelic.com
 
 ## Further Reading
 
+- [operations-docker.md](../system/operations-docker.md) - Unified Docker deployment standards
 - [operations-workflows.md](./operations-workflows.md) - Initial setup and update procedures
 - [operations-remote-access.md](./operations-remote-access.md) - SSH usage, debugging, log inspection
 - [operations.md](./operations.md) - Deployment overview and quick reference
+- [system-runtime-config.md](../system/system-runtime-config.md) - Runtime configuration system
