@@ -140,15 +140,29 @@ export async function runSummationJob(
                 { sort: { blockNumber: 1, timestamp: 1 } }
             );
 
-            logger.info(
-                {
-                    tranche: tranche + 1,
-                    startBlock,
-                    endBlock,
-                    transactionCount: transactions.length
-                },
-                'Retrieved transactions for block range'
-            );
+            // Warn if no transactions found - delegation activity is normally constant on TRON
+            if (transactions.length === 0) {
+                logger.warn(
+                    {
+                        tranche: tranche + 1,
+                        startBlock,
+                        endBlock,
+                        transactionCount: 0,
+                        rangeSize: endBlock - startBlock + 1
+                    },
+                    'No delegation transactions found in block range - delegation observer may not be capturing transactions'
+                );
+            } else {
+                logger.info(
+                    {
+                        tranche: tranche + 1,
+                        startBlock,
+                        endBlock,
+                        transactionCount: transactions.length
+                    },
+                    'Retrieved transactions for block range'
+                );
+            }
 
             // Determine timestamp from first transaction in the starting block
             // If no transactions exist in range, use current time as fallback
