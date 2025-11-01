@@ -271,12 +271,10 @@ View logs with:
 
 TronRelic uses GitHub Actions for continuous integration and automated Docker image builds. All images are tagged as `:production` regardless of target environment. Deployment to servers is always manual.
 
-**Workflow file:** `.github/workflows/docker-publish.yml`
+**Workflow file:** `.github/workflows/prod-publish.yml`
 
 **Triggers:**
-- Push to `main` branch (for tronrelic.com deployment)
-- Push to `dev` branch (for dev.tronrelic.com deployment)
-- Pull requests to either branch
+- Push to `main` branch only (production releases)
 
 **Pipeline stages:**
 
