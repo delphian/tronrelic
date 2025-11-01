@@ -1,0 +1,130 @@
+/**
+ * MenuNav component styles.
+ *
+ * Provides tab-like navigation with active state highlighting for all navigation
+ * instances (main, system, footer, etc.). Uses design system variables for
+ * consistent theming and spacing across all namespaces.
+ *
+ * When HamburgerMenu is enabled, it manages its own container query context.
+ * The flex-wrap property allows tabs to wrap gracefully when hamburger is disabled
+ * or before the container query triggers.
+ */
+
+.nav {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--spacing-4);
+    border-bottom: var(--border-width-thin) solid var(--color-border);
+    padding-bottom: var(--spacing-4);
+}
+
+.tab {
+    padding: var(--spacing-4) var(--spacing-7);
+    background: transparent;
+    border: var(--border-width-thin) solid transparent;
+    border-radius: var(--radius-sm);
+    text-transform: capitalize;
+    text-decoration: none;
+    color: inherit;
+    transition: all var(--transition-base);
+    cursor: pointer;
+    font-size: var(--font-size-sm);
+}
+
+.tab:hover {
+    background: var(--color-surface-elevated);
+    border-color: rgba(255, 255, 255, 0.1);
+}
+
+.tab.active {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.2);
+    font-weight: var(--font-weight-medium);
+}
+
+/**
+ * Category styles for hierarchical menus.
+ *
+ * Categories are expandable containers that reveal nested menu items
+ * when clicked. They use the same tab styling for consistency.
+ */
+.category {
+    position: relative;
+    display: inline-block;
+}
+
+.categoryButton {
+    padding: var(--spacing-4) var(--spacing-7);
+    background: transparent;
+    border: var(--border-width-thin) solid transparent;
+    border-radius: var(--radius-sm);
+    text-transform: capitalize;
+    color: inherit;
+    transition: all var(--transition-base);
+    cursor: pointer;
+    font-size: var(--font-size-sm);
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacing-2);
+    font-family: inherit;
+    white-space: nowrap;
+}
+
+.categoryButton:hover {
+    background: var(--color-surface-elevated);
+    border-color: rgba(255, 255, 255, 0.1);
+}
+
+.categoryButton:focus {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+}
+
+.categoryChildren {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    margin-top: var(--spacing-2);
+    background: var(--color-surface-elevated);
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-md);
+    padding: var(--spacing-2);
+    min-width: 200px;
+    box-shadow: var(--shadow-md);
+    z-index: 100;
+}
+
+.nested {
+    display: block;
+    width: 100%;
+    text-align: left;
+    margin-bottom: var(--spacing-1);
+}
+
+.nested:last-child {
+    margin-bottom: 0;
+}
+
+/**
+ * Hamburger menu category styles.
+ *
+ * In the hamburger menu, categories are always expanded and show
+ * all children inline with indentation.
+ */
+.hamburgerCategory {
+    margin-bottom: var(--spacing-4);
+}
+
+.hamburgerCategoryLabel {
+    display: block;
+    font-weight: var(--font-weight-medium);
+    color: var(--color-text-secondary);
+    margin-bottom: var(--spacing-2);
+    text-transform: uppercase;
+    font-size: var(--font-size-xs);
+    letter-spacing: 0.05em;
+}
+
+.nestedHamburger {
+    padding-left: var(--spacing-6);
+}

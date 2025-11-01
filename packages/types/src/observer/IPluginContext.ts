@@ -5,6 +5,7 @@ import type { IDatabaseService } from '../database/IDatabaseService.js';
 import type { IPluginWebSocketManager } from './IPluginWebSocketManager.js';
 import type { ICacheService } from '../services/ICacheService.js';
 import type { ISystemConfigService } from '../system-config/ISystemConfigService.js';
+import type { IMenuService } from '../menu/IMenuService.js';
 import { ISystemLogService } from '../system-log/ISystemLogService.js';
 
 /**
@@ -41,6 +42,9 @@ export interface IPluginContext {
 
     /** System configuration service for accessing runtime-editable settings like site URL */
     systemConfig: ISystemConfigService;
+
+    /** Menu service for registering navigation menu items */
+    menuService: IMenuService;
 
     /** Structured logger scoped to the plugin for consistent telemetry */
     logger: ISystemLogService;

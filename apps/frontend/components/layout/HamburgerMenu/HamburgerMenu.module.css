@@ -9,14 +9,18 @@
 /**
  * Root container with container query support.
  *
- * Sets up container context so child elements can query against this container's
- * width using @container rules. The triggerWidth is injected via CSS custom
- * property from the component props.
+ * Container type and name are set via inline styles in the component to support
+ * dynamic instance-specific container names. Each HamburgerMenu instance gets
+ * a unique container name to prevent conflicts when multiple instances have
+ * different trigger widths.
+ *
+ * Width is set to 100% to constrain the container to its parent's width rather
+ * than expanding to fit content. This allows the container query to trigger when
+ * the parent is narrow, even if the content (tabs) would naturally be wider.
  */
 .container {
-    container-type: inline-size;
-    container-name: hamburger-menu;
     position: relative;
+    width: 100%;
 }
 
 /**
@@ -55,26 +59,13 @@
  *
  * Shows navigation links in full desktop mode. Hidden when container is
  * narrow and hamburger button is displayed.
+ *
+ * The container query that shows/hides this element is injected dynamically
+ * via a <style> tag in the component because CSS variables cannot be used
+ * in container query conditions. See HamburgerMenu.tsx for the injection logic.
  */
 .normal_content {
     display: contents; /* Pass-through container, doesn't affect layout */
-}
-
-/**
- * Show hamburger button and hide normal content when container is narrower than triggerWidth.
- *
- * Uses CSS container queries to check parent container width against the
- * custom property injected from props. This enables component-level
- * responsiveness independent of viewport size.
- */
-@container hamburger-menu (max-width: var(--hamburger-trigger-width)) {
-    .hamburger_button {
-        display: inline-flex;
-    }
-
-    .normal_content {
-        display: none;
-    }
 }
 
 /**

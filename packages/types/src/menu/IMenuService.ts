@@ -108,19 +108,32 @@ export interface IMenuService {
     /**
      * Create a new menu node in the tree.
      *
-     * Validates the node through before:create event subscribers, saves to database,
-     * updates in-memory tree, emits after:create event, and broadcasts WebSocket
-     * update to all clients.
+     * Validates the node through before:create event subscribers, optionally saves
+     * to database (for persistent entries), updates in-memory tree, emits after:create
+     * event, and broadcasts WebSocket update to all clients.
      *
      * Subscribers can halt creation by setting validation.continue = false in the
      * before:create event handler.
      *
      * @param nodeData - Partial menu node data (label, url, order, parent, etc.)
+     * @param persist - If true, saves to database for persistence across restarts.
+     *                  If false (default), creates memory-only entry (e.g., plugin pages)
      * @returns Promise resolving to the created node with assigned _id
      * @throws Error if validation fails or database operation fails
      *
      * @example
      * ```typescript
+     * // Memory-only menu entry (default) - recreated on each startup
+     * const pluginNode = await menuService.create({
+     *     label: 'My Plugin',
+     *     url: '/my-plugin',
+     *     icon: 'Puzzle',
+     *     order: 50,
+     *     parent: null,
+     *     enabled: true
+     * });
+     *
+     * // Persisted menu entry - saved to database
      * const dashboardNode = await menuService.create({
      *     label: 'Dashboard',
      *     url: '/dashboard',
@@ -128,10 +141,10 @@ export interface IMenuService {
      *     order: 0,
      *     parent: null,
      *     enabled: true
-     * });
+     * }, true);
      * ```
      */
-    create(nodeData: Partial<IMenuNode>): Promise<IMenuNode>;
+    create(nodeData: Partial<IMenuNode>, persist?: boolean): Promise<IMenuNode>;
 
     /**
      * Update an existing menu node.
