@@ -160,6 +160,23 @@ jobs:
           ssh root@"$DROPLET_IP" << 'EOF'
             set -e
 
+            # Wait for apt locks to be released (fresh droplets often have unattended-upgrades running)
+            echo "Waiting for apt locks to be released..."
+            MAX_WAIT=300
+            ELAPSED=0
+            while fuser /var/lib/apt/lists/lock >/dev/null 2>&1 || fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1 ; do
+                echo "Waiting for other apt processes to finish... ($ELAPSED seconds elapsed)"
+                sleep 10
+                ELAPSED=$((ELAPSED + 10))
+                if [ $ELAPSED -ge $MAX_WAIT ]; then
+                    echo "Timeout waiting for apt lock - killing background processes"
+                    killall -9 apt-get apt || true
+                    sleep 5
+                    break
+                fi
+            done
+            echo "Apt locks released, proceeding with installation"
+
             # Update package index
             apt-get update
 
