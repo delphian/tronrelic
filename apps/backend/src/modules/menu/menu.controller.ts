@@ -81,7 +81,7 @@ const updateNodeSchema = z.object({
 const namespaceConfigSchema = z.object({
     hamburgerMenu: z.object({
         enabled: z.boolean(),
-        triggerWidth: z.number().int().min(320).max(2560)
+        triggerWidth: z.number().int().positive().max(2560)
     }).optional(),
     icons: z.object({
         enabled: z.boolean(),
