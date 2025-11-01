@@ -6,6 +6,8 @@
  */
 
 .nav {
+    container-type: inline-size;
+    container-name: system-nav;
     display: flex;
     flex-wrap: wrap;
     gap: var(--spacing-4);
