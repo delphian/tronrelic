@@ -1,10 +1,10 @@
-name: Build Prod Images
+name: Build and Push Docker Images
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
   pull_request:
-    branches: [main]
+    branches: [main, dev]
 
 jobs:
   test:
@@ -12,7 +12,7 @@ jobs:
     uses: ./.github/workflows/test.yml
     secrets: inherit
 
-  build-prod:
+  build:
     runs-on: ubuntu-latest
     needs: test
     permissions:
@@ -23,6 +23,17 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Determine deployment target
+        id: target
+        run: |
+          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+            echo "server=tronrelic.com" >> $GITHUB_OUTPUT
+            echo "env=production" >> $GITHUB_OUTPUT
+          else
+            echo "server=dev.tronrelic.com" >> $GITHUB_OUTPUT
+            echo "env=development" >> $GITHUB_OUTPUT
+          fi
+
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
@@ -30,7 +41,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push backend production image
+      - name: Build and push backend image
         run: |
           docker build --target backend \
             -t ghcr.io/${{ github.repository }}/backend:production \
@@ -39,7 +50,7 @@ jobs:
           docker push ghcr.io/${{ github.repository }}/backend:production
           docker push ghcr.io/${{ github.repository }}/backend:production-${{ github.sha }}
 
-      - name: Build and push frontend production image
+      - name: Build and push frontend image
         run: |
           docker build --target frontend-prod \
             -t ghcr.io/${{ github.repository }}/frontend:production \
@@ -48,11 +59,11 @@ jobs:
           docker push ghcr.io/${{ github.repository }}/frontend:production
           docker push ghcr.io/${{ github.repository }}/frontend:production-${{ github.sha }}
 
-      - name: Production images built
+      - name: Images built successfully
         run: |
-          echo "✅ Production images built and pushed to GHCR"
+          echo "✅ Docker images built and pushed to GHCR"
           echo "Backend: ghcr.io/${{ github.repository }}/backend:production"
           echo "Frontend: ghcr.io/${{ github.repository }}/frontend:production"
           echo ""
-          echo "To deploy to tronrelic.com, run from your local machine:"
-          echo "  ./scripts/droplet-update.sh prod"
+          echo "To deploy to ${{ steps.target.outputs.server }}, run from your local machine:"
+          echo "  ./scripts/droplet-update.sh ${{ steps.target.outputs.env }}"

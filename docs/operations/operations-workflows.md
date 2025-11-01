@@ -141,7 +141,7 @@ curl -I http://tronrelic.com/
 
 **Differences from production setup:**
 - **Environment variable:** `ENV=development` (production uses `ENV=production`)
-- **Docker image tags:** `:development` instead of `:production`
+- **Docker image tags:** `:production` (same as prod, ENV controls behavior)
 - **No SSL setup** (development uses HTTP for faster iteration)
 
 **Note:** Development and production use identical deployment directory (`/opt/tronrelic`), container names, and docker-compose.yml per the unified Docker standards. Only the `ENV` variable in the .env file differs between environments (see [operations-docker.md](../system/operations-docker.md)).
@@ -157,7 +157,7 @@ Application URLs (via Nginx on port 80):
 
 Configuration:
   Environment:  DEVELOPMENT (ENV=development)
-  Image tags:   :development
+  Image tags:   :production (same as prod)
   Nginx:        Reverse proxy on port 80
 
 Next Steps:
@@ -245,7 +245,7 @@ ssh root@<PROD_DROPLET_IP> 'cd /opt/tronrelic && docker compose logs --tail=50 b
 **What the script does:**
 1. **Verifies SSH connection** to development server (<DEV_DROPLET_IP>)
 2. **Shows current container status**
-3. **Pulls latest :development images** from ghcr.io
+3. **Pulls latest :production images** from ghcr.io (same images as prod)
 4. **Restarts containers** with new images using full restart strategy (docker compose down && docker compose up -d)
 5. **Waits for startup** (15 seconds)
 6. **Checks container health**
@@ -269,24 +269,20 @@ View logs with:
 
 ## CI/CD Image Building
 
-TronRelic uses GitHub Actions for continuous integration and automated Docker image builds. Deployment to servers is always manual.
+TronRelic uses GitHub Actions for continuous integration and automated Docker image builds. All images are tagged as `:production` regardless of target environment. Deployment to servers is always manual.
 
-### Production CI/CD (main branch)
+**Workflow file:** `.github/workflows/docker-publish.yml`
 
-**Trigger:** Push to `main` branch or pull request to `main`
-
-**Workflow file:** `.github/workflows/docker-publish-prod.yml`
+**Triggers:**
+- Push to `main` branch (for tronrelic.com deployment)
+- Push to `dev` branch (for dev.tronrelic.com deployment)
+- Pull requests to either branch
 
 **Pipeline stages:**
 
-1. **Integration Tests:**
-   - Checkout code
-   - Build backend and frontend images with `:test` tags
-   - Start MongoDB, Redis, backend, frontend via docker compose
-   - Wait for backend health check
-   - Run Playwright integration tests
-   - Upload test artifacts (screenshots, reports)
-   - Stop and clean up containers
+1. **Run Tests:**
+   - Runs unit and integration tests via `.github/workflows/test.yml`
+   - Tests must pass before images are built
 
 2. **Build and Push (only on successful tests):**
    - Log in to GitHub Container Registry (ghcr.io)
@@ -297,53 +293,34 @@ TronRelic uses GitHub Actions for continuous integration and automated Docker im
 
 3. **Manual Deployment Required:**
    - GitHub Actions builds images but does NOT deploy them
-   - Run `./scripts/droplet-update.sh prod` manually after verifying images
+   - Run appropriate deployment script manually after verifying images:
+     - Production: `./scripts/droplet-update.sh prod`
+     - Development: `./scripts/droplet-update.sh dev`
 
-**Why manual production deployment?**
+**Why manual deployment?**
 - Extra safety for production changes
 - Allows verification of images before deployment
 - Enables scheduled deployment windows (maintenance windows)
-- Prevents accidental production deployments
+- Prevents accidental deployments
+- Consistent workflow across all environments
 
-**Trigger production deployment:**
+**Deploy after successful build:**
 ```bash
-# After GitHub Actions completes successfully:
+# Production (after push to main):
 ./scripts/droplet-update.sh prod
-```
 
-### Development CI/CD (dev branch)
-
-**Trigger:** Push to `dev` branch
-
-**Workflow file:** `.github/workflows/docker-publish-dev.yml`
-
-**Pipeline stages:**
-
-1. **Build and Push:**
-   - Log in to GitHub Container Registry (ghcr.io)
-   - Build and tag backend image (`:development` and `:development-$COMMIT_SHA`)
-   - Push backend image to ghcr.io
-   - Build and tag frontend image (`:development` and `:development-$COMMIT_SHA`)
-   - Push frontend image to ghcr.io
-
-2. **Manual Deployment Required:**
-   - GitHub Actions builds images but does NOT deploy them
-   - Run `./scripts/droplet-update.sh dev` manually after images are pushed
-
-**Why manual dev deployment?**
-- Consistent deployment workflow across all environments
-- Explicit control over when changes are deployed
-- Easier to troubleshoot deployment issues
-- Prevents unexpected changes from deploying automatically
-
-**Deploy to development:**
-```bash
-# After GitHub Actions completes successfully:
+# Development (after push to dev):
 ./scripts/droplet-update.sh dev
 
 # View deployment logs
-ssh root@<DEV_DROPLET_IP> 'cd /opt/tronrelic && docker compose logs --tail=100 -f'
+ssh root@<DROPLET_IP> 'cd /opt/tronrelic && docker compose logs --tail=100 -f'
 ```
+
+**Why single :production tag for all environments?**
+- Images are identical regardless of deployment target
+- ENV variable in server .env file controls runtime behavior
+- Eliminates confusion about which tag to use
+- Simplifies docker-compose.yml (no ${ENV} variable needed)
 
 ## Environment-Specific Configuration
 
@@ -358,13 +335,13 @@ All servers use the **same docker-compose.yml** located at `/opt/tronrelic/docke
 ```yaml
 services:
   backend:
-    image: ghcr.io/delphian/tronrelic/backend:${ENV}
+    image: ghcr.io/delphian/tronrelic/backend:production
     container_name: tronrelic-backend
     environment:
       - NODE_ENV=${ENV}
 
   frontend:
-    image: ghcr.io/delphian/tronrelic/frontend:${ENV}
+    image: ghcr.io/delphian/tronrelic/frontend:production
     container_name: tronrelic-frontend
     environment:
       - NODE_ENV=${ENV}
@@ -378,7 +355,7 @@ services:
     command: ["redis-server", "--requirepass", "${REDIS_PASSWORD}"]
 ```
 
-**Key principle:** The `${ENV}` variable determines which Docker image tag is pulled (`:production` or `:development`) and sets the Node.js runtime environment.
+**Key principle:** All environments use `:production` Docker images. The `ENV` variable determines runtime Node.js environment (development or production) only.
 
 ### Production Environment
 
@@ -455,8 +432,8 @@ TRONGRID_API_KEY_3=<key3>
 ```
 
 **Docker behavior with `ENV=development`:**
-- Pulls `ghcr.io/delphian/tronrelic/backend:development`
-- Pulls `ghcr.io/delphian/tronrelic/frontend:development`
+- Pulls `ghcr.io/delphian/tronrelic/backend:production`
+- Pulls `ghcr.io/delphian/tronrelic/frontend:production`
 - Sets `NODE_ENV=development` in containers
 - Uses development-optimized frontend build
 
@@ -483,7 +460,7 @@ All environments use the **same container names** (no `-prod` or `-dev` suffixes
 
 ### Rollback by Image Tag
 
-**Note:** The unified Docker system uses `:production` and `:development` tags. For rollback, you'll need to temporarily modify docker-compose.yml to reference a specific commit SHA tag.
+**Note:** All environments use `:production` tags. For rollback to specific commits, use SHA-tagged images like `:production-<commit-sha>` in docker-compose.yml.
 
 ```bash
 # SSH to server
@@ -497,7 +474,7 @@ cd /opt/tronrelic
 nano docker-compose.yml
 
 # Change:
-#   image: ghcr.io/delphian/tronrelic/backend:${ENV}
+#   image: ghcr.io/delphian/tronrelic/backend:production
 # To:
 #   image: ghcr.io/delphian/tronrelic/backend:production-<COMMIT_SHA>
 
@@ -565,8 +542,8 @@ grep ^ENV /opt/tronrelic/.env
 docker pull ghcr.io/delphian/tronrelic/backend:production     # If ENV=production
 docker pull ghcr.io/delphian/tronrelic/frontend:production    # If ENV=production
 # or
-docker pull ghcr.io/delphian/tronrelic/backend:development    # If ENV=development
-docker pull ghcr.io/delphian/tronrelic/frontend:development   # If ENV=development
+docker pull ghcr.io/delphian/tronrelic/backend:production     # Universal tag
+docker pull ghcr.io/delphian/tronrelic/frontend:production    # Universal tag
 ```
 
 **Containers fail health checks:**
@@ -659,7 +636,7 @@ ssh root@<DROPLET_IP> 'cd /opt/tronrelic && docker compose logs -f'
 # Edit docker-compose.yml to use previous commit SHA tag
 ssh root@<DROPLET_IP>
 cd /opt/tronrelic
-nano docker-compose.yml  # Change image: from :${ENV} to :production-<SHA>
+nano docker-compose.yml  # Change image: from :production to :production-<SHA>
 docker compose down && docker compose up -d
 # Restore docker-compose.yml after verification
 ```
