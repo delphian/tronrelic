@@ -14,6 +14,7 @@ import { PluginWebSocketManager } from '../services/plugin-websocket-manager.js'
 import { PluginWebSocketRegistry } from '../services/plugin-websocket-registry.js';
 import { CacheService } from '../services/cache.service.js';
 import { SystemConfigService } from '../services/system-config/index.js';
+import { MenuService } from '../modules/menu/menu.service.js';
 import { getRedisClient } from './redis.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -135,7 +136,7 @@ async function loadAllPlugins(): Promise<IPlugin[]> {
  * 1. Register plugin metadata in database (auto-discovery)
  * 2. Install hook (one-time setup: indexes, seed data) - if not already installed
  * 3. Enable hook (activate features)
- * 4. Init hook (every startup: register observers, start services)
+ * 4. Init hook (every startup: register observers, menu items via context.menuService, start services)
  * 5. API route registration (expose REST endpoints)
  */
 export async function loadPlugins(): Promise<void> {
@@ -156,6 +157,7 @@ export async function loadPlugins(): Promise<void> {
     const redis = getRedisClient();
     const cacheService = new CacheService(redis);
     const systemConfigService = SystemConfigService.getInstance();
+    const menuService = MenuService.getInstance();
 
     for (const plugin of pluginList) {
         const pluginLogger = logger.child({ pluginId: plugin.manifest.id, pluginTitle: plugin.manifest.title });
@@ -190,6 +192,7 @@ export async function loadPlugins(): Promise<void> {
                 database,
                 cache: cacheService,
                 systemConfig: systemConfigService,
+                menuService,
                 logger: pluginLogger
             };
 

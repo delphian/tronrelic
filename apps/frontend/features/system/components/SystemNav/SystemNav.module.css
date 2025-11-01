@@ -3,11 +3,13 @@
  *
  * Provides tab-like navigation with active state highlighting for system monitoring pages.
  * Uses design system variables for consistent theming and spacing.
+ *
+ * When HamburgerMenu is enabled, it manages its own container query context.
+ * The flex-wrap property allows tabs to wrap gracefully when hamburger is disabled
+ * or before the container query triggers.
  */
 
 .nav {
-    container-type: inline-size;
-    container-name: system-nav;
     display: flex;
     flex-wrap: wrap;
     gap: var(--spacing-4);
