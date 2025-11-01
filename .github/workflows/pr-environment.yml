@@ -1,0 +1,192 @@
+name: PR Environment
+
+on:
+  pull_request:
+    branches:
+      - dev
+
+jobs:
+  build-and-provision:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Sanitize branch name for Docker tag
+        id: prep
+        run: |
+          # Convert branch name to lowercase and replace invalid characters
+          BRANCH_NAME="${{ github.head_ref }}"
+          SANITIZED_BRANCH=$(echo "$BRANCH_NAME" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9._-]/-/g')
+          SHORT_SHA=$(echo "${{ github.event.pull_request.head.sha }}" | cut -c1-7)
+          IMAGE_TAG="pr-${SANITIZED_BRANCH}-${SHORT_SHA}"
+
+          echo "branch=$SANITIZED_BRANCH" >> $GITHUB_OUTPUT
+          echo "tag=$IMAGE_TAG" >> $GITHUB_OUTPUT
+          echo "short_sha=$SHORT_SHA" >> $GITHUB_OUTPUT
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push backend image
+        run: |
+          docker build --target backend \
+            -t ghcr.io/${{ github.repository }}/backend:${{ steps.prep.outputs.tag }} \
+            .
+          docker push ghcr.io/${{ github.repository }}/backend:${{ steps.prep.outputs.tag }}
+
+      - name: Build and push frontend image
+        run: |
+          docker build --target frontend-prod \
+            -t ghcr.io/${{ github.repository }}/frontend:${{ steps.prep.outputs.tag }} \
+            .
+          docker push ghcr.io/${{ github.repository }}/frontend:${{ steps.prep.outputs.tag }}
+
+      - name: Images built successfully
+        run: |
+          echo "✅ Pull request Docker images built and pushed to GHCR"
+          echo ""
+          echo "PR: #${{ github.event.pull_request.number }} - ${{ github.event.pull_request.title }}"
+          echo "Source branch: ${{ github.head_ref }}"
+          echo "Target branch: dev"
+          echo "Image tag: ${{ steps.prep.outputs.tag }}"
+          echo ""
+          echo "Backend: ghcr.io/${{ github.repository }}/backend:${{ steps.prep.outputs.tag }}"
+          echo "Frontend: ghcr.io/${{ github.repository }}/frontend:${{ steps.prep.outputs.tag }}"
+
+      - name: Install doctl
+        uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.DO_API_TOKEN }}
+
+      - name: Check if droplet already exists
+        id: check
+        run: |
+          DROPLET_NAME="tronrelic-pr-${{ github.event.pull_request.number }}"
+
+          if doctl compute droplet list --format Name --no-header | grep -q "^${DROPLET_NAME}$"; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "⚠️ Droplet $DROPLET_NAME already exists, skipping creation"
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "✅ Droplet $DROPLET_NAME does not exist, will create"
+          fi
+
+      - name: Create droplet
+        if: steps.check.outputs.exists == 'false'
+        id: create
+        run: |
+          DROPLET_NAME="tronrelic-pr-${{ github.event.pull_request.number }}"
+
+          echo "Creating droplet: $DROPLET_NAME"
+
+          doctl compute droplet create "$DROPLET_NAME" \
+            --size s-2vcpu-4gb-amd \
+            --region sgp1 \
+            --image ubuntu-25-04-x64 \
+            --ssh-keys ${{ secrets.DO_SSH_KEY_FINGERPRINT }} \
+            --wait \
+            --format ID,Name,PublicIPv4 \
+            --no-header
+
+          echo "✅ Droplet created successfully"
+
+      - name: Get droplet IP
+        if: steps.check.outputs.exists == 'false'
+        id: ip
+        run: |
+          DROPLET_NAME="tronrelic-pr-${{ github.event.pull_request.number }}"
+
+          # Wait a moment for droplet to be fully ready
+          sleep 10
+
+          DROPLET_IP=$(doctl compute droplet list \
+            --format Name,PublicIPv4 \
+            --no-header \
+            | grep "^${DROPLET_NAME}" \
+            | awk '{print $2}')
+
+          if [ -z "$DROPLET_IP" ]; then
+            echo "❌ Could not retrieve droplet IP"
+            exit 1
+          fi
+
+          echo "ip=$DROPLET_IP" >> $GITHUB_OUTPUT
+          echo "✅ Droplet IP: $DROPLET_IP"
+
+      - name: Post success comment on PR
+        if: steps.check.outputs.exists == 'false'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const prNumber = ${{ github.event.pull_request.number }};
+            const dropletIp = '${{ steps.ip.outputs.ip }}';
+            const imageTag = '${{ steps.prep.outputs.tag }}';
+            const backendImage = `ghcr.io/${{ github.repository }}/backend:${imageTag}`;
+            const frontendImage = `ghcr.io/${{ github.repository }}/frontend:${imageTag}`;
+
+            const comment = `## ✅ Environment provisioned for PR #${prNumber}
+
+            **Droplet Information:**
+            - **Name:** \`tronrelic-pr-${prNumber}\`
+            - **IP Address:** \`${dropletIp}\`
+            - **Expected DNS:** \`pr-${prNumber}.dev.tronrelic.com\`
+
+            **Docker Images:**
+            - **Backend:** \`${backendImage}\`
+            - **Frontend:** \`${frontendImage}\`
+
+            **SSH Access:**
+            \`\`\`bash
+            ssh root@${dropletIp}
+            \`\`\`
+
+            ⚠️ **Note:** Application deployment is not yet configured. This is a bare Ubuntu 25.04 droplet.
+            `;
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+              body: comment
+            });
+
+      - name: Post already exists comment on PR
+        if: steps.check.outputs.exists == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const prNumber = ${{ github.event.pull_request.number }};
+            const imageTag = '${{ steps.prep.outputs.tag }}';
+            const backendImage = `ghcr.io/${{ github.repository }}/backend:${imageTag}`;
+            const frontendImage = `ghcr.io/${{ github.repository }}/frontend:${imageTag}`;
+
+            const comment = `## ⚠️ Environment already exists for PR #${prNumber}
+
+            Droplet \`tronrelic-pr-${prNumber}\` is already running. Skipping creation.
+
+            **New Docker Images Built:**
+            - **Backend:** \`${backendImage}\`
+            - **Frontend:** \`${frontendImage}\`
+
+            If you need to recreate the environment, manually destroy the droplet first:
+            \`\`\`bash
+            doctl compute droplet delete tronrelic-pr-${prNumber} --force
+            \`\`\`
+            `;
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+              body: comment
+            });
