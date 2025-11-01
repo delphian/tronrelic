@@ -192,18 +192,61 @@ export function useMenuConfig(namespace: string = 'main'): IUseMenuConfigResult 
 
     useEffect(() => {
         /**
+         * Validates that the config object has required structure.
+         *
+         * Checks for presence of required configuration fields to detect
+         * malformed responses or API changes early. Throws descriptive error
+         * if validation fails.
+         *
+         * @param config - Configuration object to validate
+         * @throws Error if required fields are missing or invalid
+         */
+        function validateConfig(config: unknown): asserts config is IMenuNamespaceConfig {
+            if (!config || typeof config !== 'object') {
+                throw new Error('Config must be an object');
+            }
+
+            const c = config as Partial<IMenuNamespaceConfig>;
+
+            if (!c.namespace) {
+                throw new Error('Config missing required field: namespace');
+            }
+
+            if (!c.hamburgerMenu || typeof c.hamburgerMenu !== 'object') {
+                throw new Error('Config missing required field: hamburgerMenu');
+            }
+
+            if (typeof c.hamburgerMenu.enabled !== 'boolean') {
+                throw new Error('Config hamburgerMenu.enabled must be a boolean');
+            }
+
+            if (typeof c.hamburgerMenu.triggerWidth !== 'number') {
+                throw new Error('Config hamburgerMenu.triggerWidth must be a number');
+            }
+        }
+
+        /**
          * Fetches namespace configuration from backend API.
          *
-         * On success, updates state with fetched config. On failure, keeps
-         * default configuration and logs error. Always sets loading to false
+         * On success, validates and updates state with fetched config. On failure,
+         * keeps default configuration and logs error. Always sets loading to false
          * when complete (success or failure).
          */
         async function fetchConfig() {
             try {
-                const response = await apiClient.get<IMenuNamespaceConfig>(
+                const response = await apiClient.get<{ success: boolean; config: IMenuNamespaceConfig }>(
                     `/menu/namespace/${namespace}/config`
                 );
-                setConfig(response);
+
+                // Validate response structure
+                if (!response.data || !response.data.config) {
+                    throw new Error('Invalid API response structure: missing config property');
+                }
+
+                // Validate config has required fields
+                validateConfig(response.data.config);
+
+                setConfig(response.data.config);
             } catch (error) {
                 console.error(`Failed to fetch menu config for namespace '${namespace}':`, error);
                 // Keep default config on error
