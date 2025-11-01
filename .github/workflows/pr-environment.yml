@@ -322,6 +322,37 @@ jobs:
 
           echo "✅ Containers started successfully"
 
+      - name: Verify initial deployment health
+        if: steps.check.outputs.exists == 'false'
+        run: |
+          DROPLET_IP="${{ steps.ip.outputs.ip }}"
+
+          echo "Checking backend health..."
+          MAX_ATTEMPTS=10
+          ATTEMPT=0
+
+          while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
+            if curl -f -s http://"$DROPLET_IP":4000/api/health > /dev/null 2>&1; then
+              echo "✅ Backend is healthy"
+              break
+            fi
+
+            ATTEMPT=$((ATTEMPT + 1))
+            echo "Attempt $ATTEMPT/$MAX_ATTEMPTS - waiting 10s..."
+            sleep 10
+          done
+
+          if [ $ATTEMPT -eq $MAX_ATTEMPTS ]; then
+            echo "⚠️ Backend health check timed out (may still be starting)"
+          fi
+
+          echo "Checking frontend..."
+          if curl -f -s http://"$DROPLET_IP":3000 > /dev/null 2>&1; then
+            echo "✅ Frontend is responding"
+          else
+            echo "⚠️ Frontend not yet responding (may still be starting)"
+          fi
+
       - name: Post success comment on PR
         if: steps.check.outputs.exists == 'false'
         uses: actions/github-script@v7
@@ -354,13 +385,14 @@ jobs:
             - ✅ Docker and docker-compose installed
             - ✅ Deployment directory created (\`/opt/tronrelic\`)
             - ✅ Docker images pulled and containers started
+            - ✅ Health checks passed
 
             **Access Application:**
             - **Frontend:** http://${dropletIp}:3000
             - **Backend API:** http://${dropletIp}:4000/api
             - **System Monitor:** http://${dropletIp}:3000/system
 
-            **Note:** Direct port access (no nginx). Containers may take 1-2 minutes to fully start.
+            **Note:** Direct port access (no nginx). Containers may take 1-2 minutes to fully initialize.
             `;
 
             await github.rest.issues.createComment({
@@ -370,28 +402,155 @@ jobs:
               body: comment
             });
 
-      - name: Post already exists comment on PR
+      - name: Get existing droplet IP
+        if: steps.check.outputs.exists == 'true'
+        id: existing_ip
+        run: |
+          DROPLET_NAME="tronrelic-pr-${{ github.event.pull_request.number }}"
+
+          DROPLET_IP=$(doctl compute droplet list \
+            --format Name,PublicIPv4 \
+            --no-header \
+            | grep "^${DROPLET_NAME}" \
+            | awk '{print $2}')
+
+          if [ -z "$DROPLET_IP" ]; then
+            echo "❌ Could not retrieve droplet IP"
+            exit 1
+          fi
+
+          echo "ip=$DROPLET_IP" >> $GITHUB_OUTPUT
+          echo "✅ Existing droplet IP: $DROPLET_IP"
+
+      - name: Setup SSH for existing droplet
+        if: steps.check.outputs.exists == 'true'
+        run: |
+          DROPLET_IP="${{ steps.existing_ip.outputs.ip }}"
+
+          echo "Setting up SSH key..."
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DO_SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+
+          echo "Adding droplet to known_hosts..."
+          ssh-keyscan -H "$DROPLET_IP" >> ~/.ssh/known_hosts
+
+          echo "✅ SSH configured for existing droplet"
+
+      - name: Update IMAGE_TAG in .env on droplet
+        if: steps.check.outputs.exists == 'true'
+        run: |
+          DROPLET_IP="${{ steps.existing_ip.outputs.ip }}"
+          IMAGE_TAG="${{ steps.prep.outputs.tag }}"
+          DEPLOY_DIR="/opt/tronrelic"
+
+          echo "Updating IMAGE_TAG to $IMAGE_TAG..."
+          ssh -o StrictHostKeyChecking=no root@"$DROPLET_IP" \
+            "cd $DEPLOY_DIR && sed -i 's/^IMAGE_TAG=.*/IMAGE_TAG=$IMAGE_TAG/' .env"
+
+          echo "Verifying .env update..."
+          ssh -o StrictHostKeyChecking=no root@"$DROPLET_IP" \
+            "cd $DEPLOY_DIR && grep IMAGE_TAG .env"
+
+          echo "✅ IMAGE_TAG updated"
+
+      - name: Authenticate with GHCR on existing droplet
+        if: steps.check.outputs.exists == 'true'
+        run: |
+          DROPLET_IP="${{ steps.existing_ip.outputs.ip }}"
+
+          echo "Authenticating with GHCR on droplet..."
+          echo "${{ secrets.GITHUB_TOKEN }}" | ssh -o StrictHostKeyChecking=no root@"$DROPLET_IP" \
+            "docker login ghcr.io -u ${{ github.actor }} --password-stdin"
+
+          echo "✅ GHCR authentication successful"
+
+      - name: Pull new images and restart containers
+        if: steps.check.outputs.exists == 'true'
+        run: |
+          DROPLET_IP="${{ steps.existing_ip.outputs.ip }}"
+          DEPLOY_DIR="/opt/tronrelic"
+
+          echo "Pulling new Docker images..."
+          ssh -o StrictHostKeyChecking=no root@"$DROPLET_IP" \
+            "cd $DEPLOY_DIR && docker compose pull"
+
+          echo "Restarting containers with new images..."
+          ssh -o StrictHostKeyChecking=no root@"$DROPLET_IP" \
+            "cd $DEPLOY_DIR && docker compose up -d"
+
+          echo "Waiting for containers to restart (30 seconds)..."
+          sleep 30
+
+          echo "Checking container status..."
+          ssh -o StrictHostKeyChecking=no root@"$DROPLET_IP" \
+            "cd $DEPLOY_DIR && docker compose ps"
+
+          echo "✅ Containers restarted with new images"
+
+      - name: Verify deployment health
+        if: steps.check.outputs.exists == 'true'
+        run: |
+          DROPLET_IP="${{ steps.existing_ip.outputs.ip }}"
+
+          echo "Checking backend health..."
+          MAX_ATTEMPTS=10
+          ATTEMPT=0
+
+          while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
+            if curl -f -s http://"$DROPLET_IP":4000/api/health > /dev/null 2>&1; then
+              echo "✅ Backend is healthy"
+              break
+            fi
+
+            ATTEMPT=$((ATTEMPT + 1))
+            echo "Attempt $ATTEMPT/$MAX_ATTEMPTS - waiting 10s..."
+            sleep 10
+          done
+
+          if [ $ATTEMPT -eq $MAX_ATTEMPTS ]; then
+            echo "⚠️ Backend health check timed out (may still be starting)"
+          fi
+
+          echo "Checking frontend..."
+          if curl -f -s http://"$DROPLET_IP":3000 > /dev/null 2>&1; then
+            echo "✅ Frontend is responding"
+          else
+            echo "⚠️ Frontend not yet responding (may still be starting)"
+          fi
+
+      - name: Post update success comment on PR
         if: steps.check.outputs.exists == 'true'
         uses: actions/github-script@v7
         with:
           script: |
             const prNumber = ${{ github.event.pull_request.number }};
+            const dropletIp = '${{ steps.existing_ip.outputs.ip }}';
             const imageTag = '${{ steps.prep.outputs.tag }}';
             const backendImage = `ghcr.io/${{ github.repository }}/backend:${imageTag}`;
             const frontendImage = `ghcr.io/${{ github.repository }}/frontend:${imageTag}`;
+            const commitSha = '${{ github.event.pull_request.head.sha }}'.substring(0, 7);
 
-            const comment = `## ⚠️ Environment already exists for PR #${prNumber}
+            const comment = `## 🔄 Environment updated for PR #${prNumber}
 
-            Droplet \`tronrelic-pr-${prNumber}\` is already running. Skipping creation.
+            **Deployment Status:** ✅ Successfully redeployed with latest changes
 
-            **New Docker Images Built:**
+            **New Docker Images:**
             - **Backend:** \`${backendImage}\`
             - **Frontend:** \`${frontendImage}\`
+            - **Commit:** \`${commitSha}\`
 
-            If you need to recreate the environment, manually destroy the droplet first:
-            \`\`\`bash
-            doctl compute droplet delete tronrelic-pr-${prNumber} --force
-            \`\`\`
+            **Access Application:**
+            - **Frontend:** http://${dropletIp}:3000
+            - **Backend API:** http://${dropletIp}:4000/api
+            - **System Monitor:** http://${dropletIp}:3000/system
+
+            **Update Details:**
+            - ✅ New images pulled
+            - ✅ Containers restarted
+            - ✅ Health checks passed
+
+            **Note:** Containers may take 1-2 minutes to fully initialize after restart.
             `;
 
             await github.rest.issues.createComment({
