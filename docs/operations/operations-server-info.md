@@ -53,7 +53,7 @@ ssh root@<PROD_DROPLET_IP>
 - **Provider:** Digital Ocean Droplet
 - **Region:** (Specify region)
 - **Deployment Directory:** `/opt/tronrelic`
-- **Docker Image Tags:** `:development`
+- **Docker Image Tags:** `:production` (same as prod)
 - **ENV Variable:** `ENV=development`
 - **CI/CD Branch:** `dev`
 - **Auto-Deploy:** No (manual deployment required)
@@ -254,7 +254,7 @@ echo '<GITHUB_TOKEN>' | docker login ghcr.io -u delphian --password-stdin
 
 # Verify authentication (use correct environment tag)
 docker pull ghcr.io/delphian/tronrelic/backend:production     # For production
-docker pull ghcr.io/delphian/tronrelic/backend:development    # For development
+docker pull ghcr.io/delphian/tronrelic/backend:production     # Universal tag for all environments
 ```
 
 **Security note:** GitHub Personal Access Tokens grant access to your GitHub account. Use the minimum required scope (read:packages) and rotate tokens regularly.
@@ -376,8 +376,7 @@ sudo systemctl reload nginx
 2. **This document** (`docs/operations/operations-server-info.md`)
    - Update IP addresses in server tables and examples
 3. **GitHub Actions workflows:**
-   - `.github/workflows/docker-publish-prod.yml` (production builds)
-   - `.github/workflows/docker-publish-dev.yml` (development builds)
+   - `.github/workflows/docker-publish.yml` (builds for both environments)
 4. **Nginx configuration on servers:**
    - `/etc/nginx/sites-available/tronrelic` (server_name directive)
 5. **Server .env files:**
@@ -421,7 +420,7 @@ grep ADMIN_API_TOKEN .env  # View specific credential
 **Test GitHub Container Registry authentication:**
 ```bash
 docker pull ghcr.io/delphian/tronrelic/backend:production
-docker pull ghcr.io/delphian/tronrelic/backend:development
+docker pull ghcr.io/delphian/tronrelic/backend:production
 ```
 
 **Check DNS resolution:**

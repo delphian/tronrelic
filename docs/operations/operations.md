@@ -29,17 +29,17 @@ Production (tronrelic.com)
 ├── Domain: tronrelic.com
 ├── Server: Digital Ocean Droplet (<PROD_DROPLET_IP>)
 ├── Deployment: /opt/tronrelic
-├── Docker Images: ghcr.io/delphian/tronrelic/*:production
+├── Docker Images: ghcr.io/delphian/tronrelic/*:production (same as dev)
 ├── ENV Variable: ENV=production
-└── CI/CD: Builds images on push to 'main' (manual deployment required)
+└── CI/CD: Builds :production images on push to 'main' (manual deployment required)
 
 Development (dev.tronrelic.com)
 ├── Domain: dev.tronrelic.com
 ├── Server: Digital Ocean Droplet (<DEV_DROPLET_IP>)
 ├── Deployment: /opt/tronrelic
-├── Docker Images: ghcr.io/delphian/tronrelic/*:development
+├── Docker Images: ghcr.io/delphian/tronrelic/*:production (same as prod)
 ├── ENV Variable: ENV=development
-└── CI/CD: Builds images on push to 'dev' (manual deployment required)
+└── CI/CD: Builds :production images on push to 'dev' (manual deployment required)
 ```
 
 **Key architectural decisions:**
@@ -58,10 +58,10 @@ This directory contains comprehensive documentation covering different aspects o
 **See [operations-docker.md](../system/operations-docker.md) for complete details on:**
 - Unified Docker deployment system architecture
 - ENV variable convention (development/production)
-- Image tagging standards (:development/:production)
+- Universal :production image tagging (all environments use same images)
 - Container naming conventions (unified names, no suffixes)
 - Runtime configuration approach
-- Migration from legacy tag system
+- Migration from legacy multi-tag system
 
 **See [operations-server-info.md](./operations-server-info.md) for complete details on:**
 - Production and development server locations
@@ -91,7 +91,7 @@ This directory contains comprehensive documentation covering different aspects o
 | Environment | Domain | IP Address | Deploy Directory | Image Tag | ENV Variable |
 |-------------|--------|------------|------------------|-----------|--------------|
 | **Production** | tronrelic.com | <PROD_DROPLET_IP> | /opt/tronrelic | :production | ENV=production |
-| **Development** | dev.tronrelic.com | <DEV_DROPLET_IP> | /opt/tronrelic | :development | ENV=development |
+| **Development** | dev.tronrelic.com | <DEV_DROPLET_IP> | /opt/tronrelic | :production | ENV=development |
 
 ### Common Commands
 
@@ -176,26 +176,21 @@ docker exec -it tronrelic-redis redis-cli
 
 TronRelic uses GitHub Actions for automated image building with unified Docker standards:
 
-**Production pipeline (.github/workflows/docker-publish-prod.yml):**
-1. Triggered on push to `main` branch
-2. Runs integration tests with Docker Compose
-3. Builds backend and frontend images
-4. Tags images as `:production` (single tag, no dual-tagging)
-5. Pushes images to GitHub Container Registry
-6. Manual deployment required (run `./scripts/droplet-update.sh prod`)
+**Workflow file:** `.github/workflows/docker-publish.yml`
 
-**Development pipeline (.github/workflows/docker-publish-dev.yml):**
-1. Triggered on push to `dev` branch
-2. Builds backend and frontend images
-3. Tags images as `:development` (single tag, no additional tags)
-4. Pushes images to GitHub Container Registry
-5. Manual deployment required (run `./scripts/droplet-update.sh dev`)
+**Pipeline behavior:**
+1. Triggered on push to `main` or `dev` branches
+2. Runs all tests (unit and integration)
+3. Builds backend and frontend images (only if tests pass)
+4. Tags all images as `:production` (single tag, no environment-specific tags)
+5. Pushes images to GitHub Container Registry
+6. Manual deployment required (run `./scripts/droplet-update.sh <env>`)
 
 **Image tag convention:**
-- Production uses `:production` tag (not `:latest`)
-- Development uses `:development` tag (not `:dev`)
-- Single-tag approach eliminates ambiguity and prevents accidental deployments
-- See [operations-docker.md](../system/operations-docker.md) for complete tagging standards
+- All images use `:production` tag regardless of target environment
+- Images are identical; ENV variable in server .env controls runtime behavior
+- Eliminates :development vs :production tag confusion
+- See [operations-docker.md](../system/operations-docker.md) for complete Docker standards
 
 ## Security Considerations
 

@@ -2,9 +2,15 @@
 
 ## Overview
 
-TronRelic uses a **unified Docker deployment system** where a single `ENV` variable controls image tags, Node.js runtime configuration, and all environment-specific behavior across development and production servers.
+TronRelic uses a **simplified Docker deployment system** where all environments use identical `:production` tagged images. Runtime behavior is controlled entirely by the `ENV` variable in the .env file.
 
 ## Core Convention
+
+### Universal Production Images
+
+**Key principle:** All Docker images are tagged as `:production` regardless of deployment target.
+
+Environment differentiation happens at **runtime through environment variables**, not at build time through image tags.
 
 ### Single Environment Variable
 
@@ -13,9 +19,14 @@ Only two values are permitted:
 - `ENV=production` - Production environments
 
 This variable controls:
-- Docker image tags (`:development` or `:production`)
 - Node.js runtime (`NODE_ENV=development` or `NODE_ENV=production`)
+- Feature flags and logging levels
 - All environment-specific behavior
+
+**What it does NOT control:**
+- Docker image tags (always `:production`)
+- Container names (always the same)
+- Build output (images are identical)
 
 ### Implementation
 
@@ -23,13 +34,13 @@ This variable controls:
 ```yaml
 services:
   backend:
-    image: ghcr.io/delphian/tronrelic/backend:${ENV}
+    image: ghcr.io/delphian/tronrelic/backend:production
     container_name: tronrelic-backend
     environment:
       - NODE_ENV=${ENV}
 
   frontend:
-    image: ghcr.io/delphian/tronrelic/frontend:${ENV}
+    image: ghcr.io/delphian/tronrelic/frontend:production
     container_name: tronrelic-frontend
     environment:
       - NODE_ENV=${ENV}
@@ -50,30 +61,28 @@ SITE_URL=https://tronrelic.com
 
 ### CI/CD Requirements
 
-**Development builds (dev branch):**
-- MUST tag as `:development` only
-- NO additional tags (`:dev`, `:latest`, etc.)
-
-**Production builds (main branch):**
+**All builds (main and dev branches):**
 - MUST tag as `:production` only
+- NO environment-specific tags (`:development`, `:dev`, `:prod`)
 - NO dual-tagging with `:latest`
 
-**Rationale:** Single tags eliminate ambiguity and prevent accidental deployments with wrong tags.
+**Rationale:**
+- Images are byte-for-byte identical
+- Eliminates confusion about which tag to use
+- Simplifies docker-compose.yml (no variable substitution needed)
+- Prevents accidental deployments with wrong tags
 
 ### GitHub Actions Implementation
 
 ```yaml
-# Development
-- name: Build development images
-  run: |
-    docker build --target backend -t ghcr.io/delphian/tronrelic/backend:development .
-    docker push ghcr.io/delphian/tronrelic/backend:development
-
-# Production
-- name: Build production images
+# Unified workflow for both branches
+- name: Build and push images
   run: |
     docker build --target backend -t ghcr.io/delphian/tronrelic/backend:production .
     docker push ghcr.io/delphian/tronrelic/backend:production
+
+    docker build --target frontend-prod -t ghcr.io/delphian/tronrelic/frontend:production .
+    docker push ghcr.io/delphian/tronrelic/frontend:production
 ```
 
 ## Naming Conventions
@@ -116,15 +125,17 @@ Environment differentiation is **entirely controlled by .env file content**, not
 
 ## Benefits
 
-**Reduced complexity:** 3 variables (ENV, IMAGE_TAG, NODE_ENV) consolidated to 1 variable that controls all environment behavior.
+**Maximum simplicity:** All images use `:production` tag. No decision-making required for image selection.
+
+**Universal images:** Single Docker image works on any domain or environment without rebuilding.
 
 **Industry alignment:** Uses Node.js standard `NODE_ENV` conventions (development/production) instead of custom naming schemes.
 
-**Single source of truth:** One variable in .env file determines image tags, runtime configuration, and feature flags—impossible to have mismatched settings.
+**Single source of truth:** ENV variable in .env file determines runtime behavior—impossible to have mismatched image tags and runtime config.
 
 **Clear intent:** `development` and `production` are explicit and unambiguous, unlike abbreviations or aliases.
 
-**Runtime configuration:** Frontend fetches configuration from backend API at SSR time, enabling universal Docker images that work on any domain without rebuilding.
+**Runtime configuration:** Frontend fetches configuration from backend API at SSR time, enabling true build-once-deploy-anywhere workflows.
 
 ## Security Checklist
 
@@ -152,10 +163,12 @@ Environment differentiation is **entirely controlled by .env file content**, not
 
 ### Image Tags
 
-| Environment | Backend | Frontend |
-|------------|---------|----------|
-| Development | `ghcr.io/delphian/tronrelic/backend:development` | `ghcr.io/delphian/tronrelic/frontend:development` |
-| Production | `ghcr.io/delphian/tronrelic/backend:production` | `ghcr.io/delphian/tronrelic/frontend:production` |
+All environments use the same images:
+
+| Service | Image |
+|---------|-------|
+| Backend | `ghcr.io/delphian/tronrelic/backend:production` |
+| Frontend | `ghcr.io/delphian/tronrelic/frontend:production` |
 
 ### Container Names (identical for all environments)
 
@@ -167,30 +180,35 @@ Environment differentiation is **entirely controlled by .env file content**, not
 ## Migration from Old System
 
 **Deprecated tags (no longer used):**
-- `:dev` (replaced by `:development`)
-- `:latest` (replaced by `:production`)
+- `:development` (replaced by `:production` for all environments)
+- `:dev` (replaced by `:production` for all environments)
+- `:latest` (not used)
 
 **Required changes:**
-1. Update CI/CD workflows to use `:development`/`:production` tags only
-2. Update deployment scripts to use `ENV` instead of `IMAGE_TAG` + `NODE_ENV`
-3. Replace environment-specific docker-compose files with unified docker-compose.yml
-4. Remove `-prod`/-dev` suffixes from container names
-5. Frontend removes NEXT_PUBLIC_* build-time variables, uses runtime config from backend API
+1. Update CI/CD workflows to always tag as `:production`
+2. Update docker-compose.yml to use hardcoded `:production` tags (no `${ENV}` variable substitution)
+3. ENV variable now controls runtime behavior only, not image selection
+4. Deployment scripts pull `:production` images for all environments
 
 **Migration procedure:**
-1. Deploy CI/CD updates to build new tags
-2. Update docker-compose.yml to use `${ENV}` for image tags
-3. Update .env files on servers with `ENV` variable
-4. Stop and remove old containers with environment suffixes
-5. Start new containers with unified names
-6. Verify runtime configuration loads correctly
-7. Clean up old Docker images with deprecated tags
+1. Update GitHub Actions workflow to build `:production` tags only
+2. Update docker-compose.yml to reference `:production` images
+3. Pull new `:production` images on all servers: `docker compose pull`
+4. Restart containers: `docker compose up -d`
+5. Verify ENV variable in .env controls runtime behavior correctly
+6. Clean up old Docker images: `docker image prune -af`
 
 ## Troubleshooting
 
-**Wrong image tag pulled:**
+**Images not updating after deployment:**
+- Run `docker compose pull` to fetch latest `:production` images
+- Check that CI/CD successfully pushed new images to GHCR
+- Verify image digest: `docker image inspect ghcr.io/delphian/tronrelic/backend:production`
+
+**Wrong runtime behavior:**
 - Check `ENV` value in .env file (must be exactly `development` or `production`)
-- Run `docker compose config` to verify image resolution
+- Verify container picked up ENV: `docker exec tronrelic-backend env | grep NODE_ENV`
+- Restart containers if ENV was changed: `docker compose restart`
 
 **Container name conflicts:**
 - Stop old containers: `docker stop tronrelic-backend-prod tronrelic-backend-dev`
