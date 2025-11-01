@@ -176,10 +176,10 @@ docker exec -it tronrelic-redis redis-cli
 
 TronRelic uses GitHub Actions for automated image building with unified Docker standards:
 
-**Workflow file:** `.github/workflows/docker-publish.yml`
+**Workflow file:** `.github/workflows/prod-publish.yml`
 
 **Pipeline behavior:**
-1. Triggered on push to `main` or `dev` branches
+1. Triggered on push to `main` branch only (production releases)
 2. Runs all tests (unit and integration)
 3. Builds backend and frontend images (only if tests pass)
 4. Tags all images as `:production` (single tag, no environment-specific tags)
