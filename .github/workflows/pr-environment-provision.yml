@@ -1,0 +1,175 @@
+name: Provision PR Environment
+
+on:
+  workflow_run:
+    workflows: ["Build and Push PR Images"]
+    types:
+      - completed
+
+jobs:
+  provision:
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - name: Extract PR number
+        id: pr
+        run: |
+          PR_NUMBER=$(echo "${{ github.event.workflow_run.head_branch }}" | grep -oP 'pull/\K[0-9]+' || echo "")
+
+          if [ -z "$PR_NUMBER" ]; then
+            # Try to get PR number from associated pull requests
+            PR_NUMBER=$(gh api repos/${{ github.repository }}/pulls \
+              --jq ".[] | select(.head.ref==\"${{ github.event.workflow_run.head_branch }}\") | .number" \
+              | head -1)
+          fi
+
+          if [ -z "$PR_NUMBER" ]; then
+            echo "❌ Could not extract PR number from workflow run"
+            exit 1
+          fi
+
+          echo "number=$PR_NUMBER" >> $GITHUB_OUTPUT
+          echo "Found PR #$PR_NUMBER"
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Install doctl
+        uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.DO_API_TOKEN }}
+
+      - name: Check if droplet already exists
+        id: check
+        run: |
+          DROPLET_NAME="tronrelic-pr-${{ steps.pr.outputs.number }}"
+
+          if doctl compute droplet list --format Name --no-header | grep -q "^${DROPLET_NAME}$"; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "⚠️ Droplet $DROPLET_NAME already exists, skipping creation"
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "✅ Droplet $DROPLET_NAME does not exist, will create"
+          fi
+
+      - name: Create droplet
+        if: steps.check.outputs.exists == 'false'
+        id: create
+        run: |
+          DROPLET_NAME="tronrelic-pr-${{ steps.pr.outputs.number }}"
+
+          echo "Creating droplet: $DROPLET_NAME"
+
+          doctl compute droplet create "$DROPLET_NAME" \
+            --size s-2vcpu-4gb-amd \
+            --region sgp1 \
+            --image ubuntu-25-04-x64 \
+            --ssh-keys ${{ secrets.DO_SSH_KEY_FINGERPRINT }} \
+            --wait \
+            --format ID,Name,PublicIPv4 \
+            --no-header
+
+          echo "✅ Droplet created successfully"
+
+      - name: Get droplet IP
+        id: ip
+        run: |
+          DROPLET_NAME="tronrelic-pr-${{ steps.pr.outputs.number }}"
+
+          # Wait a moment for droplet to be fully ready
+          sleep 10
+
+          DROPLET_IP=$(doctl compute droplet list \
+            --format Name,PublicIPv4 \
+            --no-header \
+            | grep "^${DROPLET_NAME}" \
+            | awk '{print $2}')
+
+          if [ -z "$DROPLET_IP" ]; then
+            echo "❌ Could not retrieve droplet IP"
+            exit 1
+          fi
+
+          echo "ip=$DROPLET_IP" >> $GITHUB_OUTPUT
+          echo "✅ Droplet IP: $DROPLET_IP"
+
+      - name: Extract Docker image tags
+        id: images
+        run: |
+          # Get the image tag from the workflow run (this was built in docker-publish-pr.yml)
+          # The tag format is: pr-{sanitized-branch}-{short-sha}
+          BRANCH="${{ github.event.workflow_run.head_branch }}"
+          SHA="${{ github.event.workflow_run.head_sha }}"
+          SHORT_SHA=$(echo "$SHA" | cut -c1-7)
+
+          # Sanitize branch name same way as docker-publish-pr.yml
+          SANITIZED_BRANCH=$(echo "$BRANCH" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9._-]/-/g')
+          IMAGE_TAG="pr-${SANITIZED_BRANCH}-${SHORT_SHA}"
+
+          echo "tag=$IMAGE_TAG" >> $GITHUB_OUTPUT
+          echo "backend_image=ghcr.io/${{ github.repository }}/backend:${IMAGE_TAG}" >> $GITHUB_OUTPUT
+          echo "frontend_image=ghcr.io/${{ github.repository }}/frontend:${IMAGE_TAG}" >> $GITHUB_OUTPUT
+
+      - name: Post success comment on PR
+        if: steps.check.outputs.exists == 'false'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const prNumber = ${{ steps.pr.outputs.number }};
+            const dropletIp = '${{ steps.ip.outputs.ip }}';
+            const imageTag = '${{ steps.images.outputs.tag }}';
+            const backendImage = '${{ steps.images.outputs.backend_image }}';
+            const frontendImage = '${{ steps.images.outputs.frontend_image }}';
+
+            const comment = `## ✅ Environment provisioned for PR #${prNumber}
+
+            **Droplet Information:**
+            - **Name:** \`tronrelic-pr-${prNumber}\`
+            - **IP Address:** \`${dropletIp}\`
+            - **Expected DNS:** \`pr-${prNumber}.dev.tronrelic.com\`
+
+            **Docker Images:**
+            - **Backend:** \`${backendImage}\`
+            - **Frontend:** \`${frontendImage}\`
+
+            **SSH Access:**
+            \`\`\`bash
+            ssh root@${dropletIp}
+            \`\`\`
+
+            ⚠️ **Note:** Application deployment is not yet configured. This is a bare Ubuntu 25.04 droplet.
+            `;
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+              body: comment
+            });
+
+      - name: Post already exists comment on PR
+        if: steps.check.outputs.exists == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const prNumber = ${{ steps.pr.outputs.number }};
+
+            const comment = `## ⚠️ Environment already exists for PR #${prNumber}
+
+            Droplet \`tronrelic-pr-${prNumber}\` is already running. Skipping creation.
+
+            If you need to recreate the environment, manually destroy the droplet first:
+            \`\`\`bash
+            doctl compute droplet delete tronrelic-pr-${prNumber} --force
+            \`\`\`
+            `;
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+              body: comment
+            });

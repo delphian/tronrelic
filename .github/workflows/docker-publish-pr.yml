@@ -1,0 +1,67 @@
+name: Build and Push PR Images
+
+on:
+  pull_request:
+    branches:
+      - dev
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Sanitize branch name for Docker tag
+        id: prep
+        run: |
+          # Convert branch name to lowercase and replace invalid characters
+          BRANCH_NAME="${{ github.head_ref }}"
+          SANITIZED_BRANCH=$(echo "$BRANCH_NAME" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9._-]/-/g')
+          SHORT_SHA=$(echo "${{ github.event.pull_request.head.sha }}" | cut -c1-7)
+          IMAGE_TAG="pr-${SANITIZED_BRANCH}-${SHORT_SHA}"
+
+          echo "branch=$SANITIZED_BRANCH" >> $GITHUB_OUTPUT
+          echo "tag=$IMAGE_TAG" >> $GITHUB_OUTPUT
+          echo "short_sha=$SHORT_SHA" >> $GITHUB_OUTPUT
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push backend image
+        run: |
+          docker build --target backend \
+            -t ghcr.io/${{ github.repository }}/backend:${{ steps.prep.outputs.tag }} \
+            .
+          docker push ghcr.io/${{ github.repository }}/backend:${{ steps.prep.outputs.tag }}
+
+      - name: Build and push frontend image
+        run: |
+          docker build --target frontend-prod \
+            -t ghcr.io/${{ github.repository }}/frontend:${{ steps.prep.outputs.tag }} \
+            .
+          docker push ghcr.io/${{ github.repository }}/frontend:${{ steps.prep.outputs.tag }}
+
+      - name: Images built successfully
+        run: |
+          echo "✅ Pull request Docker images built and pushed to GHCR"
+          echo ""
+          echo "PR: #${{ github.event.pull_request.number }} - ${{ github.event.pull_request.title }}"
+          echo "Source branch: ${{ github.head_ref }}"
+          echo "Target branch: dev"
+          echo "Image tag: ${{ steps.prep.outputs.tag }}"
+          echo ""
+          echo "Backend: ghcr.io/${{ github.repository }}/backend:${{ steps.prep.outputs.tag }}"
+          echo "Frontend: ghcr.io/${{ github.repository }}/frontend:${{ steps.prep.outputs.tag }}"
+          echo ""
+          echo "To test these images before merging, update your docker-compose.yml:"
+          echo "  image: ghcr.io/${{ github.repository }}/backend:${{ steps.prep.outputs.tag }}"
+          echo "  image: ghcr.io/${{ github.repository }}/frontend:${{ steps.prep.outputs.tag }}"
