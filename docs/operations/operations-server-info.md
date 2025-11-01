@@ -376,7 +376,7 @@ sudo systemctl reload nginx
 2. **This document** (`docs/operations/operations-server-info.md`)
    - Update IP addresses in server tables and examples
 3. **GitHub Actions workflows:**
-   - `.github/workflows/docker-publish.yml` (builds for both environments)
+   - `.github/workflows/prod-publish.yml` (builds production images)
 4. **Nginx configuration on servers:**
    - `/etc/nginx/sites-available/tronrelic` (server_name directive)
 5. **Server .env files:**
