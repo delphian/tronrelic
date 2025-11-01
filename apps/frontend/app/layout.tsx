@@ -4,7 +4,7 @@ import { getServerConfig, type RuntimeConfig } from '../lib/serverConfig';
 import { buildMetadata, SITE_NAME } from '../lib/seo';
 import './globals.css';
 import { Providers } from './providers';
-import { NavBar } from '../components/layout/NavBar';
+import { MainHeader } from '../components/layout/MainHeader';
 import { BlockTicker } from '../components/layout/BlockTicker';
 
 /**
@@ -121,7 +121,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
       </head>
       <body>
         <Providers>
-          <NavBar />
+          <MainHeader />
           <BlockTicker />
           <main>
             {children}

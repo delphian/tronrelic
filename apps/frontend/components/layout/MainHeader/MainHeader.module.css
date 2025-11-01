@@ -1,0 +1,128 @@
+/**
+ * MainHeader Component CSS Module
+ *
+ * Scoped styles for the primary site header with database-driven navigation,
+ * logo, and utility controls (theme toggle, wallet connection).
+ */
+
+.header {
+    width: 100%;
+}
+
+.container {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--spacing-9) var(--container-padding-desktop);
+    width: min(var(--breakpoint-desktop), 100%);
+    margin: 0 auto;
+    gap: var(--spacing-6);
+}
+
+.logo {
+    font-weight: var(--font-weight-bold);
+    font-size: var(--font-size-lg);
+    letter-spacing: var(--letter-spacing-tight);
+    flex-shrink: 0;
+}
+
+.nav_section {
+    flex: 1;
+    min-width: 0; /* Allow flexbox to shrink */
+}
+
+/* Wallet Container and Controls */
+.controls {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-5);
+    flex-shrink: 0;
+}
+
+/**
+ * Connect Wallet Button - Premium Design
+ *
+ * Enhanced wallet connection button with strong visual hierarchy and premium
+ * appearance. Features a bold gradient, prominent icon treatment, and clear
+ * disabled state communication. The design balances trust and modernity while
+ * integrating a subtle "Coming Soon" indicator that doesn't overwhelm the CTA.
+ *
+ * Design decisions:
+ * - Stronger gradient for visual impact and depth
+ * - Larger icon with glow effect for immediate recognition
+ * - Bold border to define button boundaries clearly
+ * - Prominent shadow for elevation and importance
+ * - Grayscale treatment for disabled state clarity
+ */
+.connect_wallet_btn {
+    position: relative;
+    background: linear-gradient(135deg, rgba(75, 140, 255, 0.28), rgba(109, 163, 255, 0.22));
+    border: var(--border-width-medium) solid rgba(75, 140, 255, 0.6);
+    color: var(--color-text);
+    font-weight: var(--font-weight-semibold);
+    font-size: var(--font-size-base);
+    padding: var(--spacing-5) var(--spacing-9) var(--spacing-5) var(--spacing-8);
+    border-radius: var(--radius-full);
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacing-5);
+    cursor: not-allowed;
+    transition: all var(--transition-base);
+    box-shadow: 0 4px 16px rgba(75, 140, 255, 0.2),
+                0 2px 8px rgba(0, 0, 0, 0.3);
+    backdrop-filter: blur(12px);
+    opacity: var(--opacity-70);
+}
+
+.connect_wallet_btn:hover {
+    border-color: rgba(75, 140, 255, 0.75);
+    box-shadow: 0 6px 20px rgba(75, 140, 255, 0.28),
+                0 3px 10px rgba(0, 0, 0, 0.35);
+    transform: translateY(-1px);
+    opacity: var(--opacity-80);
+}
+
+.connect_wallet_btn:focus-visible {
+    outline: var(--focus-outline-width) solid var(--focus-outline-color);
+    outline-offset: var(--focus-outline-offset);
+    box-shadow: var(--focus-shadow),
+                0 6px 20px rgba(75, 140, 255, 0.28);
+    opacity: var(--opacity-85);
+}
+
+/**
+ * Wallet Icon Styling
+ *
+ * Prominent icon treatment with enhanced glow effect to emphasize the wallet
+ * connection action. The larger size and stronger shadow make the icon a
+ * focal point while maintaining balance with the text.
+ */
+.wallet_icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: #8bb5ff;
+    filter: drop-shadow(0 0 6px rgba(75, 140, 255, 0.5));
+}
+
+/**
+ * Coming Soon Badge - Subtle Indicator
+ *
+ * Refined badge design that communicates feature status without competing
+ * with the main button text. Uses muted colors and smaller scale to act as
+ * supplementary information rather than primary content.
+ */
+.coming_soon_badge {
+    display: inline-flex;
+    align-items: center;
+    padding: var(--spacing-1) var(--spacing-4);
+    background: rgba(150, 190, 255, 0.14);
+    border: var(--border-width-thin) solid rgba(150, 190, 255, 0.25);
+    border-radius: var(--radius-full);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-bold);
+    letter-spacing: 0.06em;
+    color: rgba(200, 220, 255, 0.8);
+    text-transform: uppercase;
+    margin-left: var(--spacing-3);
+}

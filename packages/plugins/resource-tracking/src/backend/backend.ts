@@ -208,6 +208,31 @@ export const resourceTrackingBackendPlugin = definePlugin({
         });
 
         context.logger.info('WebSocket subscription handlers registered');
+
+        // Register navigation menu items (memory-only, recreated on each startup)
+        // First, ensure Analytics category container exists
+        const analyticsCategory = await context.menuService.create({
+            namespace: 'main',
+            label: 'Analytics',
+            icon: 'BarChart3',
+            order: 30,
+            parent: null,
+            enabled: true
+            // No url - this is a container/category node
+        });
+
+        // Register Resource Explorer under Analytics category
+        await context.menuService.create({
+            namespace: 'main',
+            label: 'Resource Explorer',
+            url: '/resources',
+            icon: 'Activity',
+            order: 10,
+            parent: analyticsCategory._id!,
+            enabled: true
+        });
+
+        context.logger.info('Navigation menu items registered (Analytics category and Resource Explorer)');
     },
 
     /**

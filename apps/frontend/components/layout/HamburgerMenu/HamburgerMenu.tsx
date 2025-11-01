@@ -83,8 +83,8 @@ export interface IHamburgerMenuProps {
  * - Backdrop overlay to focus attention and enable click-to-close
  *
  * The component uses CSS container queries to automatically show/hide based on
- * the triggerWidth prop. No JavaScript width detection needed - CSS handles
- * the responsive behavior declaratively.
+ * the triggerWidth prop. Because CSS variables cannot be used in container query
+ * conditions, we inject the literal breakpoint value via an inline style tag.
  *
  * @param props - Component configuration
  * @param props.triggerWidth - Pixel width that triggers hamburger mode
@@ -103,6 +103,15 @@ export function HamburgerMenu({
     const [isOpen, setIsOpen] = useState(false);
     const panelRef = useRef<HTMLDivElement>(null);
     const buttonRef = useRef<HTMLButtonElement>(null);
+
+    /**
+     * Generate unique instance ID for this component.
+     *
+     * Each HamburgerMenu instance needs a unique container name so that
+     * the injected container query styles don't conflict across multiple
+     * instances with different trigger widths.
+     */
+    const instanceId = useRef(`hm-${Math.random().toString(36).substr(2, 9)}`).current;
 
     /**
      * Closes the menu panel.
@@ -183,63 +192,87 @@ export function HamburgerMenu({
     }, [isOpen]);
 
     return (
-        <div
-            className={`${styles.container} ${className}`}
-            style={
-                {
-                    '--hamburger-trigger-width': `${triggerWidth}px`
-                } as React.CSSProperties
-            }
-        >
-            {/* Hamburger button - only visible when container is narrow */}
-            <button
-                ref={buttonRef}
-                className={styles.hamburger_button}
-                onClick={toggleMenu}
-                aria-label={ariaLabel}
-                aria-expanded={isOpen}
-                aria-controls="hamburger-menu-panel"
-            >
-                <Menu size={24} />
-            </button>
+        <>
+            {/*
+              * Injected container query with literal breakpoint value.
+              *
+              * CSS variables (var()) cannot be used in container query conditions,
+              * so we inject the literal triggerWidth value via this style tag.
+              * Each instance gets a unique container name to prevent conflicts.
+              *
+              * This approach keeps all styling in the CSS Module except for the
+              * dynamic breakpoint, which must be injected as literal CSS.
+              */}
+            <style>{`
+                @container ${instanceId} (max-width: ${triggerWidth}px) {
+                    .hamburger_button_${instanceId} {
+                        display: inline-flex;
+                    }
+                    .normal_content_${instanceId} {
+                        display: none;
+                    }
+                }
+            `}</style>
 
-            {/* Normal navigation content - hidden when hamburger is visible */}
-            <div className={styles.normal_content}>
-                {children}
-            </div>
-
-            {/* Backdrop overlay - only visible when menu is open */}
-            {isOpen && (
-                <div className={styles.backdrop} aria-hidden="true" />
-            )}
-
-            {/* Slideout panel */}
             <div
-                ref={panelRef}
-                id="hamburger-menu-panel"
-                className={`${styles.panel} ${isOpen ? styles.panel_open : ''}`}
-                role="dialog"
-                aria-modal="true"
-                aria-label="Navigation menu"
+                className={`${styles.container} ${className}`}
+                style={
+                    {
+                        containerType: 'inline-size',
+                        containerName: instanceId
+                    } as React.CSSProperties
+                }
             >
-                {/* Close button */}
+                {/* Hamburger button - only visible when container is narrow */}
                 <button
-                    className={styles.close_button}
-                    onClick={closeMenu}
-                    aria-label="Close menu"
+                    ref={buttonRef}
+                    className={`${styles.hamburger_button} hamburger_button_${instanceId}`}
+                    onClick={toggleMenu}
+                    aria-label={ariaLabel}
+                    aria-expanded={isOpen}
+                    aria-controls="hamburger-menu-panel"
                 >
-                    <X size={24} />
+                    <Menu size={24} />
                 </button>
 
-                {/* Menu items */}
-                <nav className={styles.menu_items}>
-                    {items.map((item, index) => (
-                        <div key={index} className={styles.menu_item} onClick={closeMenu}>
-                            {item}
-                        </div>
-                    ))}
-                </nav>
+                {/* Normal navigation content - hidden when hamburger is visible */}
+                <div className={`${styles.normal_content} normal_content_${instanceId}`}>
+                    {children}
+                </div>
+
+                {/* Backdrop overlay - only visible when menu is open */}
+                {isOpen && (
+                    <div className={styles.backdrop} aria-hidden="true" />
+                )}
+
+                {/* Slideout panel */}
+                <div
+                    ref={panelRef}
+                    id="hamburger-menu-panel"
+                    className={`${styles.panel} ${isOpen ? styles.panel_open : ''}`}
+                    role="dialog"
+                    aria-modal="true"
+                    aria-label="Navigation menu"
+                >
+                    {/* Close button */}
+                    <button
+                        className={styles.close_button}
+                        onClick={closeMenu}
+                        aria-label="Close menu"
+                    >
+                        <X size={24} />
+                    </button>
+
+                    {/* Menu items */}
+                    <nav className={styles.menu_items}>
+                        {items.map((item, index) => (
+                            <div key={index} className={styles.menu_item} onClick={closeMenu}>
+                                {item}
+                            </div>
+                        ))}
+                    </nav>
+                </div>
             </div>
-        </div>
+        </>
     );
 }
