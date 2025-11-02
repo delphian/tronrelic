@@ -160,7 +160,7 @@ export function WhalesTab({ context, settings, setSettings, onSave, saving }: IW
                         <input
                             id="whaleDetectionEnabled"
                             type="checkbox"
-                            checked={settings.whaleDetectionEnabled}
+                            checked={settings.whaleDetectionEnabled ?? false}
                             onChange={(e) =>
                                 setSettings({ ...settings, whaleDetectionEnabled: e.target.checked })
                             }

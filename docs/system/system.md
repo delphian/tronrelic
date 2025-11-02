@@ -33,6 +33,7 @@ TronRelic uses runtime configuration to enable universal Docker images that work
 **Key architectural decisions:**
 
 - **Backend as source of truth** - SystemConfigService stores siteUrl in MongoDB (editable via admin UI)
+- **Chain parameters included** - TRON network parameters injected alongside URL config for instant energy/TRX conversions
 - **SSR fetch and cache** - Frontend fetches config once at container startup, caches in memory
 - **HTML injection** - Config injected as `window.__RUNTIME_CONFIG__` for instant client access
 - **No NEXT_PUBLIC_* in production** - Frontend doesn't rely on build-time variables for client code
@@ -41,6 +42,7 @@ TronRelic uses runtime configuration to enable universal Docker images that work
 - Why Next.js build-time inlining breaks universal Docker images
 - How SSR-injected runtime config solves the problem
 - Backend environment variable configuration (SITE_URL in .env)
+- Using chain parameters in frontend components for energy/TRX conversions
 - Deployment workflow for fresh installs
 - Troubleshooting WebSocket connection issues
 

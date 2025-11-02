@@ -37,6 +37,23 @@
  */
 
 /**
+ * TRON blockchain chain parameters for frontend calculations.
+ * Subset of IChainParameters containing only the parameters object.
+ */
+export interface ChainParametersConfig {
+    /** Total energy available per day across the network */
+    totalEnergyLimit: number;
+    /** Current energy limit (may differ from total during adjustments) */
+    totalEnergyCurrentLimit: number;
+    /** Total TRX frozen/staked for energy across network (in SUN) */
+    totalFrozenForEnergy: number;
+    /** Derived ratio: energy units per TRX when staking */
+    energyPerTrx: number;
+    /** Cost to burn energy (SUN per energy unit) */
+    energyFee: number;
+}
+
+/**
  * Runtime configuration shape returned by backend.
  * Must match the response structure from /api/config/public.
  */
@@ -47,6 +64,8 @@ export interface RuntimeConfig {
     apiUrl: string;
     /** WebSocket connection URL (e.g., "https://tronrelic.com") */
     socketUrl: string;
+    /** TRON blockchain chain parameters for energy/TRX conversions */
+    chainParameters: ChainParametersConfig;
 }
 
 /**
@@ -130,7 +149,14 @@ export async function getServerConfig(): Promise<RuntimeConfig> {
         const fallbackConfig: RuntimeConfig = {
             siteUrl: siteUrl.replace(/\/$/, ''),
             apiUrl: `${backendUrl}/api`.replace(/\/$/, ''),
-            socketUrl: backendUrl.replace(/\/$/, '')
+            socketUrl: backendUrl.replace(/\/$/, ''),
+            chainParameters: {
+                totalEnergyLimit: 180_000_000_000,
+                totalEnergyCurrentLimit: 180_000_000_000,
+                totalFrozenForEnergy: 32_000_000_000_000_000, // 32M TRX in SUN
+                energyPerTrx: 5625, // Approximate ratio: 180B / 32M TRX
+                energyFee: 100
+            }
         };
 
         // Cache the fallback config (don't retry every request)

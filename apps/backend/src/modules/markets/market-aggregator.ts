@@ -18,7 +18,7 @@ export class MarketAggregator {
     private fetchersInitialised = false;
     private readonly reliabilityService = new MarketReliabilityService();
     private readonly affiliateService = new MarketAffiliateService();
-    private readonly chainParamsService = new ChainParametersService();
+    private readonly chainParamsService = ChainParametersService.getInstance();
 
     constructor(private readonly redis: RedisClient, private readonly websocket = WebSocketService.getInstance()) {}
 
