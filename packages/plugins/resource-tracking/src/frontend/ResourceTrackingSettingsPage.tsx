@@ -63,7 +63,11 @@ export function ResourceTrackingSettingsPage({ context }: { context: IFrontendPl
             try {
                 const response = await api.get('/plugins/resource-tracking/settings');
                 if (response.settings) {
-                    setSettings(response.settings);
+                    // Merge API response with default values to ensure all fields are defined
+                    setSettings((currentSettings) => ({
+                        ...currentSettings,
+                        ...response.settings
+                    }));
                 }
             } catch (error) {
                 console.error('Failed to load settings:', error);
