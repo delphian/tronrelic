@@ -131,7 +131,6 @@ export function createDelegationTrackerObserver(
 
             try {
                 await this.database.insertOne('transactions', delegationRecord);
-
                 // Transaction persisted successfully (debug logging removed for performance)
             } catch (error) {
                 // Duplicate key error (E11000) - transaction already exists due to unique index on txId
