@@ -2,6 +2,115 @@ import type { IPluginDatabase, ISystemLogService, IPluginWebSocketManager } from
 import type { IDelegationTransaction, ISummationData, IResourceTrackingConfig, IAggregationState } from '../shared/types/index.js';
 
 /**
+ * Initialize aggregation state on first run by finding the earliest transaction.
+ *
+ * Creates the initial aggregation state with lastProcessedBlock set to one block
+ * before the earliest available transaction. This ensures the first summation run
+ * will include the earliest transaction.
+ *
+ * @param database - Plugin database for querying transactions and storing state
+ * @param logger - Logger for recording initialization
+ * @returns Initialized state, or null if no transactions available yet
+ */
+async function initializeAggregationState(
+    database: IPluginDatabase,
+    logger: ISystemLogService
+): Promise<IAggregationState | null> {
+    // Find the earliest block in transactions collection
+    const earliestTxs = await database.find<IDelegationTransaction>(
+        'transactions',
+        {},
+        { sort: { blockNumber: 1 }, limit: 1 }
+    );
+
+    if (earliestTxs.length === 0) {
+        logger.info('No transactions found - waiting for blockchain sync to populate data');
+        return null;
+    }
+
+    const initialBlock = earliestTxs[0].blockNumber;
+    const state: IAggregationState = {
+        lastProcessedBlock: initialBlock - 1, // Start before first transaction
+        lastAggregationTime: new Date()
+    };
+
+    await database.set('aggregation-state', state);
+    logger.info(
+        { initialBlock, lastProcessedBlock: state.lastProcessedBlock },
+        'Initialized block aggregation state'
+    );
+
+    return state;
+}
+
+/**
+ * Detect and skip gaps in transaction data caused by purge job deletions.
+ *
+ * When the purge job deletes old transactions (older than retention period), it may
+ * create a gap between the summation cursor and the earliest available transaction.
+ * This function detects such gaps and auto-advances the cursor to avoid processing
+ * hundreds of empty block ranges.
+ *
+ * @param database - Plugin database for querying transactions and updating state
+ * @param logger - Logger for recording gap detection and cursor adjustments
+ * @param currentState - Current aggregation state with lastProcessedBlock cursor
+ * @param blocksPerInterval - Size of each summation interval in blocks
+ * @returns Updated state if gap was detected and skipped, otherwise null
+ */
+async function detectAndSkipGap(
+    database: IPluginDatabase,
+    logger: ISystemLogService,
+    currentState: IAggregationState,
+    blocksPerInterval: number
+): Promise<IAggregationState | null> {
+    // Find earliest available transaction
+    const earliestAvailableTxs = await database.find<IDelegationTransaction>(
+        'transactions',
+        {},
+        { sort: { blockNumber: 1 }, limit: 1 }
+    );
+
+    if (earliestAvailableTxs.length === 0) {
+        return null; // No transactions available, nothing to skip
+    }
+
+    const earliestAvailableBlock = earliestAvailableTxs[0].blockNumber;
+    const nextBlockToProcess = currentState.lastProcessedBlock + 1;
+
+    // Check if there's a gap (purge job deleted old data)
+    if (nextBlockToProcess >= earliestAvailableBlock) {
+        return null; // No gap detected, cursor is aligned with available data
+    }
+
+    // Gap detected - calculate new cursor position
+    const gapSize = earliestAvailableBlock - nextBlockToProcess;
+    const newCursor = earliestAvailableBlock - blocksPerInterval;
+
+    logger.warn(
+        {
+            oldCursor: currentState.lastProcessedBlock,
+            newCursor,
+            gapSize,
+            earliestAvailableBlock,
+            blocksSkipped: newCursor - currentState.lastProcessedBlock,
+            reason: 'Purge job deleted old transactions - auto-advancing cursor'
+        },
+        'Detected gap in transaction data - skipping forward'
+    );
+
+    // Create updated state
+    const updatedState: IAggregationState = {
+        lastProcessedBlock: newCursor,
+        lastAggregationTime: new Date()
+    };
+
+    // Persist the updated cursor
+    await database.set('aggregation-state', updatedState);
+
+    return updatedState;
+}
+
+/**
  * Aggregate delegation transaction data into summation records using block-based windows.
  *
  * This job operates on fixed block ranges (default 300 blocks ≈ 5 minutes at 3-second blocks)
@@ -36,45 +145,28 @@ export async function runSummationJob(
     const MAX_TRANCHES_PER_RUN = 3;
 
     try {
-        // Step 1: Load persistent aggregation state
+        // Step 1: Load or initialize aggregation state
         let state = await database.get<IAggregationState>('aggregation-state');
 
-        // Initialize state if first run
         if (!state) {
-            // Find the earliest block in transactions collection
-            const earliestTxs = await database.find<IDelegationTransaction>(
-                'transactions',
-                {},
-                { sort: { blockNumber: 1 }, limit: 1 }
-            );
-
-            if (earliestTxs.length === 0) {
-                logger.info('No transactions found - waiting for blockchain sync to populate data');
-                return;
-            }
-
-            const initialBlock = earliestTxs[0].blockNumber;
-            state = {
-                lastProcessedBlock: initialBlock - 1, // Start before first transaction
-                lastAggregationTime: new Date()
-            };
-
-            await database.set('aggregation-state', state);
-            logger.info(
-                { initialBlock, lastProcessedBlock: state.lastProcessedBlock },
-                'Initialized block aggregation state'
-            );
-            return; // Wait for next run to process first range
+            await initializeAggregationState(database, logger);
+            return; // Wait for initialization or next run to process first range
         }
 
         // Step 2: Load configuration to get blocks per interval
         const config = await database.get<IResourceTrackingConfig>('config');
         if (!config) {
-            logger.warn('No configuration found - cannot determine blocksPerInterval');
+            logger.error('No configuration found - cannot determine blocksPerInterval');
             return;
         }
 
         const blocksPerInterval = config.blocksPerInterval;
+
+        // Step 2.5: Detect and skip gaps caused by purge job
+        const updatedState = await detectAndSkipGap(database, logger, state, blocksPerInterval);
+        if (updatedState) {
+            state = updatedState; // Use the updated state with skipped cursor
+        }
 
         // Step 3: Process up to MAX_TRANCHES_PER_RUN tranches
         let tranchesProcessed = 0;
@@ -140,9 +232,9 @@ export async function runSummationJob(
                 { sort: { blockNumber: 1, timestamp: 1 } }
             );
 
-            // Warn if no transactions found - delegation activity is normally constant on TRON
+            // Error if no transactions found - delegation activity is normally constant on TRON
             if (transactions.length === 0) {
-                logger.warn(
+                logger.error(
                     {
                         tranche: tranche + 1,
                         startBlock,
