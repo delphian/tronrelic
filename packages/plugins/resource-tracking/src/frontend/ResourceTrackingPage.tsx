@@ -60,7 +60,7 @@ const CHART_COLORS = {
 } as const;
 
 /**
- * Resource Tracking Page Component.
+ * Resource Explorer Page Component.
  *
  * Displays resource delegation trends with configurable time periods and line toggles.
  * Shows energy and bandwidth delegation/reclaim flows over time using line charts
@@ -484,11 +484,16 @@ export function ResourceTrackingPage({ context }: { context: IFrontendPluginCont
             <header className={styles.header}>
                 <h1 className={styles.title}>
                     <Activity size={28} style={{ display: 'inline-block', marginRight: '0.5rem', verticalAlign: 'middle' }} />
-                    Resource Usage Tracker
+                    Resource Explorer
                 </h1>
-                <p className={styles.subtitle}>
-                    Track how energy and bandwidth resources flow across the TRON network through delegation and reclaim transactions. TRON users stake TRX to generate energy (for smart contracts) and bandwidth (for transactions), then delegate these resources to other addresses or reclaim them. This dashboard visualizes network-wide patterns showing resources being shared, reclaimed, and net changes over time. Values are in TRX equivalence - the amount of TRX staked to generate the observed energy and bandwidth.
-                </p>
+                <div className={styles.subtitle}>
+                    <p className={styles.subtitleShort}>
+                        Visualize TRON network energy and bandwidth delegation patterns with real-time trend analysis.
+                    </p>
+                    <p className={styles.subtitleFull}>
+                        Monitor TRON energy and bandwidth delegation activity across the network. This dashboard tracks how users stake TRX to generate resources, delegate them to other addresses, and reclaim them over time. View network-wide patterns showing resource flows, net changes, and transaction volume trends. All values displayed in TRX equivalence based on staking amounts.
+                    </p>
+                </div>
             </header>
 
             <ResourceDelegationsCard

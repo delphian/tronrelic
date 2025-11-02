@@ -1,7 +1,7 @@
 import type { IPluginManifest } from '@tronrelic/types';
 
 /**
- * Resource Tracking plugin manifest.
+ * Resource Explorer plugin manifest.
  *
  * This plugin tracks TRON resource delegation and reclaim transactions to provide
  * insights into network energy and bandwidth flows over time. It stores individual
@@ -10,7 +10,7 @@ import type { IPluginManifest } from '@tronrelic/types';
  */
 export const resourceTrackingManifest: IPluginManifest = {
     id: 'resource-tracking',
-    title: 'Resource Tracking',
+    title: 'Resource Explorer',
     version: '1.0.0',
     description: 'Track TRON resource delegation and reclaim patterns over time',
     author: 'TronRelic',

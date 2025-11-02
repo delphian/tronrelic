@@ -35,5 +35,16 @@ export async function createResourceTrackingIndexes(context: IPluginContext): Pr
 
     logger.info('Created indexes for summations collection');
 
+    // Index for whale delegations collection
+    // - txId unique index prevents duplicate whale transaction storage
+    // - timestamp descending index optimizes recent whale queries
+    // - resourceType + timestamp composite index supports filtered whale queries
+    const whaleDelegationsCollection = database.getCollection('whale-delegations');
+    await whaleDelegationsCollection.createIndex({ txId: 1 }, { unique: true });
+    await whaleDelegationsCollection.createIndex({ timestamp: -1 }); // Descending for recent queries
+    await whaleDelegationsCollection.createIndex({ resourceType: 1, timestamp: -1 });
+
+    logger.info('Created indexes for whale-delegations collection');
+
     logger.info('Resource tracking indexes created successfully');
 }

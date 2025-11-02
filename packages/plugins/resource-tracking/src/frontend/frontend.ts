@@ -5,14 +5,14 @@ import { ResourceTrackingSettingsPage } from './ResourceTrackingSettingsPage';
 import './styles.css';
 
 /**
- * Resource Tracking frontend plugin definition.
+ * Resource Explorer frontend plugin definition.
  *
  * This plugin provides:
  * - Resource delegation trends dashboard with time-series charts
  * - Time period selector for data visualization (1d, 7d, 30d, 6m)
  * - Line toggles for filtering energy vs bandwidth flows
  * - Admin settings page for retention policy configuration
- * - Navigation menu item for resource tracking
+ * - Navigation menu item for resource explorer
  * - Scoped CSS styles for plugin-specific components
  */
 export const resourceTrackingFrontendPlugin = definePlugin({
@@ -37,7 +37,7 @@ export const resourceTrackingFrontendPlugin = definePlugin({
         {
             path: '/resources',
             component: ResourceTrackingPage,
-            title: 'Resource Tracking - TronRelic',
+            title: 'Resource Explorer - TronRelic',
             description: 'Monitor TRON energy and bandwidth delegation trends'
         }
     ],
@@ -47,7 +47,7 @@ export const resourceTrackingFrontendPlugin = definePlugin({
         {
             path: '/system/plugins/resource-tracking/settings',
             component: ResourceTrackingSettingsPage,
-            title: 'Resource Tracking Settings - TronRelic',
+            title: 'Resource Explorer Settings - TronRelic',
             description: 'Configure data retention and purge frequency for resource tracking'
         }
     ]
