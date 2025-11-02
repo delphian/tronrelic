@@ -275,7 +275,7 @@ jobs:
 
           echo "Creating temporary HTTP-only Nginx configuration for Let's Encrypt verification..."
           ssh root@"$DROPLET_IP" << NGINXEOF
-            cat > /etc/nginx/sites-available/tronrelic << 'INNEREOF'
+            cat > /etc/nginx/sites-available/tronrelic << INNEREOF
 server {
     listen 80;
     listen [::]:80;
@@ -321,7 +321,7 @@ INNEREOF
 
           echo "Updating Nginx configuration with SSL..."
           ssh root@"$DROPLET_IP" << NGINXEOF
-            cat > /etc/nginx/sites-available/tronrelic << 'INNEREOF'
+            cat > /etc/nginx/sites-available/tronrelic << INNEREOF
 # HTTP - Redirect to HTTPS
 server {
     listen 80;
