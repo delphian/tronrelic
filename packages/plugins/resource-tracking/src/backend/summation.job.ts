@@ -142,7 +142,7 @@ export async function runSummationJob(
     websocket: IPluginWebSocketManager
 ): Promise<void> {
     const jobStartTime = new Date();
-    const MAX_TRANCHES_PER_RUN = 3;
+    const MAX_TRANCHES_PER_RUN = 4;
 
     try {
         // Step 1: Load or initialize aggregation state
