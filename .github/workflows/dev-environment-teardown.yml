@@ -72,6 +72,20 @@ jobs:
             if [ "$CURRENT_TIME" -ge "$EXPIRES_AT" ]; then
               echo "🗑️ EXPIRED - Destroying $DROPLET_NAME..."
 
+              # Check if droplet has reserved IP assigned
+              RESERVED_IP="${{ secrets.DO_DEV_IP }}"
+              ATTACHED_DROPLET_ID=$(doctl compute floating-ip get "$RESERVED_IP" --format DropletID --no-header 2>/dev/null || echo "")
+
+              if [ "$ATTACHED_DROPLET_ID" = "$DROPLET_ID" ]; then
+                echo "📌 Unassigning reserved IP $RESERVED_IP from droplet..."
+                if doctl compute floating-ip-action unassign "$RESERVED_IP" --wait 2>/dev/null; then
+                  echo "✅ Reserved IP unassigned"
+                else
+                  echo "⚠️ Failed to unassign reserved IP (may already be unassigned)"
+                fi
+              fi
+
+              # Destroy droplet
               if doctl compute droplet delete "$DROPLET_ID" --force; then
                 echo "✅ Successfully destroyed $DROPLET_NAME"
                 DESTROYED_COUNT=$((DESTROYED_COUNT + 1))
