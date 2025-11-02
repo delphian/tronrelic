@@ -7,7 +7,7 @@ import {
     type IHttpNext
 } from '@tronrelic/types';
 import { resourceTrackingManifest } from '../manifest.js';
-import type { IResourceTrackingConfig, ISummationData } from '../shared/types/index.js';
+import type { IResourceTrackingConfig, ISummationData, IWhaleDelegation } from '../shared/types/index.js';
 import type { ISummationResponse } from '../shared/types/api.js';
 import { createResourceTrackingIndexes } from './install-indexes.js';
 import { runSummationJob } from './summation.job.js';
@@ -21,7 +21,7 @@ let summationInterval: NodeJS.Timeout | null = null;
 let purgeInterval: NodeJS.Timeout | null = null;
 
 /**
- * Resource Tracking backend plugin implementation.
+ * Resource Explorer backend plugin implementation.
  *
  * This plugin tracks TRON resource delegation and reclaim transactions, storing
  * individual transaction details with a 48-hour TTL and aggregating statistics
@@ -55,7 +55,9 @@ export const resourceTrackingBackendPlugin = definePlugin({
                 detailsRetentionDays: 2, // 48 hours for transaction details
                 summationRetentionMonths: 6, // 6 months for aggregated data
                 purgeFrequencyHours: 1, // Run purge job every hour
-                blocksPerInterval: 100 // 100 blocks = ~5 minutes at 20 blocks/minute (3-second block time)
+                blocksPerInterval: 100, // 100 blocks = ~5 minutes at 20 blocks/minute (3-second block time)
+                whaleDetectionEnabled: false, // Whale detection disabled by default
+                whaleThresholdTrx: 1_000_000 // 1M TRX minimum for whale detection
             };
             await context.database.set('config', defaultConfig);
             context.logger.info({ config: defaultConfig }, 'Created default resource tracking configuration');
@@ -363,7 +365,9 @@ export const resourceTrackingBackendPlugin = definePlugin({
                         detailsRetentionDays,
                         summationRetentionMonths,
                         purgeFrequencyHours,
-                        blocksPerInterval
+                        blocksPerInterval,
+                        whaleDetectionEnabled,
+                        whaleThresholdTrx
                     } = req.body;
 
                     // Validate and sanitize settings
@@ -371,7 +375,9 @@ export const resourceTrackingBackendPlugin = definePlugin({
                         detailsRetentionDays: Math.max(Number(detailsRetentionDays) || 2, 1),
                         summationRetentionMonths: Math.max(Number(summationRetentionMonths) || 6, 1),
                         purgeFrequencyHours: Math.max(Number(purgeFrequencyHours) || 1, 1),
-                        blocksPerInterval: Math.max(Number(blocksPerInterval) || 300, 100)
+                        blocksPerInterval: Math.max(Number(blocksPerInterval) || 300, 100),
+                        whaleDetectionEnabled: Boolean(whaleDetectionEnabled),
+                        whaleThresholdTrx: Math.max(Number(whaleThresholdTrx) || 1_000_000, 100_000) // Min 100k TRX
                     };
 
                     await pluginContext.database.set('config', config);
@@ -400,6 +406,52 @@ export const resourceTrackingBackendPlugin = definePlugin({
                 }
             },
             description: 'Update resource tracking configuration'
+        },
+        {
+            method: 'GET',
+            path: '/whales/recent',
+            handler: async (req: IHttpRequest, res: IHttpResponse, next: IHttpNext) => {
+                try {
+                    const limit = Math.min(Number(req.query.limit) || 50, 100); // Max 100 whales
+                    const resourceType = req.query.resourceType ? Number(req.query.resourceType) : undefined;
+
+                    // Build query filter
+                    const filter: Record<string, unknown> = {};
+                    if (resourceType !== undefined && (resourceType === 0 || resourceType === 1)) {
+                        filter.resourceType = resourceType;
+                    }
+
+                    // Query whale delegations sorted by timestamp descending (most recent first)
+                    const whales = await pluginContext.database.find<IWhaleDelegation>(
+                        'whale-delegations',
+                        filter,
+                        {
+                            sort: { timestamp: -1 },
+                            limit
+                        }
+                    );
+
+                    // Format response with ISO timestamps
+                    const formattedWhales = whales.map(whale => ({
+                        txId: whale.txId,
+                        timestamp: whale.timestamp.toISOString(),
+                        fromAddress: whale.fromAddress,
+                        toAddress: whale.toAddress,
+                        resourceType: whale.resourceType,
+                        amountTrx: whale.amountTrx,
+                        blockNumber: whale.blockNumber
+                    }));
+
+                    res.json({
+                        success: true,
+                        whales: formattedWhales,
+                        count: formattedWhales.length
+                    });
+                } catch (error) {
+                    next(error);
+                }
+            },
+            description: 'Get recent whale delegations (high-value resource delegations)'
         }
     ] as IApiRouteConfig[],
 
