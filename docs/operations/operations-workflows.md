@@ -341,21 +341,31 @@ TronRelic automatically creates temporary testing droplets on every push to the 
    - Tag as `dev-{short-sha}` (e.g., `dev-a1b2c3d`)
    - Push to GitHub Container Registry
 
-2. **Create testing droplet:**
+2. **Claim reserved IP:**
+   - Check if reserved IP is currently attached to another droplet
+   - Destroy existing droplet if present (replaces previous testing environment)
+   - Reserved IP ready for new droplet
+
+3. **Create testing droplet:**
    - Create droplet named `tronrelic-dev-{short-sha}`
    - Tag droplet with `tronrelic-dev-testing` and `expires-at-{timestamp}`
+   - Assign reserved IP to droplet
    - Expiration time: 30 minutes from creation
 
-3. **Provision environment:**
+4. **Provision environment:**
    - Install Docker and Docker Compose
+   - Install Nginx and Certbot
+   - Obtain Let's Encrypt SSL certificate for domain
+   - Configure Nginx reverse proxy with trusted SSL (HTTP redirects to HTTPS)
    - Copy docker-compose.yml to `/opt/tronrelic`
-   - Create .env with `ENV=development` and dev-specific image tags
+   - Create .env with `ENV=development` and domain URLs
    - Pull dev branch images from GHCR
    - Start all containers (MongoDB, Redis, backend, frontend)
-   - Run health checks
+   - Run health checks via Nginx (HTTPS)
 
-4. **Workflow summary provides:**
-   - Droplet IP address and SSH access instructions
+5. **Workflow summary provides:**
+   - Domain name and reserved IP address
+   - SSH access instructions
    - Application URLs (frontend, backend API, system monitor)
    - Expiration time in UTC
    - Docker image tags used
@@ -365,21 +375,25 @@ TronRelic automatically creates temporary testing droplets on every push to the 
 1. List all droplets tagged `tronrelic-dev-testing`
 2. Parse `expires-at-{timestamp}` tag from each droplet
 3. Compare expiration time to current time
-4. Delete expired droplets
-5. Log cleanup actions to workflow summary
+4. Unassign reserved IP from expired droplets
+5. Delete expired droplets
+6. Log cleanup actions to workflow summary
 
 ### Differences from Permanent Dev Server
 
-| Feature | Permanent Dev Server (dev.tronrelic.com) | Temporary Testing Droplet |
-|---------|------------------------------------------|---------------------------|
-| **Domain** | dev.tronrelic.com (fixed DNS) | Direct IP access only |
+| Feature | Permanent Dev Server | Temporary Testing Droplet |
+|---------|---------------------|---------------------------|
+| **Domain** | Custom domain (if configured) | Uses `DO_DEV_HOST` (e.g., dev.tronrelic.com) |
+| **IP Address** | Static droplet IP | Reserved IP (reused across all testing droplets) |
 | **Lifespan** | Permanent (until manually destroyed) | 30 minutes (auto-destroys) |
 | **Trigger** | Manual deployment script | Automatic on every dev push |
 | **Image source** | `:production` images (same as prod) | `:dev-{sha}` images (dev branch code) |
 | **Purpose** | Long-running development environment | Quick testing of specific commits |
 | **Cost** | $24/month (always running) | ~$0.017 per push (~$5/month for 10 pushes/day) |
-| **SSL/HTTPS** | Available with Let's Encrypt | HTTP only (no domain) |
+| **SSL/HTTPS** | Let's Encrypt (trusted certificate) | Let's Encrypt (trusted certificate) |
+| **Nginx** | Yes (reverse proxy) | Yes (reverse proxy) |
 | **Use case** | Ongoing development and testing | Testing specific features before merging |
+| **Replacement** | Each push replaces previous | Only one testing droplet active at a time |
 
 ### Accessing a Dev Testing Environment
 
@@ -398,23 +412,37 @@ After pushing to the `dev` branch, find the testing environment details in the G
 
 Droplet Information:
 - Name: tronrelic-dev-a1b2c3d
-- IP Address: 123.45.67.89
+- Domain: dev.tronrelic.com
+- Reserved IP: 139.59.222.237
 - Lifespan: 30 minutes
 - Auto-destroy: 2025-11-02 19:30:00 UTC
 
-SSH Access:
-ssh root@123.45.67.89
+Setup Status:
+- ✅ Ubuntu 25.04 droplet created
+- ✅ Reserved IP (139.59.222.237) assigned
+- ✅ Let's Encrypt SSL certificate obtained for dev.tronrelic.com
+- ✅ Nginx reverse proxy configured
+- ✅ Docker images pulled and containers started
+- ✅ Health checks passed
 
 Access Application:
-- Frontend: http://123.45.67.89:3000
-- Backend API: http://123.45.67.89:4000/api
-- System Monitor: http://123.45.67.89:3000/system
+- Frontend: https://dev.tronrelic.com/
+- Backend API: https://dev.tronrelic.com/api
+- System Monitor: https://dev.tronrelic.com/system
+
+SSH Access:
+ssh root@139.59.222.237
+
+Note:
+- Uses Let's Encrypt trusted SSL certificate (no browser warnings!)
+- Traffic routed through Nginx reverse proxy (identical to production)
+- Reserved IP will be released when droplet is destroyed
 ```
 
 **Connect to testing droplet:**
 ```bash
-# SSH to testing droplet (IP from workflow summary)
-ssh root@<DROPLET_IP>
+# SSH to testing droplet (use reserved IP from workflow summary)
+ssh root@<RESERVED_IP>
 
 # View container status
 cd /opt/tronrelic
@@ -424,11 +452,22 @@ docker compose ps
 docker compose logs -f backend
 docker compose logs -f frontend
 
-# Test backend health
-curl http://localhost:4000/api/health
+# Test backend health (via Nginx HTTPS with trusted certificate)
+curl https://<DOMAIN>/api/health
 
-# Test frontend
-curl http://localhost:3000/
+# Test frontend (via Nginx HTTPS)
+curl https://<DOMAIN>/
+
+# Check Nginx status
+systemctl status nginx
+nginx -t
+
+# View Nginx logs
+tail -f /var/log/nginx/access.log
+tail -f /var/log/nginx/error.log
+
+# Check Let's Encrypt certificate
+certbot certificates
 ```
 
 ### Cost and Resource Usage
@@ -449,6 +488,37 @@ curl http://localhost:3000/
 - PR droplets persist until PR is closed (potentially days/weeks)
 - Dev testing droplets expire after 30 minutes regardless
 - Both use same droplet size and region
+
+### Required GitHub Secrets
+
+The dev testing environment requires additional GitHub secrets to be configured:
+
+**Navigate to repository Settings → Secrets and variables → Actions** and add:
+
+| Secret Name | Description | Example Value | Required |
+|------------|-------------|---------------|----------|
+| `DO_DEV_IP` | Digital Ocean reserved IP address | `139.59.222.237` | ✅ Yes |
+| `DO_DEV_HOST` | Domain name pointing to reserved IP | `dev.tronrelic.com` | ✅ Yes |
+| `SSL_EMAIL` | Email for Let's Encrypt notifications | `admin@tronrelic.com` | ⚠️ Optional (defaults to admin@tronrelic.com) |
+
+**Setup instructions:**
+
+1. **Create reserved IP in Digital Ocean:**
+   ```bash
+   doctl compute floating-ip create --region sgp1
+   # Note the IP address (e.g., 139.59.222.237)
+   ```
+
+2. **Point DNS to reserved IP:**
+   - Add A record: `dev.tronrelic.com` → `139.59.222.237`
+   - Wait for DNS propagation (use `nslookup dev.tronrelic.com` to verify)
+
+3. **Add GitHub secrets:**
+   - `DO_DEV_IP`: The reserved IP from step 1
+   - `DO_DEV_HOST`: The domain from step 2
+   - `SSL_EMAIL` (optional): Email for certificate expiration notices
+
+**Note:** These secrets are separate from the existing `PROD_DROPLET_IP` and `DEV_DROPLET_IP` in your local `.env` file. The testing environment uses a reserved IP that gets reassigned to new droplets, while permanent servers use static IPs.
 
 ### Manual Cleanup (Optional)
 
@@ -497,11 +567,30 @@ doctl compute droplet delete <DROPLET_ID> --force
 - Verify droplet has correct tags: `doctl compute droplet get <NAME> --format Tags`
 
 **Health checks fail:**
-- SSH to droplet: `ssh root@<DROPLET_IP>`
+- SSH to droplet: `ssh root@<RESERVED_IP>`
+- Check Nginx status first: `systemctl status nginx`
+- Test Nginx config: `nginx -t`
+- Check Nginx logs: `tail -100 /var/log/nginx/error.log`
+- Check Let's Encrypt certificate: `certbot certificates`
 - Check container logs: `cd /opt/tronrelic && docker compose logs`
 - Verify .env file created: `cat /opt/tronrelic/.env`
 - Check container status: `docker compose ps`
+- Test direct container access: `curl http://localhost:4000/api/health`
+- Restart Nginx if needed: `systemctl restart nginx`
 - Restart containers if needed: `docker compose restart`
+
+**Let's Encrypt certificate fails to obtain:**
+- Verify DNS resolution: `nslookup <DOMAIN>` (should return reserved IP)
+- Check port 80 is open: `curl http://<DOMAIN>/.well-known/acme-challenge/test`
+- Review certbot logs: `journalctl -u certbot`
+- Manually retry: `certbot certonly --nginx -d <DOMAIN> --non-interactive --agree-tos --email admin@tronrelic.com`
+- Check Let's Encrypt rate limits: https://letsencrypt.org/docs/rate-limits/
+
+**Reserved IP assignment fails:**
+- Check if reserved IP exists: `doctl compute floating-ip list`
+- Verify DO_DEV_IP secret is set correctly in GitHub repository secrets
+- Check Digital Ocean API token permissions (requires floating-ip management)
+- Manually unassign: `doctl compute floating-ip-action unassign <RESERVED_IP>`
 
 ## Environment-Specific Configuration
 

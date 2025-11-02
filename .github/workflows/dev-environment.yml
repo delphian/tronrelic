@@ -72,6 +72,43 @@ jobs:
         with:
           token: ${{ secrets.DO_API_TOKEN }}
 
+      - name: Check if reserved IP is attached to existing droplet
+        id: check_ip
+        run: |
+          RESERVED_IP="${{ secrets.DO_DEV_IP }}"
+
+          echo "Checking reserved IP: $RESERVED_IP"
+
+          # Get droplet ID that currently has this reserved IP
+          EXISTING_DROPLET_ID=$(doctl compute floating-ip get "$RESERVED_IP" --format DropletID --no-header 2>/dev/null || echo "")
+
+          if [ -n "$EXISTING_DROPLET_ID" ] && [ "$EXISTING_DROPLET_ID" != "0" ]; then
+            echo "existing_droplet_id=$EXISTING_DROPLET_ID" >> $GITHUB_OUTPUT
+
+            # Get droplet name
+            EXISTING_DROPLET_NAME=$(doctl compute droplet get "$EXISTING_DROPLET_ID" --format Name --no-header 2>/dev/null || echo "unknown")
+            echo "existing_droplet_name=$EXISTING_DROPLET_NAME" >> $GITHUB_OUTPUT
+
+            echo "⚠️ Reserved IP is currently attached to droplet: $EXISTING_DROPLET_NAME (ID: $EXISTING_DROPLET_ID)"
+          else
+            echo "✅ Reserved IP is available"
+            echo "existing_droplet_id=" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Destroy existing droplet if present
+        if: steps.check_ip.outputs.existing_droplet_id != ''
+        run: |
+          EXISTING_DROPLET_ID="${{ steps.check_ip.outputs.existing_droplet_id }}"
+          EXISTING_DROPLET_NAME="${{ steps.check_ip.outputs.existing_droplet_name }}"
+
+          echo "Destroying existing droplet: $EXISTING_DROPLET_NAME (ID: $EXISTING_DROPLET_ID)"
+
+          doctl compute droplet delete "$EXISTING_DROPLET_ID" --force
+
+          echo "✅ Existing droplet destroyed"
+          echo "Waiting 10 seconds for cleanup..."
+          sleep 10
+
       - name: Create droplet with expiration tag
         id: create
         run: |
@@ -92,27 +129,36 @@ jobs:
 
           echo "✅ Droplet created successfully"
 
-      - name: Get droplet IP
-        id: ip
+      - name: Assign reserved IP to droplet
+        id: assign_ip
         run: |
           DROPLET_NAME="${{ steps.prep.outputs.droplet_name }}"
+          RESERVED_IP="${{ secrets.DO_DEV_IP }}"
 
-          # Wait a moment for droplet to be fully ready
-          sleep 10
+          # Get droplet ID
+          DROPLET_ID=$(doctl compute droplet list --format ID,Name --no-header | grep "$DROPLET_NAME" | awk '{print $1}')
 
-          DROPLET_IP=$(doctl compute droplet list \
-            --format Name,PublicIPv4 \
-            --no-header \
-            | grep "^${DROPLET_NAME}" \
-            | awk '{print $2}')
-
-          if [ -z "$DROPLET_IP" ]; then
-            echo "❌ Could not retrieve droplet IP"
+          if [ -z "$DROPLET_ID" ]; then
+            echo "❌ Could not find droplet ID for $DROPLET_NAME"
             exit 1
           fi
 
-          echo "ip=$DROPLET_IP" >> $GITHUB_OUTPUT
-          echo "✅ Droplet IP: $DROPLET_IP"
+          echo "Assigning reserved IP $RESERVED_IP to droplet $DROPLET_NAME (ID: $DROPLET_ID)..."
+
+          doctl compute floating-ip-action assign "$RESERVED_IP" "$DROPLET_ID" --wait
+
+          echo "ip=$RESERVED_IP" >> $GITHUB_OUTPUT
+          echo "✅ Reserved IP assigned: $RESERVED_IP"
+
+      - name: Set droplet access info
+        id: ip
+        run: |
+          RESERVED_IP="${{ steps.assign_ip.outputs.ip }}"
+          DOMAIN="${{ secrets.DO_DEV_HOST }}"
+
+          echo "ip=$RESERVED_IP" >> $GITHUB_OUTPUT
+          echo "domain=$DOMAIN" >> $GITHUB_OUTPUT
+          echo "✅ Droplet accessible at: $DOMAIN ($RESERVED_IP)"
 
       - name: Install Docker on droplet
         run: |
@@ -208,6 +254,161 @@ jobs:
 
           echo "✅ Droplet setup complete"
 
+      - name: Install and configure Nginx with Let's Encrypt
+        run: |
+          DROPLET_IP="${{ steps.ip.outputs.ip }}"
+          DOMAIN="${{ steps.ip.outputs.domain }}"
+
+          echo "Installing Nginx and Certbot..."
+          ssh root@"$DROPLET_IP" << 'EOF'
+            set -e
+
+            # Install Nginx and Certbot
+            apt-get install -y nginx certbot python3-certbot-nginx
+
+            # Start and enable Nginx
+            systemctl start nginx
+            systemctl enable nginx
+
+            echo "✅ Nginx and Certbot installed"
+          EOF
+
+          echo "Creating temporary HTTP-only Nginx configuration for Let's Encrypt verification..."
+          ssh root@"$DROPLET_IP" << NGINXEOF
+            cat > /etc/nginx/sites-available/tronrelic << 'INNEREOF'
+server {
+    listen 80;
+    listen [::]:80;
+    server_name $DOMAIN;
+
+    # Let's Encrypt verification
+    location /.well-known/acme-challenge/ {
+        root /var/www/html;
+    }
+
+    # Temporary: Allow traffic for initial setup
+    location / {
+        return 200 'Server provisioning...';
+        add_header Content-Type text/plain;
+    }
+}
+INNEREOF
+
+            # Enable site
+            ln -sf /etc/nginx/sites-available/tronrelic /etc/nginx/sites-enabled/tronrelic
+            rm -f /etc/nginx/sites-enabled/default
+
+            # Test and reload Nginx
+            nginx -t
+            systemctl reload nginx
+
+            echo "✅ Temporary Nginx configuration active"
+          NGINXEOF
+
+          echo "Obtaining Let's Encrypt SSL certificate for $DOMAIN..."
+          ssh root@"$DROPLET_IP" << CERTEOF
+            set -e
+
+            # Obtain SSL certificate
+            certbot certonly --nginx -d $DOMAIN \
+              --non-interactive \
+              --agree-tos \
+              --email ${{ secrets.SSL_EMAIL || 'admin@tronrelic.com' }} \
+              --keep-until-expiring
+
+            echo "✅ SSL certificate obtained"
+          CERTEOF
+
+          echo "Updating Nginx configuration with SSL..."
+          ssh root@"$DROPLET_IP" << NGINXEOF
+            cat > /etc/nginx/sites-available/tronrelic << 'INNEREOF'
+# HTTP - Redirect to HTTPS
+server {
+    listen 80;
+    listen [::]:80;
+    server_name $DOMAIN;
+
+    # Let's Encrypt validation
+    location /.well-known/acme-challenge/ {
+        root /var/www/html;
+    }
+
+    # Redirect all other HTTP traffic to HTTPS
+    location / {
+        return 301 https://\$server_name\$request_uri;
+    }
+}
+
+# HTTPS
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name $DOMAIN;
+
+    # SSL Configuration (Let's Encrypt)
+    ssl_certificate /etc/letsencrypt/live/$DOMAIN/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/$DOMAIN/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers HIGH:!aNULL:!MD5;
+    ssl_prefer_server_ciphers on;
+
+    # Security headers
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+
+    # File upload size limit (100MB)
+    client_max_body_size 100m;
+
+    # Increase timeouts for long-running requests
+    proxy_read_timeout 300s;
+    proxy_connect_timeout 75s;
+
+    # Backend API
+    location /api {
+        proxy_pass http://127.0.0.1:4000;
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+
+    # WebSocket connections
+    location /socket.io {
+        proxy_pass http://127.0.0.1:4000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_cache_bypass \$http_upgrade;
+    }
+
+    # Frontend (Next.js)
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+}
+INNEREOF
+
+            # Test and reload Nginx with SSL configuration
+            nginx -t
+            systemctl reload nginx
+
+            echo "✅ Nginx configured with Let's Encrypt SSL"
+          NGINXEOF
+
+          echo "✅ Nginx setup complete with trusted SSL certificate"
+
       - name: Copy docker-compose.yml to droplet
         run: |
           DROPLET_IP="${{ steps.ip.outputs.ip }}"
@@ -238,12 +439,14 @@ jobs:
           MONGO_PASSWORD=$(openssl rand -hex 32)
           REDIS_PASSWORD=$(openssl rand -hex 32)
 
+          DOMAIN="${{ steps.ip.outputs.domain }}"
+
           echo "Creating .env file..."
           {
             echo "# TronRelic Dev Environment - Auto-generated by GitHub Actions"
             echo "ENV=development"
-            echo "SITE_URL=http://$DROPLET_IP:3000"
-            echo "SITE_WS=http://$DROPLET_IP:4000"
+            echo "SITE_URL=https://$DOMAIN"
+            echo "SITE_WS=https://$DOMAIN"
             echo "SITE_BACKEND=http://backend:4000"
             echo "ADMIN_API_TOKEN=$ADMIN_TOKEN"
             echo "TRONGRID_API_KEY=$TRONGRID_KEY_1"
@@ -309,15 +512,15 @@ jobs:
 
       - name: Verify deployment health
         run: |
-          DROPLET_IP="${{ steps.ip.outputs.ip }}"
+          DOMAIN="${{ steps.ip.outputs.domain }}"
 
-          echo "Checking backend health..."
+          echo "Checking backend health via Nginx (HTTPS with trusted certificate)..."
           MAX_ATTEMPTS=10
           ATTEMPT=0
 
           while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
-            if curl -f -s http://"$DROPLET_IP":4000/api/health > /dev/null 2>&1; then
-              echo "✅ Backend is healthy"
+            if curl -f -s https://"$DOMAIN"/api/health > /dev/null 2>&1; then
+              echo "✅ Backend is healthy (via Nginx)"
               break
             fi
 
@@ -330,9 +533,9 @@ jobs:
             echo "⚠️ Backend health check timed out (may still be starting)"
           fi
 
-          echo "Checking frontend..."
-          if curl -f -s http://"$DROPLET_IP":3000 > /dev/null 2>&1; then
-            echo "✅ Frontend is responding"
+          echo "Checking frontend via Nginx (HTTPS with trusted certificate)..."
+          if curl -f -s https://"$DOMAIN"/ > /dev/null 2>&1; then
+            echo "✅ Frontend is responding (via Nginx)"
           else
             echo "⚠️ Frontend not yet responding (may still be starting)"
           fi
@@ -341,6 +544,7 @@ jobs:
         run: |
           DROPLET_NAME="${{ steps.prep.outputs.droplet_name }}"
           DROPLET_IP="${{ steps.ip.outputs.ip }}"
+          DOMAIN="${{ steps.ip.outputs.domain }}"
           IMAGE_TAG="${{ steps.prep.outputs.tag }}"
           EXPIRES_AT="${{ steps.prep.outputs.expires_at }}"
           EXPIRES_AT_HUMAN=$(date -u -d @$EXPIRES_AT '+%Y-%m-%d %H:%M:%S UTC')
@@ -354,7 +558,8 @@ jobs:
 
           ### Droplet Information
           - **Name:** \`${DROPLET_NAME}\`
-          - **IP Address:** \`${DROPLET_IP}\`
+          - **Domain:** \`${DOMAIN}\`
+          - **Reserved IP:** \`${DROPLET_IP}\`
           - **Lifespan:** 30 minutes
           - **Auto-destroy:** ${EXPIRES_AT_HUMAN}
 
@@ -369,17 +574,24 @@ jobs:
 
           ### Setup Status
           - ✅ Ubuntu 25.04 droplet created
+          - ✅ Reserved IP (${DROPLET_IP}) assigned
+          - ✅ Let's Encrypt SSL certificate obtained for ${DOMAIN}
+          - ✅ Nginx reverse proxy configured
           - ✅ Docker and docker-compose installed
           - ✅ Deployment directory created (\`/opt/tronrelic\`)
           - ✅ Docker images pulled and containers started
           - ✅ Health checks passed
 
           ### Access Application
-          - **Frontend:** http://${DROPLET_IP}:3000
-          - **Backend API:** http://${DROPLET_IP}:4000/api
-          - **System Monitor:** http://${DROPLET_IP}:3000/system
+          - **Frontend:** https://${DOMAIN}/
+          - **Backend API:** https://${DOMAIN}/api
+          - **System Monitor:** https://${DOMAIN}/system
 
-          **Note:** Direct port access (no nginx). Containers may take 1-2 minutes to fully initialize.
+          **Note:**
+          - Uses Let's Encrypt trusted SSL certificate (no browser warnings!)
+          - Traffic routed through Nginx reverse proxy (identical to production)
+          - Containers may take 1-2 minutes to fully initialize
+          - Reserved IP will be released when droplet is destroyed
           EOF
 
           echo "✅ Workflow summary written"
