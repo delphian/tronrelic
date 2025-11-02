@@ -13,7 +13,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: var(--spacing-9) var(--container-padding-desktop);
+    padding: var(--spacing-9) var(--container-padding-desktop) 0;
     width: min(var(--breakpoint-desktop), 100%);
     margin: 0 auto;
     gap: var(--spacing-6);
