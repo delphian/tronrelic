@@ -52,6 +52,12 @@ export interface ChainParametersConfig {
     energyPerTrx: number;
     /** Cost to burn energy (SUN per energy unit) */
     energyFee: number;
+    /** Total bandwidth available per day across the network */
+    totalBandwidthLimit: number;
+    /** Total TRX frozen/staked for bandwidth across network (in SUN) */
+    totalFrozenForBandwidth: number;
+    /** Derived ratio: bandwidth units per TRX when staking */
+    bandwidthPerTrx: number;
 }
 
 /**
@@ -147,7 +153,10 @@ export function getRuntimeConfig(): RuntimeConfig {
             totalEnergyCurrentLimit: 180_000_000_000,
             totalFrozenForEnergy: 32_000_000_000_000_000, // 32M TRX in SUN
             energyPerTrx: 5625, // Approximate ratio: 180B / 32M TRX
-            energyFee: 100
+            energyFee: 100,
+            totalBandwidthLimit: 43_200_000_000, // 43.2B bandwidth per day
+            totalFrozenForBandwidth: 43_200_000_000_000_000, // 43.2M TRX in SUN
+            bandwidthPerTrx: 1000 // Approximate ratio: 43.2B / 43.2M TRX
         }
     };
 

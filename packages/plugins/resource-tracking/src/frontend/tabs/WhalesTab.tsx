@@ -6,6 +6,27 @@ import { AlertCircle } from 'lucide-react';
 import styles from '../ResourceTrackingSettingsPage.module.css';
 
 /**
+ * Get runtime configuration with chain parameters.
+ *
+ * Reads from window.__RUNTIME_CONFIG__ injected by SSR.
+ * Provides instant access to TRON network parameters without API calls.
+ *
+ * @returns Runtime config with chain parameters
+ */
+function getRuntimeConfig() {
+    if (typeof window === 'undefined') {
+        throw new Error('getRuntimeConfig can only be called client-side');
+    }
+    return (window as any).__RUNTIME_CONFIG__ || {
+        chainParameters: {
+            energyPerTrx: 5625,
+            energyFee: 100,
+            bandwidthPerTrx: 1000
+        }
+    };
+}
+
+/**
  * Settings interface for resource tracking plugin configuration.
  *
  * Represents the complete configuration state for the plugin including
@@ -77,7 +98,7 @@ export function WhalesTab({ context, settings, setSettings, onSave, saving }: IW
     /**
      * Load recent whale delegations from API.
      *
-     * Fetches the last 50 whale delegations sorted by timestamp descending.
+     * Fetches the last 10 whale delegations sorted by timestamp descending.
      * Called on component mount and after settings save.
      */
     async function loadWhales() {
@@ -85,7 +106,7 @@ export function WhalesTab({ context, settings, setSettings, onSave, saving }: IW
         setWhaleError(null);
 
         try {
-            const response = await api.get('/plugins/resource-tracking/whales/recent', { limit: 50 });
+            const response = await api.get('/plugins/resource-tracking/whales/recent', { limit: 10 });
             setWhales(response.whales || []);
         } catch (error) {
             console.error('Failed to load whale delegations:', error);
@@ -143,17 +164,18 @@ export function WhalesTab({ context, settings, setSettings, onSave, saving }: IW
     }
 
     return (
-        <div>
-            {/* Whale Configuration Form */}
-            <form
-                className={styles.form}
-                onSubmit={async (e) => {
-                    e.preventDefault();
-                    onSave();
-                    // Reload whales after save to reflect any new detections
-                    await loadWhales();
-                }}
-            >
+        <>
+            {/* Whale Configuration Form - Constrained Width */}
+            <div className={styles.formContainer}>
+                <form
+                    className={styles.form}
+                    onSubmit={async (e) => {
+                        e.preventDefault();
+                        onSave();
+                        // Reload whales after save to reflect any new detections
+                        await loadWhales();
+                    }}
+                >
                 {/* Whale Detection Enabled Toggle */}
                 <div className={styles.field}>
                     <label htmlFor="whaleDetectionEnabled" className={styles.label}>
@@ -181,7 +203,7 @@ export function WhalesTab({ context, settings, setSettings, onSave, saving }: IW
                     </label>
                     <p className={styles.description}>
                         Minimum delegation amount in TRX to qualify as a whale transaction.
-                        Default is 1,000,000 TRX (1M TRX). Applies to both energy and bandwidth delegations.
+                        Default is 2,000,000 TRX (2M TRX). Applies to both energy and bandwidth delegations.
                     </p>
                     <ui.Input
                         id="whaleThreshold"
@@ -195,6 +217,34 @@ export function WhalesTab({ context, settings, setSettings, onSave, saving }: IW
                         }
                         required
                     />
+                    {/* Threshold conversion display */}
+                    <div style={{
+                        marginTop: '0.5rem',
+                        fontSize: '0.875rem',
+                        color: 'var(--color-text-secondary)',
+                        fontFamily: 'var(--font-mono)'
+                    }}>
+                        {(() => {
+                            try {
+                                const config = getRuntimeConfig();
+                                const energyPerTrx = config.chainParameters?.energyPerTrx || 5625;
+                                const bandwidthPerTrx = config.chainParameters?.bandwidthPerTrx || 1000;
+                                const energyAmount = Math.floor(settings.whaleThresholdTrx * energyPerTrx);
+                                const bandwidthAmount = Math.floor(settings.whaleThresholdTrx * bandwidthPerTrx);
+                                return (
+                                    <>
+                                        <div>≈ {energyAmount.toLocaleString()} Energy</div>
+                                        <div style={{ marginTop: '0.25rem' }}>≈ {bandwidthAmount.toLocaleString()} Bandwidth</div>
+                                    </>
+                                );
+                            } catch {
+                                return <div>...</div>;
+                            }
+                        })()}
+                        <div style={{ marginTop: '0.5rem', fontSize: '0.75rem', fontStyle: 'italic' }}>
+                            (Conversions based on current network parameters)
+                        </div>
+                    </div>
                 </div>
 
                 {/* Action Buttons */}
@@ -208,8 +258,9 @@ export function WhalesTab({ context, settings, setSettings, onSave, saving }: IW
                     </ui.Button>
                 </div>
             </form>
+            </div>
 
-            {/* Recent Whale Delegations Section */}
+            {/* Recent Whale Delegations Section - Full Width */}
             <div className={styles.whaleSection}>
                 <h3 className={styles.whaleSectionTitle}>Recent Whale Delegations</h3>
                 <p className={styles.whaleSectionDescription}>
@@ -266,7 +317,30 @@ export function WhalesTab({ context, settings, setSettings, onSave, saving }: IW
                                                 {getResourceTypeName(whale.resourceType)}
                                             </span>
                                         </td>
-                                        <td className={styles.amountCell}>{formatTrx(whale.amountTrx)}</td>
+                                        <td className={styles.amountCell}>
+                                            <div>{formatTrx(whale.amountTrx)}</div>
+                                            <div style={{
+                                                fontSize: '0.75rem',
+                                                color: 'var(--color-text-secondary)',
+                                                marginTop: '0.25rem',
+                                                fontFamily: 'var(--font-mono)'
+                                            }}>
+                                                {(() => {
+                                                    try {
+                                                        const config = getRuntimeConfig();
+                                                        // Use correct ratio based on resource type with fallbacks
+                                                        const energyPerTrx = config.chainParameters?.energyPerTrx || 5625;
+                                                        const bandwidthPerTrx = config.chainParameters?.bandwidthPerTrx || 1000;
+                                                        const ratio = whale.resourceType === 1 ? energyPerTrx : bandwidthPerTrx;
+                                                        const nominalAmount = Math.floor(whale.amountTrx * ratio);
+                                                        const resourceName = whale.resourceType === 1 ? 'Energy' : 'Bandwidth';
+                                                        return `≈ ${nominalAmount.toLocaleString()} ${resourceName}`;
+                                                    } catch {
+                                                        return '';
+                                                    }
+                                                })()}
+                                            </div>
+                                        </td>
                                         <td>{whale.blockNumber.toLocaleString()}</td>
                                     </tr>
                                 ))}
@@ -275,6 +349,6 @@ export function WhalesTab({ context, settings, setSettings, onSave, saving }: IW
                     </div>
                 )}
             </div>
-        </div>
+        </>
     );
 }

@@ -22,6 +22,15 @@ export interface IChainParameters {
 
         /** Cost to burn energy (SUN per energy unit) */
         energyFee: number;
+
+        /** Total bandwidth available per day across the network */
+        totalBandwidthLimit: number;
+
+        /** Total TRX frozen/staked for bandwidth across network (in SUN) */
+        totalFrozenForBandwidth: number;
+
+        /** Derived ratio: bandwidth units per TRX when staking */
+        bandwidthPerTrx: number;
     };
 
     /** When these parameters were fetched from the blockchain */

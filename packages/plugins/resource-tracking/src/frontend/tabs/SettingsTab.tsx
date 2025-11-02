@@ -54,13 +54,14 @@ export function SettingsTab({ context, settings, setSettings, onSave, saving }: 
     const { ui } = context;
 
     return (
-        <form
-            className={styles.form}
-            onSubmit={(e) => {
-                e.preventDefault();
-                onSave();
-            }}
-        >
+        <div className={styles.formContainer}>
+            <form
+                className={styles.form}
+                onSubmit={(e) => {
+                    e.preventDefault();
+                    onSave();
+                }}
+            >
             {/* Details Retention */}
             <div className={styles.field}>
                 <label htmlFor="detailsRetention" className={styles.label}>
@@ -161,5 +162,6 @@ export function SettingsTab({ context, settings, setSettings, onSave, saving }: 
                 </ui.Button>
             </div>
         </form>
+        </div>
     );
 }
