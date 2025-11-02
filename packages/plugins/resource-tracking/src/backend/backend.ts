@@ -57,7 +57,7 @@ export const resourceTrackingBackendPlugin = definePlugin({
                 purgeFrequencyHours: 1, // Run purge job every hour
                 blocksPerInterval: 100, // 100 blocks = ~5 minutes at 20 blocks/minute (3-second block time)
                 whaleDetectionEnabled: false, // Whale detection disabled by default
-                whaleThresholdTrx: 1_000_000 // 1M TRX minimum for whale detection
+                whaleThresholdTrx: 2_000_000 // 2M TRX minimum for whale detection
             };
             await context.database.set('config', defaultConfig);
             context.logger.info({ config: defaultConfig }, 'Created default resource tracking configuration');
@@ -377,7 +377,7 @@ export const resourceTrackingBackendPlugin = definePlugin({
                         purgeFrequencyHours: Math.max(Number(purgeFrequencyHours) || 1, 1),
                         blocksPerInterval: Math.max(Number(blocksPerInterval) || 300, 100),
                         whaleDetectionEnabled: Boolean(whaleDetectionEnabled),
-                        whaleThresholdTrx: Math.max(Number(whaleThresholdTrx) || 1_000_000, 100_000) // Min 100k TRX
+                        whaleThresholdTrx: Math.max(Number(whaleThresholdTrx) || 2_000_000, 100_000) // Min 100k TRX
                     };
 
                     await pluginContext.database.set('config', config);

@@ -24,8 +24,11 @@
 }
 
 .container {
+    /* No max-width here - individual tabs control their own width constraints */
+}
+
+.formContainer {
     max-width: 600px;
-    padding: var(--spacing-12);
 }
 
 .form {
