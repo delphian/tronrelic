@@ -21,7 +21,7 @@ import { Input } from '../../../../components/ui/Input';
 import { Badge } from '../../../../components/ui/Badge';
 import { useModal } from '../../../../components/ui/ModalProvider';
 import { IconPickerModal } from '../../../../components/ui/IconPickerModal';
-import { Plus, Trash2, X, CheckCircle, AlertTriangle } from 'lucide-react';
+import { Plus, Trash2, X, CheckCircle, AlertTriangle, Copy } from 'lucide-react';
 import * as LucideIcons from 'lucide-react';
 import styles from './page.module.css';
 
@@ -118,6 +118,29 @@ export default function ThemePage() {
     };
 
     /**
+     * Copies the theme UUID to clipboard.
+     *
+     * Uses the navigator clipboard API with a fallback for older browsers.
+     */
+    const handleCopyUUID = async (uuid: string, e: React.MouseEvent) => {
+        e.stopPropagation(); // Prevent selecting the theme
+        try {
+            await navigator.clipboard.writeText(uuid);
+            // Could add a toast notification here if available
+        } catch (err) {
+            // Fallback for older browsers
+            const textarea = document.createElement('textarea');
+            textarea.value = uuid;
+            textarea.style.position = 'fixed';
+            textarea.style.opacity = '0';
+            document.body.appendChild(textarea);
+            textarea.select();
+            document.execCommand('copy');
+            document.body.removeChild(textarea);
+        }
+    };
+
+    /**
      * Opens the icon picker modal for selecting a Lucide icon.
      *
      * Displays a searchable grid of all available Lucide React icons,
@@ -194,7 +217,17 @@ export default function ThemePage() {
                                         onClick={() => handleSelectTheme(theme)}
                                     >
                                         <div className={styles.theme_item_header}>
-                                            <h3 className={styles.theme_name}>{theme.name}</h3>
+                                            <div className={styles.theme_name_wrapper}>
+                                                <h3 className={styles.theme_name}>{theme.name}</h3>
+                                                <Button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    icon={<Copy size={14} />}
+                                                    onClick={(e) => void handleCopyUUID(theme.id, e)}
+                                                    title={`Copy UUID: ${theme.id}`}
+                                                    className={styles.copy_uuid_button}
+                                                />
+                                            </div>
                                             {theme.isActive && <Badge tone="success">Active</Badge>}
                                         </div>
 
@@ -266,9 +299,6 @@ export default function ThemePage() {
                                 <label className={styles.form_label}>
                                     Icon
                                 </label>
-                                <p className={styles.form_hint}>
-                                    Select a Lucide icon for this theme
-                                </p>
                                 <div className={styles.icon_picker_wrapper}>
                                     <Button
                                         type="button"
@@ -307,6 +337,9 @@ export default function ThemePage() {
                                         </div>
                                     )}
                                 </div>
+                                <p className={styles.form_hint}>
+                                    Select a Lucide icon for this theme
+                                </p>
                             </div>
                         </div>
 

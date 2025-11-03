@@ -48,7 +48,7 @@
  * integrating a subtle "Coming Soon" indicator that doesn't overwhelm the CTA.
  *
  * Design decisions:
- * - Stronger gradient for visual impact and depth
+ * - Theme-aware gradient using primary color for consistency
  * - Larger icon with glow effect for immediate recognition
  * - Bold border to define button boundaries clearly
  * - Prominent shadow for elevation and importance
@@ -56,27 +56,27 @@
  */
 .connect_wallet_btn {
     position: relative;
-    background: linear-gradient(135deg, rgba(75, 140, 255, 0.28), rgba(109, 163, 255, 0.22));
-    border: var(--border-width-medium) solid rgba(75, 140, 255, 0.6);
+    background: linear-gradient(135deg, var(--color-primary-alpha-30), var(--color-primary-alpha-18));
+    border: var(--border-width-medium) solid var(--color-primary);
     color: var(--color-text);
     font-weight: var(--font-weight-semibold);
     font-size: var(--font-size-base);
-    padding: var(--spacing-5) var(--spacing-9) var(--spacing-5) var(--spacing-8);
+    padding: var(--spacing-3) var(--spacing-9) var(--spacing-3) var(--spacing-8);
     border-radius: var(--radius-full);
     display: inline-flex;
     align-items: center;
     gap: var(--spacing-5);
     cursor: not-allowed;
     transition: all var(--transition-base);
-    box-shadow: 0 4px 16px rgba(75, 140, 255, 0.2),
+    box-shadow: 0 4px 16px var(--color-primary-alpha-30),
                 0 2px 8px rgba(0, 0, 0, 0.3);
     backdrop-filter: blur(12px);
     opacity: var(--opacity-70);
 }
 
 .connect_wallet_btn:hover {
-    border-color: rgba(75, 140, 255, 0.75);
-    box-shadow: 0 6px 20px rgba(75, 140, 255, 0.28),
+    border-color: var(--color-primary-strong);
+    box-shadow: 0 6px 20px var(--color-primary-alpha-38),
                 0 3px 10px rgba(0, 0, 0, 0.35);
     transform: translateY(-1px);
     opacity: var(--opacity-80);
@@ -86,7 +86,7 @@
     outline: var(--focus-outline-width) solid var(--focus-outline-color);
     outline-offset: var(--focus-outline-offset);
     box-shadow: var(--focus-shadow),
-                0 6px 20px rgba(75, 140, 255, 0.28);
+                0 6px 20px var(--color-primary-alpha-38);
     opacity: var(--opacity-85);
 }
 
@@ -101,8 +101,8 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    color: #8bb5ff;
-    filter: drop-shadow(0 0 6px rgba(75, 140, 255, 0.5));
+    color: var(--color-primary);
+    filter: drop-shadow(0 0 6px var(--color-primary-alpha-38));
 }
 
 /**
@@ -116,13 +116,13 @@
     display: inline-flex;
     align-items: center;
     padding: var(--spacing-1) var(--spacing-4);
-    background: rgba(150, 190, 255, 0.14);
-    border: var(--border-width-thin) solid rgba(150, 190, 255, 0.25);
+    background: var(--color-secondary-alpha-15, var(--color-primary-alpha-15));
+    border: var(--border-width-thin) solid var(--color-secondary, var(--color-primary));
     border-radius: var(--radius-full);
     font-size: var(--font-size-xs);
     font-weight: var(--font-weight-bold);
     letter-spacing: 0.06em;
-    color: rgba(200, 220, 255, 0.8);
+    color: var(--color-secondary, var(--color-primary));
     text-transform: uppercase;
     margin-left: var(--spacing-3);
 }
