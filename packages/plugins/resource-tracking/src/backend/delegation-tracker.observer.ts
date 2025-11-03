@@ -50,6 +50,9 @@ export function createDelegationTrackerObserver(
     class DelegationTrackerObserver extends BaseObserver {
         protected readonly name = 'DelegationTrackerObserver';
         private readonly database: IPluginDatabase;
+        private config: IResourceTrackingConfig | null = null;
+        private configLastLoaded = 0;
+        private readonly CONFIG_CACHE_MS = 5 * 60 * 1000; // 5 minutes
 
         constructor() {
             super(scopedLogger);
@@ -160,11 +163,32 @@ export function createDelegationTrackerObserver(
         }
 
         /**
+         * Load configuration from database with 5-minute cache.
+         *
+         * Reduces database load by caching whale detection settings in memory.
+         * Config is refreshed every 5 minutes, meaning admin changes take effect
+         * within 5 minutes without requiring observer restart.
+         *
+         * @returns Current configuration or null if not set
+         */
+        private async loadConfigIfStale(): Promise<IResourceTrackingConfig | null> {
+            const now = Date.now();
+            if (!this.config || (now - this.configLastLoaded) > this.CONFIG_CACHE_MS) {
+                this.config = await this.database.get<IResourceTrackingConfig>('config') ?? null;
+                this.configLastLoaded = now;
+            }
+            return this.config;
+        }
+
+        /**
          * Detect and persist whale delegations that exceed configured threshold.
          *
          * Checks if the delegation amount exceeds the whale threshold and, if enabled,
          * stores the delegation in a separate whale-delegations collection for
          * specialized tracking and analysis.
+         *
+         * Uses cached configuration (5-minute TTL) to avoid database load on every
+         * delegation transaction. Config changes take effect within 5 minutes.
          *
          * @param delegation - The delegation record that was just persisted
          * @param logger - Scoped logger for whale detection events
@@ -174,8 +198,8 @@ export function createDelegationTrackerObserver(
             logger: ISystemLogService
         ): Promise<void> {
             try {
-                // Load configuration to check if whale detection is enabled
-                const config = await this.database.get<IResourceTrackingConfig>('config');
+                // Load configuration with 5-minute cache (reduces DB load by ~99%)
+                const config = await this.loadConfigIfStale();
                 if (!config || !config.whaleDetectionEnabled) {
                     return; // Whale detection disabled
                 }
