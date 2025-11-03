@@ -128,6 +128,8 @@ jobs:
             --no-header
 
           echo "✅ Droplet created successfully"
+          echo "Waiting for droplet initialization to complete..."
+          sleep 15
 
       - name: Assign reserved IP to droplet
         id: assign_ip
@@ -304,14 +306,15 @@ jobs:
           echo "✅ Temporary Nginx configuration active"
 
           echo "Obtaining Let's Encrypt SSL certificate for $DOMAIN..."
+
           ssh root@"$DROPLET_IP" << CERTEOF
             set -e
 
-            # Obtain SSL certificate
+            # Obtain SSL certificate (using default admin email for dev environment)
             certbot certonly --nginx -d $DOMAIN \
               --non-interactive \
               --agree-tos \
-              --email ${{ secrets.SSL_EMAIL || 'admin@tronrelic.com' }} \
+              --email admin@tronrelic.com \
               --keep-until-expiring
 
             echo "✅ SSL certificate obtained"
