@@ -592,6 +592,238 @@ doctl compute droplet delete <DROPLET_ID> --force
 - Check Digital Ocean API token permissions (requires floating-ip management)
 - Manually unassign: `doctl compute floating-ip-action unassign <RESERVED_IP>`
 
+## PR Testing Environments
+
+TronRelic automatically creates persistent testing droplets for each pull request to the `dev` branch. Unlike ephemeral dev testing environments that destroy after 30 minutes, PR environments persist until the PR is closed or merged, allowing extended testing over days or weeks.
+
+**Workflow files:**
+- `.github/workflows/pr-environment.yml` - Creates and updates PR droplet
+- `.github/workflows/pr-environment-teardown.yml` - Destroys droplet on PR close/merge
+
+**Triggers:**
+- **Automatic creation:** Opening PR to `dev` branch creates droplet
+- **Automatic updates:** Every push to PR branch updates same droplet
+- **Automatic cleanup:** Closing or merging PR destroys droplet
+
+### How PR Testing Environments Work
+
+**On PR creation (first time):**
+
+1. **Build PR branch images:**
+   - Build backend and frontend from PR branch code
+   - Sanitize branch name for Docker tag (lowercase, replace invalid chars)
+   - Tag as `pr-{branch}-{sha}` (e.g., `pr-feature-whales-a1b2c3d`)
+   - Push to GitHub Container Registry
+
+2. **Create testing droplet:**
+   - Create droplet named `tronrelic-pr-{number}` (e.g., `tronrelic-pr-42`)
+   - Droplet size: `s-2vcpu-4gb-amd` (2 vCPU, 4GB RAM)
+   - Region: Singapore (`sgp1`)
+   - OS: Ubuntu 25.04
+
+3. **Provision environment:**
+   - Install Docker and Docker Compose
+   - Copy docker-compose.yml to `/opt/tronrelic`
+   - Create .env with `ENV=development` and direct IP URLs
+   - Pull PR branch images from GHCR
+   - Start all containers (MongoDB, Redis, backend, frontend)
+   - Run health checks via direct port access (no Nginx)
+
+4. **Post comment on PR:**
+   - Droplet IP address and SSH access
+   - Application URLs (frontend, backend, system monitor)
+   - Docker image tags used
+   - Setup status checklist
+
+**On subsequent pushes to PR branch:**
+
+1. **Build updated images:**
+   - Build new images with updated code
+   - Tag as `pr-{branch}-{new-sha}`
+   - Push to GHCR
+
+2. **Update existing droplet:**
+   - SSH to existing droplet
+   - Update `IMAGE_TAG` in .env file
+   - Pull new images
+   - Restart containers with `docker compose up -d`
+   - Verify health checks
+
+3. **Post update comment on PR:**
+   - New commit SHA
+   - Updated image tags
+   - Deployment status
+
+**On PR close or merge:**
+
+1. `.github/workflows/pr-environment-teardown.yml` triggers
+2. Droplet `tronrelic-pr-{number}` destroyed
+3. All data and containers removed
+4. IP address released
+
+### Differences from Dev Testing Environments
+
+| Feature | PR Environments | Ephemeral Dev Testing |
+|---------|-----------------|----------------------|
+| **Trigger** | Opening PR to dev | Push/merge to dev branch |
+| **Droplet name** | `tronrelic-pr-{number}` | `tronrelic-dev-{sha}` |
+| **Lifespan** | Until PR closed/merged (days/weeks) | 30 minutes (auto-destroy) |
+| **Domain** | Direct IP only | dev.tronrelic.com (reserved IP) |
+| **SSL/HTTPS** | No (direct port access) | Yes (Let's Encrypt) |
+| **Nginx** | No | Yes (reverse proxy) |
+| **Updates** | Every push to PR branch | New droplet on every dev push |
+| **Access** | http://{ip}:3000, http://{ip}:4000 | https://dev.tronrelic.com |
+| **Use case** | Extended feature testing | Quick commit verification |
+| **Cost** | $0.033/hour × hours active | $0.017 per 30-minute session |
+
+### Accessing a PR Testing Environment
+
+After opening a PR to the `dev` branch, find the environment details in the PR comment posted by GitHub Actions:
+
+**Example PR comment:**
+```
+✅ Environment provisioned for PR #42
+
+Droplet Information:
+- Name: tronrelic-pr-42
+- IP Address: 159.89.123.45
+- Expected DNS: pr-42.dev.tronrelic.com
+
+Docker Images:
+- Backend: ghcr.io/delphian/tronrelic/backend:pr-feature-whales-a1b2c3d
+- Frontend: ghcr.io/delphian/tronrelic/frontend:pr-feature-whales-a1b2c3d
+
+SSH Access:
+ssh root@159.89.123.45
+
+Access Application:
+- Frontend: http://159.89.123.45:3000
+- Backend API: http://159.89.123.45:4000/api
+- System Monitor: http://159.89.123.45:3000/system
+
+Note: Direct port access (no nginx). Containers may take 1-2 minutes to fully initialize.
+```
+
+**Connect to PR droplet:**
+```bash
+# SSH to PR droplet (use IP from PR comment)
+ssh root@<DROPLET_IP>
+
+# View container status
+cd /opt/tronrelic
+docker compose ps
+
+# View logs
+docker compose logs -f backend
+docker compose logs -f frontend
+
+# Test backend health (direct port access)
+curl http://localhost:4000/api/health
+
+# Test frontend (direct port access)
+curl http://localhost:3000/
+
+# Check .env configuration
+cat /opt/tronrelic/.env
+```
+
+### Cost and Resource Usage
+
+**Per PR environment:**
+- Droplet cost: $0.033/hour
+- If PR open for 1 day: $0.033 × 24 = **$0.79**
+- If PR open for 1 week: $0.033 × 168 = **$5.54**
+- If PR open for 1 month: $0.033 × 720 = **$23.76**
+
+**Best practices to minimize costs:**
+- Close or merge PRs promptly after testing
+- Don't leave abandoned PRs open for extended periods
+- Use ephemeral dev testing (30 minutes) for quick checks instead of opening PRs
+
+**Resource specifications:**
+- Droplet size: `s-2vcpu-4gb-amd` (2 vCPU, 4GB RAM)
+- Region: Singapore (`sgp1`)
+- OS: Ubuntu 25.04
+
+### Required GitHub Secrets
+
+PR environments require the same secrets as dev testing environments:
+
+| Secret Name | Description | Required |
+|------------|-------------|----------|
+| `DO_API_TOKEN` | Digital Ocean API token | ✅ Yes |
+| `DO_SSH_KEY_FINGERPRINT` | SSH key fingerprint for droplet access | ✅ Yes |
+| `DO_SSH_PRIVATE_KEY` | SSH private key for provisioning | ✅ Yes |
+| `ADMIN_API_TOKEN` | Admin API token for testing | ✅ Yes |
+| `TRONGRID_API_KEY` | TronGrid API key #1 | ✅ Yes |
+| `TRONGRID_API_KEY_2` | TronGrid API key #2 | ✅ Yes |
+| `TRONGRID_API_KEY_3` | TronGrid API key #3 | ✅ Yes |
+
+### Manual Cleanup (Optional)
+
+While cleanup runs automatically when PRs close, you can manually destroy droplets:
+
+**List PR droplets:**
+```bash
+doctl compute droplet list | grep tronrelic-pr-
+```
+
+**Manually destroy a specific PR droplet:**
+```bash
+# By name
+doctl compute droplet delete tronrelic-pr-42 --force
+
+# Or by ID
+doctl compute droplet delete <DROPLET_ID> --force
+```
+
+**Trigger teardown workflow manually:**
+1. Navigate to **Actions** tab → **PR Environment Teardown**
+2. Click **Run workflow** button
+3. Enter PR number when prompted
+4. Click **Run workflow**
+
+### Troubleshooting PR Environments
+
+**Workflow fails to create droplet:**
+- Check Digital Ocean API token is valid in GitHub secrets
+- Verify droplet quota not exceeded in Digital Ocean account
+- Review workflow logs for specific error messages
+- Check SSH key fingerprint matches actual key in DO account
+
+**Cannot access droplet after creation:**
+- Wait 1-2 minutes for containers to fully start
+- Check PR comment for correct IP address
+- Verify firewall allows HTTP traffic (ports 3000, 4000)
+- SSH to droplet and check container status: `docker compose ps`
+- Test direct container access: `curl http://localhost:4000/api/health`
+
+**Images fail to build:**
+- Review build logs in GitHub Actions workflow
+- Check for TypeScript compilation errors in PR branch
+- Verify package dependencies are installable
+- Ensure Docker build context isn't too large
+
+**Droplet not updated on push:**
+- Check PR comment for latest update timestamp
+- Review workflow logs to see if update step executed
+- Verify IMAGE_TAG was updated in .env: `ssh root@<IP> 'grep IMAGE_TAG /opt/tronrelic/.env'`
+- Manually trigger rebuild by closing and reopening PR (if needed)
+
+**Droplet not destroyed after PR close:**
+- Check **PR Environment Teardown** workflow for errors
+- Manually trigger teardown workflow if needed
+- Manually destroy droplet: `doctl compute droplet delete tronrelic-pr-<NUMBER> --force`
+
+**Health checks fail:**
+- SSH to droplet: `ssh root@<DROPLET_IP>`
+- Check container logs: `cd /opt/tronrelic && docker compose logs`
+- Verify .env file created: `cat /opt/tronrelic/.env`
+- Check container status: `docker compose ps`
+- Test direct container access: `curl http://localhost:4000/api/health`
+- Restart containers if needed: `docker compose restart`
+- Check for port conflicts: `netstat -tlnp | grep -E '3000|4000'`
+
 ## Environment-Specific Configuration
 
 TronRelic uses a **unified deployment system** where all environments share the same docker-compose.yml and container names. Environment differentiation is controlled entirely by the `.env` file.
