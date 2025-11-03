@@ -128,11 +128,27 @@
     gap: var(--spacing-5);
 }
 
+.theme_name_wrapper {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-3);
+}
+
 .theme_name {
     font-size: var(--font-size-md);
     font-weight: var(--font-weight-semibold);
     color: var(--color-text);
     margin: 0;
+}
+
+.copy_uuid_button {
+    opacity: 0;
+    transition: opacity var(--transition-base);
+}
+
+.theme_item:hover .copy_uuid_button,
+.copy_uuid_button:focus-visible {
+    opacity: 1;
 }
 
 .theme_toggle {

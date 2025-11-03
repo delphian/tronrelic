@@ -46,14 +46,25 @@ function setCookie(name: string, value: string): void {
 }
 
 /**
- * Theme toggle component that cycles through all available themes from backend.
+ * Delete cookie by name.
  *
- * Fetches theme list from `/api/system/themes`, persists selection via cookies,
- * and dynamically renders Lucide icons based on theme configuration. When clicked,
- * cycles to the next available theme and updates the `data-theme` attribute on the
- * document root element.
+ * @param name - Cookie name
+ */
+function deleteCookie(name: string): void {
+    if (typeof document === 'undefined') return;
+    document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; SameSite=Lax`;
+}
+
+/**
+ * Theme toggle component that displays one button per active theme.
  *
- * @returns {JSX.Element} A toggle button displaying the current theme's icon
+ * Fetches active themes from `/api/system/themes`, persists selection via cookies,
+ * and dynamically renders Lucide icons based on theme configuration. When a theme
+ * button is clicked, it toggles that theme on/off. If toggled on, all other themes
+ * are automatically disabled. The `data-theme` attribute is removed when no theme
+ * is active.
+ *
+ * @returns {JSX.Element} One toggle button per active theme
  */
 export function ThemeToggle() {
     const [themes, setThemes] = useState<ITheme[]>([]);
@@ -73,21 +84,22 @@ export function ThemeToggle() {
                 }
 
                 const data = await response.json();
-                const fetchedThemes: ITheme[] = data.themes || [];
-                setThemes(fetchedThemes);
+                const allThemes: ITheme[] = data.themes || [];
+                // Only include active themes
+                const activeThemes = allThemes.filter(t => t.isActive);
+                setThemes(activeThemes);
 
                 // Load saved theme preference from cookie
                 const savedThemeId = getCookie('theme');
-                const savedTheme = fetchedThemes.find(t => t.id === savedThemeId);
+                const savedTheme = activeThemes.find(t => t.id === savedThemeId);
 
                 if (savedTheme) {
                     setCurrentThemeId(savedTheme.id);
                     applyTheme(savedTheme.id);
-                } else if (fetchedThemes.length > 0) {
-                    // Default to first theme if no preference saved
-                    const defaultTheme = fetchedThemes[0];
-                    setCurrentThemeId(defaultTheme.id);
-                    applyTheme(defaultTheme.id);
+                } else {
+                    // No theme active by default
+                    setCurrentThemeId(null);
+                    removeTheme();
                 }
             } catch (error) {
                 console.error('Error fetching themes:', error);
@@ -109,42 +121,63 @@ export function ThemeToggle() {
     }
 
     /**
-     * Cycle to next available theme.
-     * Wraps around to first theme after reaching the last one.
+     * Remove data-theme attribute from document root.
      */
-    function cycleTheme(): void {
-        if (themes.length === 0) return;
-
-        const currentIndex = themes.findIndex(t => t.id === currentThemeId);
-        const nextIndex = (currentIndex + 1) % themes.length;
-        const nextTheme = themes[nextIndex];
-
-        setCurrentThemeId(nextTheme.id);
-        setCookie('theme', nextTheme.id);
-        applyTheme(nextTheme.id);
+    function removeTheme(): void {
+        if (typeof document === 'undefined') return;
+        document.documentElement.removeAttribute('data-theme');
     }
 
-    // Get current theme object
-    const currentTheme = themes.find(t => t.id === currentThemeId);
-
-    // Dynamically load Lucide icon component
-    const IconComponent = currentTheme
-        ? (LucideIcons as any)[currentTheme.icon]
-        : null;
+    /**
+     * Toggle a specific theme on/off.
+     * If toggling on, disables all other themes.
+     * If toggling off, removes data-theme attribute.
+     *
+     * @param themeId - Theme UUID to toggle
+     */
+    function toggleTheme(themeId: string): void {
+        if (currentThemeId === themeId) {
+            // Toggle off - remove theme
+            setCurrentThemeId(null);
+            deleteCookie('theme');
+            removeTheme();
+        } else {
+            // Toggle on - apply this theme and disable others
+            setCurrentThemeId(themeId);
+            setCookie('theme', themeId);
+            applyTheme(themeId);
+        }
+    }
 
     // Avoid hydration mismatch by not rendering until mounted
-    if (!mounted || !currentTheme || !IconComponent) {
+    if (!mounted || themes.length === 0) {
         return null;
     }
 
     return (
-        <button
-            onClick={cycleTheme}
-            className={styles.toggle}
-            aria-label={`Current theme: ${currentTheme.name}. Click to cycle themes.`}
-            title={`Current theme: ${currentTheme.name}`}
-        >
-            <IconComponent className={styles.icon} />
-        </button>
+        <>
+            {themes.map((theme) => {
+                const IconComponent = (LucideIcons as any)[theme.icon];
+                const isActive = currentThemeId === theme.id;
+
+                // Skip if icon is invalid
+                if (!IconComponent) {
+                    return null;
+                }
+
+                return (
+                    <button
+                        key={theme.id}
+                        onClick={() => toggleTheme(theme.id)}
+                        className={styles.toggle}
+                        aria-label={`Theme: ${theme.name}. ${isActive ? 'Currently active. Click to disable.' : 'Click to enable.'}`}
+                        title={`${theme.name}${isActive ? ' (Active)' : ''}`}
+                    >
+                        <IconComponent className={styles.icon} />
+                        {isActive && <span className={styles.activeIndicator} />}
+                    </button>
+                );
+            })}
+        </>
     );
 }
