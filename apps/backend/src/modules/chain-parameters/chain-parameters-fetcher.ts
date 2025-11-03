@@ -52,10 +52,14 @@ export class ChainParametersFetcher implements IChainParametersFetcher {
 
             const chainParams = response.data.chainParameter;
 
-            // Extract required parameters
+            // Extract energy-related parameters
             const totalEnergyLimit = this.findParam(chainParams, 'getTotalEnergyLimit');
             const totalEnergyCurrentLimit = this.findParam(chainParams, 'getTotalEnergyCurrentLimit');
             const energyFee = this.findParam(chainParams, 'getEnergyFee');
+
+            // Extract bandwidth-related parameters
+            const totalBandwidthLimit = this.findParam(chainParams, 'getTotalNetLimit');
+            const totalNetWeight = this.findParam(chainParams, 'getTotalNetWeight');
 
             // Calculate total frozen for energy
             // NOTE: This is an approximation based on network averages
@@ -63,8 +67,18 @@ export class ChainParametersFetcher implements IChainParametersFetcher {
             // For now, we use a conservative estimate of 32M TRX frozen network-wide
             const totalFrozenForEnergy = 32_000_000_000_000_000; // 32M TRX in SUN
 
+            // Calculate total frozen for bandwidth from network weight
+            // totalNetWeight is in SUN (1 TRX = 1,000,000 SUN)
+            const totalFrozenForBandwidth = totalNetWeight;
+
             // Calculate energy per TRX ratio
             const energyPerTrx = totalEnergyLimit / (totalFrozenForEnergy / 1_000_000);
+
+            // Calculate bandwidth per TRX ratio
+            // If totalNetWeight is 0, use approximation based on network averages
+            const bandwidthPerTrx = totalFrozenForBandwidth > 0
+                ? totalBandwidthLimit / (totalFrozenForBandwidth / 1_000_000)
+                : 1000; // Approximate fallback: 1000 bandwidth per TRX
 
             const parameters: IChainParameters = {
                 network: 'mainnet',
@@ -73,7 +87,10 @@ export class ChainParametersFetcher implements IChainParametersFetcher {
                     totalEnergyCurrentLimit,
                     totalFrozenForEnergy,
                     energyPerTrx,
-                    energyFee
+                    energyFee,
+                    totalBandwidthLimit,
+                    totalFrozenForBandwidth,
+                    bandwidthPerTrx
                 },
                 fetchedAt: new Date(),
                 createdAt: new Date()
@@ -86,7 +103,9 @@ export class ChainParametersFetcher implements IChainParametersFetcher {
                 {
                     energyPerTrx: energyPerTrx.toFixed(2),
                     totalEnergyLimit,
-                    energyFee
+                    energyFee,
+                    bandwidthPerTrx: bandwidthPerTrx.toFixed(2),
+                    totalBandwidthLimit
                 },
                 'Chain parameters updated successfully'
             );
