@@ -14,4 +14,8 @@ export interface IResourceTrackingConfig {
     purgeFrequencyHours: number;
     /** Number of blocks to aggregate per summation period (default: 100, approximately 5 minutes at 20 blocks/minute) */
     blocksPerInterval: number;
+    /** Enable whale delegation detection (default: false) */
+    whaleDetectionEnabled: boolean;
+    /** Threshold in TRX for whale detection (default: 1,000,000 TRX) */
+    whaleThresholdTrx: number;
 }

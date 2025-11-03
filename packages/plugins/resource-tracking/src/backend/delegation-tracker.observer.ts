@@ -5,7 +5,7 @@ import type {
     IPluginDatabase,
     ISystemLogService
 } from '@tronrelic/types';
-import type { IDelegationTransaction } from '../shared/types/index.js';
+import type { IDelegationTransaction, IWhaleDelegation, IResourceTrackingConfig } from '../shared/types/index.js';
 
 /**
  * Delegation Tracker Observer processes resource delegation and reclaim transactions.
@@ -50,6 +50,9 @@ export function createDelegationTrackerObserver(
     class DelegationTrackerObserver extends BaseObserver {
         protected readonly name = 'DelegationTrackerObserver';
         private readonly database: IPluginDatabase;
+        private config: IResourceTrackingConfig | null = null;
+        private configLastLoaded = 0;
+        private readonly CONFIG_CACHE_MS = 5 * 60 * 1000; // 5 minutes
 
         constructor() {
             super(scopedLogger);
@@ -153,6 +156,102 @@ export function createDelegationTrackerObserver(
 
                 // Re-throw non-duplicate errors for observer error handling
                 throw error;
+            }
+
+            // Whale detection: Check if delegation exceeds threshold
+            await this.detectWhale(delegationRecord, scopedLogger);
+        }
+
+        /**
+         * Load configuration from database with 5-minute cache.
+         *
+         * Reduces database load by caching whale detection settings in memory.
+         * Config is refreshed every 5 minutes, meaning admin changes take effect
+         * within 5 minutes without requiring observer restart.
+         *
+         * @returns Current configuration or null if not set
+         */
+        private async loadConfigIfStale(): Promise<IResourceTrackingConfig | null> {
+            const now = Date.now();
+            if (!this.config || (now - this.configLastLoaded) > this.CONFIG_CACHE_MS) {
+                this.config = await this.database.get<IResourceTrackingConfig>('config') ?? null;
+                this.configLastLoaded = now;
+            }
+            return this.config;
+        }
+
+        /**
+         * Detect and persist whale delegations that exceed configured threshold.
+         *
+         * Checks if the delegation amount exceeds the whale threshold and, if enabled,
+         * stores the delegation in a separate whale-delegations collection for
+         * specialized tracking and analysis.
+         *
+         * Uses cached configuration (5-minute TTL) to avoid database load on every
+         * delegation transaction. Config changes take effect within 5 minutes.
+         *
+         * @param delegation - The delegation record that was just persisted
+         * @param logger - Scoped logger for whale detection events
+         */
+        private async detectWhale(
+            delegation: Omit<IDelegationTransaction, 'createdAt'>,
+            logger: ISystemLogService
+        ): Promise<void> {
+            try {
+                // Load configuration with 5-minute cache (reduces DB load by ~99%)
+                const config = await this.loadConfigIfStale();
+                if (!config || !config.whaleDetectionEnabled) {
+                    return; // Whale detection disabled
+                }
+
+                // Convert threshold from TRX to SUN for comparison (1 TRX = 1,000,000 SUN)
+                const thresholdSun = config.whaleThresholdTrx * 1_000_000;
+
+                // Use absolute value since reclaims are stored as negative amounts
+                const amountSun = Math.abs(delegation.amountSun);
+
+                // Check if delegation exceeds threshold
+                if (amountSun < thresholdSun) {
+                    return; // Below threshold, not a whale
+                }
+
+                // Create whale delegation record
+                const whaleDelegation: Omit<IWhaleDelegation, 'createdAt'> = {
+                    txId: delegation.txId,
+                    timestamp: delegation.timestamp,
+                    fromAddress: delegation.fromAddress,
+                    toAddress: delegation.toAddress,
+                    resourceType: delegation.resourceType,
+                    amountSun: amountSun, // Store positive amount for whale records
+                    amountTrx: amountSun / 1_000_000, // Convert to TRX for display
+                    blockNumber: delegation.blockNumber
+                };
+
+                // Persist whale delegation to separate collection
+                await this.database.insertOne('whale-delegations', whaleDelegation);
+
+                logger.info({
+                    txId: delegation.txId,
+                    fromAddress: delegation.fromAddress,
+                    toAddress: delegation.toAddress,
+                    amountTrx: whaleDelegation.amountTrx,
+                    resourceType: delegation.resourceType === 1 ? 'ENERGY' : 'BANDWIDTH',
+                    threshold: config.whaleThresholdTrx
+                }, 'Whale delegation detected and persisted');
+            } catch (error) {
+                // Check for duplicate key error (whale already recorded)
+                const isDuplicateError = error && typeof error === 'object' && (
+                    ('code' in error && error.code === 11000) ||
+                    ('error' in error && typeof error.error === 'object' && error.error && 'code' in error.error && error.error.code === 11000)
+                );
+
+                if (isDuplicateError) {
+                    logger.debug({ txId: delegation.txId }, 'Whale delegation already persisted');
+                    return;
+                }
+
+                // Log error but don't throw - whale detection failure shouldn't break transaction processing
+                logger.error({ error, txId: delegation.txId }, 'Failed to persist whale delegation');
             }
         }
     }

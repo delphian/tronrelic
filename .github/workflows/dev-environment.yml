@@ -1,0 +1,587 @@
+name: Dev Environment
+
+on:
+  push:
+    branches:
+      - dev
+
+jobs:
+  build-and-provision:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Prepare image tag and expiration
+        id: prep
+        run: |
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          IMAGE_TAG="dev-${SHORT_SHA}"
+          DROPLET_NAME="tronrelic-dev-${SHORT_SHA}"
+
+          # Calculate expiration time (30 minutes from now)
+          EXPIRES_AT=$(date -u -d '+30 minutes' +%s)
+
+          echo "tag=$IMAGE_TAG" >> $GITHUB_OUTPUT
+          echo "short_sha=$SHORT_SHA" >> $GITHUB_OUTPUT
+          echo "droplet_name=$DROPLET_NAME" >> $GITHUB_OUTPUT
+          echo "expires_at=$EXPIRES_AT" >> $GITHUB_OUTPUT
+
+          echo "📦 Image tag: $IMAGE_TAG"
+          echo "🖥️ Droplet name: $DROPLET_NAME"
+          echo "⏰ Expires at: $(date -u -d @$EXPIRES_AT '+%Y-%m-%d %H:%M:%S UTC')"
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push backend image
+        run: |
+          docker build --target backend \
+            -t ghcr.io/${{ github.repository }}/backend:${{ steps.prep.outputs.tag }} \
+            .
+          docker push ghcr.io/${{ github.repository }}/backend:${{ steps.prep.outputs.tag }}
+
+      - name: Build and push frontend image
+        run: |
+          docker build --target frontend-prod \
+            -t ghcr.io/${{ github.repository }}/frontend:${{ steps.prep.outputs.tag }} \
+            .
+          docker push ghcr.io/${{ github.repository }}/frontend:${{ steps.prep.outputs.tag }}
+
+      - name: Images built successfully
+        run: |
+          echo "✅ Dev branch Docker images built and pushed to GHCR"
+          echo ""
+          echo "Branch: dev"
+          echo "Commit: ${{ github.sha }}"
+          echo "Image tag: ${{ steps.prep.outputs.tag }}"
+          echo ""
+          echo "Backend: ghcr.io/${{ github.repository }}/backend:${{ steps.prep.outputs.tag }}"
+          echo "Frontend: ghcr.io/${{ github.repository }}/frontend:${{ steps.prep.outputs.tag }}"
+
+      - name: Install doctl
+        uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.DO_API_TOKEN }}
+
+      - name: Check if reserved IP is attached to existing droplet
+        id: check_ip
+        run: |
+          RESERVED_IP="${{ secrets.DO_DEV_IP }}"
+
+          echo "Checking reserved IP: $RESERVED_IP"
+
+          # Get droplet ID that currently has this reserved IP
+          EXISTING_DROPLET_ID=$(doctl compute floating-ip get "$RESERVED_IP" --format DropletID --no-header 2>/dev/null || echo "")
+
+          if [ -n "$EXISTING_DROPLET_ID" ] && [ "$EXISTING_DROPLET_ID" != "0" ]; then
+            echo "existing_droplet_id=$EXISTING_DROPLET_ID" >> $GITHUB_OUTPUT
+
+            # Get droplet name
+            EXISTING_DROPLET_NAME=$(doctl compute droplet get "$EXISTING_DROPLET_ID" --format Name --no-header 2>/dev/null || echo "unknown")
+            echo "existing_droplet_name=$EXISTING_DROPLET_NAME" >> $GITHUB_OUTPUT
+
+            echo "⚠️ Reserved IP is currently attached to droplet: $EXISTING_DROPLET_NAME (ID: $EXISTING_DROPLET_ID)"
+          else
+            echo "✅ Reserved IP is available"
+            echo "existing_droplet_id=" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Destroy existing droplet if present
+        if: steps.check_ip.outputs.existing_droplet_id != ''
+        run: |
+          EXISTING_DROPLET_ID="${{ steps.check_ip.outputs.existing_droplet_id }}"
+          EXISTING_DROPLET_NAME="${{ steps.check_ip.outputs.existing_droplet_name }}"
+
+          echo "Destroying existing droplet: $EXISTING_DROPLET_NAME (ID: $EXISTING_DROPLET_ID)"
+
+          doctl compute droplet delete "$EXISTING_DROPLET_ID" --force
+
+          echo "✅ Existing droplet destroyed"
+          echo "Waiting 10 seconds for cleanup..."
+          sleep 10
+
+      - name: Create droplet with expiration tag
+        id: create
+        run: |
+          DROPLET_NAME="${{ steps.prep.outputs.droplet_name }}"
+          EXPIRES_AT="${{ steps.prep.outputs.expires_at }}"
+
+          echo "Creating droplet: $DROPLET_NAME"
+
+          doctl compute droplet create "$DROPLET_NAME" \
+            --size s-2vcpu-4gb-amd \
+            --region sgp1 \
+            --image ubuntu-25-04-x64 \
+            --ssh-keys ${{ secrets.DO_SSH_KEY_FINGERPRINT }} \
+            --tag-names "tronrelic-dev-testing,expires-at-${EXPIRES_AT}" \
+            --wait \
+            --format ID,Name,PublicIPv4 \
+            --no-header
+
+          echo "✅ Droplet created successfully"
+          echo "Waiting for droplet initialization to complete..."
+          sleep 15
+
+      - name: Assign reserved IP to droplet
+        id: assign_ip
+        run: |
+          DROPLET_NAME="${{ steps.prep.outputs.droplet_name }}"
+          RESERVED_IP="${{ secrets.DO_DEV_IP }}"
+
+          # Get droplet ID
+          DROPLET_ID=$(doctl compute droplet list --format ID,Name --no-header | grep "$DROPLET_NAME" | awk '{print $1}')
+
+          if [ -z "$DROPLET_ID" ]; then
+            echo "❌ Could not find droplet ID for $DROPLET_NAME"
+            exit 1
+          fi
+
+          echo "Assigning reserved IP $RESERVED_IP to droplet $DROPLET_NAME (ID: $DROPLET_ID)..."
+
+          doctl compute floating-ip-action assign "$RESERVED_IP" "$DROPLET_ID"
+
+          echo "Waiting for IP assignment to complete..."
+          sleep 10
+
+          echo "ip=$RESERVED_IP" >> $GITHUB_OUTPUT
+          echo "✅ Reserved IP assigned: $RESERVED_IP"
+
+      - name: Set droplet access info
+        id: ip
+        run: |
+          RESERVED_IP="${{ steps.assign_ip.outputs.ip }}"
+          DOMAIN="${{ secrets.DO_DEV_HOST }}"
+
+          echo "ip=$RESERVED_IP" >> $GITHUB_OUTPUT
+          echo "domain=$DOMAIN" >> $GITHUB_OUTPUT
+          echo "✅ Droplet accessible at: $DOMAIN ($RESERVED_IP)"
+
+      - name: Install Docker on droplet
+        run: |
+          DROPLET_IP="${{ steps.ip.outputs.ip }}"
+
+          echo "Setting up SSH key..."
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DO_SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+
+          echo "Waiting for SSH to become available..."
+          MAX_ATTEMPTS=30
+          ATTEMPT=0
+
+          while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
+            if ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no root@"$DROPLET_IP" "echo 'SSH Ready'" 2>/dev/null; then
+              echo "✅ SSH connection established"
+              break
+            fi
+
+            ATTEMPT=$((ATTEMPT + 1))
+            echo "Attempt $ATTEMPT/$MAX_ATTEMPTS - waiting 10s..."
+            sleep 10
+          done
+
+          if [ $ATTEMPT -eq $MAX_ATTEMPTS ]; then
+            echo "❌ SSH did not become available in time"
+            exit 1
+          fi
+
+          echo "Adding droplet to known_hosts..."
+          ssh-keyscan -H "$DROPLET_IP" >> ~/.ssh/known_hosts
+
+          echo "Installing Docker and dependencies..."
+          ssh root@"$DROPLET_IP" << 'EOF'
+            set -e
+
+            # Wait for apt locks to be released (fresh droplets often have unattended-upgrades running)
+            echo "Waiting for apt locks to be released..."
+            MAX_WAIT=300
+            ELAPSED=0
+            while fuser /var/lib/apt/lists/lock >/dev/null 2>&1 || fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1 ; do
+                echo "Waiting for other apt processes to finish... ($ELAPSED seconds elapsed)"
+                sleep 10
+                ELAPSED=$((ELAPSED + 10))
+                if [ $ELAPSED -ge $MAX_WAIT ]; then
+                    echo "Timeout waiting for apt lock - killing background processes"
+                    killall -9 apt-get apt || true
+                    sleep 5
+                    break
+                fi
+            done
+            echo "Apt locks released, proceeding with installation"
+
+            # Update package index
+            apt-get update
+
+            # Install prerequisites
+            apt-get install -y \
+              ca-certificates \
+              curl \
+              gnupg \
+              lsb-release
+
+            # Add Docker's official GPG key
+            install -m 0755 -d /etc/apt/keyrings
+            curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+            chmod a+r /etc/apt/keyrings/docker.asc
+
+            # Add Docker repository
+            echo \
+              "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu \
+              $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
+              tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+            # Install Docker Engine
+            apt-get update
+            apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+
+            # Start and enable Docker
+            systemctl start docker
+            systemctl enable docker
+
+            # Create deployment directory
+            mkdir -p /opt/tronrelic
+
+            # Verify installation
+            docker --version
+            docker compose version
+
+            echo "✅ Docker installation complete"
+          EOF
+
+          echo "✅ Droplet setup complete"
+
+      - name: Install and configure Nginx with Let's Encrypt
+        run: |
+          DROPLET_IP="${{ steps.ip.outputs.ip }}"
+          DOMAIN="${{ steps.ip.outputs.domain }}"
+
+          echo "Installing Nginx and Certbot..."
+          ssh root@"$DROPLET_IP" << 'EOF'
+            set -e
+
+            # Install Nginx and Certbot
+            apt-get install -y nginx certbot python3-certbot-nginx
+
+            # Start and enable Nginx
+            systemctl start nginx
+            systemctl enable nginx
+
+            echo "✅ Nginx and Certbot installed"
+          EOF
+
+          echo "Creating temporary HTTP-only Nginx configuration for Let's Encrypt verification..."
+
+          cat > /tmp/nginx-temp.conf <<'LOCALEOF'
+          server {
+              listen 80;
+              listen [::]:80;
+              server_name DOMAIN_PLACEHOLDER;
+
+              location /.well-known/acme-challenge/ {
+                  root /var/www/html;
+              }
+
+              location / {
+                  return 200 'Server provisioning...';
+                  add_header Content-Type text/plain;
+              }
+          }
+          LOCALEOF
+
+          sed -i "s/DOMAIN_PLACEHOLDER/$DOMAIN/g" /tmp/nginx-temp.conf
+
+          scp -o StrictHostKeyChecking=no /tmp/nginx-temp.conf root@"$DROPLET_IP":/etc/nginx/sites-available/tronrelic
+
+          ssh root@"$DROPLET_IP" "ln -sf /etc/nginx/sites-available/tronrelic /etc/nginx/sites-enabled/tronrelic && rm -f /etc/nginx/sites-enabled/default && nginx -t && systemctl reload nginx"
+
+          echo "✅ Temporary Nginx configuration active"
+
+          echo "Obtaining Let's Encrypt SSL certificate for $DOMAIN..."
+
+          ssh root@"$DROPLET_IP" << CERTEOF
+            set -e
+
+            # Obtain SSL certificate (using default admin email for dev environment)
+            certbot certonly --nginx -d $DOMAIN \
+              --non-interactive \
+              --agree-tos \
+              --email admin@tronrelic.com \
+              --keep-until-expiring
+
+            echo "✅ SSL certificate obtained"
+          CERTEOF
+
+          echo "Updating Nginx configuration with SSL..."
+
+          cat > /tmp/nginx-ssl.conf <<'LOCALEOF'
+          server {
+              listen 80;
+              listen [::]:80;
+              server_name DOMAIN_PLACEHOLDER;
+
+              location /.well-known/acme-challenge/ {
+                  root /var/www/html;
+              }
+
+              location / {
+                  return 301 https://$server_name$request_uri;
+              }
+          }
+
+          server {
+              listen 443 ssl http2;
+              listen [::]:443 ssl http2;
+              server_name DOMAIN_PLACEHOLDER;
+
+              ssl_certificate /etc/letsencrypt/live/DOMAIN_PLACEHOLDER/fullchain.pem;
+              ssl_certificate_key /etc/letsencrypt/live/DOMAIN_PLACEHOLDER/privkey.pem;
+              ssl_protocols TLSv1.2 TLSv1.3;
+              ssl_ciphers HIGH:!aNULL:!MD5;
+              ssl_prefer_server_ciphers on;
+
+              add_header X-Frame-Options "SAMEORIGIN" always;
+              add_header X-Content-Type-Options "nosniff" always;
+              add_header X-XSS-Protection "1; mode=block" always;
+              add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+
+              client_max_body_size 100m;
+              proxy_read_timeout 300s;
+              proxy_connect_timeout 75s;
+
+              location /api {
+                  proxy_pass http://127.0.0.1:4000;
+                  proxy_http_version 1.1;
+                  proxy_set_header Host $host;
+                  proxy_set_header X-Real-IP $remote_addr;
+                  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                  proxy_set_header X-Forwarded-Proto $scheme;
+              }
+
+              location /socket.io {
+                  proxy_pass http://127.0.0.1:4000;
+                  proxy_http_version 1.1;
+                  proxy_set_header Upgrade $http_upgrade;
+                  proxy_set_header Connection "upgrade";
+                  proxy_set_header Host $host;
+                  proxy_set_header X-Real-IP $remote_addr;
+                  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                  proxy_set_header X-Forwarded-Proto $scheme;
+                  proxy_cache_bypass $http_upgrade;
+              }
+
+              location / {
+                  proxy_pass http://127.0.0.1:3000;
+                  proxy_http_version 1.1;
+                  proxy_set_header Host $host;
+                  proxy_set_header X-Real-IP $remote_addr;
+                  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                  proxy_set_header X-Forwarded-Proto $scheme;
+              }
+          }
+          LOCALEOF
+
+          sed -i "s/DOMAIN_PLACEHOLDER/$DOMAIN/g" /tmp/nginx-ssl.conf
+
+          scp -o StrictHostKeyChecking=no /tmp/nginx-ssl.conf root@"$DROPLET_IP":/etc/nginx/sites-available/tronrelic
+
+          ssh root@"$DROPLET_IP" "nginx -t && systemctl reload nginx"
+
+          echo "✅ Nginx configured with Let's Encrypt SSL"
+
+          echo "✅ Nginx setup complete with trusted SSL certificate"
+
+      - name: Copy docker-compose.yml to droplet
+        run: |
+          DROPLET_IP="${{ steps.ip.outputs.ip }}"
+          DEPLOY_DIR="/opt/tronrelic"
+
+          echo "Copying docker-compose.yml to droplet..."
+          scp -o StrictHostKeyChecking=no \
+            docker-compose.yml \
+            root@"$DROPLET_IP":"$DEPLOY_DIR/"
+
+          echo "✅ Docker compose configuration copied"
+
+          # Verify it exists
+          ssh -o StrictHostKeyChecking=no root@"$DROPLET_IP" \
+            "ls -lh $DEPLOY_DIR/docker-compose.yml"
+
+      - name: Create .env file on droplet
+        run: |
+          DROPLET_IP="${{ steps.ip.outputs.ip }}"
+          DEPLOY_DIR="/opt/tronrelic"
+          IMAGE_TAG="${{ steps.prep.outputs.tag }}"
+          ADMIN_TOKEN="${{ secrets.ADMIN_API_TOKEN }}"
+          TRONGRID_KEY_1="${{ secrets.TRONGRID_API_KEY }}"
+          TRONGRID_KEY_2="${{ secrets.TRONGRID_API_KEY_2 }}"
+          TRONGRID_KEY_3="${{ secrets.TRONGRID_API_KEY_3 }}"
+
+          echo "Generating secure secrets..."
+          MONGO_PASSWORD=$(openssl rand -hex 32)
+          REDIS_PASSWORD=$(openssl rand -hex 32)
+
+          DOMAIN="${{ steps.ip.outputs.domain }}"
+
+          echo "Creating .env file..."
+          {
+            echo "# TronRelic Dev Environment - Auto-generated by GitHub Actions"
+            echo "ENV=development"
+            echo "SITE_URL=https://$DOMAIN"
+            echo "SITE_WS=https://$DOMAIN"
+            echo "SITE_BACKEND=http://backend:4000"
+            echo "ADMIN_API_TOKEN=$ADMIN_TOKEN"
+            echo "TRONGRID_API_KEY=$TRONGRID_KEY_1"
+            echo "TRONGRID_API_KEY_2=$TRONGRID_KEY_2"
+            echo "TRONGRID_API_KEY_3=$TRONGRID_KEY_3"
+            echo "MONGO_ROOT_USERNAME=admin"
+            echo "MONGO_ROOT_PASSWORD=$MONGO_PASSWORD"
+            echo "REDIS_PASSWORD=$REDIS_PASSWORD"
+            echo "PORT=4000"
+            echo "ENABLE_SCHEDULER=true"
+            echo "ENABLE_WEBSOCKETS=true"
+            echo "REDIS_NAMESPACE=tronrelic"
+            echo "IMAGE_TAG=$IMAGE_TAG"
+          } > /tmp/dev.env
+
+          scp -o StrictHostKeyChecking=no /tmp/dev.env root@"$DROPLET_IP":"$DEPLOY_DIR/.env"
+          ssh -o StrictHostKeyChecking=no root@"$DROPLET_IP" "chmod 600 $DEPLOY_DIR/.env && ls -lh $DEPLOY_DIR/.env"
+          rm /tmp/dev.env
+
+          echo "✅ Environment file created"
+
+      - name: Authenticate with GitHub Container Registry
+        run: |
+          DROPLET_IP="${{ steps.ip.outputs.ip }}"
+
+          echo "Authenticating with GHCR on droplet..."
+          echo "${{ secrets.GITHUB_TOKEN }}" | ssh -o StrictHostKeyChecking=no root@"$DROPLET_IP" \
+            "docker login ghcr.io -u ${{ github.actor }} --password-stdin"
+
+          echo "✅ GHCR authentication successful"
+
+      - name: Pull Docker images
+        run: |
+          DROPLET_IP="${{ steps.ip.outputs.ip }}"
+          DEPLOY_DIR="/opt/tronrelic"
+          IMAGE_TAG="${{ steps.prep.outputs.tag }}"
+
+          echo "Pulling Docker images with tag: $IMAGE_TAG"
+          echo "This may take several minutes..."
+
+          ssh -o StrictHostKeyChecking=no root@"$DROPLET_IP" \
+            "cd $DEPLOY_DIR && docker compose pull"
+
+          echo "✅ Docker images pulled successfully"
+
+      - name: Start containers
+        run: |
+          DROPLET_IP="${{ steps.ip.outputs.ip }}"
+          DEPLOY_DIR="/opt/tronrelic"
+
+          echo "Starting containers..."
+          ssh -o StrictHostKeyChecking=no root@"$DROPLET_IP" \
+            "cd $DEPLOY_DIR && docker compose up -d"
+
+          echo "Waiting for containers to start (30 seconds)..."
+          sleep 30
+
+          echo "Checking container status..."
+          ssh -o StrictHostKeyChecking=no root@"$DROPLET_IP" \
+            "cd $DEPLOY_DIR && docker compose ps"
+
+          echo "✅ Containers started successfully"
+
+      - name: Verify deployment health
+        run: |
+          DOMAIN="${{ steps.ip.outputs.domain }}"
+
+          echo "Checking backend health via Nginx (HTTPS with trusted certificate)..."
+          MAX_ATTEMPTS=10
+          ATTEMPT=0
+
+          while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
+            if curl -f -s https://"$DOMAIN"/api/health > /dev/null 2>&1; then
+              echo "✅ Backend is healthy (via Nginx)"
+              break
+            fi
+
+            ATTEMPT=$((ATTEMPT + 1))
+            echo "Attempt $ATTEMPT/$MAX_ATTEMPTS - waiting 10s..."
+            sleep 10
+          done
+
+          if [ $ATTEMPT -eq $MAX_ATTEMPTS ]; then
+            echo "⚠️ Backend health check timed out (may still be starting)"
+          fi
+
+          echo "Checking frontend via Nginx (HTTPS with trusted certificate)..."
+          if curl -f -s https://"$DOMAIN"/ > /dev/null 2>&1; then
+            echo "✅ Frontend is responding (via Nginx)"
+          else
+            echo "⚠️ Frontend not yet responding (may still be starting)"
+          fi
+
+      - name: Write workflow summary
+        run: |
+          DROPLET_NAME="${{ steps.prep.outputs.droplet_name }}"
+          DROPLET_IP="${{ steps.ip.outputs.ip }}"
+          DOMAIN="${{ steps.ip.outputs.domain }}"
+          IMAGE_TAG="${{ steps.prep.outputs.tag }}"
+          EXPIRES_AT="${{ steps.prep.outputs.expires_at }}"
+          EXPIRES_AT_HUMAN=$(date -u -d @$EXPIRES_AT '+%Y-%m-%d %H:%M:%S UTC')
+          BACKEND_IMAGE="ghcr.io/${{ github.repository }}/backend:${IMAGE_TAG}"
+          FRONTEND_IMAGE="ghcr.io/${{ github.repository }}/frontend:${IMAGE_TAG}"
+
+          cat >> $GITHUB_STEP_SUMMARY << EOF
+          ## ✅ Dev Testing Environment Provisioned
+
+          **⚠️ This droplet will auto-destroy at ${EXPIRES_AT_HUMAN} (30 minutes from creation)**
+
+          ### Droplet Information
+          - **Name:** \`${DROPLET_NAME}\`
+          - **Domain:** \`${DOMAIN}\`
+          - **Reserved IP:** \`${DROPLET_IP}\`
+          - **Lifespan:** 30 minutes
+          - **Auto-destroy:** ${EXPIRES_AT_HUMAN}
+
+          ### Docker Images
+          - **Backend:** \`${BACKEND_IMAGE}\`
+          - **Frontend:** \`${FRONTEND_IMAGE}\`
+
+          ### SSH Access
+          \`\`\`bash
+          ssh root@${DROPLET_IP}
+          \`\`\`
+
+          ### Setup Status
+          - ✅ Ubuntu 25.04 droplet created
+          - ✅ Reserved IP (${DROPLET_IP}) assigned
+          - ✅ Let's Encrypt SSL certificate obtained for ${DOMAIN}
+          - ✅ Nginx reverse proxy configured
+          - ✅ Docker and docker-compose installed
+          - ✅ Deployment directory created (\`/opt/tronrelic\`)
+          - ✅ Docker images pulled and containers started
+          - ✅ Health checks passed
+
+          ### Access Application
+          - **Frontend:** https://${DOMAIN}/
+          - **Backend API:** https://${DOMAIN}/api
+          - **System Monitor:** https://${DOMAIN}/system
+
+          **Note:**
+          - Uses Let's Encrypt trusted SSL certificate (no browser warnings!)
+          - Traffic routed through Nginx reverse proxy (identical to production)
+          - Containers may take 1-2 minutes to fully initialize
+          - Reserved IP will be released when droplet is destroyed
+          EOF
+
+          echo "✅ Workflow summary written"

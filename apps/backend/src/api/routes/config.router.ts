@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { SystemConfigService } from '../../services/system-config/index.js';
+import { ChainParametersService } from '../../modules/chain-parameters/index.js';
 
 /**
  * Creates the public configuration router.
@@ -28,33 +29,47 @@ export function configRouter() {
      *
      * Response format:
      * {
-     *   siteUrl: string,    // Public site URL (e.g., "https://tronrelic.com")
-     *   apiUrl: string,     // API base URL (e.g., "https://tronrelic.com/api")
-     *   socketUrl: string   // WebSocket URL (e.g., "https://tronrelic.com")
+     *   siteUrl: string,          // Public site URL (e.g., "https://tronrelic.com")
+     *   apiUrl: string,           // API base URL (e.g., "https://tronrelic.com/api")
+     *   socketUrl: string,        // WebSocket URL (e.g., "https://tronrelic.com")
+     *   chainParameters: {        // TRON blockchain parameters for energy/TRX conversions
+     *     totalEnergyLimit: number,
+     *     totalEnergyCurrentLimit: number,
+     *     totalFrozenForEnergy: number,
+     *     energyPerTrx: number,
+     *     energyFee: number
+     *   }
      * }
      *
      * Caching:
      * - SystemConfigService caches config in memory (1 minute TTL)
+     * - ChainParametersService caches parameters in memory (1 minute TTL)
      * - Frontend SSR caches response for container lifetime
      * - Client receives config injected in HTML (no separate fetch needed)
      *
      * Security:
-     * No authentication required - exposes only public configuration URLs.
+     * No authentication required - exposes only public configuration URLs and chain parameters.
      * Administrators control these values via /system/config admin UI.
      */
     router.get('/public', async (_req, res, next) => {
         try {
             const configService = SystemConfigService.getInstance();
-            const siteUrl = await configService.getSiteUrl();
-            const apiUrl = await configService.getApiUrl();
-            const socketUrl = await configService.getSocketUrl();
+            const chainParamsService = ChainParametersService.getInstance();
+
+            const [siteUrl, apiUrl, socketUrl, chainParams] = await Promise.all([
+                configService.getSiteUrl(),
+                configService.getApiUrl(),
+                configService.getSocketUrl(),
+                chainParamsService.getParameters()
+            ]);
 
             res.json({
                 success: true,
                 config: {
                     siteUrl,
                     apiUrl,
-                    socketUrl
+                    socketUrl,
+                    chainParameters: chainParams.parameters
                 }
             });
         } catch (error) {
