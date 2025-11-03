@@ -24,22 +24,51 @@ This documentation is for developers and operators who need to deploy, update, o
 
 TronRelic uses a **unified Docker deployment system** where environment differentiation is controlled by a single `ENV` variable in the `.env` file. Both development and production servers use identical container names, deployment directories, and docker-compose.yml configuration.
 
-```
-Production (tronrelic.com)
-├── Domain: tronrelic.com
-├── Server: Digital Ocean Droplet (<PROD_DROPLET_IP>)
-├── Deployment: /opt/tronrelic
-├── Docker Images: ghcr.io/delphian/tronrelic/*:production (same as dev)
-├── ENV Variable: ENV=production
-└── CI/CD: Builds :production images on push to 'main' (manual deployment required)
+### Environment Types
 
-Development (dev.tronrelic.com)
-├── Domain: dev.tronrelic.com
-├── Server: Digital Ocean Droplet (<DEV_DROPLET_IP>)
+TronRelic maintains **four distinct environment types** with different automation levels and lifecycles:
+
+```
+1. Production (tronrelic.com) - MANUAL DEPLOYMENT
+├── Domain: tronrelic.com
+├── Server: Permanent Digital Ocean Droplet (<PROD_DROPLET_IP>)
+├── Deployment: /opt/tronrelic
+├── Docker Images: ghcr.io/delphian/tronrelic/*:production
+├── ENV Variable: ENV=production
+├── Trigger: Push to 'main' builds images → Manual deployment with ./scripts/droplet-update.sh prod
+└── Lifespan: Permanent (until manually destroyed)
+
+2. Permanent Dev Server (dev.tronrelic.com) - MANUAL DEPLOYMENT
+├── Domain: dev.tronrelic.com (optional, if configured)
+├── Server: Permanent Digital Ocean Droplet (<DEV_DROPLET_IP>)
 ├── Deployment: /opt/tronrelic
 ├── Docker Images: ghcr.io/delphian/tronrelic/*:production (same as prod)
 ├── ENV Variable: ENV=development
-└── CI/CD: Builds :production images on push to 'dev' (manual deployment required)
+├── Trigger: Push to 'dev' builds images → Manual deployment with ./scripts/droplet-update.sh dev
+└── Lifespan: Permanent (until manually destroyed)
+
+3. Ephemeral Dev Testing (dev.tronrelic.com) - FULLY AUTOMATED
+├── Domain: dev.tronrelic.com (uses reserved IP)
+├── Server: Temporary droplet created on every dev push (tronrelic-dev-{sha})
+├── Deployment: /opt/tronrelic
+├── Docker Images: ghcr.io/delphian/tronrelic/*:dev-{sha} (built from dev branch)
+├── ENV Variable: ENV=development
+├── Trigger: AUTOMATIC - Every push/merge to 'dev' branch
+├── Provisioning: Full stack (Nginx + Let's Encrypt SSL + Docker containers)
+├── Lifespan: 30 minutes (auto-destroys via scheduled workflow every 5 minutes)
+└── Workflow: .github/workflows/dev-environment.yml
+
+4. PR Testing Environments - FULLY AUTOMATED
+├── Domain: Direct IP access (no domain)
+├── Server: Temporary droplet per PR (tronrelic-pr-{number})
+├── Deployment: /opt/tronrelic
+├── Docker Images: ghcr.io/delphian/tronrelic/*:pr-{branch}-{sha}
+├── ENV Variable: ENV=development
+├── Access: http://{ip}:3000 (frontend), http://{ip}:4000 (backend)
+├── Trigger: AUTOMATIC - Opening PR to 'dev' branch
+├── Updates: Automatically redeploys on every push to PR branch
+├── Lifespan: Persists until PR is closed/merged
+└── Workflow: .github/workflows/pr-environment.yml
 ```
 
 **Key architectural decisions:**
@@ -47,9 +76,32 @@ Development (dev.tronrelic.com)
 - **Identical container names**: All environments use same names (`tronrelic-backend`, `tronrelic-frontend`) without environment suffixes
 - **Runtime configuration**: Frontend fetches config from backend API at SSR time, enabling universal images that work on any domain
 - **Nginx reverse proxy**: Routes traffic to backend (port 4000) and frontend (port 3000)
-- **HTTPS with Let's Encrypt**: Production uses SSL certificates for secure communication
+- **HTTPS with Let's Encrypt**: Production and ephemeral dev testing use SSL certificates for secure communication
 - **GitHub Container Registry**: Stores Docker images built by GitHub Actions
 - **MongoDB and Redis**: Run as Docker containers with persistent volumes
+
+### Automation Matrix
+
+| Environment | Provisioning | Image Building | Deployment | Teardown | Cost/Month |
+|-------------|--------------|----------------|------------|----------|------------|
+| **Production** | Manual script | Automatic (push to main) | Manual script | Manual | ~$24 (always on) |
+| **Permanent Dev** | Manual script | Automatic (push to dev) | Manual script | Manual | ~$24 (always on) |
+| **Ephemeral Dev Testing** | **Automatic** | **Automatic** | **Automatic** | **Automatic** (30 min) | ~$5 (10 pushes/day) |
+| **PR Environments** | **Automatic** | **Automatic** | **Automatic** | **Automatic** (PR close) | ~$24/PR (if left open for month) |
+
+**When pushing to dev branch:**
+1. GitHub Actions builds `:dev-{sha}` images
+2. GitHub Actions provisions new temporary droplet with Nginx + SSL
+3. GitHub Actions deploys containers automatically
+4. Droplet auto-destroys after 30 minutes
+5. Reserved IP released for next push
+
+**When opening PR to dev:**
+1. GitHub Actions builds `:pr-{branch}-{sha}` images
+2. GitHub Actions provisions droplet (if doesn't exist)
+3. GitHub Actions deploys containers automatically
+4. Subsequent pushes update same droplet
+5. Droplet destroys when PR closes/merges
 
 ## Detailed Documentation
 
@@ -88,10 +140,16 @@ This directory contains comprehensive documentation covering different aspects o
 
 ### Server Information
 
-| Environment | Domain | IP Address | Deploy Directory | Image Tag | ENV Variable |
-|-------------|--------|------------|------------------|-----------|--------------|
-| **Production** | tronrelic.com | <PROD_DROPLET_IP> | /opt/tronrelic | :production | ENV=production |
-| **Development** | dev.tronrelic.com | <DEV_DROPLET_IP> | /opt/tronrelic | :production | ENV=development |
+| Environment | Domain | IP Address | Deploy Directory | Image Tag | ENV Variable | Lifespan |
+|-------------|--------|------------|------------------|-----------|--------------|----------|
+| **Production** | tronrelic.com | <PROD_DROPLET_IP> | /opt/tronrelic | :production | ENV=production | Permanent |
+| **Permanent Dev** | dev.tronrelic.com (optional) | <DEV_DROPLET_IP> | /opt/tronrelic | :production | ENV=development | Permanent |
+| **Ephemeral Dev Testing** | dev.tronrelic.com | Reserved IP (see GitHub Actions) | /opt/tronrelic | :dev-{sha} | ENV=development | 30 minutes |
+| **PR Environments** | Direct IP only | See PR comment | /opt/tronrelic | :pr-{branch}-{sha} | ENV=development | Until PR closed |
+
+**Note:** The same domain `dev.tronrelic.com` can point to either:
+- Permanent dev server (static droplet IP, manual deployment)
+- Ephemeral testing droplet (reserved IP reassigned on each push, automated)
 
 ### Common Commands
 
@@ -174,23 +232,71 @@ docker exec -it tronrelic-redis redis-cli
 
 ## CI/CD Pipeline
 
-TronRelic uses GitHub Actions for automated image building with unified Docker standards:
+TronRelic uses GitHub Actions with **three distinct workflow types**:
+
+### 1. Production Image Building (Manual Deployment)
 
 **Workflow file:** `.github/workflows/prod-publish.yml`
 
+**Trigger:** Push to `main` branch
+
 **Pipeline behavior:**
-1. Triggered on push to `main` branch only (production releases)
-2. Runs all tests (unit and integration)
-3. Builds backend and frontend images (only if tests pass)
-4. Tags all images as `:production` (single tag, no environment-specific tags)
-5. Pushes images to GitHub Container Registry
-6. Manual deployment required (run `./scripts/droplet-update.sh <env>`)
+1. Runs all tests (unit and integration)
+2. Builds backend and frontend images (only if tests pass)
+3. Tags all images as `:production` (single universal tag)
+4. Pushes images to GitHub Container Registry
+5. **Manual deployment required** - Images built but NOT deployed automatically
+
+**Deploy manually after build:**
+```bash
+./scripts/droplet-update.sh prod  # Production
+./scripts/droplet-update.sh dev   # Permanent dev server (if exists)
+```
 
 **Image tag convention:**
 - All images use `:production` tag regardless of target environment
 - Images are identical; ENV variable in server .env controls runtime behavior
 - Eliminates :development vs :production tag confusion
 - See [operations-docker.md](../system/operations-docker.md) for complete Docker standards
+
+### 2. Ephemeral Dev Testing (Fully Automated)
+
+**Workflow files:**
+- `.github/workflows/dev-environment.yml` - Provisions testing droplet
+- `.github/workflows/dev-environment-teardown.yml` - Scheduled cleanup (every 5 minutes)
+
+**Trigger:** Push or merge to `dev` branch
+
+**Pipeline behavior:**
+1. Builds `:dev-{sha}` images from dev branch code
+2. Destroys previous testing droplet (if exists)
+3. Creates new temporary droplet
+4. Installs Docker, Nginx, Let's Encrypt SSL
+5. Deploys containers automatically
+6. Auto-destroys after 30 minutes
+
+**Access:** Check GitHub Actions workflow summary for domain and IP
+
+**No manual deployment needed** - Fully automated from push to teardown
+
+### 3. PR Testing Environments (Fully Automated)
+
+**Workflow files:**
+- `.github/workflows/pr-environment.yml` - Provisions/updates PR droplet
+- `.github/workflows/pr-environment-teardown.yml` - Cleanup on PR close
+
+**Trigger:** Opening PR to `dev` branch
+
+**Pipeline behavior:**
+1. Builds `:pr-{branch}-{sha}` images from PR branch code
+2. Creates droplet (if doesn't exist) or updates existing
+3. Deploys containers automatically
+4. Updates on every push to PR branch
+5. Auto-destroys when PR closes/merges
+
+**Access:** Direct IP (see PR comment for URLs)
+
+**No manual deployment needed** - Updates automatically on every PR push
 
 ## Security Considerations
 
