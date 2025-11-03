@@ -13,6 +13,7 @@ import { BlockTicker } from '../components/layout/BlockTicker';
 interface IOrderedTheme {
     id: string;
     name: string;
+    icon: string;
     css: string;
 }
 
