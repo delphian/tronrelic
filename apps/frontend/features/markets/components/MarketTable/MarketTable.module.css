@@ -57,7 +57,7 @@
 }
 
 .table__info_icon {
-    color: rgba(226, 234, 255, 0.6);
+    color: var(--color-text-muted);
     cursor: help;
 }
 
@@ -66,7 +66,7 @@
 }
 
 .table__row--expanded {
-    background: rgba(79, 140, 255, 0.12);
+    background: var(--color-primary-alpha-15);
     border-left: var(--border-width-thick) solid var(--color-primary);
 }
 
