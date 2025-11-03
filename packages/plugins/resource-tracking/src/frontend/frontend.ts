@@ -25,7 +25,7 @@ export const resourceTrackingFrontendPlugin = definePlugin({
     menuItems: [
         {
             label: 'Resources',
-            href: '/resources',
+            href: '/tron-resource-explorer',
             icon: 'Activity',
             category: 'analytics',
             order: 40
@@ -35,7 +35,7 @@ export const resourceTrackingFrontendPlugin = definePlugin({
     // Register main resource tracking page
     pages: [
         {
-            path: '/resources',
+            path: '/tron-resource-explorer',
             component: ResourceTrackingPage,
             title: 'Resource Explorer - TronRelic',
             description: 'Monitor TRON energy and bandwidth delegation trends'

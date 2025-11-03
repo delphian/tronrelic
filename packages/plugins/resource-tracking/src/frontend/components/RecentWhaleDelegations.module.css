@@ -1,0 +1,358 @@
+/**
+ * Recent Whale Delegations Component CSS Module
+ *
+ * Scoped styles for whale delegation table display using design tokens
+ * from globals.css and container queries for responsive behavior.
+ */
+
+/* Container with proper spacing from surrounding content */
+.container {
+    container-type: inline-size;
+    container-name: whale-delegations;
+}
+
+/* Header section with title and description */
+.header {
+    margin-bottom: var(--spacing-10);
+}
+
+.header_top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-7);
+    margin-bottom: var(--spacing-4);
+}
+
+.title {
+    font-size: var(--font-size-xl);
+    font-weight: var(--font-weight-bold);
+    color: var(--color-text);
+    margin: 0;
+}
+
+.description {
+    font-size: var(--font-size-sm);
+    color: var(--color-text-muted);
+    margin: 0;
+    line-height: 1.6;
+    transition: opacity var(--transition-base);
+}
+
+/* Table wrapper with overflow handling */
+.table_wrapper {
+    overflow-x: auto;
+    border-radius: var(--card-border-radius);
+    border: var(--card-border);
+}
+
+.table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--font-size-sm);
+}
+
+.table thead {
+    background: var(--table-header-background);
+    border-bottom: var(--card-border);
+}
+
+.table th {
+    padding: var(--spacing-7) var(--spacing-10);
+    text-align: left;
+    font-weight: var(--font-weight-semibold);
+    font-size: var(--font-size-xs);
+    color: var(--color-text-muted);
+    text-transform: uppercase;
+    letter-spacing: var(--letter-spacing-wide);
+}
+
+.table td {
+    padding: var(--spacing-7) var(--spacing-10);
+    border-top: var(--card-border);
+    color: var(--color-text-muted);
+}
+
+.table tbody tr {
+    transition: background-color var(--transition-base);
+}
+
+.table tbody tr:hover {
+    background: var(--table-row-background-hover);
+}
+
+/* Amount column with emphasis */
+.amount_cell {
+    font-variant-numeric: tabular-nums;
+}
+
+/* Stacked amount container */
+.amount_full,
+.amount_mobile {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-2);
+}
+
+/* Primary amount (TRX value) */
+.amount_primary {
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text);
+    font-size: var(--font-size-sm);
+}
+
+/* Secondary amount (energy/bandwidth approximation) */
+.amount_secondary {
+    font-size: var(--font-size-xs);
+    color: var(--color-text-secondary);
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-2);
+}
+
+.resource_amount {
+    font-size: var(--font-size-xs);
+    color: var(--color-text-subtle);
+    margin-top: var(--spacing-1);
+    font-family: var(--font-mono);
+}
+
+/* Desktop view - full format displayed by default */
+.amount_full {
+    display: flex;
+}
+
+/* Mobile view - abbreviated format hidden by default */
+.amount_mobile {
+    display: none;
+}
+
+/* Resource type badges */
+.badge_energy {
+    display: inline-flex;
+    align-items: center;
+    padding: var(--badge-padding);
+    font-size: var(--badge-font-size);
+    font-weight: var(--font-weight-semibold);
+    border-radius: var(--badge-border-radius);
+    letter-spacing: var(--badge-letter-spacing);
+    background: var(--badge-success-background);
+    color: var(--badge-success-color);
+    border: var(--badge-border-width) solid var(--badge-success-border);
+}
+
+.badge_bandwidth {
+    display: inline-flex;
+    align-items: center;
+    padding: var(--badge-padding);
+    font-size: var(--badge-font-size);
+    font-weight: var(--font-weight-semibold);
+    border-radius: var(--badge-border-radius);
+    letter-spacing: var(--badge-letter-spacing);
+    background: var(--badge-neutral-background);
+    color: var(--badge-neutral-color);
+    border: var(--badge-border-width) solid var(--badge-neutral-border);
+}
+
+/* Loading state */
+.loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: var(--spacing-12);
+    color: var(--color-text-muted);
+    font-size: var(--font-size-sm);
+}
+
+/* Error state */
+.error {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--spacing-7);
+    padding: var(--spacing-12);
+    color: var(--color-text-muted);
+    text-align: center;
+}
+
+.error_icon {
+    color: var(--badge-danger-color);
+}
+
+.error_text {
+    font-size: var(--font-size-sm);
+    color: var(--color-text-muted);
+    margin: 0;
+}
+
+/* Empty state */
+.empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: var(--spacing-12);
+    color: var(--color-text-subtle);
+    text-align: center;
+}
+
+.empty_text {
+    font-size: var(--font-size-sm);
+    margin: 0 0 var(--spacing-4) 0;
+}
+
+.empty_hint {
+    font-size: var(--font-size-sm);
+    color: var(--color-text-subtle);
+    margin: 0;
+}
+
+/* Compact mode styles */
+.compact .header {
+    margin-bottom: var(--spacing-7);
+}
+
+.compact .title {
+    font-size: var(--font-size-lg);
+}
+
+.compact .description {
+    opacity: 0;
+    height: 0;
+    overflow: hidden;
+    margin: 0;
+}
+
+.compact .table {
+    font-size: var(--font-size-xs);
+}
+
+.compact .table th {
+    padding: var(--spacing-4) var(--spacing-7);
+    font-size: var(--font-size-xs);
+}
+
+.compact .table td {
+    padding: var(--spacing-4) var(--spacing-7);
+    font-size: var(--font-size-xs);
+}
+
+.compact .amount_primary {
+    font-size: var(--font-size-xs);
+}
+
+.compact .amount_secondary {
+    font-size: var(--font-size-xs);
+}
+
+.compact .resource_amount {
+    font-size: var(--font-size-xs);
+    margin-top: 0;
+}
+
+.compact .badge_energy,
+.compact .badge_bandwidth {
+    padding: var(--spacing-1) var(--spacing-3);
+    font-size: var(--font-size-xs);
+}
+
+/* Type column icon display */
+.type_icon {
+    display: none;
+}
+
+.type_text {
+    display: inline;
+}
+
+/* Block column visibility control */
+.block_column {
+    display: table-cell;
+}
+
+/* Time column display control - desktop shows full year */
+.time_full {
+    display: inline;
+}
+
+.time_mobile {
+    display: none;
+}
+
+/* Responsive behavior using container queries */
+@container whale-delegations (max-width: 640px) {
+    .table th,
+    .table td {
+        padding: var(--spacing-5) var(--spacing-7);
+        font-size: var(--font-size-xs);
+    }
+
+    .title {
+        font-size: var(--font-size-lg);
+    }
+
+    /* Compact mode adjustments for small containers */
+    .compact .table th,
+    .compact .table td {
+        padding: var(--spacing-3) var(--spacing-5);
+    }
+}
+
+/* Below mobile breakpoint: hide Block column and show Type icons */
+@container whale-delegations (max-width: 768px) {
+    /* Hide Block column header and cells */
+    .block_column {
+        display: none;
+    }
+
+    /* Switch Type column from text to icon */
+    .type_icon {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .type_text {
+        display: none;
+    }
+
+    /* Switch Time column to mobile format without year */
+    .time_full {
+        display: none;
+    }
+
+    .time_mobile {
+        display: inline;
+    }
+
+    /* Switch Amount column to mobile abbreviated format */
+    .amount_full {
+        display: none;
+    }
+
+    .amount_mobile {
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-2);
+    }
+
+    .amount_mobile .amount_primary {
+        font-size: var(--font-size-sm);
+    }
+
+    .amount_mobile .amount_secondary {
+        font-size: var(--font-size-xs);
+    }
+
+    /* Adjust table layout for fewer columns */
+    .table {
+        min-width: auto;
+    }
+
+    /* Tighten padding on remaining columns */
+    .table th,
+    .table td {
+        padding: var(--spacing-4) var(--spacing-5);
+    }
+}
