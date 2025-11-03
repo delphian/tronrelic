@@ -1,0 +1,158 @@
+/**
+ * Icon Picker Modal Styles
+ *
+ * Provides a searchable, responsive grid interface for browsing and selecting
+ * Lucide React icons. Uses container queries to adapt layout based on modal
+ * width, ensuring consistent experience across different modal sizes.
+ *
+ * All spacing, typography, and colors use design tokens from semantic-tokens.css
+ * for consistency with the broader design system.
+ */
+
+.container {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-7);
+    container-type: inline-size;
+    container-name: icon-picker;
+    max-height: 70vh;
+}
+
+/* Search Container */
+.search_container {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.search_input {
+    width: 100%;
+    padding-right: var(--spacing-12); /* Space for search icon */
+}
+
+.search_icon {
+    position: absolute;
+    right: var(--spacing-5);
+    color: var(--color-text-muted);
+    pointer-events: none;
+}
+
+/* Results Count */
+.results_count {
+    font-size: var(--font-size-sm);
+    color: var(--color-text-muted);
+    margin: 0;
+}
+
+/* Icon Grid */
+.icon_grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+    gap: var(--spacing-5);
+    overflow-y: auto;
+    padding: var(--spacing-4);
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-background);
+    max-height: 50vh;
+}
+
+/* Responsive grid columns based on container width */
+@container icon-picker (min-width: 600px) {
+    .icon_grid {
+        grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+    }
+}
+
+@container icon-picker (min-width: 800px) {
+    .icon_grid {
+        grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    }
+}
+
+/* Icon Button */
+.icon_button {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--spacing-4);
+    padding: var(--spacing-5);
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-surface);
+    color: var(--color-text);
+    cursor: pointer;
+    transition: all var(--transition-base);
+    min-height: 90px;
+}
+
+.icon_button:hover {
+    border-color: var(--color-primary-alpha-30);
+    background: var(--color-surface-elevated);
+    box-shadow: var(--shadow-sm);
+}
+
+.icon_button:focus-visible {
+    outline: var(--focus-outline-width) solid var(--color-focus);
+    outline-offset: var(--focus-outline-offset);
+    box-shadow: var(--focus-shadow);
+}
+
+.icon_button--selected {
+    border-color: var(--color-primary);
+    border-width: var(--border-width-medium);
+    background: var(--color-primary-alpha-10);
+}
+
+/* Icon Preview */
+.icon_preview {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 40px;
+    color: var(--color-text);
+}
+
+.icon_button--selected .icon_preview {
+    color: var(--color-primary);
+}
+
+/* Icon Name */
+.icon_name {
+    font-size: var(--font-size-xs);
+    color: var(--color-text-muted);
+    text-align: center;
+    word-break: break-word;
+    line-height: var(--line-height-tight);
+}
+
+.icon_button--selected .icon_name {
+    color: var(--color-primary);
+    font-weight: var(--font-weight-medium);
+}
+
+/* Empty State */
+.empty_state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--spacing-5);
+    padding: var(--spacing-12);
+    text-align: center;
+}
+
+.empty_state_text {
+    font-size: var(--font-size-md);
+    color: var(--color-text-muted);
+    margin: 0;
+}
+
+/* Action Bar */
+.action_bar {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--spacing-5);
+    padding-top: var(--spacing-5);
+    border-top: var(--border-width-thin) solid var(--color-border);
+}
