@@ -145,7 +145,10 @@ jobs:
 
           echo "Assigning reserved IP $RESERVED_IP to droplet $DROPLET_NAME (ID: $DROPLET_ID)..."
 
-          doctl compute floating-ip-action assign "$RESERVED_IP" "$DROPLET_ID" --wait
+          doctl compute floating-ip-action assign "$RESERVED_IP" "$DROPLET_ID"
+
+          echo "Waiting for IP assignment to complete..."
+          sleep 10
 
           echo "ip=$RESERVED_IP" >> $GITHUB_OUTPUT
           echo "✅ Reserved IP assigned: $RESERVED_IP"
