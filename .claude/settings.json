@@ -13,12 +13,10 @@
       "Bash(tee:*)",
       "Bash(npx playwright test:*)",
       "Bash(npm run test:*)",
-      "Bash(npm start)",
       "Bash(npm test:*)",
       "Bash(npm run build:plugin-backends:*)",
       "Bash(npm run build:plugin-frontends:*)",
       "Bash(npm run build:plugins:*)",
-      "Bash(node:*)",
       "Bash(openssl:*)",
       "Bash(npm run build:*)",
       "Bash(curl:*)",
@@ -40,10 +38,11 @@
       "Bash(git log:*)"
     ],
     "deny": [
-      "Bash(git push:*)"
     ],
     "ask": [
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(gh pr:*)"
     ]
   }
 }
