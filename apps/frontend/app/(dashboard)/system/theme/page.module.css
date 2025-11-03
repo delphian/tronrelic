@@ -187,6 +187,19 @@
     gap: var(--spacing-4);
 }
 
+.form_row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--spacing-7);
+}
+
+/* Stack form row on smaller containers */
+@container theme-admin (max-width: 768px) {
+    .form_row {
+        grid-template-columns: 1fr;
+    }
+}
+
 .form_label {
     font-size: var(--font-size-sm);
     font-weight: var(--font-weight-medium);
@@ -314,4 +327,32 @@
 .empty_state_text {
     margin: 0;
     font-size: var(--font-size-md);
+}
+
+/* Icon Picker Integration */
+.icon_picker_wrapper {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-7);
+}
+
+.icon_picker_button {
+    flex-shrink: 0;
+}
+
+.selected_icon_preview {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-4);
+    padding: var(--spacing-5) var(--spacing-7);
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-surface);
+    color: var(--color-text);
+}
+
+.selected_icon_name {
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+    color: var(--color-text-muted);
 }
