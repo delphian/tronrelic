@@ -15,11 +15,12 @@ Next.js inlines `NEXT_PUBLIC_*` environment variables into JavaScript bundles at
 Instead of relying on build-time environment variables, TronRelic:
 
 1. **Backend stores siteUrl** in MongoDB (editable via `/system/config` admin UI)
-2. **SSR fetches config** from backend API once at container startup, caches in memory
-3. **SSR injects config** into HTML as `<script>window.__RUNTIME_CONFIG__={...}</script>`
-4. **Client reads from global** - No hardcoded values, no separate fetch, instant access
+2. **Backend fetches chain parameters** from TRON network (updated every 10 minutes)
+3. **SSR fetches config** from backend API once at container startup, caches in memory
+4. **SSR injects config** into HTML as `<script>window.__RUNTIME_CONFIG__={...}</script>`
+5. **Client reads from global** - No hardcoded values, no separate fetch, instant access
 
-This enables the same Docker image to work on `tronrelic.com`, `dev.tronrelic.com`, or any domain.
+This enables the same Docker image to work on `tronrelic.com`, `dev.tronrelic.com`, or any domain, and provides instant access to TRON network parameters for energy/TRX conversions in the browser.
 
 ## Architecture
 
@@ -36,10 +37,19 @@ Backend Database → /api/config/public → SSR Cache → HTML Injection → Cli
 - Exposes via public `/api/config/public` endpoint (no auth required)
 - Caches in memory (1 minute TTL)
 
+**ChainParametersService** (`apps/backend/src/modules/chain-parameters/chain-parameters.service.ts`):
+- Fetches TRON network parameters from blockchain every 10 minutes (via scheduled job)
+- Stores in MongoDB `chain_parameters` collection
+- Provides energy/TRX conversion ratios (`energyPerTrx`, `energyFee`)
+- Included in `/api/config/public` response for instant client access
+- Caches in memory (1 minute TTL)
+- Singleton pattern ensures all consumers share same cache
+
 **Initial database default:**
 - Reads from `NEXT_PUBLIC_SITE_URL` backend environment variable (set via docker-compose)
 - Falls back to `http://localhost:3000` if not set
 - Created automatically on first backend startup when database is empty
+- Chain parameters use fallback values until first TRON network fetch completes
 
 ### Frontend SSR (Server-Side)
 
@@ -102,6 +112,54 @@ If the domain changes after deployment:
 4. SSR cache refreshes with new config
 5. WebSocket connects to new domain
 
+## Using Chain Parameters in Frontend
+
+The runtime config includes TRON blockchain parameters for instant energy/TRX conversions without additional API calls.
+
+**Available parameters:**
+```typescript
+const { chainParameters } = getRuntimeConfig();
+
+// Calculate energy from TRX
+const energy = trxAmount * chainParameters.energyPerTrx;
+
+// Calculate TRX from energy
+const trx = energyAmount / chainParameters.energyPerTrx;
+
+// Get burn cost per energy unit
+const burnCost = chainParameters.energyFee; // SUN per energy unit
+```
+
+**Example usage (whale threshold conversion):**
+```typescript
+import { getRuntimeConfig } from '@/lib/runtimeConfig';
+
+export function WhaleSettings() {
+    const { chainParameters } = getRuntimeConfig();
+    const [thresholdTrx, setThresholdTrx] = useState(1_000_000);
+
+    // Convert TRX to energy for display
+    const energyAmount = Math.floor(thresholdTrx * chainParameters.energyPerTrx);
+
+    return (
+        <div>
+            <input
+                type="number"
+                value={thresholdTrx}
+                onChange={(e) => setThresholdTrx(parseInt(e.target.value))}
+            />
+            <small>≈ {energyAmount.toLocaleString()} Energy</small>
+        </div>
+    );
+}
+```
+
+**Data freshness:**
+- Parameters update every 10 minutes from TRON network
+- Frontend receives snapshot at page load (SSR injection)
+- For most UI calculations, page-load snapshot is sufficient
+- If real-time accuracy is critical, fetch from `/api/config/public` directly
+
 ## Key Points
 
 ✅ **Universal Docker images** - Same image works on any domain
@@ -117,6 +175,8 @@ If the domain changes after deployment:
 **Backend:**
 - `apps/backend/src/api/routes/config.router.ts` - Public config endpoint
 - `apps/backend/src/services/system-config/system-config.service.ts` - Config storage and retrieval
+- `apps/backend/src/modules/chain-parameters/chain-parameters.service.ts` - TRON network parameters (singleton)
+- `apps/backend/src/modules/chain-parameters/chain-parameters-fetcher.ts` - Scheduled fetch from TRON network
 
 **Frontend:**
 - `apps/frontend/lib/serverConfig.ts` - SSR single source of truth (use in server components)

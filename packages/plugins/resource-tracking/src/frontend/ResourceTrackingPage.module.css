@@ -1,4 +1,4 @@
-/* Resource Tracking Page Styles */
+/* Resource Explorer Page Styles */
 
 .page {
     container-type: inline-size;
@@ -25,9 +25,37 @@
     font-size: var(--font-size-md);
     color: var(--color-text-muted);
     margin: 0;
-    display: inline-flex;
-    align-items: center;
-    gap: var(--spacing-1);
+    line-height: 1.6;
+}
+
+/**
+ * Short subtitle for mobile devices (below 768px).
+ * Displays a single-sentence summary optimized for small screens.
+ */
+.subtitleShort {
+    display: block;
+}
+
+/**
+ * Full subtitle for desktop devices (768px and above).
+ * Displays the complete SEO-optimized description.
+ */
+.subtitleFull {
+    display: none;
+}
+
+/**
+ * Responsive subtitle visibility using container queries.
+ * At 768px and above (desktop), hide short version and show full version.
+ */
+@container resource-tracking-page (min-width: 768px) {
+    .subtitleShort {
+        display: none;
+    }
+
+    .subtitleFull {
+        display: block;
+    }
 }
 
 .helpIcon {

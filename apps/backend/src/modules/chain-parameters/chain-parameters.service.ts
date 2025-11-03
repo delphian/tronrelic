@@ -11,11 +11,37 @@ import { logger } from '../../lib/logger.js';
  * Market fetchers need to convert between TRX and energy amounts based on current
  * network conditions. This service maintains fresh chain parameters from the database
  * and provides conversion methods that reflect real-time staking ratios.
+ *
+ * Singleton pattern ensures all consumers share the same cache instance.
  */
 export class ChainParametersService implements IChainParametersService {
+    private static instance: ChainParametersService | null = null;
+
     private cachedParams: IChainParameters | null = null;
     private cacheExpiry: number = 0;
     private readonly CACHE_TTL_MS = 60_000; // 1 minute
+
+    /**
+     * Private constructor to enforce singleton pattern.
+     * Use getInstance() to access the service.
+     */
+    private constructor() {}
+
+    /**
+     * Get the singleton instance of ChainParametersService.
+     *
+     * Creates the instance on first call and reuses it for all subsequent calls.
+     * This ensures all consumers share the same cache, preventing duplicate
+     * database queries and improving performance.
+     *
+     * @returns Singleton instance of ChainParametersService
+     */
+    public static getInstance(): ChainParametersService {
+        if (!ChainParametersService.instance) {
+            ChainParametersService.instance = new ChainParametersService();
+        }
+        return ChainParametersService.instance;
+    }
 
     /**
      * Get latest chain parameters from cache or database
@@ -120,7 +146,10 @@ export class ChainParametersService implements IChainParametersService {
                 totalEnergyCurrentLimit: 180_000_000_000,
                 totalFrozenForEnergy: 32_000_000_000_000_000, // 32M TRX in SUN
                 energyPerTrx: 5625, // Approximate ratio: 180B / 32M TRX
-                energyFee: 100
+                energyFee: 100,
+                totalBandwidthLimit: 43_200_000_000, // 43.2B bandwidth per day
+                totalFrozenForBandwidth: 43_200_000_000_000_000, // 43.2M TRX in SUN
+                bandwidthPerTrx: 1000 // Approximate ratio: 43.2B / 43.2M TRX
             },
             fetchedAt: new Date(),
             createdAt: new Date()

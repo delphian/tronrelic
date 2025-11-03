@@ -1,0 +1,163 @@
+name: Teardown Dev Environment
+
+on:
+  schedule:
+    # Run every 5 minutes to check for expired droplets
+    - cron: '*/5 * * * *'
+  workflow_dispatch: # Allow manual trigger for testing
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Install doctl
+        uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.DO_API_TOKEN }}
+
+      - name: Find and cleanup expired droplets
+        id: cleanup
+        run: |
+          echo "🔍 Searching for dev testing droplets..."
+
+          # Get current Unix timestamp
+          CURRENT_TIME=$(date +%s)
+          echo "Current time: $(date -u -d @$CURRENT_TIME '+%Y-%m-%d %H:%M:%S UTC') ($CURRENT_TIME)"
+
+          # List all droplets with tronrelic-dev-testing tag
+          DROPLETS=$(doctl compute droplet list --tag-name tronrelic-dev-testing --format ID,Name,Tags --no-header)
+
+          if [ -z "$DROPLETS" ]; then
+            echo "✅ No dev testing droplets found"
+            echo "found_droplets=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          echo "found_droplets=true" >> $GITHUB_OUTPUT
+          echo ""
+          echo "📋 Found dev testing droplets:"
+          echo "$DROPLETS"
+          echo ""
+
+          DESTROYED_COUNT=0
+          KEPT_COUNT=0
+          DESTROYED_LIST=""
+          KEPT_LIST=""
+
+          # Process each droplet
+          while IFS= read -r line; do
+            DROPLET_ID=$(echo "$line" | awk '{print $1}')
+            DROPLET_NAME=$(echo "$line" | awk '{print $2}')
+            TAGS=$(echo "$line" | cut -d' ' -f3-)
+
+            echo "Checking droplet: $DROPLET_NAME (ID: $DROPLET_ID)"
+
+            # Extract expiration timestamp from tags (format: expires-at-{timestamp})
+            EXPIRES_AT=$(echo "$TAGS" | grep -oP 'expires-at-\K[0-9]+' || echo "")
+
+            if [ -z "$EXPIRES_AT" ]; then
+              echo "⚠️ No expiration tag found for $DROPLET_NAME - skipping"
+              KEPT_COUNT=$((KEPT_COUNT + 1))
+              KEPT_LIST="${KEPT_LIST}\n- $DROPLET_NAME (no expiration tag)"
+              continue
+            fi
+
+            EXPIRES_AT_HUMAN=$(date -u -d @$EXPIRES_AT '+%Y-%m-%d %H:%M:%S UTC' 2>/dev/null || echo "invalid")
+            echo "Expires at: $EXPIRES_AT_HUMAN ($EXPIRES_AT)"
+
+            # Check if expired
+            if [ "$CURRENT_TIME" -ge "$EXPIRES_AT" ]; then
+              echo "🗑️ EXPIRED - Destroying $DROPLET_NAME..."
+
+              # Check if droplet has reserved IP assigned
+              RESERVED_IP="${{ secrets.DO_DEV_IP }}"
+              ATTACHED_DROPLET_ID=$(doctl compute floating-ip get "$RESERVED_IP" --format DropletID --no-header 2>/dev/null || echo "")
+
+              if [ "$ATTACHED_DROPLET_ID" = "$DROPLET_ID" ]; then
+                echo "📌 Unassigning reserved IP $RESERVED_IP from droplet..."
+                if doctl compute floating-ip-action unassign "$RESERVED_IP" --wait 2>/dev/null; then
+                  echo "✅ Reserved IP unassigned"
+                else
+                  echo "⚠️ Failed to unassign reserved IP (may already be unassigned)"
+                fi
+              fi
+
+              # Destroy droplet
+              if doctl compute droplet delete "$DROPLET_ID" --force; then
+                echo "✅ Successfully destroyed $DROPLET_NAME"
+                DESTROYED_COUNT=$((DESTROYED_COUNT + 1))
+                DESTROYED_LIST="${DESTROYED_LIST}\n- $DROPLET_NAME (expired at $EXPIRES_AT_HUMAN)"
+              else
+                echo "❌ Failed to destroy $DROPLET_NAME"
+                KEPT_COUNT=$((KEPT_COUNT + 1))
+                KEPT_LIST="${KEPT_LIST}\n- $DROPLET_NAME (deletion failed)"
+              fi
+            else
+              TIME_REMAINING=$((EXPIRES_AT - CURRENT_TIME))
+              MINUTES_REMAINING=$((TIME_REMAINING / 60))
+              echo "⏰ Not expired yet - $MINUTES_REMAINING minutes remaining"
+              KEPT_COUNT=$((KEPT_COUNT + 1))
+              KEPT_LIST="${KEPT_LIST}\n- $DROPLET_NAME (expires in $MINUTES_REMAINING minutes)"
+            fi
+
+            echo ""
+          done <<< "$DROPLETS"
+
+          # Save counts for summary
+          echo "destroyed_count=$DESTROYED_COUNT" >> $GITHUB_OUTPUT
+          echo "kept_count=$KEPT_COUNT" >> $GITHUB_OUTPUT
+          echo "destroyed_list<<EOF" >> $GITHUB_OUTPUT
+          echo -e "$DESTROYED_LIST" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          echo "kept_list<<EOF" >> $GITHUB_OUTPUT
+          echo -e "$KEPT_LIST" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+          echo "📊 Cleanup summary:"
+          echo "Destroyed: $DESTROYED_COUNT droplets"
+          echo "Kept: $KEPT_COUNT droplets"
+
+      - name: Write workflow summary
+        if: steps.cleanup.outputs.found_droplets == 'true'
+        run: |
+          DESTROYED_COUNT="${{ steps.cleanup.outputs.destroyed_count }}"
+          KEPT_COUNT="${{ steps.cleanup.outputs.kept_count }}"
+
+          cat >> $GITHUB_STEP_SUMMARY << 'EOF'
+          ## 🗑️ Dev Testing Environment Cleanup
+
+          ### Summary
+          - **Destroyed:** ${{ steps.cleanup.outputs.destroyed_count }} droplets
+          - **Kept:** ${{ steps.cleanup.outputs.kept_count }} droplets
+
+          EOF
+
+          if [ "$DESTROYED_COUNT" -gt 0 ]; then
+            cat >> $GITHUB_STEP_SUMMARY << 'EOF'
+          ### ✅ Destroyed Droplets
+          ${{ steps.cleanup.outputs.destroyed_list }}
+
+          EOF
+          fi
+
+          if [ "$KEPT_COUNT" -gt 0 ]; then
+            cat >> $GITHUB_STEP_SUMMARY << 'EOF'
+          ### ⏰ Active Droplets (Not Expired)
+          ${{ steps.cleanup.outputs.kept_list }}
+
+          EOF
+          fi
+
+          echo "✅ Workflow summary written"
+
+      - name: Write empty summary
+        if: steps.cleanup.outputs.found_droplets == 'false'
+        run: |
+          cat >> $GITHUB_STEP_SUMMARY << 'EOF'
+          ## ✅ Dev Testing Environment Cleanup
+
+          No dev testing droplets found. All clean!
+          EOF
