@@ -5,11 +5,12 @@ import type { IThemeDocument, ICreateThemeInput, IUpdateThemeInput } from '../da
 
 /**
  * Ordered theme for frontend injection.
- * Includes only the fields needed for SSR rendering.
+ * Includes only the fields needed for SSR rendering and theme toggle.
  */
 export interface IOrderedTheme {
     id: string;
     name: string;
+    icon: string;
     css: string;
 }
 
@@ -115,23 +116,46 @@ export class ThemeService {
     }
 
     /**
-     * Create a new theme with auto-generated UUID and timestamps.
+     * Create a new theme with auto-generated or client-provided UUID and timestamps.
      *
-     * @param input - Theme creation data (name, css, dependencies, isActive)
+     * @param input - Theme creation data (optional id, name, css, dependencies, isActive)
      * @returns Created theme document
-     * @throws Error if theme with same name already exists
+     * @throws Error if theme with same name already exists or if provided UUID is invalid/duplicate
      */
     async createTheme(input: ICreateThemeInput): Promise<IThemeDocument> {
+        let themeId: string;
+
+        // Validate and assign UUID
+        if (input.id) {
+            // Client provided UUID - validate format
+            if (!this.isValidUUID(input.id)) {
+                throw new Error('Invalid UUID format. Must be a valid UUID v4.');
+            }
+
+            // Check for UUID collision
+            const existingById = await this.collection.findOne({ id: input.id });
+            if (existingById) {
+                throw new Error(`Theme with ID "${input.id}" already exists`);
+            }
+
+            themeId = input.id;
+            this.logger.debug({ themeId }, 'Using client-provided UUID');
+        } else {
+            // Server generates UUID
+            themeId = uuidv4();
+        }
+
         // Check for duplicate name
-        const existing = await this.collection.findOne({ name: input.name });
-        if (existing) {
+        const existingByName = await this.collection.findOne({ name: input.name });
+        if (existingByName) {
             throw new Error(`Theme with name "${input.name}" already exists`);
         }
 
         const now = new Date();
         const theme: Omit<IThemeDocument, '_id'> = {
-            id: uuidv4(),
+            id: themeId,
             name: input.name,
+            icon: input.icon,
             css: input.css,
             dependencies: input.dependencies || [],
             isActive: input.isActive || false,
@@ -312,6 +336,7 @@ export class ThemeService {
         const result: IOrderedTheme[] = ordered.map(t => ({
             id: t.id,
             name: t.name,
+            icon: t.icon,
             css: t.css
         }));
 
@@ -475,6 +500,20 @@ export class ThemeService {
     private async invalidateActiveCache(): Promise<void> {
         await this.cacheService.invalidate('themes:active');
         this.logger.debug('Active themes cache invalidated (batch)');
+    }
+
+    /**
+     * Validate UUID v4 format.
+     *
+     * Checks if the provided string matches the UUID v4 specification with proper
+     * version (4) and variant (8, 9, a, or b) bits.
+     *
+     * @param str - String to validate
+     * @returns True if valid UUID v4, false otherwise
+     */
+    private isValidUUID(str: string): boolean {
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+        return uuidRegex.test(str);
     }
 
     /**
