@@ -7,6 +7,7 @@ export interface ITheme {
     _id: string;
     id: string;
     name: string;
+    icon: string;
     css: string;
     dependencies: string[];
     isActive: boolean;
@@ -65,7 +66,7 @@ export const fetchThemes = createAsyncThunk(
  */
 export const createTheme = createAsyncThunk(
     'theme/createTheme',
-    async (input: { name: string; css: string; dependencies?: string[]; isActive?: boolean; token: string }, { rejectWithValue }) => {
+    async (input: { id?: string; name: string; icon: string; css: string; dependencies?: string[]; isActive?: boolean; token: string }, { rejectWithValue }) => {
         try {
             const { token, ...themeData } = input;
 

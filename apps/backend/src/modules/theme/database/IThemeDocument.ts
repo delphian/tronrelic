@@ -26,6 +26,12 @@ export interface IThemeDocument {
     name: string;
 
     /**
+     * Lucide React icon name for theme toggle button.
+     * @example 'Sparkles', 'Ghost', 'Turkey'
+     */
+    icon: string;
+
+    /**
      * Raw CSS content to inject into the page.
      * Should primarily override CSS custom properties defined in globals.css.
      * @example '.theme-dark { --color-primary: #3b82f6; }'
@@ -58,13 +64,25 @@ export interface IThemeDocument {
 
 /**
  * Input data for creating a new theme.
- * Excludes auto-generated fields (_id, id, createdAt, updatedAt).
+ * Excludes auto-generated fields (_id, createdAt, updatedAt).
  */
 export interface ICreateThemeInput {
+    /**
+     * Optional client-generated UUID v4.
+     * If provided, must be valid UUID v4 format and not already exist.
+     * If omitted, server generates a new UUID.
+     */
+    id?: string;
+
     /**
      * Human-readable theme name.
      */
     name: string;
+
+    /**
+     * Lucide React icon name for theme toggle button.
+     */
+    icon: string;
 
     /**
      * Raw CSS content.
@@ -93,6 +111,11 @@ export interface IUpdateThemeInput {
      * Updated theme name.
      */
     name?: string;
+
+    /**
+     * Updated icon name.
+     */
+    icon?: string;
 
     /**
      * Updated CSS content.

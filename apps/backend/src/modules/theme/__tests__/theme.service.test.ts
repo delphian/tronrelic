@@ -450,6 +450,7 @@ describe('ThemeService', () => {
         it('should create a new theme with default values', async () => {
             const input: ICreateThemeInput = {
                 name: 'Test Theme',
+                icon: 'Sparkles',
                 css: ':root { --color: blue; }'
             };
 
@@ -467,6 +468,7 @@ describe('ThemeService', () => {
         it('should create a theme with custom dependencies and active status', async () => {
             const input: ICreateThemeInput = {
                 name: 'Dependent Theme',
+                icon: 'Link',
                 css: ':root { --size: 10px; }',
                 dependencies: ['theme-uuid-1'],
                 isActive: true
@@ -481,6 +483,7 @@ describe('ThemeService', () => {
         it('should invalidate active cache when creating active theme', async () => {
             const input: ICreateThemeInput = {
                 name: 'Active Theme',
+                icon: 'Check',
                 css: ':root { --test: 1; }',
                 isActive: true
             };
@@ -498,6 +501,7 @@ describe('ThemeService', () => {
         it('should not invalidate cache when creating inactive theme', async () => {
             const input: ICreateThemeInput = {
                 name: 'Inactive Theme',
+                icon: 'X',
                 css: ':root { --test: 1; }',
                 isActive: false
             };
@@ -511,6 +515,99 @@ describe('ThemeService', () => {
             const cachedIds = await mockCache.get('themes:active');
             expect(cachedIds).toEqual(['old-id']);
         });
+
+        it('should accept client-provided valid UUID v4', async () => {
+            const clientId = '550e8400-e29b-41d4-a716-446655440000';
+            const input: ICreateThemeInput = {
+                id: clientId,
+                name: 'Client UUID Theme',
+                icon: 'Sparkles',
+                css: '[data-theme="550e8400-e29b-41d4-a716-446655440000"] { --color: red; }'
+            };
+
+            const theme = await themeService.createTheme(input);
+
+            expect(theme.id).toBe(clientId);
+            expect(theme.name).toBe('Client UUID Theme');
+
+            // Verify debug log was created
+            const debugLogs = mockLogger.logs.filter(l => l.level === 'debug');
+            const hasClientUuidLog = debugLogs.some(log =>
+                log.metadata?.themeId === clientId
+            );
+            expect(hasClientUuidLog).toBe(true);
+        });
+
+        it('should reject invalid UUID format', async () => {
+            const input: ICreateThemeInput = {
+                id: 'not-a-valid-uuid',
+                name: 'Invalid UUID Theme',
+                icon: 'X',
+                css: ':root { }'
+            };
+
+            await expect(themeService.createTheme(input)).rejects.toThrow(
+                'Invalid UUID format. Must be a valid UUID v4.'
+            );
+        });
+
+        it('should reject non-v4 UUID', async () => {
+            const input: ICreateThemeInput = {
+                id: '550e8400-e29b-11d4-a716-446655440000', // v1 UUID (notice "1" in version position)
+                name: 'UUID v1 Theme',
+                icon: 'X',
+                css: ':root { }'
+            };
+
+            await expect(themeService.createTheme(input)).rejects.toThrow(
+                'Invalid UUID format. Must be a valid UUID v4.'
+            );
+        });
+
+        it('should reject duplicate client-provided UUID', async () => {
+            const clientId = '550e8400-e29b-41d4-a716-446655440000';
+
+            // Create first theme with this UUID
+            await themeService.createTheme({
+                id: clientId,
+                name: 'First Theme',
+                icon: 'Check',
+                css: ':root { }'
+            });
+
+            // Attempt to create second theme with same UUID
+            await expect(
+                themeService.createTheme({
+                    id: clientId,
+                    name: 'Second Theme',
+                    icon: 'X',
+                    css: ':root { }'
+                })
+            ).rejects.toThrow(`Theme with ID "${clientId}" already exists`);
+        });
+
+        it('should handle both client-provided and server-generated UUIDs in same session', async () => {
+            const clientId = '550e8400-e29b-41d4-a716-446655440000';
+
+            // Create theme with client UUID
+            const theme1 = await themeService.createTheme({
+                id: clientId,
+                name: 'Client UUID',
+                icon: 'User',
+                css: ':root { }'
+            });
+
+            // Create theme with server-generated UUID
+            const theme2 = await themeService.createTheme({
+                name: 'Server UUID',
+                icon: 'Server',
+                css: ':root { }'
+            });
+
+            expect(theme1.id).toBe(clientId);
+            expect(theme2.id).toBeDefined();
+            expect(theme2.id).not.toBe(clientId);
+        });
     });
 
     describe('updateTheme', () => {
@@ -519,6 +616,7 @@ describe('ThemeService', () => {
         beforeEach(async () => {
             existingTheme = await themeService.createTheme({
                 name: 'Original Theme',
+                icon: 'Sparkles',
                 css: ':root { --original: true; }',
                 isActive: true
             });
@@ -588,12 +686,14 @@ describe('ThemeService', () => {
         beforeEach(async () => {
             theme1 = await themeService.createTheme({
                 name: 'Theme 1',
+                icon: 'Sparkles',
                 css: ':root { --theme1: true; }',
                 isActive: true
             });
 
             theme2 = await themeService.createTheme({
                 name: 'Theme 2',
+                icon: 'Ghost',
                 css: ':root { --theme2: true; }',
                 dependencies: [theme1.id],
                 isActive: true
@@ -605,6 +705,7 @@ describe('ThemeService', () => {
         it('should delete inactive theme without dependencies', async () => {
             const inactiveTheme = await themeService.createTheme({
                 name: 'Inactive',
+                icon: 'Moon',
                 css: ':root { }',
                 isActive: false
             });
@@ -646,12 +747,14 @@ describe('ThemeService', () => {
         beforeEach(async () => {
             theme1 = await themeService.createTheme({
                 name: 'Theme 1',
+                icon: 'Sparkles',
                 css: ':root { --theme1: red; }',
                 isActive: true
             });
 
             theme2 = await themeService.createTheme({
                 name: 'Theme 2',
+                icon: 'Ghost',
                 css: ':root { --theme2: blue; }',
                 dependencies: [theme1.id],
                 isActive: true
@@ -659,6 +762,7 @@ describe('ThemeService', () => {
 
             theme3 = await themeService.createTheme({
                 name: 'Theme 3',
+                icon: 'Moon',
                 css: ':root { --theme3: green; }',
                 isActive: false // inactive
             });
@@ -681,8 +785,8 @@ describe('ThemeService', () => {
             const cachedTheme1 = await mockCache.get(`themes:id:${theme1.id}`);
             const cachedTheme2 = await mockCache.get(`themes:id:${theme2.id}`);
 
-            expect(cachedTheme1).toEqual({ id: theme1.id, name: theme1.name, css: theme1.css });
-            expect(cachedTheme2).toEqual({ id: theme2.id, name: theme2.name, css: theme2.css });
+            expect(cachedTheme1).toEqual({ id: theme1.id, name: theme1.name, icon: theme1.icon, css: theme1.css });
+            expect(cachedTheme2).toEqual({ id: theme2.id, name: theme2.name, icon: theme2.icon, css: theme2.css });
 
             // Verify tags
             const entry1 = mockCache.getEntry(`themes:id:${theme1.id}`);
@@ -758,12 +862,14 @@ describe('ThemeService', () => {
         beforeEach(async () => {
             theme1 = await themeService.createTheme({
                 name: 'Theme 1',
+                icon: 'Sparkles',
                 css: ':root { }',
                 isActive: true
             });
 
             theme2 = await themeService.createTheme({
                 name: 'Theme 2',
+                icon: 'Ghost',
                 css: ':root { }',
                 isActive: true
             });
@@ -808,12 +914,14 @@ describe('ThemeService', () => {
         it('should throw error on circular dependencies', async () => {
             const theme1 = await themeService.createTheme({
                 name: 'Circular Theme 1',
+                icon: 'Sparkles',
                 css: ':root { }',
                 isActive: true
             });
 
             const theme2 = await themeService.createTheme({
                 name: 'Circular Theme 2',
+                icon: 'Ghost',
                 css: ':root { }',
                 dependencies: [theme1.id],
                 isActive: true
@@ -835,6 +943,7 @@ describe('ThemeService', () => {
         it('should warn about missing dependencies and continue', async () => {
             await themeService.createTheme({
                 name: 'Theme with Missing Dep',
+                icon: 'AlertTriangle',
                 css: ':root { }',
                 dependencies: ['non-existent-uuid'],
                 isActive: true
@@ -861,6 +970,7 @@ describe('ThemeService', () => {
         it('should toggle theme active status', async () => {
             const theme = await themeService.createTheme({
                 name: 'Toggle Test',
+                icon: 'ToggleLeft',
                 css: ':root { }',
                 isActive: false
             });
@@ -877,8 +987,8 @@ describe('ThemeService', () => {
 
     describe('listThemes', () => {
         it('should return all themes regardless of active status', async () => {
-            await themeService.createTheme({ name: 'Active', css: ':root { }', isActive: true });
-            await themeService.createTheme({ name: 'Inactive', css: ':root { }', isActive: false });
+            await themeService.createTheme({ name: 'Active', icon: 'Check', css: ':root { }', isActive: true });
+            await themeService.createTheme({ name: 'Inactive', icon: 'X', css: ':root { }', isActive: false });
 
             const all = await themeService.listThemes();
 
@@ -888,7 +998,7 @@ describe('ThemeService', () => {
 
     describe('getTheme', () => {
         it('should return theme by ID', async () => {
-            const created = await themeService.createTheme({ name: 'Test', css: ':root { }' });
+            const created = await themeService.createTheme({ name: 'Test', icon: 'TestTube', css: ':root { }' });
 
             const found = await themeService.getTheme(created.id);
 
