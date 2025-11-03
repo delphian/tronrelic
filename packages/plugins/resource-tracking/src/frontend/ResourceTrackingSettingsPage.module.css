@@ -58,9 +58,11 @@
 
 .message {
     padding: var(--spacing-7);
+    margin-bottom: var(--spacing-10);
     border-radius: var(--radius-md);
     font-size: var(--font-size-sm);
     font-weight: var(--font-weight-medium);
+    transition: opacity var(--transition-base);
 }
 
 .messageSuccess {

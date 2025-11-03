@@ -295,3 +295,42 @@
     outline-offset: 2px;
     box-shadow: 0 0 0 4px rgba(124, 155, 255, 0.24);
 }
+
+/**
+ * Content layout container for responsive grid.
+ *
+ * Default (mobile/tablet): Stacked layout with single column
+ * Desktop (>= 1440px): Two-column layout with delegations chart on left and whales on right
+ */
+.content_layout {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: var(--spacing-10);
+}
+
+/**
+ * Main content area (resource delegations chart).
+ * Takes full width on mobile, 60% on desktop for optimal chart visibility.
+ */
+.content_main {
+    min-width: 0; /* Prevent grid blowout */
+}
+
+/**
+ * Sidebar content area (recent whale delegations).
+ * Stacks below main content on mobile, sits alongside on desktop.
+ */
+.content_sidebar {
+    min-width: 0; /* Prevent grid blowout */
+}
+
+/**
+ * Desktop layout: Side-by-side columns with 60/40 split.
+ * Chart gets more space for better visualization, whales table gets readable width.
+ * Breakpoint lowered to 1280px to support typical laptop screens (1366px HD, 1920px FHD).
+ */
+@container resource-tracking-page (min-width: 1280px) {
+    .content_layout {
+        grid-template-columns: 1.5fr 1fr;
+    }
+}

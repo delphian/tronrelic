@@ -18,3 +18,25 @@ Network activity summaries would be valuable for giving channel members a pulse 
 Whale activity highlights would capture attention and provide real-time market intelligence. When large TRX or USDT transfers occur above certain thresholds (configurable, perhaps 1M TRX or 500k USDT), the bot could post brief alerts with transaction hashes and wallet addresses. These alerts help traders and analysts spot potential market-moving events before they impact prices. A daily rollup summarizing the largest transfers and most active whale wallets would complement the real-time alerts.
 
 Energy market insights would serve users looking for cost-effective TRON resource rentals. Posting daily or twice-daily updates showing which platforms currently offer the best energy rental rates, along with price trend analysis (rising, falling, stable), helps channel members make informed decisions about when and where to rent energy. Highlighting sudden price drops or unusually good deals would add immediate actionable value for DeFi participants managing transaction costs.
+
+## CSS Preprocessor Investigation for Breakpoint Variables
+
+**Context:** CSS custom properties (variables) cannot be used in `@media` or `@container` query conditions due to CSS specification limitations. This forces us to use hardcoded pixel values for breakpoints throughout the codebase, which reduces maintainability and creates potential for inconsistency with our design token system.
+
+**Intent:** Investigate CSS preprocessors (Sass, Less, PostCSS with custom plugins) to enable compile-time variable substitution for breakpoints. This would allow us to:
+- Define breakpoints once in a central location (e.g., `$breakpoint-mobile: 768px`)
+- Reference them in media/container queries (e.g., `@container (max-width: $breakpoint-mobile)`)
+- Maintain design system consistency without runtime CSS variable limitations
+- Automatically update all breakpoint references when design tokens change
+
+**Considerations:**
+- Integration with Next.js build pipeline
+- Impact on build performance
+- Developer experience and tooling setup
+- Migration strategy for existing hardcoded breakpoints
+- Documentation updates for new workflow
+
+**Related files:**
+- `apps/frontend/app/primitives.css` - Current breakpoint token definitions
+- `apps/frontend/app/globals.css` - Documents CSS variable limitations
+- Component CSS Modules using hardcoded breakpoints (e.g., `RecentWhaleDelegations.module.css`)

@@ -80,6 +80,23 @@ export function ResourceTrackingSettingsPage({ context }: { context: IFrontendPl
         void loadSettings();
     }, [api]);
 
+    /**
+     * Auto-dismiss success messages after 3 seconds.
+     *
+     * Error messages persist until manually dismissed to ensure users see critical feedback.
+     * Success messages auto-clear to reduce UI clutter after confirming the action succeeded.
+     */
+    useEffect(() => {
+        if (message?.type === 'success') {
+            const timer = setTimeout(() => {
+                setMessage(null);
+            }, 3000);
+
+            return () => clearTimeout(timer);
+        }
+        return undefined;
+    }, [message]);
+
     const handleSave = async () => {
         setSaving(true);
         setMessage(null);
