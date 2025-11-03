@@ -227,7 +227,7 @@ export const resourceTrackingBackendPlugin = definePlugin({
         await context.menuService.create({
             namespace: 'main',
             label: 'Resource Explorer',
-            url: '/resources',
+            url: '/tron-resource-explorer',
             icon: 'Activity',
             order: 10,
             parent: analyticsCategory._id!,
