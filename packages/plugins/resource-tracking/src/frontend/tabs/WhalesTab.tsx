@@ -81,7 +81,7 @@ interface IWhalesTabProps {
  *
  * Features two sections:
  * 1. Whale Configuration - Enable/disable detection and set threshold
- * 2. Recent Whale Delegations - Table showing last 50 whale transactions
+ * 2. Recent Whale Delegations - Table showing last 10 whale transactions
  *
  * Whale delegations reveal institutional activity, large-scale energy rental
  * operations, and market-moving resource allocation patterns on the TRON network.
