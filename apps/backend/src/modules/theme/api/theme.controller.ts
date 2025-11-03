@@ -100,8 +100,8 @@ export class ThemeController {
             const input: ICreateThemeInput = req.body;
 
             // Validate required fields
-            if (!input.name || !input.css) {
-                res.status(400).json({ error: 'Name and css are required' });
+            if (!input.name || !input.icon || !input.css) {
+                res.status(400).json({ error: 'Name, icon, and css are required' });
                 return;
             }
 

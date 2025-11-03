@@ -19,7 +19,10 @@ import { Card } from '../../../../components/ui/Card';
 import { Button } from '../../../../components/ui/Button';
 import { Input } from '../../../../components/ui/Input';
 import { Badge } from '../../../../components/ui/Badge';
+import { useModal } from '../../../../components/ui/ModalProvider';
+import { IconPickerModal } from '../../../../components/ui/IconPickerModal';
 import { Plus, Trash2, X, CheckCircle, AlertTriangle } from 'lucide-react';
+import * as LucideIcons from 'lucide-react';
 import styles from './page.module.css';
 
 /**
@@ -32,6 +35,7 @@ import styles from './page.module.css';
 export default function ThemePage() {
     const dispatch = useAppDispatch();
     const { token } = useSystemAuth();
+    const { open: openModal, close: closeModal } = useModal();
     const themes = useAppSelector((state) => state.theme.themes);
     const selectedTheme = useAppSelector((state) => state.theme.selectedTheme);
     const validationResult = useAppSelector((state) => state.theme.validationResult);
@@ -39,11 +43,16 @@ export default function ThemePage() {
     const error = useAppSelector((state) => state.theme.error);
 
     const [formData, setFormData] = useState({
+        id: '',
         name: '',
+        icon: '',
         css: '',
         dependencies: [] as string[],
         isActive: false
     });
+
+    // Form fields are disabled until user clicks "New" or selects an existing theme
+    const isFormDisabled = !selectedTheme && !formData.id;
 
     useEffect(() => {
         void dispatch(fetchThemes());
@@ -52,7 +61,9 @@ export default function ThemePage() {
     useEffect(() => {
         if (selectedTheme) {
             setFormData({
+                id: selectedTheme.id,
                 name: selectedTheme.name,
+                icon: selectedTheme.icon,
                 css: selectedTheme.css,
                 dependencies: selectedTheme.dependencies,
                 isActive: selectedTheme.isActive
@@ -64,7 +75,18 @@ export default function ThemePage() {
         dispatch(selectTheme(theme));
         dispatch(clearValidation());
         if (!theme) {
-            setFormData({ name: '', css: '', dependencies: [], isActive: false });
+            // Generate new UUID for client-side creation
+            const newThemeId = crypto.randomUUID();
+            const cssTemplate = `[data-theme="${newThemeId}"] {\n    /* Override design tokens */\n    --color-primary: #4f8cff;\n    --color-secondary: #3fd1ff;\n    \n    /* Override component tokens */\n    --button-primary-background: linear-gradient(135deg, var(--color-primary), #6da3ff);\n}`;
+
+            setFormData({
+                id: newThemeId,
+                name: 'New Theme',
+                icon: '',
+                css: cssTemplate,
+                dependencies: [],
+                isActive: false
+            });
         }
     };
 
@@ -93,6 +115,31 @@ export default function ThemePage() {
     const handleToggle = async (id: string, isActive: boolean) => {
         await dispatch(toggleTheme({ id, isActive, token }));
         void dispatch(fetchThemes());
+    };
+
+    /**
+     * Opens the icon picker modal for selecting a Lucide icon.
+     *
+     * Displays a searchable grid of all available Lucide React icons,
+     * allowing visual selection instead of requiring users to remember
+     * exact icon names.
+     */
+    const handleOpenIconPicker = () => {
+        const modalId = openModal({
+            title: 'Select Icon',
+            size: 'lg',
+            content: (
+                <IconPickerModal
+                    selectedIcon={formData.icon}
+                    onSelect={(iconName) => {
+                        setFormData(prev => ({ ...prev, icon: iconName }));
+                        closeModal(modalId);
+                    }}
+                    onClose={() => closeModal(modalId)}
+                />
+            ),
+            dismissible: true
+        });
     };
 
     return (
@@ -197,18 +244,70 @@ export default function ThemePage() {
                     </div>
 
                     <form className={styles.form} onSubmit={(e) => e.preventDefault()}>
-                        {/* Name Field */}
-                        <div className={styles.form_group}>
-                            <label htmlFor="theme-name" className={styles.form_label}>
-                                Theme Name
-                            </label>
-                            <Input
-                                id="theme-name"
-                                type="text"
-                                value={formData.name}
-                                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                                placeholder="Enter theme name"
-                            />
+                        {/* Name and Icon Row */}
+                        <div className={styles.form_row}>
+                            {/* Name Field */}
+                            <div className={styles.form_group}>
+                                <label htmlFor="theme-name" className={styles.form_label}>
+                                    Theme Name
+                                </label>
+                                <Input
+                                    id="theme-name"
+                                    type="text"
+                                    value={formData.name}
+                                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                                    placeholder="Enter theme name"
+                                    disabled={isFormDisabled}
+                                />
+                            </div>
+
+                            {/* Icon Field */}
+                            <div className={styles.form_group}>
+                                <label className={styles.form_label}>
+                                    Icon
+                                </label>
+                                <p className={styles.form_hint}>
+                                    Select a Lucide icon for this theme
+                                </p>
+                                <div className={styles.icon_picker_wrapper}>
+                                    <Button
+                                        type="button"
+                                        variant="secondary"
+                                        size="md"
+                                        onClick={handleOpenIconPicker}
+                                        className={styles.icon_picker_button}
+                                        disabled={isFormDisabled}
+                                    >
+                                        {formData.icon ? 'Change Icon' : 'Select Icon'}
+                                    </Button>
+                                    {formData.icon && (
+                                        <div className={styles.selected_icon_preview}>
+                                            {(() => {
+                                                // Validate icon name before looking it up
+                                                const isValidIconName =
+                                                    formData.icon !== 'createLucideIcon' &&
+                                                    formData.icon !== 'icons' &&
+                                                    formData.icon !== 'Icon' &&
+                                                    /^[A-Z]/.test(formData.icon);
+
+                                                if (!isValidIconName) {
+                                                    return <span className={styles.selected_icon_name}>{formData.icon}</span>;
+                                                }
+
+                                                const IconComponent = LucideIcons[formData.icon as keyof typeof LucideIcons] as React.ComponentType<{ size?: number }> | undefined;
+                                                return IconComponent ? (
+                                                    <>
+                                                        <IconComponent size={20} />
+                                                        <span className={styles.selected_icon_name}>{formData.icon}</span>
+                                                    </>
+                                                ) : (
+                                                    <span className={styles.selected_icon_name}>{formData.icon}</span>
+                                                );
+                                            })()}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
                         </div>
 
                         {/* CSS Field */}
@@ -225,6 +324,7 @@ export default function ThemePage() {
                                 value={formData.css}
                                 onChange={(e) => setFormData({ ...formData, css: e.target.value })}
                                 placeholder="/* Enter CSS rules here */"
+                                disabled={isFormDisabled}
                             />
                         </div>
 
@@ -247,6 +347,7 @@ export default function ThemePage() {
                                         dependencies: Array.from(e.target.selectedOptions, (opt) => opt.value)
                                     })
                                 }
+                                disabled={isFormDisabled}
                             >
                                 {themes
                                     .filter((t) => t.id !== selectedTheme?.id)
@@ -265,6 +366,7 @@ export default function ThemePage() {
                                     type="checkbox"
                                     checked={formData.isActive}
                                     onChange={(e) => setFormData({ ...formData, isActive: e.target.checked })}
+                                    disabled={isFormDisabled}
                                 />
                                 <span className={styles.checkbox_label}>Enable theme immediately after save</span>
                             </label>
@@ -319,14 +421,14 @@ export default function ThemePage() {
                             <Button
                                 variant="secondary"
                                 onClick={handleValidate}
-                                disabled={loading || !selectedTheme}
+                                disabled={loading || !selectedTheme || isFormDisabled}
                             >
                                 Validate CSS
                             </Button>
                             <Button
                                 variant="primary"
                                 onClick={handleSave}
-                                disabled={loading || !formData.name || !formData.css}
+                                disabled={loading || !formData.name || !formData.icon || !formData.css || isFormDisabled}
                                 loading={loading}
                             >
                                 Save Theme
