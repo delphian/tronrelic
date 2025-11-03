@@ -5,6 +5,7 @@ import type { IFrontendPluginContext } from '@tronrelic/types';
 import { Activity, AlertCircle } from 'lucide-react';
 import styles from './ResourceTrackingPage.module.css';
 import { ResourceDelegationsCard } from './ResourceDelegationsCard';
+import { RecentWhaleDelegations } from './components/RecentWhaleDelegations';
 
 /**
  * Card component imported from frontend context.
@@ -484,7 +485,7 @@ export function ResourceTrackingPage({ context }: { context: IFrontendPluginCont
             <header className={styles.header}>
                 <h1 className={styles.title}>
                     <Activity size={28} style={{ display: 'inline-block', marginRight: '0.5rem', verticalAlign: 'middle' }} />
-                    Resource Explorer
+                    TRON Resource Explorer
                 </h1>
                 <div className={styles.subtitle}>
                     <p className={styles.subtitleShort}>
@@ -496,30 +497,42 @@ export function ResourceTrackingPage({ context }: { context: IFrontendPluginCont
                 </div>
             </header>
 
-            <ResourceDelegationsCard
-                context={context}
-                period={period}
-                setPeriod={setPeriod}
-                chartSeries={chartSeries}
-                timeRange={timeRange}
-                yAxisMin={yAxisMin}
-                yAxisMax={yAxisMax}
-                showEnergyDelegated={showEnergyDelegated}
-                setShowEnergyDelegated={setShowEnergyDelegated}
-                showEnergyReclaimed={showEnergyReclaimed}
-                setShowEnergyReclaimed={setShowEnergyReclaimed}
-                showNetEnergy={showNetEnergy}
-                setShowNetEnergy={setShowNetEnergy}
-                showBandwidthDelegated={showBandwidthDelegated}
-                setShowBandwidthDelegated={setShowBandwidthDelegated}
-                showBandwidthReclaimed={showBandwidthReclaimed}
-                setShowBandwidthReclaimed={setShowBandwidthReclaimed}
-                showNetBandwidth={showNetBandwidth}
-                setShowNetBandwidth={setShowNetBandwidth}
-                loading={loading}
-                error={error}
-                onRetry={() => void loadData()}
-            />
+            <div className={styles.content_layout}>
+                <div className={styles.content_main}>
+                    <ResourceDelegationsCard
+                        context={context}
+                        period={period}
+                        setPeriod={setPeriod}
+                        chartSeries={chartSeries}
+                        timeRange={timeRange}
+                        yAxisMin={yAxisMin}
+                        yAxisMax={yAxisMax}
+                        showEnergyDelegated={showEnergyDelegated}
+                        setShowEnergyDelegated={setShowEnergyDelegated}
+                        showEnergyReclaimed={showEnergyReclaimed}
+                        setShowEnergyReclaimed={setShowEnergyReclaimed}
+                        showNetEnergy={showNetEnergy}
+                        setShowNetEnergy={setShowNetEnergy}
+                        showBandwidthDelegated={showBandwidthDelegated}
+                        setShowBandwidthDelegated={setShowBandwidthDelegated}
+                        showBandwidthReclaimed={showBandwidthReclaimed}
+                        setShowBandwidthReclaimed={setShowBandwidthReclaimed}
+                        showNetBandwidth={showNetBandwidth}
+                        setShowNetBandwidth={setShowNetBandwidth}
+                        loading={loading}
+                        error={error}
+                        onRetry={() => void loadData()}
+                    />
+                </div>
+                <div className={styles.content_sidebar}>
+                    <RecentWhaleDelegations
+                        context={context}
+                        limit={10}
+                        whaleDetectionEnabled={true}
+                        defaultCompact={true}
+                    />
+                </div>
+            </div>
         </main>
     );
 }

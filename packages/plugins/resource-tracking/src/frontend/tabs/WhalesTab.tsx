@@ -168,11 +168,13 @@ export function WhalesTab({ context, settings, setSettings, onSave, saving }: IW
             </div>
 
             {/* Recent Whale Delegations Section - Full Width */}
-            <RecentWhaleDelegations
-                context={context}
-                limit={10}
-                whaleDetectionEnabled={settings.whaleDetectionEnabled}
-            />
+            <div className={styles.whaleSection}>
+                <RecentWhaleDelegations
+                    context={context}
+                    limit={10}
+                    whaleDetectionEnabled={settings.whaleDetectionEnabled}
+                />
+            </div>
         </>
     );
 }
