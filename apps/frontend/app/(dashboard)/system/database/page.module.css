@@ -6,6 +6,44 @@
  * queries for adaptable table and grid presentations.
  */
 
+/* Tab Navigation */
+.tabs {
+    display: flex;
+    gap: var(--spacing-2);
+    border-bottom: 2px solid var(--color-border);
+}
+
+.tab {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-2);
+    padding: var(--spacing-4) var(--spacing-6);
+    background: transparent;
+    border: none;
+    border-bottom: 3px solid transparent;
+    margin-bottom: -2px;
+    color: var(--color-text-muted);
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-medium);
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.tab:hover {
+    color: var(--color-text);
+    background: var(--color-surface-hover);
+}
+
+.tab:focus {
+    outline: 2px solid var(--color-primary);
+    outline-offset: -2px;
+}
+
+.tab_active {
+    color: var(--color-primary);
+    border-bottom-color: var(--color-primary);
+}
+
 /* Header Section */
 .header {
     display: flex;
