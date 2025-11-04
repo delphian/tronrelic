@@ -101,6 +101,12 @@
     --card-padding-md: var(--spacing-10);                  /* 1.5rem */
     --card-padding-lg: var(--spacing-12);                  /* 2rem */
 
+    /* Card - Background Image Customization */
+    --card-bg-image: none;                      /* Default: no background image */
+    --card-bg-opacity: 0.08;                    /* Subtle watermark opacity */
+    --card-bg-size: 140px;                      /* Background image size */
+    --card-bg-position: bottom right;           /* Position in card corner */
+
     /* ========================================================================
      * BADGE COMPONENT TOKENS
      * ======================================================================== */
