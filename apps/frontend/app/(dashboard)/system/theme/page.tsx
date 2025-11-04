@@ -75,8 +75,8 @@ export default function ThemePage() {
         dispatch(selectTheme(theme));
         dispatch(clearValidation());
         if (!theme) {
-            // Generate new UUID for client-side creation
-            const newThemeId = crypto.randomUUID();
+            // Generate new UUID for client-side creation with fallback for browsers without crypto.randomUUID
+            const newThemeId = crypto.randomUUID?.() ?? `theme-${Math.random().toString(36).slice(2, 11)}`;
             const cssTemplate = `[data-theme="${newThemeId}"] {\n    /* Override design tokens */\n    --color-primary: #4f8cff;\n    --color-secondary: #3fd1ff;\n    \n    /* Override component tokens */\n    --button-primary-background: linear-gradient(135deg, var(--color-primary), #6da3ff);\n}`;
 
             setFormData({
