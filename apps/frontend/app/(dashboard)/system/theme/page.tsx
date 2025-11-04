@@ -26,6 +26,22 @@ import * as LucideIcons from 'lucide-react';
 import styles from './page.module.css';
 
 /**
+ * Generate RFC4122 v4 compliant UUID using Math.random fallback.
+ *
+ * This fallback is used only when crypto.randomUUID() is unavailable (older browsers).
+ * The generated UUID follows the v4 specification with proper version and variant bits.
+ *
+ * @returns UUID v4 string in format xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx
+ */
+function generateUUIDv4Fallback(): string {
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+        const r = Math.random() * 16 | 0;
+        const v = c === 'x' ? r : (r & 0x3 | 0x8);
+        return v.toString(16);
+    });
+}
+
+/**
  * Theme management page for administrators.
  *
  * Provides CRUD operations for custom CSS themes with dependency management,
@@ -75,8 +91,8 @@ export default function ThemePage() {
         dispatch(selectTheme(theme));
         dispatch(clearValidation());
         if (!theme) {
-            // Generate new UUID for client-side creation with fallback for browsers without crypto.randomUUID
-            const newThemeId = crypto.randomUUID?.() ?? `theme-${Math.random().toString(36).slice(2, 11)}`;
+            // Generate new UUID for client-side creation with RFC4122 v4 compliant fallback
+            const newThemeId = crypto.randomUUID?.() ?? generateUUIDv4Fallback();
             const cssTemplate = `[data-theme="${newThemeId}"] {\n    /* Override design tokens */\n    --color-primary: #4f8cff;\n    --color-secondary: #3fd1ff;\n    \n    /* Override component tokens */\n    --button-primary-background: linear-gradient(135deg, var(--color-primary), #6da3ff);\n}`;
 
             setFormData({
