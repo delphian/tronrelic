@@ -55,7 +55,7 @@ TronRelic maintains **four distinct environment types** with different automatio
 ├── ENV Variable: ENV=development
 ├── Trigger: AUTOMATIC - Every push/merge to 'dev' branch
 ├── Provisioning: Full stack (Nginx + Let's Encrypt SSL + Docker containers)
-├── Lifespan: 30 minutes (auto-destroys via scheduled workflow every 5 minutes)
+├── Lifespan: 30 minutes (auto-destroys via scheduled workflow every 15 minutes)
 └── Workflow: .github/workflows/dev-environment.yml
 
 4. PR Testing Environments - FULLY AUTOMATED
@@ -263,7 +263,7 @@ TronRelic uses GitHub Actions with **three distinct workflow types**:
 
 **Workflow files:**
 - `.github/workflows/dev-environment.yml` - Provisions testing droplet
-- `.github/workflows/dev-environment-teardown.yml` - Scheduled cleanup (every 5 minutes)
+- `.github/workflows/dev-environment-teardown.yml` - Scheduled cleanup (every 15 minutes)
 
 **Trigger:** Push or merge to `dev` branch
 
