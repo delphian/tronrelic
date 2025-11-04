@@ -198,7 +198,7 @@ export function MyPluginPage({ context }: { context: IFrontendPluginContext }) {
 - Combine CSS Modules with utility classes (`.surface`, `.btn`, `.badge`) for consistency
 - Use container queries instead of viewport media queries for plugin responsiveness
 
-For complete CSS architecture guidance, see [Frontend Component Guide](../frontend/frontend-component-guide.md) and [Plugin Frontend Context](./plugins-frontend-context.md).
+For complete CSS architecture guidance, see [Frontend Component Guide](../frontend/ui/ui-component-styling.md) and [Plugin Frontend Context](./plugins-frontend-context.md).
 
 ### Build outputs
 

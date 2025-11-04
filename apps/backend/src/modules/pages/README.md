@@ -574,6 +574,6 @@ Before deploying new pages module features, verify:
 - [Frontend Architecture](../../../../docs/frontend/frontend-architecture.md) - Feature-based organization pattern
 
 **Core framework documentation:**
-- [Documentation Standards](../../../../docs/documentation-guidance.md) - Writing conventions for all TronRelic docs
+- [Documentation Standards](../../../../docs/documentation.md) - Writing conventions for all TronRelic docs
 - [Environment Variables](../../../../docs/environment.md) - Configuration reference
 - [System Architecture](../../../../docs/system/system.md) - Backend module patterns and dependency injection

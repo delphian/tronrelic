@@ -363,7 +363,7 @@ TronRelic uses a **3-layer design token system**. Component styles should refere
 
 **Always use semantic tokens instead of hardcoding values.** This ensures consistency, enables theming, and makes global design updates trivial.
 
-**See [frontend-design-token-layers.md](./frontend-design-token-layers.md) for complete token reference and usage guidelines.**
+**See [ui-design-token-layers.md](./ui/ui-design-token-layers.md) for complete token reference and usage guidelines.**
 
 ### Available Utility Classes
 
