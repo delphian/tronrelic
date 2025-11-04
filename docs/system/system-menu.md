@@ -262,4 +262,4 @@ console.log('Orphaned nodes:', orphans);
 - [plugins/plugins.md](../plugins/plugins.md) - Plugin system architecture and integration patterns
 - [plugins/plugins-page-registration.md](../plugins/plugins-page-registration.md) - How plugins register frontend pages
 - [system-api.md](./system-api.md) - WebSocket event patterns and admin authentication
-- [documentation-guidance.md](../documentation-guidance.md) - Documentation standards and writing style
+- [documentation.md](../documentation.md) - Documentation standards and writing style

@@ -2,6 +2,26 @@
 
 This document describes the complete procedures for deploying TronRelic to production and development environments, from initial server setup to routine updates.
 
+## Security Note: IP Address Placeholders
+
+**For security reasons, actual IP addresses are replaced with placeholders in this documentation.**
+
+**Automated agents can find actual IP addresses in:**
+- **Local .env file:** Variables `PROD_DROPLET_IP` and `DEV_DROPLET_IP` (used by deployment scripts)
+- **Deployment config:** `scripts/droplet-config.sh` (ENVIRONMENTS array, sourced by scripts)
+- **GitHub Actions secrets:**
+  - `DO_DEV_IP` - Reserved IP for ephemeral dev testing droplets
+  - (No production/dev IPs stored in GitHub - deployments are manual only)
+- **GitHub Actions workflow summaries:** Check recent workflow runs for actual IPs used
+- **PR comments:** GitHub Actions posts droplet IPs in PR comments for PR environments
+- **Digital Ocean CLI:** `doctl compute droplet list` shows all active droplets and IPs
+
+**Placeholders used in this document:**
+- `<PROD_DROPLET_IP>` - Production server IP (from .env: `PROD_DROPLET_IP`)
+- `<DEV_DROPLET_IP>` - Permanent development server IP (from .env: `DEV_DROPLET_IP`)
+- `<EPHEMERAL_DEV_IP>` - Reserved IP for ephemeral dev testing (GitHub secret: `DO_DEV_IP`)
+- `<PR_DROPLET_IP>` - Example IP for PR testing environments (see PR comments)
+
 ## Why This Matters
 
 **Risk of ad-hoc deployments:**
@@ -413,13 +433,13 @@ After pushing to the `dev` branch, find the testing environment details in the G
 Droplet Information:
 - Name: tronrelic-dev-a1b2c3d
 - Domain: dev.tronrelic.com
-- Reserved IP: 139.59.222.237
+- Reserved IP: <EPHEMERAL_DEV_IP>
 - Lifespan: 30 minutes
 - Auto-destroy: 2025-11-02 19:30:00 UTC
 
 Setup Status:
 - ✅ Ubuntu 25.04 droplet created
-- ✅ Reserved IP (139.59.222.237) assigned
+- ✅ Reserved IP (<EPHEMERAL_DEV_IP>) assigned
 - ✅ Let's Encrypt SSL certificate obtained for dev.tronrelic.com
 - ✅ Nginx reverse proxy configured
 - ✅ Docker images pulled and containers started
@@ -431,7 +451,7 @@ Access Application:
 - System Monitor: https://dev.tronrelic.com/system
 
 SSH Access:
-ssh root@139.59.222.237
+ssh root@<EPHEMERAL_DEV_IP>
 
 Note:
 - Uses Let's Encrypt trusted SSL certificate (no browser warnings!)
@@ -497,7 +517,7 @@ The dev testing environment requires additional GitHub secrets to be configured:
 
 | Secret Name | Description | Example Value | Required |
 |------------|-------------|---------------|----------|
-| `DO_DEV_IP` | Digital Ocean reserved IP address | `139.59.222.237` | ✅ Yes |
+| `DO_DEV_IP` | Digital Ocean reserved IP address | `<EPHEMERAL_DEV_IP>` | ✅ Yes |
 | `DO_DEV_HOST` | Domain name pointing to reserved IP | `dev.tronrelic.com` | ✅ Yes |
 | `SSL_EMAIL` | Email for Let's Encrypt notifications | `admin@tronrelic.com` | ⚠️ Optional (defaults to admin@tronrelic.com) |
 
@@ -506,11 +526,11 @@ The dev testing environment requires additional GitHub secrets to be configured:
 1. **Create reserved IP in Digital Ocean:**
    ```bash
    doctl compute floating-ip create --region sgp1
-   # Note the IP address (e.g., 139.59.222.237)
+   # Note the IP address for use in DO_DEV_IP GitHub secret
    ```
 
 2. **Point DNS to reserved IP:**
-   - Add A record: `dev.tronrelic.com` → `139.59.222.237`
+   - Add A record: `dev.tronrelic.com` → `<EPHEMERAL_DEV_IP>`
    - Wait for DNS propagation (use `nslookup dev.tronrelic.com` to verify)
 
 3. **Add GitHub secrets:**
@@ -686,7 +706,7 @@ After opening a PR to the `dev` branch, find the environment details in the PR c
 
 Droplet Information:
 - Name: tronrelic-pr-42
-- IP Address: 159.89.123.45
+- IP Address: <PR_DROPLET_IP>
 - Expected DNS: pr-42.dev.tronrelic.com
 
 Docker Images:
@@ -694,12 +714,12 @@ Docker Images:
 - Frontend: ghcr.io/delphian/tronrelic/frontend:pr-feature-whales-a1b2c3d
 
 SSH Access:
-ssh root@159.89.123.45
+ssh root@<PR_DROPLET_IP>
 
 Access Application:
-- Frontend: http://159.89.123.45:3000
-- Backend API: http://159.89.123.45:4000/api
-- System Monitor: http://159.89.123.45:3000/system
+- Frontend: http://<PR_DROPLET_IP>:3000
+- Backend API: http://<PR_DROPLET_IP>:4000/api
+- System Monitor: http://<PR_DROPLET_IP>:3000/system
 
 Note: Direct port access (no nginx). Containers may take 1-2 minutes to fully initialize.
 ```
