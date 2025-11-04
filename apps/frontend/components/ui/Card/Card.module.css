@@ -3,6 +3,11 @@
  *
  * Scoped styles for the Card wrapper component that provides surface elevation
  * and visual hierarchy throughout the application.
+ *
+ * Note: overflow is not set to 'hidden' to allow tooltips, popovers, and other
+ * absolutely positioned elements to extend beyond card boundaries. The background
+ * watermark system (::after pseudo-element) is sized and positioned to stay within
+ * card bounds without requiring overflow clipping.
  */
 
 .card {
@@ -12,6 +17,7 @@
     backdrop-filter: var(--card-backdrop-filter);
     box-shadow: var(--card-shadow);
     transition: var(--card-transition);
+    position: relative;
 }
 
 .card:hover {
@@ -43,4 +49,53 @@
 
 .card--padding-lg {
     padding: var(--card-padding-lg);
+}
+
+/* ============================================================================
+ * BACKGROUND IMAGE SYSTEM
+ * ========================================================================== */
+
+/**
+ * Card Background Image System
+ *
+ * Applies themeable background watermarks using CSS custom properties defined
+ * in semantic-tokens.css. Themes can override --card-bg-image to display logos,
+ * icons, or decorative elements at any position within cards.
+ *
+ * Usage in themes:
+ *   [data-theme="custom"] {
+ *     --card-bg-image: url('/images/logo-watermark.svg');
+ *     --card-bg-opacity: 0.12;
+ *     --card-bg-size: 160px;
+ *     --card-bg-position: bottom right;
+ *   }
+ *
+ * Position options: top left, top center, top right, center, bottom left, bottom right, etc.
+ *
+ * To disable for specific cards:
+ *   <Card noBackgroundImage>
+ */
+
+.card::after {
+    content: '';
+    position: absolute;
+    inset: 0; /* Cover entire card */
+    background-image: var(--card-bg-image);
+    background-size: var(--card-bg-size);
+    background-repeat: no-repeat;
+    background-position: var(--card-bg-position);
+    opacity: var(--card-bg-opacity);
+    pointer-events: none; /* Allow clicks to pass through */
+    z-index: 0; /* Keep behind card content */
+}
+
+/* Ensure card content stays above the background image */
+.card > * {
+    position: relative;
+    z-index: 1;
+}
+
+/* Modifier to disable background image for specific cards */
+.card--no-bg-image::after {
+    display: none;
 }
