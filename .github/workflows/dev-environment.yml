@@ -6,7 +6,13 @@ on:
       - dev
 
 jobs:
+  test:
+    name: Run All Tests
+    uses: ./.github/workflows/test.yml
+    secrets: inherit
+
   build-and-provision:
+    needs: test
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -259,78 +265,52 @@ jobs:
 
           echo "✅ Droplet setup complete"
 
-      - name: Install and configure Nginx with Let's Encrypt
+      - name: Install and configure Nginx with self-signed SSL
         run: |
           DROPLET_IP="${{ steps.ip.outputs.ip }}"
           DOMAIN="${{ steps.ip.outputs.domain }}"
 
-          echo "Installing Nginx and Certbot..."
+          echo "Installing Nginx..."
           ssh root@"$DROPLET_IP" << 'EOF'
             set -e
 
-            # Install Nginx and Certbot
-            apt-get install -y nginx certbot python3-certbot-nginx
+            # Install Nginx
+            apt-get install -y nginx
 
             # Start and enable Nginx
             systemctl start nginx
             systemctl enable nginx
 
-            echo "✅ Nginx and Certbot installed"
+            echo "✅ Nginx installed"
           EOF
 
-          echo "Creating temporary HTTP-only Nginx configuration for Let's Encrypt verification..."
+          echo "Generating self-signed SSL certificate..."
 
-          cat > /tmp/nginx-temp.conf <<'LOCALEOF'
-          server {
-              listen 80;
-              listen [::]:80;
-              server_name DOMAIN_PLACEHOLDER;
-
-              location /.well-known/acme-challenge/ {
-                  root /var/www/html;
-              }
-
-              location / {
-                  return 200 'Server provisioning...';
-                  add_header Content-Type text/plain;
-              }
-          }
-          LOCALEOF
-
-          sed -i "s/DOMAIN_PLACEHOLDER/$DOMAIN/g" /tmp/nginx-temp.conf
-
-          scp -o StrictHostKeyChecking=no /tmp/nginx-temp.conf root@"$DROPLET_IP":/etc/nginx/sites-available/tronrelic
-
-          ssh root@"$DROPLET_IP" "ln -sf /etc/nginx/sites-available/tronrelic /etc/nginx/sites-enabled/tronrelic && rm -f /etc/nginx/sites-enabled/default && nginx -t && systemctl reload nginx"
-
-          echo "✅ Temporary Nginx configuration active"
-
-          echo "Obtaining Let's Encrypt SSL certificate for $DOMAIN..."
-
-          ssh root@"$DROPLET_IP" << CERTEOF
+          ssh root@"$DROPLET_IP" << SSLEOF
             set -e
 
-            # Obtain SSL certificate (using default admin email for dev environment)
-            certbot certonly --nginx -d $DOMAIN \
-              --non-interactive \
-              --agree-tos \
-              --email admin@tronrelic.com \
-              --keep-until-expiring
+            # Create directory for SSL certificates
+            mkdir -p /etc/nginx/ssl
 
-            echo "✅ SSL certificate obtained"
-          CERTEOF
+            # Generate self-signed certificate (valid for 30 days)
+            openssl req -x509 -nodes -days 30 -newkey rsa:2048 \
+              -keyout /etc/nginx/ssl/selfsigned.key \
+              -out /etc/nginx/ssl/selfsigned.crt \
+              -subj "/C=US/ST=Dev/L=Dev/O=TronRelic/CN=$DOMAIN"
 
-          echo "Updating Nginx configuration with SSL..."
+            chmod 600 /etc/nginx/ssl/selfsigned.key
+            chmod 644 /etc/nginx/ssl/selfsigned.crt
+
+            echo "✅ Self-signed certificate generated"
+          SSLEOF
+
+          echo "Creating Nginx configuration with self-signed SSL..."
 
           cat > /tmp/nginx-ssl.conf <<'LOCALEOF'
           server {
               listen 80;
               listen [::]:80;
               server_name DOMAIN_PLACEHOLDER;
-
-              location /.well-known/acme-challenge/ {
-                  root /var/www/html;
-              }
 
               location / {
                   return 301 https://$server_name$request_uri;
@@ -342,8 +322,8 @@ jobs:
               listen [::]:443 ssl http2;
               server_name DOMAIN_PLACEHOLDER;
 
-              ssl_certificate /etc/letsencrypt/live/DOMAIN_PLACEHOLDER/fullchain.pem;
-              ssl_certificate_key /etc/letsencrypt/live/DOMAIN_PLACEHOLDER/privkey.pem;
+              ssl_certificate /etc/nginx/ssl/selfsigned.crt;
+              ssl_certificate_key /etc/nginx/ssl/selfsigned.key;
               ssl_protocols TLSv1.2 TLSv1.3;
               ssl_ciphers HIGH:!aNULL:!MD5;
               ssl_prefer_server_ciphers on;
@@ -351,7 +331,6 @@ jobs:
               add_header X-Frame-Options "SAMEORIGIN" always;
               add_header X-Content-Type-Options "nosniff" always;
               add_header X-XSS-Protection "1; mode=block" always;
-              add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
 
               client_max_body_size 100m;
               proxy_read_timeout 300s;
@@ -393,11 +372,11 @@ jobs:
 
           scp -o StrictHostKeyChecking=no /tmp/nginx-ssl.conf root@"$DROPLET_IP":/etc/nginx/sites-available/tronrelic
 
-          ssh root@"$DROPLET_IP" "nginx -t && systemctl reload nginx"
+          ssh root@"$DROPLET_IP" "ln -sf /etc/nginx/sites-available/tronrelic /etc/nginx/sites-enabled/tronrelic && rm -f /etc/nginx/sites-enabled/default && nginx -t && systemctl reload nginx"
 
-          echo "✅ Nginx configured with Let's Encrypt SSL"
+          echo "✅ Nginx configured with self-signed SSL"
 
-          echo "✅ Nginx setup complete with trusted SSL certificate"
+          echo "✅ Nginx setup complete with self-signed SSL certificate"
 
       - name: Copy docker-compose.yml to droplet
         run: |
@@ -504,12 +483,12 @@ jobs:
         run: |
           DOMAIN="${{ steps.ip.outputs.domain }}"
 
-          echo "Checking backend health via Nginx (HTTPS with trusted certificate)..."
+          echo "Checking backend health via Nginx (HTTPS with self-signed certificate)..."
           MAX_ATTEMPTS=10
           ATTEMPT=0
 
           while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
-            if curl -f -s https://"$DOMAIN"/api/health > /dev/null 2>&1; then
+            if curl -k -f -s https://"$DOMAIN"/api/health > /dev/null 2>&1; then
               echo "✅ Backend is healthy (via Nginx)"
               break
             fi
@@ -523,8 +502,8 @@ jobs:
             echo "⚠️ Backend health check timed out (may still be starting)"
           fi
 
-          echo "Checking frontend via Nginx (HTTPS with trusted certificate)..."
-          if curl -f -s https://"$DOMAIN"/ > /dev/null 2>&1; then
+          echo "Checking frontend via Nginx (HTTPS with self-signed certificate)..."
+          if curl -k -f -s https://"$DOMAIN"/ > /dev/null 2>&1; then
             echo "✅ Frontend is responding (via Nginx)"
           else
             echo "⚠️ Frontend not yet responding (may still be starting)"
@@ -565,7 +544,7 @@ jobs:
           ### Setup Status
           - ✅ Ubuntu 25.04 droplet created
           - ✅ Reserved IP (${DROPLET_IP}) assigned
-          - ✅ Let's Encrypt SSL certificate obtained for ${DOMAIN}
+          - ✅ Self-signed SSL certificate generated for ${DOMAIN}
           - ✅ Nginx reverse proxy configured
           - ✅ Docker and docker-compose installed
           - ✅ Deployment directory created (\`/opt/tronrelic\`)
@@ -578,7 +557,7 @@ jobs:
           - **System Monitor:** https://${DOMAIN}/system
 
           **Note:**
-          - Uses Let's Encrypt trusted SSL certificate (no browser warnings!)
+          - Uses self-signed SSL certificate (browser will show warning - click through to proceed)
           - Traffic routed through Nginx reverse proxy (identical to production)
           - Containers may take 1-2 minutes to fully initialize
           - Reserved IP will be released when droplet is destroyed
