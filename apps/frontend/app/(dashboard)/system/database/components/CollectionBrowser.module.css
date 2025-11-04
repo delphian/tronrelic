@@ -1,0 +1,162 @@
+/**
+ * Styles for CollectionBrowser component.
+ *
+ * Uses design tokens from globals.css and follows TronRelic's CSS Module patterns.
+ * Container queries enable responsive behavior in different layout contexts.
+ */
+
+.browser {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-md);
+}
+
+.overview {
+    display: flex;
+    align-items: center;
+    gap: var(--space-md);
+}
+
+.overview_title {
+    margin: 0;
+    font-size: var(--text-xl);
+    font-weight: 600;
+    color: var(--color-text);
+}
+
+.overview_subtitle {
+    margin: var(--space-xs) 0 0;
+    font-size: var(--text-sm);
+    color: var(--color-text-muted);
+}
+
+.section_title {
+    margin: 0 0 var(--space-md);
+    font-size: var(--text-lg);
+    font-weight: 600;
+    color: var(--color-text);
+}
+
+.collections {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-sm);
+}
+
+.collection_item {
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    background: var(--color-surface-elevated);
+}
+
+.collection_header {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+    width: 100%;
+    padding: var(--space-md);
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    text-align: left;
+    color: var(--color-text);
+    transition: background-color 0.15s ease;
+}
+
+.collection_header:hover {
+    background: var(--color-surface-hover);
+}
+
+.collection_header:focus {
+    outline: 2px solid var(--color-primary);
+    outline-offset: -2px;
+}
+
+.collection_name {
+    flex: 1;
+    font-weight: 500;
+    font-family: var(--font-mono);
+}
+
+.collection_stats {
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs);
+}
+
+.documents_panel {
+    border-top: 1px solid var(--color-border);
+    padding: var(--space-md);
+    background: var(--color-surface);
+}
+
+.documents_header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: var(--space-md);
+    padding-bottom: var(--space-sm);
+    border-bottom: 1px solid var(--color-border);
+    font-size: var(--text-sm);
+    color: var(--color-text-muted);
+}
+
+.pagination {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+}
+
+.page_info {
+    padding: 0 var(--space-sm);
+    font-size: var(--text-sm);
+    color: var(--color-text);
+}
+
+.documents_list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-sm);
+    max-height: 500px;
+    overflow-y: auto;
+}
+
+.document {
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    padding: var(--space-sm);
+    background: var(--color-surface-elevated);
+}
+
+.document_summary {
+    cursor: pointer;
+    user-select: none;
+    color: var(--color-text);
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+}
+
+.document_summary:hover {
+    color: var(--color-primary);
+}
+
+.document_json {
+    margin: var(--space-sm) 0 0;
+    padding: var(--space-sm);
+    background: var(--color-surface);
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--color-border);
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: var(--color-text);
+    overflow-x: auto;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+}
+
+.loading {
+    padding: var(--space-md);
+    text-align: center;
+    color: var(--color-text-muted);
+}

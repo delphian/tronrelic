@@ -20,7 +20,10 @@ import type { IModule, IModuleMetadata, ISystemLogService } from '@tronrelic/typ
 import { DatabaseService } from './services/database.service.js';
 import { MigrationsService } from './services/migrations.service.js';
 import { MigrationsController } from './api/migrations.controller.js';
+import { DatabaseBrowserRepository } from './repositories/database-browser.repository.js';
+import { DatabaseBrowserController } from './api/database-browser.controller.js';
 import { Router } from 'express';
+import mongoSanitize from 'express-mongo-sanitize';
 
 /**
  * Database module dependencies for initialization.
@@ -123,6 +126,12 @@ export class DatabaseModule implements IModule<IDatabaseModuleDependencies> {
     private migrationsController!: MigrationsController;
 
     /**
+     * Database browser components created during init() phase.
+     */
+    private browserRepository!: DatabaseBrowserRepository;
+    private browserController!: DatabaseBrowserController;
+
+    /**
      * Initialize the database module with injected dependencies.
      *
      * This phase prepares the module by creating the core DatabaseService instance,
@@ -163,6 +172,12 @@ export class DatabaseModule implements IModule<IDatabaseModuleDependencies> {
         // Create migrations service and controller
         this.migrationsService = new MigrationsService(this.databaseService, this.logger);
         this.migrationsController = new MigrationsController(this.databaseService, this.logger);
+
+        // Create database browser repository and controller
+        // Import mongoose to access connection
+        const { default: mongoose } = await import('mongoose');
+        this.browserRepository = new DatabaseBrowserRepository(mongoose.connection, this.logger);
+        this.browserController = new DatabaseBrowserController(this.browserRepository, this.logger);
 
         this.logger.info('Database module initialized');
     }
@@ -206,6 +221,11 @@ export class DatabaseModule implements IModule<IDatabaseModuleDependencies> {
         const migrationsRouter = this.createMigrationsRouter();
         this.app.use('/api/admin/migrations', migrationsRouter);
         this.logger.info('Migrations router mounted at /api/admin/migrations');
+
+        // Create and mount database browser router
+        const browserRouter = this.createBrowserRouter();
+        this.app.use('/api/admin/database', browserRouter);
+        this.logger.info('Database browser router mounted at /api/admin/database');
 
         this.logger.info('Database module running');
     }
@@ -278,5 +298,40 @@ export class DatabaseModule implements IModule<IDatabaseModuleDependencies> {
             throw new Error('DatabaseModule not initialized. Call init() first.');
         }
         return this.migrationsService;
+    }
+
+    /**
+     * Create the database browser router with all endpoints.
+     *
+     * This is an internal helper method called during the run() phase.
+     * All routes require admin authentication (enforced by parent router).
+     *
+     * Applies express-mongo-sanitize middleware to prevent MongoDB injection attacks
+     * by stripping $ and . characters from request bodies and query parameters.
+     *
+     * @returns Express router with database browser endpoints
+     */
+    private createBrowserRouter(): Router {
+        const router = Router();
+
+        // Apply MongoDB injection protection to all routes
+        router.use(mongoSanitize({
+            replaceWith: '_'  // Replace $ and . with _ instead of removing
+        }));
+
+        // GET /api/admin/database/stats
+        router.get('/stats', (req, res) => this.browserController.getStats(req, res));
+
+        // GET /api/admin/database/collections/:name/documents
+        router.get('/collections/:name/documents', (req, res) =>
+            this.browserController.getDocuments(req, res)
+        );
+
+        // POST /api/admin/database/collections/:name/query
+        router.post('/collections/:name/query', (req, res) =>
+            this.browserController.queryDocuments(req, res)
+        );
+
+        return router;
     }
 }
