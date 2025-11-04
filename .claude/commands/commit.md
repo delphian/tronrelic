@@ -1,5 +1,5 @@
 ---
-description: Examine staged files and their diffs from original. Give me a 2 sentence plain english, no double quotes, no new lines, commit message describing currently staged changes and pipe it into clip.exe
+description: Use git to examine the staged changes. Give me a `git` command line to copy that commits a message describing the staged changes with 2 sentences of plain english. Echo the command and pipe it to clip.exe
 ---
 
-Examine staged files and their diffs from original. Give me a 2 sentence plain english, no double quotes, no new lines, commit message describing currently staged changes and pipe it into clip.exe
+Use git to examine the staged changes. Give me a `git` command line to copy that commits a message describing the staged changes with 2 sentences of plain english. Echo the command and pipe it to clip.exe
