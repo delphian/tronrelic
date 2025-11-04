@@ -67,8 +67,10 @@
  *     --card-bg-image: url('/images/logo-watermark.svg');
  *     --card-bg-opacity: 0.12;
  *     --card-bg-size: 160px;
- *     --card-bg-position: bottom right; /* top left, center, etc. */
+ *     --card-bg-position: bottom right;
  *   }
+ *
+ * Position options: top left, top center, top right, center, bottom left, bottom right, etc.
  *
  * To disable for specific cards:
  *   <Card noBackgroundImage>
