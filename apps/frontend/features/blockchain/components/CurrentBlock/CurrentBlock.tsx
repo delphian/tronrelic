@@ -69,8 +69,18 @@ export function CurrentBlock() {
     const chartLoading = isLiveMode ? false : timeseriesLoading;
     const chartError = isLiveMode ? null : timeseriesError;
 
+    // Get primary color from CSS variables for chart
+    const [primaryColor, setPrimaryColor] = useState('#7C9BFF');
+
     useEffect(() => {
         setIsMounted(true);
+        // Read primary color from CSS variables
+        if (typeof window !== 'undefined') {
+            const color = getComputedStyle(document.documentElement).getPropertyValue('--color-primary').trim();
+            if (color) {
+                setPrimaryColor(color);
+            }
+        }
     }, []);
 
     // Track when we receive live WebSocket updates
@@ -236,7 +246,7 @@ export function CurrentBlock() {
                                                 date: point.date,
                                                 value: point.transactions
                                             })),
-                                            color: '#7C9BFF'
+                                            color: primaryColor
                                         }
                                     ]}
                                     yAxisFormatter={(value) => formatLargeNumber(value)}

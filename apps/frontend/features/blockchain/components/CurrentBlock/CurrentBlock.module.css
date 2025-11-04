@@ -73,13 +73,13 @@
 }
 
 .stat-card--accent {
-    background: rgba(59, 130, 246, 0.1);
-    border: var(--border-width-thin) solid rgba(59, 130, 246, 0.3);
+    background: var(--color-primary-alpha-10);
+    border: var(--border-width-thin) solid var(--color-primary-alpha-30);
 }
 
 .stat-card--accent.stat-card--clickable:hover {
-    background: rgba(59, 130, 246, 0.15);
-    border-color: rgba(59, 130, 246, 0.4);
+    background: var(--color-primary-alpha-15);
+    border-color: var(--color-primary-alpha-38);
 }
 
 .stat-card__label {
@@ -198,12 +198,12 @@
 }
 
 .period-button--active {
-    background: rgba(124, 155, 255, 0.2);
-    color: rgb(124, 155, 255);
+    background: var(--color-primary-alpha-15);
+    color: var(--color-primary);
 }
 
 .period-button--active:hover {
-    background: rgba(124, 155, 255, 0.3);
+    background: var(--color-primary-alpha-30);
 }
 
 .graph-content {
