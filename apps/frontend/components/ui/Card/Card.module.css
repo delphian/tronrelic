@@ -3,6 +3,11 @@
  *
  * Scoped styles for the Card wrapper component that provides surface elevation
  * and visual hierarchy throughout the application.
+ *
+ * Note: overflow is not set to 'hidden' to allow tooltips, popovers, and other
+ * absolutely positioned elements to extend beyond card boundaries. The background
+ * watermark system (::after pseudo-element) is sized and positioned to stay within
+ * card bounds without requiring overflow clipping.
  */
 
 .card {
@@ -13,7 +18,6 @@
     box-shadow: var(--card-shadow);
     transition: var(--card-transition);
     position: relative;
-    overflow: hidden; /* Prevent background image from bleeding outside card borders */
 }
 
 .card:hover {
