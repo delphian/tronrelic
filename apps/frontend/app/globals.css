@@ -178,12 +178,6 @@ main {
   background: var(--table-row-background-hover);
 }
 
-/* Pagination styles removed - migrated to Pagination.module.css */
-
-/* Toast styles removed - migrated to ToastProvider.module.css */
-
-/* Modal styles removed - migrated to ModalProvider.module.css */
-
 .divider {
   width: 100%;
   height: var(--divider-height);
@@ -218,10 +212,6 @@ button:focus-visible {
   outline-offset: var(--focus-outline-offset);
   box-shadow: var(--focus-shadow);
 }
-
-/* Navigation styles removed - migrated to NavBar.module.css */
-
-/* BlockTicker styles removed - migrated to BlockTicker.module.css */
 
 .segmented-control {
   display: inline-flex;
@@ -263,10 +253,6 @@ button:focus-visible {
   border-top: var(--border-width-thin) solid var(--color-border);
 }
 
-/* Skeleton styles removed - migrated to Skeleton.module.css */
-
-/* Chart styles removed - migrated to LineChart.module.css */
-
 .alert {
   border-radius: var(--alert-border-radius);
   padding: var(--alert-padding);
@@ -304,8 +290,6 @@ button:focus-visible {
   background: var(--meter-value-background);
   transform-origin: left center;
 }
-
-/* Market Dashboard Slideout styles removed - migrated to MarketDashboard.module.css */
 
 /* Tablet and below (matches --breakpoint-tablet: 1200px)
    Note: CSS custom properties cannot be used in @media queries,
