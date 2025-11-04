@@ -5,9 +5,12 @@ import { useSystemAuth } from '../../../../features/system';
 import { Card } from '../../../../components/ui/Card';
 import { Button } from '../../../../components/ui/Button';
 import { Badge } from '../../../../components/ui/Badge';
-import { Database, Play, CheckCircle, XCircle, AlertCircle, RefreshCw } from 'lucide-react';
+import { Database, Play, CheckCircle, XCircle, AlertCircle, RefreshCw, FileSearch } from 'lucide-react';
 import { DatabaseHealthCards } from './DatabaseHealthCards';
+import { CollectionBrowser } from './components/CollectionBrowser';
 import styles from './page.module.css';
+
+type TabType = 'browser' | 'migrations';
 
 /**
  * Migration metadata structure returned from API.
@@ -87,6 +90,7 @@ interface IExecuteResponse {
  */
 export default function DatabaseMigrationPage() {
     const { token } = useSystemAuth();
+    const [activeTab, setActiveTab] = useState<TabType>('browser');
     const [status, setStatus] = useState<IMigrationStatus | null>(null);
     const [history, setHistory] = useState<IMigrationHistory | null>(null);
     const [loading, setLoading] = useState(true);
@@ -299,6 +303,36 @@ export default function DatabaseMigrationPage() {
         <div className="page">
             {/* Database Health Cards */}
             <DatabaseHealthCards token={token} />
+
+            {/* Tab Navigation */}
+            <Card padding="md">
+                <div className={styles.tabs}>
+                    <button
+                        className={`${styles.tab} ${activeTab === 'browser' ? styles.tab_active : ''}`}
+                        onClick={() => setActiveTab('browser')}
+                        aria-selected={activeTab === 'browser'}
+                    >
+                        <FileSearch size={16} />
+                        Browser
+                    </button>
+                    <button
+                        className={`${styles.tab} ${activeTab === 'migrations' ? styles.tab_active : ''}`}
+                        onClick={() => setActiveTab('migrations')}
+                        aria-selected={activeTab === 'migrations'}
+                    >
+                        <Database size={16} />
+                        Migrations
+                    </button>
+                </div>
+            </Card>
+
+            {/* Tab Content */}
+            {activeTab === 'browser' && (
+                <CollectionBrowser token={token} />
+            )}
+
+            {activeTab === 'migrations' && (
+                <>
 
             {/* Header with System Status */}
             <Card padding="lg">
@@ -521,6 +555,8 @@ export default function DatabaseMigrationPage() {
                     )}
                 </div>
             </Card>
+            </>
+            )}
         </div>
     );
 }
