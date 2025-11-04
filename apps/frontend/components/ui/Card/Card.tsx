@@ -6,7 +6,7 @@ import styles from './Card.module.css';
  * CardProps interface defines the properties available for the Card component.
  *
  * Extends standard div attributes to support padding variants, elevation control,
- * and visual tone selection for consistent surface presentation.
+ * visual tone selection, and background image control for consistent surface presentation.
  */
 interface CardProps extends HTMLAttributes<HTMLDivElement> {
     /**
@@ -24,6 +24,11 @@ interface CardProps extends HTMLAttributes<HTMLDivElement> {
      * @default 'default'
      */
     tone?: 'default' | 'muted' | 'accent';
+    /**
+     * Disables the theme background image watermark for this card
+     * @default false
+     */
+    noBackgroundImage?: boolean;
 }
 
 /**
@@ -51,7 +56,8 @@ const toneClass: Record<NonNullable<CardProps['tone']>, string> = {
  *
  * A versatile container component that provides consistent surface elevation,
  * borders, and shadows throughout the application. Supports multiple padding
- * sizes, visual tones, and elevation levels for flexible UI composition.
+ * sizes, visual tones, elevation levels, and optional theme background images
+ * for flexible UI composition.
  *
  * @example
  * ```tsx
@@ -62,21 +68,22 @@ const toneClass: Record<NonNullable<CardProps['tone']>, string> = {
  *
  * @example
  * ```tsx
- * <Card tone="muted" padding="sm">
- *   <p>Subtle background card</p>
+ * <Card tone="muted" padding="sm" noBackgroundImage>
+ *   <p>Subtle background card without watermark</p>
  * </Card>
  * ```
  *
  * @param props - Card component properties
  * @returns A styled div element with surface styling
  */
-export function Card({ className, padding = 'md', elevated = false, tone = 'default', ...props }: CardProps) {
+export function Card({ className, padding = 'md', elevated = false, tone = 'default', noBackgroundImage = false, ...props }: CardProps) {
     return (
         <div
             className={cn(
                 toneClass[tone],
                 paddingClass[padding],
                 elevated && styles['card--elevated'],
+                noBackgroundImage && styles['card--no-bg-image'],
                 className
             )}
             {...props}
