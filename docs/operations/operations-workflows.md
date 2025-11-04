@@ -326,11 +326,11 @@ TronRelic automatically creates temporary testing droplets on every push to the 
 
 **Workflow files:**
 - `.github/workflows/dev-environment.yml` - Creates testing droplet
-- `.github/workflows/dev-environment-teardown.yml` - Scheduled cleanup (every 5 minutes)
+- `.github/workflows/dev-environment-teardown.yml` - Scheduled cleanup (every 15 minutes)
 
 **Triggers:**
 - **Automatic:** Every push to `dev` branch creates a new testing droplet
-- **Cleanup:** Scheduled job runs every 5 minutes to destroy expired droplets
+- **Cleanup:** Scheduled job runs every 15 minutes to destroy expired droplets
 
 ### How Dev Testing Environments Work
 
@@ -370,7 +370,7 @@ TronRelic automatically creates temporary testing droplets on every push to the 
    - Expiration time in UTC
    - Docker image tags used
 
-**Automated cleanup (every 5 minutes):**
+**Automated cleanup (every 15 minutes):**
 
 1. List all droplets tagged `tronrelic-dev-testing`
 2. Parse `expires-at-{timestamp}` tag from each droplet
@@ -522,7 +522,7 @@ The dev testing environment requires additional GitHub secrets to be configured:
 
 ### Manual Cleanup (Optional)
 
-While cleanup runs automatically every 5 minutes, you can manually trigger cleanup or destroy specific droplets:
+While cleanup runs automatically every 15 minutes, you can manually trigger cleanup or destroy specific droplets:
 
 **Trigger cleanup workflow manually:**
 1. Navigate to **Actions** tab → **Teardown Dev Environment**
@@ -561,7 +561,7 @@ doctl compute droplet delete <DROPLET_ID> --force
 - Verify package dependencies are installable
 
 **Droplet not automatically destroyed after 30 minutes:**
-- Cleanup workflow runs every 5 minutes (max 5 minute delay)
+- Cleanup workflow runs every 15 minutes (max 15 minute delay)
 - Check **Teardown Dev Environment** workflow for errors
 - Manually trigger cleanup workflow if needed
 - Verify droplet has correct tags: `doctl compute droplet get <NAME> --format Tags`
