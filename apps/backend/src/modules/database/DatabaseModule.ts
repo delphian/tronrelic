@@ -24,6 +24,7 @@ import { DatabaseBrowserRepository } from './repositories/database-browser.repos
 import { DatabaseBrowserController } from './api/database-browser.controller.js';
 import { Router } from 'express';
 import mongoSanitize from 'express-mongo-sanitize';
+import { requireAdmin } from '../../api/middleware/admin-auth.js';
 
 /**
  * Database module dependencies for initialization.
@@ -219,12 +220,12 @@ export class DatabaseModule implements IModule<IDatabaseModuleDependencies> {
 
         // Create and mount migrations router (IoC - module attaches itself to app)
         const migrationsRouter = this.createMigrationsRouter();
-        this.app.use('/api/admin/migrations', migrationsRouter);
+        this.app.use('/api/admin/migrations', requireAdmin, migrationsRouter);
         this.logger.info('Migrations router mounted at /api/admin/migrations');
 
         // Create and mount database browser router
         const browserRouter = this.createBrowserRouter();
-        this.app.use('/api/admin/database', browserRouter);
+        this.app.use('/api/admin/database', requireAdmin, browserRouter);
         this.logger.info('Database browser router mounted at /api/admin/database');
 
         this.logger.info('Database module running');
@@ -234,7 +235,7 @@ export class DatabaseModule implements IModule<IDatabaseModuleDependencies> {
      * Create the migrations router with all endpoints.
      *
      * This is an internal helper method called during the run() phase.
-     * All routes require admin authentication (enforced by parent router).
+     * All routes require admin authentication (enforced by requireAdmin middleware).
      *
      * @returns Express router with migration management endpoints
      */
@@ -304,7 +305,7 @@ export class DatabaseModule implements IModule<IDatabaseModuleDependencies> {
      * Create the database browser router with all endpoints.
      *
      * This is an internal helper method called during the run() phase.
-     * All routes require admin authentication (enforced by parent router).
+     * All routes require admin authentication (enforced by requireAdmin middleware).
      *
      * Applies express-mongo-sanitize middleware to prevent MongoDB injection attacks
      * by stripping $ and . characters from request bodies and query parameters.

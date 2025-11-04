@@ -273,8 +273,81 @@ describe('DatabaseModule', () => {
 
             expect(mockApp.use).toHaveBeenCalledWith(
                 '/api/admin/migrations',
+                expect.anything(),
                 expect.anything()
             );
+        });
+
+        /**
+         * Test: run should mount database browser router at correct path.
+         *
+         * Verifies that the database browser API is mounted at /api/admin/database.
+         */
+        it('should mount database browser router at correct path', async () => {
+            await module.init({
+                logger: mockLogger as any,
+                app: mockApp as any
+            });
+
+            await module.run();
+
+            expect(mockApp.use).toHaveBeenCalledWith(
+                '/api/admin/database',
+                expect.anything(),
+                expect.anything()
+            );
+        });
+
+        /**
+         * Test: run should apply requireAdmin middleware to migrations routes.
+         *
+         * Verifies that the migrations API is protected with admin authentication.
+         */
+        it('should apply requireAdmin middleware to migrations routes', async () => {
+            await module.init({
+                logger: mockLogger as any,
+                app: mockApp as any
+            });
+
+            await module.run();
+
+            // Get the calls to app.use
+            const useCalls = (mockApp.use as any).mock.calls;
+
+            // Find the migrations route call
+            const migrationsCall = useCalls.find((call: any[]) => call[0] === '/api/admin/migrations');
+
+            // Verify migrations route has 3 arguments: path, middleware, router
+            expect(migrationsCall).toBeDefined();
+            expect(migrationsCall?.length).toBe(3);
+            expect(migrationsCall?.[1]).toBeTypeOf('function'); // requireAdmin middleware
+            expect(migrationsCall?.[2]).toBeTypeOf('function'); // router
+        });
+
+        /**
+         * Test: run should apply requireAdmin middleware to database browser routes.
+         *
+         * Verifies that the database browser API is protected with admin authentication.
+         */
+        it('should apply requireAdmin middleware to database browser routes', async () => {
+            await module.init({
+                logger: mockLogger as any,
+                app: mockApp as any
+            });
+
+            await module.run();
+
+            // Get the calls to app.use
+            const useCalls = (mockApp.use as any).mock.calls;
+
+            // Find the database browser route call
+            const browserCall = useCalls.find((call: any[]) => call[0] === '/api/admin/database');
+
+            // Verify database browser route has 3 arguments: path, middleware, router
+            expect(browserCall).toBeDefined();
+            expect(browserCall?.length).toBe(3);
+            expect(browserCall?.[1]).toBeTypeOf('function'); // requireAdmin middleware
+            expect(browserCall?.[2]).toBeTypeOf('function'); // router
         });
 
         /**
