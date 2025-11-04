@@ -12,6 +12,8 @@
     backdrop-filter: var(--card-backdrop-filter);
     box-shadow: var(--card-shadow);
     transition: var(--card-transition);
+    position: relative;
+    overflow: hidden; /* Prevent background image from bleeding outside card borders */
 }
 
 .card:hover {
@@ -43,4 +45,53 @@
 
 .card--padding-lg {
     padding: var(--card-padding-lg);
+}
+
+/* ============================================================================
+ * BACKGROUND IMAGE SYSTEM
+ * ========================================================================== */
+
+/**
+ * Card Background Image System
+ *
+ * Applies themeable background watermarks using CSS custom properties defined
+ * in semantic-tokens.css. Themes can override --card-bg-image to display logos,
+ * icons, or decorative elements in the bottom-right corner of cards.
+ *
+ * Usage in themes:
+ *   [data-theme="custom"] {
+ *     --card-bg-image: url('/images/logo-watermark.svg');
+ *     --card-bg-opacity: 0.12;
+ *     --card-bg-size: 160px;
+ *   }
+ *
+ * To disable for specific cards:
+ *   <Card className="card--no-bg-image">
+ */
+
+.card::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    right: 0;
+    width: var(--card-bg-size);
+    height: var(--card-bg-size);
+    background-image: var(--card-bg-image);
+    background-size: contain;
+    background-repeat: no-repeat;
+    background-position: var(--card-bg-position);
+    opacity: var(--card-bg-opacity);
+    pointer-events: none; /* Allow clicks to pass through */
+    z-index: 0; /* Keep behind card content */
+}
+
+/* Ensure card content stays above the background image */
+.card > * {
+    position: relative;
+    z-index: 1;
+}
+
+/* Modifier to disable background image for specific cards */
+.card--no-bg-image::after {
+    display: none;
 }
