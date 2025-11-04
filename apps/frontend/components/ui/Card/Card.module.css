@@ -60,28 +60,26 @@
  *
  * Applies themeable background watermarks using CSS custom properties defined
  * in semantic-tokens.css. Themes can override --card-bg-image to display logos,
- * icons, or decorative elements in the bottom-right corner of cards.
+ * icons, or decorative elements at any position within cards.
  *
  * Usage in themes:
  *   [data-theme="custom"] {
  *     --card-bg-image: url('/images/logo-watermark.svg');
  *     --card-bg-opacity: 0.12;
  *     --card-bg-size: 160px;
+ *     --card-bg-position: bottom right; /* top left, center, etc. */
  *   }
  *
  * To disable for specific cards:
- *   <Card className="card--no-bg-image">
+ *   <Card noBackgroundImage>
  */
 
 .card::after {
     content: '';
     position: absolute;
-    bottom: 0;
-    right: 0;
-    width: var(--card-bg-size);
-    height: var(--card-bg-size);
+    inset: 0; /* Cover entire card */
     background-image: var(--card-bg-image);
-    background-size: contain;
+    background-size: var(--card-bg-size);
     background-repeat: no-repeat;
     background-position: var(--card-bg-position);
     opacity: var(--card-bg-opacity);
