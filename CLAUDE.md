@@ -10,7 +10,7 @@ Claude should consider delegating to specialized agents when:
 1. **Task complexity** - Work requires deep domain expertise (e.g., complex plugin architecture, market fetcher debugging, infrastructure troubleshooting)
 2. **Multi-file changes** - Significant changes across multiple files in a specialized domain
 3. **Research-heavy tasks** - Requires exploring unfamiliar codebases or patterns
-4. **Documentation work** - Creating or updating documentation (documentation-writer handles standards compliance)
+4. **Documentation work** - Creating or updating documentation (documentation-expert handles standards compliance)
 
 **Claude has autonomy to:**
 - Analyze tasks before delegating
@@ -53,7 +53,7 @@ Claude should consider delegating to specialized agents when:
 - Can skip for: Simple bug fixes, text changes, minor styling tweaks
 - Note: Defers to tronrelic-plugin-specialist for plugin logic and backend integration
 
-**documentation-writer:**
+**documentation-expert:**
 - Keywords: documentation, docs, README, markdown, .md files, documentation gaps, documentation review, documentation standards
 - Best for: Creating new documentation, major documentation restructuring, standards compliance reviews
 - Can skip for: Minor typo fixes, small clarifications, inline code comments
@@ -92,7 +92,7 @@ When working with these file paths, consider delegating to specialized agents fo
 - `packages/plugins/**/frontend/**` (when task focuses on UX/UI, styling, accessibility, visual design)
 - Note: Defers to tronrelic-plugin-specialist for plugin logic, architecture, and integration work
 
-**documentation-writer:**
+**documentation-expert:**
 - `docs/**/*.md`
 - `**/README.md`
 - `**/AGENTS.md`

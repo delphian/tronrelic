@@ -1173,7 +1173,7 @@ async init(deps: IMyModuleDependencies): Promise<void> {
 - Public API exports documented in `index.ts`
 - Migration guide if replacing existing code
 
-Follow TronRelic's documentation standards from `docs/documentation-guidance.md`:
+Follow TronRelic's documentation standards from `docs/documentation.md`:
 - Lead with "why" (purpose and risks)
 - Follow with "how" (workflow and patterns)
 - Close with code examples
@@ -1209,5 +1209,5 @@ Before creating a new module, verify:
 **Related topics:**
 - [plugins.md](../plugins/plugins.md) - Plugin system overview (comparison to modules)
 - [plugins-system-architecture.md](../plugins/plugins-system-architecture.md) - Plugin lifecycle and discovery
-- [documentation-guidance.md](../documentation-guidance.md) - Documentation standards and writing conventions
+- [documentation.md](../documentation.md) - Documentation standards and writing conventions
 - [environment.md](../environment.md) - Environment variable configuration reference

@@ -13,7 +13,7 @@ When this skill is invoked for frontend UI/UX, CSS, HTML, or React component tas
 **Core Documentation (always loaded):**
 - [@frontend.md](../../../docs/frontend/frontend.md) - Architecture overview and quick reference
 - [@frontend-architecture.md](../../../docs/frontend/frontend-architecture.md) - Complete file organization and feature module patterns
-- [@frontend-component-guide.md](../../../docs/frontend/frontend-component-guide.md) - Detailed styling guide, CSS system, accessibility standards
+- [@ui-component-styling.md](../../../docs/frontend/ui/ui-component-styling.md) - Detailed styling guide, CSS system, accessibility standards
 - [@globals.css](../../../apps/frontend/styles/globals.css) - Complete design tokens reference and utility classes
 
 **Plugin Documentation (loaded when working on plugins):**

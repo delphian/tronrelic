@@ -4,7 +4,7 @@
 
 The TronRelic frontend follows a **feature-based architecture** that mirrors the backend's modular structure. This approach improves maintainability, scalability, and developer experience by colocating all related code for each feature.
 
-**This document focuses on file organization and folder structure.** For styling guidance (CSS Modules, design system, component patterns), see the [Frontend Component Guide](./frontend-component-guide.md).
+**This document focuses on file organization and folder structure.** For styling guidance (CSS Modules, design system, component patterns), see the [Frontend Component Guide](./ui/ui-component-styling.md).
 
 ## Directory Structure
 
@@ -329,7 +329,7 @@ components/MarketCard/
 - Clean imports via barrel exports (`import { MarketCard } from './components/MarketCard'`)
 - Scalable pattern that works for simple and complex components
 
-See [Frontend Component Guide](./frontend-component-guide.md) for styling patterns and design system usage.
+See [Frontend Component Guide](./ui/ui-component-styling.md) for styling patterns and design system usage.
 
 ## Component Folder Organization
 
@@ -786,7 +786,7 @@ See [config.ts](../../apps/frontend/lib/config.ts) for the complete implementati
 
 ## Related Documentation
 
-- [Frontend Component Guide](./frontend-component-guide.md) - How to style components (CSS Modules, design system, patterns)
+- [Frontend Component Guide](./ui/ui-component-styling.md) - How to style components (CSS Modules, design system, patterns)
 - [Feature Modules README](../../apps/frontend/features/README.md) - Detailed feature documentation
 - [Plugin System](../plugins/plugins.md) - Plugin architecture (separate from features)
-- [Backend Modules](../backend-architecture.md) - Backend modular structure
+- [Backend Modules](../system/system-modules.md) - Backend modular structure and lifecycle patterns
