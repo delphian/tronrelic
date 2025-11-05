@@ -31,9 +31,12 @@ export function MarketsPage({ context }: { context: IFrontendPluginContext }) {
     /**
      * Fetches market data from the plugin's REST API endpoint.
      *
-     * Makes a GET request to `/api/plugins/resource-markets/markets` and updates
+     * Makes a GET request to `/plugins/resource-markets/markets` and updates
      * local state with the response. Handles loading states and error messages to
      * provide feedback during data fetching.
+     *
+     * The api.get() method is already configured with the '/api' base path, so we
+     * only need to provide the plugin-specific path segment.
      *
      * This function is called on initial mount and can be manually triggered by the
      * refresh button to fetch the latest pricing data before the next scheduled update.
@@ -43,7 +46,7 @@ export function MarketsPage({ context }: { context: IFrontendPluginContext }) {
             setLoading(true);
             setError(null);
 
-            const response = await api.get('/api/plugins/resource-markets/markets');
+            const response = await api.get('/plugins/resource-markets/markets');
 
             if (response.success && response.markets) {
                 setMarkets(response.markets);
