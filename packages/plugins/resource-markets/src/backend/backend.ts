@@ -9,6 +9,8 @@ import { resourceMarketsManifest } from '../manifest.js';
 import { MarketFetcherRegistry } from './fetchers/fetcher-registry.js';
 import { refreshMarketsJob } from './jobs/refresh-markets.job.js';
 import { createMarketService } from './services/market.service.js';
+import { createConfigRoutes } from './api/config.routes.js';
+import { DEFAULT_CONFIG, type IResourceMarketsConfig } from '../shared/types/config.js';
 
 // Module-level variables for route handlers and lifecycle
 let pluginContext: IPluginContext;
@@ -23,6 +25,8 @@ export const resourceMarketsBackendPlugin = definePlugin({
      * Creates database indexes for:
      * - markets collection (query by guid, sort by priority)
      * - price_history collection (query by market and timestamp)
+     *
+     * Seeds default configuration for public page URL and menu settings.
      */
     install: async (context: IPluginContext) => {
         context.logger.info('Installing resource-markets plugin');
@@ -43,6 +47,10 @@ export const resourceMarketsBackendPlugin = definePlugin({
             timestamp: -1
         });
 
+        // Seed default configuration
+        await context.database.set('config', DEFAULT_CONFIG);
+        context.logger.info({ config: DEFAULT_CONFIG }, 'Seeded default configuration');
+
         context.logger.info('Resource-markets plugin installed successfully');
     },
 
@@ -60,15 +68,46 @@ export const resourceMarketsBackendPlugin = definePlugin({
      * Init hook - runs when plugin is enabled.
      *
      * Registers:
-     * 1. Market fetchers (14 total)
-     * 2. Scheduler job (refreshes markets every 10 minutes)
-     * 3. WebSocket subscription handlers (real-time market updates)
+     * 1. Navigation menu item (using configured URL and settings)
+     * 2. Market fetchers (14 total)
+     * 3. Scheduler job (refreshes markets every 10 minutes)
+     * 4. WebSocket subscription handlers (real-time market updates)
      */
     init: async (context: IPluginContext) => {
         context.logger.info('Initializing resource-markets plugin');
 
         // Store context for route handlers
         pluginContext = context;
+
+        // Load configuration from database
+        let config = await context.database.get<IResourceMarketsConfig>('config');
+        if (!config) {
+            // Fallback to defaults if config missing
+            config = DEFAULT_CONFIG;
+            await context.database.set('config', config);
+            context.logger.warn('Config not found, using defaults');
+        }
+
+        // Register navigation menu item with configured values
+        const menuItem = await context.menuService.create({
+            namespace: 'main',
+            label: config.menuLabel,
+            url: config.publicPageUrl,
+            icon: config.menuIcon,
+            order: config.menuOrder,
+            parent: null,
+            enabled: true
+        });
+
+        // Store menu item ID in config for easy updates
+        const menuNodeId = menuItem && ('_id' in menuItem ? menuItem._id : (menuItem as any).id);
+        if (menuNodeId && !config.menuItemId) {
+            config.menuItemId = menuNodeId as string;
+            await context.database.set('config', config);
+            context.logger.info({ menuItemId: menuNodeId }, 'Stored menu item ID in config');
+        }
+
+        context.logger.info({ config }, 'Registered navigation menu item');
 
         // Initialize fetcher registry with dependency-injected context
         fetcherRegistry = new MarketFetcherRegistry(context);
@@ -195,5 +234,20 @@ export const resourceMarketsBackendPlugin = definePlugin({
                 }
             }
         }
-    ]
+    ],
+
+    /**
+     * Admin API routes accessible at /api/plugins/resource-markets/system/*
+     *
+     * These routes are automatically protected with requireAdmin middleware
+     * and prefixed with /system/ by the plugin API service.
+     */
+    get adminRoutes() {
+        // Return config routes using the stored context
+        // This ensures context is available when routes are registered
+        if (pluginContext) {
+            return createConfigRoutes(pluginContext);
+        }
+        return [];
+    }
 });
