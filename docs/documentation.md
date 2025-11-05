@@ -104,7 +104,7 @@ docs/topic-name/
 `docs/frontend/`:
 - `frontend.md` (summary - links to architecture and component guides)
 - `frontend-architecture.md` (file organization, feature modules, import patterns)
-- `frontend-component-guide.md` (styling, CSS Modules, design system reference)
+- `ui/ui-component-styling.md` (styling, CSS Modules, design system reference)
 
 `docs/markets/`:
 - `markets.md` (summary - links to discovery, architecture, operations)
@@ -172,7 +172,7 @@ Each detailed document within a directory should address a single, well-defined 
 - **Discovery and implementation** - Workflow guidance for adding new components (e.g., `market-fetcher-discovery.md`)
 - **Architecture and design** - System structure, data flow, technical patterns (e.g., `frontend-architecture.md`, `market-system-architecture.md`)
 - **Operations and runbooks** - Configuration management, monitoring, troubleshooting (e.g., `market-system-operations.md`)
-- **Component or pattern reference** - Styling guides, API references, design systems (e.g., `frontend-component-guide.md`)
+- **Component or pattern reference** - Styling guides, API references, design systems (e.g., `ui-component-styling.md`)
 
 **Avoid duplication between files:**
 - Link to related sections instead of repeating content
@@ -190,7 +190,7 @@ See [frontend-architecture.md](./frontend-architecture.md) for file organization
 
 **To parent directory documentation:**
 ```markdown
-See [documentation-guidance.md](../documentation-guidance.md) for writing standards.
+See [documentation.md](../documentation.md) for writing standards.
 ```
 
 **To other subdirectories:**

@@ -834,4 +834,4 @@ This keeps the codebase modular, enables rapid feature development, and ensures 
 
 **Frontend documentation:**
 - [frontend.md](../frontend/frontend.md) - Frontend architecture overview
-- [frontend-component-guide.md](../frontend/frontend-component-guide.md) - Component styling and design system
+- [ui-component-styling.md](../frontend/ui/ui-component-styling.md) - Component styling and design system

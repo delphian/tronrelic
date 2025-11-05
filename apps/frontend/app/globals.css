@@ -6,7 +6,7 @@
  * Semantic tokens (composed meaning) are defined in semantic-tokens.css.
  *
  * See docs/frontend/design-token-layers.md for design token reference.
- * See docs/frontend/frontend-component-guide.md for component styling patterns.
+ * See docs/frontend/ui/ui-component-styling.md for component styling patterns.
  */
 
 @import './primitives.css';

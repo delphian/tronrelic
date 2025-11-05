@@ -1,0 +1,255 @@
+# UI System Overview
+
+This document provides a high-level summary of TronRelic's UI styling system and design token architecture. For detailed guidance on specific topics, refer to the specialized documentation linked throughout.
+
+## Who This Document Is For
+
+Frontend developers and plugin authors building user interfaces within TronRelic who need to understand the styling standards, design token system, and component patterns before implementing new features or plugin pages.
+
+## Why These Standards Matter
+
+TronRelic's UI system follows strict architectural patterns that solve specific problems:
+
+- **Design tokens prevent visual fragmentation** - Hardcoded color values and spacing create disjointed interfaces that look unprofessional and break when themes change
+- **CSS Modules eliminate naming collisions** - Global styles cause conflicts where changing one component breaks unrelated interfaces across the application
+- **Container queries enable plugin flexibility** - Viewport media queries fail when components render in sidebars, modals, or plugin contexts with constrained widths
+- **Three-layer token hierarchy enables theming** - Without semantic token layers, theme changes require hunting through dozens of CSS files instead of updating a few token definitions
+
+Following these patterns ensures your work integrates seamlessly with existing interfaces and remains maintainable as the system evolves.
+
+## Core UI Principles
+
+### Two-Layer CSS Architecture
+
+TronRelic separates styling concerns into two distinct layers to prevent conflicts and duplication:
+
+1. **`globals.css`** - Design tokens (CSS variables), utility classes, base resets, and global animations shared across the entire application
+2. **CSS Modules** - Component-specific styles with scoped class names that prevent naming collisions and make ownership clear
+
+Every component should reference design tokens from `globals.css` (like `var(--color-primary)` or `var(--spacing-7)`) and implement component-specific layout in colocated `.module.css` files.
+
+**Critical rule:** Never hardcode colors, spacing, typography, or other design values. Always use CSS variables to ensure consistency and enable theming.
+
+**See [ui-component-styling.md](./ui/ui-component-styling.md) for complete details on:**
+- What belongs in `globals.css` vs CSS Modules
+- How to create and use CSS Module files with TypeScript-safe naming conventions
+- Available utility classes for surfaces, buttons, badges, forms, and layouts
+- Container queries for responsive component behavior
+- Icon usage with `lucide-react`
+- Animation and state feedback patterns
+- Accessibility best practices with semantic HTML and ARIA labels
+- Plugin-specific styling considerations
+- SSR hydration patterns for timezone-sensitive data
+
+### Three-Layer Design Token System
+
+TronRelic implements an industry-standard token hierarchy used by Google (Material Design), Adobe (Spectrum), Shopify (Polaris), and GitHub (Primer). This pattern separates concerns and enables flexible theming without duplicating values:
+
+**Layer 1: Foundation Tokens (Primitives)**
+- Raw design values with no semantic meaning (color palette, spacing scale, typography scale)
+- Defined in `primitives.css`
+- Examples: `--color-blue-500`, `--spacing-7`, `--font-size-lg`
+
+**Layer 2: Semantic Tokens (Aliases)**
+- Context-aware variables that compose foundation tokens with purpose
+- Defined in `semantic-tokens.css`
+- Examples: `--button-bg-primary`, `--card-border-radius`, `--modal-backdrop-blur`
+
+**Layer 3: Utility Classes (Application Layer)**
+- Ready-to-use classes that apply semantic tokens to create reusable UI patterns
+- Defined in `globals.css`
+- Examples: `.btn .btn--primary`, `.surface .surface--padding-md`, `.badge .badge--success`
+
+**Why this architecture matters:**
+- **Single source of truth** - Change button padding once instead of hunting through dozens of files
+- **Theme switching without rewrites** - Dark mode becomes token remapping instead of code changes
+- **Predictable cascading updates** - Adjust spacing scale once, all dependent tokens inherit automatically
+- **Proven at scale** - Used by major design systems managing hundreds of components
+
+**See [ui-design-token-layers.md](./ui/ui-design-token-layers.md) for complete details on:**
+- Industry-standard token hierarchy with examples from Material Design, Spectrum, Polaris, and Primer
+- Complete token reference for colors, spacing, typography, borders, shadows, and transitions
+- Token naming conventions and semantic patterns
+- W3C Design Tokens Community Group alignment
+- Tooling and automation options (Style Dictionary, Figma Tokens, Theo)
+- Migration guide for legacy styles
+
+## Quick Reference
+
+### Creating a New Component with Styling
+
+1. **Create component folder with CSS Module:**
+   ```
+   features/my-feature/components/MyComponent/
+   ├── MyComponent.tsx
+   ├── MyComponent.module.css
+   └── index.ts
+   ```
+
+2. **Import CSS Module in TypeScript:**
+   ```typescript
+   import styles from './MyComponent.module.css';
+   ```
+
+3. **Use design tokens in CSS Module:**
+   ```css
+   /* MyComponent.module.css */
+   .card {
+       background: var(--color-surface);
+       border: var(--border-width-thin) solid var(--color-border);
+       border-radius: var(--radius-md);
+       padding: var(--spacing-10);
+   }
+   ```
+
+4. **Apply scoped classes with utility classes:**
+   ```typescript
+   <div className={`surface ${styles.card}`}>
+       <button className="btn btn--primary btn--md">
+           Submit
+       </button>
+   </div>
+   ```
+
+5. **Use container queries for responsiveness:**
+   ```css
+   .card {
+       container-type: inline-size;
+       container-name: my-card;
+   }
+
+   @container my-card (min-width: 480px) {
+       .grid { grid-template-columns: repeat(2, 1fr); }
+   }
+   ```
+
+### CSS Module Naming Conventions
+
+**Critical for TypeScript type safety:** Use underscores for multi-word identifiers to enable clean dot notation (`styles.market_card`) instead of bracket notation (`styles['market-card']`).
+
+| Pattern | CSS Class | TypeScript Access |
+|---------|-----------|-------------------|
+| Single word | `.card` | `styles.card` |
+| Multi-word | `.market_card` | `styles.market_card` |
+| BEM element | `.card__header` | `styles.card__header` |
+| BEM element (multi-word) | `.card__header_title` | `styles.card__header_title` |
+| BEM modifier | `.card--selected` | `styles['card--selected']` |
+
+### Common Design Tokens
+
+| Category | Token Examples | Purpose |
+|----------|---------------|---------|
+| **Colors** | `--color-text`, `--color-primary`, `--color-surface`, `--color-border` | Text, backgrounds, borders |
+| **Spacing** | `--spacing-1` through `--spacing-20` | Consistent spacing scale (0.25rem to 5rem) |
+| **Typography** | `--font-size-xs` through `--font-size-3xl`, `--font-weight-semibold` | Font sizes and weights |
+| **Borders** | `--border-width-thin`, `--radius-sm`, `--radius-md`, `--radius-lg` | Border widths and radii |
+| **Shadows** | `--shadow-sm`, `--shadow-md`, `--shadow-lg` | Elevation shadows |
+| **Transitions** | `--transition-base` | Standard timing |
+
+### Common Utility Classes
+
+| Pattern | Class | Example |
+|---------|-------|---------|
+| Surface background | `.surface` | `<div className="surface surface--padding-md">` |
+| Primary button | `.btn .btn--primary` | `<button className="btn btn--primary btn--md">` |
+| Status badge | `.badge .badge--success` | `<span className="badge badge--success">` |
+| Vertical stack | `.stack` | `<div className="stack">` |
+| Responsive grid | `.grid .grid--responsive` | `<div className="grid grid--responsive">` |
+
+### Icons with Lucide React
+
+**Rule:** All icons must come from `lucide-react` for consistency.
+
+```typescript
+import { Info, TrendingUp, AlertCircle } from 'lucide-react';
+
+// Simple icon with size
+<Info size={16} />
+
+// With design system color
+<AlertCircle size={18} style={{ color: 'var(--color-warning)' }} />
+```
+
+**Standard sizes:** `14px` (inline text), `16px` (headings), `18px` (buttons), `24px` (hero icons)
+
+### Responsive Design Pattern
+
+**Critical rule:** Always use container queries for component-level responsiveness. Reserve viewport media queries exclusively for global layout changes in `app/layout.tsx`.
+
+```css
+/* Component adapts to its container width, not viewport */
+.analytics_card {
+    container-type: inline-size;
+    container-name: analytics-card;
+}
+
+@container analytics-card (min-width: 480px) {
+    .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+```
+
+### SSR Hydration for Timezone-Sensitive Data
+
+**Problem:** Dates render differently on server (UTC) vs client (user's local timezone), causing React hydration errors.
+
+**Solution 1 - Static timestamps:** Use `ClientTime` component for simple timestamp display.
+
+```typescript
+import { ClientTime } from '../../components/ui/ClientTime';
+
+<td>
+    <ClientTime date={transaction.timestamp} format="time" />
+</td>
+```
+
+**Solution 2 - Real-time data:** Use two-phase rendering pattern that shows relative time initially ("2h ago") then switches to absolute time ("10:31 PM") after live data flows.
+
+See `apps/frontend/features/blockchain/components/CurrentBlock/CurrentBlock.tsx` (lines 53, 77-81, 243-272) for reference implementation.
+
+## Pre-Ship Checklist
+
+Before committing any UI component or plugin page, verify:
+
+- [ ] Uses CSS variables from `globals.css` (no hardcoded colors, spacing, fonts, or sizes)
+  - [ ] Spacing: `var(--spacing-*)` not `1rem`, `10px`, etc.
+  - [ ] Colors: `var(--color-*)` not `#fff`, `rgba(...)`, etc.
+  - [ ] Typography: `var(--font-size-*)`, `var(--font-weight-*)` not `1.2rem`, `600`, etc.
+  - [ ] Borders: `var(--border-width-*)`, `var(--radius-*)` not `1px`, `16px`, etc.
+- [ ] Component-specific styles are in colocated CSS Module file (`ComponentName.module.css`)
+- [ ] CSS Module uses underscore naming for multi-word identifiers (enables dot notation)
+- [ ] Uses container queries for component-level responsiveness (not viewport media queries)
+- [ ] Uses built-in utility classes for common patterns (`.surface`, `.btn`, `.badge`, `.stack`)
+- [ ] Uses `lucide-react` for all icons with design system colors
+- [ ] Provides visual feedback for state changes (loading, error, success)
+- [ ] Uses semantic HTML (buttons, nav, lists, not generic divs)
+- [ ] Includes ARIA labels for icon buttons and interactive elements
+- [ ] Has visible focus states for all interactive elements (automatically provided by design system)
+- [ ] Uses `ClientTime` component for static timestamps or two-phase rendering for real-time data
+- [ ] Avoids browser-only APIs during initial render (check for `window`, `document` usage)
+- [ ] Tested in multiple contexts (full-page, slideout, modal, mobile viewport)
+- [ ] JSDoc comments explain the "why" before showing the "how"
+
+## Further Reading
+
+**Detailed documentation:**
+- [ui-component-styling.md](./ui/ui-component-styling.md) - Complete styling guide with CSS Modules, utility classes, container queries, icons, animations, accessibility, and SSR patterns
+- [ui-design-token-layers.md](./ui/ui-design-token-layers.md) - Industry-standard token hierarchy, complete token reference, W3C alignment, and tooling options
+
+**Related topics:**
+- [frontend-architecture.md](./frontend-architecture.md) - Feature-based organization, file structure, and import patterns
+- [frontend.md](./frontend.md) - Frontend system overview and architectural principles
+- [plugins-page-registration.md](../plugins/plugins-page-registration.md) - How plugins register frontend pages with styling
+- [plugins-frontend-context.md](../plugins/plugins-frontend-context.md) - Plugin frontend context and CSS Modules usage
+- [documentation.md](../documentation.md) - Documentation standards and writing style
+
+**Source files:**
+- [apps/frontend/app/primitives.css](/home/delphian/projects/tronrelic.com-beta/apps/frontend/app/primitives.css) - Foundation tokens (Layer 1)
+- [apps/frontend/app/semantic-tokens.css](/home/delphian/projects/tronrelic.com-beta/apps/frontend/app/semantic-tokens.css) - Semantic tokens (Layer 2)
+- [apps/frontend/app/globals.css](/home/delphian/projects/tronrelic.com-beta/apps/frontend/app/globals.css) - Utility classes and global styles (Layer 3)
+
+**External resources:**
+- [Lucide React Documentation](https://lucide.dev/guide/packages/lucide-react) - Icon library usage
+- [Lucide Icon Browser](https://lucide.dev/icons) - Browse all available icons
+- [CSS Container Queries (MDN)](https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_Container_Queries) - Container query syntax reference
+- [Material Design Tokens](https://m3.material.io/foundations/design-tokens/overview) - Industry token patterns
+- [W3C Design Tokens Community Group](https://www.w3.org/community/design-tokens/) - Token specification
