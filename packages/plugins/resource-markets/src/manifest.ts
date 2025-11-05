@@ -16,5 +16,6 @@ export const resourceMarketsManifest: IPluginManifest = {
     author: 'TronRelic',
     license: 'MIT',
     backend: true,
-    frontend: true
+    frontend: true,
+    adminUrl: '/system/plugins/resource-markets/settings'
 };
