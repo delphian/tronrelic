@@ -325,7 +325,7 @@ When working with TronRelic's design tokens, remember:
 ## Further Reading
 
 **TronRelic documentation:**
-- [frontend-component-guide.md](./frontend-component-guide.md) - Component styling patterns and CSS Module usage
+- [ui-component-styling.md](./ui-component-styling.md) - Component styling patterns and CSS Module usage
 - [frontend-architecture.md](./frontend-architecture.md) - Frontend file organization and structure
 
 **TronRelic source files:**

@@ -610,7 +610,7 @@ export function MyPluginPage({ context }: { context: IFrontendPluginContext }) {
 - Tree-shakeable (unused styles are eliminated from bundles)
 - Type-safe imports with TypeScript
 
-See [Frontend Component Guide](../frontend/frontend-component-guide.md) for complete CSS Modules guidance and styling patterns.
+See [Frontend Component Guide](../frontend/ui/ui-component-styling.md) for complete CSS Modules guidance and styling patterns.
 
 ### Step 5: Remove Type Imports
 

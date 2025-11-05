@@ -337,7 +337,7 @@ IconPickerModal supports selecting a single icon only. If you need multi-select 
 
 ## Related Documentation
 
-- [Frontend Component Guide](../../frontend-component-guide.md) - CSS Modules and design token reference
+- [Frontend Component Guide](../../ui/ui-component-styling.md) - CSS Modules and design token reference
 - [Frontend Architecture](../../frontend-architecture.md) - Component organization patterns
 - [System Theme Management](../../../system/system-theme.md) - Example usage in theme editor (if exists)
 
