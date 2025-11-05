@@ -127,4 +127,4 @@ Before deploying a new market fetcher or configuration change, verify:
 
 **Related topics:**
 - [tron-chain-parameters.md](../tron/tron-chain-parameters.md) - Chain Parameters Service for dynamic blockchain data
-- [documentation-guidance.md](../documentation-guidance.md) - Documentation standards and writing style
+- [documentation.md](../documentation.md) - Documentation standards and writing style

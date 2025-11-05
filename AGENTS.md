@@ -12,7 +12,7 @@
 - [@markets.md](docs/markets/markets.md) - Market system overview
 - [@operations.md](docs/operations/operations.md) - Deployment and operations overview
 - [@TODO.md](docs/TODO.md) - Future requirements.
-- [@documentation-guidance.md](docs/documentation-guidance.md) - Documentation standards and writing conventions
+- [@documentation.md](docs/documentation.md) - Documentation standards and writing conventions
 
 **Note:** These summary documents link to detailed implementation guides. Load additional detailed documentation as needed based on your specific task (e.g., load `frontend-architecture.md` when working on frontend file organization, load `plugins-blockchain-observers.md` when implementing transaction observers).
 

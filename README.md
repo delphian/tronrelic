@@ -8,7 +8,7 @@ Real-time TRON blockchain monitoring and whale activity tracking.
 
 - [@AGENTS.md](AGENTS.md) - Project rules and agent delegation protocol
 - [@README.md](README.md) - Project overview and quick start
-- [@documentation-guidance.md](docs/documentation-guidance.md) - Documentation standards and writing conventions
+- [@documentation.md](docs/documentation.md) - Documentation standards and writing conventions
 
 **Load these summary documents based on your task domain:**
 

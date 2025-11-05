@@ -857,4 +857,4 @@ The module creates `/public/uploads/` automatically during `init()`, but if runn
 **Related backend patterns:**
 - [plugins/plugins.md](../plugins/plugins.md) - Plugin system architecture (comparison to modules)
 - [environment.md](../environment.md) - Environment variable configuration reference
-- [documentation-guidance.md](../documentation-guidance.md) - Documentation standards and writing conventions
+- [documentation.md](../documentation.md) - Documentation standards and writing conventions
