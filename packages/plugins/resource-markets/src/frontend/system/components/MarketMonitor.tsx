@@ -41,9 +41,9 @@ interface MarketMonitorProps {
  * - Warning alerts for platforms with data older than 1 hour
  *
  * **Data Sources:**
- * - `/admin/system/markets/platforms` - Platform status and reliability metrics
- * - `/admin/system/markets/freshness` - Data age and staleness tracking
- * - `/admin/system/markets/refresh` - Manual refresh trigger (POST)
+ * - `/plugins/resource-markets/system/platforms` - Platform status and reliability metrics
+ * - `/plugins/resource-markets/system/freshness` - Data age and staleness tracking
+ * - `/plugins/resource-markets/system/refresh` - Manual refresh trigger (POST)
  *
  * @param props - Component props
  * @param props.context - Frontend plugin context with API client
@@ -64,8 +64,8 @@ export function MarketMonitor({ context }: MarketMonitorProps) {
     const fetchData = async () => {
         try {
             const [platformsData, freshnessData] = await Promise.all([
-                api.get('/admin/system/markets/platforms'),
-                api.get('/admin/system/markets/freshness')
+                api.get('/plugins/resource-markets/system/platforms'),
+                api.get('/plugins/resource-markets/system/freshness')
             ]);
 
             setPlatforms(platformsData.platforms);
@@ -89,7 +89,7 @@ export function MarketMonitor({ context }: MarketMonitorProps) {
     const triggerRefresh = async (force = false) => {
         setRefreshing(true);
         try {
-            await api.post('/admin/system/markets/refresh', { force });
+            await api.post('/plugins/resource-markets/system/refresh', { force });
             setTimeout(fetchData, 2000);
         } catch (error) {
             console.error('Failed to trigger refresh:', error);
