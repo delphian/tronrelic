@@ -3,8 +3,22 @@
     "version": "1.0.0",
     "description": "TRON energy market comparison and pricing analysis plugin",
     "type": "module",
-    "main": "./dist/manifest.js",
-    "types": "./dist/manifest.d.ts",
+    "main": "dist/backend/backend.js",
+    "types": "dist/backend/backend.d.ts",
+    "exports": {
+        "./backend": {
+            "types": "./dist/backend/backend.d.ts",
+            "import": "./dist/backend/backend.js"
+        },
+        "./frontend": {
+            "types": "./src/frontend/frontend.ts",
+            "import": "./src/frontend/frontend.ts"
+        },
+        "./shared": {
+            "types": "./src/shared/index.ts",
+            "import": "./src/shared/index.ts"
+        }
+    },
     "scripts": {
         "build": "tsc",
         "clean": "rm -rf dist",
