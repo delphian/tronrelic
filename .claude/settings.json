@@ -21,7 +21,6 @@
       "Bash(npm run build:*)",
       "Bash(curl:*)",
       "Bash(docker exec:*)",
-      "Bash(rm:*)",
       "Bash(mkdir:*)",
       "Bash(npm run typecheck:*)",
       "Bash(tree:*)",
