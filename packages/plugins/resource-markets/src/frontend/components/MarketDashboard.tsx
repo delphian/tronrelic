@@ -62,7 +62,7 @@ export function MarketDashboard({ context, markets: initialMarkets, stats }: Mar
         setLoading(true);
         setError(null);
         try {
-            const response = await api.get(`/api/plugins/resource-markets/markets/${market.guid}/history`);
+            const response = await api.get(`/plugins/resource-markets/markets/${market.guid}/history`);
             if (response.success && response.history) {
                 setHistory(response.history);
             }
