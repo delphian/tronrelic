@@ -262,7 +262,11 @@ async function bootstrap() {
         }
         logger.info({}, 'All core modules initialized');
 
-        // Load plugins AFTER WebSocket is initialized so they can register handlers
+        // Initialize jobs (scheduler) BEFORE loading plugins so they can register scheduled tasks
+        await initializeJobs();
+        logger.info({}, 'Scheduler initialized');
+
+        // Load plugins AFTER WebSocket and Scheduler are initialized so they can use both
         try {
             await logger.waitUntilInitialized();
             await loadPlugins();
@@ -270,8 +274,6 @@ async function bootstrap() {
             logger.error({ pluginError, stack: pluginError instanceof Error ? pluginError.stack : undefined }, 'Plugin initialization failed')
         }
         logger.info({}, 'Plugins initialized');
-
-        await initializeJobs();
 
         server.listen(env.PORT, () => {
             logger.info({ port: env.PORT }, 'Server listening');
