@@ -13,6 +13,8 @@ import { Badge } from '../components/ui/Badge';
 import { Skeleton } from '../components/ui/Skeleton';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
+import { ClientTime } from '../components/ui/ClientTime';
+import { Tooltip } from '../components/ui/Tooltip';
 import { LineChart } from '../features/charts/components/LineChart';
 import { getSocket } from './socketClient';
 import { config } from './config';
@@ -320,7 +322,9 @@ export function FrontendPluginContextProvider({ children }: { children: React.Re
             Badge,
             Skeleton,
             Button,
-            Input
+            Input,
+            ClientTime,
+            Tooltip
         };
 
         const charts: IChartComponents = {
@@ -388,7 +392,9 @@ export function createPluginContext(pluginId: string): IFrontendPluginContext {
         Badge,
         Skeleton,
         Button,
-        Input
+        Input,
+        ClientTime,
+        Tooltip
     };
 
     const charts: IChartComponents = {

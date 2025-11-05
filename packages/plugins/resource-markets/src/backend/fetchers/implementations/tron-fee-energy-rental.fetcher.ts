@@ -1,17 +1,10 @@
+import type { IPluginContext } from '@tronrelic/types';
 import { BaseMarketFetcher } from '../base/base-fetcher.js';
-import type { MarketFetcherContext } from '../types.js';
-import type { MarketSnapshot } from '../../dtos/market-snapshot.dto.js';
+import type { MarketSnapshot } from '../../../shared/types/market-snapshot.dto.js';
 import { executeWithRetry } from '../helpers/retry.js';
-import { marketProviderConfig } from '../../../../config/market-providers.js';
-import { UsdtParametersService } from '../../../usdt-parameters/usdt-parameters.service.js';
+import { marketProviderConfig } from '../../config/market-providers.js';
 
 const MARKET_GUID = 'tron-fee-energy-rental';
-
-/**
- * USDT parameters service for fetching dynamic energy costs
- * Replaces hardcoded 65_000 constant with blockchain-measured values
- */
-const usdtService = UsdtParametersService.getInstance();
 
 /**
  * Pricing configuration structure embedded in window.AppSettings
@@ -62,25 +55,24 @@ function extractPricingConfig(html: string): ToFeePricingConfig | null {
 export class TronFeeEnergyRentalFetcher extends BaseMarketFetcher {
     private readonly config = marketProviderConfig.tronFeeEnergyRental;
 
-    constructor() {
-        super({ name: 'Tron Fee Energy Rental', guid: MARKET_GUID });
+    constructor(context: IPluginContext) {
+        super(context, { name: 'Tron Fee Energy Rental', guid: MARKET_GUID });
     }
 
     /**
      * Fetch and normalize market data from Tron Fee Energy Rental
      * Extracts energy availability from HTML input field and pricing tiers from window.AppSettings
-     * @param context - Market fetcher context with HTTP client and logger
      * @returns Complete market snapshot with energy availability and pricing tiers
      */
-    async pull(context: MarketFetcherContext): Promise<MarketSnapshot | null> {
+    async pull(): Promise<MarketSnapshot | null> {
         const response = await executeWithRetry(
             () =>
-                context.http.get<string>(this.config.endpoints.home, {
+                this.context.http.get<string>(this.config.endpoints.home, {
                     timeout: this.timeoutMs,
                     responseType: 'text'
                 }),
             {
-                logger: context.logger,
+                logger: this.context.logger,
                 fetcher: this.name,
                 marketGuid: this.guid,
                 requestLabel: 'home'
@@ -98,7 +90,7 @@ export class TronFeeEnergyRentalFetcher extends BaseMarketFetcher {
         // Extract pricing configuration from window.AppSettings
         // ToFee prices are per USDT transaction, need to normalize to per-energy pricing
         // Use dynamic USDT energy cost from blockchain instead of hardcoded 65_000
-        const energyPerTransaction = await usdtService.getStandardTransferEnergy();
+        const energyPerTransaction = await this.context.usdtParameters.getStandardTransferEnergy();
         const pricingConfig = extractPricingConfig(html);
         const fees = pricingConfig
             ? [

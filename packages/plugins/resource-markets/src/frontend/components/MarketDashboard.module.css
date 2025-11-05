@@ -1,0 +1,38 @@
+/**
+ * MarketDashboard CSS Module
+ *
+ * Scoped styles for the market comparison dashboard container component.
+ * Uses CSS variables from globals.css for consistent theming.
+ */
+
+.grid {
+    gap: var(--spacing-12);
+}
+
+.stat_grid {
+    display: grid;
+    gap: var(--spacing-7);
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.stat_card__label {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-sm);
+    letter-spacing: var(--letter-spacing-wide);
+    text-transform: uppercase;
+}
+
+.stat_card__value {
+    font-size: var(--font-size-xl);
+    font-weight: var(--font-weight-bold);
+}
+
+.stat_card__delta {
+    font-size: var(--font-size-sm);
+    color: var(--color-text-muted);
+}
+
+.dashboard_container {
+    position: relative;
+    overflow: hidden;
+}

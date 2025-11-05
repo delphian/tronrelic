@@ -1,6 +1,7 @@
 import { readdirSync, existsSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import axios from 'axios';
 import type { IPluginContext, IPlugin } from '@tronrelic/types';
 import { logger } from '../lib/logger.js';
 import { BlockchainObserverService } from '../services/blockchain-observer/index.js';
@@ -15,6 +16,9 @@ import { PluginWebSocketRegistry } from '../services/plugin-websocket-registry.j
 import { CacheService } from '../services/cache.service.js';
 import { SystemConfigService } from '../services/system-config/index.js';
 import { MenuService } from '../modules/menu/menu.service.js';
+import { getScheduler } from '../jobs/index.js';
+import { ChainParametersService } from '../modules/chain-parameters/chain-parameters.service.js';
+import { UsdtParametersService } from '../modules/usdt-parameters/usdt-parameters.service.js';
 import { getRedisClient } from './redis.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -158,6 +162,17 @@ export async function loadPlugins(): Promise<void> {
     const cacheService = new CacheService(redis);
     const systemConfigService = SystemConfigService.getInstance();
     const menuService = MenuService.getInstance();
+    const schedulerService = getScheduler();
+    const chainParametersService = ChainParametersService.getInstance();
+    const usdtParametersService = UsdtParametersService.getInstance();
+
+    // Create shared HTTP client for all plugins
+    const httpClient = axios.create({
+        timeout: 30000,
+        headers: {
+            'User-Agent': 'TronRelic/1.0'
+        }
+    });
 
     for (const plugin of pluginList) {
         const pluginLogger = logger.child({ pluginId: plugin.manifest.id, pluginTitle: plugin.manifest.title });
@@ -185,6 +200,7 @@ export async function loadPlugins(): Promise<void> {
 
             // Create plugin context with injected dependencies
             const context: IPluginContext = {
+                http: httpClient,
                 observerRegistry: observerService,
                 websocketService,
                 websocket: websocketManager as any, // Will be defined if io exists
@@ -193,6 +209,9 @@ export async function loadPlugins(): Promise<void> {
                 cache: cacheService,
                 systemConfig: systemConfigService,
                 menuService,
+                scheduler: schedulerService as any, // May be null if scheduler disabled
+                chainParameters: chainParametersService,
+                usdtParameters: usdtParametersService,
                 logger: pluginLogger
             };
 
