@@ -50,6 +50,13 @@ config.local.json
 *.sqlite3
 /database/
 
+# Security scan reports
+gitleaks.json
+*.gitleaks.json
+gitleaks-*.json
+gitleaks-*.txt
+categorize-gitleaks.py
+
 # ============================================
 # WordPress Development
 # ============================================
