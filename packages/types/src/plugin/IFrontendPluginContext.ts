@@ -60,6 +60,20 @@ export interface IUIComponents {
         id?: string;
         name?: string;
     }>;
+
+    /** Client-side time rendering component (prevents SSR hydration mismatches) */
+    ClientTime: ComponentType<{
+        date: Date | string | null | undefined;
+        format?: 'time' | 'datetime' | 'date';
+        fallback?: string;
+    }>;
+
+    /** Tooltip component for contextual help text */
+    Tooltip: ComponentType<{
+        content: string;
+        children: React.ReactNode;
+        placement?: 'top' | 'bottom';
+    }>;
 }
 
 /**

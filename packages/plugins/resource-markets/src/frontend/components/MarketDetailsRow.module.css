@@ -1,0 +1,20 @@
+/* Market Details Row Styles */
+
+.details_row {
+    background-color: var(--surface-secondary);
+}
+
+.details_cell {
+    padding: 0 !important;
+}
+
+.details_container {
+    padding: var(--spacing-8);
+    border-top: 1px solid var(--color-border);
+}
+
+.stat_grid {
+    display: grid;
+    gap: var(--spacing-5);
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
