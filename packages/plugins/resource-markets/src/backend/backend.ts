@@ -10,6 +10,7 @@ import { MarketFetcherRegistry } from './fetchers/fetcher-registry.js';
 import { refreshMarketsJob } from './jobs/refresh-markets.job.js';
 import { createMarketService } from './services/market.service.js';
 import { createConfigRoutes } from './api/config.routes.js';
+import { createMonitoringRoutes } from './api/monitoring.routes.js';
 import { DEFAULT_CONFIG, type IResourceMarketsConfig } from '../shared/types/config.js';
 
 // Module-level variables for route handlers and lifecycle
@@ -241,12 +242,19 @@ export const resourceMarketsBackendPlugin = definePlugin({
      *
      * These routes are automatically protected with requireAdmin middleware
      * and prefixed with /system/ by the plugin API service.
+     *
+     * Provides:
+     * - Config routes: GET/PUT /config for plugin configuration
+     * - Monitoring routes: GET /platforms, GET /freshness, POST /refresh
      */
     get adminRoutes() {
-        // Return config routes using the stored context
+        // Return combined config and monitoring routes using stored context
         // This ensures context is available when routes are registered
         if (pluginContext) {
-            return createConfigRoutes(pluginContext);
+            return [
+                ...createConfigRoutes(pluginContext),
+                ...createMonitoringRoutes(pluginContext, fetcherRegistry)
+            ];
         }
         return [];
     }
