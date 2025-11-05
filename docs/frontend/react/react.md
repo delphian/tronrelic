@@ -316,6 +316,74 @@ function ThemeForm() {
 
 **Provider location:** `apps/frontend/components/ui/ModalProvider/ModalProvider.tsx`
 
+### SchedulerMonitor
+
+Admin diagnostic tool for monitoring BullMQ scheduled job health, execution history, and runtime configuration. Displays real-time job status tracking with inline controls for enabling/disabling jobs and modifying schedules without backend restarts.
+
+**Key features:**
+
+- **Real-time status tracking** - Color-coded badges (success/failed/running/never run) with auto-refresh every 10 seconds
+- **Global health metrics** - Scheduler uptime, success rate, and enabled/disabled state
+- **Inline job control** - Enable/disable toggles and editable cron expressions with blur-to-save
+- **Job filtering** - Show all jobs or filter by job name/prefix for plugin-scoped views
+- **Admin authentication** - Requires admin token from localStorage, directs to /system if missing
+- **Persistent configuration** - All changes saved to MongoDB, no backend restart needed
+
+**Props interface:**
+
+```typescript
+interface SchedulerJob {
+    name: string;
+    schedule: string;
+    enabled: boolean;
+    lastRun: string | null;
+    nextRun: string | null;
+    status: 'running' | 'success' | 'failed' | 'never_run';
+    duration: number | null;
+    error: string | null;
+}
+
+interface Props {
+    token: string;
+    jobFilter?: string[] | ((job: SchedulerJob) => boolean);
+    sectionTitle?: string;
+    hideHealth?: boolean;
+}
+```
+
+**Usage example:**
+
+```typescript
+import { SchedulerMonitor, useSystemAuth } from '../../../features/system';
+
+function SchedulerPage() {
+    const { token } = useSystemAuth();
+    return <SchedulerMonitor token={token} />;
+}
+
+// Plugin-scoped view (filter to specific jobs)
+function PluginJobControl() {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('admin_token') : null;
+
+    if (!token) {
+        return <AuthPrompt href="/system" />;
+    }
+
+    return (
+        <SchedulerMonitor
+            token={token}
+            jobFilter={['markets:refresh']}
+            sectionTitle="Market Refresh Job"
+            hideHealth={true}
+        />
+    );
+}
+```
+
+**See [react/component-scheduler-monitor.md](./react/component-scheduler-monitor.md) for complete integration guide and troubleshooting.**
+
+**Component location:** `apps/frontend/features/system/components/SchedulerMonitor/SchedulerMonitor.tsx`
+
 ### ToastProvider
 
 Notification system for displaying success, error, info, and warning messages with automatic dismissal and action buttons.
@@ -730,6 +798,7 @@ Before committing any React component or feature, verify:
 **Detailed component guides in `docs/frontend/react/`:**
 
 - [component-icon-picker-modal.md](./react/component-icon-picker-modal.md) - Searchable icon selection modal with visual browsing and real-time search
+- [component-scheduler-monitor.md](./react/component-scheduler-monitor.md) - Admin diagnostic tool for monitoring BullMQ scheduled job health with inline controls
 
 **Future component documentation will be added to the `react/` subdirectory following the same pattern.**
 
@@ -743,6 +812,7 @@ Before committing any React component or feature, verify:
 
 **React-specific component guides:**
 - [react/component-icon-picker-modal.md](./react/component-icon-picker-modal.md) - IconPickerModal component with ModalProvider integration
+- [react/component-scheduler-monitor.md](./react/component-scheduler-monitor.md) - SchedulerMonitor component for admin job control
 
 **Related topics:**
 - [plugins.md](../plugins/plugins.md) - Plugin architecture overview

@@ -5,16 +5,18 @@ import type { IFrontendPluginContext } from '@tronrelic/types';
 import type { IResourceMarketsConfig } from '../../../shared/types';
 import { MarketConfigSettings } from '../components/MarketConfigSettings';
 import { MarketMonitor } from '../components/MarketMonitor';
+import { SchedulerJobControl } from '../components/SchedulerJobControl';
 
 /**
  * Resource Markets Admin Page.
  *
  * Provides administrative controls for configuring the resource-markets plugin.
- * This page allows admins to configure the public page URL, menu settings, and
- * monitor market platform health and data freshness.
+ * This page allows admins to configure the public page URL, menu settings, control
+ * the scheduled market refresh job, and monitor market platform health and data freshness.
  *
  * **Features:**
  * - Configure public page URL and menu item settings
+ * - Control the markets:refresh scheduler job (enable/disable, modify schedule)
  * - Monitor market platform health and reliability
  * - View data freshness metrics
  * - Manually trigger market refreshes
@@ -126,6 +128,8 @@ export function ResourceMarketsAdminPage({ context }: { context: IFrontendPlugin
                         onChange={setConfig}
                         context={context}
                     />
+
+                    <SchedulerJobControl context={context} />
 
                     <MarketMonitor context={context} />
                 </div>
