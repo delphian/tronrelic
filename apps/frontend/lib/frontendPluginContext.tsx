@@ -16,6 +16,8 @@ import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { ClientTime } from '../components/ui/ClientTime';
 import { Tooltip } from '../components/ui/Tooltip';
+import { IconPickerModal } from '../components/ui/IconPickerModal';
+import { useModal as useModalHook } from '../components/ui/ModalProvider';
 import { LineChart } from '../features/charts/components/LineChart';
 import { SchedulerMonitor } from '../features/system/components/SchedulerMonitor';
 import { getSocket } from './socketClient';
@@ -326,7 +328,8 @@ export function FrontendPluginContextProvider({ children }: { children: React.Re
             Button,
             Input,
             ClientTime,
-            Tooltip
+            Tooltip,
+            IconPickerModal
         };
 
         const charts: IChartComponents = {
@@ -347,7 +350,8 @@ export function FrontendPluginContextProvider({ children }: { children: React.Re
             charts,
             system,
             api,
-            websocket
+            websocket,
+            useModal: useModalHook
         };
     }, []);
 
@@ -401,7 +405,8 @@ export function createPluginContext(pluginId: string): IFrontendPluginContext {
         Button,
         Input,
         ClientTime,
-        Tooltip
+        Tooltip,
+        IconPickerModal
     };
 
     const charts: IChartComponents = {
@@ -421,6 +426,7 @@ export function createPluginContext(pluginId: string): IFrontendPluginContext {
         charts,
         system,
         api,
-        websocket
+        websocket,
+        useModal: useModalHook
     };
 }
