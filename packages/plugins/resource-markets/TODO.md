@@ -237,3 +237,246 @@ Use `ui.Tabs` component for navigation between sections.
 - [market-system-architecture.md](../../docs/markets/market-system-architecture.md) - Market data pipeline
 - [plugins-api-registration.md](../../docs/plugins/plugins-api-registration.md) - Admin endpoint patterns
 - [ui-component-styling.md](../../docs/frontend/ui/ui-component-styling.md) - Table styling guidelines
+
+---
+
+## Prometheus Metrics Support
+
+### Current State
+
+The plugin currently tracks market reliability and performance metrics in MongoDB:
+
+- **MarketReliabilityService** stores success/failure counts, reliability scores, and EMA availability in `reliability` collection
+- **MarketService** stores effective prices, availability percentages, and staleness indicators in `markets` collection
+- **REST API monitoring endpoints** expose this data as JSON via:
+  - `GET /plugins/resource-markets/system/platforms` - Platform status and reliability
+  - `GET /plugins/resource-markets/system/freshness` - Data age metrics
+
+**Missing component:**
+- No Prometheus metrics export for time-series monitoring
+- No Grafana dashboard integration for historical trend analysis
+- No alerting integration with Prometheus Alertmanager
+
+### Background
+
+Prior to plugin migration, the legacy markets module (`apps/backend/src/modules/markets/`) exposed 7 Prometheus metrics:
+
+| Metric Name | Type | Purpose |
+|-------------|------|---------|
+| `tronrelic_market_fetch_duration_seconds` | Histogram | Fetch execution time |
+| `tronrelic_market_fetch_success_total` | Counter | Total successful fetches |
+| `tronrelic_market_fetch_failure_total` | Counter | Total failed fetches |
+| `tronrelic_market_fetch_retry_total` | Counter | Total retry attempts |
+| `tronrelic_market_availability_percent` | Gauge | Latest availability % |
+| `tronrelic_market_reliability_score` | Gauge | Latest reliability (0-1) |
+| `tronrelic_market_effective_price_trx` | Gauge | Latest effective price |
+
+These metrics were removed during legacy module retirement to avoid duplicating metrics infrastructure.
+
+### Requirement
+
+**Monitoring teams need Prometheus metrics export to:**
+- Visualize market reliability trends in Grafana dashboards
+- Set up alerting rules for market failures (e.g., reliability drops below 50%)
+- Correlate market performance with blockchain sync and transaction volumes
+- Track SLA compliance for third-party market API uptime
+- Monitor effective price changes over time for anomaly detection
+
+### Proposed Implementation
+
+Add optional Prometheus metrics export to the resource-markets plugin while maintaining REST API monitoring as the primary interface.
+
+#### Option A: Plugin-Native Prometheus Registry (Recommended)
+
+**Architecture:**
+- Plugin maintains its own Prometheus `Registry` instance
+- Exposes `/plugins/resource-markets/metrics` endpoint (admin-only)
+- Core `/metrics` endpoint aggregates all plugin registries
+
+**Implementation:**
+
+**1. Add Prometheus dependency** (`package.json`):
+```json
+{
+  "dependencies": {
+    "prom-client": "^15.1.0"
+  }
+}
+```
+
+**2. Create metrics service** (`src/backend/services/market-metrics.service.ts`):
+```typescript
+import { Registry, Counter, Gauge, Histogram } from 'prom-client';
+import type { IPluginContext } from '@tronrelic/types';
+
+/**
+ * Prometheus metrics service for resource markets plugin.
+ *
+ * Exposes market fetcher performance and reliability metrics in Prometheus format
+ * for Grafana dashboards and Alertmanager integration.
+ */
+export class MarketMetricsService {
+    private readonly registry: Registry;
+    private readonly fetchDuration: Histogram<string>;
+    private readonly fetchSuccess: Counter<string>;
+    private readonly fetchFailure: Counter<string>;
+    private readonly availabilityGauge: Gauge<string>;
+    private readonly reliabilityGauge: Gauge<string>;
+    private readonly effectivePriceGauge: Gauge<string>;
+
+    constructor(private readonly context: IPluginContext) {
+        this.registry = new Registry();
+
+        // Initialize metrics with same names as legacy module
+        this.fetchDuration = new Histogram({
+            name: 'tronrelic_market_fetch_duration_seconds',
+            help: 'Duration of market fetcher executions in seconds',
+            labelNames: ['market'],
+            registers: [this.registry]
+        });
+
+        // ... initialize other metrics
+    }
+
+    // Expose methods: observeDuration(), incrementSuccess(), etc.
+}
+```
+
+**3. Integrate into fetcher workflow** (`src/backend/jobs/refresh-markets.job.ts`):
+```typescript
+// Instrument fetcher execution
+const startTime = process.hrtime.bigint();
+try {
+    const result = await fetcher.fetch(context);
+    metricsService.incrementSuccess(fetcher.guid);
+} catch (error) {
+    metricsService.incrementFailure(fetcher.guid);
+} finally {
+    const duration = Number(process.hrtime.bigint() - startTime) / 1e9;
+    metricsService.observeDuration(fetcher.guid, duration);
+}
+```
+
+**4. Add metrics endpoint** (`src/backend/api/monitoring.routes.ts`):
+```typescript
+{
+    method: 'GET',
+    path: '/metrics',  // Results in /plugins/resource-markets/system/metrics
+    handler: async (req, res, next) => {
+        const metrics = await metricsService.collectMetrics();
+        res.setHeader('Content-Type', 'text/plain; version=0.0.4');
+        res.send(metrics);
+    }
+}
+```
+
+**5. Core backend aggregates plugin metrics** (`apps/backend/src/loaders/express.ts`):
+```typescript
+app.get('/metrics', async (req, res) => {
+    // Collect from all plugins
+    const pluginMetrics = await PluginRegistry.collectAllMetrics();
+
+    // Merge with core metrics
+    const combined = coreMetrics + '\n' + pluginMetrics;
+    res.setHeader('Content-Type', 'text/plain; version=0.0.4');
+    res.send(combined);
+});
+```
+
+#### Option B: Core Metrics Bridge (Alternative)
+
+**Architecture:**
+- Core backend queries plugin MongoDB collections
+- Exposes metrics at core `/metrics` endpoint
+- Plugin remains unmodified
+
+**Pros:**
+- No plugin code changes required
+- Centralized metrics management
+
+**Cons:**
+- Tight coupling to plugin database schema
+- Adds latency to `/metrics` scraping
+- Cannot capture real-time counters (only current state)
+
+**Decision:** Option A preferred for cleaner separation of concerns and real-time metric accuracy.
+
+#### Metrics Mapping
+
+**From MongoDB to Prometheus:**
+
+| MongoDB Collection | Field | Prometheus Metric | Type |
+|-------------------|-------|-------------------|------|
+| `reliability` | `successCount` | `tronrelic_market_fetch_success_total` | Counter |
+| `reliability` | `failureCount` | `tronrelic_market_fetch_failure_total` | Counter |
+| `reliability` | `reliability` | `tronrelic_market_reliability_score` | Gauge |
+| `markets` | `availabilityPercent` | `tronrelic_market_availability_percent` | Gauge |
+| `markets` | `effectivePrice` | `tronrelic_market_effective_price_trx` | Gauge |
+| Instrumentation | Fetch timing | `tronrelic_market_fetch_duration_seconds` | Histogram |
+
+### Files to Create/Modify
+
+**Plugin files:**
+- `src/backend/services/market-metrics.service.ts` - New Prometheus metrics service
+- `src/backend/jobs/refresh-markets.job.ts` - Instrument fetcher execution
+- `src/backend/api/monitoring.routes.ts` - Add `/metrics` endpoint
+- `src/backend/backend.ts` - Initialize and expose metrics service
+- `package.json` - Add `prom-client` dependency
+
+**Core backend files (for aggregation):**
+- `apps/backend/src/loaders/express.ts` - Aggregate plugin metrics into `/metrics` endpoint
+- `apps/backend/src/services/plugin-registry.ts` - Add `collectAllMetrics()` method
+
+### Testing Checklist
+
+- [ ] Metrics endpoint returns valid Prometheus format
+- [ ] Counter increments are accurate (success/failure)
+- [ ] Histogram buckets capture fetch duration correctly
+- [ ] Gauge values sync from MongoDB state
+- [ ] Plugin metrics appear in core `/metrics` endpoint
+- [ ] Prometheus scraper successfully ingests metrics
+- [ ] Grafana dashboard queries render correctly
+- [ ] Alerting rules trigger on reliability drops
+
+### Grafana Dashboard Example
+
+**Resource Markets Health Dashboard:**
+```
+┌─────────────────────────────────────────────────────────────┐
+│ Market Reliability                                           │
+│ ──────────────────────────────────────────────────────────  │
+│ [Line graph: tronrelic_market_reliability_score over time]  │
+│                                                              │
+│ Fetch Success Rate                                           │
+│ ──────────────────────────────────────────────────────────  │
+│ [Line graph: rate(tronrelic_market_fetch_success_total)]    │
+│                                                              │
+│ Effective Price Trends                                       │
+│ ──────────────────────────────────────────────────────────  │
+│ [Line graph: tronrelic_market_effective_price_trx]          │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Alerting Rule Example:**
+```yaml
+groups:
+  - name: resource_markets
+    rules:
+      - alert: MarketReliabilityLow
+        expr: tronrelic_market_reliability_score < 0.5
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Market {{ $labels.market }} reliability below 50%"
+          description: "{{ $labels.market }} has {{ $value }}% reliability"
+```
+
+### Priority
+
+**Low** - This feature improves operational observability but doesn't block core functionality. REST API monitoring endpoints (`/platforms`, `/freshness`) provide equivalent data for manual inspection. Implement when Grafana dashboards become critical for production monitoring.
+
+### Related Documentation
+
+- [system-api.md](../../docs/system/system-api.md) - Core `/metrics` endpoint reference
+- [PROMETHEUS_METRICS_GAP_ANALYSIS.md](../../PROMETHEUS_METRICS_GAP_ANALYSIS.md) - Decision rationale for removing legacy metrics
