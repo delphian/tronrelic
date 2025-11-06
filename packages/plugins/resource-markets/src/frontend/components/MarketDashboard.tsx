@@ -159,7 +159,7 @@ export function MarketDashboard({ context, markets: initialMarkets, stats }: Mar
             <div className={`grid ${styles.grid}`}>
                 <section className={styles.stat_grid}>
                     {summaryItems.map(item => (
-                        <ui.Card key={item.label} tone="muted" padding="sm">
+                        <ui.Card key={item.label} tone="muted" padding="md">
                             <div className={styles.stat_card__label}>{item.label}</div>
                             <div className={styles.stat_card__value}>{item.value}</div>
                             <div className={styles.stat_card__delta}>{item.helper}</div>

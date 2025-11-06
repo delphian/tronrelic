@@ -149,14 +149,15 @@ class MarketService {
      * Gets pricing history for a specific market.
      *
      * Retrieves historical pricing data from the price_history collection,
-     * sorted by timestamp descending (most recent first).
+     * sorted by timestamp descending (most recent first). Maps the database
+     * field 'timestamp' to frontend-expected field 'recordedAt' for API consistency.
      *
      * @param guid - Market identifier
      * @param limit - Maximum number of history records to return (default: 30)
-     * @returns Promise resolving to array of historical pricing records
+     * @returns Promise resolving to array of historical pricing records with recordedAt field
      */
     async getMarketHistory(guid: string, limit = 30): Promise<Array<{
-        timestamp: Date;
+        recordedAt: string;
         minUsdtTransferCost?: number;
         fees?: Array<{ minutes: number; sun: number; apy?: number }>;
     }>> {
@@ -173,7 +174,12 @@ class MarketService {
             }
         );
 
-        return history;
+        // Map database field 'timestamp' to frontend field 'recordedAt'
+        return history.map(record => ({
+            recordedAt: record.timestamp.toISOString(),
+            minUsdtTransferCost: record.minUsdtTransferCost,
+            fees: record.fees
+        }));
     }
 
     /**
