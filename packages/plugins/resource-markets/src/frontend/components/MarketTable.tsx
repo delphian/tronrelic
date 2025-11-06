@@ -1,6 +1,6 @@
 'use client';
 
-import { Fragment, useState, useMemo } from 'react';
+import { Fragment, useMemo } from 'react';
 import type { IFrontendPluginContext } from '@tronrelic/types';
 import type { MarketDocument } from '@tronrelic/shared';
 import { Info } from 'lucide-react';
@@ -44,7 +44,6 @@ export function MarketTable({
     onToggleExpand
 }: MarketTableProps) {
     const { ui } = context;
-    const [isMounted, setIsMounted] = useState(false);
 
     // Sort markets by cost (lowest first), then by buy orders (highest first)
     const sortedMarkets = useMemo(() => {
@@ -107,6 +106,43 @@ export function MarketTable({
                                 ? market.pricingDetail.minUsdtTransferCost.toFixed(3)
                                 : '—';
 
+                            /**
+                             * Calculates and formats the price range display for a market.
+                             * Shows the lowest and highest cost per USDT transfer across all available rental durations.
+                             * This gives users a quick overview of pricing tiers without expanding the full details.
+                             */
+                            const priceRange = market.pricingDetail?.usdtTransferCosts && market.pricingDetail.usdtTransferCosts.length > 0
+                                ? (() => {
+                                    // Sort by duration (shortest first), then by price (lowest first)
+                                    const sorted = [...market.pricingDetail.usdtTransferCosts].sort((a, b) => {
+                                        if (a.durationMinutes !== b.durationMinutes) {
+                                            return a.durationMinutes - b.durationMinutes;
+                                        }
+                                        return a.costTrx - b.costTrx;
+                                    });
+
+                                    // Find lowest and highest price per transfer
+                                    const lowestCost = sorted.reduce((min, c) => c.costTrx < min.costTrx ? c : min, sorted[0]);
+                                    const highestCost = sorted.reduce((max, c) => c.costTrx > max.costTrx ? c : max, sorted[0]);
+
+                                    const formatDuration = (minutes: number) => {
+                                        const hours = Math.floor(minutes / 60);
+                                        const days = Math.floor(hours / 24);
+                                        return days > 0 ? `${days}d` : hours > 0 ? `${hours}h` : `${minutes}m`;
+                                    };
+
+                                    const line1 = `${lowestCost.costTrx.toFixed(2)} TRX/tx @ ${formatDuration(lowestCost.durationMinutes)}`;
+                                    const line2 = `${highestCost.costTrx.toFixed(2)} TRX/tx @ ${formatDuration(highestCost.durationMinutes)}`;
+
+                                    return (
+                                        <div className={styles.table__price_range}>
+                                            <div key="lowest">{line1}</div>
+                                            <div key="highest" className={styles.table__price_range_high}>{line2}</div>
+                                        </div>
+                                    );
+                                })()
+                                : '—';
+
                             return (
                                 <Fragment key={market.guid}>
                                     <tr
@@ -124,7 +160,7 @@ export function MarketTable({
                                             </div>
                                         </td>
                                         <td>{usdtTransferCost}</td>
-                                        <td>—</td>
+                                        <td>{priceRange}</td>
                                         <td>
                                             {market.availabilityPercent != null && market.availabilityPercent > 0
                                                 ? `${market.availabilityPercent.toFixed(1)}%`
