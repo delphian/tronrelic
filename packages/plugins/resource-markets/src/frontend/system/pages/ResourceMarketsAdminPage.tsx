@@ -6,6 +6,7 @@ import type { IResourceMarketsConfig } from '../../../shared/types';
 import { MarketConfigSettings } from '../components/MarketConfigSettings';
 import { MarketMonitor } from '../components/MarketMonitor';
 import { SchedulerJobControl } from '../components/SchedulerJobControl';
+import styles from './ResourceMarketsAdminPage.module.css';
 
 /**
  * Resource Markets Admin Page.
@@ -69,7 +70,7 @@ export function ResourceMarketsAdminPage({ context }: { context: IFrontendPlugin
 
     if (loading) {
         return (
-            <main>
+            <main className={styles.main}>
                 <div className="page">
                     <section className="page-header">
                         <h1 className="page-title">Resource Markets Settings</h1>
@@ -82,7 +83,7 @@ export function ResourceMarketsAdminPage({ context }: { context: IFrontendPlugin
 
     if (!config) {
         return (
-            <main>
+            <main className={styles.main}>
                 <div className="page">
                     <section className="page-header">
                         <h1 className="page-title">Resource Markets Settings</h1>
@@ -101,7 +102,7 @@ export function ResourceMarketsAdminPage({ context }: { context: IFrontendPlugin
     }
 
     return (
-        <main>
+        <main className={styles.main}>
             <div className="page">
                 <section className="page-header">
                     <h1 className="page-title">Resource Markets Settings</h1>

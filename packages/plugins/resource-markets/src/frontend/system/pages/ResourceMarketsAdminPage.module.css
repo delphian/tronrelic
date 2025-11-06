@@ -1,0 +1,11 @@
+/**
+ * Resource Markets Admin Page Styles
+ *
+ * Scoped styles for the admin settings page to prevent margin/padding
+ * conflicts with the system admin layout.
+ */
+
+.main {
+    margin: 0;
+    padding: 0;
+}
