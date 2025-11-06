@@ -62,12 +62,16 @@ interface RegisteredJob {
  */
 export class SchedulerService {
     private readonly jobs = new Map<string, RegisteredJob>();
+    private started = false;
 
     /**
      * Registers a new scheduled job with default configuration.
      *
-     * Jobs must be registered before calling start(). The default schedule
-     * will be used unless admin has configured a different schedule in MongoDB.
+     * If the scheduler has already started (via start()), the job will be
+     * automatically scheduled immediately. Otherwise, it will be scheduled
+     * when start() is called.
+     *
+     * This allows plugins to register jobs after the main scheduler has started.
      *
      * @param name - Unique job identifier (e.g., "markets:refresh")
      * @param defaultSchedule - Default cron expression. Note: use slash instead of {S} (e.g., "STAR/10 * * * *" where STAR = asterisk)
@@ -86,6 +90,12 @@ export class SchedulerService {
             handler,
             task: undefined
         });
+
+        // If scheduler already started (e.g., plugin loaded after initialization),
+        // schedule this job immediately
+        if (this.started) {
+            void this.scheduleJobFromDatabase(name);
+        }
     }
 
     /**
@@ -101,37 +111,57 @@ export class SchedulerService {
      * This method must be called after all jobs are registered via register().
      */
     async start(): Promise<void> {
-        for (const [name, job] of this.jobs.entries()) {
-            // Load or create config from MongoDB
-            let config = await SchedulerConfigModel.findOne({ jobName: name });
+        for (const [name] of this.jobs.entries()) {
+            await this.scheduleJobFromDatabase(name);
+        }
+        this.started = true;
+    }
 
-            if (!config) {
-                // First time seeing this job - create default config
-                config = await SchedulerConfigModel.create({
-                    jobName: name,
-                    enabled: true,
-                    schedule: job.defaultSchedule,
-                    updatedAt: new Date()
-                });
-                logger.info(
-                    { jobName: name, schedule: job.defaultSchedule },
-                    'Created default scheduler config'
-                );
-            }
+    /**
+     * Loads configuration for a single job from MongoDB and schedules it if enabled.
+     *
+     * This method is called both during start() for bulk initialization and
+     * from register() when plugins register jobs after the scheduler has started.
+     *
+     * @param name - Job name to schedule
+     * @private
+     */
+    private async scheduleJobFromDatabase(name: string): Promise<void> {
+        const job = this.jobs.get(name);
+        if (!job) {
+            logger.error({ jobName: name }, 'Attempted to schedule unknown job');
+            return;
+        }
 
-            // Update job with config from database
-            job.currentSchedule = config.schedule;
-            job.enabled = config.enabled;
+        // Load or create config from MongoDB
+        let config = await SchedulerConfigModel.findOne({ jobName: name });
 
-            if (job.enabled) {
-                this.scheduleJob(job);
-                logger.info(
-                    { jobName: name, schedule: job.currentSchedule },
-                    `Scheduler job started: ${name}`
-                );
-            } else {
-                logger.info({ jobName: name }, 'Scheduler job disabled (skipped)');
-            }
+        if (!config) {
+            // First time seeing this job - create default config
+            config = await SchedulerConfigModel.create({
+                jobName: name,
+                enabled: true,
+                schedule: job.defaultSchedule,
+                updatedAt: new Date()
+            });
+            logger.info(
+                { jobName: name, schedule: job.defaultSchedule },
+                'Created default scheduler config'
+            );
+        }
+
+        // Update job with config from database
+        job.currentSchedule = config.schedule;
+        job.enabled = config.enabled;
+
+        if (job.enabled) {
+            this.scheduleJob(job);
+            logger.info(
+                { jobName: name, schedule: job.currentSchedule },
+                `Scheduler job started: ${name}`
+            );
+        } else {
+            logger.info({ jobName: name }, 'Scheduler job disabled (skipped)');
         }
     }
 

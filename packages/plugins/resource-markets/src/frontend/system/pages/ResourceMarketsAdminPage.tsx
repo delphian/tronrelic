@@ -17,7 +17,7 @@ import styles from './ResourceMarketsAdminPage.module.css';
  *
  * **Features:**
  * - Configure public page URL and menu item settings
- * - Control the markets:refresh scheduler job (enable/disable, modify schedule)
+ * - Control the resource-markets:refresh scheduler job (enable/disable, modify schedule)
  * - Monitor market platform health and reliability
  * - View data freshness metrics
  * - Manually trigger market refreshes
