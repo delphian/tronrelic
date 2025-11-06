@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import type { IFrontendPluginContext } from '@tronrelic/types';
 import type { MarketDocument } from '@tronrelic/shared';
+import { Zap, Send, Globe, ExternalLink } from 'lucide-react';
 import { MarketDashboard } from '../components/MarketDashboard';
 import styles from './MarketsPage.module.css';
 
@@ -26,7 +27,6 @@ export function MarketsPage({ context }: { context: IFrontendPluginContext }) {
     const [markets, setMarkets] = useState<MarketDocument[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-    const [refreshing, setRefreshing] = useState(false);
 
     /**
      * Fetches market data from the plugin's REST API endpoint.
@@ -59,19 +59,6 @@ export function MarketsPage({ context }: { context: IFrontendPluginContext }) {
         } finally {
             setLoading(false);
         }
-    };
-
-    /**
-     * Handles manual refresh button clicks.
-     *
-     * Fetches fresh market data and provides visual feedback during the refresh
-     * operation. Uses separate refreshing state to differentiate between initial
-     * load and manual refresh, allowing the UI to show appropriate loading indicators.
-     */
-    const handleRefresh = async () => {
-        setRefreshing(true);
-        await loadMarkets();
-        setRefreshing(false);
     };
 
     // Load markets on mount
@@ -123,10 +110,42 @@ export function MarketsPage({ context }: { context: IFrontendPluginContext }) {
     if (loading && markets.length === 0) {
         return (
             <div className={styles.page}>
-                <div className={styles.header}>
-                    <h1 className={styles.title}>Energy Markets</h1>
-                    <p className={styles.description}>Real-time TRON energy market comparison</p>
-                </div>
+                <section className={styles.page_header}>
+                    <div className={styles.title_row}>
+                        <h1 className={styles.title}>
+                            <Zap className={styles.title_icon} size={64} />
+                            Energy Markets
+                        </h1>
+                        <div className={styles.cta_buttons}>
+                            <a
+                                href="https://t.me/BuyEnergyTronsave_bot?start=tcrq2fjvon5mphjg"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className={styles.cta_link}
+                            >
+                                <Send size={18} />
+                                <span>Rent Energy via Bot</span>
+                                <ExternalLink size={14} />
+                            </a>
+                            <a
+                                href="https://tronsave.io/?ref=tcrq2fjvon5mphjg"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className={styles.cta_link}
+                            >
+                                <Globe size={18} />
+                                <span>Rent Energy via Web</span>
+                                <ExternalLink size={14} />
+                            </a>
+                        </div>
+                    </div>
+                    <p className={styles.subtitle}>
+                        Rent TRON energy at the cheapest rates across 20+ platforms and save up to 90% on USDT TRC20 transfer fees.
+                        Compare real-time pricing from top energy rental marketplaces including TronSave, JustLend DAO, and CatFee to
+                        find the best deals for your transactions. Live price tracking updates every 10 minutes to ensure you always
+                        get the lowest cost per energy unit.
+                    </p>
+                </section>
                 <ui.Card>
                     <ui.Skeleton height={400} />
                 </ui.Card>
@@ -138,14 +157,46 @@ export function MarketsPage({ context }: { context: IFrontendPluginContext }) {
     if (error) {
         return (
             <div className={styles.page}>
-                <div className={styles.header}>
-                    <h1 className={styles.title}>Energy Markets</h1>
-                    <p className={styles.description}>Real-time TRON energy market comparison</p>
-                </div>
+                <section className={styles.page_header}>
+                    <div className={styles.title_row}>
+                        <h1 className={styles.title}>
+                            <Zap className={styles.title_icon} size={64} />
+                            Energy Markets
+                        </h1>
+                        <div className={styles.cta_buttons}>
+                            <a
+                                href="https://t.me/BuyEnergyTronsave_bot?start=tcrq2fjvon5mphjg"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className={styles.cta_link}
+                            >
+                                <Send size={18} />
+                                <span>Rent Energy via Bot</span>
+                                <ExternalLink size={14} />
+                            </a>
+                            <a
+                                href="https://tronsave.io/?ref=tcrq2fjvon5mphjg"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className={styles.cta_link}
+                            >
+                                <Globe size={18} />
+                                <span>Rent Energy via Web</span>
+                                <ExternalLink size={14} />
+                            </a>
+                        </div>
+                    </div>
+                    <p className={styles.subtitle}>
+                        Rent TRON energy at the cheapest rates across 20+ platforms and save up to 90% on USDT TRC20 transfer fees.
+                        Compare real-time pricing from top energy rental marketplaces including TronSave, JustLend DAO, and CatFee to
+                        find the best deals for your transactions. Live price tracking updates every 10 minutes to ensure you always
+                        get the lowest cost per energy unit.
+                    </p>
+                </section>
                 <ui.Card>
                     <div className={styles.error_container}>
                         <p className={styles.error_message}>{error}</p>
-                        <ui.Button onClick={handleRefresh} variant="primary">
+                        <ui.Button onClick={() => void loadMarkets()} variant="primary">
                             Retry
                         </ui.Button>
                     </div>
@@ -157,20 +208,42 @@ export function MarketsPage({ context }: { context: IFrontendPluginContext }) {
     // Show main dashboard with market data
     return (
         <div className={styles.page}>
-            <div className={styles.header}>
-                <div className={styles.header_content}>
-                    <h1 className={styles.title}>Energy Markets</h1>
-                    <p className={styles.description}>Real-time TRON energy market comparison</p>
+            <section className={styles.page_header}>
+                <div className={styles.title_row}>
+                    <h1 className={styles.title}>
+                        <Zap className={styles.title_icon} size={64} />
+                        Energy Markets
+                    </h1>
+                    <div className={styles.cta_buttons}>
+                        <a
+                            href="https://t.me/BuyEnergyTronsave_bot?start=tcrq2fjvon5mphjg"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className={styles.cta_link}
+                        >
+                            <Send size={18} />
+                            <span>Rent Energy via Bot</span>
+                            <ExternalLink size={14} />
+                        </a>
+                        <a
+                            href="https://tronsave.io/?ref=tcrq2fjvon5mphjg"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className={styles.cta_link}
+                        >
+                            <Globe size={18} />
+                            <span>Rent Energy via Web</span>
+                            <ExternalLink size={14} />
+                        </a>
+                    </div>
                 </div>
-                <ui.Button
-                    onClick={handleRefresh}
-                    variant="secondary"
-                    loading={refreshing}
-                    disabled={refreshing}
-                >
-                    Refresh
-                </ui.Button>
-            </div>
+                <p className={styles.subtitle}>
+                    Rent TRON energy at the cheapest rates across 20+ platforms and save up to 90% on USDT TRC20 transfer fees.
+                    Compare real-time pricing from top energy rental marketplaces including TronSave, JustLend DAO, and CatFee to
+                    find the best deals for your transactions. Live price tracking updates every 10 minutes to ensure you always
+                    get the lowest cost per energy unit.
+                </p>
+            </section>
             <MarketDashboard context={context} markets={markets} />
         </div>
     );
