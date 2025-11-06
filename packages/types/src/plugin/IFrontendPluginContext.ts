@@ -74,6 +74,13 @@ export interface IUIComponents {
         children: React.ReactNode;
         placement?: 'top' | 'bottom';
     }>;
+
+    /** Icon picker modal component for visual icon selection */
+    IconPickerModal: ComponentType<{
+        selectedIcon?: string;
+        onSelect: (iconName: string) => void;
+        onClose: () => void;
+    }>;
 }
 
 /**
@@ -411,4 +418,32 @@ export interface IFrontendPluginContext {
 
     /** WebSocket client for real-time event subscriptions with auto-prefixing */
     websocket: IWebSocketClient;
+
+    /**
+     * Modal control hook for opening and closing modals programmatically.
+     *
+     * Returns methods to open, close, and manage modal state. Must be called
+     * within a component context (similar to React hooks pattern).
+     *
+     * @example
+     * ```typescript
+     * const { open: openModal, close: closeModal } = context.useModal();
+     * const modalId = openModal({
+     *   title: 'Select Icon',
+     *   size: 'lg',
+     *   content: <IconPickerModal onSelect={handleSelect} onClose={() => closeModal(modalId)} />
+     * });
+     * ```
+     */
+    useModal: () => {
+        open: (options: {
+            title?: string;
+            content: React.ReactNode;
+            size?: 'sm' | 'md' | 'lg' | 'xl';
+            dismissible?: boolean;
+            onClose?: () => void;
+        }) => string;
+        close: (id: string) => void;
+        closeAll: () => void;
+    };
 }

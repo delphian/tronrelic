@@ -1,0 +1,80 @@
+/**
+ * Market Configuration Settings Component Styles
+ *
+ * Responsive two-column layout for page and menu configuration fields. Uses container
+ * queries for component-level responsiveness. All values use design tokens from
+ * primitives.css and semantic-tokens.css for consistency.
+ *
+ * Layout:
+ * - Mobile (<768px): Single column, all fields stacked
+ * - Tablet/Desktop (≥768px): Two columns with 2 fields each
+ */
+
+.container {
+    container-type: inline-size;
+    container-name: market_config_settings;
+}
+
+.form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-10);
+}
+
+/* Two-column layout at tablet breakpoint and above */
+@container market_config_settings (min-width: 768px) {
+    .form {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: var(--spacing-10);
+    }
+}
+
+/* Column wrapper for field groups */
+.column {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-10);
+}
+
+/* Form field spacing */
+.field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-4);
+}
+
+.label {
+    display: block;
+    font-weight: var(--font-weight-medium);
+}
+
+.input {
+    width: 100%;
+    padding: var(--spacing-4);
+    font-size: var(--font-size-base);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background-color: var(--color-surface);
+    color: var(--color-text);
+}
+
+.input--error {
+    border-color: var(--color-danger);
+}
+
+.input--number {
+    width: 200px;
+}
+
+.help_text {
+    margin-top: var(--spacing-2);
+    font-size: var(--font-size-sm);
+    opacity: 0.7;
+}
+
+.error_text {
+    margin-top: var(--spacing-2);
+    font-size: var(--font-size-sm);
+    color: var(--color-danger);
+}
