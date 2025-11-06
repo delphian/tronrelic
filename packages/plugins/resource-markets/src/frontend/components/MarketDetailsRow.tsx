@@ -142,7 +142,15 @@ export function MarketDetailsRow({
 
         // Backend returns pre-aggregated data, just filter and transform
         const data = history
-            .filter(point => typeof point.minUsdtTransferCost === 'number' && point.minUsdtTransferCost > 0)
+            .filter(point => {
+                // Filter out invalid costs
+                if (typeof point.minUsdtTransferCost !== 'number' || point.minUsdtTransferCost <= 0) {
+                    return false;
+                }
+                // Filter out invalid dates to prevent NaN coordinates in chart
+                const date = new Date(point.recordedAt);
+                return !isNaN(date.getTime());
+            })
             .map(point => ({
                 date: point.recordedAt,
                 value: point.minUsdtTransferCost!
