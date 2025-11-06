@@ -65,3 +65,14 @@
 .table__market_region {
     font-size: var(--font-size-sm);
 }
+
+.table__price_range {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    font-size: var(--font-size-sm);
+}
+
+.table__price_range_high {
+    opacity: var(--opacity-70);
+}
