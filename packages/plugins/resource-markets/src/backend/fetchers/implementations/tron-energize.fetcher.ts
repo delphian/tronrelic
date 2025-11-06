@@ -85,6 +85,7 @@ export class TronEnergizeFetcher extends BaseMarketFetcher {
 
     const orderSnapshots = (data.data ?? [])
       .filter(order => order.active)
+      .filter(order => order.energy != null && order.energy > 0)
       .map(order => {
         const durationSeconds = (Number(order.duration) || 0) * 3;
         const paymentSun = Number(order.payout) || 0;
