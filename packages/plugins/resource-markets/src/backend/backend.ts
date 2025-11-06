@@ -11,6 +11,8 @@ import { refreshMarketsJob } from './jobs/refresh-markets.job.js';
 import { createMarketService } from './services/market.service.js';
 import { createConfigRoutes } from './api/config.routes.js';
 import { createMonitoringRoutes } from './api/monitoring.routes.js';
+import { createAdminRoutes } from './api/admin.routes.js';
+import { createAffiliateRoutes } from './api/affiliate.routes.js';
 import { DEFAULT_CONFIG, type IResourceMarketsConfig } from '../shared/types/config.js';
 
 // Module-level variables for route handlers and lifecycle
@@ -23,16 +25,19 @@ export const resourceMarketsBackendPlugin = definePlugin({
     /**
      * Install hook - runs once when plugin is installed.
      *
-     * Creates database indexes for:
-     * - markets collection (query by guid, sort by priority)
-     * - price_history collection (query by market and timestamp)
+     * Creates database indexes for all plugin collections:
+     * - markets: Query by guid, sort by priority
+     * - price_history: Query by market and timestamp
+     * - reliability: Query by guid for reliability tracking
+     * - reliability_history: Query by guid and timestamp for trend analysis
+     * - affiliate_tracking: Query by guid and trackingCode for impressions/clicks
      *
      * Seeds default configuration for public page URL and menu settings.
      */
     install: async (context: IPluginContext) => {
         context.logger.info('Installing resource-markets plugin');
 
-        // Create indexes for markets collection
+        // Markets collection indexes
         await context.database.createIndex('markets', {
             guid: 1
         }, { unique: true });
@@ -42,10 +47,31 @@ export const resourceMarketsBackendPlugin = definePlugin({
             isActive: 1
         });
 
-        // Create indexes for price history collection
+        // Price history collection indexes
         await context.database.createIndex('price_history', {
             marketGuid: 1,
             timestamp: -1
+        });
+
+        // Reliability collection indexes
+        await context.database.createIndex('reliability', {
+            guid: 1
+        }, { unique: true });
+
+        // Reliability history collection indexes
+        await context.database.createIndex('reliability_history', {
+            guid: 1,
+            recordedAt: -1
+        });
+
+        // Affiliate tracking collection indexes
+        await context.database.createIndex('affiliate_tracking', {
+            guid: 1
+        }, { unique: true });
+
+        await context.database.createIndex('affiliate_tracking', {
+            guid: 1,
+            trackingCode: 1
         });
 
         // Seed default configuration
@@ -175,67 +201,73 @@ export const resourceMarketsBackendPlugin = definePlugin({
     /**
      * Public API routes accessible at /api/plugins/resource-markets/*
      */
-    routes: [
-        {
-            method: 'GET',
-            path: '/markets',
-            handler: async (_req: IHttpRequest, res: IHttpResponse, next: IHttpNext) => {
-                try {
-                    const marketService = createMarketService(pluginContext);
-                    const markets = await marketService.listActiveMarkets();
-                    res.json({
-                        success: true,
-                        markets,
-                        timestamp: new Date().toISOString()
-                    });
-                } catch (error) {
-                    next(error);
-                }
-            }
-        },
-
-        {
-            method: 'GET',
-            path: '/markets/:guid',
-            handler: async (req: IHttpRequest, res: IHttpResponse, next: IHttpNext) => {
-                try {
-                    const marketService = createMarketService(pluginContext);
-                    const market = await marketService.getMarket(req.params.guid);
-                    if (!market) {
-                        res.status(404).json({
-                            success: false,
-                            error: 'Market not found'
-                        });
-                        return;
+    get routes() {
+        if (pluginContext) {
+            return [
+                // Market data endpoints
+                {
+                    method: 'GET' as const,
+                    path: '/markets',
+                    handler: async (_req: IHttpRequest, res: IHttpResponse, next: IHttpNext) => {
+                        try {
+                            const marketService = createMarketService(pluginContext);
+                            const markets = await marketService.listActiveMarkets();
+                            res.json({
+                                success: true,
+                                markets,
+                                timestamp: new Date().toISOString()
+                            });
+                        } catch (error) {
+                            next(error);
+                        }
                     }
-                    res.json({
-                        success: true,
-                        market
-                    });
-                } catch (error) {
-                    next(error);
-                }
-            }
-        },
-
-        {
-            method: 'GET',
-            path: '/markets/:guid/history',
-            handler: async (req: IHttpRequest, res: IHttpResponse, next: IHttpNext) => {
-                try {
-                    const marketService = createMarketService(pluginContext);
-                    const limit = req.query?.limit ? parseInt(req.query.limit as string, 10) : 30;
-                    const history = await marketService.getMarketHistory(req.params.guid, limit);
-                    res.json({
-                        success: true,
-                        history
-                    });
-                } catch (error) {
-                    next(error);
-                }
-            }
+                },
+                {
+                    method: 'GET' as const,
+                    path: '/markets/:guid',
+                    handler: async (req: IHttpRequest, res: IHttpResponse, next: IHttpNext) => {
+                        try {
+                            const marketService = createMarketService(pluginContext);
+                            const market = await marketService.getMarket(req.params.guid);
+                            if (!market) {
+                                res.status(404).json({
+                                    success: false,
+                                    error: 'Market not found'
+                                });
+                                return;
+                            }
+                            res.json({
+                                success: true,
+                                market
+                            });
+                        } catch (error) {
+                            next(error);
+                        }
+                    }
+                },
+                {
+                    method: 'GET' as const,
+                    path: '/markets/:guid/history',
+                    handler: async (req: IHttpRequest, res: IHttpResponse, next: IHttpNext) => {
+                        try {
+                            const marketService = createMarketService(pluginContext);
+                            const limit = req.query?.limit ? parseInt(req.query.limit as string, 10) : 30;
+                            const history = await marketService.getMarketHistory(req.params.guid, limit);
+                            res.json({
+                                success: true,
+                                history
+                            });
+                        } catch (error) {
+                            next(error);
+                        }
+                    }
+                },
+                // Affiliate tracking endpoints
+                ...createAffiliateRoutes(pluginContext)
+            ];
         }
-    ],
+        return [];
+    },
 
     /**
      * Admin API routes accessible at /api/plugins/resource-markets/system/*
@@ -246,14 +278,16 @@ export const resourceMarketsBackendPlugin = definePlugin({
      * Provides:
      * - Config routes: GET/PUT /config for plugin configuration
      * - Monitoring routes: GET /platforms, GET /freshness, POST /refresh
+     * - Admin routes: PATCH /markets/:guid/priority, PATCH /markets/:guid/status, etc.
      */
     get adminRoutes() {
-        // Return combined config and monitoring routes using stored context
+        // Return combined admin routes using stored context
         // This ensures context is available when routes are registered
         if (pluginContext) {
             return [
                 ...createConfigRoutes(pluginContext),
-                ...createMonitoringRoutes(pluginContext, fetcherRegistry)
+                ...createMonitoringRoutes(pluginContext, fetcherRegistry),
+                ...createAdminRoutes(pluginContext, fetcherRegistry)
             ];
         }
         return [];
