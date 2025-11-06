@@ -21,6 +21,7 @@ export type {
     IFrontendPluginContext,
     IUIComponents,
     IChartComponents,
+    ISystemComponents,
     IApiClient,
     IWebSocketClient
 } from './IFrontendPluginContext.js';

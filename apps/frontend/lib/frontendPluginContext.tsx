@@ -5,6 +5,7 @@ import type {
     IFrontendPluginContext,
     IUIComponents,
     IChartComponents,
+    ISystemComponents,
     IApiClient,
     IWebSocketClient
 } from '@tronrelic/types';
@@ -16,6 +17,7 @@ import { Input } from '../components/ui/Input';
 import { ClientTime } from '../components/ui/ClientTime';
 import { Tooltip } from '../components/ui/Tooltip';
 import { LineChart } from '../features/charts/components/LineChart';
+import { SchedulerMonitor } from '../features/system/components/SchedulerMonitor';
 import { getSocket } from './socketClient';
 import { config } from './config';
 
@@ -331,6 +333,10 @@ export function FrontendPluginContextProvider({ children }: { children: React.Re
             LineChart
         };
 
+        const system: ISystemComponents = {
+            SchedulerMonitor
+        };
+
         const api = new ApiClient();
         // Create a default websocket client with empty plugin ID for global context
         const websocket = new WebSocketClient('');
@@ -339,6 +345,7 @@ export function FrontendPluginContextProvider({ children }: { children: React.Re
             pluginId: '',
             ui,
             charts,
+            system,
             api,
             websocket
         };
@@ -401,6 +408,10 @@ export function createPluginContext(pluginId: string): IFrontendPluginContext {
         LineChart
     };
 
+    const system: ISystemComponents = {
+        SchedulerMonitor
+    };
+
     const api = new ApiClient();
     const websocket = new WebSocketClient(pluginId);
 
@@ -408,6 +419,7 @@ export function createPluginContext(pluginId: string): IFrontendPluginContext {
         pluginId,
         ui,
         charts,
+        system,
         api,
         websocket
     };
