@@ -61,12 +61,12 @@ export function createMonitoringRoutes(
                             status = 'failed';
                         } else if (ageMinutes > 60) {
                             status = 'stale';
-                        } else if (market.reliability !== undefined && market.reliability < 0.5) {
+                        } else if (typeof market.reliability === 'number' && market.reliability < 0.5) {
                             status = 'failed';
                         }
 
                         // Convert reliability from 0-1 to 0-100%
-                        const reliabilityScore = market.reliability !== undefined
+                        const reliabilityScore = typeof market.reliability === 'number'
                             ? market.reliability * 100
                             : 100;
 

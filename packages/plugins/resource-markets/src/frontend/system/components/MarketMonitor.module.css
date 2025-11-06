@@ -15,6 +15,8 @@
    ======================================== */
 
 .section {
+    container-type: inline-size;
+    container-name: platform-section;
     display: grid;
     gap: var(--spacing-7);
 }
@@ -95,6 +97,19 @@
 .platform_list {
     display: grid;
     gap: var(--spacing-5);
+}
+
+/* Responsive grid layout using container queries */
+@container platform-section (min-width: 768px) {
+    .platform_list {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@container platform-section (min-width: 1440px) {
+    .platform_list {
+        grid-template-columns: repeat(3, 1fr);
+    }
 }
 
 /* ========================================
