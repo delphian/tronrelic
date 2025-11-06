@@ -2,6 +2,7 @@ import type { IPluginContext } from '@tronrelic/types';
 import type { MarketDocument } from '@tronrelic/shared';
 import type { IMarketFetcher } from '../fetchers/types.js';
 import { normalizeMarket } from './market-normalizer.js';
+import { MarketReliabilityService } from './market-reliability.service.js';
 
 /**
  * Creates a market service instance with injected dependencies.
@@ -24,22 +25,30 @@ export function createMarketService(context: IPluginContext) {
  * - Fetching market data from all registered fetchers
  * - Normalizing diverse API responses into standardized format
  * - Computing pricing details with energy regeneration accounting
+ * - Tracking reliability metrics for each market platform
  * - Storing snapshots in plugin database (auto-prefixed collections)
+ * - Saving price history for trend analysis
  * - Emitting WebSocket updates on market changes
  * - Caching current market state for fast API responses
  */
 class MarketService {
-    constructor(private readonly context: IPluginContext) {}
+    private readonly reliabilityService: MarketReliabilityService;
+
+    constructor(private readonly context: IPluginContext) {
+        this.reliabilityService = new MarketReliabilityService(context);
+    }
 
     /**
      * Refreshes all markets by fetching data from all registered fetchers.
      *
      * Workflow:
      * 1. Fetch snapshots from all fetchers in parallel
-     * 2. Normalize each snapshot with pricing calculations
-     * 3. Store normalized documents in database (plugin_resource-markets_markets collection)
-     * 4. Emit WebSocket update event (plugin:resource-markets:update)
-     * 5. Cache results for fast API responses
+     * 2. Track reliability (success/failure) for each fetcher
+     * 3. Normalize each snapshot with pricing calculations and reliability score
+     * 4. Store normalized documents in database (plugin_resource-markets_markets collection)
+     * 5. Save price history snapshot for trend analysis
+     * 6. Emit WebSocket update event (plugin:resource-markets:update)
+     * 7. Cache results for fast API responses
      *
      * Called by scheduler job every 10 minutes.
      */
@@ -51,11 +60,20 @@ class MarketService {
                 try {
                     const snapshot = await fetcher.fetch();
                     if (!snapshot) {
+                        // Record failure for reliability tracking
+                        await this.reliabilityService.recordFailure(fetcher.guid, 'No snapshot returned');
                         return null;
                     }
 
-                    // Normalize with dependency-injected services
-                    const normalized = await normalizeMarket(this.context.usdtParameters, snapshot);
+                    // Record success and get reliability score
+                    const reliability = await this.reliabilityService.recordSuccess(
+                        snapshot.guid,
+                        snapshot.availabilityPercent,
+                        snapshot.effectivePrice
+                    );
+
+                    // Normalize with dependency-injected services and reliability score
+                    const normalized = await normalizeMarket(this.context.usdtParameters, snapshot, reliability);
 
                     // Store in plugin database (auto-prefixed collection)
                     const collection = this.context.database.getCollection('markets');
@@ -65,9 +83,16 @@ class MarketService {
                         { upsert: true }
                     );
 
+                    // Save price history snapshot if pricing detail exists
+                    if (normalized.pricingDetail?.minUsdtTransferCost !== undefined) {
+                        await this.savePriceHistory(normalized);
+                    }
+
                     return normalized;
                 } catch (error) {
                     this.context.logger.error({ error, fetcher: fetcher.name }, 'Market fetch failed');
+                    // Record failure for reliability tracking
+                    await this.reliabilityService.recordFailure(fetcher.guid, error);
                     return null;
                 }
             })
@@ -149,5 +174,29 @@ class MarketService {
         );
 
         return history;
+    }
+
+    /**
+     * Saves a price history snapshot for a market.
+     *
+     * Records the current pricing details to enable historical trend analysis.
+     * Snapshots are saved every 10 minutes when markets refresh.
+     *
+     * @param market - Market document with pricing details
+     */
+    private async savePriceHistory(market: MarketDocument): Promise<void> {
+        const historyEntry = {
+            marketGuid: market.guid,
+            marketName: market.name,
+            timestamp: new Date(),
+            minUsdtTransferCost: market.pricingDetail?.minUsdtTransferCost,
+            fees: market.fees,
+            availabilityPercent: market.availabilityPercent,
+            effectivePrice: market.effectivePrice,
+            reliability: market.reliability
+        };
+
+        const collection = this.context.database.getCollection('price_history');
+        await collection.insertOne(historyEntry);
     }
 }
