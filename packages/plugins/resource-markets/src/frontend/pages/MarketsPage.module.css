@@ -1,9 +1,7 @@
 /**
- * Markets Page Styles
- *
- * Styling for the main energy markets comparison page. Uses container queries
- * for responsive behavior and design tokens from globals.css for consistency
- * with the overall application theme.
+ * @file MarketsPage.module.css
+ * @description Scoped styles for Resource Markets plugin page
+ * @why Isolates page-specific components (header with icon, CTAs, subtitle) from global utilities
  */
 
 .page {
@@ -11,61 +9,148 @@
     container-name: markets-page;
     display: flex;
     flex-direction: column;
-    gap: 1.5rem;
-    padding: 1.5rem;
+    gap: var(--spacing-10);
+    padding: var(--spacing-10);
 }
 
-.header {
+/* Page Header Section */
+.page_header {
     display: flex;
+    flex-direction: column;
+    gap: var(--spacing-6);
+}
+
+/* Title row - flex container for icon/title and CTA buttons */
+.title_row {
+    display: flex;
+    align-items: center;
     justify-content: space-between;
-    align-items: flex-start;
-    gap: 1rem;
+    gap: var(--spacing-12);
 }
 
-.header_content {
-    flex: 1;
-}
-
+/* Title with icon */
 .title {
-    font-size: 1.75rem;
-    font-weight: 600;
-    margin: 0 0 0.5rem;
+    display: flex;
+    align-items: center;
+    font-size: var(--font-size-3xl);
+    font-weight: var(--font-weight-bold);
+    margin: 0;
     color: var(--color-text);
 }
 
-.description {
-    font-size: 0.95rem;
-    color: var(--color-text-subtle);
-    margin: 0;
+/* Bright red lightning icon next to title */
+.title_icon {
+    display: inline-block;
+    vertical-align: middle;
+    color: #ff1744;
+    margin-right: 0.75rem;
+    filter: drop-shadow(0 0 8px rgba(255, 23, 68, 0.4));
+    animation: pulse-glow 2s ease-in-out infinite;
 }
 
+@keyframes pulse-glow {
+    0%, 100% {
+        filter: drop-shadow(0 0 8px rgba(255, 23, 68, 0.4));
+    }
+    50% {
+        filter: drop-shadow(0 0 12px rgba(255, 23, 68, 0.6));
+    }
+}
+
+/* CTA buttons container */
+.cta_buttons {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-4);
+    flex-shrink: 0;
+}
+
+/* Individual CTA link buttons */
+.cta_link {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacing-4);
+    padding: 0.625rem 1.25rem;
+    background: linear-gradient(135deg, rgba(79, 140, 255, 0.15) 0%, rgba(79, 140, 255, 0.08) 100%);
+    border: 1.5px solid rgba(79, 140, 255, 0.3);
+    border-radius: var(--radius-md);
+    color: var(--color-primary);
+    text-decoration: none;
+    font-size: var(--font-size-base);
+    font-weight: var(--font-weight-semibold);
+    white-space: nowrap;
+    transition: all var(--transition-base);
+    box-shadow: 0 2px 8px rgba(79, 140, 255, 0.1);
+}
+
+.cta_link:hover {
+    background: linear-gradient(135deg, rgba(79, 140, 255, 0.22) 0%, rgba(79, 140, 255, 0.12) 100%);
+    border-color: rgba(79, 140, 255, 0.45);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(79, 140, 255, 0.2);
+}
+
+.cta_link:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 3px;
+}
+
+.cta_link svg {
+    flex-shrink: 0;
+}
+
+/* Comprehensive subtitle */
+.subtitle {
+    font-size: var(--font-size-md);
+    color: var(--color-text-muted);
+    margin: 0;
+    line-height: 1.6;
+    max-width: 100%;
+}
+
+/* Error state styling */
 .error_container {
-    padding: 2rem;
+    padding: var(--spacing-12);
     text-align: center;
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 1rem;
+    gap: var(--spacing-6);
 }
 
 .error_message {
     color: var(--color-danger);
-    font-size: 0.95rem;
+    font-size: var(--font-size-md);
     margin: 0;
 }
 
 /* Responsive adjustments using container queries */
 @container markets-page (max-width: 768px) {
     .page {
-        padding: 1rem;
+        padding: var(--spacing-6);
+        gap: var(--spacing-8);
     }
 
-    .header {
+    .title_row {
         flex-direction: column;
-        align-items: stretch;
+        align-items: flex-start;
+        gap: var(--spacing-7);
     }
 
     .title {
-        font-size: 1.5rem;
+        font-size: var(--font-size-2xl);
+    }
+
+    .cta_buttons {
+        width: 100%;
+    }
+
+    .cta_link {
+        font-size: var(--font-size-sm);
+        padding: var(--spacing-4) 1rem;
+    }
+
+    .subtitle {
+        font-size: var(--font-size-base);
     }
 }
