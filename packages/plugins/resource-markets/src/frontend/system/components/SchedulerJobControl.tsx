@@ -7,7 +7,7 @@ import type { IFrontendPluginContext } from '@tronrelic/types';
  * Scheduler Job Control Component.
  *
  * Provides a plugin-scoped view of the scheduler job control interface,
- * specifically showing and managing the markets:refresh job that updates
+ * specifically showing and managing the resource-markets:refresh job that updates
  * energy market pricing data.
  *
  * **Why this component exists:**
@@ -18,7 +18,7 @@ import type { IFrontendPluginContext } from '@tronrelic/types';
  * **How it works:**
  * 1. Retrieves admin token from localStorage (set by /system auth gate)
  * 2. Uses SchedulerMonitor from plugin context (dependency injection)
- * 3. Filters to show only the markets:refresh job
+ * 3. Filters to show only the resource-markets:refresh job
  * 4. Provides inline job control (enable/disable, schedule modification)
  *
  * **Security:**
@@ -76,7 +76,7 @@ export function SchedulerJobControl({ context }: { context: IFrontendPluginConte
         <context.ui.Card>
             <context.system.SchedulerMonitor
                 token={adminToken}
-                jobFilter={['markets:refresh']}
+                jobFilter={['resource-markets:refresh']}
                 sectionTitle="Market Refresh Job"
                 hideHealth={true}
             />
