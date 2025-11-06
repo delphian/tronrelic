@@ -70,11 +70,12 @@ async function isCustomPage(slug: string): Promise<boolean> {
  * Only generates metadata for custom pages (not plugin pages, as they handle
  * their own metadata client-side).
  *
- * @param params - Next.js route params containing slug array
+ * @param params - Next.js route params containing slug array (Promise in Next.js 15+)
  * @returns Metadata object for Next.js
  */
-export async function generateMetadata({ params }: { params: IPageParams }): Promise<Metadata> {
-    const slug = '/' + params.slug.join('/');
+export async function generateMetadata({ params }: { params: Promise<IPageParams> }): Promise<Metadata> {
+    const resolvedParams = await params;
+    const slug = '/' + resolvedParams.slug.join('/');
     const isCustom = await isCustomPage(slug);
 
     if (!isCustom) {
@@ -127,11 +128,12 @@ export async function generateMetadata({ params }: { params: IPageParams }): Pro
  *
  * This allows both systems to coexist at root level URLs.
  *
- * @param params - Next.js route params containing slug array
+ * @param params - Next.js route params containing slug array (Promise in Next.js 15+)
  * @returns Rendered page content
  */
-export default async function UnifiedPage({ params }: { params: IPageParams }) {
-    const slug = '/' + params.slug.join('/');
+export default async function UnifiedPage({ params }: { params: Promise<IPageParams> }) {
+    const resolvedParams = await params;
+    const slug = '/' + resolvedParams.slug.join('/');
     const isCustom = await isCustomPage(slug);
 
     // If it's a custom page, render it server-side
