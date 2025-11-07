@@ -76,6 +76,26 @@ describe('MigrationScanner', () => {
         });
 
         /**
+         * Test: Scanner should accept both .ts and .js extensions.
+         *
+         * Verifies that both TypeScript (.ts) and JavaScript (.js) extensions are valid
+         * to support development and production/Docker deployments respectively.
+         */
+        it('should accept both .ts and .js extensions', () => {
+            const validExtensions = [
+                '001_create_users.ts',
+                '001_create_users.js',
+                '042_add_indexes.ts',
+                '042_add_indexes.js'
+            ];
+
+            for (const name of validExtensions) {
+                const isValid = (scanner as any).isValidFilename(name);
+                expect(isValid, `Expected ${name} to be valid`).toBe(true);
+            }
+        });
+
+        /**
          * Test: Scanner should reject invalid migration filenames.
          *
          * Verifies that filenames not matching the required pattern are rejected
@@ -88,7 +108,7 @@ describe('MigrationScanner', () => {
                 '001_CreateUsers.ts',       // Uppercase letters
                 'create_users.ts',          // Missing numeric prefix
                 '001_create users.ts',      // Space in name
-                '001_create_users.js'       // Wrong extension
+                '001_create_users.py'       // Wrong extension
             ];
 
             for (const name of invalidNames) {
