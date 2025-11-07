@@ -19,11 +19,11 @@ import { logger } from '../../../lib/logger.js';
  * - Plugins: packages/plugins/star/src/backend/migrations/
  *
  * **Naming convention:**
- * Files must match: /^\d{3}_[a-z0-9_-]+\.ts$/
+ * Files must match: /^\d{3}_[a-z0-9_-]+\.(ts|js)$/
  *
  * Examples:
- * - 001_create_users.ts (valid)
- * - 042_add_indexes.ts (valid)
+ * - 001_create_users.ts or .js (valid)
+ * - 042_add_indexes.ts or .js (valid)
  * - 1_create_users.ts (invalid - insufficient leading zeros)
  * - 001-create-users.ts (invalid - hyphen instead of underscore)
  *
@@ -46,13 +46,15 @@ export class MigrationScanner {
     /**
      * Regex pattern for valid migration filenames.
      *
-     * Format: `{3 digits}_{snake_case_description}.ts`
+     * Format: `{3 digits}_{snake_case_description}.(ts|js)`
+     *
+     * Accepts both .ts (development) and .js (production/Docker) extensions.
      *
      * Captures:
      * - Group 1: Numeric prefix (001, 042, 123)
      * - Group 2: Description (create_users, add_indexes, etc.)
      */
-    private static readonly FILENAME_PATTERN = /^(\d{3})_([a-z0-9_-]+)\.ts$/;
+    private static readonly FILENAME_PATTERN = /^(\d{3})_([a-z0-9_-]+)\.(ts|js)$/;
 
     /**
      * Base directory for backend source code.
@@ -84,14 +86,15 @@ export class MigrationScanner {
      * - 3 digits prefix (001-999)
      * - Underscore separator
      * - Lowercase description with letters, numbers, hyphens, underscores
-     * - .ts extension
+     * - .ts or .js extension (both accepted)
      *
-     * @param filename - Base filename to validate (e.g., '001_create_users.ts')
+     * @param filename - Base filename to validate (e.g., '001_create_users.ts' or '001_create_users.js')
      * @returns True if filename matches convention, false otherwise
      *
      * @example
      * ```typescript
      * scanner.isValidFilename('001_create_users.ts')  // true
+     * scanner.isValidFilename('001_create_users.js')  // true
      * scanner.isValidFilename('1_test.ts')            // false (not 3 digits)
      * scanner.isValidFilename('001_CreateUsers.ts')   // false (uppercase)
      * ```
@@ -130,13 +133,13 @@ export class MigrationScanner {
      *
      * @param filePath - Absolute path to migration file
      * @param migration - Loaded migration object
-     * @throws Error if migration.id doesn't match the filename (without .ts extension)
+     * @throws Error if migration.id doesn't match the filename (without extension)
      *
      * @example
      * ```typescript
      * // Valid - ID matches filename
      * scanner.validateIdMatchesFilename(
-     *     '/path/001_create_users.ts',
+     *     '/path/001_create_users.ts', // or .js
      *     { id: '001_create_users', ... }
      * ); // No error
      *
@@ -333,7 +336,7 @@ export class MigrationScanner {
     /**
      * Scan a specific directory for migration files.
      *
-     * Reads all `.ts` files in the directory, validates naming conventions, loads
+     * Reads all `.ts` or `.js` files in the directory, validates naming conventions, loads
      * migration objects, and builds metadata.
      *
      * **Note:** Does not scan subdirectories. Migrations must be directly in the
