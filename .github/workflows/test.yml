@@ -16,6 +16,8 @@ jobs:
 
       - name: Pull private submodules (optional)
         run: |
+          # Rewrite SSH URLs to HTTPS for token authentication (CI/CD only)
+          git config --global url."https://github.com/".insteadOf "git@github.com:"
           git submodule update --init --recursive || true
         env:
           GIT_ASKPASS: echo
