@@ -3,7 +3,6 @@ import type { Redis as RedisClient } from 'ioredis';
 import { LOG_LEVELS, type LogLevelName } from '@tronrelic/types';
 import { SystemMonitorService } from './system-monitor.service.js';
 import { BlockchainService } from '../blockchain/blockchain.service.js';
-import { MarketService } from '../markets/market.service.js';
 import { getScheduler } from '../../jobs/index.js';
 import { BlockchainObserverService } from '../../services/blockchain-observer/index.js';
 import { SystemConfigService } from '../../services/system-config/index.js';
@@ -90,28 +89,6 @@ export class SystemMonitorController {
         error: message
       });
     }
-  };
-
-  getMarketPlatformStatus = async (_req: Request, res: Response) => {
-    const platforms = await this.service.getMarketPlatformStatus();
-    res.json({ success: true, platforms });
-  };
-
-  getMarketDataFreshness = async (_req: Request, res: Response) => {
-    const freshness = await this.service.getMarketDataFreshness();
-    res.json({ success: true, freshness });
-  };
-
-  triggerMarketRefresh = async (req: Request, res: Response) => {
-    const marketService = new MarketService(req.app.locals.redis);
-    const force = req.body?.force === true;
-
-    // Trigger refresh asynchronously
-    marketService.refreshMarkets(force).catch(err => {
-      console.error('Manual market refresh failed:', err);
-    });
-
-    res.json({ success: true, message: 'Market refresh triggered' });
   };
 
   getDatabaseStatus = async (_req: Request, res: Response) => {
@@ -218,7 +195,6 @@ export class SystemMonitorController {
       blockchainStatus,
       transactionStats,
       schedulerHealth,
-      marketFreshness,
       databaseStatus,
       redisStatus,
       serverMetrics
@@ -226,7 +202,6 @@ export class SystemMonitorController {
       this.service.getBlockchainSyncStatus(),
       this.service.getTransactionStats(),
       this.service.getSchedulerHealth(),
-      this.service.getMarketDataFreshness(),
       this.service.getDatabaseStatus(),
       this.service.getRedisStatus(),
       this.service.getServerMetrics()
@@ -238,7 +213,6 @@ export class SystemMonitorController {
         blockchain: blockchainStatus,
         transactions: transactionStats,
         scheduler: schedulerHealth,
-        markets: marketFreshness,
         database: databaseStatus,
         redis: redisStatus,
         server: serverMetrics

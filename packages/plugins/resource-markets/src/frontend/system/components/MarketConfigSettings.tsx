@@ -19,7 +19,7 @@ interface MarketConfigSettingsProps {
  * column on mobile devices.
  *
  * **Configurable Settings:**
- * - Public page URL path (must start with `/plugins/resource-markets/`)
+ * - Public page URL path (must start with `/`)
  * - Menu item label
  * - Menu item icon (visual selection via IconPickerModal)
  * - Menu item display order
@@ -65,7 +65,7 @@ export function MarketConfigSettings({ config, onChange, context }: MarketConfig
     };
 
     const isValidUrl = (url: string): boolean => {
-        return url.startsWith('/plugins/resource-markets/') && url.length > 26;
+        return url.startsWith('/') && url.length > 1;
     };
 
     /**
@@ -108,12 +108,12 @@ export function MarketConfigSettings({ config, onChange, context }: MarketConfig
                                 type="text"
                                 value={config.publicPageUrl}
                                 onChange={(e) => handleUrlChange(e.target.value)}
-                                placeholder="/plugins/resource-markets/markets"
+                                placeholder="/resource-markets"
                                 className={`${styles.input} ${!isValidUrl(config.publicPageUrl) ? styles['input--error'] : ''}`}
                             />
                             {!isValidUrl(config.publicPageUrl) && (
                                 <p className={styles.error_text}>
-                                    URL must start with /plugins/resource-markets/
+                                    URL must start with /
                                 </p>
                             )}
                             <p className={styles.help_text}>

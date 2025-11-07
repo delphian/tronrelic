@@ -4,8 +4,9 @@
  *
  * Creates the core navigation items for the 'main' namespace:
  * - Overview (/)
- * - Energy Markets (/resource-markets)
  * - Accounts (/accounts)
+ *
+ * Note: Energy Markets menu item is now registered by the resource-markets plugin.
  *
  * This script connects directly to MongoDB and inserts menu items if they don't exist.
  * Safe to run multiple times - checks for existing items before inserting.
@@ -28,18 +29,6 @@ const MENU_ITEMS = [
         url: '/',
         icon: null,
         order: 0,
-        parent: null,
-        enabled: true,
-        children: [],
-        createdAt: new Date(),
-        updatedAt: new Date()
-    },
-    {
-        namespace: NAMESPACE,
-        label: 'Energy Markets',
-        url: '/resource-markets',
-        icon: null,
-        order: 1,
         parent: null,
         enabled: true,
         children: [],

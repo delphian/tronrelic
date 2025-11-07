@@ -27,11 +27,6 @@ export function systemRouter() {
   router.get('/scheduler/health', controller.getSchedulerHealth);
   router.patch('/scheduler/job/:jobName', controller.updateSchedulerJob);
 
-  // Market endpoints
-  router.get('/markets/platforms', controller.getMarketPlatformStatus);
-  router.get('/markets/freshness', controller.getMarketDataFreshness);
-  router.post('/markets/refresh', controller.triggerMarketRefresh);
-
   // System health endpoints
   router.get('/health/database', controller.getDatabaseStatus);
   router.get('/health/redis', controller.getRedisStatus);

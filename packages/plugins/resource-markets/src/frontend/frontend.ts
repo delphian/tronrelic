@@ -27,7 +27,7 @@ export const resourceMarketsFrontendPlugin = definePlugin({
 
     pages: [
         {
-            path: '/plugins/resource-markets/markets',
+            path: '/resource-markets',
             component: MarketsPage,
             title: 'Energy Markets - TronRelic'
         }

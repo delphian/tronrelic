@@ -1,7 +1,5 @@
 import { env } from '../config/env.js';
 import { SchedulerService } from '../services/scheduler.service.js';
-import { getRedisClient } from '../loaders/redis.js';
-import { MarketService } from '../modules/markets/market.service.js';
 import { BlockchainService } from '../modules/blockchain/blockchain.service.js';
 import { logger } from '../lib/logger.js';
 import { CacheModel } from '../database/models/cache-model.js';
@@ -40,8 +38,6 @@ export async function initializeJobs(): Promise<SchedulerService | null> {
         return null;
     }
 
-    const redis = getRedisClient();
-    const marketService = new MarketService(redis);
     const blockchainService = BlockchainService.getInstance();
     const chainParametersFetcher = new ChainParametersFetcher(axios, logger);
     const usdtParametersFetcher = new UsdtParametersFetcher(axios, logger);
@@ -56,11 +52,6 @@ export async function initializeJobs(): Promise<SchedulerService | null> {
     // USDT parameters: every 10 minutes
     scheduler.register('usdt-parameters:fetch', '*/10 * * * *', async () => {
         await usdtParametersFetcher.fetch();
-    });
-
-    // Markets: every 10 minutes (configurable via admin API)
-    scheduler.register('markets:refresh', '*/10 * * * *', async () => {
-        await marketService.refreshMarkets();
     });
 
     // Blockchain: every minute

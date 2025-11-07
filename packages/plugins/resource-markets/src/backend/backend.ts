@@ -115,8 +115,8 @@ export const resourceMarketsBackendPlugin = definePlugin({
             context.logger.warn('Config not found, using defaults');
         }
 
-        // Register navigation menu item with configured values
-        const menuItem = await context.menuService.create({
+        // Register navigation menu item with configured values (runtime-only, not persisted to database)
+        await context.menuService.create({
             namespace: 'main',
             label: config.menuLabel,
             url: config.publicPageUrl,
@@ -124,17 +124,17 @@ export const resourceMarketsBackendPlugin = definePlugin({
             order: config.menuOrder,
             parent: null,
             enabled: true
-        });
+        }, false); // false = memory-only, not persisted to database
 
-        // Store menu item ID in config for easy updates
-        const menuNodeId = menuItem && ('_id' in menuItem ? menuItem._id : (menuItem as any).id);
-        if (menuNodeId && !config.menuItemId) {
-            config.menuItemId = menuNodeId as string;
-            await context.database.set('config', config);
-            context.logger.info({ menuItemId: menuNodeId }, 'Stored menu item ID in config');
-        }
-
-        context.logger.info({ config }, 'Registered navigation menu item');
+        context.logger.info(
+            {
+                label: config.menuLabel,
+                url: config.publicPageUrl,
+                icon: config.menuIcon,
+                order: config.menuOrder
+            },
+            'Registered runtime menu item (memory-only, not persisted)'
+        );
 
         // Initialize fetcher registry with dependency-injected context
         fetcherRegistry = new MarketFetcherRegistry(context);
