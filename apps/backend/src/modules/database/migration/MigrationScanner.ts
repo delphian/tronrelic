@@ -361,8 +361,8 @@ export class MigrationScanner {
             const files = await readdir(dirPath);
 
             for (const file of files) {
-                // Skip non-TypeScript files
-                if (!file.endsWith('.ts')) {
+                // Skip non-migration files (both .ts and .js are valid)
+                if (!file.endsWith('.ts') && !file.endsWith('.js')) {
                     continue;
                 }
 
