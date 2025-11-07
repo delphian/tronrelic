@@ -277,12 +277,6 @@ export class WebSocketService implements IWebSocketService {
     }
 
     switch (event.event) {
-      case 'market:update':
-        this.io.to('markets:all').emit(event.event, event.payload);
-        if (event.payload.guid) {
-          this.io.to(`markets:${event.payload.guid}`).emit(event.event, event.payload);
-        }
-        break;
       case 'transaction:large':
       case 'delegation:new':
       case 'stake:new':
