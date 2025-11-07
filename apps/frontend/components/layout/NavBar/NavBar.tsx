@@ -15,7 +15,6 @@ import styles from './NavBar.module.css';
 
 const coreNavLinks: IMenuItemConfig[] = [
     { href: '/', label: 'Overview', order: 0 },
-    { href: '/resource-markets', label: 'Energy Markets', order: 1 },
     { href: '/accounts', label: 'Accounts', order: 6 }
 ];
 

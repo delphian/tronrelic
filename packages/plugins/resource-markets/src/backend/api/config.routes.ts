@@ -15,13 +15,13 @@ import { DEFAULT_CONFIG, type IResourceMarketsConfig } from '../../shared/types/
  * @returns Array of API route configurations
  */
 export function createConfigRoutes(context: IPluginContext): IApiRouteConfig[] {
-    const { database, logger, menuService } = context;
+    const { database, logger } = context;
 
     return [
         {
             method: 'GET',
             path: '/config',
-            handler: async (req, res, next) => {
+            handler: async (_req, res, next) => {
                 try {
                     // Get config from database (stored in key-value store)
                     const config = await database.get<IResourceMarketsConfig>('config');
@@ -45,10 +45,10 @@ export function createConfigRoutes(context: IPluginContext): IApiRouteConfig[] {
                     const newConfig = req.body as IResourceMarketsConfig;
 
                     // Validate config
-                    if (!newConfig.publicPageUrl || !newConfig.publicPageUrl.startsWith('/plugins/resource-markets/')) {
+                    if (!newConfig.publicPageUrl || !newConfig.publicPageUrl.startsWith('/')) {
                         res.status(400).json({
                             success: false,
-                            error: 'publicPageUrl must start with /plugins/resource-markets/'
+                            error: 'publicPageUrl must start with /'
                         });
                         return;
                     }
@@ -82,30 +82,8 @@ export function createConfigRoutes(context: IPluginContext): IApiRouteConfig[] {
 
                     logger.info({ config: newConfig }, 'Resource-markets config updated');
 
-                    // Update menu item with new configuration
-                    try {
-                        // Get current config to retrieve stored menu item ID
-                        const currentConfig = await database.get<IResourceMarketsConfig>('config');
-                        const menuItemId = currentConfig?.menuItemId || newConfig.menuItemId;
-
-                        if (menuItemId) {
-                            await menuService.update(menuItemId, {
-                                label: newConfig.menuLabel,
-                                url: newConfig.publicPageUrl,
-                                icon: newConfig.menuIcon,
-                                order: newConfig.menuOrder
-                            });
-                            logger.info({ menuItemId }, 'Updated menu item with new config');
-
-                            // Preserve menu item ID in new config
-                            newConfig.menuItemId = menuItemId;
-                        } else {
-                            logger.warn('No menu item ID found, skipping menu update');
-                        }
-                    } catch (menuError) {
-                        logger.error({ error: menuError }, 'Failed to update menu item');
-                        // Don't fail the whole request if menu update fails
-                    }
+                    // Note: Menu item is runtime-only and recreated on plugin restart.
+                    // To apply menu changes, disable and re-enable the plugin in /system/plugins
 
                     res.json({
                         success: true,

@@ -1,14 +1,7 @@
-import { MarketPriceHistoryModel, TransactionMemoModel, TransactionModel } from '../../database/models/index.js';
+import { TransactionMemoModel, TransactionModel } from '../../database/models/index.js';
 import { ValidationError } from '../../lib/errors.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-
-interface TimeseriesPoint {
-  date: string;
-  value: number;
-  count?: number;
-  max?: number;
-}
 
 export class DashboardService {
 
@@ -101,74 +94,6 @@ export class DashboardService {
       unstaked: Number(row.unstaked.toFixed(2)),
       count: row.count
     }));
-  }
-
-  /**
-   * Retrieves market pricing history with optional time-bucket aggregation.
-   *
-   * When `bucketHours` is provided, aggregates raw data points (recorded every 10 minutes)
-   * into time buckets of the specified size (e.g., 6 hours), computing the average
-   * minUsdtTransferCost for each bucket. This reduces payload size from 4,320 records
-   * to ~120 buckets for 30-day queries, while preserving trend accuracy.
-   *
-   * Without `bucketHours`, returns raw data points up to the specified limit.
-   *
-   * @param guid - Market identifier to query
-   * @param limit - Maximum number of raw records to retrieve (capped at 5,000)
-   * @param bucketHours - Optional aggregation bucket size in hours (1-24)
-   * @returns Array of market history records (raw or aggregated)
-   */
-  async getMarketHistory(guid: string, limit = 120, bucketHours?: number) {
-    if (!guid) {
-      throw new ValidationError('Market GUID required');
-    }
-
-    const rawHistory = await MarketPriceHistoryModel.find({ guid })
-      .sort({ recordedAt: -1 })
-      .limit(Math.min(limit, 5000))
-      .lean();
-
-    // If no bucketing requested, return raw data
-    if (!bucketHours) {
-      return rawHistory;
-    }
-
-    // Aggregate into time buckets
-    const bucketSizeMs = bucketHours * 60 * 60 * 1000;
-    const buckets = new Map<number, typeof rawHistory>();
-
-    rawHistory.forEach(point => {
-      const timestamp = new Date(point.recordedAt).getTime();
-      const bucketKey = Math.floor(timestamp / bucketSizeMs) * bucketSizeMs;
-
-      if (!buckets.has(bucketKey)) {
-        buckets.set(bucketKey, []);
-      }
-      buckets.get(bucketKey)!.push(point);
-    });
-
-    // Calculate aggregated values for each bucket
-    const aggregated = Array.from(buckets.entries())
-      .map(([bucketTimestamp, points]) => {
-        // Filter out invalid minUsdtTransferCost values
-        const validCosts = points
-          .map(p => p.minUsdtTransferCost)
-          .filter((cost): cost is number => typeof cost === 'number' && cost > 0);
-
-        const avgCost = validCosts.length > 0
-          ? validCosts.reduce((sum, cost) => sum + cost, 0) / validCosts.length
-          : undefined;
-
-        return {
-          recordedAt: new Date(bucketTimestamp).toISOString(),
-          minUsdtTransferCost: avgCost,
-          // Include sample size for transparency
-          sampleSize: points.length
-        };
-      })
-      .sort((a, b) => new Date(a.recordedAt).getTime() - new Date(b.recordedAt).getTime());
-
-    return aggregated;
   }
 
   async getMemoFeed(limit = 50) {

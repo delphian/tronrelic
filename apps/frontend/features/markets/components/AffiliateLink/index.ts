@@ -1,1 +1,0 @@
-export { AffiliateLink } from './AffiliateLink';

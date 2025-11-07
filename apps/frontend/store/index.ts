@@ -1,5 +1,4 @@
 import { configureStore } from '@reduxjs/toolkit';
-import { marketReducer } from '../features/markets';
 import memoReducer from './slices/memoSlice';
 import { walletReducer, bookmarkReducer } from '../features/accounts';
 import { blockchainReducer } from '../features/blockchain';
@@ -42,7 +41,6 @@ function resolveDevToolsConfiguration(): false | Record<string, unknown> {
 
 export const store = configureStore({
     reducer: {
-        markets: marketReducer,
         memos: memoReducer,
         wallet: walletReducer,
         bookmarks: bookmarkReducer,

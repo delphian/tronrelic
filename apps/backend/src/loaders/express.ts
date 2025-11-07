@@ -9,7 +9,6 @@ import { requestContext } from '../api/middleware/request-context.js';
 import { errorHandler } from '../api/middleware/error-handler.js';
 import { createApiRouter } from '../api/routes/index.js';
 import { env } from '../config/env.js';
-import { marketMetrics } from '../modules/markets/market-metrics.service.js';
 
 export function createExpressApp(database?: IDatabaseService): Express {
   const app = express();
@@ -62,7 +61,7 @@ export function createExpressApp(database?: IDatabaseService): Express {
     res.json({ status: 'ok', timestamp: Date.now() });
   });
 
-  app.get('/metrics', async (req, res, next) => {
+  app.get('/metrics', async (req, res) => {
     if (!env.ENABLE_TELEMETRY) {
       res.status(503).send('# Telemetry disabled\n');
       return;
@@ -77,13 +76,8 @@ export function createExpressApp(database?: IDatabaseService): Express {
       }
     }
 
-    try {
-      const metrics = await marketMetrics.collectMetrics();
-      res.setHeader('Content-Type', 'text/plain; version=0.0.4; charset=utf-8');
-      res.send(metrics);
-    } catch (error) {
-      next(error);
-    }
+    res.setHeader('Content-Type', 'text/plain; version=0.0.4; charset=utf-8');
+    res.send('# Market metrics moved to plugin API\n# See: /api/plugins/resource-markets/system/platforms\n# See: /api/plugins/resource-markets/system/freshness\n');
   });
 
   app.use('/api', createApiRouter(database));
