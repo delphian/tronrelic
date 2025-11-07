@@ -23,6 +23,15 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Pull private submodules (optional)
+        run: |
+          git submodule update --init --recursive || true
+        env:
+          GIT_ASKPASS: echo
+          GIT_USERNAME: x-access-token
+          GIT_PASSWORD: ${{ secrets.GH_PRIVATE_SUBMODULE_TOKEN || '' }}
+        continue-on-error: true
+
       - name: Sanitize branch name for Docker tag
         id: prep
         run: |
