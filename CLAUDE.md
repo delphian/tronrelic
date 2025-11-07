@@ -1,6 +1,8 @@
 @AGENTS.md                      - Project rules and agent delegation protocol
 @README.md                      - Project overview and quick start
 
+**Note:** For user-specific instructions that shouldn't be committed, create `CLAUDE.local.md` (automatically gitignored).
+
 # Agent Delegation Protocol
 
 ## Agent Delegation Guidelines
