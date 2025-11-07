@@ -271,28 +271,14 @@ socket.on('transaction:large', (tx) => {
 });
 ```
 
-**Subscribe to market updates:**
-
-```javascript
-socket.emit('subscribe', {
-    markets: { all: true }
-});
-
-socket.on('market:update', (market) => {
-    console.log(`${market.name} updated: ${market.pricing['1d']} sun/energy`);
-});
-```
-
 **Multiple subscriptions:**
 
 ```javascript
 socket.emit('subscribe', {
-    markets: { all: true },
     transactions: { minAmount: 1000000 },
     chat: true
 });
 
-socket.on('market:update', handleMarketUpdate);
 socket.on('transaction:large', handleWhaleTransaction);
 socket.on('chat:update', handleChatMessage);
 ```
@@ -781,7 +767,6 @@ socket.on('connect', () => {
 3. **Legacy object format (core subscriptions):**
    ```javascript
    socket.emit('subscribe', {
-       markets: { all: true },
        transactions: { minAmount: 1000000 },
        comments: { resourceId: 'abc123...' },
        chat: true
@@ -795,33 +780,6 @@ socket.emit('unsubscribe', 'plugin-id', 'room-name');
 ```
 
 ### Core Events
-
-#### market:update
-
-Emitted when market data is refreshed for a platform.
-
-**Rooms:** `markets:all`, `markets:{guid}`
-
-**Payload:**
-
-```javascript
-{
-    guid: "tronsave",
-    name: "TronSave",
-    pricing: { "1h": 45.5, "1d": 42.0, "3d": 40.5 },
-    reliability: 95.5,
-    lastFetchedAt: "2025-10-16T14:20:00.000Z"
-}
-```
-
-**Example:**
-
-```javascript
-socket.emit('subscribe', { markets: { all: true } });
-socket.on('market:update', (market) => {
-    console.log(`${market.name}: ${market.pricing['1d']} sun/energy`);
-});
-```
 
 #### transaction:large
 

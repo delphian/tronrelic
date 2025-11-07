@@ -224,19 +224,6 @@ export class NotificationService {
 
   private buildNotificationLines(event: TronRelicSocketEvent): string[] | null {
     switch (event.event) {
-      case 'market:update': {
-        const { payload } = event;
-        const price = this.formatNumber(payload.effectivePrice ?? payload.energy.price);
-        const availability = this.formatNumber(payload.energy.available);
-        return [
-          `📊 ${payload.name} market update`,
-          price ? `Effective price: ${price} TRX` : null,
-          availability ? `Available energy: ${availability}` : null,
-          typeof payload.reliability === 'number'
-            ? `Reliability: ${(payload.reliability * 100).toFixed(1)}%`
-            : null
-        ].filter((line): line is string => Boolean(line));
-      }
       case 'transaction:large':
       case 'delegation:new':
       case 'stake:new': {
