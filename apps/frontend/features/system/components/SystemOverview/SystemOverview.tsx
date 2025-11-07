@@ -37,10 +37,6 @@ interface SystemOverviewData {
         enabled: boolean;
         uptime: number | null;
     };
-    markets: {
-        stalePlatformCount: number;
-        averageDataAge: number;
-    };
     database: {
         connected: boolean;
         responseTime: number | null;
@@ -73,7 +69,6 @@ interface Props {
  * - **Blockchain sync** - Current block, lag, health status, and recent errors
  * - **Transaction indexing** - Today's count and total indexed transactions
  * - **Scheduler** - Enabled/disabled status and uptime
- * - **Market data** - Stale platform count and average data age
  * - **Database** - MongoDB connection status and response time
  * - **Redis** - Connection status and ping latency
  * - **Server** - Process uptime and memory usage (heap)
@@ -202,20 +197,6 @@ export function SystemOverview({ token }: Props) {
                             Uptime: {formatUptime(data.scheduler.uptime)}
                         </p>
                     )}
-                </div>
-
-                {/* Market Data */}
-                <div className={cn(
-                    styles.card,
-                    data.markets.stalePlatformCount === 0 ? styles['card--healthy'] : styles['card--warning']
-                )}>
-                    <h3 className={styles.card__title}>Market Data</h3>
-                    <p className={styles.card__value}>
-                        {data.markets.stalePlatformCount === 0 ? 'Fresh' : `${data.markets.stalePlatformCount} Stale`}
-                    </p>
-                    <p className={styles.card__detail}>
-                        Avg age: {data.markets.averageDataAge.toFixed(1)} min
-                    </p>
                 </div>
             </div>
 

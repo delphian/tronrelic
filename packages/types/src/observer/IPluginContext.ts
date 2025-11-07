@@ -1,3 +1,4 @@
+import type { AxiosInstance } from 'axios';
 import type { IBlockchainObserverService } from './IBlockchainObserverService.js';
 import type { IWebSocketService } from './IWebSocketService.js';
 import type { IBaseObserver } from './IBaseObserver.js';
@@ -6,6 +7,9 @@ import type { IPluginWebSocketManager } from './IPluginWebSocketManager.js';
 import type { ICacheService } from '../services/ICacheService.js';
 import type { ISystemConfigService } from '../system-config/ISystemConfigService.js';
 import type { IMenuService } from '../menu/IMenuService.js';
+import type { ISchedulerService } from '../scheduler/ISchedulerService.js';
+import type { IChainParametersService } from '../chain-parameters/IChainParametersService.js';
+import type { IUsdtParametersService } from '../usdt-parameters/IUsdtParametersService.js';
 import { ISystemLogService } from '../system-log/ISystemLogService.js';
 
 /**
@@ -17,6 +21,8 @@ import { ISystemLogService } from '../system-log/ISystemLogService.js';
  * The injected logger keeps structured telemetry consistent across plugins.
  */
 export interface IPluginContext {
+    /** HTTP client (Axios) for making REST API calls to external services */
+    http: AxiosInstance;
     /** Blockchain observer service for subscribing to blockchain transaction types */
     observerRegistry: IBlockchainObserverService;
 
@@ -45,6 +51,15 @@ export interface IPluginContext {
 
     /** Menu service for registering navigation menu items */
     menuService: IMenuService;
+
+    /** Scheduler service for registering cron jobs that run on schedules */
+    scheduler: ISchedulerService;
+
+    /** Chain parameters service for accessing TRON network parameters and energy/TRX conversions */
+    chainParameters: IChainParametersService;
+
+    /** USDT parameters service for accessing dynamic USDT transfer energy costs */
+    usdtParameters: IUsdtParametersService;
 
     /** Structured logger scoped to the plugin for consistent telemetry */
     logger: ISystemLogService;

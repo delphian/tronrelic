@@ -1,6 +1,6 @@
 # Plugin Menu and Page System
 
-TronRelic's plugin menu and page system enables plugins to extend the application UI by registering navigation menu items and routable pages. This keeps the navigation and routing infrastructure centralized while allowing plugins to own their complete feature sets.
+TronRelic's plugin menu and page system enables plugins to extend the application UI by registering navigation menu items through the backend `IMenuService` and routable pages declaratively. This keeps the navigation and routing infrastructure centralized while allowing plugins to own their complete feature sets.
 
 ## Why This System Exists
 
@@ -10,33 +10,47 @@ Before this system, adding new pages required manually editing:
 - Multiple core files scattered across the codebase
 
 The menu/page system solves this by:
-- **Centralizing discovery** - Plugins declare their UI surfaces in one place
+- **Centralizing discovery** - Plugins register menu items via backend service and declare pages in frontend manifests
 - **Eliminating core changes** - New features require zero modifications to navigation or routing
 - **Enabling modularity** - Features can be enabled/disabled by simply installing/removing plugins
 - **Supporting dynamic loading** - Pages and menus are discovered at runtime
 
+## Menu Registration: IMenuService vs Declarative
+
+TronRelic supports two menu registration approaches:
+
+1. **IMenuService (Recommended)** - Register menu items in backend plugin `init()` hook using `context.menuService.create()`. Provides full control over menu hierarchy, ordering, and runtime updates.
+
+2. **Declarative menuItems (Legacy)** - Define menu items in frontend plugin manifest. Simple but limited - no hierarchical menus, no runtime updates, and redundant with backend menu service.
+
+**This guide documents the recommended IMenuService approach.** All new plugins should use backend menu registration for consistency with existing plugins like resource-tracking.
+
 ## Architecture Overview
 
-The system consists of four main components:
+The system consists of three main components:
 
-### 1. Type Definitions
+### 1. Backend Menu Service (IMenuService)
 
-Plugins use two core interfaces to declare their UI:
+Plugins register menu items through `context.menuService` in their backend `init()` hook:
 
-**IMenuItemConfig** - Navigation menu items:
 ```typescript
-interface IMenuItemConfig {
-    label: string;           // Display text
-    href: string;            // URL path
-    icon?: string;           // Lucide icon name
-    category?: string;       // Menu grouping
-    order?: number;          // Sort position (lower = earlier)
-    adminOnly?: boolean;     // Requires admin privileges
-    featured?: boolean;      // Highlight the item
-}
+// In backend plugin init() hook
+await context.menuService.create({
+    namespace: 'main',       // Menu context ('main', 'admin', etc.)
+    label: 'My Feature',     // Display text
+    url: '/my-feature',      // URL path
+    icon: 'Activity',        // Lucide icon name
+    order: 30,               // Sort position (lower = earlier)
+    parent: null,            // Parent menu item ID (null = top-level)
+    enabled: true            // Visibility toggle
+});
 ```
 
-**IPageConfig** - Routable pages:
+**See [system-menu.md](../system/system-menu.md) for complete IMenuService documentation.**
+
+### 2. Page Registration (IPageConfig)
+
+Plugins declare routable pages in their frontend manifest:
 ```typescript
 interface IPageConfig {
     path: string;               // URL route
@@ -46,27 +60,6 @@ interface IPageConfig {
     requiresAuth?: boolean;     // Authentication required
     requiresAdmin?: boolean;    // Admin privileges required
 }
-```
-
-### 2. Plugin Registry
-
-The `pluginRegistry` (in `apps/frontend/lib/pluginRegistry.ts`) aggregates menu items and pages from all loaded plugins:
-
-- Stores plugin configurations in memory
-- Provides lookup methods for navigation and routing
-- Automatically sorts menu items by category and order
-- Offers path-based page lookups for dynamic routing
-- **Notifies subscribers when plugins are registered** - enabling reactive UI updates
-
-The registry is populated by the PluginLoader during app initialization and provides these methods:
-
-```typescript
-pluginRegistry.registerPlugin(plugin);          // Register a plugin and notify subscribers
-pluginRegistry.getMenuItems();                  // Get all menu items
-pluginRegistry.getPages();                      // Get all pages
-pluginRegistry.getPageByPath('/some-path');     // Find specific page
-pluginRegistry.subscribe(callback);             // Subscribe to plugin registration events
-pluginRegistry.clear();                         // Reset registry
 ```
 
 ### 3. Plugin Loader Integration
@@ -98,20 +91,48 @@ Two systems consume the registry:
 
 ## How It Works
 
-### Plugin Definition Flow
+### Menu Registration Flow (Backend)
 
-1. **Plugin declares UI surfaces** in its frontend entry:
+1. **Plugin registers menu in backend init() hook**:
 ```typescript
-export const myPlugin = definePlugin({
+export const myBackendPlugin = definePlugin({
     manifest: myManifest,
-    menuItems: [
-        {
+
+    init: async (context: IPluginContext) => {
+        // Register menu item with IMenuService
+        await context.menuService.create({
+            namespace: 'main',
             label: 'My Feature',
-            href: '/my-feature',
+            url: '/my-feature',
             icon: 'Activity',
-            order: 25
-        }
-    ],
+            order: 30,
+            parent: null,
+            enabled: true
+        });
+
+        context.logger.info('Menu item registered');
+    }
+});
+```
+
+2. **MenuService stores menu node**:
+   - Creates database entry (or memory-only based on config)
+   - Assigns unique ObjectId
+   - Emits WebSocket event: `menu:updated`
+
+3. **Frontend NavBar receives update**:
+   - Subscribes to `menu:updated` WebSocket event
+   - Fetches fresh menu items from `/api/admin/system/menu/nodes?namespace=main`
+   - Re-renders navigation with new item
+
+### Page Registration Flow (Frontend)
+
+1. **Plugin declares pages** in frontend entry:
+```typescript
+export const myFrontendPlugin = definePlugin({
+    manifest: myManifest,
+
+    // No menuItems - registered via backend
     pages: [
         {
             path: '/my-feature',
@@ -122,23 +143,16 @@ export const myPlugin = definePlugin({
 });
 ```
 
-2. **PluginLoader discovers the plugin** at runtime:
+2. **PluginLoader discovers pages** at runtime:
    - Fetches manifests from `/api/plugins/manifests`
    - Filters for plugins with `frontend: true`
    - Lazy loads the plugin module
    - Calls `pluginRegistry.registerPlugin(myPlugin)`
 
-3. **Registry stores the configuration**:
-   - Extracts menu items and pages
-   - Sorts menu items by order and category
-   - Makes them available via getter methods
-   - **Notifies all subscribers that a new plugin was registered**
-
-4. **UI components reactively update**:
-   - NavBar subscribes to registry changes on mount
-   - When notified, NavBar re-fetches menu items and re-renders
-   - Dynamic route handler looks up pages by path on navigation
-   - Components render based on current URL
+3. **Registry stores page configuration**:
+   - Extracts pages array
+   - Makes them available via `getPageByPath()`
+   - Dynamic route handler uses registry for lookups
 
 ### URL Routing Flow
 
@@ -167,7 +181,47 @@ When the NavBar mounts and when plugins are registered:
 
 Follow this pattern to add UI to a plugin:
 
-### Step 1: Define Menu Items and Pages
+### Step 1: Register Menu in Backend
+
+In your plugin's `src/backend/backend.ts`:
+
+```typescript
+import { definePlugin, type IPluginContext } from '@tronrelic/types';
+import { myManifest } from '../manifest.js';
+
+export const myBackendPlugin = definePlugin({
+    manifest: myManifest,
+
+    init: async (context: IPluginContext) => {
+        // Register navigation menu item
+        await context.menuService.create({
+            namespace: 'main',
+            label: 'My Dashboard',
+            url: '/my-dashboard',
+            icon: 'BarChart3',
+            order: 30,
+            parent: null,
+            enabled: true
+        });
+
+        // Register admin settings menu item
+        await context.menuService.create({
+            namespace: 'main',
+            label: 'My Settings',
+            url: '/my-settings',
+            icon: 'Settings',
+            order: 150,
+            parent: null,
+            enabled: true
+            // Note: Access control is handled at page level, not menu level
+        });
+
+        context.logger.info('Menu items registered');
+    }
+});
+```
+
+### Step 2: Declare Pages in Frontend
 
 In your plugin's `src/frontend/frontend.ts`:
 
@@ -180,26 +234,7 @@ import { MySettingsPage } from './MySettingsPage';
 export const myFrontendPlugin = definePlugin({
     manifest: myManifest,
 
-    // Navigation menu items
-    menuItems: [
-        {
-            label: 'My Dashboard',
-            href: '/my-dashboard',
-            icon: 'BarChart3',
-            category: 'analytics',
-            order: 30
-        },
-        {
-            label: 'Settings',
-            href: '/my-settings',
-            icon: 'Settings',
-            category: 'admin',
-            order: 150,
-            adminOnly: true
-        }
-    ],
-
-    // Routable pages
+    // No menuItems - registered via backend IMenuService
     pages: [
         {
             path: '/my-dashboard',
@@ -217,7 +252,7 @@ export const myFrontendPlugin = definePlugin({
 });
 ```
 
-### Step 2: Implement Page Components
+### Step 3: Implement Page Components
 
 Create React components for each page. **All page components must accept `context` prop**:
 
@@ -249,51 +284,76 @@ export function MyDashboardPage({ context }: { context: IFrontendPluginContext }
 
 See [Plugin Frontend Context](./plugins-frontend-context.md) for complete examples of using the context.
 
-### Step 3: Set Frontend Flag in Manifest
+### Step 4: Set Frontend Flag in Manifest
 
-Ensure your manifest declares frontend support:
+Ensure your manifest declares both frontend and backend support:
 
 ```typescript
 export const myManifest: IPluginManifest = {
     id: 'my-plugin',
     title: 'My Plugin',
     version: '1.0.0',
-    frontend: true,  // Required for UI
-    backend: true    // Optional
+    frontend: true,  // Required for pages
+    backend: true    // Required for menu registration
 };
 ```
 
-### Step 4: Build and Register
-
-The system handles everything automatically:
+### Step 5: Build and Enable Plugin
 
 1. Build your plugin: `npm run build --workspace packages/plugins/my-plugin`
-2. Generate registry: `npm run generate:plugins --workspace apps/frontend`
+2. Generate frontend registry: `npm run generate:plugins --workspace apps/frontend`
 3. Restart the app: `./scripts/start.sh`
+4. Navigate to `/system/plugins` admin UI
+5. Install and enable your plugin
 
-The plugin loader will:
-- Discover your plugin from manifests
-- Load your frontend module
-- Register menu items and pages
-- Render your links in NavBar
-- Route your pages dynamically
+When enabled, the backend `init()` hook will:
+- Register menu items with IMenuService
+- Emit WebSocket events to update frontend NavBar
+- Frontend will automatically discover and route pages
 
 ## Menu Organization
 
-### Categories
+### Hierarchical Menus with Container Nodes
 
-Group related menu items using the `category` property:
+Create nested menus by setting the `parent` property to a container node's ID:
 
 ```typescript
-menuItems: [
-    { label: 'Analytics', href: '/analytics', category: 'data', order: 10 },
-    { label: 'Reports', href: '/reports', category: 'data', order: 11 },
-    { label: 'Users', href: '/users', category: 'admin', order: 20 },
-    { label: 'Settings', href: '/settings', category: 'admin', order: 21 }
-]
+// Backend plugin init() hook
+
+// 1. Create container node (no URL)
+const analyticsCategory = await context.menuService.create({
+    namespace: 'main',
+    label: 'Analytics',
+    icon: 'BarChart3',
+    order: 30,
+    parent: null,
+    enabled: true
+    // No url - this is a container/category node
+});
+
+// 2. Create child items under container
+await context.menuService.create({
+    namespace: 'main',
+    label: 'Dashboard',
+    url: '/analytics/dashboard',
+    icon: 'LayoutDashboard',
+    order: 10,
+    parent: analyticsCategory._id!,  // Nest under Analytics
+    enabled: true
+});
+
+await context.menuService.create({
+    namespace: 'main',
+    label: 'Reports',
+    url: '/analytics/reports',
+    icon: 'FileText',
+    order: 20,
+    parent: analyticsCategory._id!,  // Nest under Analytics
+    enabled: true
+});
 ```
 
-The registry automatically sorts by category first, then by order within each category.
+**Container nodes** (no `url` field) group child items. **Leaf nodes** (with `url` field) link to pages.
 
 ### Ordering
 
@@ -307,19 +367,20 @@ Lower numbers appear first. Items without `order` default to 999 (end of list).
 
 ### Access Control
 
-Restrict menu visibility with access flags:
+Menu items are always visible. Access control happens at the page level:
 
 ```typescript
-menuItems: [
+// Page requires admin authentication
+pages: [
     {
-        label: 'Admin Panel',
-        href: '/admin',
-        adminOnly: true  // Only visible to admins
+        path: '/admin/settings',
+        component: AdminSettings,
+        requiresAdmin: true  // Enforced by page, not menu
     }
 ]
 ```
 
-**Note**: The current implementation shows all items but relies on page-level auth. Future enhancements will hide menu items based on user permissions.
+**Rationale**: The MenuService manages structure, not authorization. Page-level guards prevent unauthorized access even if users navigate directly to URLs.
 
 ## Page Configuration
 
@@ -431,15 +492,21 @@ pages: [
 Menu items support icons from [Lucide React](https://lucide.dev/icons):
 
 ```typescript
-menuItems: [
-    { label: 'Dashboard', icon: 'LayoutDashboard', href: '/dashboard' },
-    { label: 'Analytics', icon: 'BarChart3', href: '/analytics' },
-    { label: 'Settings', icon: 'Settings', href: '/settings' },
-    { label: 'Alerts', icon: 'Bell', href: '/alerts' }
-]
+// Backend plugin init() hook
+await context.menuService.create({
+    namespace: 'main',
+    label: 'Dashboard',
+    url: '/dashboard',
+    icon: 'LayoutDashboard',  // Lucide icon name
+    order: 10,
+    parent: null,
+    enabled: true
+});
 ```
 
-**Current limitation**: Icons are specified by name but not yet rendered. The NavBar component will need updates to import and render Lucide icons dynamically.
+Common icons: `LayoutDashboard`, `BarChart3`, `Settings`, `Bell`, `Activity`, `TrendingUp`, `FileText`
+
+**See [Lucide Icons](https://lucide.dev/icons) for complete list.**
 
 ## Example: Full Plugin
 
@@ -452,9 +519,11 @@ See `packages/plugins/example-dashboard` for a complete working example that dem
 
 The example plugin adds an "Example" menu item and renders a dashboard page explaining the system.
 
-## Migration from AdminUI
+## Migration from AdminUI and Declarative MenuItems
 
-The older `adminUI` property is deprecated in favor of `menuItems` and `pages`:
+### From AdminUI (Deprecated)
+
+The older `adminUI` property is deprecated in favor of backend menu registration + frontend pages:
 
 **Old approach:**
 ```typescript
@@ -467,14 +536,20 @@ adminUI: {
 
 **New approach:**
 ```typescript
-menuItems: [
-    {
+// Backend: src/backend/backend.ts
+init: async (context: IPluginContext) => {
+    await context.menuService.create({
+        namespace: 'main',
         label: 'My Feature',
-        href: '/admin/my-feature',
+        url: '/admin/my-feature',
         icon: 'Activity',
-        adminOnly: true
-    }
-],
+        order: 150,
+        parent: null,
+        enabled: true
+    });
+}
+
+// Frontend: src/frontend/frontend.ts
 pages: [
     {
         path: '/admin/my-feature',
@@ -484,91 +559,139 @@ pages: [
 ]
 ```
 
-The new system provides:
-- Multiple menu items per plugin
-- Multiple pages per plugin
-- Better access control
-- Flexible ordering and categorization
+### From Declarative MenuItems (Legacy)
+
+The declarative `menuItems` array in frontend plugin manifests still works but is not recommended:
+
+**Legacy approach (works but not recommended):**
+```typescript
+// Frontend only
+menuItems: [
+    {
+        label: 'My Feature',
+        href: '/my-feature',
+        icon: 'Activity',
+        order: 30
+    }
+]
+```
+
+**Recommended approach:**
+```typescript
+// Backend init() hook
+await context.menuService.create({
+    namespace: 'main',
+    label: 'My Feature',
+    url: '/my-feature',
+    icon: 'Activity',
+    order: 30,
+    parent: null,
+    enabled: true
+});
+```
+
+**Why IMenuService is better:**
+- Hierarchical menus with container nodes
+- Runtime menu updates via WebSocket
+- Consistent with existing plugins (resource-tracking, etc.)
+- Single source of truth in backend
+- Database persistence for menu state
 
 ## Troubleshooting
 
 ### Menu item doesn't appear
 
-1. Check `manifest.frontend === true`
-2. Verify plugin builds successfully: `npm run build`
-3. Ensure registry regenerated: `npm run generate:plugins`
-4. Check browser console for plugin loading errors
-5. Verify `menuItems` array is defined and not empty
+1. Check `manifest.backend === true` (required for IMenuService)
+2. Verify plugin is **enabled** in `/system/plugins` admin UI
+3. Check backend logs for `init()` hook execution
+4. Verify `context.menuService.create()` was called successfully
+5. Check menu API: `GET /api/admin/system/menu/nodes?namespace=main` (requires admin token)
+6. Look for WebSocket `menu:updated` events in browser console
+7. Verify frontend NavBar is subscribed to menu updates
 
 ### Page shows 404
 
-1. Confirm page `path` matches menu item `href`
+1. Confirm page `path` in frontend matches menu item `url` in backend
 2. Check `pages` array includes the route
 3. Verify plugin registered successfully (check React DevTools)
 4. Ensure dynamic route exists at `app/(dashboard)/[...plugin]/page.tsx`
 5. Look for path lookup errors in console
+6. Verify frontend plugin has `manifest.frontend === true`
 
 ### Menu items in wrong order
 
-1. Set explicit `order` properties (default is 999)
+1. Set explicit `order` properties when calling `context.menuService.create()`
 2. Remember lower numbers appear first
-3. Check categories - items group by category first
-4. Review `pluginRegistry` sort logic in browser debugger
+3. Check parent-child relationships for nested menus
+4. Verify menu API returns correct order: `GET /api/admin/system/menu/nodes?namespace=main`
 
 ### Icons not displaying
 
-This is a known limitation. Icon rendering is not yet implemented. The `icon` property is stored but not used by NavBar.
+Icons are specified by Lucide icon names (e.g., `'Activity'`, `'BarChart3'`). Ensure:
+1. Icon name is valid Lucide icon (see https://lucide.dev/icons)
+2. NavBar component renders icons correctly
+3. Check browser console for icon import errors
 
-To add icon support:
-1. Import Lucide React icons dynamically in NavBar
-2. Map icon strings to components
-3. Render icons alongside menu labels
+## Advanced: WebSocket Menu Updates
 
-## Advanced: Subscribing to Registry Updates
+The menu system uses WebSocket events for real-time updates. When a plugin registers menu items:
 
-If you're building custom components that need to react to plugin registration, you can subscribe to the registry:
+1. Backend calls `context.menuService.create()`
+2. MenuService emits `menu:updated` WebSocket event
+3. Frontend NavBar subscribes to `menu:updated`
+4. NavBar fetches fresh menu data via API
+5. NavBar re-renders with new menu items
+
+**Custom components can subscribe to menu updates:**
 
 ```typescript
 import { useEffect, useState } from 'react';
-import { pluginRegistry } from '../../lib/pluginRegistry';
+import { io } from 'socket.io-client';
 
-export function MyCustomComponent() {
-    const [menuItems, setMenuItems] = useState(pluginRegistry.getMenuItems());
+export function MyCustomMenu() {
+    const [menuItems, setMenuItems] = useState([]);
 
     useEffect(() => {
-        // Subscribe to registry updates
-        const unsubscribe = pluginRegistry.subscribe(() => {
-            // Re-fetch menu items when plugins are registered
-            setMenuItems(pluginRegistry.getMenuItems());
+        const socket = io(process.env.NEXT_PUBLIC_SOCKET_URL);
+
+        // Listen for menu updates
+        socket.on('menu:updated', async () => {
+            // Fetch fresh menu data
+            const response = await fetch('/api/admin/system/menu/nodes?namespace=main');
+            const data = await response.json();
+            setMenuItems(data.nodes);
         });
 
-        // Cleanup subscription on unmount
-        return unsubscribe;
+        return () => {
+            socket.disconnect();
+        };
     }, []);
 
     return (
         <div>
             {menuItems.map(item => (
-                <div key={item.href}>{item.label}</div>
+                <div key={item._id}>{item.label}</div>
             ))}
         </div>
     );
 }
 ```
 
-**Key points:**
-- `subscribe(callback)` returns an unsubscribe function
-- Always clean up subscriptions in the `useEffect` return
-- The callback fires whenever `registerPlugin()` is called
-- Subscriptions enable reactive UI updates without polling
+**See [system-menu.md](../system/system-menu.md) for complete WebSocket event documentation.**
 
 ## Future Enhancements
 
 Planned improvements to the menu/page system:
 
-### Route Guards
+### ✅ Implemented
 
-Automatic enforcement of `requiresAuth` and `requiresAdmin`:
+- **Hierarchical menus** - Container nodes with parent-child relationships (via IMenuService)
+- **WebSocket updates** - Real-time menu updates when plugins register/unregister
+- **Icon rendering** - Full Lucide icon support in NavBar
+
+### 🚧 Planned
+
+**Route Guards** - Automatic enforcement of `requiresAuth` and `requiresAdmin`:
 
 ```typescript
 pages: [
@@ -580,60 +703,29 @@ pages: [
 ]
 ```
 
-### Dynamic Metadata
-
-Automatic Next.js metadata generation from page configs:
+**Dynamic Metadata** - Automatic Next.js metadata generation from page configs:
 
 ```typescript
 // Generates:
 // export const metadata = { title: '...', description: '...' }
 ```
 
-### Icon Rendering
-
-Full Lucide icon support in NavBar:
+**Permission-Based Visibility** - Hide menu items based on user permissions:
 
 ```typescript
-menuItems: [
-    { label: 'Analytics', icon: 'BarChart3', href: '/analytics' }
-]
-// Renders: <BarChart3Icon className="menu-icon" />
+await context.menuService.create({
+    namespace: 'main',
+    label: 'Admin Panel',
+    url: '/admin',
+    icon: 'Shield',
+    order: 200,
+    parent: null,
+    enabled: true,
+    requiresAdmin: true  // Completely hidden if not admin
+});
 ```
 
-### Permission-Based Visibility
-
-Hide menu items based on user permissions:
-
-```typescript
-menuItems: [
-    {
-        label: 'Admin',
-        href: '/admin',
-        adminOnly: true  // Completely hidden if not admin
-    }
-]
-```
-
-### Nested Menus
-
-Support for dropdown/nested navigation:
-
-```typescript
-menuItems: [
-    {
-        label: 'Analytics',
-        href: '/analytics',
-        children: [
-            { label: 'Dashboard', href: '/analytics/dashboard' },
-            { label: 'Reports', href: '/analytics/reports' }
-        ]
-    }
-]
-```
-
-### Breadcrumbs
-
-Automatic breadcrumb generation from route hierarchy:
+**Breadcrumbs** - Automatic breadcrumb generation from menu hierarchy:
 
 ```typescript
 // On /analytics/reports:
@@ -644,183 +736,161 @@ Automatic breadcrumb generation from route hierarchy:
 
 Core implementation files:
 
-- **Type definitions**:
-  - `packages/types/src/plugin/IMenuItemConfig.ts` - Menu item interface
-  - `packages/types/src/plugin/IPageConfig.ts` - Page config interface
-  - `packages/types/src/plugin/IPlugin.ts` - Plugin definition (includes menuItems/pages)
+- **Backend menu service**:
+  - `apps/backend/src/modules/menu/menu.service.ts` - MenuService implementation
+  - `apps/backend/src/modules/menu/menu.routes.ts` - REST API endpoints
+  - `packages/types/src/menu/IMenuService.ts` - Menu service interface
+  - **See [system-menu.md](../system/system-menu.md) for complete documentation**
 
-- **Registry system**:
-  - `apps/frontend/lib/pluginRegistry.ts` - Plugin menu/page registry
+- **Type definitions**:
+  - `packages/types/src/plugin/IPageConfig.ts` - Page config interface
+  - `packages/types/src/plugin/IPlugin.ts` - Plugin definition (includes pages)
+  - `packages/types/src/observer/IPluginContext.ts` - Backend context with menuService
+
+- **Page registry system**:
+  - `apps/frontend/lib/pluginRegistry.ts` - Plugin page registry
   - `apps/frontend/components/plugins/PluginLoader.tsx` - Plugin loader with registry integration
 
 - **UI integration**:
-  - `apps/frontend/components/layout/NavBar.tsx` - Navigation with plugin menu items
+  - `apps/frontend/components/layout/NavBar.tsx` - Navigation with WebSocket menu updates
   - `apps/frontend/app/(dashboard)/[...plugin]/page.tsx` - Dynamic route handler
 
-- **Example**:
-  - `packages/plugins/example-dashboard/` - Complete working example
+- **Example plugins**:
+  - `packages/plugins/resource-tracking/` - Uses IMenuService with hierarchical menus
+  - `packages/plugins/example-dashboard/` - Basic example
 
 ## Best Practices
 
 When building plugins with UI:
 
-1. **Keep paths consistent**: Match `menuItems[].href` with `pages[].path` exactly
-2. **Use semantic ordering**: Choose order values that leave room for future plugins
-3. **Set categories**: Group related features for better navigation organization
-4. **Provide metadata**: Always include page titles and descriptions for SEO
-5. **Handle loading states**: Pages should show spinners during data fetching
-6. **Error boundaries**: Wrap page content in error boundaries for resilience
-7. **Responsive design**: Ensure pages work on mobile and desktop
-8. **Document your UI**: Add README.md explaining your plugin's pages and navigation
+1. **Register menus in backend**: Use `context.menuService.create()` in `init()` hook, not declarative `menuItems`
+2. **Keep paths consistent**: Match backend menu `url` with frontend page `path` exactly
+3. **Use semantic ordering**: Choose order values that leave room for future plugins (0-9 core, 10-99 features, 100+ admin)
+4. **Create hierarchies**: Use container nodes (no `url`) to group related menu items
+5. **Require backend flag**: Set `manifest.backend = true` even if plugin only registers menus
+6. **Provide metadata**: Always include page titles and descriptions for SEO
+7. **Handle loading states**: Pages should show spinners during data fetching
+8. **Error boundaries**: Wrap page content in error boundaries for resilience
+9. **Responsive design**: Ensure pages work on mobile and desktop
+10. **Document your UI**: Add README.md explaining your plugin's pages and navigation structure
 
 ## Testing and Verification
 
 After implementing a plugin with menu items and pages, verify it works correctly:
 
-### 1. Build and Start
+### 1. Build and Install Plugin
 
 ```bash
+# Build plugin
 npm run build --workspace packages/plugins/my-plugin
+
+# Generate frontend registry
 npm run generate:plugins --workspace apps/frontend
+
+# Restart application
 ./scripts/start.sh
 ```
 
-### 2. Check Backend Recognition
+### 2. Enable Plugin
 
-Verify the plugin manifest is served:
+Navigate to `/system/plugins` admin UI:
+- Find your plugin in the list
+- Click "Install" (runs install hook)
+- Click "Enable" (runs init hook and registers menus)
+
+### 3. Verify Menu Registration
+
+Check menu was registered via API:
 
 ```bash
-curl -s http://localhost:4000/api/plugins/manifests | grep "my-plugin"
+# Requires ADMIN_API_TOKEN in .env
+curl -H "X-Admin-Token: $ADMIN_API_TOKEN" \
+  http://localhost:4000/api/admin/system/menu/nodes?namespace=main | jq '.nodes[] | select(.label == "My Feature")'
 ```
 
-### 3. Verify Registry (Browser Console)
+Should return menu node with your label, url, icon, and order.
 
-Open browser developer tools and test the registry:
+### 4. Check Backend Logs
 
-```javascript
-// Check menu items
-pluginRegistry.getMenuItems()
-// Should show core + plugin menu items
+Verify init() hook executed:
 
-// Check pages
-pluginRegistry.getPages()
-// Should show registered pages
-
-// Lookup specific page
-pluginRegistry.getPageByPath('/my-plugin-page')
-// Should return page config
+```bash
+tail -100 .run/backend.log | grep "my-plugin"
+# Should see: "Menu item registered" or similar log message
 ```
 
-### 4. Test Navigation
+### 5. Test Frontend Navigation
 
-- Look for your menu item in the navigation bar
+- Look for your menu item in NavBar
 - Click the menu item - should navigate to your page
 - Navigate directly to the URL - should render your component
 - Try invalid URLs - should show 404
 
-### 5. Check Console for Errors
+### 6. Verify WebSocket Updates
+
+Open browser console and watch for WebSocket events:
+
+```javascript
+// Should see menu:updated event when plugin enables
+// NavBar should automatically re-fetch menu data
+```
+
+### 7. Check Console for Errors
 
 Monitor the browser console for:
-- Plugin loading errors
-- Registry registration failures
+- Plugin loading errors (frontend)
+- Menu registration failures (backend logs)
 - Component rendering issues
 - Route resolution problems
 
-## Migration from AdminUI Pattern
+## Summary
 
-The older `adminUI` property is deprecated. Here's how to migrate:
+The plugin menu and page system enables self-contained UI extension through:
 
-### Old Approach (Deprecated)
+1. **Backend menu registration** via `context.menuService.create()` in plugin `init()` hook
+2. **Frontend page declaration** via `pages` array in frontend plugin manifest
+3. **WebSocket synchronization** for real-time menu updates
+4. **Dynamic routing** via Next.js catch-all route handler
 
-```typescript
-export const myPlugin = definePlugin({
-    manifest: myManifest,
-    adminUI: {
-        path: '/admin/my-feature',
-        icon: 'Activity',
-        component: MyComponent
-    }
-});
-```
+This keeps the codebase modular, enables rapid feature development, and ensures plugins remain self-contained and easy to maintain.
 
-**Limitations:**
-- Only one UI surface per plugin
-- No menu customization
-- Limited access controls
-- No ordering or categorization
-
-### New Approach (Recommended)
-
-```typescript
-export const myPlugin = definePlugin({
-    manifest: myManifest,
-    menuItems: [
-        {
-            label: 'My Feature',
-            href: '/admin/my-feature',
-            icon: 'Activity',
-            category: 'admin',
-            order: 150,
-            adminOnly: true
-        }
-    ],
-    pages: [
-        {
-            path: '/admin/my-feature',
-            component: MyComponent,
-            title: 'My Feature',
-            requiresAdmin: true
-        }
-    ]
-});
-```
-
-**Benefits:**
-- Multiple menu items per plugin
-- Multiple pages per plugin
-- Flexible ordering and categorization
-- Better access control
-- Metadata support
-
-### Migration Steps
-
-1. Replace `adminUI` with `menuItems` and `pages` arrays
-2. Set `label` property (previously inferred from title)
-3. Add `order` property for menu positioning
-4. Add `category` if grouping with other items
-5. Use `adminOnly` instead of path-based admin inference
-6. Add page metadata (`title`, `description`)
-7. Test thoroughly - URL paths must match exactly
+**Key architectural decision:** Menus are registered in the backend (not frontend) because:
+- Enables hierarchical menu structures with container nodes
+- Provides runtime menu updates via WebSocket
+- Maintains single source of truth in backend MenuService
+- Allows database persistence for menu state
+- Consistent with existing plugins (resource-tracking, etc.)
 
 ## Implementation Reference
 
 For developers working on the plugin system itself, here are the key files:
 
+### Backend Menu Service
+- `apps/backend/src/modules/menu/menu.service.ts` - MenuService singleton implementation
+- `apps/backend/src/modules/menu/menu.routes.ts` - REST API endpoints
+- `apps/backend/src/modules/menu/menu.model.ts` - MongoDB schema
+- `packages/types/src/menu/IMenuService.ts` - Service interface
+- `packages/types/src/menu/IMenuNode.ts` - Menu node data structure
+
 ### Type Definitions
-- `packages/types/src/plugin/IMenuItemConfig.ts` - Menu item interface
 - `packages/types/src/plugin/IPageConfig.ts` - Page configuration interface
-- `packages/types/src/plugin/IPlugin.ts` - Plugin definition (includes menuItems/pages)
+- `packages/types/src/plugin/IPlugin.ts` - Plugin definition (includes pages)
+- `packages/types/src/observer/IPluginContext.ts` - Backend context with menuService
 - `packages/types/src/plugin/index.ts` - Type exports
 
 ### Frontend Infrastructure
-- `apps/frontend/lib/pluginRegistry.ts` - Plugin menu/page registry singleton
+- `apps/frontend/lib/pluginRegistry.ts` - Plugin page registry singleton
 - `apps/frontend/components/plugins/PluginLoader.tsx` - Plugin loader with registry integration
-- `apps/frontend/components/layout/NavBar.tsx` - Navigation with plugin menu items
+- `apps/frontend/components/layout/NavBar.tsx` - Navigation with WebSocket menu updates
 - `apps/frontend/app/(dashboard)/[...plugin]/page.tsx` - Dynamic route handler
 - `apps/frontend/components/plugins/plugins.generated.ts` - Auto-generated plugin loaders
 
-### Example Plugin
-- `packages/plugins/example-dashboard/` - Complete working example
-  - `src/manifest.ts` - Plugin metadata
-  - `src/frontend/frontend.ts` - Menu + page registration
-  - `src/frontend/ExampleDashboardPage.tsx` - Page component
-  - `README.md` - Plugin documentation
-
-## Summary
-
-The plugin menu and page system transforms UI extension from a multi-file manual process to a single-file declarative configuration. Plugins declare their navigation and routes, and the system handles discovery, registration, rendering, and routing automatically.
-
-This keeps the codebase modular, enables rapid feature development, and ensures plugins remain self-contained and easy to maintain.
+### Example Plugins
+- `packages/plugins/resource-tracking/` - Complete example with IMenuService
+  - `src/backend/backend.ts` - Menu registration in init() hook
+  - `src/frontend/frontend.ts` - Page registration
+  - Demonstrates hierarchical menus with container nodes
+- `packages/plugins/example-dashboard/` - Basic example
 
 ## Related Documentation
 

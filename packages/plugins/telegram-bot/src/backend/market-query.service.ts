@@ -56,21 +56,24 @@ export class MarketQueryService {
     }
 
     /**
-     * Fetches current market data from the backend API.
-     * Makes HTTP request to /api/markets endpoint.
+     * Fetches current market data from the resource-markets plugin API.
+     * Makes HTTP request to /api/plugins/resource-markets/markets endpoint.
      *
      * @returns Market data array or empty array on error
      *
      * Why error handling returns empty array:
      * Telegram bot should respond gracefully even if API is temporarily unavailable.
      * Empty array triggers "no markets available" message instead of crashing.
+     *
+     * Note: This is a temporary workaround using HTTP calls. See TODO.md for planned
+     * inter-plugin service communication pattern that will replace this approach.
      */
     private async fetchMarkets(): Promise<IMarket[]> {
         try {
             // Use dynamic import to avoid bundling issues
             const axios = (await import('axios')).default;
 
-            const response = await axios.get<IMarketResponse>(`${this.apiBaseUrl}/markets`, {
+            const response = await axios.get<IMarketResponse>(`${this.apiBaseUrl}/plugins/resource-markets/markets`, {
                 timeout: 5000
             });
 

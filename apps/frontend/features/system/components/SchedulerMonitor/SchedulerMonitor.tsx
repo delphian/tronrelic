@@ -25,6 +25,12 @@ interface SchedulerHealth {
 
 interface Props {
     token: string;
+    /** Optional filter to show only specific jobs. Can be job names or a filter function. */
+    jobFilter?: string[] | ((job: SchedulerJob) => boolean);
+    /** Optional title override for the "Scheduled Jobs" section */
+    sectionTitle?: string;
+    /** Hide the scheduler health section (useful when showing only specific jobs) */
+    hideHealth?: boolean;
 }
 
 /**
@@ -39,6 +45,7 @@ interface Props {
  * - Job execution timing and duration tracking
  * - Error logging for failed jobs
  * - Auto-refresh every 10 seconds for near-real-time monitoring
+ * - Optional job filtering for plugin-specific monitoring
  *
  * **Data Sources:**
  * - `/admin/system/scheduler/status` - Job execution history and current status
@@ -49,13 +56,31 @@ interface Props {
  *
  * @param {Props} props - Component props
  * @param {string} props.token - Admin authentication token for API requests
+ * @param {string[] | ((job: SchedulerJob) => boolean)} [props.jobFilter] - Optional filter to show only specific jobs
+ * @param {string} [props.sectionTitle] - Optional title override for the "Scheduled Jobs" section
+ * @param {boolean} [props.hideHealth] - Hide the scheduler health section (useful when showing only specific jobs)
  *
  * @example
  * ```tsx
+ * // Show all jobs
  * <SchedulerMonitor token={adminToken} />
+ *
+ * // Show only specific jobs by name
+ * <SchedulerMonitor
+ *   token={adminToken}
+ *   jobFilter={['markets:refresh', 'blockchain:sync']}
+ * />
+ *
+ * // Filter jobs with a custom function
+ * <SchedulerMonitor
+ *   token={adminToken}
+ *   jobFilter={(job) => job.name.startsWith('markets:')}
+ *   sectionTitle="Market Jobs"
+ *   hideHealth
+ * />
  * ```
  */
-export function SchedulerMonitor({ token }: Props) {
+export function SchedulerMonitor({ token, jobFilter, sectionTitle = 'Scheduled Jobs', hideHealth = false }: Props) {
     const [jobs, setJobs] = useState<SchedulerJob[]>([]);
     const [health, setHealth] = useState<SchedulerHealth | null>(null);
     const [loading, setLoading] = useState(true);
@@ -263,11 +288,25 @@ export function SchedulerMonitor({ token }: Props) {
         return <div className={styles.loading}>Loading scheduler monitoring data...</div>;
     }
 
+    /**
+     * Applies the jobFilter prop to the jobs list.
+     * Supports both array of job names and custom filter functions.
+     */
+    const filteredJobs = jobFilter
+        ? jobs.filter(job => {
+            if (Array.isArray(jobFilter)) {
+                return jobFilter.includes(job.name);
+            }
+            return jobFilter(job);
+        })
+        : jobs;
+
     return (
         <div className={styles.container}>
             {/* Scheduler Health */}
-            <section className={styles.section}>
-                <h2 className={styles.section__title}>Scheduler Health</h2>
+            {!hideHealth && (
+                <section className={styles.section}>
+                    <h2 className={styles.section__title}>Scheduler Health</h2>
                 {health && (
                     <div className={styles.health_grid}>
                         <div className={`${styles.metric_card} ${health.enabled ? styles['metric_card--enabled'] : styles['metric_card--disabled']}`}>
@@ -288,13 +327,19 @@ export function SchedulerMonitor({ token }: Props) {
                         </div>
                     </div>
                 )}
-            </section>
+                </section>
+            )}
 
             {/* Scheduled Jobs */}
             <section className={styles.section}>
-                <h2 className={styles.section__title}>Scheduled Jobs</h2>
+                <h2 className={styles.section__title}>{sectionTitle}</h2>
+                {filteredJobs.length === 0 ? (
+                    <div className={styles.loading}>
+                        {jobFilter ? 'No jobs match the filter criteria.' : 'No scheduled jobs found.'}
+                    </div>
+                ) : (
                 <div className={styles.job_list}>
-                    {jobs.map(job => {
+                    {filteredJobs.map(job => {
                         const isUpdating = updatingJob === job.name;
                         const jobFeedback = feedback?.jobName === job.name ? feedback : null;
 
@@ -391,6 +436,7 @@ export function SchedulerMonitor({ token }: Props) {
                         );
                     })}
                 </div>
+                )}
             </section>
         </div>
     );

@@ -4,7 +4,6 @@ import { useEffect, useRef } from 'react';
 import type { Socket } from 'socket.io-client';
 import { getSocket, disconnectSocket } from '../../lib/socketClient';
 import { useAppDispatch, useAppSelector } from '../../store/hooks';
-import { upsertMarket } from '../../features/markets/slice';
 import { prependMemo } from '../../store/slices/memoSlice';
 import { blockReceived } from '../../features/blockchain/slice';
 import {
@@ -22,8 +21,6 @@ import type {
   MemoUpdatePayload,
   SocketSubscriptions
 } from '@tronrelic/shared';
-
-type MarketPayload = Parameters<typeof upsertMarket>[0];
 
 export function SocketBridge() {
   const dispatch = useAppDispatch();
@@ -130,10 +127,6 @@ export function SocketBridge() {
       dispatch(heartbeatReceived({ latencyMs: typeof latency === 'number' ? latency : null, timestamp: new Date().toISOString() }));
     };
 
-    const handleMarketUpdate = (payload: MarketPayload) => {
-      dispatch(upsertMarket(payload));
-    };
-
     const handleMemoUpdate = (payload: MemoUpdatePayload['payload']) => {
       dispatch(prependMemo(payload));
     };
@@ -162,7 +155,6 @@ export function SocketBridge() {
     socket.on('disconnect', handleDisconnect);
     socket.on('connect_error', handleConnectError);
     socket.on('pong', handlePong);
-    socket.on('market:update', handleMarketUpdate);
     socket.on('memo:new', handleMemoUpdate);
     socket.on('block:new', handleBlockUpdate);
 
@@ -177,7 +169,6 @@ export function SocketBridge() {
     return () => {
       manualDisconnectRef.current = true;
       clearReconnectTimer();
-      socket.off('market:update', handleMarketUpdate);
       socket.off('memo:new', handleMemoUpdate);
       socket.off('block:new', handleBlockUpdate);
       socket.off('connect', handleConnect);

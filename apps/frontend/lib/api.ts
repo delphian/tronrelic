@@ -1,39 +1,11 @@
 import axios from 'axios';
-import type { MarketComparisonResult, MarketDocument, NotificationChannel } from '@tronrelic/shared';
+import type { NotificationChannel } from '@tronrelic/shared';
 import { config } from './config';
 
 export const apiClient = axios.create({
   baseURL: config.apiBaseUrl,
   timeout: 5000
 });
-
-export async function getMarkets(limit?: number) {
-  const response = await apiClient.get('/markets/compare', {
-    params: limit ? { limit } : undefined
-  });
-  const { markets } = response.data as {
-    success: boolean;
-    markets: MarketDocument[];
-  };
-  return markets;
-}
-
-export async function getMarketComparison(limit?: number): Promise<MarketComparisonResult> {
-  const response = await apiClient.get('/markets/compare', {
-    params: limit ? { limit } : undefined
-  });
-
-  const { markets, stats } = response.data as {
-    success: boolean;
-    markets: MarketComparisonResult['markets'];
-    stats: MarketComparisonResult['stats'];
-  };
-
-  return {
-    markets,
-    stats
-  } satisfies MarketComparisonResult;
-}
 
 export async function getLatestTransactions(limit = 50) {
   const response = await apiClient.get('/blockchain/transactions/latest', {
@@ -301,17 +273,6 @@ export interface WhaleHighlightRecord {
   confidence?: number;
 }
 
-export interface MarketHistoryRecord {
-  recordedAt: string;
-  effectivePrice?: number;
-  bestPrice?: number;
-  averagePrice?: number;
-  minUsdtTransferCost?: number;
-  availabilityPercent?: number;
-  availabilityConfidence?: number;
-  sampleSize?: number;
-}
-
 export interface MemoRecord {
   memoId?: string;
   txId: string;
@@ -337,14 +298,6 @@ export async function getStakingTimeseries(days = 14): Promise<StakingTimeseries
   });
   const { series } = response.data as { success: boolean; series: StakingTimeseriesPoint[] };
   return series;
-}
-
-export async function getMarketHistory(guid: string, limit = 4320, bucketHours = 6): Promise<MarketHistoryRecord[]> {
-  const response = await apiClient.get(`/markets/${guid}/history`, {
-    params: { limit, bucket_hours: bucketHours }
-  });
-  const { history } = response.data as { success: boolean; history: MarketHistoryRecord[] };
-  return history;
 }
 
 export interface EnergyEstimateRequest {
