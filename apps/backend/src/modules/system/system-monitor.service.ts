@@ -1,11 +1,9 @@
 import type { Redis as RedisClient } from 'ioredis';
 import * as os from 'os';
 import mongoose from 'mongoose';
-import { SyncStateModel, type SyncStateDoc, type SyncStateFields } from '../../database/models/sync-state-model.js';
+import { SyncStateModel, type SyncStateFields } from '../../database/models/sync-state-model.js';
 import { BlockModel, type BlockFields } from '../../database/models/block-model.js';
-import { TransactionModel, type TransactionFields } from '../../database/models/transaction-model.js';
-import { MarketModel, type MarketFields } from '../../database/models/market-model.js';
-import { MarketReliabilityModel, type MarketReliabilityFields } from '../../database/models/market-reliability-model.js';
+import { TransactionModel } from '../../database/models/transaction-model.js';
 import { SchedulerExecutionModel, type ISchedulerExecutionFields } from '../../database/models/scheduler-execution-model.js';
 import { TronGridClient } from '../blockchain/tron-grid.client.js';
 import { logger } from '../../lib/logger.js';
@@ -132,24 +130,6 @@ export interface SchedulerHealth {
   totalJobsExecuted: number;
   successRate: number;
   overdueJobs: string[];
-}
-
-export interface MarketPlatformStatus {
-  guid: string;
-  name: string;
-  lastFetchedAt: string | null;
-  status: 'online' | 'stale' | 'failed' | 'disabled';
-  responseTime: number | null;
-  reliabilityScore: number;
-  consecutiveFailures: number;
-  isActive: boolean;
-}
-
-export interface MarketDataFreshness {
-  oldestDataAge: number | null;
-  stalePlatformCount: number;
-  averageDataAge: number;
-  platformsWithOldData: string[];
 }
 
 export interface DatabaseStatus {
@@ -547,85 +527,6 @@ export class SystemMonitorService {
       totalJobsExecuted: 0, // Would need tracking
       successRate: 100,
       overdueJobs: []
-    };
-  }
-
-  async getMarketPlatformStatus(): Promise<MarketPlatformStatus[]> {
-    const markets = await MarketModel.find().lean() as MarketFields[];
-    const reliability = await MarketReliabilityModel.find().lean() as MarketReliabilityFields[];
-
-    const reliabilityMap = new Map(reliability.map(r => [r.guid, r]));
-
-    return markets.map(market => {
-      const rel = reliabilityMap.get(market.guid);
-      const lastFetchedAt = safeToISOString(market.lastUpdated);
-
-      let status: 'online' | 'stale' | 'failed' | 'disabled' = 'online';
-      if (!market.isActive) {
-        status = 'disabled';
-      } else if (lastFetchedAt) {
-        const ageMinutes = (Date.now() - new Date(lastFetchedAt).getTime()) / 1000 / 60;
-        if (ageMinutes > 60) {
-          status = 'failed';
-        } else if (ageMinutes > 10) {
-          status = 'stale';
-        }
-      } else {
-        status = 'failed';
-      }
-
-      return {
-        guid: market.guid,
-        name: market.name,
-        lastFetchedAt,
-        status,
-        responseTime: null,
-        reliabilityScore: rel?.reliability || 0,
-        consecutiveFailures: rel?.failureStreak || 0,
-        isActive: market.isActive
-      };
-    });
-  }
-
-  async getMarketDataFreshness(): Promise<MarketDataFreshness> {
-    const markets = await MarketModel.find({ isActive: true }).lean() as MarketFields[];
-
-    if (markets.length === 0) {
-      return {
-        oldestDataAge: null,
-        stalePlatformCount: 0,
-        averageDataAge: 0,
-        platformsWithOldData: []
-      };
-    }
-
-    const now = Date.now();
-    const ages = markets
-      .filter(m => m.lastUpdated)
-      .map(m => now - new Date(m.lastUpdated!).getTime());
-
-    const oldestDataAge = ages.length > 0 ? Math.max(...ages) / 1000 / 60 : null;
-    const averageDataAge = ages.length > 0 ? ages.reduce((a, b) => a + b, 0) / ages.length / 1000 / 60 : 0;
-
-    const stalePlatforms = markets.filter(m => {
-      if (!m.lastUpdated) return true;
-      const ageMinutes = (now - new Date(m.lastUpdated).getTime()) / 1000 / 60;
-      return ageMinutes > 10;
-    });
-
-    const platformsWithOldData = markets
-      .filter(m => {
-        if (!m.lastUpdated) return true;
-        const ageMinutes = (now - new Date(m.lastUpdated).getTime()) / 1000 / 60;
-        return ageMinutes > 60;
-      })
-      .map(m => m.name);
-
-    return {
-      oldestDataAge,
-      stalePlatformCount: stalePlatforms.length,
-      averageDataAge,
-      platformsWithOldData
     };
   }
 

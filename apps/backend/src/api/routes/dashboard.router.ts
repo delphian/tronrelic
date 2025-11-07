@@ -7,7 +7,6 @@ export function dashboardRouter() {
 
   router.get('/delegations/timeseries', controller.delegationTimeseries);
   router.get('/staking/timeseries', controller.stakingTimeseries);
-  router.get('/markets/history', controller.marketHistory);
   router.get('/memos/feed', controller.memoFeed);
 
   return router;
