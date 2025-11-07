@@ -60,6 +60,27 @@ export interface IUIComponents {
         id?: string;
         name?: string;
     }>;
+
+    /** Client-side time rendering component (prevents SSR hydration mismatches) */
+    ClientTime: ComponentType<{
+        date: Date | string | null | undefined;
+        format?: 'time' | 'datetime' | 'date';
+        fallback?: string;
+    }>;
+
+    /** Tooltip component for contextual help text */
+    Tooltip: ComponentType<{
+        content: string;
+        children: React.ReactNode;
+        placement?: 'top' | 'bottom';
+    }>;
+
+    /** Icon picker modal component for visual icon selection */
+    IconPickerModal: ComponentType<{
+        selectedIcon?: string;
+        onSelect: (iconName: string) => void;
+        onClose: () => void;
+    }>;
 }
 
 /**
@@ -90,6 +111,46 @@ export interface IChartComponents {
         yAxisMin?: number;
         /** Fixed maximum value for Y-axis (overrides auto-calculated maximum) */
         yAxisMax?: number;
+    }>;
+}
+
+/**
+ * System component library provided to frontend plugins.
+ *
+ * Contains system administration and monitoring components that plugins can use
+ * for admin interfaces without creating cross-workspace dependencies.
+ */
+export interface ISystemComponents {
+    /**
+     * Scheduler Monitor component for displaying and managing scheduled jobs.
+     *
+     * Provides real-time job status tracking, enable/disable controls, and
+     * schedule modification. Supports filtering to show only specific jobs.
+     *
+     * @param token - Admin authentication token (from localStorage)
+     * @param jobFilter - Optional array of job names or filter function
+     * @param sectionTitle - Optional title override for the jobs section
+     * @param hideHealth - Whether to hide the scheduler health section
+     *
+     * @example
+     * ```tsx
+     * // Show all jobs
+     * <context.system.SchedulerMonitor token={adminToken} />
+     *
+     * // Show only specific jobs
+     * <context.system.SchedulerMonitor
+     *   token={adminToken}
+     *   jobFilter={['markets:refresh']}
+     *   sectionTitle="Market Jobs"
+     *   hideHealth
+     * />
+     * ```
+     */
+    SchedulerMonitor: ComponentType<{
+        token: string;
+        jobFilter?: string[] | ((job: any) => boolean);
+        sectionTitle?: string;
+        hideHealth?: boolean;
     }>;
 }
 
@@ -349,9 +410,40 @@ export interface IFrontendPluginContext {
     /** Chart component library (LineChart, etc.) */
     charts: IChartComponents;
 
+    /** System component library (SchedulerMonitor, etc.) */
+    system: ISystemComponents;
+
     /** API client for making authenticated requests to backend */
     api: IApiClient;
 
     /** WebSocket client for real-time event subscriptions with auto-prefixing */
     websocket: IWebSocketClient;
+
+    /**
+     * Modal control hook for opening and closing modals programmatically.
+     *
+     * Returns methods to open, close, and manage modal state. Must be called
+     * within a component context (similar to React hooks pattern).
+     *
+     * @example
+     * ```typescript
+     * const { open: openModal, close: closeModal } = context.useModal();
+     * const modalId = openModal({
+     *   title: 'Select Icon',
+     *   size: 'lg',
+     *   content: <IconPickerModal onSelect={handleSelect} onClose={() => closeModal(modalId)} />
+     * });
+     * ```
+     */
+    useModal: () => {
+        open: (options: {
+            title?: string;
+            content: React.ReactNode;
+            size?: 'sm' | 'md' | 'lg' | 'xl';
+            dismissible?: boolean;
+            onClose?: () => void;
+        }) => string;
+        close: (id: string) => void;
+        closeAll: () => void;
+    };
 }

@@ -11,6 +11,11 @@ async function load_example_dashboard(): Promise<IPlugin> {
     return resolvePluginExport('example-dashboard', module);
 }
 
+async function load_resource_markets(): Promise<IPlugin> {
+    const module = await import('../../../../packages/plugins/resource-markets/src/frontend/frontend');
+    return resolvePluginExport('resource-markets', module);
+}
+
 async function load_resource_tracking(): Promise<IPlugin> {
     const module = await import('../../../../packages/plugins/resource-tracking/src/frontend/frontend');
     return resolvePluginExport('resource-tracking', module);
@@ -28,6 +33,7 @@ async function load_whale_alerts(): Promise<IPlugin> {
 
 export const frontendPluginLoaders: Record<string, () => Promise<IPlugin>> = {
     'example-dashboard': load_example_dashboard,
+    'resource-markets': load_resource_markets,
     'resource-tracking': load_resource_tracking,
     'telegram-bot': load_telegram_bot,
     'whale-alerts': load_whale_alerts,

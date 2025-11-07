@@ -70,12 +70,12 @@
     opacity: var(--opacity-70);
 }
 
-.loading-state {
+.loading_state {
     padding: var(--spacing-12);
     text-align: center;
 }
 
-.error-state {
+.error_state {
     padding: var(--spacing-12);
     color: var(--color-danger);
 }

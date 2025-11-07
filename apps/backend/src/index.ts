@@ -83,10 +83,11 @@ async function bootstrap() {
         logger.info({}, 'WebSocketService initialized');
 
         // Initialize menu module with database dependency injection
-        // Use 'core_' as the prefix to distinguish from plugin collections
+        // Note: MenuService uses unprefixed collections (menu_nodes, menu_namespace_config)
+        // to maintain compatibility with existing admin tools and scripts
         try {
             const { DatabaseService } = await import('./modules/database/index.js');
-            const menuDatabase = new DatabaseService(logger, { prefix: 'core_' });
+            const menuDatabase = new DatabaseService(logger); // No prefix for system collections
             const menuModule = new MenuModule();
 
             // Phase 1: Initialize MenuModule (create services, load menu tree)
@@ -213,16 +214,7 @@ async function bootstrap() {
                     enabled: true
                 });
 
-                // Markets - Market data monitoring (order: 50)
-                await menuService.create({
-                    namespace: 'system',
-                    label: 'Markets',
-                    url: '/system/markets',
-                    icon: 'TrendingUp',
-                    order: 50,
-                    parent: null,
-                    enabled: true
-                });
+                // Markets menu item registered by resource-markets plugin (order: 50)
 
                 // Plugins - Plugin management (order: 65)
                 await menuService.create({
@@ -262,7 +254,11 @@ async function bootstrap() {
         }
         logger.info({}, 'All core modules initialized');
 
-        // Load plugins AFTER WebSocket is initialized so they can register handlers
+        // Initialize jobs (scheduler) BEFORE loading plugins so they can register scheduled tasks
+        await initializeJobs();
+        logger.info({}, 'Scheduler initialized');
+
+        // Load plugins AFTER WebSocket and Scheduler are initialized so they can use both
         try {
             await logger.waitUntilInitialized();
             await loadPlugins();
@@ -270,8 +266,6 @@ async function bootstrap() {
             logger.error({ pluginError, stack: pluginError instanceof Error ? pluginError.stack : undefined }, 'Plugin initialization failed')
         }
         logger.info({}, 'Plugins initialized');
-
-        await initializeJobs();
 
         server.listen(env.PORT, () => {
             logger.info({ port: env.PORT }, 'Server listening');

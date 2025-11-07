@@ -5,6 +5,7 @@ import type {
     IFrontendPluginContext,
     IUIComponents,
     IChartComponents,
+    ISystemComponents,
     IApiClient,
     IWebSocketClient
 } from '@tronrelic/types';
@@ -13,7 +14,12 @@ import { Badge } from '../components/ui/Badge';
 import { Skeleton } from '../components/ui/Skeleton';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
+import { ClientTime } from '../components/ui/ClientTime';
+import { Tooltip } from '../components/ui/Tooltip';
+import { IconPickerModal } from '../components/ui/IconPickerModal';
+import { useModal as useModalHook } from '../components/ui/ModalProvider';
 import { LineChart } from '../features/charts/components/LineChart';
+import { SchedulerMonitor } from '../features/system/components/SchedulerMonitor';
 import { getSocket } from './socketClient';
 import { config } from './config';
 
@@ -320,11 +326,18 @@ export function FrontendPluginContextProvider({ children }: { children: React.Re
             Badge,
             Skeleton,
             Button,
-            Input
+            Input,
+            ClientTime,
+            Tooltip,
+            IconPickerModal
         };
 
         const charts: IChartComponents = {
             LineChart
+        };
+
+        const system: ISystemComponents = {
+            SchedulerMonitor
         };
 
         const api = new ApiClient();
@@ -335,8 +348,10 @@ export function FrontendPluginContextProvider({ children }: { children: React.Re
             pluginId: '',
             ui,
             charts,
+            system,
             api,
-            websocket
+            websocket,
+            useModal: useModalHook
         };
     }, []);
 
@@ -388,11 +403,18 @@ export function createPluginContext(pluginId: string): IFrontendPluginContext {
         Badge,
         Skeleton,
         Button,
-        Input
+        Input,
+        ClientTime,
+        Tooltip,
+        IconPickerModal
     };
 
     const charts: IChartComponents = {
         LineChart
+    };
+
+    const system: ISystemComponents = {
+        SchedulerMonitor
     };
 
     const api = new ApiClient();
@@ -402,7 +424,9 @@ export function createPluginContext(pluginId: string): IFrontendPluginContext {
         pluginId,
         ui,
         charts,
+        system,
         api,
-        websocket
+        websocket,
+        useModal: useModalHook
     };
 }

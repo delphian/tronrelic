@@ -303,6 +303,7 @@ tmp/
 # Local development
 *.local
 .local/
+PLAN.md
 
 # Sass cache
 .sass-cache/

@@ -1,0 +1,42 @@
+{
+    "name": "@tronrelic/plugin-resource-markets",
+    "version": "1.0.0",
+    "description": "TRON energy market comparison and pricing analysis plugin",
+    "type": "module",
+    "main": "dist/backend/backend.js",
+    "types": "dist/backend/backend.d.ts",
+    "exports": {
+        "./backend": {
+            "types": "./dist/backend/backend.d.ts",
+            "import": "./dist/backend/backend.js"
+        },
+        "./frontend": {
+            "types": "./src/frontend/frontend.ts",
+            "import": "./src/frontend/frontend.ts"
+        },
+        "./shared": {
+            "types": "./src/shared/index.ts",
+            "import": "./src/shared/index.ts"
+        }
+    },
+    "scripts": {
+        "build": "tsc",
+        "clean": "rm -rf dist",
+        "typecheck": "tsc --noEmit"
+    },
+    "keywords": [
+        "tron",
+        "energy",
+        "market",
+        "plugin"
+    ],
+    "dependencies": {
+        "@tronrelic/types": "file:../../types",
+        "@tronrelic/shared": "file:../../shared",
+        "zod": "^3.22.4"
+    },
+    "devDependencies": {
+        "@types/node": "^20.11.0",
+        "typescript": "^5.3.3"
+    }
+}
