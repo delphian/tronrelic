@@ -31,8 +31,8 @@
         "plugin"
     ],
     "dependencies": {
-        "@tronrelic/types": "workspace:*",
-        "@tronrelic/shared": "workspace:*",
+        "@tronrelic/types": "file:../../types",
+        "@tronrelic/shared": "file:../../shared",
         "zod": "^3.22.4"
     },
     "devDependencies": {
