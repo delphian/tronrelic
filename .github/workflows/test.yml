@@ -14,6 +14,27 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Pull private submodules (optional)
+        run: |
+          # Rewrite SSH URLs to HTTPS for token authentication (CI/CD only)
+          git config --global url."https://github.com/".insteadOf "git@github.com:"
+
+          # Create credential helper script that returns the token
+          cat > /tmp/git-askpass.sh <<'SCRIPT'
+          #!/bin/sh
+          case "$1" in
+            Username*) echo "x-access-token" ;;
+            Password*) echo "$GH_PRIVATE_SUBMODULE_TOKEN" ;;
+          esac
+          SCRIPT
+          chmod +x /tmp/git-askpass.sh
+
+          # Use credential helper for submodule checkout
+          GIT_ASKPASS=/tmp/git-askpass.sh git submodule update --init --recursive || true
+        env:
+          GH_PRIVATE_SUBMODULE_TOKEN: ${{ secrets.GH_PRIVATE_SUBMODULE_TOKEN || '' }}
+        continue-on-error: true
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
