@@ -192,7 +192,7 @@ node dist/index.js
 # Frontend bundles everything to .next/
 app/page.tsx          → .next/server/app/page.js (server bundle)
                       → .next/static/chunks/... (client bundle)
-features/markets/...  → Included in bundles
+features/accounts/... → Included in bundles
 components/ui/...     → Included in bundles
 
 # Runtime uses Next.js server

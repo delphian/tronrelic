@@ -24,14 +24,11 @@ apps/frontend/
 │   │   ├── api/                 # Account API calls
 │   │   ├── slice.ts             # Redux slice
 │   │   └── index.ts             # Public exports
-│   ├── markets/
 │   ├── blockchain/
 │   ├── transactions/
 │   ├── whales/
 │   ├── system/
 │   ├── charts/
-│   ├── comments/
-│   ├── chat/
 │   ├── realtime/
 │   └── ui-state/
 │
@@ -54,28 +51,24 @@ Each feature follows a consistent structure:
 ### File Organization
 
 ```
-features/markets/
+features/accounts/
 ├── components/                      # React components
-│   ├── MarketDashboard/
-│   │   ├── MarketDashboard.tsx
-│   │   ├── MarketDashboard.module.css  # Component-specific styles
-│   │   └── index.ts                     # Barrel export
-│   ├── MarketTable/
-│   │   ├── MarketTable.tsx
-│   │   ├── MarketTable.module.css
+│   ├── AccountSummary/
+│   │   ├── AccountSummary.tsx
+│   │   ├── AccountSummary.module.css  # Component-specific styles
+│   │   └── index.ts                    # Barrel export
+│   ├── BookmarkPanel/
+│   │   ├── BookmarkPanel.tsx
+│   │   ├── BookmarkPanel.module.css
 │   │   └── index.ts
-│   ├── MarketCard/
-│   │   ├── MarketCard.tsx
-│   │   ├── MarketCard.module.css
-│   │   └── index.ts
-│   └── PriceCalculator/
-│       ├── PriceCalculator.tsx
-│       ├── PriceCalculator.module.css
+│   └── WalletCard/
+│       ├── WalletCard.tsx
+│       ├── WalletCard.module.css
 │       └── index.ts
 ├── hooks/                           # Feature-specific hooks
-│   └── useMarketData.ts
+│   └── useWallet.ts
 ├── api/                             # API client functions
-│   └── marketApi.ts
+│   └── accountApi.ts
 ├── slice.ts                         # Redux state slice
 ├── types.ts                         # TypeScript types (optional)
 └── index.ts                         # Public API exports
@@ -89,23 +82,22 @@ Every feature exports its public API through `index.ts`:
 
 ```typescript
 /**
- * Markets Feature Module
+ * Accounts Feature Module
  *
- * Handles energy market comparison and pricing
+ * Handles account management, wallet tracking, and bookmarks
  */
 
 // Components
-export { MarketDashboard } from './components/MarketDashboard';
-export { MarketTable } from './components/MarketTable';
-export { MarketCard } from './components/MarketCard';
-export { PriceCalculator } from './components/PriceCalculator';
+export { AccountSummary } from './components/AccountSummary';
+export { BookmarkPanel } from './components/BookmarkPanel';
+export { WalletCard } from './components/WalletCard';
 
 // Redux slice
-export { default as marketReducer } from './slice';
+export { default as walletReducer } from './slice';
 export * from './slice';
 
-// Hooks (if any)
-export { useMarketData } from './hooks/useMarketData';
+// Hooks
+export { useWallet } from './hooks/useWallet';
 ```
 
 ## Import Patterns
@@ -114,8 +106,8 @@ export { useMarketData } from './hooks/useMarketData';
 
 ```typescript
 // Recommended: Import from feature index
-import { MarketDashboard, MarketTable } from '../../../features/markets';
-import { AccountSummary } from '../../../features/accounts';
+import { AccountSummary, BookmarkPanel } from '../../../features/accounts';
+import { TransactionFeed } from '../../../features/transactions';
 
 // Alternative: Import specific component
 import { LineChart } from '../../../features/charts/components/LineChart';
@@ -140,16 +132,16 @@ import { api } from '../../../lib/api';
 
 ```typescript
 import { configureStore } from '@reduxjs/toolkit';
-import { marketReducer } from '../features/markets';
 import { walletReducer, bookmarkReducer } from '../features/accounts';
 import { transactionReducer } from '../features/transactions';
+import { blockchainReducer } from '../features/blockchain';
 
 export const store = configureStore({
     reducer: {
-        markets: marketReducer,
         wallet: walletReducer,
         bookmarks: bookmarkReducer,
         transactions: transactionReducer,
+        blockchain: blockchainReducer,
         // ...
     }
 });
@@ -162,7 +154,6 @@ export const store = configureStore({
 | Feature | Purpose | Key Components |
 |---------|---------|----------------|
 | **accounts** | Account management, wallet tracking, bookmarks | AccountSummary, BookmarkPanel, useWallet |
-| **markets** | Energy market comparison and pricing | MarketDashboard, MarketTable, PriceCalculator |
 | **transactions** | Transaction feed, details, filtering | TransactionFeed, TransactionDetails, TransactionFilter |
 | **whales** | Whale transaction tracking and analytics | WhaleDashboard |
 | **blockchain** | Blockchain sync status and network metrics | (state only) |
@@ -183,16 +174,16 @@ export const store = configureStore({
 ### Colocation
 
 All code related to a feature lives together:
-- Components in `features/markets/components/`
-- State management in `features/markets/slice.ts`
-- Hooks in `features/markets/hooks/`
-- API calls in `features/markets/api/`
+- Components in `features/accounts/components/`
+- State management in `features/accounts/slice.ts`
+- Hooks in `features/accounts/hooks/`
+- API calls in `features/accounts/api/`
 
 ### Consistency
 
 The feature structure mirrors the backend's modular architecture:
-- Backend: `apps/backend/src/modules/markets/`
-- Frontend: `apps/frontend/features/markets/`
+- Backend: `apps/backend/src/modules/blockchain/`
+- Frontend: `apps/frontend/features/blockchain/`
 
 Both follow the same mental model.
 
@@ -295,8 +286,8 @@ Add JSDoc comments to:
 ### 5. Create Focused Slices
 
 Each Redux slice should manage a single concern:
-- ✅ `marketSlice` manages market data
 - ✅ `walletSlice` manages wallet state
+- ✅ `transactionSlice` manages transaction data
 - ❌ Avoid: `appSlice` managing everything
 
 ### 6. Share Through Exports
@@ -305,10 +296,10 @@ Don't import directly from other features' internals:
 
 ```typescript
 // ❌ Bad
-import { MarketTable } from '../../markets/components/MarketTable';
+import { AccountSummary } from '../../accounts/components/AccountSummary';
 
 // ✅ Good
-import { MarketTable } from '../../markets';
+import { AccountSummary } from '../../accounts';
 ```
 
 ### 7. Use Component Folders for Organization
@@ -516,9 +507,9 @@ The frontend feature structure intentionally mirrors the backend:
 
 | Backend | Frontend |
 |---------|----------|
-| `src/modules/markets/market.controller.ts` | `features/markets/components/MarketDashboard.tsx` |
-| `src/modules/markets/market.service.ts` | `features/markets/api/marketApi.ts` |
-| `src/database/models/Market.ts` | `features/markets/slice.ts` |
+| `src/modules/blockchain/blockchain.controller.ts` | `features/blockchain/components/BlockchainMonitor.tsx` |
+| `src/modules/blockchain/blockchain.service.ts` | `features/blockchain/api/blockchainApi.ts` |
+| `src/database/models/Block.ts` | `features/blockchain/slice.ts` |
 
 This parallelism helps developers navigate both codebases efficiently.
 
