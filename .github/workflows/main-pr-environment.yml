@@ -1,4 +1,4 @@
-name: Dev Environment
+name: Main-PR Environment
 
 on:
   pull_request:
@@ -49,7 +49,7 @@ jobs:
         run: |
           SHORT_SHA=$(echo "${{ github.event.pull_request.head.sha }}" | cut -c1-7)
           IMAGE_TAG="dev-${SHORT_SHA}"
-          DROPLET_NAME="tronrelic-dev"
+          DROPLET_NAME="tronrelic-main-pr-${{ github.event.pull_request.number }}"
 
           echo "tag=$IMAGE_TAG" >> $GITHUB_OUTPUT
           echo "short_sha=$SHORT_SHA" >> $GITHUB_OUTPUT
@@ -95,7 +95,21 @@ jobs:
         with:
           token: ${{ secrets.DO_API_TOKEN }}
 
+      - name: Check if droplet already exists
+        id: check
+        run: |
+          DROPLET_NAME="${{ steps.prep.outputs.droplet_name }}"
+
+          if doctl compute droplet list --format Name --no-header | grep -q "^${DROPLET_NAME}$"; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "⚠️ Droplet $DROPLET_NAME already exists, skipping creation"
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "✅ Droplet $DROPLET_NAME does not exist, will create"
+          fi
+
       - name: Check if reserved IP is available
+        if: steps.check.outputs.exists == 'false'
         id: check_ip
         run: |
           RESERVED_IP="${{ secrets.DO_DEV_IP }}"
@@ -109,50 +123,17 @@ jobs:
             # Get droplet name
             EXISTING_DROPLET_NAME=$(doctl compute droplet get "$EXISTING_DROPLET_ID" --format Name --no-header 2>/dev/null || echo "unknown")
 
-            echo "❌ Reserved IP is currently attached to droplet: $EXISTING_DROPLET_NAME (ID: $EXISTING_DROPLET_ID)"
-            echo "❌ Cannot proceed - IP is not available"
-            echo "can_proceed=false" >> $GITHUB_OUTPUT
+            echo "⚠️ Reserved IP is currently attached to droplet: $EXISTING_DROPLET_NAME (ID: $EXISTING_DROPLET_ID)"
+            echo "⚠️ Will use dynamic IP instead"
+            echo "ip_available=false" >> $GITHUB_OUTPUT
             echo "conflicting_droplet=$EXISTING_DROPLET_NAME" >> $GITHUB_OUTPUT
           else
             echo "✅ Reserved IP is available"
-            echo "can_proceed=true" >> $GITHUB_OUTPUT
+            echo "ip_available=true" >> $GITHUB_OUTPUT
           fi
 
-      - name: Post IP conflict warning on PR
-        if: steps.check_ip.outputs.can_proceed == 'false'
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const prNumber = ${{ github.event.pull_request.number }};
-            const conflictingDroplet = '${{ steps.check_ip.outputs.conflicting_droplet }}';
-            const reservedIp = '${{ secrets.DO_DEV_IP }}';
-
-            const comment = `## ⚠️ Dev Environment provisioning blocked for PR #${prNumber}
-
-            **Reserved IP conflict detected**
-
-            The reserved IP address (\`${reservedIp}\`) is currently assigned to droplet: \`${conflictingDroplet}\`
-
-            **This means another PR to \`main\` already has an active dev environment.**
-
-            **Resolution:**
-            - Wait for the other PR to be closed/merged (which will automatically release the IP and destroy the droplet)
-            - Then re-run this workflow to provision your dev environment
-
-            **Note:** Only one dev environment can be active at a time due to the shared reserved IP.
-            `;
-
-            await github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: prNumber,
-              body: comment
-            });
-
-            core.setFailed('Reserved IP is not available - cannot provision dev environment');
-
       - name: Create droplet
-        if: steps.check_ip.outputs.can_proceed == 'true'
+        if: steps.check.outputs.exists == 'false'
         id: create
         run: |
           DROPLET_NAME="${{ steps.prep.outputs.droplet_name }}"
@@ -164,7 +145,7 @@ jobs:
             --region sgp1 \
             --image ubuntu-25-04-x64 \
             --ssh-keys ${{ secrets.DO_SSH_KEY_FINGERPRINT }} \
-            --tag-names "tronrelic-dev-testing" \
+            --tag-names "tronrelic-main-pr-testing" \
             --wait \
             --format ID,Name,PublicIPv4 \
             --no-header
@@ -173,8 +154,31 @@ jobs:
           echo "Waiting for droplet initialization to complete..."
           sleep 15
 
+      - name: Get droplet public IP
+        if: steps.check.outputs.exists == 'false'
+        id: get_ip
+        run: |
+          DROPLET_NAME="${{ steps.prep.outputs.droplet_name }}"
+
+          # Wait a moment for droplet to be fully ready
+          sleep 10
+
+          DROPLET_IP=$(doctl compute droplet list \
+            --format Name,PublicIPv4 \
+            --no-header \
+            | grep "^${DROPLET_NAME}" \
+            | awk '{print $2}')
+
+          if [ -z "$DROPLET_IP" ]; then
+            echo "❌ Could not retrieve droplet IP"
+            exit 1
+          fi
+
+          echo "ip=$DROPLET_IP" >> $GITHUB_OUTPUT
+          echo "✅ Droplet public IP: $DROPLET_IP"
+
       - name: Assign reserved IP to droplet
-        if: steps.check_ip.outputs.can_proceed == 'true'
+        if: steps.check.outputs.exists == 'false' && steps.check_ip.outputs.ip_available == 'true'
         id: assign_ip
         run: |
           DROPLET_NAME="${{ steps.prep.outputs.droplet_name }}"
@@ -195,22 +199,28 @@ jobs:
           echo "Waiting for IP assignment to complete..."
           sleep 10
 
-          echo "ip=$RESERVED_IP" >> $GITHUB_OUTPUT
           echo "✅ Reserved IP assigned: $RESERVED_IP"
 
       - name: Set droplet access info
-        if: steps.check_ip.outputs.can_proceed == 'true'
+        if: steps.check.outputs.exists == 'false'
         id: ip
         run: |
-          RESERVED_IP="${{ steps.assign_ip.outputs.ip }}"
-          DOMAIN="${{ secrets.DO_DEV_HOST }}"
+          if [ "${{ steps.check_ip.outputs.ip_available }}" == "true" ]; then
+            DROPLET_IP="${{ secrets.DO_DEV_IP }}"
+            DOMAIN="${{ secrets.DO_DEV_HOST }}"
+            echo "using_reserved_ip=true" >> $GITHUB_OUTPUT
+          else
+            DROPLET_IP="${{ steps.get_ip.outputs.ip }}"
+            DOMAIN=""
+            echo "using_reserved_ip=false" >> $GITHUB_OUTPUT
+          fi
 
-          echo "ip=$RESERVED_IP" >> $GITHUB_OUTPUT
+          echo "ip=$DROPLET_IP" >> $GITHUB_OUTPUT
           echo "domain=$DOMAIN" >> $GITHUB_OUTPUT
-          echo "✅ Droplet accessible at: $DOMAIN ($RESERVED_IP)"
+          echo "✅ Droplet accessible at: $DROPLET_IP"
 
       - name: Install Docker on droplet
-        if: steps.check_ip.outputs.can_proceed == 'true'
+        if: steps.check.outputs.exists == 'false'
         run: |
           DROPLET_IP="${{ steps.ip.outputs.ip }}"
 
@@ -305,7 +315,7 @@ jobs:
           echo "✅ Droplet setup complete"
 
       - name: Install and configure Nginx with self-signed SSL
-        if: steps.check_ip.outputs.can_proceed == 'true'
+        if: steps.check.outputs.exists == 'false' && steps.ip.outputs.using_reserved_ip == 'true'
         run: |
           DROPLET_IP="${{ steps.ip.outputs.ip }}"
           DOMAIN="${{ steps.ip.outputs.domain }}"
@@ -419,7 +429,7 @@ jobs:
           echo "✅ Nginx setup complete with self-signed SSL certificate"
 
       - name: Copy docker-compose.yml to droplet
-        if: steps.check_ip.outputs.can_proceed == 'true'
+        if: steps.check.outputs.exists == 'false'
         run: |
           DROPLET_IP="${{ steps.ip.outputs.ip }}"
           DEPLOY_DIR="/opt/tronrelic"
@@ -436,7 +446,7 @@ jobs:
             "ls -lh $DEPLOY_DIR/docker-compose.yml"
 
       - name: Create .env file on droplet
-        if: steps.check_ip.outputs.can_proceed == 'true'
+        if: steps.check.outputs.exists == 'false'
         run: |
           DROPLET_IP="${{ steps.ip.outputs.ip }}"
           DEPLOY_DIR="/opt/tronrelic"
@@ -450,14 +460,21 @@ jobs:
           MONGO_PASSWORD=$(openssl rand -hex 32)
           REDIS_PASSWORD=$(openssl rand -hex 32)
 
-          DOMAIN="${{ steps.ip.outputs.domain }}"
+          if [ "${{ steps.ip.outputs.using_reserved_ip }}" == "true" ]; then
+            DOMAIN="${{ steps.ip.outputs.domain }}"
+            SITE_URL="https://$DOMAIN"
+            SITE_WS="https://$DOMAIN"
+          else
+            SITE_URL="http://$DROPLET_IP:3000"
+            SITE_WS="http://$DROPLET_IP:4000"
+          fi
 
           echo "Creating .env file..."
           {
             echo "# TronRelic Dev Environment - Auto-generated by GitHub Actions"
             echo "ENV=development"
-            echo "SITE_URL=https://$DOMAIN"
-            echo "SITE_WS=https://$DOMAIN"
+            echo "SITE_URL=$SITE_URL"
+            echo "SITE_WS=$SITE_WS"
             echo "SITE_BACKEND=http://backend:4000"
             echo "ADMIN_API_TOKEN=$ADMIN_TOKEN"
             echo "TRONGRID_API_KEY=$TRONGRID_KEY_1"
@@ -480,7 +497,7 @@ jobs:
           echo "✅ Environment file created"
 
       - name: Authenticate with GitHub Container Registry
-        if: steps.check_ip.outputs.can_proceed == 'true'
+        if: steps.check.outputs.exists == 'false'
         run: |
           DROPLET_IP="${{ steps.ip.outputs.ip }}"
 
@@ -491,7 +508,7 @@ jobs:
           echo "✅ GHCR authentication successful"
 
       - name: Pull Docker images
-        if: steps.check_ip.outputs.can_proceed == 'true'
+        if: steps.check.outputs.exists == 'false'
         run: |
           DROPLET_IP="${{ steps.ip.outputs.ip }}"
           DEPLOY_DIR="/opt/tronrelic"
@@ -506,7 +523,7 @@ jobs:
           echo "✅ Docker images pulled successfully"
 
       - name: Start containers
-        if: steps.check_ip.outputs.can_proceed == 'true'
+        if: steps.check.outputs.exists == 'false'
         run: |
           DROPLET_IP="${{ steps.ip.outputs.ip }}"
           DEPLOY_DIR="/opt/tronrelic"
@@ -525,17 +542,30 @@ jobs:
           echo "✅ Containers started successfully"
 
       - name: Verify deployment health
-        if: steps.check_ip.outputs.can_proceed == 'true'
+        if: steps.check.outputs.exists == 'false'
         run: |
-          DOMAIN="${{ steps.ip.outputs.domain }}"
+          DROPLET_IP="${{ steps.ip.outputs.ip }}"
 
-          echo "Checking backend health via Nginx (HTTPS with self-signed certificate)..."
+          if [ "${{ steps.ip.outputs.using_reserved_ip }}" == "true" ]; then
+            DOMAIN="${{ steps.ip.outputs.domain }}"
+            BACKEND_URL="https://$DOMAIN/api/health"
+            FRONTEND_URL="https://$DOMAIN/"
+            CURL_OPTS="-k"  # Allow self-signed cert
+            echo "Checking health via Nginx (HTTPS with self-signed certificate)..."
+          else
+            BACKEND_URL="http://$DROPLET_IP:4000/api/health"
+            FRONTEND_URL="http://$DROPLET_IP:3000/"
+            CURL_OPTS=""
+            echo "Checking health via direct IP (HTTP)..."
+          fi
+
+          echo "Checking backend health..."
           MAX_ATTEMPTS=10
           ATTEMPT=0
 
           while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
-            if curl -k -f -s https://"$DOMAIN"/api/health > /dev/null 2>&1; then
-              echo "✅ Backend is healthy (via Nginx)"
+            if curl $CURL_OPTS -f -s "$BACKEND_URL" > /dev/null 2>&1; then
+              echo "✅ Backend is healthy"
               break
             fi
 
@@ -548,15 +578,15 @@ jobs:
             echo "⚠️ Backend health check timed out (may still be starting)"
           fi
 
-          echo "Checking frontend via Nginx (HTTPS with self-signed certificate)..."
-          if curl -k -f -s https://"$DOMAIN"/ > /dev/null 2>&1; then
-            echo "✅ Frontend is responding (via Nginx)"
+          echo "Checking frontend..."
+          if curl $CURL_OPTS -f -s "$FRONTEND_URL" > /dev/null 2>&1; then
+            echo "✅ Frontend is responding"
           else
             echo "⚠️ Frontend not yet responding (may still be starting)"
           fi
 
       - name: Write workflow summary
-        if: steps.check_ip.outputs.can_proceed == 'true'
+        if: steps.check.outputs.exists == 'false'
         run: |
           DROPLET_NAME="${{ steps.prep.outputs.droplet_name }}"
           DROPLET_IP="${{ steps.ip.outputs.ip }}"
@@ -565,8 +595,10 @@ jobs:
           BACKEND_IMAGE="ghcr.io/${{ github.repository }}/backend:${IMAGE_TAG}"
           FRONTEND_IMAGE="ghcr.io/${{ github.repository }}/frontend:${IMAGE_TAG}"
           PR_NUMBER="${{ github.event.pull_request.number }}"
+          USING_RESERVED_IP="${{ steps.ip.outputs.using_reserved_ip }}"
 
-          cat >> $GITHUB_STEP_SUMMARY << EOF
+          if [ "$USING_RESERVED_IP" == "true" ]; then
+            cat >> $GITHUB_STEP_SUMMARY << EOF
           ## ✅ Dev Environment Provisioned for PR #${PR_NUMBER}
 
           **⚠️ This droplet will auto-destroy when the PR is closed or merged**
@@ -607,11 +639,51 @@ jobs:
           - Containers may take 1-2 minutes to fully initialize
           - Reserved IP will be released when droplet is destroyed
           EOF
+          else
+            cat >> $GITHUB_STEP_SUMMARY << EOF
+          ## ✅ Dev Environment Provisioned for PR #${PR_NUMBER}
+
+          **⚠️ Using dynamic IP (reserved IP in use by another PR)**
+          **⚠️ This droplet will auto-destroy when the PR is closed or merged**
+
+          ### Droplet Information
+          - **Name:** \`${DROPLET_NAME}\`
+          - **Dynamic IP:** \`${DROPLET_IP}\`
+          - **Lifespan:** Until PR #${PR_NUMBER} is closed/merged
+
+          ### Docker Images
+          - **Backend:** \`${BACKEND_IMAGE}\`
+          - **Frontend:** \`${FRONTEND_IMAGE}\`
+
+          ### SSH Access
+          \`\`\`bash
+          ssh root@${DROPLET_IP}
+          \`\`\`
+
+          ### Setup Status
+          - ✅ Ubuntu 25.04 droplet created
+          - ⚠️ Using dynamic IP (no domain, no SSL)
+          - ✅ Docker and docker-compose installed
+          - ✅ Deployment directory created (\`/opt/tronrelic\`)
+          - ✅ Docker images pulled and containers started
+          - ✅ Health checks passed
+
+          ### Access Application
+          - **Frontend:** http://${DROPLET_IP}:3000
+          - **Backend API:** http://${DROPLET_IP}:4000/api
+          - **System Monitor:** http://${DROPLET_IP}:3000/system
+
+          **Note:**
+          - Direct port access (no nginx reverse proxy)
+          - HTTP only (no SSL certificate)
+          - Containers may take 1-2 minutes to fully initialize
+          EOF
+          fi
 
           echo "✅ Workflow summary written"
 
       - name: Post success comment on PR
-        if: steps.check_ip.outputs.can_proceed == 'true'
+        if: steps.check.outputs.exists == 'false'
         uses: actions/github-script@v7
         with:
           script: |
@@ -621,13 +693,16 @@ jobs:
             const imageTag = '${{ steps.prep.outputs.tag }}';
             const backendImage = `ghcr.io/${{ github.repository }}/backend:${imageTag}`;
             const frontendImage = `ghcr.io/${{ github.repository }}/frontend:${imageTag}`;
+            const usingReservedIp = '${{ steps.ip.outputs.using_reserved_ip }}' === 'true';
 
-            const comment = `## ✅ Dev Environment provisioned for PR #${prNumber}
+            let comment;
+            if (usingReservedIp) {
+              comment = `## ✅ Dev Environment provisioned for PR #${prNumber}
 
             **⚠️ This droplet will auto-destroy when the PR is closed or merged**
 
             **Droplet Information:**
-            - **Name:** \`tronrelic-dev\`
+            - **Name:** \`tronrelic-main-pr-${prNumber}\`
             - **Domain:** \`${domain}\`
             - **Reserved IP:** \`${dropletIp}\`
             - **Lifespan:** Until PR #${prNumber} is closed/merged
@@ -661,6 +736,45 @@ jobs:
             - Traffic routed through Nginx reverse proxy (identical to production)
             - Containers may take 1-2 minutes to fully initialize
             `;
+            } else {
+              comment = `## ✅ Dev Environment provisioned for PR #${prNumber}
+
+            **⚠️ Using dynamic IP (reserved IP in use by another PR)**
+            **⚠️ This droplet will auto-destroy when the PR is closed or merged**
+
+            **Droplet Information:**
+            - **Name:** \`tronrelic-main-pr-${prNumber}\`
+            - **Dynamic IP:** \`${dropletIp}\`
+            - **Lifespan:** Until PR #${prNumber} is closed/merged
+
+            **Docker Images:**
+            - **Backend:** \`${backendImage}\`
+            - **Frontend:** \`${frontendImage}\`
+
+            **SSH Access:**
+            \`\`\`bash
+            ssh root@${dropletIp}
+            \`\`\`
+
+            **Setup Status:**
+            - ✅ Ubuntu 25.04 droplet created
+            - ⚠️ Using dynamic IP (no domain, no SSL)
+            - ✅ Docker and docker-compose installed
+            - ✅ Deployment directory created (\`/opt/tronrelic\`)
+            - ✅ Docker images pulled and containers started
+            - ✅ Health checks passed
+
+            **Access Application:**
+            - **Frontend:** http://${dropletIp}:3000
+            - **Backend API:** http://${dropletIp}:4000/api
+            - **System Monitor:** http://${dropletIp}:3000/system
+
+            **Note:**
+            - Direct port access (no nginx reverse proxy)
+            - HTTP only (no SSL certificate)
+            - Containers may take 1-2 minutes to fully initialize
+            `;
+            }
 
             await github.rest.issues.createComment({
               owner: context.repo.owner,

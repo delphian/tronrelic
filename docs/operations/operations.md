@@ -47,20 +47,20 @@ TronRelic maintains **four distinct environment types** with different automatio
 ├── Trigger: Push to 'dev' builds images → Manual deployment with ./scripts/droplet-update.sh dev
 └── Lifespan: Permanent (until manually destroyed)
 
-3. Ephemeral Dev Testing (dev.tronrelic.com) - FULLY AUTOMATED
-├── Domain: dev.tronrelic.com (uses reserved IP)
-├── Server: Temporary droplet created on every dev push (tronrelic-dev-{sha})
+3. Main-PR Environments - FULLY AUTOMATED
+├── Domain: dev.tronrelic.com (opportunistic - uses reserved IP if available)
+├── Server: Temporary droplet per PR to main (tronrelic-main-pr-{number})
 ├── Deployment: /opt/tronrelic
-├── Docker Images: ghcr.io/delphian/tronrelic/*:dev-{sha} (built from dev branch)
+├── Docker Images: ghcr.io/delphian/tronrelic/*:dev-{sha} (built from PR branch)
 ├── ENV Variable: ENV=development
-├── Trigger: AUTOMATIC - Every push/merge to 'dev' branch
-├── Provisioning: Full stack (Nginx + Let's Encrypt SSL + Docker containers)
-├── Lifespan: 30 minutes (auto-destroys via scheduled workflow every 15 minutes)
-└── Workflow: .github/workflows/dev-environment.yml
+├── Trigger: AUTOMATIC - Opening PR to 'main' branch
+├── Provisioning: Full stack with Nginx + SSL if reserved IP available, otherwise direct IP access
+├── Lifespan: Persists until PR is closed/merged
+└── Workflow: .github/workflows/main-pr-environment.yml
 
-4. PR Testing Environments - FULLY AUTOMATED
+4. Dev-PR Environments - FULLY AUTOMATED
 ├── Domain: Direct IP access (no domain)
-├── Server: Temporary droplet per PR (tronrelic-pr-{number})
+├── Server: Temporary droplet per PR to dev (tronrelic-dev-pr-{number})
 ├── Deployment: /opt/tronrelic
 ├── Docker Images: ghcr.io/delphian/tronrelic/*:pr-{branch}-{sha}
 ├── ENV Variable: ENV=development
@@ -68,7 +68,7 @@ TronRelic maintains **four distinct environment types** with different automatio
 ├── Trigger: AUTOMATIC - Opening PR to 'dev' branch
 ├── Updates: Automatically redeploys on every push to PR branch
 ├── Lifespan: Persists until PR is closed/merged
-└── Workflow: .github/workflows/pr-environment.yml
+└── Workflow: .github/workflows/dev-pr-environment.yml
 ```
 
 **Key architectural decisions:**
@@ -86,20 +86,21 @@ TronRelic maintains **four distinct environment types** with different automatio
 |-------------|--------------|----------------|------------|----------|------------|
 | **Production** | Manual script | Automatic (push to main) | Manual script | Manual | ~$24 (always on) |
 | **Permanent Dev** | Manual script | Automatic (push to dev) | Manual script | Manual | ~$24 (always on) |
-| **Ephemeral Dev Testing** | **Automatic** | **Automatic** | **Automatic** | **Automatic** (30 min) | ~$5 (10 pushes/day) |
-| **PR Environments** | **Automatic** | **Automatic** | **Automatic** | **Automatic** (PR close) | ~$24/PR (if left open for month) |
+| **Main-PR** | **Automatic** | **Automatic** | **Automatic** | **Automatic** (PR close) | ~$24/PR (if left open for month) |
+| **Dev-PR** | **Automatic** | **Automatic** | **Automatic** | **Automatic** (PR close) | ~$24/PR (if left open for month) |
 
-**When pushing to dev branch:**
+**When opening PR to main:**
 1. GitHub Actions builds `:dev-{sha}` images
-2. GitHub Actions provisions new temporary droplet with Nginx + SSL
-3. GitHub Actions deploys containers automatically
-4. Droplet auto-destroys after 30 minutes
-5. Reserved IP released for next push
+2. GitHub Actions provisions droplet (`tronrelic-main-pr-{number}`)
+3. If reserved IP available: assigns IP, configures Nginx + SSL
+4. If reserved IP in use: uses dynamic IP, direct port access
+5. Subsequent pushes update same droplet
+6. Droplet destroys when PR closes/merges
 
 **When opening PR to dev:**
 1. GitHub Actions builds `:pr-{branch}-{sha}` images
-2. GitHub Actions provisions droplet (if doesn't exist)
-3. GitHub Actions deploys containers automatically
+2. GitHub Actions provisions droplet (`tronrelic-dev-pr-{number}`)
+3. Uses dynamic IP with direct port access
 4. Subsequent pushes update same droplet
 5. Droplet destroys when PR closes/merges
 
@@ -144,8 +145,8 @@ This directory contains comprehensive documentation covering different aspects o
 |-------------|--------|------------|------------------|-----------|--------------|----------|
 | **Production** | tronrelic.com | <PROD_DROPLET_IP> | /opt/tronrelic | :production | ENV=production | Permanent |
 | **Permanent Dev** | dev.tronrelic.com (optional) | <DEV_DROPLET_IP> | /opt/tronrelic | :production | ENV=development | Permanent |
-| **Ephemeral Dev Testing** | dev.tronrelic.com | Reserved IP (see GitHub Actions) | /opt/tronrelic | :dev-{sha} | ENV=development | 30 minutes |
-| **PR Environments** | Direct IP only | See PR comment | /opt/tronrelic | :pr-{branch}-{sha} | ENV=development | Until PR closed |
+| **Main-PR** | dev.tronrelic.com (if reserved IP available) | Reserved IP or dynamic | /opt/tronrelic | :dev-{sha} | ENV=development | Until PR closed |
+| **Dev-PR** | Direct IP only | See PR comment | /opt/tronrelic | :pr-{branch}-{sha} | ENV=development | Until PR closed |
 
 **Note:** The same domain `dev.tronrelic.com` can point to either:
 - Permanent dev server (static droplet IP, manual deployment)
@@ -259,40 +260,43 @@ TronRelic uses GitHub Actions with **three distinct workflow types**:
 - Eliminates :development vs :production tag confusion
 - See [operations-docker.md](../system/operations-docker.md) for complete Docker standards
 
-### 2. Ephemeral Dev Testing (Fully Automated)
+### 2. Main-PR Environments (Fully Automated)
 
 **Workflow files:**
-- `.github/workflows/dev-environment.yml` - Provisions testing droplet
-- `.github/workflows/dev-environment-teardown.yml` - Scheduled cleanup (every 15 minutes)
+- `.github/workflows/main-pr-environment.yml` - Provisions/updates Main-PR droplet
+- `.github/workflows/main-pr-teardown.yml` - Cleanup on PR close
 
-**Trigger:** Push or merge to `dev` branch
+**Trigger:** Opening PR to `main` branch
 
 **Pipeline behavior:**
-1. Builds `:dev-{sha}` images from dev branch code
-2. Destroys previous testing droplet (if exists)
-3. Creates new temporary droplet
-4. Installs Docker, Nginx, Let's Encrypt SSL
-5. Deploys containers automatically
-6. Auto-destroys after 30 minutes
+1. Builds `:dev-{sha}` images from PR branch code
+2. Creates droplet `tronrelic-main-pr-{number}` (if doesn't exist)
+3. Opportunistically assigns reserved IP if available
+4. If reserved IP available: Installs Nginx + SSL, uses dev.tronrelic.com domain
+5. If reserved IP in use: Uses dynamic IP with direct port access
+6. Deploys containers automatically
+7. Updates on every push to PR branch
+8. Auto-destroys when PR closes/merges
 
-**Access:** Check GitHub Actions workflow summary for domain and IP
+**Access:** Check PR comment for domain (with SSL) or direct IP URLs
 
-**No manual deployment needed** - Fully automated from push to teardown
+**No manual deployment needed** - Fully automated, multiple PRs supported
 
-### 3. PR Testing Environments (Fully Automated)
+### 3. Dev-PR Environments (Fully Automated)
 
 **Workflow files:**
-- `.github/workflows/pr-environment.yml` - Provisions/updates PR droplet
-- `.github/workflows/pr-environment-teardown.yml` - Cleanup on PR close
+- `.github/workflows/dev-pr-environment.yml` - Provisions/updates Dev-PR droplet
+- `.github/workflows/dev-pr-teardown.yml` - Cleanup on PR close
 
 **Trigger:** Opening PR to `dev` branch
 
 **Pipeline behavior:**
 1. Builds `:pr-{branch}-{sha}` images from PR branch code
-2. Creates droplet (if doesn't exist) or updates existing
-3. Deploys containers automatically
-4. Updates on every push to PR branch
-5. Auto-destroys when PR closes/merges
+2. Creates droplet `tronrelic-dev-pr-{number}` (if doesn't exist)
+3. Uses dynamic IP with direct port access
+4. Deploys containers automatically
+5. Updates on every push to PR branch
+6. Auto-destroys when PR closes/merges
 
 **Access:** Direct IP (see PR comment for URLs)
 
