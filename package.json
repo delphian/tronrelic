@@ -3,6 +3,10 @@
   "private": true,
   "version": "0.1.0",
   "description": "Next-generation TronRelic platform monorepo implementing SPEC.md architecture.",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/delphian/tronrelic.git"
+  },
   "workspaces": [
     "apps/*",
     "packages/*",
