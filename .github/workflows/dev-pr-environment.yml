@@ -1,4 +1,4 @@
-name: PR Environment
+name: Dev-PR Environment
 
 on:
   pull_request:
@@ -98,7 +98,7 @@ jobs:
       - name: Check if droplet already exists
         id: check
         run: |
-          DROPLET_NAME="tronrelic-pr-${{ github.event.pull_request.number }}"
+          DROPLET_NAME="tronrelic-dev-pr-${{ github.event.pull_request.number }}"
 
           if doctl compute droplet list --format Name --no-header | grep -q "^${DROPLET_NAME}$"; then
             echo "exists=true" >> $GITHUB_OUTPUT
@@ -112,7 +112,7 @@ jobs:
         if: steps.check.outputs.exists == 'false'
         id: create
         run: |
-          DROPLET_NAME="tronrelic-pr-${{ github.event.pull_request.number }}"
+          DROPLET_NAME="tronrelic-dev-pr-${{ github.event.pull_request.number }}"
 
           echo "Creating droplet: $DROPLET_NAME"
 
@@ -131,7 +131,7 @@ jobs:
         if: steps.check.outputs.exists == 'false'
         id: ip
         run: |
-          DROPLET_NAME="tronrelic-pr-${{ github.event.pull_request.number }}"
+          DROPLET_NAME="tronrelic-dev-pr-${{ github.event.pull_request.number }}"
 
           # Wait a moment for droplet to be fully ready
           sleep 10
@@ -394,7 +394,7 @@ jobs:
             const comment = `## ✅ Environment provisioned for PR #${prNumber}
 
             **Droplet Information:**
-            - **Name:** \`tronrelic-pr-${prNumber}\`
+            - **Name:** \`tronrelic-dev-pr-${prNumber}\`
             - **IP Address:** \`${dropletIp}\`
             - **Expected DNS:** \`pr-${prNumber}.dev.tronrelic.com\`
 
@@ -433,7 +433,7 @@ jobs:
         if: steps.check.outputs.exists == 'true'
         id: existing_ip
         run: |
-          DROPLET_NAME="tronrelic-pr-${{ github.event.pull_request.number }}"
+          DROPLET_NAME="tronrelic-dev-pr-${{ github.event.pull_request.number }}"
 
           DROPLET_IP=$(doctl compute droplet list \
             --format Name,PublicIPv4 \
