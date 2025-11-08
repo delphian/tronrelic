@@ -1,6 +1,6 @@
 # TronRelic
 
-Real-time TRON blockchain monitoring and whale activity tracking.
+Open-source platform for TRON on-chain research and analytics. Monitor blockchain activity, track whale movements, compare energy markets, and explore the chain with extensible plugins.
 
 ## Quick Start
 
