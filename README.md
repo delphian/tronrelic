@@ -429,4 +429,12 @@ npx playwright test tests/system.spec.ts
 
 ## License
 
-MIT
+This project is licensed under the **GNU Affero General Public License v3.0 or later (AGPL-3.0-or-later)** with a plugin exception.
+
+- **TronRelic core:** AGPL-3.0 (you must share modifications if running as a network service)
+- **Third-party plugins:** Your choice (plugin exception allows proprietary plugins)
+- **Contributors:** Must sign CLA (see [CONTRIBUTING.md](CONTRIBUTING.md))
+
+The CLA's relicensing clause lets the maintainers dual-license or offer commercial terms without renegotiating with every past contributor, keeping hosted and self-managed editions aligned.
+
+See [LICENSE](LICENSE) for full details and plugin exception terms.

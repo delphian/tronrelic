@@ -385,4 +385,6 @@ npm run dev --workspace apps/frontend
 
 ## License
 
-MIT
+This plugin is part of TronRelic and licensed under AGPL-3.0-or-later.
+
+If you extract and use this plugin independently, you may license it under the plugin exception terms (see main [LICENSE](../../../LICENSE)).
