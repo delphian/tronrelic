@@ -24,7 +24,7 @@ Following these patterns ensures your work integrates seamlessly and remains mai
 TronRelic organizes frontend code by feature, not by file type. Each feature module contains all related components, state management, hooks, and API calls in a single directory:
 
 ```
-features/markets/
+features/accounts/
 ├── components/          # React components for this feature
 ├── hooks/              # Feature-specific hooks
 ├── api/                # API client functions
@@ -132,28 +132,28 @@ Reserve viewport media queries (`@media`) exclusively for global layout changes 
 Every feature exports its public API through `index.ts`:
 
 ```typescript
-// features/markets/index.ts
+// features/accounts/index.ts
 
 // Components
-export { MarketDashboard } from './components/MarketDashboard';
-export { MarketTable } from './components/MarketTable';
+export { AccountSummary } from './components/AccountSummary';
+export { BookmarkPanel } from './components/BookmarkPanel';
 
 // Redux slice
-export { default as marketReducer } from './slice';
+export { default as walletReducer } from './slice';
 export * from './slice';
 
 // Hooks
-export { useMarketData } from './hooks/useMarketData';
+export { useWallet } from './hooks/useWallet';
 ```
 
 Import from the feature root, not individual files:
 
 ```typescript
 // Good
-import { MarketDashboard, MarketTable } from '../../../features/markets';
+import { AccountSummary, BookmarkPanel } from '../../../features/accounts';
 
 // Bad - bypasses public API
-import { MarketTable } from '../../../features/markets/components/MarketTable';
+import { BookmarkPanel } from '../../../features/accounts/components/BookmarkPanel';
 ```
 
 ## Available Features
@@ -163,7 +163,6 @@ import { MarketTable } from '../../../features/markets/components/MarketTable';
 | Feature | Purpose | Key Components |
 |---------|---------|----------------|
 | **accounts** | Account management, wallet tracking, bookmarks | AccountSummary, BookmarkPanel, useWallet |
-| **markets** | Energy market comparison and pricing | MarketDashboard, MarketTable, PriceCalculator |
 | **transactions** | Transaction feed, details, filtering | TransactionFeed, TransactionDetails, TransactionFilter |
 | **whales** | Whale transaction tracking and analytics | WhaleDashboard |
 | **blockchain** | Blockchain sync status and network metrics | (state only) |

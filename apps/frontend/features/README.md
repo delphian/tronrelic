@@ -40,16 +40,13 @@ features/
 
 - **accounts** - Account management, wallet tracking, and bookmarks
 - **blockchain** - Blockchain sync status and network metrics
-- **markets** - Energy market comparison and pricing
 - **transactions** - Transaction feed, details, and filtering
 - **whales** - Whale transaction tracking and analytics
 
 ### Supporting Features
 
 - **charts** - Reusable chart components (shared across features)
-- **comments** - User comments and discussions
 - **system** - System monitoring and administration
-- **chat** - Real-time chat functionality
 - **realtime** - WebSocket connection and real-time data sync
 - **ui-state** - Global UI state (modals, toasts, loading states)
 
@@ -59,8 +56,8 @@ features/
 
 ```typescript
 // Import from feature index (recommended)
-import { MarketDashboard, MarketTable } from '../../../features/markets';
 import { AccountSummary, BookmarkPanel } from '../../../features/accounts';
+import { TransactionFeed } from '../../../features/transactions';
 
 // Import specific components (when needed)
 import { LineChart } from '../../../features/charts/components/LineChart';
@@ -85,9 +82,9 @@ import { getMarketHistory } from '../../../lib/api';
 
 ```typescript
 // Import reducers from feature modules
-import { marketReducer } from '../features/markets';
 import { walletReducer, bookmarkReducer } from '../features/accounts';
 import { transactionReducer } from '../features/transactions';
+import { blockchainReducer } from '../features/blockchain';
 ```
 
 ## Creating a New Feature
@@ -181,8 +178,7 @@ The `components/` directory now contains **only** truly shared components:
 
 The old structure had:
 - `components/accounts/` → Now `features/accounts/components/`
-- `components/markets/` → Now `features/markets/components/`
-- `store/slices/marketSlice.ts` → Now `features/markets/slice.ts`
+- `store/slices/walletSlice.ts` → Now `features/accounts/slice.ts`
 - `hooks/useWallet.ts` → Now `features/accounts/hooks/useWallet.ts`
 
 All imports have been updated to use the new feature-based structure.
@@ -202,10 +198,10 @@ All imports have been updated to use the new feature-based structure.
 Test files should be colocated with the code they test:
 
 ```
-features/markets/
+features/accounts/
 ├── components/
-│   ├── MarketTable.tsx
-│   └── MarketTable.test.tsx
+│   ├── AccountSummary.tsx
+│   └── AccountSummary.test.tsx
 ├── slice.ts
 └── slice.test.ts
 ```
