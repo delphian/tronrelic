@@ -1,4 +1,4 @@
-name: Teardown Dev Environment
+name: Teardown Main-PR Environment
 
 on:
   pull_request:
@@ -23,7 +23,7 @@ jobs:
       - name: Check if dev droplet exists
         id: check
         run: |
-          DROPLET_NAME="tronrelic-dev"
+          DROPLET_NAME="tronrelic-main-pr-${{ github.event.pull_request.number }}"
 
           if doctl compute droplet list --format Name --no-header | grep -q "^${DROPLET_NAME}$"; then
             echo "exists=true" >> $GITHUB_OUTPUT
@@ -33,10 +33,10 @@ jobs:
             echo "⚠️ Droplet $DROPLET_NAME not found, nothing to destroy"
           fi
 
-      - name: Unassign reserved IP and destroy droplet
+      - name: Destroy droplet and unassign reserved IP if attached
         if: steps.check.outputs.exists == 'true'
         run: |
-          DROPLET_NAME="tronrelic-dev"
+          DROPLET_NAME="tronrelic-main-pr-${{ github.event.pull_request.number }}"
           RESERVED_IP="${{ secrets.DO_DEV_IP }}"
 
           # Get droplet ID
@@ -49,18 +49,18 @@ jobs:
 
           echo "Found droplet ID: $DROPLET_ID"
 
-          # Check if reserved IP is attached
+          # Check if reserved IP is attached to THIS droplet
           ATTACHED_DROPLET_ID=$(doctl compute floating-ip get "$RESERVED_IP" --format DropletID --no-header 2>/dev/null || echo "")
 
           if [ "$ATTACHED_DROPLET_ID" = "$DROPLET_ID" ]; then
             echo "📌 Unassigning reserved IP $RESERVED_IP from droplet..."
             if doctl compute floating-ip-action unassign "$RESERVED_IP" --wait 2>/dev/null; then
-              echo "✅ Reserved IP unassigned"
+              echo "✅ Reserved IP unassigned and available for next PR"
             else
               echo "⚠️ Failed to unassign reserved IP (may already be unassigned)"
             fi
           else
-            echo "ℹ️ Reserved IP not attached to this droplet, skipping unassignment"
+            echo "ℹ️ Reserved IP not attached to this droplet (was using dynamic IP)"
           fi
 
           echo "Destroying droplet: $DROPLET_NAME"
@@ -77,7 +77,7 @@ jobs:
 
             const comment = `## 🗑️ Dev Environment destroyed for PR #${prNumber}
 
-            Droplet \`tronrelic-dev\` has been successfully deleted and reserved IP released.
+            Droplet \`tronrelic-main-pr-${prNumber}\` has been successfully deleted and reserved IP released.
             `;
 
             await github.rest.issues.createComment({
@@ -96,7 +96,7 @@ jobs:
 
             const comment = `## ⚠️ No dev environment found for PR #${prNumber}
 
-            Droplet \`tronrelic-dev\` does not exist. It may have been manually deleted or never created.
+            Droplet \`tronrelic-main-pr-${prNumber}\` does not exist. It may have been manually deleted or never created.
             `;
 
             await github.rest.issues.createComment({

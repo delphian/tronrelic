@@ -1,4 +1,4 @@
-name: Teardown PR Environment
+name: Teardown Dev-PR Environment
 
 on:
   pull_request:
@@ -22,7 +22,7 @@ jobs:
       - name: Check if droplet exists
         id: check
         run: |
-          DROPLET_NAME="tronrelic-pr-${{ github.event.pull_request.number }}"
+          DROPLET_NAME="tronrelic-dev-pr-${{ github.event.pull_request.number }}"
 
           if doctl compute droplet list --format Name --no-header | grep -q "^${DROPLET_NAME}$"; then
             echo "exists=true" >> $GITHUB_OUTPUT
@@ -35,7 +35,7 @@ jobs:
       - name: Destroy droplet
         if: steps.check.outputs.exists == 'true'
         run: |
-          DROPLET_NAME="tronrelic-pr-${{ github.event.pull_request.number }}"
+          DROPLET_NAME="tronrelic-dev-pr-${{ github.event.pull_request.number }}"
 
           echo "Destroying droplet: $DROPLET_NAME"
 
@@ -52,7 +52,7 @@ jobs:
 
             const comment = `## 🗑️ Environment destroyed for PR #${prNumber}
 
-            Droplet \`tronrelic-pr-${prNumber}\` has been successfully deleted.
+            Droplet \`tronrelic-dev-pr-${prNumber}\` has been successfully deleted.
             `;
 
             await github.rest.issues.createComment({
@@ -71,7 +71,7 @@ jobs:
 
             const comment = `## ⚠️ No environment found for PR #${prNumber}
 
-            Droplet \`tronrelic-pr-${prNumber}\` does not exist. It may have been manually deleted or never created.
+            Droplet \`tronrelic-dev-pr-${prNumber}\` does not exist. It may have been manually deleted or never created.
             `;
 
             await github.rest.issues.createComment({
