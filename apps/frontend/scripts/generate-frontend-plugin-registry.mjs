@@ -24,6 +24,15 @@ async function discoverPluginDirectories() {
         }
 
         const directory = join(pluginsRoot, entry.name);
+
+        // Skip plugins that don't exist (e.g., private submodules not initialized)
+        try {
+            await fs.access(directory);
+        } catch {
+            console.log(`⏭️  Skipping ${entry.name} (directory not found - may be uninitialized submodule)`);
+            continue;
+        }
+
         try {
             await fs.access(join(directory, 'src', 'frontend', 'frontend.ts'));
             directories.push(directory);

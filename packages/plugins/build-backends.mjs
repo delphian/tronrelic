@@ -69,6 +69,13 @@ async function discoverBackendPlugins() {
         }
 
         const pluginDir = join(pluginsRoot, entry.name);
+
+        // Skip plugins that don't exist (e.g., private submodules not initialized)
+        if (!(await pathExists(pluginDir))) {
+            console.log(`⏭️  Skipping ${entry.name} (directory not found - may be uninitialized submodule)`);
+            continue;
+        }
+
         const packageJsonPath = join(pluginDir, 'package.json');
 
         if (!(await pathExists(packageJsonPath))) {

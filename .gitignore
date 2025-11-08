@@ -109,6 +109,7 @@ preparing-pets-*.zip
 
 # Claude/AI context
 # .claude/  # Uncommented to allow Claude Code configuration in repo
+CLAUDE.local.md
 ai-context/
 .ai/
 

@@ -107,6 +107,20 @@ npm run docker:clean          # Remove containers and volumes
 - **Docker** (for MongoDB and Redis containers)
 - **TronGrid API Keys** (3 recommended for rate limit distribution)
 
+## Private Plugins (Optional)
+
+Some plugins are maintained in private repositories. To include them:
+
+```bash
+# Initialize private submodules (requires access credentials)
+git submodule update --init packages/plugins/resource-markets
+
+# Or clone with all submodules
+git clone --recurse-submodules <repo-url>
+```
+
+If you don't have access, the monorepo will build and run without these plugins. Build scripts automatically skip uninitialized submodules with a log message.
+
 ## Configuration
 
 ### Security Checklist
