@@ -130,6 +130,51 @@ export interface IPageService {
      */
     invalidatePageCache(page: IPage): Promise<void>;
 
+    /**
+     * Preview markdown content without saving it to the database.
+     *
+     * Parses frontmatter and renders markdown body to HTML. Does not cache the result.
+     * Useful for live preview in the page editor before saving.
+     *
+     * @param content - Raw markdown content including frontmatter block
+     * @returns Promise resolving to object with rendered HTML and extracted metadata
+     */
+    previewMarkdown(content: string): Promise<{
+        html: string;
+        metadata: {
+            title?: string;
+            description?: string;
+            keywords?: string[];
+            ogImage?: string;
+        };
+    }>;
+
+    /**
+     * Render a published page by slug for public consumption.
+     *
+     * Optimized for public endpoints with two-layer caching strategy:
+     * 1. Check Redis cache for full response (fastest path)
+     * 2. If cache miss, fetch from database and verify published status
+     * 3. Render markdown to HTML
+     * 4. Cache full response for future requests
+     *
+     * Only returns pages that are marked as published. Returns null for:
+     * - Non-existent slugs
+     * - Unpublished pages (drafts)
+     *
+     * @param slug - Page slug to render
+     * @returns Promise resolving to rendered HTML and metadata, or null if not found/unpublished
+     */
+    renderPublicPageBySlug(slug: string): Promise<{
+        html: string;
+        metadata: {
+            title: string;
+            description?: string;
+            keywords?: string[];
+            ogImage?: string;
+        };
+    } | null>;
+
     // ============================================================================
     // File Management
     // ============================================================================

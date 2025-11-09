@@ -64,23 +64,9 @@ export function PageEditor({ token, page, onSave, onCancel }: PageEditorProps) {
     const [preview, setPreview] = useState('');
     const [showPreview, setShowPreview] = useState(false);
     const [saving, setSaving] = useState(false);
+    const [loadingPreview, setLoadingPreview] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    /**
-     * Fetch preview HTML from backend.
-     *
-     * Creates a temporary page object and requests rendered HTML from the
-     * markdown service. Updates preview state for display.
-     */
-    const fetchPreview = async () => {
-        try {
-            // For preview, we need to create a temporary page object
-            // and use the markdown service directly or add a preview endpoint
-            setPreview('<p>Preview coming soon...</p>');
-        } catch (err) {
-            setError(err instanceof Error ? err.message : 'Failed to generate preview');
-        }
-    };
 
     /**
      * Save page (create or update).
@@ -124,12 +110,40 @@ export function PageEditor({ token, page, onSave, onCancel }: PageEditorProps) {
         }
     };
 
-    // Load preview when showing preview pane
+    // Load preview when showing preview pane or content changes (debounced)
     useEffect(() => {
-        if (showPreview) {
-            void fetchPreview();
-        }
-    }, [showPreview, content]);
+        if (!showPreview) return;
+
+        // Debounce preview updates to avoid excessive API calls
+        const timeoutId = setTimeout(async () => {
+            setLoadingPreview(true);
+            try {
+                const response = await fetch('/api/admin/pages/preview', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'x-admin-token': token
+                    },
+                    body: JSON.stringify({ content })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`Failed to generate preview: ${response.statusText}`);
+                }
+
+                const data = await response.json();
+                setPreview(data.html);
+                setError(null);
+            } catch (err) {
+                setError(err instanceof Error ? err.message : 'Failed to generate preview');
+                setPreview('<p class="error">Failed to generate preview</p>');
+            } finally {
+                setLoadingPreview(false);
+            }
+        }, 500); // Wait 500ms after user stops typing
+
+        return () => clearTimeout(timeoutId);
+    }, [showPreview, content, token]);
 
     return (
         <div className={styles.editor}>
@@ -195,10 +209,16 @@ export function PageEditor({ token, page, onSave, onCancel }: PageEditorProps) {
                 {showPreview && (
                     <Card padding="md" className={styles.pane}>
                         <h3 className={styles.pane_title}>Preview</h3>
-                        <div
-                            className={styles.preview}
-                            dangerouslySetInnerHTML={{ __html: preview }}
-                        />
+                        {loadingPreview ? (
+                            <div className={styles.preview}>
+                                <p style={{ color: 'var(--color-text-muted)' }}>Loading preview...</p>
+                            </div>
+                        ) : (
+                            <div
+                                className={styles.preview}
+                                dangerouslySetInnerHTML={{ __html: preview }}
+                            />
+                        )}
                     </Card>
                 )}
             </div>

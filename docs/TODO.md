@@ -40,3 +40,36 @@ Energy market insights would serve users looking for cost-effective TRON resourc
 - `apps/frontend/app/primitives.css` - Current breakpoint token definitions
 - `apps/frontend/app/globals.css` - Documents CSS variable limitations
 - Component CSS Modules using hardcoded breakpoints (e.g., `RecentWhaleDelegations.module.css`)
+
+## Review Unused API URL Helper Functions
+
+**Context:** The `getClientSideApiUrlWithPath()` and potentially `getClientSideApiUrl()` helper functions exist in `apps/frontend/lib/api-url.ts` but have zero usage across the entire frontend codebase. All client-side API calls use hardcoded `/api` paths that rely on Next.js rewrites (configured in `next.config.mjs`) to route requests to the backend.
+
+**Current pattern (used throughout codebase):**
+```typescript
+// Hardcoded /api path - Next.js rewrites handle environment routing
+fetch('/api/admin/pages', { ... })
+```
+
+**Unused helper pattern:**
+```typescript
+// Helper exists but is never used
+const apiUrl = getClientSideApiUrlWithPath();
+fetch(`${apiUrl}/admin/pages`, { ... })
+```
+
+**Questions to investigate:**
+1. Should we standardize on the helper function pattern for explicitness?
+2. Should we remove the unused helper functions to reduce maintenance burden?
+3. Are there edge cases where hardcoded `/api` paths fail that the helpers would prevent?
+4. Does the rewrite approach have performance implications vs explicit URL construction?
+
+**Recommendation needed on:**
+- Keep helpers and migrate all calls to use them (consistency via helpers)
+- Remove helpers and document rewrite pattern as standard (consistency via rewrites)
+- Keep both patterns for flexibility (current state, but inconsistent)
+
+**Related files:**
+- `apps/frontend/lib/api-url.ts` - Helper function definitions
+- `apps/frontend/next.config.mjs` - Next.js rewrite rules
+- `apps/frontend/app/(dashboard)/system/pages/**/*.tsx` - Example hardcoded usage

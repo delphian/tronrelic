@@ -380,12 +380,116 @@ export class PageService implements IPageService {
      * Invalidate cached HTML for a page.
      *
      * Called automatically when a page is updated or deleted.
+     * Clears both HTML-only cache and full render cache.
      *
      * @param page - Page whose cache should be invalidated
      * @returns Promise resolving when cache cleared
      */
     async invalidatePageCache(page: IPage): Promise<void> {
-        await this.markdownService.invalidateCache(page.slug);
+        await this.markdownService.invalidateAllCaches(page.slug);
+    }
+
+    /**
+     * Preview markdown content without saving it to the database.
+     *
+     * Parses frontmatter and renders markdown body to HTML. Does not cache the result.
+     * Useful for live preview in the page editor before saving.
+     *
+     * @param content - Raw markdown content including frontmatter block
+     * @returns Promise resolving to object with rendered HTML and extracted metadata
+     */
+    async previewMarkdown(
+        content: string
+    ): Promise<{
+        html: string;
+        metadata: {
+            title?: string;
+            description?: string;
+            keywords?: string[];
+            ogImage?: string;
+        };
+    }> {
+        // Parse frontmatter to extract metadata
+        const { frontmatter, body } = this.markdownService.parseMarkdown(content);
+
+        // Render markdown body to HTML (without caching)
+        const html = await this.markdownService.renderMarkdown(body);
+
+        return {
+            html,
+            metadata: {
+                title: frontmatter.title,
+                description: frontmatter.description,
+                keywords: frontmatter.keywords,
+                ogImage: frontmatter.ogImage,
+            },
+        };
+    }
+
+    /**
+     * Render a public page by slug with optimized caching.
+     *
+     * This is an optimized version of the render flow that checks Redis cache
+     * BEFORE querying MongoDB. On cache hit, both database query and markdown
+     * rendering are skipped, providing maximum performance.
+     *
+     * Cache miss flow:
+     * 1. Query MongoDB for page by slug
+     * 2. Verify page exists and is published
+     * 3. Parse markdown and render to HTML
+     * 4. Cache full response (HTML + metadata)
+     * 5. Return response
+     *
+     * Cache hit flow:
+     * 1. Return cached response (HTML + metadata)
+     *
+     * @param slug - Page slug to render
+     * @returns Promise resolving to rendered HTML and metadata, or null if not found/unpublished
+     */
+    async renderPublicPageBySlug(slug: string): Promise<{
+        html: string;
+        metadata: {
+            title: string;
+            description?: string;
+            keywords?: string[];
+            ogImage?: string;
+        };
+    } | null> {
+        // Check cache first - avoids database query on cache hit
+        const cached = await this.markdownService.getCachedRender(slug);
+        if (cached) {
+            return cached;
+        }
+
+        // Cache miss - fetch from database
+        const page = await this.getPageBySlug(slug);
+
+        // Verify page exists and is published
+        if (!page || !page.published) {
+            return null;
+        }
+
+        // Parse markdown to extract body (without frontmatter)
+        const { body } = this.markdownService.parseMarkdown(page.content);
+
+        // Render markdown to HTML
+        const html = await this.markdownService.renderMarkdown(body);
+
+        // Build response object
+        const response = {
+            html,
+            metadata: {
+                title: page.title,
+                description: page.description,
+                keywords: page.keywords,
+                ogImage: page.ogImage || undefined,
+            },
+        };
+
+        // Cache full response for future requests
+        await this.markdownService.cacheRender(slug, html, response.metadata);
+
+        return response;
     }
 
     // ============================================================================

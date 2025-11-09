@@ -139,6 +139,14 @@
     font-size: var(--font-size-sm);
     font-family: 'Monaco', 'Courier New', monospace;
     color: var(--color-primary);
+    text-decoration: none;
+    transition: color var(--transition-base), text-decoration var(--transition-base);
+    cursor: pointer;
+}
+
+.page_slug:hover {
+    color: var(--color-secondary);
+    text-decoration: underline;
 }
 
 .page_description {
