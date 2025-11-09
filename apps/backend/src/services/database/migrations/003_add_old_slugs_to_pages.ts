@@ -27,7 +27,7 @@ import type { IMigration, IDatabaseService } from '@tronrelic/types';
  * ```
  *
  * **References:**
- * - See docs/system/system-pages.md for pages module architecture
+ * - See docs/system/system-modules-pages.md for pages module architecture
  */
 export const migration: IMigration = {
     id: '003_add_old_slugs_to_pages',

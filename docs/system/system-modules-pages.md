@@ -310,7 +310,7 @@ Your markdown content here...
 - Automatic on page deletion
 - Manual via `invalidateCache(slug)` method
 
-**Cache key pattern:** `pages:html:{slug}` (e.g., `pages:html:/docs/getting-started`)
+**Cache key pattern:** `page:html:{slug}` (e.g., `page:html:/docs/getting-started`)
 
 ### PagesController (HTTP Interface)
 
@@ -322,6 +322,7 @@ PagesController exposes REST API endpoints for all CRUD operations. All admin en
 - `POST /api/admin/pages` - Create page from markdown with frontmatter
 - `PATCH /api/admin/pages/:id` - Update page content and metadata
 - `DELETE /api/admin/pages/:id` - Delete page and invalidate cache
+- `POST /api/admin/pages/preview` - Preview markdown content without saving (live editor preview)
 - `GET /api/admin/pages/files` - List uploaded files with filtering
 - `POST /api/admin/pages/files` - Upload file (multipart/form-data with Multer)
 - `DELETE /api/admin/pages/files/:id` - Delete file from storage and database
@@ -329,8 +330,8 @@ PagesController exposes REST API endpoints for all CRUD operations. All admin en
 - `PATCH /api/admin/pages/settings` - Update configuration
 
 **Public endpoints (no auth):**
-- `GET /api/pages/:slug` - Get published page metadata by slug (301 redirect if slug is old)
-- `GET /api/pages/:slug/render` - Get rendered HTML with SEO metadata (301 redirect if slug is old)
+- `GET /api/pages/:slug` - Get published page metadata by slug (returns page data with slug metadata for client-side redirect if slug is old)
+- `GET /api/pages/:slug/render` - Get rendered HTML with SEO metadata (returns page data with slug metadata for client-side redirect if slug is old)
 
 ### Automatic Redirect System
 
@@ -338,11 +339,11 @@ The pages module preserves redirect history when page URLs change, preventing 40
 
 **Redirect flow for visitors:**
 
-When a user visits a URL that doesn't match any current page slug, the system checks all pages' `oldSlugs` arrays for a match. If found and the page is published, the backend returns an HTTP 301 Permanent Redirect to the current slug. The frontend Next.js catch-all route detects the redirect, extracts the new slug from the `Location` header, and performs a server-side redirect using Next.js's `redirect()` function. This entire process happens during SSR before any HTML is sent to the browser, ensuring search engines see proper 301 redirects and transfer all SEO authority to the new URL.
+When a user visits a URL that doesn't match any current page slug, the system checks all pages' `oldSlugs` arrays for a match. If found and the page is published, the backend returns page data with both the current slug and the requested slug in the response body. The frontend Next.js catch-all route detects the slug mismatch, compares `requestedSlug` with `page.slug`, and performs a client-side redirect using Next.js's `redirect()` function. This entire process happens during SSR before any HTML is sent to the browser, ensuring search engines see proper 301 redirects (triggered by the frontend's redirect() call) and transfer all SEO authority to the new URL.
 
 **Example redirect scenario:**
 
-An admin creates a page at `/about` and later changes the slug to `/company/about` in the frontmatter. The system automatically adds `/about` to the `oldSlugs` array when saving the update. Users visiting `/about` now receive a 301 redirect to `/company/about`, and search engines update their indexes to use the new URL. If the admin later changes the slug again to `/company/team`, the `oldSlugs` array becomes `["/about", "/company/about"]`, preserving the complete redirect chain.
+An admin creates a page at `/about` and later changes the slug to `/company/about` in the frontmatter. The system automatically adds `/about` to the `oldSlugs` array when saving the update. Users visiting `/about` now receive page data where `requestedSlug` is `/about` and `page.slug` is `/company/about`. The frontend detects this mismatch and redirects to `/company/about`, and search engines update their indexes to use the new URL. If the admin later changes the slug again to `/company/team`, the `oldSlugs` array becomes `["/about", "/company/about"]`, preserving the complete redirect chain.
 
 **Conflict prevention:**
 
@@ -350,7 +351,7 @@ The validation system prevents all forms of slug conflicts to ensure redirects w
 
 **Performance characteristics:**
 
-The oldSlugs index enables sub-millisecond redirect lookups even with thousands of pages. The redirect check only runs when a slug doesn't match any current page, so the performance impact on normal page loads is zero. The frontend caches the redirect response following Next.js's revalidation rules (60 seconds by default), reducing backend queries for frequently accessed old URLs.
+The oldSlugs index enables sub-millisecond redirect lookups even with thousands of pages. The redirect check only runs when a slug doesn't match any current page, so the performance impact on normal page loads is zero. The client-side redirect happens during SSR (before HTML is sent to the browser), ensuring search engines see proper 301 status codes and the redirect process is transparent to users.
 
 **File upload validation:**
 
@@ -596,6 +597,29 @@ DELETE /api/admin/pages/:id
 Response: 204 No Content
 ```
 
+**Preview Markdown:**
+```
+POST /api/admin/pages/preview
+Content-Type: application/json
+
+{
+    "content": "---\ntitle: \"My Page\"\nslug: \"/test\"\n---\n# Test Content"
+}
+
+Response: {
+    html: string,
+    metadata: {
+        title: string,
+        slug: string,
+        oldSlugs: string[] | undefined,
+        description: string | undefined,
+        keywords: string[] | undefined,
+        published: boolean,
+        ogImage: string | undefined
+    }
+}
+```
+
 **List Files:**
 ```
 GET /api/admin/pages/files?mimeType=image/&limit=100&skip=0
@@ -646,11 +670,12 @@ Response: IPageSettings
 ```
 GET /api/pages/:slug
 
-Response: { page: IPage }
+Response: { page: IPage, requestedSlug: string }
 
 # If slug is in a page's oldSlugs array:
-Response: 301 Redirect
-Location: /api/pages/{current-slug}
+# Returns page data with current slug and requested slug for client-side redirect
+Response: { page: IPage, requestedSlug: string }
+# (Frontend compares page.slug with requestedSlug to trigger redirect)
 ```
 
 **Render Page HTML:**
@@ -664,12 +689,18 @@ Response: {
         description: string,
         keywords: string[],
         ogImage: string | undefined
-    }
+    },
+    requestedSlug: string
 }
 
 # If slug is in a page's oldSlugs array:
-Response: 301 Redirect
-Location: /api/pages/{current-slug}/render
+# Returns page data with current slug metadata for client-side redirect
+Response: {
+    html: string,
+    metadata: { title, description, keywords, ogImage },
+    requestedSlug: string
+}
+# (Frontend compares metadata slug with requestedSlug to trigger redirect)
 ```
 
 ## Usage Examples
@@ -802,8 +833,8 @@ Before deploying pages module features, verify:
 - [ ] Slug conflict validation prevents collisions with current slugs and oldSlugs arrays
 - [ ] Circular reference validation prevents slugs from appearing in their own oldSlugs
 - [ ] oldSlugs index exists in MongoDB for fast redirect lookups (migration `003_add_old_slugs_to_pages`)
-- [ ] Redirect responses return HTTP 301 status for old slugs
-- [ ] Frontend catch-all route handles redirects with Next.js `redirect()` function
+- [ ] Backend returns page data with both `currentSlug` and `requestedSlug` for old slug lookups
+- [ ] Frontend catch-all route compares slugs and triggers redirect with Next.js `redirect()` function
 - [ ] Rendered HTML cached in Redis with automatic invalidation on updates
 - [ ] File uploads validate size and extension against settings before storage
 - [ ] Public endpoints filter to `published: true` pages (drafts return 404)
@@ -913,14 +944,15 @@ Choose a different slug or remove the conflicting entry from oldSlugs before cha
 
 **Diagnosis:**
 ```bash
-curl -I http://localhost:4000/api/pages/old-url
-# Returns: 404 Not Found (expected: 301 Moved Permanently)
+curl http://localhost:4000/api/pages/old-url
+# Returns: 404 Not Found (expected: page data with slug metadata)
 ```
 
 **Common causes:**
 - Old slug not in any page's oldSlugs array (check database)
 - Target page is unpublished (redirects only work for published pages)
 - oldSlugs index missing (run migration `003_add_old_slugs_to_pages`)
+- Frontend not detecting slug mismatch (check requestedSlug vs page.slug comparison)
 
 **Resolution:**
 ```typescript
@@ -931,7 +963,8 @@ if (!page) {
 } else if (!page.published) {
     console.log('Target page is unpublished');
 } else {
-    console.log(`Should redirect to: ${page.slug}`);
+    console.log(`Backend should return page with slug: ${page.slug}`);
+    console.log(`Frontend should detect mismatch and redirect`);
 }
 ```
 
