@@ -215,7 +215,7 @@ export class PagesController {
         try {
             const { content } = req.body;
 
-            if (!content) {
+            if (!content || !content.trim()) {
                 res.status(400).json({ error: 'Content is required' });
                 return;
             }

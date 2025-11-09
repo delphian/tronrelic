@@ -795,6 +795,17 @@ describe('PagesController', () => {
             expect(mockService.previewMarkdown).not.toHaveBeenCalled();
         });
 
+        it('should return 400 if content is only whitespace', async () => {
+            const req = createMockRequest({ body: { content: '   \n\t   ' } });
+            const res = createMockResponse();
+
+            await controller.previewMarkdown(req, res);
+
+            expect(res.status).toHaveBeenCalledWith(400);
+            expect(res.json).toHaveBeenCalledWith({ error: 'Content is required' });
+            expect(mockService.previewMarkdown).not.toHaveBeenCalled();
+        });
+
         it('should handle preview errors', async () => {
             mockService.previewMarkdown.mockRejectedValue(new Error('Invalid frontmatter'));
 
