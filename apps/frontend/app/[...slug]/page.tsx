@@ -45,7 +45,7 @@ interface IPageParams {
 }
 
 /**
- * Check if a path is a registered custom page.
+ * Check if a path matches a custom page in the database.
  *
  * This runs server-side and cannot access the client-side plugin registry,
  * so we need to check by attempting to fetch from the custom pages API.

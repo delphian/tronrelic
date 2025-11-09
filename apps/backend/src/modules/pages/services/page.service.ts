@@ -158,17 +158,22 @@ export class PageService implements IPageService {
             );
         }
 
+        // Batch query all potential conflicts (avoids N+1 query problem)
+        const [conflictingPages, conflictingOldSlugs] = await Promise.all([
+            this.pagesCollection.find({ slug: { $in: oldSlugs } }).toArray(),
+            this.pagesCollection.find({ oldSlugs: { $in: oldSlugs } }).toArray(),
+        ]);
+
+        // Check for conflicts and throw detailed error
         for (const oldSlug of oldSlugs) {
-            // Check if oldSlug conflicts with another page's current slug
-            const conflictingPage = await this.pagesCollection.findOne({ slug: oldSlug });
+            const conflictingPage = conflictingPages.find((p) => p.slug === oldSlug);
             if (conflictingPage) {
                 throw new Error(
                     `Old slug "${oldSlug}" conflicts with existing page "${conflictingPage.title}"`
                 );
             }
 
-            // Check if oldSlug conflicts with another page's oldSlugs array
-            const conflictingOldSlug = await this.pagesCollection.findOne({ oldSlugs: oldSlug });
+            const conflictingOldSlug = conflictingOldSlugs.find((p) => p.oldSlugs.includes(oldSlug));
             if (conflictingOldSlug) {
                 throw new Error(
                     `Old slug "${oldSlug}" conflicts with redirect from page "${conflictingOldSlug.title}"`
@@ -243,20 +248,32 @@ export class PageService implements IPageService {
         }
 
         // Validate each oldSlug doesn't conflict with other pages' current slugs or oldSlugs arrays
+        // Batch query all potential conflicts (avoids N+1 query problem)
+        const [conflictingPages, conflictingOldSlugs] = await Promise.all([
+            this.pagesCollection
+                .find({
+                    slug: { $in: oldSlugs },
+                    _id: { $ne: new ObjectId(id) },
+                })
+                .toArray(),
+            this.pagesCollection
+                .find({
+                    oldSlugs: { $in: oldSlugs },
+                    _id: { $ne: new ObjectId(id) },
+                })
+                .toArray(),
+        ]);
+
+        // Check for conflicts and throw detailed error
         for (const oldSlug of oldSlugs) {
-            // Check if oldSlug conflicts with another page's current slug
-            const conflictingPage = await this.pagesCollection.findOne({ slug: oldSlug });
-            if (conflictingPage && conflictingPage._id.toString() !== id) {
+            const conflictingPage = conflictingPages.find((p) => p.slug === oldSlug);
+            if (conflictingPage) {
                 throw new Error(
                     `Old slug "${oldSlug}" conflicts with existing page "${conflictingPage.title}"`
                 );
             }
 
-            // Check if oldSlug conflicts with another page's oldSlugs array
-            const conflictingOldSlug = await this.pagesCollection.findOne({
-                oldSlugs: oldSlug,
-                _id: { $ne: new ObjectId(id) },
-            });
+            const conflictingOldSlug = conflictingOldSlugs.find((p) => p.oldSlugs.includes(oldSlug));
             if (conflictingOldSlug) {
                 throw new Error(
                     `Old slug "${oldSlug}" conflicts with redirect from page "${conflictingOldSlug.title}"`
