@@ -35,6 +35,12 @@ export class MarkdownService implements IMarkdownService {
     private readonly CACHE_PREFIX = 'page:html:';
 
     /**
+     * Redis cache key prefix for full page render (HTML + metadata).
+     * Full key format: "page:render:{slug}"
+     */
+    private readonly RENDER_CACHE_PREFIX = 'page:render:';
+
+    /**
      * Cache TTL for rendered HTML (24 hours in seconds).
      */
     private readonly CACHE_TTL = 86400;
@@ -175,5 +181,69 @@ export class MarkdownService implements IMarkdownService {
     async invalidateCache(slug: string): Promise<void> {
         const cacheKey = this.CACHE_PREFIX + slug;
         await this.cacheService.del(cacheKey);
+    }
+
+    /**
+     * Get cached page render (HTML + metadata) for a page slug.
+     *
+     * Checks Redis for previously rendered page with full response.
+     * Returns null if not cached. This is more efficient than getCachedHtml
+     * because it includes metadata, avoiding a database query.
+     *
+     * @param slug - Page slug to look up in cache
+     * @returns Promise resolving to cached render or null if not found
+     */
+    async getCachedRender(slug: string): Promise<{
+        html: string;
+        metadata: {
+            title: string;
+            description?: string;
+            keywords?: string[];
+            ogImage?: string;
+        };
+    } | null> {
+        const cacheKey = this.RENDER_CACHE_PREFIX + slug;
+        return await this.cacheService.get(cacheKey);
+    }
+
+    /**
+     * Cache full page render (HTML + metadata) for a page slug.
+     *
+     * Stores complete render response in Redis with TTL. Subsequent requests
+     * can skip both database query and markdown rendering.
+     *
+     * @param slug - Page slug to use as cache key
+     * @param html - Rendered HTML
+     * @param metadata - Page metadata (title, description, etc.)
+     * @returns Promise resolving when cache operation completes
+     */
+    async cacheRender(
+        slug: string,
+        html: string,
+        metadata: {
+            title: string;
+            description?: string;
+            keywords?: string[];
+            ogImage?: string;
+        }
+    ): Promise<void> {
+        const cacheKey = this.RENDER_CACHE_PREFIX + slug;
+        await this.cacheService.set(cacheKey, { html, metadata }, this.CACHE_TTL);
+    }
+
+    /**
+     * Invalidate all caches for a page slug.
+     *
+     * Removes both HTML-only cache and full render cache.
+     * Called automatically when a page is updated or deleted.
+     *
+     * @param slug - Page slug whose caches should be invalidated
+     * @returns Promise resolving when all cache deletions complete
+     */
+    async invalidateAllCaches(slug: string): Promise<void> {
+        await Promise.all([
+            this.cacheService.del(this.CACHE_PREFIX + slug),
+            this.cacheService.del(this.RENDER_CACHE_PREFIX + slug),
+        ]);
     }
 }

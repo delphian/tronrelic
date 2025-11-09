@@ -24,6 +24,17 @@ export function createPagesRouter(controller: PagesController): Router {
     router.get('/', controller.listPages.bind(controller));
 
     // ============================================================================
+    // Preview Route
+    // ============================================================================
+    // NOTE: This route must come BEFORE /:id to avoid "preview" being treated as an ID
+
+    /**
+     * POST /api/admin/pages/preview
+     * Preview markdown content without saving
+     */
+    router.post('/preview', controller.previewMarkdown.bind(controller));
+
+    // ============================================================================
     // File Routes
     // ============================================================================
     // NOTE: These routes must come BEFORE /:id to avoid "files" being treated as an ID

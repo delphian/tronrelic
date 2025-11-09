@@ -1,10 +1,11 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Card } from '../../../../../components/ui/Card';
-import { Button } from '../../../../../components/ui/Button';
-import { Input } from '../../../../../components/ui/Input';
+import Link from 'next/link';
 import { Badge } from '../../../../../components/ui/Badge';
+import { Button } from '../../../../../components/ui/Button';
+import { Card } from '../../../../../components/ui/Card';
+import { Input } from '../../../../../components/ui/Input';
 import { Plus, Edit, Trash2, Eye, EyeOff, Search } from 'lucide-react';
 import type { IPage } from '@tronrelic/types';
 import styles from './PagesTab.module.css';
@@ -256,7 +257,9 @@ export function PagesTab({ token }: PagesTabProps) {
                                             )}
                                         </Badge>
                                     </div>
-                                    <p className={styles.page_slug}>{page.slug}</p>
+                                    <Link href={page.slug} className={styles.page_slug} target="_blank">
+                                        {page.slug}
+                                    </Link>
                                     {page.description && (
                                         <p className={styles.page_description}>{page.description}</p>
                                     )}

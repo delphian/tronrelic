@@ -130,6 +130,25 @@ export interface IPageService {
      */
     invalidatePageCache(page: IPage): Promise<void>;
 
+    /**
+     * Preview markdown content without saving it to the database.
+     *
+     * Parses frontmatter and renders markdown body to HTML. Does not cache the result.
+     * Useful for live preview in the page editor before saving.
+     *
+     * @param content - Raw markdown content including frontmatter block
+     * @returns Promise resolving to object with rendered HTML and extracted metadata
+     */
+    previewMarkdown(content: string): Promise<{
+        html: string;
+        metadata: {
+            title?: string;
+            description?: string;
+            keywords?: string[];
+            ogImage?: string;
+        };
+    }>;
+
     // ============================================================================
     // File Management
     // ============================================================================
