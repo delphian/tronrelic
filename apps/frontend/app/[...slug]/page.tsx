@@ -153,7 +153,7 @@ export default async function UnifiedPage({ params }: { params: Promise<IPagePar
 
             return (
                 <div className="page">
-                    <article className={styles.article}>
+                    <article>
                         <div
                             className={styles.content}
                             dangerouslySetInnerHTML={{ __html: data.html }}
