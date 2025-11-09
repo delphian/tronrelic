@@ -19,6 +19,8 @@ class MockPageService implements IPageService {
     getPageStats = vi.fn();
     renderPageHtml = vi.fn();
     invalidatePageCache = vi.fn();
+    previewMarkdown = vi.fn();
+    renderPublicPageBySlug = vi.fn();
     uploadFile = vi.fn();
     listFiles = vi.fn();
     deleteFile = vi.fn();
@@ -642,47 +644,64 @@ describe('PagesController', () => {
 
     describe('renderPublicPage', () => {
         it('should render published page HTML', async () => {
-            const mockPage = {
-                _id: '123',
-                title: 'Test Page',
-                slug: '/test',
-                published: true,
-                description: 'A test page',
-                keywords: ['test']
-            };
-
-            const mockHtml = '<h1>Test Content</h1>';
-
-            mockService.getPageBySlug.mockResolvedValue(mockPage);
-            mockService.renderPageHtml.mockResolvedValue(mockHtml);
-
-            const req = createMockRequest({ params: { slug: 'test' } });
-            const res = createMockResponse();
-
-            await controller.renderPublicPage(req, res);
-
-            expect(mockService.getPageBySlug).toHaveBeenCalledWith('/test');
-            expect(mockService.renderPageHtml).toHaveBeenCalledWith(mockPage);
-            expect(res.json).toHaveBeenCalledWith({
-                html: mockHtml,
+            const mockResponse = {
+                html: '<h1>Test Content</h1>',
                 metadata: {
                     title: 'Test Page',
                     description: 'A test page',
                     keywords: ['test'],
                     ogImage: undefined
                 }
-            });
+            };
+
+            mockService.renderPublicPageBySlug.mockResolvedValue(mockResponse);
+
+            const req = createMockRequest({ params: { slug: 'test' } });
+            const res = createMockResponse();
+
+            await controller.renderPublicPage(req, res);
+
+            expect(mockService.renderPublicPageBySlug).toHaveBeenCalledWith('/test');
+            expect(res.json).toHaveBeenCalledWith(mockResponse);
+        });
+
+        it('should normalize slug by adding leading slash', async () => {
+            const mockResponse = {
+                html: '<p>Content</p>',
+                metadata: {
+                    title: 'Test',
+                    description: undefined,
+                    keywords: undefined,
+                    ogImage: undefined
+                }
+            };
+
+            mockService.renderPublicPageBySlug.mockResolvedValue(mockResponse);
+
+            const req = createMockRequest({ params: { slug: 'no-leading-slash' } });
+            const res = createMockResponse();
+
+            await controller.renderPublicPage(req, res);
+
+            // Should add leading slash
+            expect(mockService.renderPublicPageBySlug).toHaveBeenCalledWith('/no-leading-slash');
+            expect(res.json).toHaveBeenCalledWith(mockResponse);
+        });
+
+        it('should return 404 if page not found', async () => {
+            mockService.renderPublicPageBySlug.mockResolvedValue(null);
+
+            const req = createMockRequest({ params: { slug: 'nonexistent' } });
+            const res = createMockResponse();
+
+            await controller.renderPublicPage(req, res);
+
+            expect(res.status).toHaveBeenCalledWith(404);
+            expect(res.json).toHaveBeenCalledWith({ error: 'Page not found' });
         });
 
         it('should return 404 if page not published', async () => {
-            const mockPage = {
-                _id: '123',
-                title: 'Draft',
-                slug: '/draft',
-                published: false
-            };
-
-            mockService.getPageBySlug.mockResolvedValue(mockPage);
+            mockService.renderPublicPageBySlug.mockResolvedValue(null);
 
             const req = createMockRequest({ params: { slug: 'draft' } });
             const res = createMockResponse();
@@ -690,7 +709,145 @@ describe('PagesController', () => {
             await controller.renderPublicPage(req, res);
 
             expect(res.status).toHaveBeenCalledWith(404);
-            expect(mockService.renderPageHtml).not.toHaveBeenCalled();
+            expect(res.json).toHaveBeenCalledWith({ error: 'Page not found' });
+        });
+
+        it('should handle rendering errors', async () => {
+            mockService.renderPublicPageBySlug.mockRejectedValue(new Error('Render failed'));
+
+            const req = createMockRequest({ params: { slug: 'test' } });
+            const res = createMockResponse();
+
+            await controller.renderPublicPage(req, res);
+
+            expect(res.status).toHaveBeenCalledWith(500);
+            expect(res.json).toHaveBeenCalledWith({
+                error: 'Failed to render page',
+                message: 'Render failed'
+            });
+        });
+
+        it('should include all metadata fields when present', async () => {
+            const mockResponse = {
+                html: '<h1>Complete Page</h1>',
+                metadata: {
+                    title: 'Complete Page',
+                    description: 'A complete description',
+                    keywords: ['test', 'complete', 'metadata'],
+                    ogImage: 'https://example.com/image.png'
+                }
+            };
+
+            mockService.renderPublicPageBySlug.mockResolvedValue(mockResponse);
+
+            const req = createMockRequest({ params: { slug: 'complete' } });
+            const res = createMockResponse();
+
+            await controller.renderPublicPage(req, res);
+
+            expect(res.json).toHaveBeenCalledWith(mockResponse);
+        });
+    });
+
+    describe('previewMarkdown', () => {
+        it('should preview markdown content', async () => {
+            const mockContent = '---\ntitle: Test\n---\n# Content';
+            const mockResponse = {
+                html: '<h1>Content</h1>',
+                metadata: {
+                    title: 'Test',
+                    description: undefined,
+                    keywords: undefined,
+                    ogImage: undefined
+                }
+            };
+
+            mockService.previewMarkdown.mockResolvedValue(mockResponse);
+
+            const req = createMockRequest({ body: { content: mockContent } });
+            const res = createMockResponse();
+
+            await controller.previewMarkdown(req, res);
+
+            expect(mockService.previewMarkdown).toHaveBeenCalledWith(mockContent);
+            expect(res.json).toHaveBeenCalledWith(mockResponse);
+        });
+
+        it('should return 400 if content is missing', async () => {
+            const req = createMockRequest({ body: {} });
+            const res = createMockResponse();
+
+            await controller.previewMarkdown(req, res);
+
+            expect(res.status).toHaveBeenCalledWith(400);
+            expect(res.json).toHaveBeenCalledWith({ error: 'Content is required' });
+            expect(mockService.previewMarkdown).not.toHaveBeenCalled();
+        });
+
+        it('should return 400 if content is empty string', async () => {
+            const req = createMockRequest({ body: { content: '' } });
+            const res = createMockResponse();
+
+            await controller.previewMarkdown(req, res);
+
+            expect(res.status).toHaveBeenCalledWith(400);
+            expect(res.json).toHaveBeenCalledWith({ error: 'Content is required' });
+            expect(mockService.previewMarkdown).not.toHaveBeenCalled();
+        });
+
+        it('should handle preview errors', async () => {
+            mockService.previewMarkdown.mockRejectedValue(new Error('Invalid frontmatter'));
+
+            const req = createMockRequest({ body: { content: '---\ninvalid\n---\n' } });
+            const res = createMockResponse();
+
+            await controller.previewMarkdown(req, res);
+
+            expect(res.status).toHaveBeenCalledWith(400);
+            expect(res.json).toHaveBeenCalledWith({
+                error: 'Failed to preview markdown',
+                message: 'Invalid frontmatter'
+            });
+        });
+
+        it('should preview content with all metadata fields', async () => {
+            const mockContent = '---\ntitle: Full\ndescription: Desc\nkeywords: [a, b]\nogImage: img.png\n---\nContent';
+            const mockResponse = {
+                html: '<p>Content</p>',
+                metadata: {
+                    title: 'Full',
+                    description: 'Desc',
+                    keywords: ['a', 'b'],
+                    ogImage: 'img.png'
+                }
+            };
+
+            mockService.previewMarkdown.mockResolvedValue(mockResponse);
+
+            const req = createMockRequest({ body: { content: mockContent } });
+            const res = createMockResponse();
+
+            await controller.previewMarkdown(req, res);
+
+            expect(res.json).toHaveBeenCalledWith(mockResponse);
+        });
+
+        it('should handle content without frontmatter', async () => {
+            const mockContent = '# Just Markdown';
+            const mockResponse = {
+                html: '<h1>Just Markdown</h1>',
+                metadata: {}
+            };
+
+            mockService.previewMarkdown.mockResolvedValue(mockResponse);
+
+            const req = createMockRequest({ body: { content: mockContent } });
+            const res = createMockResponse();
+
+            await controller.previewMarkdown(req, res);
+
+            expect(mockService.previewMarkdown).toHaveBeenCalledWith(mockContent);
+            expect(res.json).toHaveBeenCalledWith(mockResponse);
         });
     });
 });
