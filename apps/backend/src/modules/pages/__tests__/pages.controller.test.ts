@@ -591,7 +591,10 @@ describe('PagesController', () => {
             await controller.getPublicPage(req, res);
 
             expect(mockService.getPageBySlug).toHaveBeenCalledWith('/public');
-            expect(res.json).toHaveBeenCalledWith({ page: mockPage });
+            expect(res.json).toHaveBeenCalledWith({
+                page: mockPage,
+                requestedSlug: '/public'
+            });
         });
 
         it('should prepend slash to slug if missing', async () => {
@@ -664,7 +667,11 @@ describe('PagesController', () => {
             await controller.renderPublicPage(req, res);
 
             expect(mockService.renderPublicPageBySlug).toHaveBeenCalledWith('/test');
-            expect(res.json).toHaveBeenCalledWith(mockResponse);
+            expect(res.json).toHaveBeenCalledWith({
+                ...mockResponse,
+                currentSlug: '/test',
+                requestedSlug: '/test'
+            });
         });
 
         it('should normalize slug by adding leading slash', async () => {
@@ -687,7 +694,11 @@ describe('PagesController', () => {
 
             // Should add leading slash
             expect(mockService.renderPublicPageBySlug).toHaveBeenCalledWith('/no-leading-slash');
-            expect(res.json).toHaveBeenCalledWith(mockResponse);
+            expect(res.json).toHaveBeenCalledWith({
+                ...mockResponse,
+                currentSlug: '/no-leading-slash',
+                requestedSlug: '/no-leading-slash'
+            });
         });
 
         it('should return 404 if page not found', async () => {
@@ -747,7 +758,11 @@ describe('PagesController', () => {
 
             await controller.renderPublicPage(req, res);
 
-            expect(res.json).toHaveBeenCalledWith(mockResponse);
+            expect(res.json).toHaveBeenCalledWith({
+                ...mockResponse,
+                currentSlug: '/complete',
+                requestedSlug: '/complete'
+            });
         });
     });
 
@@ -885,11 +900,14 @@ describe('PagesController', () => {
 
             await controller.getPublicPage(req, res);
 
-            expect(res.json).toHaveBeenCalledWith({ page: mockPage });
+            expect(res.json).toHaveBeenCalledWith({
+                page: mockPage,
+                requestedSlug: '/current'
+            });
             expect(res.redirect).not.toHaveBeenCalled();
         });
 
-        it('should redirect 301 when slug is in oldSlugs array', async () => {
+        it('should return page data with old slug when slug is in oldSlugs array', async () => {
             const mockPage = {
                 _id: '1',
                 title: 'Test Page',
@@ -907,8 +925,11 @@ describe('PagesController', () => {
             await controller.getPublicPage(req, res);
 
             expect(mockService.findPageByOldSlug).toHaveBeenCalledWith('/old-url');
-            expect(res.redirect).toHaveBeenCalledWith(301, '/api/pages/current-url');
-            expect(res.json).not.toHaveBeenCalled();
+            expect(res.json).toHaveBeenCalledWith({
+                page: mockPage,
+                requestedSlug: '/old-url'
+            });
+            expect(res.redirect).not.toHaveBeenCalled();
         });
 
         it('should not redirect if redirect target page is unpublished', async () => {
@@ -962,7 +983,10 @@ describe('PagesController', () => {
             await controller.getPublicPage(req, res);
 
             expect(mockService.getPageBySlug).toHaveBeenCalledWith('/about');
-            expect(res.json).toHaveBeenCalledWith({ page: mockPage });
+            expect(res.json).toHaveBeenCalledWith({
+                page: mockPage,
+                requestedSlug: '/about'
+            });
         });
     });
 
@@ -983,11 +1007,15 @@ describe('PagesController', () => {
 
             await controller.renderPublicPage(req, res);
 
-            expect(res.json).toHaveBeenCalledWith(mockRender);
+            expect(res.json).toHaveBeenCalledWith({
+                ...mockRender,
+                currentSlug: '/current',
+                requestedSlug: '/current'
+            });
             expect(res.redirect).not.toHaveBeenCalled();
         });
 
-        it('should redirect 301 to render endpoint when slug is in oldSlugs array', async () => {
+        it('should return rendered content with slug info when slug is in oldSlugs array', async () => {
             const mockPage = {
                 _id: '1',
                 title: 'Test Page',
@@ -996,8 +1024,17 @@ describe('PagesController', () => {
                 published: true
             };
 
-            mockService.renderPublicPageBySlug.mockResolvedValue(null);
+            const mockRender = {
+                html: '<h1>Test</h1>',
+                metadata: {
+                    title: 'Test Page',
+                    description: 'Test description'
+                }
+            };
+
+            mockService.renderPublicPageBySlug.mockResolvedValueOnce(null);
             mockService.findPageByOldSlug.mockResolvedValue(mockPage);
+            mockService.renderPublicPageBySlug.mockResolvedValueOnce(mockRender);
 
             const req = createMockRequest({ params: { slug: '/old-url' } });
             const res = createMockResponse();
@@ -1005,8 +1042,13 @@ describe('PagesController', () => {
             await controller.renderPublicPage(req, res);
 
             expect(mockService.findPageByOldSlug).toHaveBeenCalledWith('/old-url');
-            expect(res.redirect).toHaveBeenCalledWith(301, '/api/pages/current-url/render');
-            expect(res.json).not.toHaveBeenCalled();
+            expect(mockService.renderPublicPageBySlug).toHaveBeenCalledWith('/current-url');
+            expect(res.json).toHaveBeenCalledWith({
+                ...mockRender,
+                currentSlug: '/current-url',
+                requestedSlug: '/old-url'
+            });
+            expect(res.redirect).not.toHaveBeenCalled();
         });
 
         it('should not redirect if redirect target page is unpublished', async () => {
@@ -1043,7 +1085,7 @@ describe('PagesController', () => {
             expect(res.json).toHaveBeenCalledWith({ error: 'Page not found' });
         });
 
-        it('should handle redirects for nested slugs', async () => {
+        it('should handle old slugs for nested paths', async () => {
             const mockPage = {
                 _id: '1',
                 title: 'Test Page',
@@ -1052,15 +1094,29 @@ describe('PagesController', () => {
                 published: true
             };
 
-            mockService.renderPublicPageBySlug.mockResolvedValue(null);
+            const mockRender = {
+                html: '<h1>Article</h1>',
+                metadata: {
+                    title: 'Article',
+                    description: 'Article description'
+                }
+            };
+
+            mockService.renderPublicPageBySlug.mockResolvedValueOnce(null);
             mockService.findPageByOldSlug.mockResolvedValue(mockPage);
+            mockService.renderPublicPageBySlug.mockResolvedValueOnce(mockRender);
 
             const req = createMockRequest({ params: { slug: '/blog/article' } });
             const res = createMockResponse();
 
             await controller.renderPublicPage(req, res);
 
-            expect(res.redirect).toHaveBeenCalledWith(301, '/api/pages/blog/posts/2025/article/render');
+            expect(mockService.renderPublicPageBySlug).toHaveBeenCalledWith('/blog/posts/2025/article');
+            expect(res.json).toHaveBeenCalledWith({
+                ...mockRender,
+                currentSlug: '/blog/posts/2025/article',
+                requestedSlug: '/blog/article'
+            });
         });
     });
 });
