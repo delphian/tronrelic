@@ -204,7 +204,7 @@ The pages module provides custom content management capabilities, allowing admin
 - **Redis caching** - Rendered HTML cached for 24 hours with automatic invalidation on updates
 - **Route conflict prevention** - Blacklist patterns prevent pages from overriding core routes
 
-**See [system-pages.md](./system-pages.md) for complete details on:**
+**See [system-modules-pages.md](./system-modules-pages.md) for complete details on:**
 - Pages module architecture and Provider vs Service distinction
 - PageService singleton pattern and dependency injection
 - IStorageProvider interface and adding new storage backends
@@ -293,7 +293,7 @@ curl -X PATCH \
 - [system-database-migrations.md](./system-database-migrations.md) - Database migration system architecture, REST API, admin UI, lifecycle documentation, and troubleshooting
 - [system-logging.md](./system-logging.md) - Logging system architecture, log levels, MongoDB persistence, and accessing historical logs
 - [system-menu.md](./system-menu.md) - Navigation menu system architecture, API reference, plugin integration, and event-driven updates
-- [system-pages.md](./system-pages.md) - Pages module for custom content management with markdown authoring, file uploads, and storage provider abstraction
+- [system-modules-pages.md](./system-modules-pages.md) - Pages module for custom content management with markdown authoring, file uploads, and storage provider abstraction
 - [system-testing.md](./system-testing.md) - Testing framework guide with Vitest setup, Mongoose mocking utilities, and testing patterns
 
 **Related topics:**

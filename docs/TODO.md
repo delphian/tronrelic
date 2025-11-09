@@ -41,6 +41,61 @@ Energy market insights would serve users looking for cost-effective TRON resourc
 - `apps/frontend/app/globals.css` - Documents CSS variable limitations
 - Component CSS Modules using hardcoded breakpoints (e.g., `RecentWhaleDelegations.module.css`)
 
+## Inject Mongoose into DatabaseService
+
+**Context:** DatabaseService currently imports mongoose directly rather than receiving it via dependency injection. This creates testing complexity where we must mock the mongoose module itself, and prevents flexible test strategies like using a real DatabaseService with a mocked mongoose connection.
+
+**Current architecture:**
+```typescript
+// DatabaseService.ts
+import mongoose from 'mongoose';
+
+export class DatabaseService implements IDatabaseService {
+    constructor(logger: ISystemLogService, options?: { prefix?: string }) {
+        // Direct coupling to global mongoose.connection
+        this.db = mongoose.connection.db;
+    }
+}
+```
+
+**Proposed architecture:**
+```typescript
+// DatabaseService.ts
+export class DatabaseService implements IDatabaseService {
+    constructor(
+        logger: ISystemLogService,
+        mongooseConnection: Connection,  // Injected
+        options?: { prefix?: string }
+    ) {
+        this.db = mongooseConnection.db;
+    }
+}
+```
+
+**Benefits:**
+- **Better testability** - Can pass real or mocked mongoose connections without vi.mock()
+- **Flexibility** - Consumer tests could use real DatabaseService with mocked connection
+- **Dependency inversion** - DatabaseService declares what it needs rather than importing it
+- **Cleaner mocks** - Single centralized IDatabaseService mock for all consumer tests
+- **Integration testing** - Can test DatabaseService against real MongoDB in integration tests
+
+**Current workarounds:**
+1. Centralized mongoose mock (`apps/backend/src/tests/vitest/mocks/mongoose.ts`) - For DatabaseService internal tests
+2. Multiple local IDatabaseService mocks - For consumer tests (PageService, ThemeModule, etc.)
+
+**Migration considerations:**
+- Update DatabaseModule to pass mongoose.connection to DatabaseService constructor
+- Update all module initialization code that creates DatabaseService instances
+- Update PluginDatabaseService to accept injected connection
+- Consolidate 5+ local IDatabaseService mocks into single centralized mock
+- Preserve backward compatibility during transition
+
+**Related files:**
+- `apps/backend/src/modules/database/services/database.service.ts` - DatabaseService implementation
+- `apps/backend/src/modules/database/DatabaseModule.ts` - DatabaseService instantiation
+- `apps/backend/src/modules/pages/__tests__/page.service.test.ts` - Example local mock
+- `apps/backend/src/tests/vitest/mocks/mongoose.ts` - Centralized mongoose mock
+
 ## Review Unused API URL Helper Functions
 
 **Context:** The `getClientSideApiUrlWithPath()` and potentially `getClientSideApiUrl()` helper functions exist in `apps/frontend/lib/api-url.ts` but have zero usage across the entire frontend codebase. All client-side API calls use hardcoded `/api` paths that rely on Next.js rewrites (configured in `next.config.mjs`) to route requests to the backend.

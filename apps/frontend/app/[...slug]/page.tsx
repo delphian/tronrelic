@@ -1,4 +1,4 @@
-import { notFound } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 import { PluginPageHandler } from '../../components/PluginPageHandler';
 import { getServerSideApiUrlWithPath } from '../../lib/api-url';
@@ -19,6 +19,7 @@ interface IPageResponse {
         createdAt: string;
         updatedAt: string;
     };
+    requestedSlug: string;
 }
 
 /**
@@ -32,6 +33,8 @@ interface IRenderResponse {
         keywords?: string[];
         ogImage?: string;
     };
+    currentSlug: string;
+    requestedSlug: string;
 }
 
 /**
@@ -42,7 +45,7 @@ interface IPageParams {
 }
 
 /**
- * Check if a path is a registered plugin page.
+ * Check if a path matches a custom page in the database.
  *
  * This runs server-side and cannot access the client-side plugin registry,
  * so we need to check by attempting to fetch from the custom pages API.
@@ -54,8 +57,7 @@ async function isCustomPage(slug: string): Promise<boolean> {
 
     try {
         const response = await fetch(`${apiUrl}/pages/${encodeURIComponent(slug)}`, {
-            next: { revalidate: 60 },
-            cache: 'no-store' // Don't cache the check itself
+            next: { revalidate: 60 }
         });
 
         return response.ok;
@@ -140,31 +142,31 @@ export default async function UnifiedPage({ params }: { params: Promise<IPagePar
     if (isCustom) {
         const apiUrl = getServerSideApiUrlWithPath();
 
-        try {
-            const response = await fetch(`${apiUrl}/pages/${encodeURIComponent(slug)}/render`, {
-                next: { revalidate: 60 }
-            });
+        const response = await fetch(`${apiUrl}/pages/${encodeURIComponent(slug)}/render`, {
+            next: { revalidate: 60 }
+        });
 
-            if (!response.ok) {
-                notFound();
-            }
-
-            const data: IRenderResponse = await response.json();
-
-            return (
-                <div className="page">
-                    <article>
-                        <div
-                            className={styles.content}
-                            dangerouslySetInnerHTML={{ __html: data.html }}
-                        />
-                    </article>
-                </div>
-            );
-        } catch (error) {
-            console.error('Failed to fetch custom page:', error);
+        if (!response.ok) {
             notFound();
         }
+
+        const data: IRenderResponse = await response.json();
+
+        // If requested slug differs from current slug, redirect to current slug
+        if (data.requestedSlug !== data.currentSlug) {
+            redirect(data.currentSlug);
+        }
+
+        return (
+            <div className="page">
+                <article>
+                    <div
+                        className={styles.content}
+                        dangerouslySetInnerHTML={{ __html: data.html }}
+                    />
+                </article>
+            </div>
+        );
     }
 
     // Not a custom page, let plugin handler check the registry

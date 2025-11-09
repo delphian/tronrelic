@@ -59,6 +59,7 @@ export class MarkdownService implements IMarkdownService {
      * ---
      * title: "My Page"
      * slug: "/my-page"
+     * oldSlugs: ["/old-url", "/another-old-url"]
      * description: "Page description"
      * keywords: ["keyword1", "keyword2"]
      * published: true
@@ -85,6 +86,7 @@ export class MarkdownService implements IMarkdownService {
                 frontmatter: {
                     title: data.title,
                     slug: data.slug,
+                    oldSlugs: Array.isArray(data.oldSlugs) ? data.oldSlugs : undefined,
                     description: data.description,
                     keywords: Array.isArray(data.keywords) ? data.keywords : undefined,
                     published: data.published === true,

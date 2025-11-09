@@ -4,6 +4,7 @@ import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { PageService } from '../services/page.service.js';
 import type { IDatabaseService, ICacheService, IStorageProvider } from '@tronrelic/types';
 import { ObjectId } from 'mongodb';
+import { matchesFilter } from '../../../tests/vitest/mocks/mongoose.js';
 
 /**
  * Mock CacheService for testing Redis operations.
@@ -129,9 +130,7 @@ class MockDatabaseService implements IDatabaseService {
                         if (Object.keys(filter).length > 0) {
                             results = data.filter((doc: any) => {
                                 return Object.entries(filter).every(([key, value]) => {
-                                    if (key === '_id' && value instanceof ObjectId) {
-                                        return doc._id.equals(value);
-                                    }
+                                    // Special PageService-specific filters
                                     if (key === '$text') {
                                         // Simple text search simulation
                                         const searchTerm = (value as any).$search.toLowerCase();
@@ -144,7 +143,8 @@ class MockDatabaseService implements IDatabaseService {
                                     if (key === 'mimeType' && value instanceof RegExp) {
                                         return value.test(doc.mimeType || '');
                                     }
-                                    return doc[key] === value;
+                                    // Use shared filter matching for standard MongoDB operators
+                                    return matchesFilter(doc, { [key]: value });
                                 });
                             });
                         }
@@ -188,14 +188,7 @@ class MockDatabaseService implements IDatabaseService {
                 };
             }),
             findOne: vi.fn(async (filter: any) => {
-                const doc = data.find((d: any) => {
-                    return Object.entries(filter).every(([key, value]) => {
-                        if (key === '_id' && value instanceof ObjectId) {
-                            return d._id.equals(value);
-                        }
-                        return d[key] === value;
-                    });
-                });
+                const doc = data.find((d: any) => matchesFilter(d, filter));
                 return doc || null;
             }),
             insertOne: vi.fn(async (doc: any) => {
@@ -205,14 +198,7 @@ class MockDatabaseService implements IDatabaseService {
                 return { insertedId: id, acknowledged: true };
             }),
             updateOne: vi.fn(async (filter: any, update: any) => {
-                const docIndex = data.findIndex((d: any) => {
-                    return Object.entries(filter).every(([key, value]) => {
-                        if (key === '_id' && value instanceof ObjectId) {
-                            return d._id.equals(value);
-                        }
-                        return d[key] === value;
-                    });
-                });
+                const docIndex = data.findIndex((d: any) => matchesFilter(d, filter));
 
                 if (docIndex !== -1) {
                     const updateFields = update.$set || {};
@@ -223,14 +209,7 @@ class MockDatabaseService implements IDatabaseService {
                 return { modifiedCount: 0, acknowledged: true };
             }),
             deleteOne: vi.fn(async (filter: any) => {
-                const docIndex = data.findIndex((d: any) => {
-                    return Object.entries(filter).every(([key, value]) => {
-                        if (key === '_id' && value instanceof ObjectId) {
-                            return d._id.equals(value);
-                        }
-                        return d[key] === value;
-                    });
-                });
+                const docIndex = data.findIndex((d: any) => matchesFilter(d, filter));
 
                 if (docIndex !== -1) {
                     data.splice(docIndex, 1);
@@ -243,9 +222,7 @@ class MockDatabaseService implements IDatabaseService {
                 if (Object.keys(filter).length === 0) {
                     return data.length;
                 }
-                return data.filter((doc: any) => {
-                    return Object.entries(filter).every(([key, value]) => doc[key] === value);
-                }).length;
+                return data.filter((doc: any) => matchesFilter(doc, filter)).length;
             }),
             createIndex: vi.fn(async () => 'index_name'),
             deleteMany: vi.fn(async () => ({ deletedCount: 0, acknowledged: true })),
@@ -980,6 +957,408 @@ slug: "/test"
         it('should allow non-blacklisted slugs', async () => {
             expect(await pageService.isSlugBlacklisted('/blog/my-post')).toBe(false);
             expect(await pageService.isSlugBlacklisted('/about')).toBe(false);
+        });
+    });
+
+    // ============================================================================
+    // Redirect System Tests
+    // ============================================================================
+
+    describe('findPageByOldSlug', () => {
+        it('should find page by old slug', async () => {
+            const content = `---
+title: "Test Page"
+slug: "/current-url"
+oldSlugs: ["/old-url", "/another-old-url"]
+---
+Content`;
+
+            await pageService.createPage(content);
+
+            const foundPage = await pageService.findPageByOldSlug('/old-url');
+
+            expect(foundPage).toBeDefined();
+            expect(foundPage?.slug).toBe('/current-url');
+            expect(foundPage?.oldSlugs).toContain('/old-url');
+        });
+
+        it('should return null if old slug not found', async () => {
+            const content = `---
+title: "Test Page"
+slug: "/current-url"
+oldSlugs: ["/old-url"]
+---
+Content`;
+
+            await pageService.createPage(content);
+
+            const foundPage = await pageService.findPageByOldSlug('/nonexistent');
+
+            expect(foundPage).toBeNull();
+        });
+
+        it('should find page with multiple old slugs', async () => {
+            const content = `---
+title: "Test Page"
+slug: "/current"
+oldSlugs: ["/v1", "/v2", "/v3"]
+---
+Content`;
+
+            await pageService.createPage(content);
+
+            const page1 = await pageService.findPageByOldSlug('/v1');
+            const page2 = await pageService.findPageByOldSlug('/v2');
+            const page3 = await pageService.findPageByOldSlug('/v3');
+
+            expect(page1?.slug).toBe('/current');
+            expect(page2?.slug).toBe('/current');
+            expect(page3?.slug).toBe('/current');
+        });
+    });
+
+    describe('oldSlugs conflict validation', () => {
+        it('should prevent creating page with slug that exists in another page\'s oldSlugs', async () => {
+            const content1 = `---
+title: "Page One"
+slug: "/current"
+oldSlugs: ["/old-about"]
+---
+Content`;
+
+            await pageService.createPage(content1);
+
+            const content2 = `---
+title: "Page Two"
+slug: "/old-about"
+---
+Content`;
+
+            await expect(pageService.createPage(content2)).rejects.toThrow(
+                'Slug "/old-about" conflicts with redirect from page "Page One"'
+            );
+        });
+
+        it('should prevent oldSlug that conflicts with existing page slug', async () => {
+            const content1 = `---
+title: "Page One"
+slug: "/existing"
+---
+Content`;
+
+            await pageService.createPage(content1);
+
+            const content2 = `---
+title: "Page Two"
+slug: "/new"
+oldSlugs: ["/existing"]
+---
+Content`;
+
+            await expect(pageService.createPage(content2)).rejects.toThrow(
+                'Old slug "/existing" conflicts with existing page "Page One"'
+            );
+        });
+
+        it('should prevent updating slug to value in another page\'s oldSlugs', async () => {
+            const content1 = `---
+title: "Page One"
+slug: "/current"
+oldSlugs: ["/old-url"]
+---
+Content`;
+
+            const content2 = `---
+title: "Page Two"
+slug: "/page-two"
+---
+Content`;
+
+            await pageService.createPage(content1);
+            const page2 = await pageService.createPage(content2);
+
+            const updateContent = `---
+title: "Page Two"
+slug: "/old-url"
+---
+Updated content`;
+
+            await expect(pageService.updatePage(page2._id!, updateContent)).rejects.toThrow(
+                'Slug "/old-url" conflicts with redirect from page "Page One"'
+            );
+        });
+
+        it('should prevent creating page with oldSlug that exists in another page\'s oldSlugs array', async () => {
+            const content1 = `---
+title: "Page One"
+slug: "/current"
+oldSlugs: ["/shared-old-slug"]
+---
+Content`;
+
+            await pageService.createPage(content1);
+
+            const content2 = `---
+title: "Page Two"
+slug: "/new-page"
+oldSlugs: ["/shared-old-slug"]
+---
+Content`;
+
+            await expect(pageService.createPage(content2)).rejects.toThrow(
+                'Old slug "/shared-old-slug" conflicts with redirect from page "Page One"'
+            );
+        });
+
+        it('should prevent updating oldSlugs to include value in another page\'s oldSlugs array', async () => {
+            const content1 = `---
+title: "Page One"
+slug: "/page-one"
+oldSlugs: ["/old-shared"]
+---
+Content`;
+
+            const content2 = `---
+title: "Page Two"
+slug: "/page-two"
+---
+Content`;
+
+            await pageService.createPage(content1);
+            const page2 = await pageService.createPage(content2);
+
+            const updateContent = `---
+title: "Page Two"
+slug: "/page-two"
+oldSlugs: ["/old-shared"]
+---
+Updated content`;
+
+            await expect(pageService.updatePage(page2._id!, updateContent)).rejects.toThrow(
+                'Old slug "/old-shared" conflicts with redirect from page "Page One"'
+            );
+        });
+    });
+
+    describe('circular reference prevention', () => {
+        it('should prevent slug from being in its own oldSlugs array', async () => {
+            const content = `---
+title: "Test Page"
+slug: "/current"
+oldSlugs: ["/current"]
+---
+Content`;
+
+            await expect(pageService.createPage(content)).rejects.toThrow(
+                'Cannot set slug to "/current" - this is already in the page\'s redirect history'
+            );
+        });
+
+        it('should prevent updating slug to value already in oldSlugs', async () => {
+            const content = `---
+title: "Test Page"
+slug: "/current"
+oldSlugs: ["/old-v1", "/old-v2"]
+---
+Content`;
+
+            const page = await pageService.createPage(content);
+
+            const updateContent = `---
+title: "Test Page"
+slug: "/old-v1"
+oldSlugs: ["/old-v1", "/old-v2"]
+---
+Updated`;
+
+            await expect(pageService.updatePage(page._id!, updateContent)).rejects.toThrow(
+                'Cannot set slug to "/old-v1" - this is already in the page\'s redirect history'
+            );
+        });
+    });
+
+    describe('automatic oldSlugs preservation', () => {
+        it('should automatically add old slug when slug changes', async () => {
+            const initialContent = `---
+title: "Test Page"
+slug: "/about"
+---
+Content`;
+
+            const page = await pageService.createPage(initialContent);
+            expect(page.oldSlugs).toEqual([]);
+
+            const updatedContent = `---
+title: "Test Page"
+slug: "/company/about"
+---
+Updated content`;
+
+            const updatedPage = await pageService.updatePage(page._id!, updatedContent);
+
+            expect(updatedPage.slug).toBe('/company/about');
+            expect(updatedPage.oldSlugs).toContain('/about');
+        });
+
+        it('should preserve existing oldSlugs when slug changes', async () => {
+            const initialContent = `---
+title: "Test Page"
+slug: "/v1"
+oldSlugs: ["/original"]
+---
+Content`;
+
+            const page = await pageService.createPage(initialContent);
+
+            const updatedContent = `---
+title: "Test Page"
+slug: "/v2"
+oldSlugs: ["/original"]
+---
+Updated`;
+
+            const updatedPage = await pageService.updatePage(page._id!, updatedContent);
+
+            expect(updatedPage.slug).toBe('/v2');
+            expect(updatedPage.oldSlugs).toContain('/original');
+            expect(updatedPage.oldSlugs).toContain('/v1');
+            expect(updatedPage.oldSlugs.length).toBe(2);
+        });
+
+        it('should not duplicate slugs in oldSlugs array', async () => {
+            const initialContent = `---
+title: "Test Page"
+slug: "/about"
+---
+Content`;
+
+            const page = await pageService.createPage(initialContent);
+
+            // Change to /new
+            const update1 = `---
+title: "Test Page"
+slug: "/new"
+---
+Content`;
+
+            await pageService.updatePage(page._id!, update1);
+
+            // Change back to /about (which is now in oldSlugs)
+            // This should be blocked by circular reference validation
+            const update2 = `---
+title: "Test Page"
+slug: "/about"
+oldSlugs: ["/about"]
+---
+Content`;
+
+            await expect(pageService.updatePage(page._id!, update2)).rejects.toThrow(
+                'Cannot set slug to "/about" - this is already in the page\'s redirect history'
+            );
+        });
+
+        it('should preserve database oldSlugs when frontmatter omits field', async () => {
+            const initialContent = `---
+title: "Test Page"
+slug: "/v1"
+oldSlugs: ["/original"]
+---
+Content`;
+
+            const page = await pageService.createPage(initialContent);
+
+            // Update without oldSlugs in frontmatter
+            const updatedContent = `---
+title: "Test Page"
+slug: "/v2"
+---
+Updated content`;
+
+            const updatedPage = await pageService.updatePage(page._id!, updatedContent);
+
+            expect(updatedPage.oldSlugs).toContain('/original');
+            expect(updatedPage.oldSlugs).toContain('/v1');
+        });
+
+        it('should not add to oldSlugs if slug unchanged', async () => {
+            const initialContent = `---
+title: "Test Page"
+slug: "/about"
+---
+Content`;
+
+            const page = await pageService.createPage(initialContent);
+
+            const updatedContent = `---
+title: "Test Page Updated"
+slug: "/about"
+---
+Updated content but same slug`;
+
+            const updatedPage = await pageService.updatePage(page._id!, updatedContent);
+
+            expect(updatedPage.oldSlugs).toEqual([]);
+        });
+    });
+
+    describe('frontmatter oldSlugs handling', () => {
+        it('should use oldSlugs from frontmatter when provided', async () => {
+            const content = `---
+title: "Test Page"
+slug: "/current"
+oldSlugs: ["/old-1", "/old-2"]
+---
+Content`;
+
+            const page = await pageService.createPage(content);
+
+            expect(page.oldSlugs).toEqual(['/old-1', '/old-2']);
+        });
+
+        it('should handle empty oldSlugs array in frontmatter', async () => {
+            const content = `---
+title: "Test Page"
+slug: "/current"
+oldSlugs: []
+---
+Content`;
+
+            const page = await pageService.createPage(content);
+
+            expect(page.oldSlugs).toEqual([]);
+        });
+
+        it('should handle missing oldSlugs field in frontmatter', async () => {
+            const content = `---
+title: "Test Page"
+slug: "/current"
+---
+Content`;
+
+            const page = await pageService.createPage(content);
+
+            expect(page.oldSlugs).toEqual([]);
+        });
+
+        it('should allow manually adding oldSlugs in frontmatter during update', async () => {
+            const initialContent = `---
+title: "Test Page"
+slug: "/current"
+---
+Content`;
+
+            const page = await pageService.createPage(initialContent);
+
+            const updatedContent = `---
+title: "Test Page"
+slug: "/current"
+oldSlugs: ["/manual-redirect"]
+---
+Updated with manual redirect`;
+
+            const updatedPage = await pageService.updatePage(page._id!, updatedContent);
+
+            expect(updatedPage.oldSlugs).toContain('/manual-redirect');
         });
     });
 });

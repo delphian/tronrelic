@@ -20,6 +20,7 @@ export interface IPageDocument {
     _id: ObjectId;
     title: string;
     slug: string;
+    oldSlugs: string[];
     content: string;
     description: string;
     keywords: string[];

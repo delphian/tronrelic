@@ -17,6 +17,12 @@ export interface IFrontmatterData {
     slug?: string;
 
     /**
+     * Array of previous slugs that should redirect to the current slug.
+     * When a page's slug is changed, old slugs are preserved here to avoid 404 errors.
+     */
+    oldSlugs?: string[];
+
+    /**
      * Page description for SEO meta tags.
      */
     description?: string;

@@ -55,6 +55,66 @@ const mockCollections = new Map<string, any[]>();
 const mockCollectionInstances = new Map<string, any>();
 
 /**
+ * Shared filter matching logic for all mock operations.
+ *
+ * Supports MongoDB query operators: $in, $ne, array contains, ObjectId comparison.
+ * Exported for reuse in custom IDatabaseService mocks.
+ *
+ * @param doc - Document to test
+ * @param filter - MongoDB filter object
+ * @returns True if document matches all filter criteria
+ */
+export function matchesFilter(doc: any, filter: Filter<any>): boolean {
+    return Object.entries(filter).every(([key, value]) => {
+        // Handle ObjectId comparison
+        if (key === '_id' && value instanceof ObjectId && doc._id instanceof ObjectId) {
+            return doc._id.equals(value);
+        }
+
+        // Handle $in operator: { field: { $in: [value1, value2] } }
+        if (value && typeof value === 'object' && '$in' in value) {
+            const inValues = (value as any).$in;
+            if (Array.isArray(doc[key])) {
+                // Document field is array - check if any value in doc array matches any value in $in array
+                return doc[key].some((docValue: any) => inValues.includes(docValue));
+            }
+            // Document field is scalar - check if it matches any value in $in array
+            return inValues.includes(doc[key]);
+        }
+
+        // Handle $ne operator: { field: { $ne: value } }
+        if (value && typeof value === 'object' && '$ne' in value) {
+            const neValue = (value as any).$ne;
+            if (key === '_id') {
+                if (neValue instanceof ObjectId && doc._id instanceof ObjectId) {
+                    return !doc._id.equals(neValue);
+                }
+            }
+            return doc[key] !== neValue;
+        }
+
+        // Handle nested field paths (e.g., 'user.name')
+        if (key.includes('.')) {
+            const parts = key.split('.');
+            let current = doc;
+            for (const part of parts) {
+                if (current == null) return false;
+                current = current[part];
+            }
+            return current === value;
+        }
+
+        // Handle array contains queries (e.g., { oldSlugs: "/old-url" })
+        if (Array.isArray(doc[key])) {
+            return doc[key].includes(value);
+        }
+
+        // Simple equality
+        return doc[key] === value;
+    });
+}
+
+/**
  * Chainable query builder for mock collections.
  *
  * Implements the MongoDB query builder pattern with support for:
@@ -74,43 +134,8 @@ class MockQueryBuilder<T = any> {
         if (Object.keys(filter).length === 0) {
             this.data = data;
         } else {
-            this.data = data.filter((doc: any) => this.matchesFilter(doc, filter));
+            this.data = data.filter((doc: any) => matchesFilter(doc, filter));
         }
-    }
-
-    /**
-     * Check if a document matches a MongoDB filter.
-     *
-     * Supports:
-     * - Equality: { field: value }
-     * - ObjectId comparison: { _id: ObjectId(...) }
-     * - Nested fields: { 'user.name': 'John' }
-     *
-     * @param doc - Document to test
-     * @param filter - MongoDB filter object
-     * @returns True if document matches all filter criteria
-     */
-    private matchesFilter(doc: any, filter: Filter<T>): boolean {
-        return Object.entries(filter).every(([key, value]) => {
-            // Handle ObjectId comparison
-            if (key === '_id' && value instanceof ObjectId && doc._id instanceof ObjectId) {
-                return doc._id.equals(value);
-            }
-
-            // Handle nested field paths (e.g., 'user.name')
-            if (key.includes('.')) {
-                const parts = key.split('.');
-                let current = doc;
-                for (const part of parts) {
-                    if (current == null) return false;
-                    current = current[part];
-                }
-                return current === value;
-            }
-
-            // Simple equality
-            return doc[key] === value;
-        });
     }
 
     /**
@@ -288,14 +313,7 @@ export class MockMongooseModel {
      */
     public findOne(filter: Filter<any>) {
         const data = this.getData();
-        const doc = data.find((d: any) => {
-            return Object.entries(filter).every(([key, value]) => {
-                if (key === '_id' && value instanceof ObjectId && d._id instanceof ObjectId) {
-                    return d._id.equals(value);
-                }
-                return d[key] === value;
-            });
-        });
+        const doc = data.find((d: any) => matchesFilter(d, filter));
 
         return {
             lean: vi.fn(() => ({
@@ -331,14 +349,7 @@ export class MockMongooseModel {
             return data.length;
         }
 
-        return data.filter((doc: any) => {
-            return Object.entries(filter).every(([key, value]) => {
-                if (key === '_id' && value instanceof ObjectId && doc._id instanceof ObjectId) {
-                    return doc._id.equals(value);
-                }
-                return doc[key] === value;
-            });
-        }).length;
+        return data.filter((doc: any) => matchesFilter(doc, filter)).length;
     }
 
     /**
@@ -353,14 +364,7 @@ export class MockMongooseModel {
         let modifiedCount = 0;
 
         data.forEach((doc, index) => {
-            const matches = Object.entries(filter).every(([key, value]) => {
-                if (key === '_id' && value instanceof ObjectId && doc._id instanceof ObjectId) {
-                    return doc._id.equals(value);
-                }
-                return doc[key] === value;
-            });
-
-            if (matches) {
+            if (matchesFilter(doc, filter)) {
                 const updateFields = (update as any).$set || {};
                 data[index] = { ...data[index], ...updateFields };
                 modifiedCount++;
@@ -382,14 +386,7 @@ export class MockMongooseModel {
         const indicesToDelete: number[] = [];
 
         data.forEach((doc, index) => {
-            const matches = Object.entries(filter).every(([key, value]) => {
-                if (key === '_id' && value instanceof ObjectId && doc._id instanceof ObjectId) {
-                    return doc._id.equals(value);
-                }
-                return doc[key] === value;
-            });
-
-            if (matches) {
+            if (matchesFilter(doc, filter)) {
                 indicesToDelete.push(index);
             }
         });
@@ -483,14 +480,7 @@ export function createMockCollection(name: string) {
          * Find a single document.
          */
         findOne: vi.fn(async (filter: Filter<any>) => {
-            const doc = data.find((d: any) => {
-                return Object.entries(filter).every(([key, value]) => {
-                    if (key === '_id' && value instanceof ObjectId && d._id instanceof ObjectId) {
-                        return d._id.equals(value);
-                    }
-                    return d[key] === value;
-                });
-            });
+            const doc = data.find((d: any) => matchesFilter(d, filter));
             return doc || null;
         }),
 
@@ -508,14 +498,7 @@ export function createMockCollection(name: string) {
          * Update a single document with upsert support.
          */
         updateOne: vi.fn(async (filter: Filter<any>, update: UpdateFilter<any>, options?: any) => {
-            const docIndex = data.findIndex((d: any) => {
-                return Object.entries(filter).every(([key, value]) => {
-                    if (key === '_id' && value instanceof ObjectId && d._id instanceof ObjectId) {
-                        return d._id.equals(value);
-                    }
-                    return d[key] === value;
-                });
-            });
+            const docIndex = data.findIndex((d: any) => matchesFilter(d, filter));
 
             if (docIndex !== -1) {
                 const updateFields = (update as any).$set || {};
@@ -542,14 +525,7 @@ export function createMockCollection(name: string) {
             let modifiedCount = 0;
 
             data.forEach((doc, index) => {
-                const matches = Object.entries(filter).every(([key, value]) => {
-                    if (key === '_id' && value instanceof ObjectId && doc._id instanceof ObjectId) {
-                        return doc._id.equals(value);
-                    }
-                    return doc[key] === value;
-                });
-
-                if (matches) {
+                if (matchesFilter(doc, filter)) {
                     const updateFields = (update as any).$set || {};
                     data[index] = { ...data[index], ...updateFields };
                     modifiedCount++;
@@ -563,14 +539,7 @@ export function createMockCollection(name: string) {
          * Delete a single document.
          */
         deleteOne: vi.fn(async (filter: Filter<any>) => {
-            const docIndex = data.findIndex((d: any) => {
-                return Object.entries(filter).every(([key, value]) => {
-                    if (key === '_id' && value instanceof ObjectId && d._id instanceof ObjectId) {
-                        return d._id.equals(value);
-                    }
-                    return d[key] === value;
-                });
-            });
+            const docIndex = data.findIndex((d: any) => matchesFilter(d, filter));
 
             if (docIndex !== -1) {
                 data.splice(docIndex, 1);
@@ -588,14 +557,7 @@ export function createMockCollection(name: string) {
             const indicesToDelete: number[] = [];
 
             data.forEach((doc, index) => {
-                const matches = Object.entries(filter).every(([key, value]) => {
-                    if (key === '_id' && value instanceof ObjectId && doc._id instanceof ObjectId) {
-                        return doc._id.equals(value);
-                    }
-                    return doc[key] === value;
-                });
-
-                if (matches) {
+                if (matchesFilter(doc, filter)) {
                     indicesToDelete.push(index);
                 }
             });
@@ -617,14 +579,7 @@ export function createMockCollection(name: string) {
                 return data.length;
             }
 
-            return data.filter((doc: any) => {
-                return Object.entries(filter).every(([key, value]) => {
-                    if (key === '_id' && value instanceof ObjectId && doc._id instanceof ObjectId) {
-                        return doc._id.equals(value);
-                    }
-                    return doc[key] === value;
-                });
-            }).length;
+            return data.filter((doc: any) => matchesFilter(doc, filter)).length;
         }),
 
         /**
