@@ -406,8 +406,9 @@ export class PagesController {
      * Get a published page by slug (public endpoint).
      *
      * Only returns published pages. Unpublished pages return 404.
+     * If the slug is an old slug, returns 301 redirect to current slug.
      *
-     * Response: IPage or 404 if not found/unpublished
+     * Response: IPage, 301 redirect, or 404 if not found/unpublished
      */
     async getPublicPage(req: Request, res: Response): Promise<void> {
         try {
@@ -419,6 +420,14 @@ export class PagesController {
             const page = await this.pageService.getPageBySlug(normalizedSlug);
 
             if (!page || !page.published) {
+                // Check if slug exists in any page's oldSlugs array
+                const redirectPage = await this.pageService.findPageByOldSlug(normalizedSlug);
+                if (redirectPage && redirectPage.published) {
+                    // Return 301 redirect to current slug
+                    res.redirect(301, `/api/pages${redirectPage.slug}`);
+                    return;
+                }
+
                 res.status(404).json({ error: 'Page not found' });
                 return;
             }
@@ -439,13 +448,14 @@ export class PagesController {
      * Get rendered HTML for a published page (public endpoint).
      *
      * Only returns HTML for published pages. Unpublished pages return 404.
+     * If the slug is an old slug, returns 301 redirect to current slug.
      * Uses optimized caching that checks Redis BEFORE querying MongoDB.
      *
      * Performance characteristics:
      * - Cache hit: ~1-2ms (Redis only, no database query)
      * - Cache miss: ~50-100ms (MongoDB query + markdown render + Redis cache)
      *
-     * Response: { html: string, metadata: FrontMatter } or 404 if not found/unpublished
+     * Response: { html: string, metadata: FrontMatter }, 301 redirect, or 404 if not found/unpublished
      */
     async renderPublicPage(req: Request, res: Response): Promise<void> {
         try {
@@ -458,6 +468,14 @@ export class PagesController {
             const rendered = await this.pageService.renderPublicPageBySlug(normalizedSlug);
 
             if (!rendered) {
+                // Check if slug exists in any page's oldSlugs array
+                const redirectPage = await this.pageService.findPageByOldSlug(normalizedSlug);
+                if (redirectPage && redirectPage.published) {
+                    // Return 301 redirect to current slug
+                    res.redirect(301, `/api/pages${redirectPage.slug}/render`);
+                    return;
+                }
+
                 res.status(404).json({ error: 'Page not found' });
                 return;
             }

@@ -15,6 +15,7 @@ import styles from './PageEditor.module.css';
 const DEFAULT_FRONTMATTER = `---
 title: "Untitled Page"
 slug: "/untitled-page"
+oldSlugs: []
 description: "Page description for SEO"
 keywords: ["keyword1", "keyword2"]
 published: false

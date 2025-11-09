@@ -140,12 +140,40 @@ export class PageService implements IPageService {
             throw new Error(`A page with slug "${slug}" already exists`);
         }
 
+        // Check if new slug conflicts with any page's oldSlugs array
+        const conflictingOldSlug = await this.pagesCollection.findOne({ oldSlugs: slug });
+        if (conflictingOldSlug) {
+            throw new Error(
+                `Slug "${slug}" conflicts with redirect from page "${conflictingOldSlug.title}"`
+            );
+        }
+
+        // Validate oldSlugs from frontmatter
+        const oldSlugs = frontmatter.oldSlugs || [];
+
+        // Check for circular reference: slug cannot be in oldSlugs
+        if (oldSlugs.includes(slug)) {
+            throw new Error(
+                `Cannot set slug to "${slug}" - this is already in the page's redirect history`
+            );
+        }
+
+        for (const oldSlug of oldSlugs) {
+            const conflictingPage = await this.pagesCollection.findOne({ slug: oldSlug });
+            if (conflictingPage) {
+                throw new Error(
+                    `Old slug "${oldSlug}" conflicts with existing page "${conflictingPage.title}"`
+                );
+            }
+        }
+
         // Create page document
         const now = new Date();
         const pageDoc: IPageDocument = {
             _id: new ObjectId(),
             title: frontmatter.title,
             slug,
+            oldSlugs,
             content, // Store full content including frontmatter
             description: frontmatter.description || '',
             keywords: frontmatter.keywords || [],
@@ -195,7 +223,28 @@ export class PageService implements IPageService {
             ? this.sanitizeSlug(frontmatter.slug)
             : this.sanitizeSlug(frontmatter.title);
 
-        // If slug changed, validate new slug
+        // Validate oldSlugs from frontmatter (including circular reference check)
+        const oldSlugs = frontmatter.oldSlugs || page.oldSlugs || [];
+
+        // Check for circular reference: new slug cannot be in oldSlugs
+        if (oldSlugs.includes(newSlug)) {
+            throw new Error(
+                `Cannot set slug to "${newSlug}" - this is already in the page's redirect history`
+            );
+        }
+
+        // Validate each oldSlug doesn't conflict with other pages' current slugs
+        for (const oldSlug of oldSlugs) {
+            const conflictingPage = await this.pagesCollection.findOne({ slug: oldSlug });
+            if (conflictingPage && conflictingPage._id.toString() !== id) {
+                throw new Error(
+                    `Old slug "${oldSlug}" conflicts with existing page "${conflictingPage.title}"`
+                );
+            }
+        }
+
+        // If slug changed, validate new slug and add old slug to oldSlugs array
+        let updatedOldSlugs = oldSlugs;
         if (newSlug !== page.slug) {
             if (await this.isSlugBlacklisted(newSlug)) {
                 throw new Error(`Slug "${newSlug}" conflicts with a blacklisted route pattern`);
@@ -204,6 +253,22 @@ export class PageService implements IPageService {
             const existing = await this.pagesCollection.findOne({ slug: newSlug });
             if (existing && existing._id.toString() !== id) {
                 throw new Error(`A page with slug "${newSlug}" already exists`);
+            }
+
+            // Check if new slug conflicts with any other page's oldSlugs array
+            const conflictingOldSlug = await this.pagesCollection.findOne({
+                oldSlugs: newSlug,
+                _id: { $ne: new ObjectId(id) },
+            });
+            if (conflictingOldSlug) {
+                throw new Error(
+                    `Slug "${newSlug}" conflicts with redirect from page "${conflictingOldSlug.title}"`
+                );
+            }
+
+            // Add old slug to oldSlugs array (avoid duplicates)
+            if (!updatedOldSlugs.includes(page.slug)) {
+                updatedOldSlugs = [...updatedOldSlugs, page.slug];
             }
 
             // Invalidate old slug cache
@@ -217,6 +282,7 @@ export class PageService implements IPageService {
                 $set: {
                     title: frontmatter.title,
                     slug: newSlug,
+                    oldSlugs: updatedOldSlugs,
                     content,
                     description: frontmatter.description || '',
                     keywords: frontmatter.keywords || [],
@@ -265,6 +331,30 @@ export class PageService implements IPageService {
      */
     async getPageBySlug(slug: string): Promise<IPage | null> {
         const page = await this.pagesCollection.findOne({ slug });
+        return page ? this.toIPage(page) : null;
+    }
+
+    /**
+     * Find a page that has the given slug in its oldSlugs array.
+     *
+     * This method is used to implement redirects from old URLs to current pages.
+     * When a slug doesn't match any current page, check if it exists in any page's
+     * oldSlugs array and redirect to that page's current slug.
+     *
+     * @param oldSlug - Old slug to search for in oldSlugs arrays
+     * @returns Promise resolving to the page document or null if not found
+     *
+     * @example
+     * ```typescript
+     * // User visits /old-url which doesn't exist as a current slug
+     * const page = await pageService.findPageByOldSlug('/old-url');
+     * if (page) {
+     *     // Redirect to page.slug with 301 status
+     * }
+     * ```
+     */
+    async findPageByOldSlug(oldSlug: string): Promise<IPage | null> {
+        const page = await this.pagesCollection.findOne({ oldSlugs: oldSlug });
         return page ? this.toIPage(page) : null;
     }
 
@@ -775,6 +865,7 @@ export class PageService implements IPageService {
             _id: doc._id.toString(),
             title: doc.title,
             slug: doc.slug,
+            oldSlugs: doc.oldSlugs || [],
             content: doc.content,
             description: doc.description,
             keywords: doc.keywords,

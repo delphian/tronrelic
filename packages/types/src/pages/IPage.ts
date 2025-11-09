@@ -25,6 +25,20 @@ export interface IPage {
     slug: string;
 
     /**
+     * Array of previous slugs that should redirect to the current slug.
+     * When a page's slug is changed, the old slug is added to this array to preserve
+     * incoming links and avoid 404 errors. The system returns a 301 permanent redirect
+     * when users visit an old slug.
+     *
+     * @example
+     * ```typescript
+     * // Page moved from /about to /company/about
+     * oldSlugs: ["/about"]
+     * ```
+     */
+    oldSlugs: string[];
+
+    /**
      * Raw markdown content including frontmatter block.
      * The frontmatter section contains metadata that maps to database fields.
      * Example:

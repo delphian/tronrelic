@@ -1,4 +1,4 @@
-import { notFound } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 import { PluginPageHandler } from '../../components/PluginPageHandler';
 import { getServerSideApiUrlWithPath } from '../../lib/api-url';
@@ -142,8 +142,22 @@ export default async function UnifiedPage({ params }: { params: Promise<IPagePar
 
         try {
             const response = await fetch(`${apiUrl}/pages/${encodeURIComponent(slug)}/render`, {
-                next: { revalidate: 60 }
+                next: { revalidate: 60 },
+                redirect: 'manual' // Handle redirects manually
             });
+
+            // Handle 301 redirects from old slugs to current slugs
+            if (response.status === 301 || response.type === 'opaqueredirect') {
+                const location = response.headers.get('location');
+                if (location) {
+                    // Extract slug from redirect location
+                    // Location format: /api/pages/{slug}/render
+                    const match = location.match(/\/api\/pages(\/[^/]+(?:\/[^/]+)*)\/render/);
+                    if (match && match[1]) {
+                        redirect(match[1]); // Redirect to the current slug
+                    }
+                }
+            }
 
             if (!response.ok) {
                 notFound();
