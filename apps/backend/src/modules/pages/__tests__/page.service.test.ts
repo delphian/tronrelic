@@ -4,6 +4,7 @@ import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { PageService } from '../services/page.service.js';
 import type { IDatabaseService, ICacheService, IStorageProvider } from '@tronrelic/types';
 import { ObjectId } from 'mongodb';
+import { matchesFilter } from '../../../tests/vitest/mocks/mongoose.js';
 
 /**
  * Mock CacheService for testing Redis operations.
@@ -129,9 +130,7 @@ class MockDatabaseService implements IDatabaseService {
                         if (Object.keys(filter).length > 0) {
                             results = data.filter((doc: any) => {
                                 return Object.entries(filter).every(([key, value]) => {
-                                    if (key === '_id' && value instanceof ObjectId) {
-                                        return doc._id.equals(value);
-                                    }
+                                    // Special PageService-specific filters
                                     if (key === '$text') {
                                         // Simple text search simulation
                                         const searchTerm = (value as any).$search.toLowerCase();
@@ -144,11 +143,8 @@ class MockDatabaseService implements IDatabaseService {
                                     if (key === 'mimeType' && value instanceof RegExp) {
                                         return value.test(doc.mimeType || '');
                                     }
-                                    // Handle array contains queries (e.g., { oldSlugs: "/old-url" })
-                                    if (Array.isArray(doc[key])) {
-                                        return doc[key].includes(value);
-                                    }
-                                    return doc[key] === value;
+                                    // Use shared filter matching for standard MongoDB operators
+                                    return matchesFilter(doc, { [key]: value });
                                 });
                             });
                         }
@@ -192,29 +188,7 @@ class MockDatabaseService implements IDatabaseService {
                 };
             }),
             findOne: vi.fn(async (filter: any) => {
-                const doc = data.find((d: any) => {
-                    return Object.entries(filter).every(([key, value]) => {
-                        if (key === '_id') {
-                            // Handle $ne operator
-                            if (value && typeof value === 'object' && '$ne' in value) {
-                                const neValue = value.$ne;
-                                if (neValue instanceof ObjectId) {
-                                    return !d._id.equals(neValue);
-                                }
-                                return d._id !== neValue;
-                            }
-                            // Handle direct ObjectId comparison
-                            if (value instanceof ObjectId) {
-                                return d._id.equals(value);
-                            }
-                        }
-                        // Handle array contains queries (e.g., { oldSlugs: "/old-url" })
-                        if (Array.isArray(d[key])) {
-                            return d[key].includes(value);
-                        }
-                        return d[key] === value;
-                    });
-                });
+                const doc = data.find((d: any) => matchesFilter(d, filter));
                 return doc || null;
             }),
             insertOne: vi.fn(async (doc: any) => {
@@ -224,14 +198,7 @@ class MockDatabaseService implements IDatabaseService {
                 return { insertedId: id, acknowledged: true };
             }),
             updateOne: vi.fn(async (filter: any, update: any) => {
-                const docIndex = data.findIndex((d: any) => {
-                    return Object.entries(filter).every(([key, value]) => {
-                        if (key === '_id' && value instanceof ObjectId) {
-                            return d._id.equals(value);
-                        }
-                        return d[key] === value;
-                    });
-                });
+                const docIndex = data.findIndex((d: any) => matchesFilter(d, filter));
 
                 if (docIndex !== -1) {
                     const updateFields = update.$set || {};
@@ -242,14 +209,7 @@ class MockDatabaseService implements IDatabaseService {
                 return { modifiedCount: 0, acknowledged: true };
             }),
             deleteOne: vi.fn(async (filter: any) => {
-                const docIndex = data.findIndex((d: any) => {
-                    return Object.entries(filter).every(([key, value]) => {
-                        if (key === '_id' && value instanceof ObjectId) {
-                            return d._id.equals(value);
-                        }
-                        return d[key] === value;
-                    });
-                });
+                const docIndex = data.findIndex((d: any) => matchesFilter(d, filter));
 
                 if (docIndex !== -1) {
                     data.splice(docIndex, 1);
@@ -262,9 +222,7 @@ class MockDatabaseService implements IDatabaseService {
                 if (Object.keys(filter).length === 0) {
                     return data.length;
                 }
-                return data.filter((doc: any) => {
-                    return Object.entries(filter).every(([key, value]) => doc[key] === value);
-                }).length;
+                return data.filter((doc: any) => matchesFilter(doc, filter)).length;
             }),
             createIndex: vi.fn(async () => 'index_name'),
             deleteMany: vi.fn(async () => ({ deletedCount: 0, acknowledged: true })),
