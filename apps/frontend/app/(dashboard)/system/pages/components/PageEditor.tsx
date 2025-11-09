@@ -67,38 +67,6 @@ export function PageEditor({ token, page, onSave, onCancel }: PageEditorProps) {
     const [loadingPreview, setLoadingPreview] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    /**
-     * Fetch preview HTML from backend.
-     *
-     * Sends current markdown content to the preview endpoint and receives
-     * rendered HTML. Updates preview state for display.
-     */
-    const fetchPreview = async () => {
-        setLoadingPreview(true);
-        try {
-            const response = await fetch('/api/admin/pages/preview', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'x-admin-token': token
-                },
-                body: JSON.stringify({ content })
-            });
-
-            if (!response.ok) {
-                throw new Error(`Failed to generate preview: ${response.statusText}`);
-            }
-
-            const data = await response.json();
-            setPreview(data.html);
-            setError(null);
-        } catch (err) {
-            setError(err instanceof Error ? err.message : 'Failed to generate preview');
-            setPreview('<p class="error">Failed to generate preview</p>');
-        } finally {
-            setLoadingPreview(false);
-        }
-    };
 
     /**
      * Save page (create or update).
@@ -147,12 +115,35 @@ export function PageEditor({ token, page, onSave, onCancel }: PageEditorProps) {
         if (!showPreview) return;
 
         // Debounce preview updates to avoid excessive API calls
-        const timeoutId = setTimeout(() => {
-            void fetchPreview();
+        const timeoutId = setTimeout(async () => {
+            setLoadingPreview(true);
+            try {
+                const response = await fetch('/api/admin/pages/preview', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'x-admin-token': token
+                    },
+                    body: JSON.stringify({ content })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`Failed to generate preview: ${response.statusText}`);
+                }
+
+                const data = await response.json();
+                setPreview(data.html);
+                setError(null);
+            } catch (err) {
+                setError(err instanceof Error ? err.message : 'Failed to generate preview');
+                setPreview('<p class="error">Failed to generate preview</p>');
+            } finally {
+                setLoadingPreview(false);
+            }
         }, 500); // Wait 500ms after user stops typing
 
         return () => clearTimeout(timeoutId);
-    }, [showPreview, content]);
+    }, [showPreview, content, token]);
 
     return (
         <div className={styles.editor}>
