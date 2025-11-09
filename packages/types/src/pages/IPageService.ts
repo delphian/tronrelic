@@ -66,6 +66,27 @@ export interface IPageService {
     getPageBySlug(slug: string): Promise<IPage | null>;
 
     /**
+     * Find a page that has the given slug in its oldSlugs array.
+     *
+     * Used to implement redirects from old URLs to current pages. When a slug
+     * doesn't match any current page, check if it exists in any page's oldSlugs
+     * array and redirect to that page's current slug.
+     *
+     * @param oldSlug - Old slug to search for in oldSlugs arrays
+     * @returns Promise resolving to the page document or null if not found
+     *
+     * @example
+     * ```typescript
+     * // User visits /old-url which doesn't exist as a current slug
+     * const page = await pageService.findPageByOldSlug('/old-url');
+     * if (page) {
+     *     // Redirect to page.slug with 301 status
+     * }
+     * ```
+     */
+    findPageByOldSlug(oldSlug: string): Promise<IPage | null>;
+
+    /**
      * List pages with optional filtering.
      *
      * @param options - Filter and pagination options

@@ -406,8 +406,9 @@ export class PagesController {
      * Get a published page by slug (public endpoint).
      *
      * Only returns published pages. Unpublished pages return 404.
+     * If the slug is an old slug, returns page data with current slug for frontend redirect.
      *
-     * Response: IPage or 404 if not found/unpublished
+     * Response: { page: IPage, requestedSlug: string } or 404 if not found/unpublished
      */
     async getPublicPage(req: Request, res: Response): Promise<void> {
         try {
@@ -416,14 +417,22 @@ export class PagesController {
             // Prepend slash if not present
             const normalizedSlug = slug.startsWith('/') ? slug : `/${slug}`;
 
-            const page = await this.pageService.getPageBySlug(normalizedSlug);
+            let page = await this.pageService.getPageBySlug(normalizedSlug);
 
             if (!page || !page.published) {
+                // Check if slug exists in any page's oldSlugs array
+                const redirectPage = await this.pageService.findPageByOldSlug(normalizedSlug);
+                if (redirectPage && redirectPage.published) {
+                    // Return page data with requested slug for frontend redirect
+                    res.json({ page: redirectPage, requestedSlug: normalizedSlug });
+                    return;
+                }
+
                 res.status(404).json({ error: 'Page not found' });
                 return;
             }
 
-            res.json({ page });
+            res.json({ page, requestedSlug: normalizedSlug });
         } catch (error) {
             this.logger.error('Failed to get public page', { error, slug: req.params.slug });
             res.status(500).json({
@@ -439,13 +448,14 @@ export class PagesController {
      * Get rendered HTML for a published page (public endpoint).
      *
      * Only returns HTML for published pages. Unpublished pages return 404.
+     * If the slug is an old slug, returns rendered content with current slug for frontend redirect.
      * Uses optimized caching that checks Redis BEFORE querying MongoDB.
      *
      * Performance characteristics:
      * - Cache hit: ~1-2ms (Redis only, no database query)
      * - Cache miss: ~50-100ms (MongoDB query + markdown render + Redis cache)
      *
-     * Response: { html: string, metadata: FrontMatter } or 404 if not found/unpublished
+     * Response: { html: string, metadata: FrontMatter, currentSlug: string, requestedSlug: string } or 404
      */
     async renderPublicPage(req: Request, res: Response): Promise<void> {
         try {
@@ -455,14 +465,32 @@ export class PagesController {
             const normalizedSlug = slug.startsWith('/') ? slug : `/${slug}`;
 
             // Use optimized method that checks cache before database
-            const rendered = await this.pageService.renderPublicPageBySlug(normalizedSlug);
+            let rendered = await this.pageService.renderPublicPageBySlug(normalizedSlug);
+            let currentSlug = normalizedSlug;
 
             if (!rendered) {
-                res.status(404).json({ error: 'Page not found' });
-                return;
+                // Check if slug exists in any page's oldSlugs array
+                const redirectPage = await this.pageService.findPageByOldSlug(normalizedSlug);
+                if (redirectPage && redirectPage.published) {
+                    // Render using current slug
+                    rendered = await this.pageService.renderPublicPageBySlug(redirectPage.slug);
+                    currentSlug = redirectPage.slug;
+
+                    if (!rendered) {
+                        res.status(404).json({ error: 'Page not found' });
+                        return;
+                    }
+                } else {
+                    res.status(404).json({ error: 'Page not found' });
+                    return;
+                }
             }
 
-            res.json(rendered);
+            res.json({
+                ...rendered,
+                currentSlug,
+                requestedSlug: normalizedSlug,
+            });
         } catch (error) {
             this.logger.error('Failed to render public page', { error, slug: req.params.slug });
             res.status(500).json({
