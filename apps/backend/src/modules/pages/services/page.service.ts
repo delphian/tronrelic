@@ -159,10 +159,19 @@ export class PageService implements IPageService {
         }
 
         for (const oldSlug of oldSlugs) {
+            // Check if oldSlug conflicts with another page's current slug
             const conflictingPage = await this.pagesCollection.findOne({ slug: oldSlug });
             if (conflictingPage) {
                 throw new Error(
                     `Old slug "${oldSlug}" conflicts with existing page "${conflictingPage.title}"`
+                );
+            }
+
+            // Check if oldSlug conflicts with another page's oldSlugs array
+            const conflictingOldSlug = await this.pagesCollection.findOne({ oldSlugs: oldSlug });
+            if (conflictingOldSlug) {
+                throw new Error(
+                    `Old slug "${oldSlug}" conflicts with redirect from page "${conflictingOldSlug.title}"`
                 );
             }
         }
@@ -233,12 +242,24 @@ export class PageService implements IPageService {
             );
         }
 
-        // Validate each oldSlug doesn't conflict with other pages' current slugs
+        // Validate each oldSlug doesn't conflict with other pages' current slugs or oldSlugs arrays
         for (const oldSlug of oldSlugs) {
+            // Check if oldSlug conflicts with another page's current slug
             const conflictingPage = await this.pagesCollection.findOne({ slug: oldSlug });
             if (conflictingPage && conflictingPage._id.toString() !== id) {
                 throw new Error(
                     `Old slug "${oldSlug}" conflicts with existing page "${conflictingPage.title}"`
+                );
+            }
+
+            // Check if oldSlug conflicts with another page's oldSlugs array
+            const conflictingOldSlug = await this.pagesCollection.findOne({
+                oldSlugs: oldSlug,
+                _id: { $ne: new ObjectId(id) },
+            });
+            if (conflictingOldSlug) {
+                throw new Error(
+                    `Old slug "${oldSlug}" conflicts with redirect from page "${conflictingOldSlug.title}"`
                 );
             }
         }

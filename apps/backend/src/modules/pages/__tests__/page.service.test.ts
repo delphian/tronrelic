@@ -1129,6 +1129,57 @@ Updated content`;
                 'Slug "/old-url" conflicts with redirect from page "Page One"'
             );
         });
+
+        it('should prevent creating page with oldSlug that exists in another page\'s oldSlugs array', async () => {
+            const content1 = `---
+title: "Page One"
+slug: "/current"
+oldSlugs: ["/shared-old-slug"]
+---
+Content`;
+
+            await pageService.createPage(content1);
+
+            const content2 = `---
+title: "Page Two"
+slug: "/new-page"
+oldSlugs: ["/shared-old-slug"]
+---
+Content`;
+
+            await expect(pageService.createPage(content2)).rejects.toThrow(
+                'Old slug "/shared-old-slug" conflicts with redirect from page "Page One"'
+            );
+        });
+
+        it('should prevent updating oldSlugs to include value in another page\'s oldSlugs array', async () => {
+            const content1 = `---
+title: "Page One"
+slug: "/page-one"
+oldSlugs: ["/old-shared"]
+---
+Content`;
+
+            const content2 = `---
+title: "Page Two"
+slug: "/page-two"
+---
+Content`;
+
+            await pageService.createPage(content1);
+            const page2 = await pageService.createPage(content2);
+
+            const updateContent = `---
+title: "Page Two"
+slug: "/page-two"
+oldSlugs: ["/old-shared"]
+---
+Updated content`;
+
+            await expect(pageService.updatePage(page2._id!, updateContent)).rejects.toThrow(
+                'Old slug "/old-shared" conflicts with redirect from page "Page One"'
+            );
+        });
     });
 
     describe('circular reference prevention', () => {
