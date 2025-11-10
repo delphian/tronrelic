@@ -2,25 +2,9 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { ThemeModule } from '../ThemeModule.js';
-import type { IDatabaseService, ICacheService, IMenuService } from '@tronrelic/types';
+import type { ICacheService, IMenuService } from '@tronrelic/types';
 import type { Express } from 'express';
-
-/**
- * Mock database service for testing.
- */
-class MockDatabase implements Partial<IDatabaseService> {
-    getCollection() {
-        return {
-            createIndex: vi.fn().mockResolvedValue('mock-index')
-        } as any;
-    }
-    registerModel() {}
-    getModel() { return undefined; }
-    async initializeMigrations() {}
-    async getMigrationsPending() { return []; }
-    async getMigrationsCompleted() { return []; }
-    async executeMigration() {}
-}
+import { createMockDatabaseService } from '../../../tests/vitest/mocks/database-service.js';
 
 /**
  * Mock cache service for testing.
@@ -104,7 +88,7 @@ vi.mock('../api/theme.routes.js', () => ({
 
 describe('ThemeModule', () => {
     let module: ThemeModule;
-    let mockDatabase: MockDatabase;
+    let mockDatabase: ReturnType<typeof createMockDatabaseService>;
     let mockCacheService: MockCacheService;
     let mockMenuService: MockMenuService;
     let mockApp: Partial<Express>;
@@ -112,7 +96,7 @@ describe('ThemeModule', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         module = new ThemeModule();
-        mockDatabase = new MockDatabase();
+        mockDatabase = createMockDatabaseService();
         mockCacheService = new MockCacheService();
         mockMenuService = new MockMenuService();
         mockApp = createMockApp();

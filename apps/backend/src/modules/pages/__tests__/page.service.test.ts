@@ -2,9 +2,9 @@
 
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { PageService } from '../services/page.service.js';
-import type { IDatabaseService, ICacheService, IStorageProvider } from '@tronrelic/types';
+import type { ICacheService, IStorageProvider } from '@tronrelic/types';
 import { ObjectId } from 'mongodb';
-import { matchesFilter } from '../../../tests/vitest/mocks/mongoose.js';
+import { createMockDatabaseService } from '../../../tests/vitest/mocks/database-service.js';
 
 /**
  * Mock CacheService for testing Redis operations.
@@ -69,220 +69,6 @@ class MockStorageProvider implements IStorageProvider {
     }
 }
 
-/**
- * Mock DatabaseService for testing MongoDB operations.
- */
-class MockDatabaseService implements IDatabaseService {
-    private collections = new Map<string, any[]>();
-
-    // Model registry (not used by PageService but required by interface)
-    registerModel(collectionName: string, model: any): void {
-        // No-op for tests
-    }
-
-    getModel(collectionName: string): any | undefined {
-        return undefined;
-    }
-
-    // Migration methods (not used by PageService but required by interface)
-    async initializeMigrations(): Promise<void> {
-        // No-op for tests
-    }
-
-    async getMigrationsPending(): Promise<Array<{ id: string; description: string; source: string; filePath: string; timestamp: Date; dependencies: string[]; checksum?: string }>> {
-        return [];
-    }
-
-    async getMigrationsCompleted(limit?: number): Promise<Array<{ migrationId: string; status: 'completed' | 'failed'; source: string; executedAt: Date; executionDuration: number; error?: string; errorStack?: string; checksum?: string }>> {
-        return [];
-    }
-
-    async executeMigration(migrationId: string): Promise<void> {
-        // No-op for tests
-    }
-
-    async executeMigrationsAll(): Promise<void> {
-        // No-op for tests
-    }
-
-    isMigrationRunning(): boolean {
-        return false;
-    }
-
-    getCollection<T extends Document = Document>(name: string) {
-        if (!this.collections.has(name)) {
-            this.collections.set(name, []);
-        }
-
-        const data = this.collections.get(name)!;
-
-        return {
-            find: vi.fn((filter: any = {}) => {
-                let _skip = 0;
-                let _limit: number | undefined;
-                let _sort: any = null;
-
-                return {
-                    toArray: vi.fn(async () => {
-                        let results = data;
-
-                        // Apply filters
-                        if (Object.keys(filter).length > 0) {
-                            results = data.filter((doc: any) => {
-                                return Object.entries(filter).every(([key, value]) => {
-                                    // Special PageService-specific filters
-                                    if (key === '$text') {
-                                        // Simple text search simulation
-                                        const searchTerm = (value as any).$search.toLowerCase();
-                                        return (
-                                            doc.title?.toLowerCase().includes(searchTerm) ||
-                                            doc.slug?.toLowerCase().includes(searchTerm) ||
-                                            doc.description?.toLowerCase().includes(searchTerm)
-                                        );
-                                    }
-                                    if (key === 'mimeType' && value instanceof RegExp) {
-                                        return value.test(doc.mimeType || '');
-                                    }
-                                    // Use shared filter matching for standard MongoDB operators
-                                    return matchesFilter(doc, { [key]: value });
-                                });
-                            });
-                        }
-
-                        // Apply sorting
-                        if (_sort) {
-                            const sortField = Object.keys(_sort)[0];
-                            const sortOrder = _sort[sortField];
-                            results = [...results].sort((a, b) => {
-                                const aVal = a[sortField];
-                                const bVal = b[sortField];
-                                if (sortOrder === -1) {
-                                    return aVal < bVal ? 1 : -1;
-                                }
-                                return aVal > bVal ? 1 : -1;
-                            });
-                        }
-
-                        // Apply pagination
-                        if (_skip > 0) {
-                            results = results.slice(_skip);
-                        }
-                        if (_limit !== undefined) {
-                            results = results.slice(0, _limit);
-                        }
-
-                        return results;
-                    }),
-                    sort: vi.fn(function(this: any, sortOptions: any) {
-                        _sort = sortOptions;
-                        return this;
-                    }),
-                    skip: vi.fn(function(this: any, skipValue: number) {
-                        _skip = skipValue;
-                        return this;
-                    }),
-                    limit: vi.fn(function(this: any, limitValue: number) {
-                        _limit = limitValue;
-                        return this;
-                    })
-                };
-            }),
-            findOne: vi.fn(async (filter: any) => {
-                const doc = data.find((d: any) => matchesFilter(d, filter));
-                return doc || null;
-            }),
-            insertOne: vi.fn(async (doc: any) => {
-                const id = doc._id || new ObjectId();
-                const newDoc = { ...doc, _id: id };
-                data.push(newDoc);
-                return { insertedId: id, acknowledged: true };
-            }),
-            updateOne: vi.fn(async (filter: any, update: any) => {
-                const docIndex = data.findIndex((d: any) => matchesFilter(d, filter));
-
-                if (docIndex !== -1) {
-                    const updateFields = update.$set || {};
-                    data[docIndex] = { ...data[docIndex], ...updateFields };
-                    return { modifiedCount: 1, acknowledged: true };
-                }
-
-                return { modifiedCount: 0, acknowledged: true };
-            }),
-            deleteOne: vi.fn(async (filter: any) => {
-                const docIndex = data.findIndex((d: any) => matchesFilter(d, filter));
-
-                if (docIndex !== -1) {
-                    data.splice(docIndex, 1);
-                    return { deletedCount: 1, acknowledged: true };
-                }
-
-                return { deletedCount: 0, acknowledged: true };
-            }),
-            countDocuments: vi.fn(async (filter: any = {}) => {
-                if (Object.keys(filter).length === 0) {
-                    return data.length;
-                }
-                return data.filter((doc: any) => matchesFilter(doc, filter)).length;
-            }),
-            createIndex: vi.fn(async () => 'index_name'),
-            deleteMany: vi.fn(async () => ({ deletedCount: 0, acknowledged: true })),
-            updateMany: vi.fn(async () => ({ modifiedCount: 0, acknowledged: true }))
-        } as any;
-    }
-
-    async get<T = any>(key: string): Promise<T | undefined> {
-        const collection = this.getCollection('_kv');
-        const doc = await collection.findOne({ key });
-        return doc?.value;
-    }
-
-    async set<T = any>(key: string, value: T): Promise<void> {
-        const collection = this.getCollection('_kv');
-        await collection.updateOne(
-            { key },
-            { $set: { key, value } },
-            { upsert: true }
-        );
-    }
-
-    async delete(key: string): Promise<boolean> {
-        const collection = this.getCollection('_kv');
-        const result = await collection.deleteOne({ key });
-        return result.deletedCount > 0;
-    }
-
-    async createIndex(): Promise<void> {
-        // No-op for tests
-    }
-
-    async count(): Promise<number> {
-        return 0;
-    }
-
-    async find(): Promise<any[]> {
-        return [];
-    }
-
-    async findOne(): Promise<any> {
-        return null;
-    }
-
-    async insertOne(): Promise<any> {
-        return new ObjectId();
-    }
-
-    async updateMany(): Promise<number> {
-        return 0;
-    }
-
-    async deleteMany(): Promise<number> {
-        return 0;
-    }
-
-    clear(): void {
-        this.collections.clear();
-    }
-}
 
 /**
  * Mock logger for testing log output.
@@ -297,13 +83,13 @@ const mockLogger = {
 
 describe('PageService', () => {
     let pageService: PageService;
-    let mockDatabase: MockDatabaseService;
+    let mockDatabase: ReturnType<typeof createMockDatabaseService>;
     let mockCache: MockCacheService;
     let mockStorage: MockStorageProvider;
 
     beforeEach(() => {
         vi.clearAllMocks();
-        mockDatabase = new MockDatabaseService();
+        mockDatabase = createMockDatabaseService();
         mockCache = new MockCacheService();
         mockStorage = new MockStorageProvider();
 

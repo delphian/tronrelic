@@ -51,7 +51,14 @@ describe('PluginDatabaseService', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mockLogger = new MockLogger();
-        service = new PluginDatabaseService(mockLogger as any, 'test-plugin');
+
+        // Re-define the db property to ensure fresh mock for each test
+        Object.defineProperty(mongoose.connection, 'db', {
+            get: vi.fn(() => mockDb),
+            configurable: true
+        });
+
+        service = new PluginDatabaseService(mockLogger as any, mongoose.connection, 'test-plugin');
         mockCollection = new MockCollection();
         mockDb.collection.mockReturnValue(mockCollection as any);
     });
@@ -63,7 +70,7 @@ describe('PluginDatabaseService', () => {
          * Verifies that plugin ID is used to create collection name prefix.
          */
         it('should create plugin database service with automatic prefixing', () => {
-            const pluginService = new PluginDatabaseService(mockLogger as any, 'whale-alerts');
+            const pluginService = new PluginDatabaseService(mockLogger as any, mongoose.connection, 'whale-alerts');
             expect(pluginService).toBeDefined();
         });
     });
@@ -100,7 +107,7 @@ describe('PluginDatabaseService', () => {
          * Verifies that invalid characters in plugin IDs are handled.
          */
         it('should sanitize plugin ID in prefix', () => {
-            const invalidPluginService = new PluginDatabaseService(mockLogger as any, 'invalid@plugin$id');
+            const invalidPluginService = new PluginDatabaseService(mockLogger as any, mongoose.connection, 'invalid@plugin$id');
 
             invalidPluginService.getCollection('test');
 
@@ -117,8 +124,8 @@ describe('PluginDatabaseService', () => {
          * Verifies that different plugins cannot access each other's collections.
          */
         it('should isolate collections between plugins', () => {
-            const plugin1 = new PluginDatabaseService(mockLogger as any, 'plugin-1');
-            const plugin2 = new PluginDatabaseService(mockLogger as any, 'plugin-2');
+            const plugin1 = new PluginDatabaseService(mockLogger as any, mongoose.connection, 'plugin-1');
+            const plugin2 = new PluginDatabaseService(mockLogger as any, mongoose.connection, 'plugin-2');
 
             plugin1.getCollection('data');
             expect(mockDb.collection).toHaveBeenCalledWith('plugin_plugin-1_data');
@@ -261,8 +268,8 @@ describe('PluginDatabaseService', () => {
          * without interference.
          */
         it('should support multiple plugins simultaneously', async () => {
-            const plugin1 = new PluginDatabaseService(mockLogger as any, 'whale-alerts');
-            const plugin2 = new PluginDatabaseService(mockLogger as any, 'delegation-tracker');
+            const plugin1 = new PluginDatabaseService(mockLogger as any, mongoose.connection, 'whale-alerts');
+            const plugin2 = new PluginDatabaseService(mockLogger as any, mongoose.connection, 'delegation-tracker');
 
             // Both plugins use 'subscriptions' collection
             mockCollection.insertOne.mockResolvedValue({ insertedId: 'id-1', acknowledged: true });

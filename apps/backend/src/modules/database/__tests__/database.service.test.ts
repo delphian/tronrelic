@@ -89,7 +89,7 @@ describe('DatabaseService', () => {
             configurable: true
         });
 
-        service = new DatabaseService(mockLogger as any);
+        service = new DatabaseService(mockLogger as any, mongoose.connection);
     });
 
     afterEach(() => {
@@ -104,7 +104,7 @@ describe('DatabaseService', () => {
          * collection name prefixing.
          */
         it('should create service without prefix', () => {
-            const coreService = new DatabaseService(mockLogger as any);
+            const coreService = new DatabaseService(mockLogger as any, mongoose.connection);
             expect(coreService).toBeDefined();
         });
 
@@ -115,7 +115,7 @@ describe('DatabaseService', () => {
          * collection name prefixing.
          */
         it('should create service with prefix', () => {
-            const pluginService = new DatabaseService(mockLogger as any, { prefix: 'plugin_test_' });
+            const pluginService = new DatabaseService(mockLogger as any, mongoose.connection, { prefix: 'plugin_test_' });
             expect(pluginService).toBeDefined();
         });
     });
@@ -139,7 +139,7 @@ describe('DatabaseService', () => {
          * Verifies that collection names are automatically prefixed when configured.
          */
         it('should return collection with prefix', () => {
-            const pluginService = new DatabaseService(mockLogger as any, { prefix: 'plugin_test_' });
+            const pluginService = new DatabaseService(mockLogger as any, mongoose.connection, { prefix: 'plugin_test_' });
 
             const collection = pluginService.getCollection('subscriptions');
 
@@ -184,7 +184,7 @@ describe('DatabaseService', () => {
          * Verifies that plugin databases cannot access collections outside their namespace.
          */
         it('should restrict plugin database to prefixed collections only', () => {
-            const pluginService = new DatabaseService(mockLogger as any, { prefix: 'plugin_test_' });
+            const pluginService = new DatabaseService(mockLogger as any, mongoose.connection, { prefix: 'plugin_test_' });
 
             // This should work - collection has correct prefix
             expect(() => pluginService.getCollection('subscriptions')).not.toThrow();

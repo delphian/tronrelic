@@ -1,4 +1,4 @@
-import mongoose from 'mongoose';
+import type { Connection } from 'mongoose';
 import type { Collection, Document, Filter, UpdateFilter, IndexDescription, CreateIndexesOptions } from 'mongodb';
 import type { IDatabaseService, ISystemLogService } from '@tronrelic/types';
 import { MigrationScanner } from '../migration/MigrationScanner.js';
@@ -51,6 +51,7 @@ import type { IMigrationMetadata } from '../migration/types.js';
 export class DatabaseService implements IDatabaseService {
     private readonly collectionPrefix: string;
     private readonly logger: ISystemLogService;
+    private readonly connection: Connection;
     private readonly models: Map<string, any> = new Map();
 
     // Migration system components
@@ -64,25 +65,33 @@ export class DatabaseService implements IDatabaseService {
     /**
      * Create a database service instance.
      *
-     * Core services typically pass logger and optional prefix. Plugins
-     * pass a prefix to isolate their collections from other plugins and
+     * Core services typically pass logger, mongoose connection, and optional prefix.
+     * Plugins pass a prefix to isolate their collections from other plugins and
      * core services.
      *
+     * The Mongoose connection is injected to enable flexible testing strategies:
+     * - Unit tests can pass a mocked connection without importing mongoose
+     * - Integration tests can pass a real connection to test database
+     * - Services declare dependencies explicitly via constructor
+     *
      * @param logger - System log service for database operation logging
+     * @param mongooseConnection - Mongoose connection instance
      * @param options - Configuration options
      * @param options.prefix - Optional prefix for all collection names
      *
      * @example
      * ```typescript
      * // Core service (called by DatabaseModule)
-     * const db = new DatabaseService(logger);
+     * import mongoose from 'mongoose';
+     * const db = new DatabaseService(logger, mongoose.connection);
      *
      * // Plugin with namespace isolation
-     * const pluginDb = new DatabaseService(logger, { prefix: 'plugin_whale-alerts_' });
+     * const pluginDb = new DatabaseService(logger, mongoose.connection, { prefix: 'plugin_whale-alerts_' });
      * ```
      */
-    constructor(logger: ISystemLogService, options?: { prefix?: string }) {
+    constructor(logger: ISystemLogService, mongooseConnection: Connection, options?: { prefix?: string }) {
         this.logger = logger;
+        this.connection = mongooseConnection;
         this.collectionPrefix = options?.prefix || '';
     }
 
@@ -139,7 +148,7 @@ export class DatabaseService implements IDatabaseService {
             );
         }
 
-        const db = mongoose.connection.db;
+        const db = this.connection.db;
         if (!db) {
             throw new Error('MongoDB connection not established');
         }
