@@ -57,7 +57,7 @@ const mockCollectionInstances = new Map<string, any>();
 /**
  * Shared filter matching logic for all mock operations.
  *
- * Supports MongoDB query operators: $in, $ne, array contains, ObjectId comparison.
+ * Supports MongoDB query operators: $in, $ne, RegExp, array contains, ObjectId comparison.
  * Exported for reuse in custom IDatabaseService mocks.
  *
  * @param doc - Document to test
@@ -69,6 +69,12 @@ export function matchesFilter(doc: any, filter: Filter<any>): boolean {
         // Handle ObjectId comparison
         if (key === '_id' && value instanceof ObjectId && doc._id instanceof ObjectId) {
             return doc._id.equals(value);
+        }
+
+        // Handle RegExp (for MongoDB regex queries like { mimeType: /^image\// })
+        if (value instanceof RegExp) {
+            const docValue = doc[key];
+            return docValue != null && value.test(String(docValue));
         }
 
         // Handle $in operator: { field: { $in: [value1, value2] } }

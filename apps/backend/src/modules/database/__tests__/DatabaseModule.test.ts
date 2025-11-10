@@ -2,7 +2,6 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { DatabaseModule } from '../DatabaseModule.js';
-import type { IDatabaseService } from '@tronrelic/types';
 import type { Express } from 'express';
 
 /**
@@ -17,33 +16,6 @@ class MockLogger {
         const child = new MockLogger();
         return child as any;
     });
-}
-
-/**
- * Mock database service for testing.
- *
- * Simulates the DatabaseService behavior without requiring MongoDB connection.
- */
-class MockDatabaseService implements Partial<IDatabaseService> {
-    getCollection() { return {} as any; }
-    registerModel() {}
-    getModel() { return undefined; }
-    async get() { return undefined; }
-    async set() {}
-    async delete() { return false; }
-    async createIndex() {}
-    async count() { return 0; }
-    async find() { return []; }
-    async findOne() { return null; }
-    async insertOne() { return null; }
-    async updateMany() { return 0; }
-    async deleteMany() { return 0; }
-    async initializeMigrations() {}
-    async getMigrationsPending() { return []; }
-    async getMigrationsCompleted() { return []; }
-    async executeMigration() {}
-    async executeMigrationsAll() {}
-    isMigrationRunning() { return false; }
 }
 
 /**

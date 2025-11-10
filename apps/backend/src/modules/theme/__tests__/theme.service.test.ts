@@ -2,9 +2,10 @@
 
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { ThemeService } from '../services/theme.service.js';
-import type { IDatabaseService, ICacheService, ISystemLogService } from '@tronrelic/types';
+import type { ICacheService, ISystemLogService } from '@tronrelic/types';
 import type { IThemeDocument, ICreateThemeInput, IUpdateThemeInput } from '../database/index.js';
 import { ObjectId } from 'mongodb';
+import { createMockDatabaseService } from '../../../tests/vitest/mocks/database-service.js';
 
 /**
  * Mock CacheService for testing Redis operations with tag support.
@@ -69,214 +70,6 @@ class MockCacheService implements ICacheService {
     }
 }
 
-/**
- * Mock DatabaseService for testing MongoDB operations.
- *
- * Provides in-memory collection storage with MongoDB-like API.
- */
-class MockDatabaseService implements IDatabaseService {
-    private collections = new Map<string, Map<string, any>>();
-    private kvStore = new Map<string, any>();
-
-    registerModel(collectionName: string, model: any): void {
-        // No-op for tests
-    }
-
-    getModel(collectionName: string): any | undefined {
-        return undefined;
-    }
-
-    async get<T = any>(key: string): Promise<T | undefined> {
-        return this.kvStore.get(key);
-    }
-
-    async set<T = any>(key: string, value: T): Promise<void> {
-        this.kvStore.set(key, value);
-    }
-
-    async delete(key: string): Promise<boolean> {
-        return this.kvStore.delete(key);
-    }
-
-    async createIndex(
-        collectionName: string,
-        indexSpec: Record<string, 1 | -1>,
-        options?: { unique?: boolean; sparse?: boolean; expireAfterSeconds?: number; name?: string }
-    ): Promise<void> {
-        // No-op for tests
-    }
-
-    async count<T extends any = any>(collectionName: string, filter: any): Promise<number> {
-        const collection = this.getCollection<T>(collectionName);
-        const results = await collection.find(filter).toArray();
-        return results.length;
-    }
-
-    async find<T extends any = any>(
-        collectionName: string,
-        filter: any,
-        options?: { limit?: number; skip?: number; sort?: Record<string, 1 | -1> }
-    ): Promise<T[]> {
-        const collection = this.getCollection<T>(collectionName);
-        return collection.find(filter).toArray();
-    }
-
-    async findOne<T extends any = any>(collectionName: string, filter: any): Promise<T | null> {
-        const collection = this.getCollection<T>(collectionName);
-        return collection.findOne(filter);
-    }
-
-    async insertOne<T extends any = any>(collectionName: string, document: T): Promise<any> {
-        const collection = this.getCollection<T>(collectionName);
-        const result = await collection.insertOne(document);
-        return result.insertedId;
-    }
-
-    async updateMany<T extends any = any>(
-        collectionName: string,
-        filter: any,
-        update: any
-    ): Promise<number> {
-        // Simple implementation for tests
-        return 0;
-    }
-
-    async deleteMany<T extends any = any>(collectionName: string, filter: any): Promise<number> {
-        // Simple implementation for tests
-        return 0;
-    }
-
-    async initializeMigrations(): Promise<void> {
-        // No-op for tests
-    }
-
-    async getMigrationsPending(): Promise<any[]> {
-        return [];
-    }
-
-    async getMigrationsCompleted(limit?: number): Promise<any[]> {
-        return [];
-    }
-
-    async executeMigration(migrationId: string): Promise<void> {
-        // No-op for tests
-    }
-
-    async executeMigrationsAll(): Promise<void> {
-        // No-op for tests
-    }
-
-    isMigrationRunning(): boolean {
-        return false;
-    }
-
-    getCollection<T = any>(name: string): any {
-        if (!this.collections.has(name)) {
-            this.collections.set(name, new Map());
-        }
-
-        const data = this.collections.get(name)!;
-
-        return {
-            find: (filter: any = {}) => ({
-                toArray: async () => {
-                    const results: any[] = [];
-                    for (const doc of data.values()) {
-                        // Simple filter matching with array inclusion support
-                        let matches = true;
-                        for (const [key, value] of Object.entries(filter)) {
-                            // Check if we're filtering by array inclusion
-                            if (Array.isArray(doc[key])) {
-                                // doc[key] is an array, check if it includes the value
-                                if (!doc[key].includes(value)) {
-                                    matches = false;
-                                    break;
-                                }
-                            } else if (doc[key] !== value) {
-                                matches = false;
-                                break;
-                            }
-                        }
-                        if (matches) {
-                            results.push(doc);
-                        }
-                    }
-                    return results;
-                }
-            }),
-
-            findOne: async (filter: any) => {
-                for (const doc of data.values()) {
-                    let matches = true;
-                    for (const [key, value] of Object.entries(filter)) {
-                        if (doc[key] !== value) {
-                            matches = false;
-                            break;
-                        }
-                    }
-                    if (matches) {
-                        return doc;
-                    }
-                }
-                return null;
-            },
-
-            insertOne: async (doc: any) => {
-                const id = doc._id || new ObjectId();
-                const fullDoc = { ...doc, _id: id };
-                data.set(doc.id, fullDoc);
-                return { insertedId: id };
-            },
-
-            updateOne: async (filter: any, update: any) => {
-                for (const [key, doc] of data.entries()) {
-                    let matches = true;
-                    for (const [filterKey, filterValue] of Object.entries(filter)) {
-                        if (doc[filterKey] !== filterValue) {
-                            matches = false;
-                            break;
-                        }
-                    }
-
-                    if (matches) {
-                        const updated = { ...doc, ...update.$set, updatedAt: new Date() };
-                        data.set(key, updated);
-                        return { matchedCount: 1, modifiedCount: 1 };
-                    }
-                }
-                return { matchedCount: 0, modifiedCount: 0 };
-            },
-
-            deleteOne: async (filter: any) => {
-                for (const [key, doc] of data.entries()) {
-                    let matches = true;
-                    for (const [filterKey, filterValue] of Object.entries(filter)) {
-                        if (doc[filterKey] !== filterValue) {
-                            matches = false;
-                            break;
-                        }
-                    }
-
-                    if (matches) {
-                        data.delete(key);
-                        return { deletedCount: 1 };
-                    }
-                }
-                return { deletedCount: 0 };
-            },
-
-            createIndex: async () => 'mock-index'
-        };
-    }
-
-    /**
-     * Test helper: Clear all collections.
-     */
-    clear(): void {
-        this.collections.clear();
-        this.kvStore.clear();
-    }
-}
 
 /**
  * Mock SystemLogService for testing logging operations.
@@ -406,12 +199,12 @@ class MockSystemLogService implements ISystemLogService {
 
 describe('ThemeService', () => {
     let themeService: ThemeService;
-    let mockDatabase: MockDatabaseService;
+    let mockDatabase: ReturnType<typeof createMockDatabaseService>;
     let mockCache: MockCacheService;
     let mockLogger: MockSystemLogService;
 
     beforeEach(() => {
-        mockDatabase = new MockDatabaseService();
+        mockDatabase = createMockDatabaseService();
         mockCache = new MockCacheService();
         mockLogger = new MockSystemLogService();
 

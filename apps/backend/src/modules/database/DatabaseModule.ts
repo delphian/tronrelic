@@ -149,8 +149,12 @@ export class DatabaseModule implements IModule<IDatabaseModuleDependencies> {
 
         this.logger.info('Initializing database module...');
 
+        // Import mongoose to access connection
+        const mongooseModule = await import('mongoose');
+        const mongooseConnection = mongooseModule.default.connection;
+
         // Create core database service (no prefix for system collections)
-        this.databaseService = new DatabaseService(this.logger);
+        this.databaseService = new DatabaseService(this.logger, mongooseConnection);
         this.logger.info('Core DatabaseService instance created');
 
         // Initialize migration system by scanning filesystem

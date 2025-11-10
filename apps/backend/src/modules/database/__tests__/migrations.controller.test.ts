@@ -2,33 +2,9 @@
 
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { MigrationsController } from '../api/migrations.controller.js';
-import type { IDatabaseService, ISystemLogService } from '@tronrelic/types';
+import type { ISystemLogService } from '@tronrelic/types';
 import type { Request, Response } from 'express';
-
-/**
- * Mock DatabaseService for controller instantiation.
- */
-class MockDatabaseService implements Partial<IDatabaseService> {
-    getCollection() { return {} as any; }
-    registerModel() {}
-    getModel() { return undefined; }
-    async get() { return undefined; }
-    async set() {}
-    async delete() { return false; }
-    async createIndex() {}
-    async count() { return 0; }
-    async find() { return []; }
-    async findOne() { return null; }
-    async insertOne() { return null; }
-    async updateMany() { return 0; }
-    async deleteMany() { return 0; }
-    async initializeMigrations() {}
-    async getMigrationsPending() { return []; }
-    async getMigrationsCompleted() { return []; }
-    async executeMigration() {}
-    async executeMigrationsAll() {}
-    isMigrationRunning() { return false; }
-}
+import { createMockDatabaseService } from '../../../tests/vitest/mocks/database-service.js';
 
 /**
  * Mock logger for testing.
@@ -86,15 +62,15 @@ vi.mock('../services/migrations.service.js', () => ({
 
 describe('MigrationsController', () => {
     let controller: MigrationsController;
-    let mockDatabase: MockDatabaseService;
+    let mockDatabase: ReturnType<typeof createMockDatabaseService>;
     let mockLogger: MockLogger;
 
     beforeEach(() => {
-        mockDatabase = new MockDatabaseService();
+        mockDatabase = createMockDatabaseService();
         mockLogger = new MockLogger();
 
         controller = new MigrationsController(
-            mockDatabase as any as IDatabaseService,
+            mockDatabase,
             mockLogger as any as ISystemLogService
         );
     });

@@ -3,9 +3,10 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { PagesModule } from '../index.js';
 import { PageService } from '../services/page.service.js';
-import type { IDatabaseService, ICacheService, IMenuService } from '@tronrelic/types';
+import type { ICacheService, IMenuService } from '@tronrelic/types';
 import { ObjectId } from 'mongodb';
 import type { Express, Router } from 'express';
+import { createMockDatabaseService } from '../../../tests/vitest/mocks/database-service.js';
 
 /**
  * Mock CacheService for testing.
@@ -32,114 +33,6 @@ class MockCacheService implements ICacheService {
     }
 }
 
-/**
- * Mock DatabaseService for testing.
- */
-class MockDatabaseService implements IDatabaseService {
-    private collections = new Map<string, any[]>();
-
-    registerModel(collectionName: string, model: any): void {
-        // No-op for tests
-    }
-
-    getModel(collectionName: string): any | undefined {
-        return undefined;
-    }
-
-    async initializeMigrations(): Promise<void> {
-        // No-op for tests
-    }
-
-    async getMigrationsPending(): Promise<Array<{ id: string; description: string; source: string; filePath: string; timestamp: Date; dependencies: string[]; checksum?: string }>> {
-        return [];
-    }
-
-    async getMigrationsCompleted(limit?: number): Promise<Array<{ migrationId: string; status: 'completed' | 'failed'; source: string; executedAt: Date; executionDuration: number; error?: string; errorStack?: string; checksum?: string }>> {
-        return [];
-    }
-
-    async executeMigration(migrationId: string): Promise<void> {
-        // No-op for tests
-    }
-
-    async executeMigrationsAll(): Promise<void> {
-        // No-op for tests
-    }
-
-    isMigrationRunning(): boolean {
-        return false;
-    }
-
-    getCollection<T extends Document = Document>(name: string) {
-        if (!this.collections.has(name)) {
-            this.collections.set(name, []);
-        }
-
-        const data = this.collections.get(name)!;
-
-        return {
-            find: vi.fn((filter: any = {}) => ({
-                toArray: vi.fn(async () => data),
-                sort: vi.fn(function(this: any) { return this; }),
-                skip: vi.fn(function(this: any) { return this; }),
-                limit: vi.fn(function(this: any) { return this; })
-            })),
-            findOne: vi.fn(async (filter: any) => null),
-            insertOne: vi.fn(async (doc: any) => {
-                const id = doc._id || new ObjectId();
-                const newDoc = { ...doc, _id: id };
-                data.push(newDoc);
-                return { insertedId: id, acknowledged: true };
-            }),
-            updateOne: vi.fn(async (filter: any, update: any) => ({ modifiedCount: 0, acknowledged: true })),
-            deleteOne: vi.fn(async (filter: any) => ({ deletedCount: 0, acknowledged: true })),
-            countDocuments: vi.fn(async () => data.length),
-            createIndex: vi.fn(async () => 'index_name'),
-            deleteMany: vi.fn(async () => ({ deletedCount: 0, acknowledged: true })),
-            updateMany: vi.fn(async () => ({ modifiedCount: 0, acknowledged: true }))
-        } as any;
-    }
-
-    async get<T = any>(key: string): Promise<T | undefined> {
-        return undefined;
-    }
-
-    async set<T = any>(key: string, value: T): Promise<void> {
-        // No-op
-    }
-
-    async delete(key: string): Promise<boolean> {
-        return false;
-    }
-
-    async createIndex(): Promise<void> {
-        // No-op
-    }
-
-    async count(): Promise<number> {
-        return 0;
-    }
-
-    async find(): Promise<any[]> {
-        return [];
-    }
-
-    async findOne(): Promise<any> {
-        return null;
-    }
-
-    async insertOne(): Promise<any> {
-        return new ObjectId();
-    }
-
-    async updateMany(): Promise<number> {
-        return 0;
-    }
-
-    async deleteMany(): Promise<number> {
-        return 0;
-    }
-}
 
 /**
  * Mock MenuService for testing.
@@ -182,7 +75,7 @@ class MockExpressApp {
 }
 
 describe('PagesModule', () => {
-    let mockDatabase: MockDatabaseService;
+    let mockDatabase: ReturnType<typeof createMockDatabaseService>;
     let mockCache: MockCacheService;
     let mockMenu: MockMenuService;
     let mockApp: MockExpressApp;
@@ -193,7 +86,7 @@ describe('PagesModule', () => {
         // Reset PageService singleton before each test
         (PageService as any).instance = undefined;
 
-        mockDatabase = new MockDatabaseService();
+        mockDatabase = createMockDatabaseService();
         mockCache = new MockCacheService();
         mockMenu = new MockMenuService();
         mockApp = new MockExpressApp();
