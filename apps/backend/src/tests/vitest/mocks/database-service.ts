@@ -335,7 +335,7 @@ export function createMockDatabaseService(): IDatabaseService & {
             const data = ensureCollection(collectionName);
 
             let results = Object.keys(filter).length === 0
-                ? data
+                ? [...data]  // Create copy to prevent mutations (consistent with getCollection().find())
                 : data.filter((doc: any) => matchesFilter(doc, filter));
 
             // Apply sorting
