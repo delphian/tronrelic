@@ -2,6 +2,7 @@ import { readdirSync, existsSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import axios from 'axios';
+import mongoose from 'mongoose';
 import type { IPluginContext, IPlugin } from '@tronrelic/types';
 import { logger } from '../lib/logger.js';
 import { BlockchainObserverService } from '../services/blockchain-observer/index.js';
@@ -181,8 +182,8 @@ export async function loadPlugins(): Promise<void> {
             // Register plugin in database (creates entry if new)
             await metadataService.registerPlugin(plugin.manifest);
 
-            // Create plugin-scoped database service
-            const database = new PluginDatabaseService(pluginLogger, plugin.manifest.id);
+            // Create plugin-scoped database service with injected mongoose connection
+            const database = new PluginDatabaseService(pluginLogger, mongoose.connection, plugin.manifest.id);
 
             // Create plugin-scoped WebSocket manager if Socket.IO is initialized
             let websocketManager: PluginWebSocketManager | undefined;

@@ -1,4 +1,5 @@
 import { DatabaseService } from './database.service.js';
+import type { Connection } from 'mongoose';
 import type { ISystemLogService } from '@tronrelic/types';
 
 /**
@@ -17,7 +18,8 @@ import type { ISystemLogService } from '@tronrelic/types';
  * @example
  * ```typescript
  * // In plugin init:
- * const db = new PluginDatabaseService(logger, 'whale-alerts');
+ * import mongoose from 'mongoose';
+ * const db = new PluginDatabaseService(logger, mongoose.connection, 'whale-alerts');
  *
  * // Access collection (becomes "plugin_whale-alerts_subscriptions")
  * const subscriptions = db.getCollection('subscriptions');
@@ -36,9 +38,10 @@ export class PluginDatabaseService extends DatabaseService {
      * isolation between plugins and preventing naming conflicts.
      *
      * @param logger - System log service for database operation logging
+     * @param mongooseConnection - Mongoose connection instance
      * @param pluginId - The unique plugin identifier (from manifest)
      */
-    constructor(logger: ISystemLogService, pluginId: string) {
-        super(logger, { prefix: `plugin_${pluginId}_` });
+    constructor(logger: ISystemLogService, mongooseConnection: Connection, pluginId: string) {
+        super(logger, mongooseConnection, { prefix: `plugin_${pluginId}_` });
     }
 }

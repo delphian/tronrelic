@@ -2,8 +2,8 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { LogsModule } from '../LogsModule.js';
-import type { IDatabaseService } from '@tronrelic/types';
 import type { Express } from 'express';
+import { createMockDatabaseService } from '../../../tests/vitest/mocks/database-service.js';
 
 /**
  * Mock Pino logger for testing.
@@ -23,30 +23,6 @@ class MockPinoLogger {
     });
 }
 
-/**
- * Mock database service for testing.
- */
-class MockDatabase implements Partial<IDatabaseService> {
-    getCollection() { return {} as any; }
-    registerModel() {}
-    getModel() { return undefined; }
-    async get() { return undefined; }
-    async set() {}
-    async delete() { return false; }
-    async createIndex() {}
-    async count() { return 0; }
-    async find() { return []; }
-    async findOne() { return null; }
-    async insertOne() { return null; }
-    async updateMany() { return 0; }
-    async deleteMany() { return 0; }
-    async initializeMigrations() {}
-    async getMigrationsPending() { return []; }
-    async getMigrationsCompleted() { return []; }
-    async executeMigration() {}
-    async executeMigrationsAll() {}
-    isMigrationRunning() { return false; }
-}
 
 /**
  * Mock Express app for testing.
@@ -100,7 +76,7 @@ vi.mock('../../menu/index.js', () => ({
 describe('LogsModule', () => {
     let module: LogsModule;
     let mockPino: MockPinoLogger;
-    let mockDatabase: MockDatabase;
+    let mockDatabase: ReturnType<typeof createMockDatabaseService>;
     let mockApp: Partial<Express>;
 
     beforeEach(() => {
@@ -109,7 +85,7 @@ describe('LogsModule', () => {
         mockMenuCreate.mockResolvedValue(undefined);
         module = new LogsModule();
         mockPino = new MockPinoLogger();
-        mockDatabase = new MockDatabase();
+        mockDatabase = createMockDatabaseService();
         mockApp = createMockApp();
     });
 
