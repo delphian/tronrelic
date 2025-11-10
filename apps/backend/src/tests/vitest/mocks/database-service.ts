@@ -167,6 +167,7 @@ export function createMockDatabaseService(): IDatabaseService & {
 
                     const cursor = {
                         toArray: async () => {
+                            checkInjectedError(name, 'find');
                             let results = filter && Object.keys(filter).length > 0
                                 ? data.filter((doc: any) => matchesFilter(doc, filter))
                                 : [...data];
@@ -238,7 +239,8 @@ export function createMockDatabaseService(): IDatabaseService & {
                     if (options?.upsert) {
                         const id = new ObjectId();
                         const updateFields = (update as any).$set || {};
-                        const newDoc = { ...updateFields, _id: id };
+                        // Merge filter fields with update fields (matches MongoDB behavior)
+                        const newDoc = { ...filter, ...updateFields, _id: id };
                         data.push(newDoc);
                         return { modifiedCount: 0, matchedCount: 0, acknowledged: true, upsertedCount: 1, upsertedId: id };
                     }
