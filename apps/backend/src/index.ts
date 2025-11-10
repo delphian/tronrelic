@@ -86,13 +86,11 @@ async function bootstrap() {
         // Note: MenuService uses unprefixed collections (menu_nodes, menu_namespace_config)
         // to maintain compatibility with existing admin tools and scripts
         try {
-            const { DatabaseService } = await import('./modules/database/index.js');
-            const menuDatabase = new DatabaseService(logger); // No prefix for system collections
             const menuModule = new MenuModule();
 
             // Phase 1: Initialize MenuModule (create services, load menu tree)
             await menuModule.init({
-                database: menuDatabase,
+                database: coreDatabase,
                 app
             });
 
