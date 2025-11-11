@@ -282,14 +282,14 @@ jobs:
           echo "Deploying wildcard SSL certificate..."
 
           # Create certificate directory on droplet
-          ssh root@"$DROPLET_IP" "mkdir -p /etc/nginx/ssl"
+          ssh -o StrictHostKeyChecking=no root@"$DROPLET_IP" "mkdir -p /etc/nginx/ssl"
 
           # Deploy certificate files (base64 encoded in secrets)
-          echo "${{ secrets.WILDCARD_SSL_CERT }}" | base64 -d | ssh root@"$DROPLET_IP" "cat > /etc/nginx/ssl/wildcard.crt"
-          echo "${{ secrets.WILDCARD_SSL_KEY }}" | base64 -d | ssh root@"$DROPLET_IP" "cat > /etc/nginx/ssl/wildcard.key"
+          echo "${{ secrets.WILDCARD_SSL_CERT }}" | base64 -d | ssh -o StrictHostKeyChecking=no root@"$DROPLET_IP" "cat > /etc/nginx/ssl/wildcard.crt"
+          echo "${{ secrets.WILDCARD_SSL_KEY }}" | base64 -d | ssh -o StrictHostKeyChecking=no root@"$DROPLET_IP" "cat > /etc/nginx/ssl/wildcard.key"
 
           # Set proper permissions
-          ssh root@"$DROPLET_IP" "chmod 644 /etc/nginx/ssl/wildcard.crt && chmod 600 /etc/nginx/ssl/wildcard.key"
+          ssh -o StrictHostKeyChecking=no root@"$DROPLET_IP" "chmod 644 /etc/nginx/ssl/wildcard.crt && chmod 600 /etc/nginx/ssl/wildcard.key"
 
           echo "✅ SSL certificate deployed"
 
@@ -381,7 +381,7 @@ jobs:
 
           scp -o StrictHostKeyChecking=no /tmp/nginx-pr.conf root@"$DROPLET_IP":/etc/nginx/sites-available/tronrelic
 
-          ssh root@"$DROPLET_IP" "ln -sf /etc/nginx/sites-available/tronrelic /etc/nginx/sites-enabled/tronrelic && rm -f /etc/nginx/sites-enabled/default && nginx -t && systemctl reload nginx"
+          ssh -o StrictHostKeyChecking=no root@"$DROPLET_IP" "ln -sf /etc/nginx/sites-available/tronrelic /etc/nginx/sites-enabled/tronrelic && rm -f /etc/nginx/sites-enabled/default && nginx -t && systemctl reload nginx"
 
           echo "✅ Nginx configured with wildcard SSL certificate"
 

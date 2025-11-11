@@ -106,11 +106,11 @@ sudo certbot certificates
 GitHub Actions needs the certificate files in base64 format to deploy them to PR droplets.
 
 ```bash
-# Encode certificate
-sudo cat /etc/letsencrypt/live/dev-pr.tronrelic.com/fullchain.pem | base64 -w 0 > cert.b64
+# Encode certificate (cross-platform: works on Linux and macOS)
+sudo cat /etc/letsencrypt/live/dev-pr.tronrelic.com/fullchain.pem | base64 | tr -d '\n' > cert.b64
 
-# Encode private key
-sudo cat /etc/letsencrypt/live/dev-pr.tronrelic.com/privkey.pem | base64 -w 0 > key.b64
+# Encode private key (cross-platform: works on Linux and macOS)
+sudo cat /etc/letsencrypt/live/dev-pr.tronrelic.com/privkey.pem | base64 | tr -d '\n' > key.b64
 
 # Display for copying to GitHub secrets
 echo "WILDCARD_SSL_CERT:"
@@ -190,8 +190,9 @@ When the wildcard certificate is renewed, update GitHub secrets with the new cer
 
 2. **Encode new certificate:**
    ```bash
-   sudo cat /etc/letsencrypt/live/dev-pr.tronrelic.com/fullchain.pem | base64 -w 0 > cert.b64
-   sudo cat /etc/letsencrypt/live/dev-pr.tronrelic.com/privkey.pem | base64 -w 0 > key.b64
+   # Cross-platform encoding (works on Linux and macOS)
+   sudo cat /etc/letsencrypt/live/dev-pr.tronrelic.com/fullchain.pem | base64 | tr -d '\n' > cert.b64
+   sudo cat /etc/letsencrypt/live/dev-pr.tronrelic.com/privkey.pem | base64 | tr -d '\n' > key.b64
    ```
 
 3. **Update GitHub secrets:**

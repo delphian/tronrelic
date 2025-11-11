@@ -37,7 +37,6 @@ jobs:
           fi
 
       - name: Delete DNS A record via Cloudflare
-        if: steps.check.outputs.exists == 'true'
         run: |
           PR_SUBDOMAIN="pr-${{ github.event.pull_request.number }}"
 
@@ -52,7 +51,7 @@ jobs:
           CLOUDFLARE_ZONE_ID="${{ secrets.CLOUDFLARE_ZONE_ID }}" \
             ./scripts/cloudflare-dns-delete.sh "$PR_SUBDOMAIN" || true
 
-          echo "✅ DNS record cleanup completed"
+          echo "✅ DNS record cleanup completed (or record didn't exist)"
 
       - name: Destroy droplet
         if: steps.check.outputs.exists == 'true'
@@ -100,10 +99,13 @@ jobs:
         with:
           script: |
             const prNumber = ${{ github.event.pull_request.number }};
+            const prSubdomain = `pr-${prNumber}.dev-pr.tronrelic.com`;
 
             const comment = `## ⚠️ No PR environment found for PR #${prNumber}
 
             Droplet \`tronrelic-pr-${prNumber}\` does not exist. It may have been manually deleted or never created.
+
+            DNS record for \`${prSubdomain}\` has been cleaned up (if it existed).
             `;
 
             await github.rest.issues.createComment({
