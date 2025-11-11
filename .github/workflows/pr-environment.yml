@@ -356,6 +356,8 @@ jobs:
           fi
 
           echo "Adding droplet to known_hosts..."
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
           ssh-keyscan -H "$DROPLET_IP" >> ~/.ssh/known_hosts
 
           echo "Installing Docker and dependencies..."
