@@ -1,0 +1,20 @@
+# Code Owners Configuration
+#
+# These owners will be automatically requested for review when someone
+# opens a pull request that modifies files matching the patterns below.
+#
+# Security-critical paths require explicit approval from @delphian
+
+# Workflow files - any changes to GitHub Actions require review
+/.github/workflows/* @delphian
+
+# Security and deployment scripts
+/scripts/cloudflare-*.sh @delphian
+/scripts/droplet-*.sh @delphian
+
+# Environment configuration examples (not .env itself, which is gitignored)
+/.env.example @delphian
+
+# Documentation about security and operations
+/docs/operations/operations-cloudflare-setup.md @delphian
+/docs/operations/operations-server-info.md @delphian
