@@ -192,19 +192,56 @@ remote_exec "cd $DEPLOY_DIR && docker compose -f $COMPOSE_FILE ps"
 echo ""
 
 # Step 7: Verify backend health
-log_info "Verifying backend API health..."
-if curl -sf "http://$DROPLET_IP/api/health" > /dev/null; then
-    log_success "Backend is healthy"
-else
-    log_warning "Backend health check failed (may still be starting)"
+log_info "Verifying backend API health (max 60s)..."
+MAX_ATTEMPTS=12
+ATTEMPT=0
+BACKEND_HEALTHY=false
+
+while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
+    ATTEMPT=$((ATTEMPT + 1))
+
+    if curl -sf "http://$DROPLET_IP/api/health" > /dev/null 2>&1; then
+        log_success "Backend is healthy (attempt $ATTEMPT/$MAX_ATTEMPTS)"
+        BACKEND_HEALTHY=true
+        break
+    fi
+
+    if [ $ATTEMPT -lt $MAX_ATTEMPTS ]; then
+        echo "  Attempt $ATTEMPT/$MAX_ATTEMPTS failed, retrying in 5s..."
+        sleep 5
+    fi
+done
+
+if [ "$BACKEND_HEALTHY" = false ]; then
+    log_error "Backend health check failed after $MAX_ATTEMPTS attempts (60s)"
+    log_warning "Check backend logs: ssh $DROPLET_HOST 'cd $DEPLOY_DIR && docker compose -f $COMPOSE_FILE logs backend'"
+    exit 1
 fi
 
 # Step 8: Verify frontend health
-log_info "Verifying frontend health..."
-if curl -sf "http://$DROPLET_IP/" > /dev/null; then
-    log_success "Frontend is healthy"
-else
-    log_warning "Frontend health check failed (may still be starting)"
+log_info "Verifying frontend health (max 60s)..."
+ATTEMPT=0
+FRONTEND_HEALTHY=false
+
+while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
+    ATTEMPT=$((ATTEMPT + 1))
+
+    if curl -sf "http://$DROPLET_IP/" > /dev/null 2>&1; then
+        log_success "Frontend is healthy (attempt $ATTEMPT/$MAX_ATTEMPTS)"
+        FRONTEND_HEALTHY=true
+        break
+    fi
+
+    if [ $ATTEMPT -lt $MAX_ATTEMPTS ]; then
+        echo "  Attempt $ATTEMPT/$MAX_ATTEMPTS failed, retrying in 5s..."
+        sleep 5
+    fi
+done
+
+if [ "$FRONTEND_HEALTHY" = false ]; then
+    log_error "Frontend health check failed after $MAX_ATTEMPTS attempts (60s)"
+    log_warning "Check frontend logs: ssh $DROPLET_HOST 'cd $DEPLOY_DIR && docker compose -f $COMPOSE_FILE logs frontend'"
+    exit 1
 fi
 
 echo ""

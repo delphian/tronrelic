@@ -44,6 +44,68 @@ jobs:
           GH_PRIVATE_SUBMODULE_TOKEN: ${{ secrets.GH_PRIVATE_SUBMODULE_TOKEN || '' }}
         continue-on-error: true
 
+      - name: Validate required secrets
+        run: |
+          echo "🔍 Validating required secrets..."
+          MISSING_SECRETS=""
+
+          # Check each required secret
+          if [ -z "${{ secrets.DO_API_TOKEN }}" ]; then
+            MISSING_SECRETS="$MISSING_SECRETS DO_API_TOKEN"
+          fi
+
+          if [ -z "${{ secrets.DO_SSH_KEY_FINGERPRINT }}" ]; then
+            MISSING_SECRETS="$MISSING_SECRETS DO_SSH_KEY_FINGERPRINT"
+          fi
+
+          if [ -z "${{ secrets.DO_SSH_PRIVATE_KEY }}" ]; then
+            MISSING_SECRETS="$MISSING_SECRETS DO_SSH_PRIVATE_KEY"
+          fi
+
+          if [ -z "${{ secrets.CLOUDFLARE_API_TOKEN }}" ]; then
+            MISSING_SECRETS="$MISSING_SECRETS CLOUDFLARE_API_TOKEN"
+          fi
+
+          if [ -z "${{ secrets.CLOUDFLARE_ZONE_ID }}" ]; then
+            MISSING_SECRETS="$MISSING_SECRETS CLOUDFLARE_ZONE_ID"
+          fi
+
+          if [ -z "${{ secrets.WILDCARD_SSL_CERT }}" ]; then
+            MISSING_SECRETS="$MISSING_SECRETS WILDCARD_SSL_CERT"
+          fi
+
+          if [ -z "${{ secrets.WILDCARD_SSL_KEY }}" ]; then
+            MISSING_SECRETS="$MISSING_SECRETS WILDCARD_SSL_KEY"
+          fi
+
+          if [ -z "${{ secrets.ADMIN_API_TOKEN }}" ]; then
+            MISSING_SECRETS="$MISSING_SECRETS ADMIN_API_TOKEN"
+          fi
+
+          if [ -z "${{ secrets.TRONGRID_API_KEY }}" ]; then
+            MISSING_SECRETS="$MISSING_SECRETS TRONGRID_API_KEY"
+          fi
+
+          if [ -z "${{ secrets.TRONGRID_API_KEY_2 }}" ]; then
+            MISSING_SECRETS="$MISSING_SECRETS TRONGRID_API_KEY_2"
+          fi
+
+          if [ -z "${{ secrets.TRONGRID_API_KEY_3 }}" ]; then
+            MISSING_SECRETS="$MISSING_SECRETS TRONGRID_API_KEY_3"
+          fi
+
+          # Fail if any secrets are missing
+          if [ -n "$MISSING_SECRETS" ]; then
+            echo "❌ Missing required secrets:$MISSING_SECRETS"
+            echo ""
+            echo "Please configure these secrets in repository settings:"
+            echo "  Settings → Secrets and variables → Actions → New repository secret"
+            echo ""
+            exit 1
+          fi
+
+          echo "✅ All required secrets are configured"
+
       - name: Prepare image tag and subdomain
         id: prep
         run: |
@@ -113,50 +175,129 @@ jobs:
             echo "✅ Droplet $DROPLET_NAME does not exist, will create"
           fi
 
+      - name: Check for stale DNS record
+        id: check_dns
+        run: |
+          PR_SUBDOMAIN="pr-${{ github.event.pull_request.number }}"
+          DNS_FQDN="${PR_SUBDOMAIN}.dev-pr.tronrelic.com"
+
+          echo "Checking if DNS record exists: $DNS_FQDN"
+
+          # Use dig to check if DNS record exists
+          if EXISTING_IP=$(dig +short "$DNS_FQDN" | grep -E '^[0-9.]+$' | head -1); then
+            if [ -n "$EXISTING_IP" ]; then
+              echo "dns_exists=true" >> $GITHUB_OUTPUT
+              echo "dns_ip=$EXISTING_IP" >> $GITHUB_OUTPUT
+              echo "⚠️ DNS record exists with IP: $EXISTING_IP"
+            else
+              echo "dns_exists=false" >> $GITHUB_OUTPUT
+              echo "✅ DNS record does not exist"
+            fi
+          else
+            echo "dns_exists=false" >> $GITHUB_OUTPUT
+            echo "✅ DNS record does not exist"
+          fi
+
+      - name: Warn about stale DNS record
+        if: steps.check.outputs.exists == 'false' && steps.check_dns.outputs.dns_exists == 'true'
+        run: |
+          PR_SUBDOMAIN="pr-${{ github.event.pull_request.number }}"
+          DNS_FQDN="${PR_SUBDOMAIN}.dev-pr.tronrelic.com"
+
+          echo "::warning::⚠️ STALE DNS RECORD DETECTED"
+          echo "::warning::DNS record exists but droplet does not: $DNS_FQDN → ${{ steps.check_dns.outputs.dns_ip }}"
+          echo "::warning::This may indicate a previous cleanup failure or partial teardown."
+          echo "::warning::Manual cleanup required - run: ./scripts/cloudflare-dns-delete.sh $PR_SUBDOMAIN"
+          echo ""
+          echo "⚠️ STALE DNS RECORD DETECTED"
+          echo "   DNS: $DNS_FQDN"
+          echo "   IP: ${{ steps.check_dns.outputs.dns_ip }}"
+          echo "   Droplet: Does not exist"
+          echo ""
+          echo "🛠️ Manual cleanup command:"
+          echo "   CLOUDFLARE_API_TOKEN=<token> CLOUDFLARE_ZONE_ID=<zone> \\"
+          echo "     ./scripts/cloudflare-dns-delete.sh $PR_SUBDOMAIN"
+          echo ""
+          echo "⏩ Continuing with fresh droplet creation..."
+
       - name: Create droplet
         if: steps.check.outputs.exists == 'false'
         id: create
         run: |
           DROPLET_NAME="${{ steps.prep.outputs.droplet_name }}"
+          MAX_RETRIES=3
+          RETRY_COUNT=0
 
-          echo "Creating droplet: $DROPLET_NAME"
+          echo "Creating droplet: $DROPLET_NAME (with retry logic)"
 
-          doctl compute droplet create "$DROPLET_NAME" \
-            --size s-2vcpu-4gb-amd \
-            --region sgp1 \
-            --image ubuntu-25-04-x64 \
-            --ssh-keys ${{ secrets.DO_SSH_KEY_FINGERPRINT }} \
-            --tag-names "tronrelic-pr-testing" \
-            --wait \
-            --format ID,Name,PublicIPv4 \
-            --no-header
+          while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+            echo "Attempt $((RETRY_COUNT + 1))/$MAX_RETRIES..."
 
-          echo "✅ Droplet created successfully"
-          echo "Waiting for droplet initialization to complete..."
-          sleep 15
+            if doctl compute droplet create "$DROPLET_NAME" \
+              --size s-2vcpu-4gb-amd \
+              --region sgp1 \
+              --image ubuntu-25-04-x64 \
+              --ssh-keys ${{ secrets.DO_SSH_KEY_FINGERPRINT }} \
+              --tag-names "tronrelic-pr-testing" \
+              --wait \
+              --format ID,Name,PublicIPv4 \
+              --no-header; then
+              echo "✅ Droplet created successfully"
+              echo "Waiting for droplet initialization to complete..."
+              sleep 15
+              exit 0
+            fi
+
+            RETRY_COUNT=$((RETRY_COUNT + 1))
+
+            if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
+              BACKOFF_SECONDS=$((RETRY_COUNT * 30))
+              echo "⚠️ Droplet creation failed, retrying in ${BACKOFF_SECONDS}s..."
+              sleep $BACKOFF_SECONDS
+            fi
+          done
+
+          echo "❌ Failed to create droplet after $MAX_RETRIES attempts"
+          exit 1
 
       - name: Get droplet public IP
         if: steps.check.outputs.exists == 'false'
         id: get_ip
         run: |
           DROPLET_NAME="${{ steps.prep.outputs.droplet_name }}"
+          MAX_RETRIES=5
+          RETRY_COUNT=0
+
+          echo "Retrieving droplet public IP (with retry logic)"
 
           # Wait a moment for droplet to be fully ready
           sleep 10
 
-          DROPLET_IP=$(doctl compute droplet list \
-            --format Name,PublicIPv4 \
-            --no-header \
-            | grep "^${DROPLET_NAME}" \
-            | awk '{print $2}')
+          while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+            echo "Attempt $((RETRY_COUNT + 1))/$MAX_RETRIES..."
 
-          if [ -z "$DROPLET_IP" ]; then
-            echo "❌ Could not retrieve droplet IP"
-            exit 1
-          fi
+            DROPLET_IP=$(doctl compute droplet list \
+              --format Name,PublicIPv4 \
+              --no-header \
+              | grep "^${DROPLET_NAME}" \
+              | awk '{print $2}')
 
-          echo "ip=$DROPLET_IP" >> $GITHUB_OUTPUT
-          echo "✅ Droplet public IP: $DROPLET_IP"
+            if [ -n "$DROPLET_IP" ]; then
+              echo "ip=$DROPLET_IP" >> $GITHUB_OUTPUT
+              echo "✅ Droplet public IP: $DROPLET_IP"
+              exit 0
+            fi
+
+            RETRY_COUNT=$((RETRY_COUNT + 1))
+
+            if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
+              echo "⚠️ Could not retrieve droplet IP, retrying in 10s..."
+              sleep 10
+            fi
+          done
+
+          echo "❌ Failed to retrieve droplet IP after $MAX_RETRIES attempts"
+          exit 1
 
       - name: Create DNS A record via Cloudflare
         if: steps.check.outputs.exists == 'false'
@@ -179,15 +320,20 @@ jobs:
           echo "⏳ Waiting for DNS propagation (30 seconds)..."
           sleep 30
 
+      - name: Set up SSH agent with private key
+        if: steps.check.outputs.exists == 'false'
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.DO_SSH_PRIVATE_KEY }}
+        # Security: Uses ssh-agent instead of writing key to ~/.ssh/id_rsa
+        # - Key never written to disk
+        # - Automatic cleanup after workflow
+        # - Proper ssh-agent memory handling
+
       - name: Install Docker on droplet
         if: steps.check.outputs.exists == 'false'
         run: |
           DROPLET_IP="${{ steps.get_ip.outputs.ip }}"
-
-          echo "Setting up SSH key..."
-          mkdir -p ~/.ssh
-          echo "${{ secrets.DO_SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
 
           echo "Waiting for SSH to become available..."
           MAX_ATTEMPTS=30
@@ -425,6 +571,9 @@ jobs:
           {
             echo "# TronRelic PR Environment - Auto-generated by GitHub Actions"
             echo "ENV=development"
+            echo "GITHUB_USERNAME=${{ github.repository_owner }}"
+            echo "GITHUB_REPO=${{ github.event.repository.name }}"
+            echo "IMAGE_TAG=$IMAGE_TAG"
             echo "SITE_URL=$SITE_URL"
             echo "SITE_WS=$SITE_WS"
             echo "SITE_BACKEND=http://backend:4000"
@@ -439,7 +588,6 @@ jobs:
             echo "ENABLE_SCHEDULER=true"
             echo "ENABLE_WEBSOCKETS=true"
             echo "REDIS_NAMESPACE=tronrelic"
-            echo "IMAGE_TAG=$IMAGE_TAG"
           } > /tmp/pr.env
 
           scp -o StrictHostKeyChecking=no /tmp/pr.env root@"$DROPLET_IP":"$DEPLOY_DIR/.env"

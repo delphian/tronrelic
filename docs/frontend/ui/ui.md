@@ -243,9 +243,9 @@ Before committing any UI component or plugin page, verify:
 - [documentation.md](../documentation.md) - Documentation standards and writing style
 
 **Source files:**
-- [apps/frontend/app/primitives.css](/home/delphian/projects/tronrelic.com-beta/apps/frontend/app/primitives.css) - Foundation tokens (Layer 1)
-- [apps/frontend/app/semantic-tokens.css](/home/delphian/projects/tronrelic.com-beta/apps/frontend/app/semantic-tokens.css) - Semantic tokens (Layer 2)
-- [apps/frontend/app/globals.css](/home/delphian/projects/tronrelic.com-beta/apps/frontend/app/globals.css) - Utility classes and global styles (Layer 3)
+- [apps/frontend/app/primitives.css](../../../apps/frontend/app/primitives.css) - Foundation tokens (Layer 1)
+- [apps/frontend/app/semantic-tokens.css](../../../apps/frontend/app/semantic-tokens.css) - Semantic tokens (Layer 2)
+- [apps/frontend/app/globals.css](../../../apps/frontend/app/globals.css) - Utility classes and global styles (Layer 3)
 
 **External resources:**
 - [Lucide React Documentation](https://lucide.dev/guide/packages/lucide-react) - Icon library usage

@@ -1201,7 +1201,7 @@ Before creating a new module, verify:
 ## Further Reading
 
 **Detailed documentation:**
-- [pages/README.md](/home/delphian/projects/tronrelic.com-beta/apps/backend/src/modules/pages/README.md) - Complete pages module architecture and patterns
+- [pages/README.md](../../apps/backend/src/modules/pages/README.md) - Complete pages module architecture and patterns
 - [system-database-migrations.md](./system-database-migrations.md) - Migration system for schema evolution
 - [system-menu.md](./system-menu.md) - Menu service for navigation management
 - [system-testing.md](./system-testing.md) - Testing framework with Vitest and Mongoose mocking

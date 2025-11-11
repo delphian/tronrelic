@@ -1,13 +1,13 @@
 # Deployment Workflows
 
-This document describes the complete procedures for deploying TronRelic to production and development environments, from initial server setup to routine updates.
+This document describes the complete procedures for deploying TronRelic to production, from initial server setup to routine updates.
 
 ## Security Note: IP Address Placeholders
 
 **For security reasons, actual IP addresses are replaced with placeholders in this documentation.**
 
 **Automated agents can find actual IP addresses in:**
-- **Local .env file:** Variables `PROD_DROPLET_IP` and `DEV_DROPLET_IP` (used by deployment scripts)
+- **Local .env file:** Variable `PROD_DROPLET_IP` (used by deployment scripts)
 - **Deployment config:** `scripts/droplet-config.sh` (ENVIRONMENTS array, sourced by scripts)
 - **GitHub Actions workflow summaries:** Check recent workflow runs for actual IPs used
 - **PR comments:** GitHub Actions posts droplet IPs in PR comments for PR environments
@@ -15,7 +15,6 @@ This document describes the complete procedures for deploying TronRelic to produ
 
 **Placeholders used in this document:**
 - `<PROD_DROPLET_IP>` - Production server IP (from .env: `PROD_DROPLET_IP`)
-- `<DEV_DROPLET_IP>` - Permanent development server IP (from .env: `DEV_DROPLET_IP`)
 - `<PR_DROPLET_IP>` - Example IP for PR testing environments (see PR comments)
 
 ## Why This Matters
@@ -43,9 +42,10 @@ TronRelic supports three deployment methods with different use cases:
 | **CI/CD Image Builds** | Automated image building | Fully automated | Both environments |
 
 **Recommendation:**
-- Use **initial setup scripts** when provisioning a new server
-- Use **manual update scripts** for all deployments (both production and development)
+- Use **initial setup scripts** when provisioning a new production server
+- Use **manual update scripts** for production deployments
 - **CI/CD builds Docker images** automatically but does not deploy them to servers
+- **PR testing environments** are fully automated (no manual deployment needed)
 
 ## Initial Server Setup
 
@@ -68,8 +68,8 @@ These workflows take a fresh Ubuntu 22.04 droplet and configure it to run TronRe
 # Example (production):
 ./scripts/droplet-deploy.sh prod
 
-# Example (development):
-./scripts/droplet-deploy.sh dev
+# Note: PR testing environments are automatically provisioned via GitHub Actions
+# No manual deployment needed for PR testing
 ```
 
 **What the script does:**
@@ -114,8 +114,8 @@ Next Steps:
 # Example (production):
 ./scripts/droplet-setup-ssl.sh prod tronrelic.com admin@tronrelic.com
 
-# Example (development - if using custom domain):
-./scripts/droplet-setup-ssl.sh dev dev.tronrelic.com admin@tronrelic.com
+# Note: PR testing environments use wildcard SSL certificate (*.dev-pr.tronrelic.com)
+# SSL is configured automatically via GitHub Actions workflow
 ```
 
 **What the SSL script does:**
@@ -135,51 +135,6 @@ curl https://tronrelic.com/api/health
 # Test HTTP (should redirect to HTTPS)
 curl -I http://tronrelic.com/
 # Expected: HTTP/1.1 301 Moved Permanently
-```
-
-### Development Setup (dev.tronrelic.com)
-
-**Prerequisites:**
-- Fresh Ubuntu 22.04+ Digital Ocean droplet
-- Root SSH access configured
-- Domain DNS A record pointing dev.tronrelic.com to droplet IP (<DEV_DROPLET_IP>)
-- GitHub Personal Access Token with `read:packages` scope
-- Three TronGrid API keys
-
-**Run development setup script:**
-```bash
-# From your local machine
-./scripts/droplet-deploy.sh dev
-
-# Or skip confirmation prompt
-./scripts/droplet-deploy.sh dev --force
-```
-
-**Differences from production setup:**
-- **Environment variable:** `ENV=development` (production uses `ENV=production`)
-- **Docker image tags:** `:production` (same as prod, ENV controls behavior)
-- **No SSL setup** (development uses HTTP for faster iteration)
-
-**Note:** Development and production use identical deployment directory (`/opt/tronrelic`), container names, and docker-compose.yml per the unified Docker standards. Only the `ENV` variable in the .env file differs between environments (see [operations-docker.md](../system/operations-docker.md)).
-
-**Expected output:**
-```
-DEPLOYMENT COMPLETE!
-
-Application URLs (via Nginx on port 80):
-  Frontend:     http://dev.tronrelic.com/
-  Backend API:  http://dev.tronrelic.com/api
-  System:       http://dev.tronrelic.com/system
-
-Configuration:
-  Environment:  DEVELOPMENT (ENV=development)
-  Image tags:   :production (same as prod)
-  Nginx:        Reverse proxy on port 80
-
-Next Steps:
-  1. Access the frontend at http://dev.tronrelic.com/
-  2. Push to 'dev' branch to trigger CI/CD image builds
-  3. Use ./scripts/droplet-update.sh dev to deploy the new images
 ```
 
 ## Manual Deployment Updates
@@ -242,47 +197,6 @@ curl -I https://tronrelic.com/
 ssh root@<PROD_DROPLET_IP> 'cd /opt/tronrelic && docker compose logs --tail=50 backend'
 ```
 
-### Update Development
-
-**When to use:**
-- Deploy new features to development environment
-- Test deployment scripts before using on production
-- Apply updates after pushing to `dev` branch
-
-**Run update script:**
-```bash
-# From your local machine
-./scripts/droplet-update.sh dev
-
-# Or skip confirmation prompt
-./scripts/droplet-update.sh dev --force
-```
-
-**What the script does:**
-1. **Verifies SSH connection** to development server (<DEV_DROPLET_IP>)
-2. **Shows current container status**
-3. **Pulls latest :production images** from ghcr.io (same images as prod)
-4. **Restarts containers** with new images using full restart strategy (docker compose down && docker compose up -d)
-5. **Waits for startup** (15 seconds)
-6. **Checks container health**
-7. **Verifies backend and frontend health** via Nginx
-
-**Development restart strategy:**
-Development uses `docker compose down && docker compose up -d` which performs a full restart. This ensures a completely clean state, which is more suitable for development environments where state consistency matters more than uptime.
-
-**Expected output:**
-```
-Dev deployment complete!
-
-Application URLs:
-  Frontend: http://<DEV_DROPLET_IP>/
-  Backend:  http://<DEV_DROPLET_IP>/api
-  System:   http://<DEV_DROPLET_IP>/system
-
-View logs with:
-  ssh root@<DEV_DROPLET_IP> 'cd /opt/tronrelic && docker compose logs -f'
-```
-
 ## CI/CD Image Building
 
 TronRelic uses GitHub Actions for continuous integration and automated Docker image builds. All images are tagged as `:production` regardless of target environment. Deployment to servers is always manual.
@@ -307,34 +221,28 @@ TronRelic uses GitHub Actions for continuous integration and automated Docker im
 
 3. **Manual Deployment Required:**
    - GitHub Actions builds images but does NOT deploy them
-   - Run appropriate deployment script manually after verifying images:
-     - Production: `./scripts/droplet-update.sh prod`
-     - Development: `./scripts/droplet-update.sh dev`
+   - Run deployment script manually after verifying images:
+     - `./scripts/droplet-update.sh prod`
 
 **Why manual deployment?**
 - Extra safety for production changes
 - Allows verification of images before deployment
 - Enables scheduled deployment windows (maintenance windows)
 - Prevents accidental deployments
-- Consistent workflow across all environments
 
 **Deploy after successful build:**
 ```bash
 # Production (after push to main):
 ./scripts/droplet-update.sh prod
 
-# Development (after push to dev):
-./scripts/droplet-update.sh dev
-
 # View deployment logs
-ssh root@<DROPLET_IP> 'cd /opt/tronrelic && docker compose logs --tail=100 -f'
+ssh root@<PROD_DROPLET_IP> 'cd /opt/tronrelic && docker compose logs --tail=100 -f'
 ```
 
-**Why single :production tag for all environments?**
-- Images are identical regardless of deployment target
+**Why single :production tag?**
+- Simplifies deployment (no confusion about which tag to use)
 - ENV variable in server .env file controls runtime behavior
-- Eliminates confusion about which tag to use
-- Simplifies docker-compose.yml (no ${ENV} variable needed)
+- Simplifies docker-compose.yml (no variable substitution needed)
 
 ## PR Testing Environments
 
@@ -679,45 +587,32 @@ TRONGRID_API_KEY_3=<key3>
 - Sets `NODE_ENV=production` in containers
 - Uses production-optimized frontend build
 
-### Development Environment
+### PR Testing Environments
 
-**Configuration file:** `/opt/tronrelic/.env`
+**Provisioning:** Fully automated via GitHub Actions (`.github/workflows/pr-environment.yml`)
 
-**Development-specific values:**
-```bash
-# Environment identifier (controls image tags and runtime)
-ENV=development
+**Configuration:** Automatically created when PR is opened to `main` branch
 
-# Site configuration
-SITE_URL=https://dev.tronrelic.com
-SITE_WS=https://dev.tronrelic.com
-SITE_BACKEND=http://backend:4000
-
-# Database authentication (same as production)
-MONGO_ROOT_USERNAME=admin
-MONGO_ROOT_PASSWORD=<secure-password>
-REDIS_PASSWORD=<secure-password>
-
-# Database connections (same as production)
-MONGODB_URI=mongodb://admin:<password>@mongodb:27017/tronrelic?authSource=admin
-REDIS_URL=redis://:<password>@redis:6379
-
-# Feature flags (same as production)
-ENABLE_SCHEDULER=true
-ENABLE_WEBSOCKETS=true
-
-# API keys (can use same or different keys)
-ADMIN_API_TOKEN=<dev-token>
-TRONGRID_API_KEY=<key1>
-TRONGRID_API_KEY_2=<key2>
-TRONGRID_API_KEY_3=<key3>
-```
+**Environment values (auto-generated):**
+- `ENV=development` - Uses development runtime mode
+- `SITE_URL=https://pr-{number}.dev-pr.tronrelic.com` - Unique subdomain per PR
+- `SITE_WS=https://pr-{number}.dev-pr.tronrelic.com` - WebSocket URL
+- `SITE_BACKEND=http://backend:4000` - Internal Docker network
+- Secure credentials auto-generated with `openssl rand -hex 32`
+- TronGrid API keys from GitHub Secrets
 
 **Docker behavior with `ENV=development`:**
-- Pulls `ghcr.io/delphian/tronrelic/backend:production`
-- Pulls `ghcr.io/delphian/tronrelic/frontend:production`
+- Pulls `ghcr.io/delphian/tronrelic/backend:dev-{sha}` - Branch-specific images
+- Pulls `ghcr.io/delphian/tronrelic/frontend:dev-{sha}` - Branch-specific images
 - Sets `NODE_ENV=development` in containers
 - Uses development-optimized frontend build
+
+**Lifecycle:**
+- Created automatically when PR opened
+- Updated automatically on push to PR branch
+- Destroyed automatically when PR closed/merged
+
+**See:** [operations.md - PR Testing Environments](./operations.md#pr-testing-environments) for complete details
 
 ### Container Names (identical for all environments)
 
@@ -782,12 +677,12 @@ git log --oneline
 # Create rollback branch from previous commit
 git checkout -b rollback-<commit-sha> <commit-sha>
 
-# Force push to main (production) or dev (development)
+# Force push to main (production)
 git push origin rollback-<commit-sha>:main --force
 
 # Wait for GitHub Actions to build and push images
 # Then run deployment script
-./scripts/droplet-update.sh prod  # or: ./scripts/droplet-update.sh dev
+./scripts/droplet-update.sh prod
 ```
 
 **Warning:** Force pushing to main should be a last resort. Prefer rolling forward with a fix commit.
@@ -879,7 +774,7 @@ ssh root@<DROPLET_IP>
 ssh root@<DROPLET_IP> 'cd /opt/tronrelic && docker compose ps'
 
 # Manually deploy with verbose output
-./scripts/droplet-update.sh dev  # or prod
+./scripts/droplet-update.sh prod
 ```
 
 ## Quick Reference
@@ -890,8 +785,7 @@ ssh root@<DROPLET_IP> 'cd /opt/tronrelic && docker compose ps'
 ./scripts/droplet-deploy.sh prod
 ./scripts/droplet-setup-ssl.sh prod tronrelic.com your-email@example.com
 
-# Development
-./scripts/droplet-deploy.sh dev
+# Note: PR testing environments are automatically provisioned via GitHub Actions
 ```
 
 **Manual updates:**
@@ -899,8 +793,7 @@ ssh root@<DROPLET_IP> 'cd /opt/tronrelic && docker compose ps'
 # Production
 ./scripts/droplet-update.sh prod
 
-# Development
-./scripts/droplet-update.sh dev
+# Note: PR testing environments update automatically on push to PR branch
 ```
 
 **Verify deployment:**

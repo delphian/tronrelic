@@ -1,6 +1,6 @@
 # Branch Protection Setup
 
-This document explains how to configure GitHub branch protection rules to require all tests to pass before merging to `main` and `dev` branches.
+This document explains how to configure GitHub branch protection rules to require all tests to pass before merging to `main` branch.
 
 ## Automated Test Workflow
 
@@ -10,7 +10,7 @@ The repository uses a reusable test workflow (`.github/workflows/test.yml`) that
 
 Integration tests (Playwright) can be run manually but are not required for merging.
 
-Both the `main` and `dev` branch workflows now call this test workflow and wait for it to complete before building/deploying.
+The `main` branch workflow calls this test workflow and waits for it to complete before building/deploying.
 
 ## Protection Layers
 
@@ -30,7 +30,7 @@ git config core.hooksPath .githooks
 ```
 
 This enables the pre-push hook that:
-- Runs unit tests before pushing to `main` or `dev`
+- Runs unit tests before pushing to `main`
 - Provides fast feedback (catches issues before GitHub Actions)
 - Can be bypassed with `git push --no-verify` (not recommended)
 
@@ -62,34 +62,14 @@ See [../.githooks/README.md](../.githooks/README.md) for details.
 
 4. Click **Create** or **Save changes**
 
-### For `dev` branch (Development)
-
-1. Go to **Settings** → **Branches** in your GitHub repository
-2. Click **Add branch protection rule**
-3. Configure the following settings:
-
-   **Branch name pattern:** `dev`
-
-   **Protect matching branches:**
-   - ☑ Require a pull request before merging
-     - Require approvals: 0 or 1 (depending on team size)
-   - ☑ Require status checks to pass before merging
-     - ☑ Require branches to be up to date before merging
-     - **Required status checks:**
-       - `test / unit-tests`
-   - ☑ **Do not allow bypassing the above settings** ← **CRITICAL: Blocks local merges**
-   - ☑ **Include administrators** ← **Recommended: Even admins must use PRs**
-
-4. Click **Create** or **Save changes**
-
 ## How It Works
 
-### Pull Requests to `main` or `dev`
+### Pull Requests to `main`
 
 When you create a pull request:
 
 1. The test workflow automatically runs
-2. Both unit tests and integration tests must pass
+2. Unit tests must pass
 3. The PR cannot be merged until all required status checks pass
 4. If tests fail, the "Merge" button will be disabled
 
@@ -105,11 +85,6 @@ If branch protection is enabled and someone tries to push directly:
 **For `main` branch:**
 ```
 PR Created → Test Workflow Runs → Build & Push (only if tests pass)
-```
-
-**For `dev` branch:**
-```
-PR Created → Test Workflow Runs → Build & Deploy (only if tests pass)
 ```
 
 ## Testing the Setup
@@ -139,7 +114,7 @@ git push origin test/branch-protection
 
 ### 4. Create pull request
 
-Go to GitHub and create a PR targeting `dev` or `main`. You should see:
+Go to GitHub and create a PR targeting `main`. You should see:
 
 - ❌ Status check "test / unit-tests" failing
 - 🚫 Merge button disabled with message "Merging is blocked"
@@ -198,7 +173,7 @@ docker compose -f docker-compose.yml -f docker-compose.ci.yml down -v
 
 **Solution:**
 1. Make sure you pushed your branch after the workflow files were merged
-2. Update your branch with the latest from `main` or `dev`
+2. Update your branch with the latest from `main`
 3. Check the "Actions" tab to verify workflows are running
 
 ### Tests pass locally but fail in CI
@@ -219,8 +194,8 @@ docker compose -f docker-compose.yml -f docker-compose.ci.yml down -v
 **Cause:** Status checks only appear after they've run at least once on the branch.
 
 **Solution:**
-1. Merge the workflow changes to `main` and `dev` first
-2. Wait for the workflows to run on those branches
+1. Merge the workflow changes to `main` first
+2. Wait for the workflows to run on that branch
 3. The status check name (`test / unit-tests`) will then appear in the dropdown when configuring branch protection
 
 ## Best Practices

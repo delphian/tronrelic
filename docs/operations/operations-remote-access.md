@@ -28,9 +28,13 @@ ssh root@<PROD_DROPLET_IP>
 cd /opt/tronrelic
 ```
 
-**Connect to development:**
+**Connect to PR testing environment:**
 ```bash
-ssh root@<DEV_DROPLET_IP>
+# Find droplet IP from PR comment or:
+doctl compute droplet list --tag-name tronrelic-pr-testing
+
+# Connect to specific PR droplet
+ssh root@<PR_DROPLET_IP>
 
 # Once connected, navigate to deployment directory
 cd /opt/tronrelic
@@ -61,13 +65,13 @@ Host tronrelic-prod
     ServerAliveInterval 60
     ServerAliveCountMax 3
 
-# Development
-Host tronrelic-dev
-    HostName <DEV_DROPLET_IP>
-    User root
-    IdentityFile ~/.ssh/id_ed25519
-    ServerAliveInterval 60
-    ServerAliveCountMax 3
+# PR Testing Environments (find IP from PR comment or doctl)
+# Host tronrelic-pr-42
+#     HostName <PR_DROPLET_IP>
+#     User root
+#     IdentityFile ~/.ssh/id_ed25519
+#     ServerAliveInterval 60
+#     ServerAliveCountMax 3
 ```
 
 **Connect using alias:**
@@ -440,12 +444,11 @@ ssh root@<PROD_DROPLET_IP> 'cd /opt/tronrelic && \
   docker exec -i -e MONGO_PASSWORD="<paste-password-here>" tronrelic-mongo sh -c \
   "mongosh --username admin --password \"\$MONGO_PASSWORD\" --authenticationDatabase admin tronrelic"'
 
-# Development - Same pattern
-ssh root@<DEV_DROPLET_IP> 'grep MONGO_ROOT_PASSWORD /opt/tronrelic/.env'
-
-ssh root@<DEV_DROPLET_IP> 'cd /opt/tronrelic && \
-  docker exec -i -e MONGO_PASSWORD="<paste-password-here>" tronrelic-mongo sh -c \
-  "mongosh --username admin --password \"\$MONGO_PASSWORD\" --authenticationDatabase admin tronrelic"'
+# PR Testing Environment - Same pattern (find IP from PR comment)
+# ssh root@<PR_DROPLET_IP> 'grep MONGO_ROOT_PASSWORD /opt/tronrelic/.env'
+# ssh root@<PR_DROPLET_IP> 'cd /opt/tronrelic && \
+#   docker exec -i -e MONGO_PASSWORD="<paste-password-here>" tronrelic-mongo sh -c \
+#   "mongosh --username admin --password \"\$MONGO_PASSWORD\" --authenticationDatabase admin tronrelic"'
 ```
 
 **Key flags explained:**
@@ -854,8 +857,8 @@ sudo cat /etc/nginx/sites-available/tronrelic
 
 **Connect to servers:**
 ```bash
-ssh root@<PROD_DROPLET_IP>  # Production
-ssh root@<DEV_DROPLET_IP>      # Development
+ssh root@<PROD_DROPLET_IP>    # Production (permanent)
+ssh root@<PR_DROPLET_IP>      # PR Testing (find IP from PR comment)
 ```
 
 **Container management:**

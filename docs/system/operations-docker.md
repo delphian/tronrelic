@@ -2,13 +2,18 @@
 
 ## Overview
 
-TronRelic uses a **simplified Docker deployment system** where all environments use identical `:production` tagged images. Runtime behavior is controlled entirely by the `ENV` variable in the .env file.
+TronRelic uses **two distinct Docker image tagging strategies** depending on deployment type:
+
+1. **Production deployments** - Use universal `:production` tagged images with runtime `ENV` variable control
+2. **PR testing environments** - Use branch-specific `:dev-{sha}` tagged images for isolated testing
+
+This document covers both strategies and when to use each.
 
 ## Core Convention
 
-### Universal Production Images
+### Universal Production Images (Manual Deployments)
 
-**Key principle:** All Docker images are tagged as `:production` regardless of deployment target.
+**Key principle:** Production and manual deployments use `:production` tagged images regardless of target environment.
 
 Environment differentiation happens at **runtime through environment variables**, not at build time through image tags.
 
@@ -59,12 +64,16 @@ SITE_URL=https://tronrelic.com
 
 ## Image Tagging Convention
 
-### CI/CD Requirements
+### Production Deployments (Manual)
 
-**All builds (main and dev branches):**
+**Builds from `main` branch:**
 - MUST tag as `:production` only
 - NO environment-specific tags (`:development`, `:dev`, `:prod`)
 - NO dual-tagging with `:latest`
+
+**Used by:**
+- Production server (tronrelic.com)
+- Manual deployments via `./scripts/droplet-update.sh`
 
 **Rationale:**
 - Images are byte-for-byte identical
@@ -72,17 +81,60 @@ SITE_URL=https://tronrelic.com
 - Simplifies docker-compose.yml (no variable substitution needed)
 - Prevents accidental deployments with wrong tags
 
+### PR Testing Environments (Automated)
+
+**Builds from PR branches:**
+- MUST tag as `:dev-{sha}` (e.g., `:dev-a1b2c3d`)
+- Built from PR branch code (not `main`)
+- Unique tag per commit to prevent caching issues
+
+**Used by:**
+- Ephemeral PR testing droplets (pr-{number}.dev-pr.tronrelic.com)
+- Fully automated via `.github/workflows/pr-environment.yml`
+
+**Why different from production:**
+- Allows testing unreleased code in isolated environments
+- Prevents conflicts between concurrent PR environments
+- Each PR gets its own immutable image snapshot
+- Automatic cleanup when PR closes/merges
+
+**Example workflow:**
+```yaml
+# PR environment builds use commit SHA
+IMAGE_TAG="dev-${SHORT_SHA}"
+docker build -t ghcr.io/delphian/tronrelic/backend:dev-a1b2c3d .
+docker push ghcr.io/delphian/tronrelic/backend:dev-a1b2c3d
+```
+
 ### GitHub Actions Implementation
 
+**Production workflow (`.github/workflows/prod-publish.yml`):**
 ```yaml
-# Unified workflow for both branches
-- name: Build and push images
+# Builds on push to main branch
+- name: Build and push production images
   run: |
     docker build --target backend -t ghcr.io/delphian/tronrelic/backend:production .
     docker push ghcr.io/delphian/tronrelic/backend:production
 
     docker build --target frontend-prod -t ghcr.io/delphian/tronrelic/frontend:production .
     docker push ghcr.io/delphian/tronrelic/frontend:production
+```
+
+**PR testing workflow (`.github/workflows/pr-environment.yml`):**
+```yaml
+# Builds on PR to main branch
+- name: Prepare image tag
+  run: |
+    SHORT_SHA=$(echo "${{ github.event.pull_request.head.sha }}" | cut -c1-7)
+    IMAGE_TAG="dev-${SHORT_SHA}"
+
+- name: Build and push PR images
+  run: |
+    docker build --target backend -t ghcr.io/delphian/tronrelic/backend:$IMAGE_TAG .
+    docker push ghcr.io/delphian/tronrelic/backend:$IMAGE_TAG
+
+    docker build --target frontend-prod -t ghcr.io/delphian/tronrelic/frontend:$IMAGE_TAG .
+    docker push ghcr.io/delphian/tronrelic/frontend:$IMAGE_TAG
 ```
 
 ## Naming Conventions
@@ -125,17 +177,33 @@ Environment differentiation is **entirely controlled by .env file content**, not
 
 ## Benefits
 
-**Maximum simplicity:** All images use `:production` tag. No decision-making required for image selection.
+### Production Deployment Benefits
+
+**Maximum simplicity:** All manual deployments use `:production` tag. No decision-making required for image selection.
 
 **Universal images:** Single Docker image works on any domain or environment without rebuilding.
 
-**Industry alignment:** Uses Node.js standard `NODE_ENV` conventions (development/production) instead of custom naming schemes.
+**Runtime configuration:** Frontend fetches configuration from backend API at SSR time, enabling true build-once-deploy-anywhere workflows.
 
 **Single source of truth:** ENV variable in .env file determines runtime behavior—impossible to have mismatched image tags and runtime config.
 
+### PR Testing Environment Benefits
+
+**Isolated testing:** Each PR gets its own unique image (`:dev-{sha}`), preventing conflicts between concurrent PRs.
+
+**Immutable snapshots:** Commit-specific tags ensure PR environments always run exact code from that commit.
+
+**Automatic cleanup:** Images tagged `:dev-{sha}` are automatically pruned when PRs close, reducing registry storage costs.
+
+**Branch testing:** Test unreleased code without affecting production images or other PR environments.
+
+### Shared Benefits (Both Strategies)
+
+**Industry alignment:** Uses Node.js standard `NODE_ENV` conventions (development/production) instead of custom naming schemes.
+
 **Clear intent:** `development` and `production` are explicit and unambiguous, unlike abbreviations or aliases.
 
-**Runtime configuration:** Frontend fetches configuration from backend API at SSR time, enabling true build-once-deploy-anywhere workflows.
+**Consistent infrastructure:** All environments use same container names, deployment paths, and docker-compose.yml structure.
 
 ## Security Checklist
 

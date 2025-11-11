@@ -46,13 +46,14 @@ source "$ENV_FILE"
 set +a  # Stop exporting
 
 # Validate required droplet configuration
-if [[ -z "${PROD_DROPLET_IP:-}" ]] || [[ -z "${DEV_DROPLET_IP:-}" ]]; then
+if [[ -z "${PROD_DROPLET_IP:-}" ]]; then
     echo "ERROR: Missing required droplet configuration in $ENV_FILE" >&2
-    echo "Required variables: PROD_DROPLET_IP, DEV_DROPLET_IP" >&2
+    echo "Required variable: PROD_DROPLET_IP" >&2
     echo "" >&2
-    echo "Add these to your .env file:" >&2
+    echo "Add this to your .env file:" >&2
     echo "  PROD_DROPLET_IP=your.prod.ip.here" >&2
-    echo "  DEV_DROPLET_IP=your.dev.ip.here" >&2
+    echo "" >&2
+    echo "Note: PR testing environments are automatically provisioned via GitHub Actions" >&2
     echo "" >&2
     exit 1
 fi
@@ -71,14 +72,16 @@ fi
 # Define environments using values from .env
 declare -A ENVIRONMENTS=(
     [prod]="$PROD_DROPLET_IP"
-    [dev]="$DEV_DROPLET_IP"
 )
 
 ##
 ## Retrieves configuration for the specified environment and exports
 ## environment-specific variables for use in droplet scripts.
 ##
-## @param {string} env - Environment name (prod, dev)
+## @param {string} env - Environment name (only 'prod' supported for manual deployment)
+##
+## Note: PR testing environments are automatically provisioned via GitHub Actions
+##       and do not use this configuration system.
 ##
 get_config() {
     local env=$1
@@ -86,7 +89,8 @@ get_config() {
     # Validate environment
     local ip=${ENVIRONMENTS[$env]:-}
     if [[ -z "$ip" ]]; then
-        echo "ERROR: Unknown environment '$env'. Available: ${!ENVIRONMENTS[*]}" >&2
+        echo "ERROR: Unknown environment '$env'. Only 'prod' is supported." >&2
+        echo "Note: PR testing environments are automatically provisioned via GitHub Actions" >&2
         exit 1
     fi
 
@@ -101,12 +105,8 @@ get_config() {
     # Unified Docker compose file
     export COMPOSE_FILE="docker-compose.yml"
 
-    # Environment-specific Docker image tag
-    if [[ "$env" == "prod" ]]; then
-        export ENV_TAG="production"
-    else
-        export ENV_TAG="development"
-    fi
+    # Production uses :production image tag
+    export ENV_TAG="production"
 
     # Unified container names (no suffixes)
     export MONGO_CONTAINER="tronrelic-mongo"
