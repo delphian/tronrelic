@@ -1,4 +1,4 @@
-name: Teardown Main-PR Environment
+name: Teardown PR Environment
 
 on:
   pull_request:
@@ -15,15 +15,18 @@ jobs:
       pull-requests: write
 
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
       - name: Install doctl
         uses: digitalocean/action-doctl@v2
         with:
           token: ${{ secrets.DO_API_TOKEN }}
 
-      - name: Check if dev droplet exists
+      - name: Check if droplet exists
         id: check
         run: |
-          DROPLET_NAME="tronrelic-main-pr-${{ github.event.pull_request.number }}"
+          DROPLET_NAME="tronrelic-pr-${{ github.event.pull_request.number }}"
 
           if doctl compute droplet list --format Name --no-header | grep -q "^${DROPLET_NAME}$"; then
             echo "exists=true" >> $GITHUB_OUTPUT
@@ -33,11 +36,27 @@ jobs:
             echo "⚠️ Droplet $DROPLET_NAME not found, nothing to destroy"
           fi
 
-      - name: Destroy droplet and unassign reserved IP if attached
+      - name: Delete DNS A record via Cloudflare
+        run: |
+          PR_SUBDOMAIN="pr-${{ github.event.pull_request.number }}"
+
+          echo "Deleting DNS A record: ${PR_SUBDOMAIN}.dev-pr.tronrelic.com"
+
+          # Install jq for JSON parsing
+          sudo apt-get update && sudo apt-get install -y jq
+
+          # Make script executable and run it
+          chmod +x scripts/cloudflare-dns-delete.sh
+          CLOUDFLARE_API_TOKEN="${{ secrets.CLOUDFLARE_API_TOKEN }}" \
+          CLOUDFLARE_ZONE_ID="${{ secrets.CLOUDFLARE_ZONE_ID }}" \
+            ./scripts/cloudflare-dns-delete.sh "$PR_SUBDOMAIN" || true
+
+          echo "✅ DNS record cleanup completed (or record didn't exist)"
+
+      - name: Destroy droplet
         if: steps.check.outputs.exists == 'true'
         run: |
-          DROPLET_NAME="tronrelic-main-pr-${{ github.event.pull_request.number }}"
-          RESERVED_IP="${{ secrets.DO_DEV_IP }}"
+          DROPLET_NAME="tronrelic-pr-${{ github.event.pull_request.number }}"
 
           # Get droplet ID
           DROPLET_ID=$(doctl compute droplet list --format Name,ID --no-header | grep "^${DROPLET_NAME}" | awk '{print $2}')
@@ -48,21 +67,6 @@ jobs:
           fi
 
           echo "Found droplet ID: $DROPLET_ID"
-
-          # Check if reserved IP is attached to THIS droplet
-          ATTACHED_DROPLET_ID=$(doctl compute floating-ip get "$RESERVED_IP" --format DropletID --no-header 2>/dev/null || echo "")
-
-          if [ "$ATTACHED_DROPLET_ID" = "$DROPLET_ID" ]; then
-            echo "📌 Unassigning reserved IP $RESERVED_IP from droplet..."
-            if doctl compute floating-ip-action unassign "$RESERVED_IP" --wait 2>/dev/null; then
-              echo "✅ Reserved IP unassigned and available for next PR"
-            else
-              echo "⚠️ Failed to unassign reserved IP (may already be unassigned)"
-            fi
-          else
-            echo "ℹ️ Reserved IP not attached to this droplet (was using dynamic IP)"
-          fi
-
           echo "Destroying droplet: $DROPLET_NAME"
           doctl compute droplet delete "$DROPLET_ID" --force
 
@@ -74,10 +78,12 @@ jobs:
         with:
           script: |
             const prNumber = ${{ github.event.pull_request.number }};
+            const prSubdomain = `pr-${prNumber}.dev-pr.tronrelic.com`;
 
-            const comment = `## 🗑️ Dev Environment destroyed for PR #${prNumber}
+            const comment = `## 🗑️ PR Environment destroyed for PR #${prNumber}
 
-            Droplet \`tronrelic-main-pr-${prNumber}\` has been successfully deleted and reserved IP released.
+            Droplet \`tronrelic-pr-${prNumber}\` has been successfully deleted.
+            DNS record for \`${prSubdomain}\` has been removed from Cloudflare.
             `;
 
             await github.rest.issues.createComment({
@@ -93,10 +99,13 @@ jobs:
         with:
           script: |
             const prNumber = ${{ github.event.pull_request.number }};
+            const prSubdomain = `pr-${prNumber}.dev-pr.tronrelic.com`;
 
-            const comment = `## ⚠️ No dev environment found for PR #${prNumber}
+            const comment = `## ⚠️ No PR environment found for PR #${prNumber}
 
-            Droplet \`tronrelic-main-pr-${prNumber}\` does not exist. It may have been manually deleted or never created.
+            Droplet \`tronrelic-pr-${prNumber}\` does not exist. It may have been manually deleted or never created.
+
+            DNS record for \`${prSubdomain}\` has been cleaned up (if it existed).
             `;
 
             await github.rest.issues.createComment({

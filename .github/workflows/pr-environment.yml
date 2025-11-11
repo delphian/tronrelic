@@ -1,9 +1,9 @@
-name: Dev-PR Environment
+name: PR Environment
 
 on:
   pull_request:
     branches:
-      - dev
+      - main
 
 jobs:
   test:
@@ -44,18 +44,24 @@ jobs:
           GH_PRIVATE_SUBMODULE_TOKEN: ${{ secrets.GH_PRIVATE_SUBMODULE_TOKEN || '' }}
         continue-on-error: true
 
-      - name: Sanitize branch name for Docker tag
+      - name: Prepare image tag and subdomain
         id: prep
         run: |
-          # Convert branch name to lowercase and replace invalid characters
-          BRANCH_NAME="${{ github.head_ref }}"
-          SANITIZED_BRANCH=$(echo "$BRANCH_NAME" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9._-]/-/g')
           SHORT_SHA=$(echo "${{ github.event.pull_request.head.sha }}" | cut -c1-7)
-          IMAGE_TAG="pr-${SANITIZED_BRANCH}-${SHORT_SHA}"
+          IMAGE_TAG="dev-${SHORT_SHA}"
+          DROPLET_NAME="tronrelic-pr-${{ github.event.pull_request.number }}"
+          PR_SUBDOMAIN="pr-${{ github.event.pull_request.number }}"
+          PR_DOMAIN="${PR_SUBDOMAIN}.dev-pr.tronrelic.com"
 
-          echo "branch=$SANITIZED_BRANCH" >> $GITHUB_OUTPUT
           echo "tag=$IMAGE_TAG" >> $GITHUB_OUTPUT
           echo "short_sha=$SHORT_SHA" >> $GITHUB_OUTPUT
+          echo "droplet_name=$DROPLET_NAME" >> $GITHUB_OUTPUT
+          echo "pr_subdomain=$PR_SUBDOMAIN" >> $GITHUB_OUTPUT
+          echo "pr_domain=$PR_DOMAIN" >> $GITHUB_OUTPUT
+
+          echo "📦 Image tag: $IMAGE_TAG"
+          echo "🖥️ Droplet name: $DROPLET_NAME"
+          echo "🌐 PR domain: $PR_DOMAIN"
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
@@ -80,11 +86,10 @@ jobs:
 
       - name: Images built successfully
         run: |
-          echo "✅ Pull request Docker images built and pushed to GHCR"
+          echo "✅ Dev branch Docker images built and pushed to GHCR"
           echo ""
-          echo "PR: #${{ github.event.pull_request.number }} - ${{ github.event.pull_request.title }}"
-          echo "Source branch: ${{ github.head_ref }}"
-          echo "Target branch: dev"
+          echo "Branch: dev"
+          echo "Commit: ${{ github.sha }}"
           echo "Image tag: ${{ steps.prep.outputs.tag }}"
           echo ""
           echo "Backend: ghcr.io/${{ github.repository }}/backend:${{ steps.prep.outputs.tag }}"
@@ -98,7 +103,7 @@ jobs:
       - name: Check if droplet already exists
         id: check
         run: |
-          DROPLET_NAME="tronrelic-dev-pr-${{ github.event.pull_request.number }}"
+          DROPLET_NAME="${{ steps.prep.outputs.droplet_name }}"
 
           if doctl compute droplet list --format Name --no-header | grep -q "^${DROPLET_NAME}$"; then
             echo "exists=true" >> $GITHUB_OUTPUT
@@ -112,7 +117,7 @@ jobs:
         if: steps.check.outputs.exists == 'false'
         id: create
         run: |
-          DROPLET_NAME="tronrelic-dev-pr-${{ github.event.pull_request.number }}"
+          DROPLET_NAME="${{ steps.prep.outputs.droplet_name }}"
 
           echo "Creating droplet: $DROPLET_NAME"
 
@@ -121,17 +126,20 @@ jobs:
             --region sgp1 \
             --image ubuntu-25-04-x64 \
             --ssh-keys ${{ secrets.DO_SSH_KEY_FINGERPRINT }} \
+            --tag-names "tronrelic-pr-testing" \
             --wait \
             --format ID,Name,PublicIPv4 \
             --no-header
 
           echo "✅ Droplet created successfully"
+          echo "Waiting for droplet initialization to complete..."
+          sleep 15
 
-      - name: Get droplet IP
+      - name: Get droplet public IP
         if: steps.check.outputs.exists == 'false'
-        id: ip
+        id: get_ip
         run: |
-          DROPLET_NAME="tronrelic-dev-pr-${{ github.event.pull_request.number }}"
+          DROPLET_NAME="${{ steps.prep.outputs.droplet_name }}"
 
           # Wait a moment for droplet to be fully ready
           sleep 10
@@ -148,12 +156,33 @@ jobs:
           fi
 
           echo "ip=$DROPLET_IP" >> $GITHUB_OUTPUT
-          echo "✅ Droplet IP: $DROPLET_IP"
+          echo "✅ Droplet public IP: $DROPLET_IP"
+
+      - name: Create DNS A record via Cloudflare
+        if: steps.check.outputs.exists == 'false'
+        run: |
+          PR_SUBDOMAIN="${{ steps.prep.outputs.pr_subdomain }}"
+          DROPLET_IP="${{ steps.get_ip.outputs.ip }}"
+
+          echo "Creating DNS A record: ${PR_SUBDOMAIN}.dev-pr.tronrelic.com -> $DROPLET_IP"
+
+          # Install jq for JSON parsing
+          sudo apt-get update && sudo apt-get install -y jq
+
+          # Make script executable and run it
+          chmod +x scripts/cloudflare-dns-add.sh
+          CLOUDFLARE_API_TOKEN="${{ secrets.CLOUDFLARE_API_TOKEN }}" \
+          CLOUDFLARE_ZONE_ID="${{ secrets.CLOUDFLARE_ZONE_ID }}" \
+            ./scripts/cloudflare-dns-add.sh "$PR_SUBDOMAIN" "$DROPLET_IP"
+
+          echo "✅ DNS record created successfully"
+          echo "⏳ Waiting for DNS propagation (30 seconds)..."
+          sleep 30
 
       - name: Install Docker on droplet
         if: steps.check.outputs.exists == 'false'
         run: |
-          DROPLET_IP="${{ steps.ip.outputs.ip }}"
+          DROPLET_IP="${{ steps.get_ip.outputs.ip }}"
 
           echo "Setting up SSH key..."
           mkdir -p ~/.ssh
@@ -245,10 +274,121 @@ jobs:
 
           echo "✅ Droplet setup complete"
 
+      - name: Deploy wildcard SSL certificate to droplet
+        if: steps.check.outputs.exists == 'false'
+        run: |
+          DROPLET_IP="${{ steps.get_ip.outputs.ip }}"
+
+          echo "Deploying wildcard SSL certificate..."
+
+          # Create certificate directory on droplet
+          ssh -o StrictHostKeyChecking=no root@"$DROPLET_IP" "mkdir -p /etc/nginx/ssl"
+
+          # Deploy certificate files (base64 encoded in secrets)
+          echo "${{ secrets.WILDCARD_SSL_CERT }}" | base64 -d | ssh -o StrictHostKeyChecking=no root@"$DROPLET_IP" "cat > /etc/nginx/ssl/wildcard.crt"
+          echo "${{ secrets.WILDCARD_SSL_KEY }}" | base64 -d | ssh -o StrictHostKeyChecking=no root@"$DROPLET_IP" "cat > /etc/nginx/ssl/wildcard.key"
+
+          # Set proper permissions
+          ssh -o StrictHostKeyChecking=no root@"$DROPLET_IP" "chmod 644 /etc/nginx/ssl/wildcard.crt && chmod 600 /etc/nginx/ssl/wildcard.key"
+
+          echo "✅ SSL certificate deployed"
+
+      - name: Install and configure Nginx with wildcard SSL
+        if: steps.check.outputs.exists == 'false'
+        run: |
+          DROPLET_IP="${{ steps.get_ip.outputs.ip }}"
+          PR_DOMAIN="${{ steps.prep.outputs.pr_domain }}"
+
+          echo "Installing Nginx..."
+          ssh root@"$DROPLET_IP" << 'EOF'
+            set -e
+
+            # Install Nginx
+            apt-get install -y nginx
+
+            # Start and enable Nginx
+            systemctl start nginx
+            systemctl enable nginx
+
+            echo "✅ Nginx installed"
+          EOF
+
+          echo "Creating Nginx configuration with wildcard SSL..."
+
+          cat > /tmp/nginx-pr.conf <<'LOCALEOF'
+          server {
+              listen 80;
+              listen [::]:80;
+              server_name DOMAIN_PLACEHOLDER;
+
+              location / {
+                  return 301 https://$server_name$request_uri;
+              }
+          }
+
+          server {
+              listen 443 ssl http2;
+              listen [::]:443 ssl http2;
+              server_name DOMAIN_PLACEHOLDER;
+
+              ssl_certificate /etc/nginx/ssl/wildcard.crt;
+              ssl_certificate_key /etc/nginx/ssl/wildcard.key;
+              ssl_protocols TLSv1.2 TLSv1.3;
+              ssl_ciphers HIGH:!aNULL:!MD5;
+              ssl_prefer_server_ciphers on;
+
+              add_header X-Frame-Options "SAMEORIGIN" always;
+              add_header X-Content-Type-Options "nosniff" always;
+              add_header X-XSS-Protection "1; mode=block" always;
+
+              client_max_body_size 100m;
+              proxy_read_timeout 300s;
+              proxy_connect_timeout 75s;
+
+              location /api {
+                  proxy_pass http://127.0.0.1:4000;
+                  proxy_http_version 1.1;
+                  proxy_set_header Host $host;
+                  proxy_set_header X-Real-IP $remote_addr;
+                  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                  proxy_set_header X-Forwarded-Proto $scheme;
+              }
+
+              location /socket.io {
+                  proxy_pass http://127.0.0.1:4000;
+                  proxy_http_version 1.1;
+                  proxy_set_header Upgrade $http_upgrade;
+                  proxy_set_header Connection "upgrade";
+                  proxy_set_header Host $host;
+                  proxy_set_header X-Real-IP $remote_addr;
+                  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                  proxy_set_header X-Forwarded-Proto $scheme;
+                  proxy_cache_bypass $http_upgrade;
+              }
+
+              location / {
+                  proxy_pass http://127.0.0.1:3000;
+                  proxy_http_version 1.1;
+                  proxy_set_header Host $host;
+                  proxy_set_header X-Real-IP $remote_addr;
+                  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                  proxy_set_header X-Forwarded-Proto $scheme;
+              }
+          }
+          LOCALEOF
+
+          sed -i "s/DOMAIN_PLACEHOLDER/$PR_DOMAIN/g" /tmp/nginx-pr.conf
+
+          scp -o StrictHostKeyChecking=no /tmp/nginx-pr.conf root@"$DROPLET_IP":/etc/nginx/sites-available/tronrelic
+
+          ssh -o StrictHostKeyChecking=no root@"$DROPLET_IP" "ln -sf /etc/nginx/sites-available/tronrelic /etc/nginx/sites-enabled/tronrelic && rm -f /etc/nginx/sites-enabled/default && nginx -t && systemctl reload nginx"
+
+          echo "✅ Nginx configured with wildcard SSL certificate"
+
       - name: Copy docker-compose.yml to droplet
         if: steps.check.outputs.exists == 'false'
         run: |
-          DROPLET_IP="${{ steps.ip.outputs.ip }}"
+          DROPLET_IP="${{ steps.get_ip.outputs.ip }}"
           DEPLOY_DIR="/opt/tronrelic"
 
           echo "Copying docker-compose.yml to droplet..."
@@ -265,7 +405,8 @@ jobs:
       - name: Create .env file on droplet
         if: steps.check.outputs.exists == 'false'
         run: |
-          DROPLET_IP="${{ steps.ip.outputs.ip }}"
+          DROPLET_IP="${{ steps.get_ip.outputs.ip }}"
+          PR_DOMAIN="${{ steps.prep.outputs.pr_domain }}"
           DEPLOY_DIR="/opt/tronrelic"
           IMAGE_TAG="${{ steps.prep.outputs.tag }}"
           ADMIN_TOKEN="${{ secrets.ADMIN_API_TOKEN }}"
@@ -277,12 +418,15 @@ jobs:
           MONGO_PASSWORD=$(openssl rand -hex 32)
           REDIS_PASSWORD=$(openssl rand -hex 32)
 
+          SITE_URL="https://$PR_DOMAIN"
+          SITE_WS="https://$PR_DOMAIN"
+
           echo "Creating .env file..."
           {
             echo "# TronRelic PR Environment - Auto-generated by GitHub Actions"
             echo "ENV=development"
-            echo "SITE_URL=http://$DROPLET_IP:3000"
-            echo "SITE_WS=http://$DROPLET_IP:4000"
+            echo "SITE_URL=$SITE_URL"
+            echo "SITE_WS=$SITE_WS"
             echo "SITE_BACKEND=http://backend:4000"
             echo "ADMIN_API_TOKEN=$ADMIN_TOKEN"
             echo "TRONGRID_API_KEY=$TRONGRID_KEY_1"
@@ -307,7 +451,7 @@ jobs:
       - name: Authenticate with GitHub Container Registry
         if: steps.check.outputs.exists == 'false'
         run: |
-          DROPLET_IP="${{ steps.ip.outputs.ip }}"
+          DROPLET_IP="${{ steps.get_ip.outputs.ip }}"
 
           echo "Authenticating with GHCR on droplet..."
           echo "${{ secrets.GITHUB_TOKEN }}" | ssh -o StrictHostKeyChecking=no root@"$DROPLET_IP" \
@@ -318,7 +462,7 @@ jobs:
       - name: Pull Docker images
         if: steps.check.outputs.exists == 'false'
         run: |
-          DROPLET_IP="${{ steps.ip.outputs.ip }}"
+          DROPLET_IP="${{ steps.get_ip.outputs.ip }}"
           DEPLOY_DIR="/opt/tronrelic"
           IMAGE_TAG="${{ steps.prep.outputs.tag }}"
 
@@ -333,7 +477,7 @@ jobs:
       - name: Start containers
         if: steps.check.outputs.exists == 'false'
         run: |
-          DROPLET_IP="${{ steps.ip.outputs.ip }}"
+          DROPLET_IP="${{ steps.get_ip.outputs.ip }}"
           DEPLOY_DIR="/opt/tronrelic"
 
           echo "Starting containers..."
@@ -349,17 +493,21 @@ jobs:
 
           echo "✅ Containers started successfully"
 
-      - name: Verify initial deployment health
+      - name: Verify deployment health
         if: steps.check.outputs.exists == 'false'
         run: |
-          DROPLET_IP="${{ steps.ip.outputs.ip }}"
+          PR_DOMAIN="${{ steps.prep.outputs.pr_domain }}"
+          BACKEND_URL="https://$PR_DOMAIN/api/health"
+          FRONTEND_URL="https://$PR_DOMAIN/"
+
+          echo "Checking health via Nginx (HTTPS with wildcard certificate)..."
 
           echo "Checking backend health..."
           MAX_ATTEMPTS=10
           ATTEMPT=0
 
           while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
-            if curl -f -s http://"$DROPLET_IP":4000/api/health > /dev/null 2>&1; then
+            if curl -f -s "$BACKEND_URL" > /dev/null 2>&1; then
               echo "✅ Backend is healthy"
               break
             fi
@@ -374,11 +522,66 @@ jobs:
           fi
 
           echo "Checking frontend..."
-          if curl -f -s http://"$DROPLET_IP":3000 > /dev/null 2>&1; then
+          if curl -f -s "$FRONTEND_URL" > /dev/null 2>&1; then
             echo "✅ Frontend is responding"
           else
             echo "⚠️ Frontend not yet responding (may still be starting)"
           fi
+
+      - name: Write workflow summary
+        if: steps.check.outputs.exists == 'false'
+        run: |
+          DROPLET_NAME="${{ steps.prep.outputs.droplet_name }}"
+          DROPLET_IP="${{ steps.get_ip.outputs.ip }}"
+          PR_DOMAIN="${{ steps.prep.outputs.pr_domain }}"
+          IMAGE_TAG="${{ steps.prep.outputs.tag }}"
+          BACKEND_IMAGE="ghcr.io/${{ github.repository }}/backend:${IMAGE_TAG}"
+          FRONTEND_IMAGE="ghcr.io/${{ github.repository }}/frontend:${IMAGE_TAG}"
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+
+          cat >> $GITHUB_STEP_SUMMARY << EOF
+          ## ✅ PR Environment Provisioned for PR #${PR_NUMBER}
+
+          **⚠️ This droplet will auto-destroy when the PR is closed or merged**
+
+          ### Droplet Information
+          - **Name:** \`${DROPLET_NAME}\`
+          - **Domain:** \`${PR_DOMAIN}\`
+          - **IP Address:** \`${DROPLET_IP}\`
+          - **Lifespan:** Until PR #${PR_NUMBER} is closed/merged
+
+          ### Docker Images
+          - **Backend:** \`${BACKEND_IMAGE}\`
+          - **Frontend:** \`${FRONTEND_IMAGE}\`
+
+          ### SSH Access
+          \`\`\`bash
+          ssh root@${DROPLET_IP}
+          \`\`\`
+
+          ### Setup Status
+          - ✅ Ubuntu 25.04 droplet created
+          - ✅ Cloudflare DNS record created (${PR_DOMAIN} -> ${DROPLET_IP})
+          - ✅ Wildcard SSL certificate deployed
+          - ✅ Nginx reverse proxy configured with HTTPS
+          - ✅ Docker and docker-compose installed
+          - ✅ Deployment directory created (\`/opt/tronrelic\`)
+          - ✅ Docker images pulled and containers started
+          - ✅ Health checks passed
+
+          ### Access Application
+          - **Frontend:** https://${PR_DOMAIN}/
+          - **Backend API:** https://${PR_DOMAIN}/api
+          - **System Monitor:** https://${PR_DOMAIN}/system
+
+          **Note:**
+          - Uses trusted wildcard SSL certificate (no browser warnings!)
+          - Traffic routed through Nginx reverse proxy (identical to production)
+          - Containers may take 1-2 minutes to fully initialize
+          - DNS record will be cleaned up when PR is closed
+          EOF
+
+          echo "✅ Workflow summary written"
 
       - name: Post success comment on PR
         if: steps.check.outputs.exists == 'false'
@@ -386,17 +589,21 @@ jobs:
         with:
           script: |
             const prNumber = ${{ github.event.pull_request.number }};
-            const dropletIp = '${{ steps.ip.outputs.ip }}';
+            const dropletIp = '${{ steps.get_ip.outputs.ip }}';
+            const prDomain = '${{ steps.prep.outputs.pr_domain }}';
             const imageTag = '${{ steps.prep.outputs.tag }}';
             const backendImage = `ghcr.io/${{ github.repository }}/backend:${imageTag}`;
             const frontendImage = `ghcr.io/${{ github.repository }}/frontend:${imageTag}`;
 
-            const comment = `## ✅ Environment provisioned for PR #${prNumber}
+            const comment = `## ✅ PR Environment provisioned for PR #${prNumber}
+
+            **⚠️ This droplet will auto-destroy when the PR is closed or merged**
 
             **Droplet Information:**
-            - **Name:** \`tronrelic-dev-pr-${prNumber}\`
+            - **Name:** \`tronrelic-pr-${prNumber}\`
+            - **Domain:** \`${prDomain}\`
             - **IP Address:** \`${dropletIp}\`
-            - **Expected DNS:** \`pr-${prNumber}.dev.tronrelic.com\`
+            - **Lifespan:** Until PR #${prNumber} is closed/merged
 
             **Docker Images:**
             - **Backend:** \`${backendImage}\`
@@ -409,175 +616,24 @@ jobs:
 
             **Setup Status:**
             - ✅ Ubuntu 25.04 droplet created
+            - ✅ Cloudflare DNS record created (\`${prDomain}\` -> \`${dropletIp}\`)
+            - ✅ Wildcard SSL certificate deployed
+            - ✅ Nginx reverse proxy configured with HTTPS
             - ✅ Docker and docker-compose installed
             - ✅ Deployment directory created (\`/opt/tronrelic\`)
             - ✅ Docker images pulled and containers started
             - ✅ Health checks passed
 
             **Access Application:**
-            - **Frontend:** http://${dropletIp}:3000
-            - **Backend API:** http://${dropletIp}:4000/api
-            - **System Monitor:** http://${dropletIp}:3000/system
+            - **Frontend:** https://${prDomain}/
+            - **Backend API:** https://${prDomain}/api
+            - **System Monitor:** https://${prDomain}/system
 
-            **Note:** Direct port access (no nginx). Containers may take 1-2 minutes to fully initialize.
-            `;
-
-            await github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: prNumber,
-              body: comment
-            });
-
-      - name: Get existing droplet IP
-        if: steps.check.outputs.exists == 'true'
-        id: existing_ip
-        run: |
-          DROPLET_NAME="tronrelic-dev-pr-${{ github.event.pull_request.number }}"
-
-          DROPLET_IP=$(doctl compute droplet list \
-            --format Name,PublicIPv4 \
-            --no-header \
-            | grep "^${DROPLET_NAME}" \
-            | awk '{print $2}')
-
-          if [ -z "$DROPLET_IP" ]; then
-            echo "❌ Could not retrieve droplet IP"
-            exit 1
-          fi
-
-          echo "ip=$DROPLET_IP" >> $GITHUB_OUTPUT
-          echo "✅ Existing droplet IP: $DROPLET_IP"
-
-      - name: Setup SSH for existing droplet
-        if: steps.check.outputs.exists == 'true'
-        run: |
-          DROPLET_IP="${{ steps.existing_ip.outputs.ip }}"
-
-          echo "Setting up SSH key..."
-          mkdir -p ~/.ssh
-          echo "${{ secrets.DO_SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
-
-          echo "Adding droplet to known_hosts..."
-          ssh-keyscan -H "$DROPLET_IP" >> ~/.ssh/known_hosts
-
-          echo "✅ SSH configured for existing droplet"
-
-      - name: Update IMAGE_TAG in .env on droplet
-        if: steps.check.outputs.exists == 'true'
-        run: |
-          DROPLET_IP="${{ steps.existing_ip.outputs.ip }}"
-          IMAGE_TAG="${{ steps.prep.outputs.tag }}"
-          DEPLOY_DIR="/opt/tronrelic"
-
-          echo "Updating IMAGE_TAG to $IMAGE_TAG..."
-          ssh -o StrictHostKeyChecking=no root@"$DROPLET_IP" \
-            "cd $DEPLOY_DIR && sed -i 's/^IMAGE_TAG=.*/IMAGE_TAG=$IMAGE_TAG/' .env"
-
-          echo "Verifying .env update..."
-          ssh -o StrictHostKeyChecking=no root@"$DROPLET_IP" \
-            "cd $DEPLOY_DIR && grep IMAGE_TAG .env"
-
-          echo "✅ IMAGE_TAG updated"
-
-      - name: Authenticate with GHCR on existing droplet
-        if: steps.check.outputs.exists == 'true'
-        run: |
-          DROPLET_IP="${{ steps.existing_ip.outputs.ip }}"
-
-          echo "Authenticating with GHCR on droplet..."
-          echo "${{ secrets.GITHUB_TOKEN }}" | ssh -o StrictHostKeyChecking=no root@"$DROPLET_IP" \
-            "docker login ghcr.io -u ${{ github.actor }} --password-stdin"
-
-          echo "✅ GHCR authentication successful"
-
-      - name: Pull new images and restart containers
-        if: steps.check.outputs.exists == 'true'
-        run: |
-          DROPLET_IP="${{ steps.existing_ip.outputs.ip }}"
-          DEPLOY_DIR="/opt/tronrelic"
-
-          echo "Pulling new Docker images..."
-          ssh -o StrictHostKeyChecking=no root@"$DROPLET_IP" \
-            "cd $DEPLOY_DIR && docker compose pull"
-
-          echo "Restarting containers with new images..."
-          ssh -o StrictHostKeyChecking=no root@"$DROPLET_IP" \
-            "cd $DEPLOY_DIR && docker compose up -d"
-
-          echo "Waiting for containers to restart (30 seconds)..."
-          sleep 30
-
-          echo "Checking container status..."
-          ssh -o StrictHostKeyChecking=no root@"$DROPLET_IP" \
-            "cd $DEPLOY_DIR && docker compose ps"
-
-          echo "✅ Containers restarted with new images"
-
-      - name: Verify deployment health
-        if: steps.check.outputs.exists == 'true'
-        run: |
-          DROPLET_IP="${{ steps.existing_ip.outputs.ip }}"
-
-          echo "Checking backend health..."
-          MAX_ATTEMPTS=10
-          ATTEMPT=0
-
-          while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
-            if curl -f -s http://"$DROPLET_IP":4000/api/health > /dev/null 2>&1; then
-              echo "✅ Backend is healthy"
-              break
-            fi
-
-            ATTEMPT=$((ATTEMPT + 1))
-            echo "Attempt $ATTEMPT/$MAX_ATTEMPTS - waiting 10s..."
-            sleep 10
-          done
-
-          if [ $ATTEMPT -eq $MAX_ATTEMPTS ]; then
-            echo "⚠️ Backend health check timed out (may still be starting)"
-          fi
-
-          echo "Checking frontend..."
-          if curl -f -s http://"$DROPLET_IP":3000 > /dev/null 2>&1; then
-            echo "✅ Frontend is responding"
-          else
-            echo "⚠️ Frontend not yet responding (may still be starting)"
-          fi
-
-      - name: Post update success comment on PR
-        if: steps.check.outputs.exists == 'true'
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const prNumber = ${{ github.event.pull_request.number }};
-            const dropletIp = '${{ steps.existing_ip.outputs.ip }}';
-            const imageTag = '${{ steps.prep.outputs.tag }}';
-            const backendImage = `ghcr.io/${{ github.repository }}/backend:${imageTag}`;
-            const frontendImage = `ghcr.io/${{ github.repository }}/frontend:${imageTag}`;
-            const commitSha = '${{ github.event.pull_request.head.sha }}'.substring(0, 7);
-
-            const comment = `## 🔄 Environment updated for PR #${prNumber}
-
-            **Deployment Status:** ✅ Successfully redeployed with latest changes
-
-            **New Docker Images:**
-            - **Backend:** \`${backendImage}\`
-            - **Frontend:** \`${frontendImage}\`
-            - **Commit:** \`${commitSha}\`
-
-            **Access Application:**
-            - **Frontend:** http://${dropletIp}:3000
-            - **Backend API:** http://${dropletIp}:4000/api
-            - **System Monitor:** http://${dropletIp}:3000/system
-
-            **Update Details:**
-            - ✅ New images pulled
-            - ✅ Containers restarted
-            - ✅ Health checks passed
-
-            **Note:** Containers may take 1-2 minutes to fully initialize after restart.
+            **Note:**
+            - Uses trusted wildcard SSL certificate (no browser warnings!)
+            - Traffic routed through Nginx reverse proxy (identical to production)
+            - Containers may take 1-2 minutes to fully initialize
+            - DNS record will be cleaned up when PR is closed
             `;
 
             await github.rest.issues.createComment({

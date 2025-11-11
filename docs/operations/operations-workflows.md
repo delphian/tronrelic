@@ -9,9 +9,6 @@ This document describes the complete procedures for deploying TronRelic to produ
 **Automated agents can find actual IP addresses in:**
 - **Local .env file:** Variables `PROD_DROPLET_IP` and `DEV_DROPLET_IP` (used by deployment scripts)
 - **Deployment config:** `scripts/droplet-config.sh` (ENVIRONMENTS array, sourced by scripts)
-- **GitHub Actions secrets:**
-  - `DO_DEV_IP` - Reserved IP for ephemeral dev testing droplets
-  - (No production/dev IPs stored in GitHub - deployments are manual only)
 - **GitHub Actions workflow summaries:** Check recent workflow runs for actual IPs used
 - **PR comments:** GitHub Actions posts droplet IPs in PR comments for PR environments
 - **Digital Ocean CLI:** `doctl compute droplet list` shows all active droplets and IPs
@@ -19,7 +16,6 @@ This document describes the complete procedures for deploying TronRelic to produ
 **Placeholders used in this document:**
 - `<PROD_DROPLET_IP>` - Production server IP (from .env: `PROD_DROPLET_IP`)
 - `<DEV_DROPLET_IP>` - Permanent development server IP (from .env: `DEV_DROPLET_IP`)
-- `<EPHEMERAL_DEV_IP>` - Reserved IP for ephemeral dev testing (GitHub secret: `DO_DEV_IP`)
 - `<PR_DROPLET_IP>` - Example IP for PR testing environments (see PR comments)
 
 ## Why This Matters
@@ -340,290 +336,25 @@ ssh root@<DROPLET_IP> 'cd /opt/tronrelic && docker compose logs --tail=100 -f'
 - Eliminates confusion about which tag to use
 - Simplifies docker-compose.yml (no ${ENV} variable needed)
 
-## Dev Testing Environments
-
-TronRelic automatically creates temporary testing droplets on every push to the `dev` branch. These ephemeral environments provide isolated testing environments that automatically destroy after 30 minutes.
-
-**Workflow files:**
-- `.github/workflows/dev-environment.yml` - Creates testing droplet
-- `.github/workflows/dev-environment-teardown.yml` - Scheduled cleanup (every 15 minutes)
-
-**Triggers:**
-- **Automatic:** Every push to `dev` branch creates a new testing droplet
-- **Cleanup:** Scheduled job runs every 15 minutes to destroy expired droplets
-
-### How Dev Testing Environments Work
-
-**On every push to `dev` branch:**
-
-1. **Build dev branch images:**
-   - Build backend and frontend from dev branch code
-   - Tag as `dev-{short-sha}` (e.g., `dev-a1b2c3d`)
-   - Push to GitHub Container Registry
-
-2. **Claim reserved IP:**
-   - Check if reserved IP is currently attached to another droplet
-   - Destroy existing droplet if present (replaces previous testing environment)
-   - Reserved IP ready for new droplet
-
-3. **Create testing droplet:**
-   - Create droplet named `tronrelic-dev-{short-sha}`
-   - Tag droplet with `tronrelic-dev-testing` and `expires-at-{timestamp}`
-   - Assign reserved IP to droplet
-   - Expiration time: 30 minutes from creation
-
-4. **Provision environment:**
-   - Install Docker and Docker Compose
-   - Install Nginx and Certbot
-   - Obtain Let's Encrypt SSL certificate for domain
-   - Configure Nginx reverse proxy with trusted SSL (HTTP redirects to HTTPS)
-   - Copy docker-compose.yml to `/opt/tronrelic`
-   - Create .env with `ENV=development` and domain URLs
-   - Pull dev branch images from GHCR
-   - Start all containers (MongoDB, Redis, backend, frontend)
-   - Run health checks via Nginx (HTTPS)
-
-5. **Workflow summary provides:**
-   - Domain name and reserved IP address
-   - SSH access instructions
-   - Application URLs (frontend, backend API, system monitor)
-   - Expiration time in UTC
-   - Docker image tags used
-
-**Automated cleanup (every 15 minutes):**
-
-1. List all droplets tagged `tronrelic-dev-testing`
-2. Parse `expires-at-{timestamp}` tag from each droplet
-3. Compare expiration time to current time
-4. Unassign reserved IP from expired droplets
-5. Delete expired droplets
-6. Log cleanup actions to workflow summary
-
-### Differences from Permanent Dev Server
-
-| Feature | Permanent Dev Server | Temporary Testing Droplet |
-|---------|---------------------|---------------------------|
-| **Domain** | Custom domain (if configured) | Uses `DO_DEV_HOST` (e.g., dev.tronrelic.com) |
-| **IP Address** | Static droplet IP | Reserved IP (reused across all testing droplets) |
-| **Lifespan** | Permanent (until manually destroyed) | 30 minutes (auto-destroys) |
-| **Trigger** | Manual deployment script | Automatic on every dev push |
-| **Image source** | `:production` images (same as prod) | `:dev-{sha}` images (dev branch code) |
-| **Purpose** | Long-running development environment | Quick testing of specific commits |
-| **Cost** | $24/month (always running) | ~$0.017 per push (~$5/month for 10 pushes/day) |
-| **SSL/HTTPS** | Let's Encrypt (trusted certificate) | Let's Encrypt (trusted certificate) |
-| **Nginx** | Yes (reverse proxy) | Yes (reverse proxy) |
-| **Use case** | Ongoing development and testing | Testing specific features before merging |
-| **Replacement** | Each push replaces previous | Only one testing droplet active at a time |
-
-### Accessing a Dev Testing Environment
-
-After pushing to the `dev` branch, find the testing environment details in the GitHub Actions workflow summary:
-
-**View workflow summary:**
-1. Navigate to **Actions** tab in GitHub repository
-2. Click the most recent **"Dev Environment"** workflow run
-3. Scroll to workflow summary at the bottom
-
-**Example summary output:**
-```
-✅ Dev Testing Environment Provisioned
-
-⚠️ This droplet will auto-destroy at 2025-11-02 19:30:00 UTC (30 minutes from creation)
-
-Droplet Information:
-- Name: tronrelic-dev-a1b2c3d
-- Domain: dev.tronrelic.com
-- Reserved IP: <EPHEMERAL_DEV_IP>
-- Lifespan: 30 minutes
-- Auto-destroy: 2025-11-02 19:30:00 UTC
-
-Setup Status:
-- ✅ Ubuntu 25.04 droplet created
-- ✅ Reserved IP (<EPHEMERAL_DEV_IP>) assigned
-- ✅ Let's Encrypt SSL certificate obtained for dev.tronrelic.com
-- ✅ Nginx reverse proxy configured
-- ✅ Docker images pulled and containers started
-- ✅ Health checks passed
-
-Access Application:
-- Frontend: https://dev.tronrelic.com/
-- Backend API: https://dev.tronrelic.com/api
-- System Monitor: https://dev.tronrelic.com/system
-
-SSH Access:
-ssh root@<EPHEMERAL_DEV_IP>
-
-Note:
-- Uses Let's Encrypt trusted SSL certificate (no browser warnings!)
-- Traffic routed through Nginx reverse proxy (identical to production)
-- Reserved IP will be released when droplet is destroyed
-```
-
-**Connect to testing droplet:**
-```bash
-# SSH to testing droplet (use reserved IP from workflow summary)
-ssh root@<RESERVED_IP>
-
-# View container status
-cd /opt/tronrelic
-docker compose ps
-
-# View logs
-docker compose logs -f backend
-docker compose logs -f frontend
-
-# Test backend health (via Nginx HTTPS with trusted certificate)
-curl https://<DOMAIN>/api/health
-
-# Test frontend (via Nginx HTTPS)
-curl https://<DOMAIN>/
-
-# Check Nginx status
-systemctl status nginx
-nginx -t
-
-# View Nginx logs
-tail -f /var/log/nginx/access.log
-tail -f /var/log/nginx/error.log
-
-# Check Let's Encrypt certificate
-certbot certificates
-```
-
-### Cost and Resource Usage
-
-**Per testing session (30 minutes):**
-- Droplet cost: $0.033/hour × 0.5 hours = **$0.017**
-- GitHub Actions minutes: Negligible (mostly wait time)
-
-**Monthly cost estimate (10 pushes per day):**
-- 10 sessions × 30 days × $0.017 = **~$5/month**
-
-**Resource specifications:**
-- Droplet size: `s-2vcpu-4gb-amd` (2 vCPU, 4GB RAM)
-- Region: Singapore (`sgp1`)
-- OS: Ubuntu 25.04
-
-**Comparison to PR environments:**
-- PR droplets persist until PR is closed (potentially days/weeks)
-- Dev testing droplets expire after 30 minutes regardless
-- Both use same droplet size and region
-
-### Required GitHub Secrets
-
-The dev testing environment requires additional GitHub secrets to be configured:
-
-**Navigate to repository Settings → Secrets and variables → Actions** and add:
-
-| Secret Name | Description | Example Value | Required |
-|------------|-------------|---------------|----------|
-| `DO_DEV_IP` | Digital Ocean reserved IP address | `<EPHEMERAL_DEV_IP>` | ✅ Yes |
-| `DO_DEV_HOST` | Domain name pointing to reserved IP | `dev.tronrelic.com` | ✅ Yes |
-| `SSL_EMAIL` | Email for Let's Encrypt notifications | `admin@tronrelic.com` | ⚠️ Optional (defaults to admin@tronrelic.com) |
-
-**Setup instructions:**
-
-1. **Create reserved IP in Digital Ocean:**
-   ```bash
-   doctl compute floating-ip create --region sgp1
-   # Note the IP address for use in DO_DEV_IP GitHub secret
-   ```
-
-2. **Point DNS to reserved IP:**
-   - Add A record: `dev.tronrelic.com` → `<EPHEMERAL_DEV_IP>`
-   - Wait for DNS propagation (use `nslookup dev.tronrelic.com` to verify)
-
-3. **Add GitHub secrets:**
-   - `DO_DEV_IP`: The reserved IP from step 1
-   - `DO_DEV_HOST`: The domain from step 2
-   - `SSL_EMAIL` (optional): Email for certificate expiration notices
-
-**Note:** These secrets are separate from the existing `PROD_DROPLET_IP` and `DEV_DROPLET_IP` in your local `.env` file. The testing environment uses a reserved IP that gets reassigned to new droplets, while permanent servers use static IPs.
-
-### Manual Cleanup (Optional)
-
-While cleanup runs automatically every 15 minutes, you can manually trigger cleanup or destroy specific droplets:
-
-**Trigger cleanup workflow manually:**
-1. Navigate to **Actions** tab → **Teardown Dev Environment**
-2. Click **Run workflow** button
-3. Select branch (usually `dev` or `main`)
-4. Click **Run workflow**
-
-**Manually destroy a specific droplet:**
-```bash
-# List all dev testing droplets
-doctl compute droplet list --tag-name tronrelic-dev-testing
-
-# Delete specific droplet by name
-doctl compute droplet delete tronrelic-dev-a1b2c3d --force
-
-# Or delete by ID
-doctl compute droplet delete <DROPLET_ID> --force
-```
-
-### Troubleshooting Dev Testing Environments
-
-**Workflow fails to create droplet:**
-- Check Digital Ocean API token is valid in GitHub secrets
-- Verify droplet quota not exceeded in Digital Ocean account
-- Review workflow logs for specific error messages
-
-**Cannot access droplet after creation:**
-- Wait 1-2 minutes for containers to fully start
-- Check workflow summary for correct IP address
-- Verify firewall allows SSH and HTTP traffic (ports 22, 3000, 4000)
-- SSH to droplet and check container status: `docker compose ps`
-
-**Images fail to build:**
-- Review build logs in GitHub Actions workflow
-- Check for TypeScript compilation errors in dev branch
-- Verify package dependencies are installable
-
-**Droplet not automatically destroyed after 30 minutes:**
-- Cleanup workflow runs every 15 minutes (max 15 minute delay)
-- Check **Teardown Dev Environment** workflow for errors
-- Manually trigger cleanup workflow if needed
-- Verify droplet has correct tags: `doctl compute droplet get <NAME> --format Tags`
-
-**Health checks fail:**
-- SSH to droplet: `ssh root@<RESERVED_IP>`
-- Check Nginx status first: `systemctl status nginx`
-- Test Nginx config: `nginx -t`
-- Check Nginx logs: `tail -100 /var/log/nginx/error.log`
-- Check Let's Encrypt certificate: `certbot certificates`
-- Check container logs: `cd /opt/tronrelic && docker compose logs`
-- Verify .env file created: `cat /opt/tronrelic/.env`
-- Check container status: `docker compose ps`
-- Test direct container access: `curl http://localhost:4000/api/health`
-- Restart Nginx if needed: `systemctl restart nginx`
-- Restart containers if needed: `docker compose restart`
-
-**Let's Encrypt certificate fails to obtain:**
-- Verify DNS resolution: `nslookup <DOMAIN>` (should return reserved IP)
-- Check port 80 is open: `curl http://<DOMAIN>/.well-known/acme-challenge/test`
-- Review certbot logs: `journalctl -u certbot`
-- Manually retry: `certbot certonly --nginx -d <DOMAIN> --non-interactive --agree-tos --email admin@tronrelic.com`
-- Check Let's Encrypt rate limits: https://letsencrypt.org/docs/rate-limits/
-
-**Reserved IP assignment fails:**
-- Check if reserved IP exists: `doctl compute floating-ip list`
-- Verify DO_DEV_IP secret is set correctly in GitHub repository secrets
-- Check Digital Ocean API token permissions (requires floating-ip management)
-- Manually unassign: `doctl compute floating-ip-action unassign <RESERVED_IP>`
-
 ## PR Testing Environments
 
-TronRelic automatically creates persistent testing droplets for each pull request to the `dev` branch. Unlike ephemeral dev testing environments that destroy after 30 minutes, PR environments persist until the PR is closed or merged, allowing extended testing over days or weeks.
+TronRelic automatically creates persistent testing droplets for each pull request to the `main` branch. Each PR gets its own subdomain with trusted HTTPS certificates, allowing production-like testing without browser warnings or SSL configuration delays.
 
 **Workflow files:**
 - `.github/workflows/pr-environment.yml` - Creates and updates PR droplet
-- `.github/workflows/pr-environment-teardown.yml` - Destroys droplet on PR close/merge
+- `.github/workflows/pr-teardown.yml` - Destroys droplet and cleans up DNS on PR close/merge
 
 **Triggers:**
-- **Automatic creation:** Opening PR to `dev` branch creates droplet
-- **Automatic updates:** Every push to PR branch updates same droplet
-- **Automatic cleanup:** Closing or merging PR destroys droplet
+- **Automatic creation:** Opening PR to `main` branch creates droplet
+- **Automatic cleanup:** Closing or merging PR destroys droplet and removes DNS record
+
+**Key features:**
+- Unique subdomain for each PR: `pr-{number}.dev-pr.tronrelic.com`
+- Wildcard SSL certificate (no browser warnings)
+- Nginx reverse proxy (production-like configuration)
+- Dynamic DNS via Cloudflare API
+- No reserved IP address required
+- Unlimited concurrent PRs without rate limits
 
 ### How PR Testing Environments Work
 
@@ -631,8 +362,7 @@ TronRelic automatically creates persistent testing droplets for each pull reques
 
 1. **Build PR branch images:**
    - Build backend and frontend from PR branch code
-   - Sanitize branch name for Docker tag (lowercase, replace invalid chars)
-   - Tag as `pr-{branch}-{sha}` (e.g., `pr-feature-whales-a1b2c3d`)
+   - Tag as `dev-{short-sha}` (e.g., `dev-a1b2c3d`)
    - Push to GitHub Container Registry
 
 2. **Create testing droplet:**
@@ -641,87 +371,78 @@ TronRelic automatically creates persistent testing droplets for each pull reques
    - Region: Singapore (`sgp1`)
    - OS: Ubuntu 25.04
 
-3. **Provision environment:**
+3. **Configure DNS:**
+   - Create Cloudflare DNS A record: `pr-{number}.dev-pr.tronrelic.com` → droplet IP
+   - Wait 30 seconds for DNS propagation
+
+4. **Provision environment:**
    - Install Docker and Docker Compose
+   - Install Nginx
+   - Deploy wildcard SSL certificate from GitHub secrets
+   - Configure Nginx with HTTPS and reverse proxy
    - Copy docker-compose.yml to `/opt/tronrelic`
-   - Create .env with `ENV=development` and direct IP URLs
+   - Create .env with `ENV=development` and HTTPS URLs
    - Pull PR branch images from GHCR
    - Start all containers (MongoDB, Redis, backend, frontend)
-   - Run health checks via direct port access (no Nginx)
+   - Run health checks via HTTPS
 
-4. **Post comment on PR:**
+5. **Post comment on PR:**
+   - PR domain (e.g., `pr-42.dev-pr.tronrelic.com`)
    - Droplet IP address and SSH access
-   - Application URLs (frontend, backend, system monitor)
+   - Application URLs (all HTTPS)
    - Docker image tags used
    - Setup status checklist
 
-**On subsequent pushes to PR branch:**
-
-1. **Build updated images:**
-   - Build new images with updated code
-   - Tag as `pr-{branch}-{new-sha}`
-   - Push to GHCR
-
-2. **Update existing droplet:**
-   - SSH to existing droplet
-   - Update `IMAGE_TAG` in .env file
-   - Pull new images
-   - Restart containers with `docker compose up -d`
-   - Verify health checks
-
-3. **Post update comment on PR:**
-   - New commit SHA
-   - Updated image tags
-   - Deployment status
-
 **On PR close or merge:**
 
-1. `.github/workflows/pr-environment-teardown.yml` triggers
-2. Droplet `tronrelic-pr-{number}` destroyed
-3. All data and containers removed
-4. IP address released
-
-### Differences from Dev Testing Environments
-
-| Feature | PR Environments | Ephemeral Dev Testing |
-|---------|-----------------|----------------------|
-| **Trigger** | Opening PR to dev | Push/merge to dev branch |
-| **Droplet name** | `tronrelic-pr-{number}` | `tronrelic-dev-{sha}` |
-| **Lifespan** | Until PR closed/merged (days/weeks) | 30 minutes (auto-destroy) |
-| **Domain** | Direct IP only | dev.tronrelic.com (reserved IP) |
-| **SSL/HTTPS** | No (direct port access) | Yes (Let's Encrypt) |
-| **Nginx** | No | Yes (reverse proxy) |
-| **Updates** | Every push to PR branch | New droplet on every dev push |
-| **Access** | http://{ip}:3000, http://{ip}:4000 | https://dev.tronrelic.com |
-| **Use case** | Extended feature testing | Quick commit verification |
-| **Cost** | $0.033/hour × hours active | $0.017 per 30-minute session |
+1. `.github/workflows/pr-teardown.yml` triggers
+2. Delete Cloudflare DNS A record for `pr-{number}.dev-pr.tronrelic.com`
+3. Destroy droplet `tronrelic-pr-{number}`
+4. All data, containers, and DNS records removed
 
 ### Accessing a PR Testing Environment
 
-After opening a PR to the `dev` branch, find the environment details in the PR comment posted by GitHub Actions:
+After opening a PR to the `main` branch, find the environment details in the PR comment posted by GitHub Actions:
 
 **Example PR comment:**
 ```
-✅ Environment provisioned for PR #42
+✅ PR Environment provisioned for PR #42
+
+⚠️ This droplet will auto-destroy when the PR is closed or merged
 
 Droplet Information:
 - Name: tronrelic-pr-42
+- Domain: pr-42.dev-pr.tronrelic.com
 - IP Address: <PR_DROPLET_IP>
-- Expected DNS: pr-42.dev.tronrelic.com
+- Lifespan: Until PR #42 is closed/merged
 
 Docker Images:
-- Backend: ghcr.io/delphian/tronrelic/backend:pr-feature-whales-a1b2c3d
-- Frontend: ghcr.io/delphian/tronrelic/frontend:pr-feature-whales-a1b2c3d
+- Backend: ghcr.io/delphian/tronrelic/backend:dev-a1b2c3d
+- Frontend: ghcr.io/delphian/tronrelic/frontend:dev-a1b2c3d
 
 SSH Access:
 ssh root@<PR_DROPLET_IP>
 
-Access Application:
-- Frontend: http://<PR_DROPLET_IP>:3000
-- Backend API: http://<PR_DROPLET_IP>:4000/api
-- System Monitor: http://<PR_DROPLET_IP>:3000/system
+Setup Status:
+- ✅ Ubuntu 25.04 droplet created
+- ✅ Cloudflare DNS record created (pr-42.dev-pr.tronrelic.com -> <PR_DROPLET_IP>)
+- ✅ Wildcard SSL certificate deployed
+- ✅ Nginx reverse proxy configured with HTTPS
+- ✅ Docker and docker-compose installed
+- ✅ Deployment directory created (/opt/tronrelic)
+- ✅ Docker images pulled and containers started
+- ✅ Health checks passed
 
-Note: Direct port access (no nginx). Containers may take 1-2 minutes to fully initialize.
+Access Application:
+- Frontend: https://pr-42.dev-pr.tronrelic.com/
+- Backend API: https://pr-42.dev-pr.tronrelic.com/api
+- System Monitor: https://pr-42.dev-pr.tronrelic.com/system
+
+Note:
+- Uses trusted wildcard SSL certificate (no browser warnings!)
+- Traffic routed through Nginx reverse proxy (identical to production)
+- Containers may take 1-2 minutes to fully initialize
+- DNS record will be cleaned up when PR is closed
 ```
 
 **Connect to PR droplet:**
@@ -737,11 +458,15 @@ docker compose ps
 docker compose logs -f backend
 docker compose logs -f frontend
 
-# Test backend health (direct port access)
-curl http://localhost:4000/api/health
+# Test backend health (via HTTPS)
+curl https://pr-42.dev-pr.tronrelic.com/api/health
 
-# Test frontend (direct port access)
-curl http://localhost:3000/
+# Test frontend (via HTTPS)
+curl https://pr-42.dev-pr.tronrelic.com/
+
+# Check Nginx configuration
+nginx -t
+systemctl status nginx
 
 # Check .env configuration
 cat /opt/tronrelic/.env
@@ -755,10 +480,19 @@ cat /opt/tronrelic/.env
 - If PR open for 1 week: $0.033 × 168 = **$5.54**
 - If PR open for 1 month: $0.033 × 720 = **$23.76**
 
+**Cloudflare DNS and SSL:**
+- DNS management: **$0/month** (free tier)
+- API access: **$0/month** (included)
+- Wildcard SSL certificate: **$0** (Let's Encrypt)
+
+**Cost comparison to old approach:**
+- Old: Reserved static IP ($4-6/month) + self-signed SSL or no SSL for dynamic IPs
+- New: Dynamic IPs + Cloudflare DNS ($0/month) + wildcard SSL ($0)
+- **Savings: $4-6/month** while improving security and consistency
+
 **Best practices to minimize costs:**
 - Close or merge PRs promptly after testing
 - Don't leave abandoned PRs open for extended periods
-- Use ephemeral dev testing (30 minutes) for quick checks instead of opening PRs
 
 **Resource specifications:**
 - Droplet size: `s-2vcpu-4gb-amd` (2 vCPU, 4GB RAM)
@@ -767,21 +501,27 @@ cat /opt/tronrelic/.env
 
 ### Required GitHub Secrets
 
-PR environments require the same secrets as dev testing environments:
+PR environments require the following GitHub secrets to be configured:
 
-| Secret Name | Description | Required |
-|------------|-------------|----------|
-| `DO_API_TOKEN` | Digital Ocean API token | ✅ Yes |
-| `DO_SSH_KEY_FINGERPRINT` | SSH key fingerprint for droplet access | ✅ Yes |
-| `DO_SSH_PRIVATE_KEY` | SSH private key for provisioning | ✅ Yes |
-| `ADMIN_API_TOKEN` | Admin API token for testing | ✅ Yes |
-| `TRONGRID_API_KEY` | TronGrid API key #1 | ✅ Yes |
-| `TRONGRID_API_KEY_2` | TronGrid API key #2 | ✅ Yes |
-| `TRONGRID_API_KEY_3` | TronGrid API key #3 | ✅ Yes |
+| Secret Name | Description | How to Obtain | Required |
+|------------|-------------|---------------|----------|
+| `DO_API_TOKEN` | Digital Ocean API token | DO Dashboard → API → Generate New Token | ✅ Yes |
+| `DO_SSH_KEY_FINGERPRINT` | SSH key fingerprint for droplet access | `ssh-keygen -lf ~/.ssh/id_rsa.pub` | ✅ Yes |
+| `DO_SSH_PRIVATE_KEY` | SSH private key for provisioning | `cat ~/.ssh/id_rsa` | ✅ Yes |
+| `CLOUDFLARE_API_TOKEN` | Cloudflare API token with DNS edit permissions | See [Cloudflare Setup Guide](./operations-cloudflare-setup.md) | ✅ Yes |
+| `CLOUDFLARE_ZONE_ID` | Zone ID for tronrelic.com domain | Cloudflare Dashboard → Domain → Zone ID | ✅ Yes |
+| `WILDCARD_SSL_CERT` | Base64-encoded wildcard certificate | See [Cloudflare Setup Guide](./operations-cloudflare-setup.md) | ✅ Yes |
+| `WILDCARD_SSL_KEY` | Base64-encoded wildcard private key | See [Cloudflare Setup Guide](./operations-cloudflare-setup.md) | ✅ Yes |
+| `ADMIN_API_TOKEN` | Admin API token for testing | `openssl rand -hex 32` | ✅ Yes |
+| `TRONGRID_API_KEY` | TronGrid API key #1 | https://www.trongrid.io/ | ✅ Yes |
+| `TRONGRID_API_KEY_2` | TronGrid API key #2 | https://www.trongrid.io/ | ✅ Yes |
+| `TRONGRID_API_KEY_3` | TronGrid API key #3 | https://www.trongrid.io/ | ✅ Yes |
+
+**See also:** [Cloudflare DNS and Wildcard SSL Setup Guide](./operations-cloudflare-setup.md) for detailed setup instructions.
 
 ### Manual Cleanup (Optional)
 
-While cleanup runs automatically when PRs close, you can manually destroy droplets:
+While cleanup runs automatically when PRs close, you can manually destroy droplets and clean up DNS:
 
 **List PR droplets:**
 ```bash
@@ -797,10 +537,17 @@ doctl compute droplet delete tronrelic-pr-42 --force
 doctl compute droplet delete <DROPLET_ID> --force
 ```
 
+**Manually delete DNS record:**
+```bash
+export CLOUDFLARE_API_TOKEN="your-token"
+export CLOUDFLARE_ZONE_ID="your-zone-id"
+./scripts/cloudflare-dns-delete.sh pr-42
+```
+
 **Trigger teardown workflow manually:**
-1. Navigate to **Actions** tab → **PR Environment Teardown**
+1. Navigate to **Actions** tab → **Teardown PR Environment**
 2. Click **Run workflow** button
-3. Enter PR number when prompted
+3. Select branch (usually `main`)
 4. Click **Run workflow**
 
 ### Troubleshooting PR Environments
@@ -811,20 +558,33 @@ doctl compute droplet delete <DROPLET_ID> --force
 - Review workflow logs for specific error messages
 - Check SSH key fingerprint matches actual key in DO account
 
-**Cannot access droplet after creation:**
-- Wait 1-2 minutes for containers to fully start
-- Check PR comment for correct IP address
-- Verify firewall allows HTTP traffic (ports 3000, 4000)
-- SSH to droplet and check container status: `docker compose ps`
-- Test direct container access: `curl http://localhost:4000/api/health`
+**DNS record creation fails:**
+- Verify `CLOUDFLARE_API_TOKEN` is valid in GitHub secrets
+- Check `CLOUDFLARE_ZONE_ID` matches your domain
+- Ensure API token has DNS edit permissions
+- Review Cloudflare API logs in workflow output
+
+**Cannot access PR environment after creation:**
+- Wait 1-2 minutes for containers and DNS to fully propagate
+- Check PR comment for correct domain and IP
+- Test DNS resolution: `dig pr-{number}.dev-pr.tronrelic.com`
+- Verify HTTPS works: `curl https://pr-{number}.dev-pr.tronrelic.com/api/health`
+- SSH to droplet and check Nginx: `systemctl status nginx`
+- Check container status: `docker compose ps`
+
+**Certificate warnings in browser:**
+- Verify wildcard certificate deployed: `ls -la /etc/nginx/ssl/`
+- Check certificate expiration: `openssl x509 -enddate -noout -in /etc/nginx/ssl/wildcard.crt`
+- Test Nginx configuration: `nginx -t`
+- Check Nginx error logs: `tail -100 /var/log/nginx/error.log`
+- Verify GitHub secret `WILDCARD_SSL_CERT` is base64-encoded certificate
+- Restart Nginx: `systemctl restart nginx`
 
 **Images fail to build:**
 - Review build logs in GitHub Actions workflow
 - Check for TypeScript compilation errors in PR branch
 - Verify package dependencies are installable
 - Ensure Docker build context isn't too large
-
-**Droplet not updated on push:**
 - Check PR comment for latest update timestamp
 - Review workflow logs to see if update step executed
 - Verify IMAGE_TAG was updated in .env: `ssh root@<IP> 'grep IMAGE_TAG /opt/tronrelic/.env'`
