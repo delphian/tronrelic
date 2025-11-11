@@ -37,6 +37,8 @@ jobs:
           fi
 
       - name: Delete DNS A record via Cloudflare
+        continue-on-error: true
+        # Non-critical cleanup: DNS record may not exist if PR was never provisioned
         run: |
           PR_SUBDOMAIN="pr-${{ github.event.pull_request.number }}"
 
@@ -49,7 +51,7 @@ jobs:
           chmod +x scripts/cloudflare-dns-delete.sh
           CLOUDFLARE_API_TOKEN="${{ secrets.CLOUDFLARE_API_TOKEN }}" \
           CLOUDFLARE_ZONE_ID="${{ secrets.CLOUDFLARE_ZONE_ID }}" \
-            ./scripts/cloudflare-dns-delete.sh "$PR_SUBDOMAIN" || true
+            ./scripts/cloudflare-dns-delete.sh "$PR_SUBDOMAIN"
 
           echo "✅ DNS record cleanup completed (or record didn't exist)"
 

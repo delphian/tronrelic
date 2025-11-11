@@ -26,7 +26,7 @@ TronRelic uses a **unified Docker deployment system** where environment differen
 
 ### Environment Types
 
-TronRelic maintains **four distinct environment types** with different automation levels and lifecycles:
+TronRelic maintains **two distinct environment types** with different automation levels and lifecycles:
 
 ```
 1. Production (tronrelic.com) - MANUAL DEPLOYMENT
@@ -38,37 +38,17 @@ TronRelic maintains **four distinct environment types** with different automatio
 ├── Trigger: Push to 'main' builds images → Manual deployment with ./scripts/droplet-update.sh prod
 └── Lifespan: Permanent (until manually destroyed)
 
-2. Permanent Dev Server (dev.tronrelic.com) - MANUAL DEPLOYMENT
-├── Domain: dev.tronrelic.com (optional, if configured)
-├── Server: Permanent Digital Ocean Droplet (<DEV_DROPLET_IP>)
-├── Deployment: /opt/tronrelic
-├── Docker Images: ghcr.io/delphian/tronrelic/*:production (same as prod)
-├── ENV Variable: ENV=development
-├── Trigger: Push to 'dev' builds images → Manual deployment with ./scripts/droplet-update.sh dev
-└── Lifespan: Permanent (until manually destroyed)
-
-3. Main-PR Environments - FULLY AUTOMATED
-├── Domain: dev.tronrelic.com (opportunistic - uses reserved IP if available)
-├── Server: Temporary droplet per PR to main (tronrelic-main-pr-{number})
+2. PR Testing Environments - FULLY AUTOMATED
+├── Domain: pr-{number}.dev-pr.tronrelic.com (with wildcard SSL certificate)
+├── Server: Temporary droplet per PR to main (tronrelic-pr-{number})
 ├── Deployment: /opt/tronrelic
 ├── Docker Images: ghcr.io/delphian/tronrelic/*:dev-{sha} (built from PR branch)
 ├── ENV Variable: ENV=development
 ├── Trigger: AUTOMATIC - Opening PR to 'main' branch
-├── Provisioning: Full stack with Nginx + SSL if reserved IP available, otherwise direct IP access
-├── Lifespan: Persists until PR is closed/merged
-└── Workflow: .github/workflows/main-pr-environment.yml
-
-4. Dev-PR Environments - FULLY AUTOMATED
-├── Domain: Direct IP access (no domain)
-├── Server: Temporary droplet per PR to dev (tronrelic-dev-pr-{number})
-├── Deployment: /opt/tronrelic
-├── Docker Images: ghcr.io/delphian/tronrelic/*:pr-{branch}-{sha}
-├── ENV Variable: ENV=development
-├── Access: http://{ip}:3000 (frontend), http://{ip}:4000 (backend)
-├── Trigger: AUTOMATIC - Opening PR to 'dev' branch
+├── Provisioning: Full stack with Nginx + wildcard SSL certificate
 ├── Updates: Automatically redeploys on every push to PR branch
 ├── Lifespan: Persists until PR is closed/merged
-└── Workflow: .github/workflows/dev-pr-environment.yml
+└── Workflow: .github/workflows/pr-environment.yml
 ```
 
 **Key architectural decisions:**
@@ -85,24 +65,17 @@ TronRelic maintains **four distinct environment types** with different automatio
 | Environment | Provisioning | Image Building | Deployment | Teardown | Cost/Month |
 |-------------|--------------|----------------|------------|----------|------------|
 | **Production** | Manual script | Automatic (push to main) | Manual script | Manual | ~$24 (always on) |
-| **Permanent Dev** | Manual script | Automatic (push to dev) | Manual script | Manual | ~$24 (always on) |
-| **Main-PR** | **Automatic** | **Automatic** | **Automatic** | **Automatic** (PR close) | ~$24/PR (if left open for month) |
-| **Dev-PR** | **Automatic** | **Automatic** | **Automatic** | **Automatic** (PR close) | ~$24/PR (if left open for month) |
+| **PR Testing** | **Automatic** | **Automatic** | **Automatic** | **Automatic** (PR close) | ~$24/PR (if left open for month) |
 
-**When opening PR to main:**
-1. GitHub Actions builds `:dev-{sha}` images
-2. GitHub Actions provisions droplet (`tronrelic-main-pr-{number}`)
-3. If reserved IP available: assigns IP, configures Nginx + SSL
-4. If reserved IP in use: uses dynamic IP, direct port access
-5. Subsequent pushes update same droplet
-6. Droplet destroys when PR closes/merges
+**PR Testing Environment Workflow:**
 
-**When opening PR to dev:**
-1. GitHub Actions builds `:pr-{branch}-{sha}` images
-2. GitHub Actions provisions droplet (`tronrelic-dev-pr-{number}`)
-3. Uses dynamic IP with direct port access
-4. Subsequent pushes update same droplet
-5. Droplet destroys when PR closes/merges
+When opening a PR to main:
+1. GitHub Actions builds `:dev-{sha}` images from PR branch
+2. GitHub Actions provisions droplet (`tronrelic-pr-{number}`)
+3. Creates DNS record: `pr-{number}.dev-pr.tronrelic.com`
+4. Installs Docker, Nginx, and deploys wildcard SSL certificate
+5. Subsequent pushes to PR branch automatically update the same droplet
+6. Droplet and DNS record automatically destroyed when PR closes/merges
 
 ## Detailed Documentation
 
@@ -144,32 +117,18 @@ This directory contains comprehensive documentation covering different aspects o
 | Environment | Domain | IP Address | Deploy Directory | Image Tag | ENV Variable | Lifespan |
 |-------------|--------|------------|------------------|-----------|--------------|----------|
 | **Production** | tronrelic.com | <PROD_DROPLET_IP> | /opt/tronrelic | :production | ENV=production | Permanent |
-| **Permanent Dev** | dev.tronrelic.com (optional) | <DEV_DROPLET_IP> | /opt/tronrelic | :production | ENV=development | Permanent |
-| **Main-PR** | dev.tronrelic.com (if reserved IP available) | Reserved IP or dynamic | /opt/tronrelic | :dev-{sha} | ENV=development | Until PR closed |
-| **Dev-PR** | Direct IP only | See PR comment | /opt/tronrelic | :pr-{branch}-{sha} | ENV=development | Until PR closed |
-
-**Note:** The same domain `dev.tronrelic.com` can point to either:
-- Permanent dev server (static droplet IP, manual deployment)
-- Ephemeral testing droplet (reserved IP reassigned on each push, automated)
+| **PR Testing** | pr-{number}.dev-pr.tronrelic.com | Dynamic (see PR comment) | /opt/tronrelic | :dev-{sha} | ENV=development | Until PR closed |
 
 ### Common Commands
 
-**Connect to servers:**
+**Connect to production server:**
 ```bash
-# Production
 ssh root@<PROD_DROPLET_IP>
-
-# Development
-ssh root@<DEV_DROPLET_IP>
 ```
 
-**Deploy updates:**
+**Deploy updates to production:**
 ```bash
-# Production (manual)
 ./scripts/droplet-update.sh prod
-
-# Development (manual)
-./scripts/droplet-update.sh dev
 ```
 
 **View logs:**
@@ -188,8 +147,7 @@ docker compose ps
 docker stats --no-stream
 
 # From local machine
-./scripts/utils/droplet-stats.sh prod  # Production
-./scripts/utils/droplet-stats.sh dev   # Development
+./scripts/utils/droplet-stats.sh prod
 ```
 
 **Access databases:**
@@ -233,7 +191,7 @@ docker exec -it tronrelic-redis redis-cli
 
 ## CI/CD Pipeline
 
-TronRelic uses GitHub Actions with **three distinct workflow types**:
+TronRelic uses GitHub Actions with **two distinct workflow types**:
 
 ### 1. Production Image Building (Manual Deployment)
 
@@ -242,7 +200,7 @@ TronRelic uses GitHub Actions with **three distinct workflow types**:
 **Trigger:** Push to `main` branch
 
 **Pipeline behavior:**
-1. Runs all tests (unit and integration)
+1. Runs all tests (unit tests via test.yml workflow)
 2. Builds backend and frontend images (only if tests pass)
 3. Tags all images as `:production` (single universal tag)
 4. Pushes images to GitHub Container Registry
@@ -250,57 +208,36 @@ TronRelic uses GitHub Actions with **three distinct workflow types**:
 
 **Deploy manually after build:**
 ```bash
-./scripts/droplet-update.sh prod  # Production
-./scripts/droplet-update.sh dev   # Permanent dev server (if exists)
+./scripts/droplet-update.sh prod
 ```
 
 **Image tag convention:**
-- All images use `:production` tag regardless of target environment
+- All images use `:production` tag
 - Images are identical; ENV variable in server .env controls runtime behavior
-- Eliminates :development vs :production tag confusion
+- Eliminates tag confusion and simplifies deployment
 - See [operations-docker.md](../system/operations-docker.md) for complete Docker standards
 
-### 2. Main-PR Environments (Fully Automated)
+### 2. PR Testing Environments (Fully Automated)
 
 **Workflow files:**
-- `.github/workflows/main-pr-environment.yml` - Provisions/updates Main-PR droplet
-- `.github/workflows/main-pr-teardown.yml` - Cleanup on PR close
+- `.github/workflows/pr-environment.yml` - Provisions/updates PR testing droplet
+- `.github/workflows/pr-teardown.yml` - Cleanup on PR close
 
 **Trigger:** Opening PR to `main` branch
 
 **Pipeline behavior:**
-1. Builds `:dev-{sha}` images from PR branch code
-2. Creates droplet `tronrelic-main-pr-{number}` (if doesn't exist)
-3. Opportunistically assigns reserved IP if available
-4. If reserved IP available: Installs Nginx + SSL, uses dev.tronrelic.com domain
-5. If reserved IP in use: Uses dynamic IP with direct port access
-6. Deploys containers automatically
+1. Runs all tests (unit tests via test.yml workflow)
+2. Builds `:dev-{sha}` images from PR branch code (only if tests pass)
+3. Creates droplet `tronrelic-pr-{number}` (if doesn't exist)
+4. Creates DNS record `pr-{number}.dev-pr.tronrelic.com` via Cloudflare
+5. Installs Docker, Nginx, and deploys wildcard SSL certificate
+6. Deploys containers automatically with full HTTPS support
 7. Updates on every push to PR branch
-8. Auto-destroys when PR closes/merges
+8. Auto-destroys droplet and DNS record when PR closes/merges
 
-**Access:** Check PR comment for domain (with SSL) or direct IP URLs
+**Access:** Check PR comment for HTTPS URL (e.g., `https://pr-42.dev-pr.tronrelic.com`)
 
-**No manual deployment needed** - Fully automated, multiple PRs supported
-
-### 3. Dev-PR Environments (Fully Automated)
-
-**Workflow files:**
-- `.github/workflows/dev-pr-environment.yml` - Provisions/updates Dev-PR droplet
-- `.github/workflows/dev-pr-teardown.yml` - Cleanup on PR close
-
-**Trigger:** Opening PR to `dev` branch
-
-**Pipeline behavior:**
-1. Builds `:pr-{branch}-{sha}` images from PR branch code
-2. Creates droplet `tronrelic-dev-pr-{number}` (if doesn't exist)
-3. Uses dynamic IP with direct port access
-4. Deploys containers automatically
-5. Updates on every push to PR branch
-6. Auto-destroys when PR closes/merges
-
-**Access:** Direct IP (see PR comment for URLs)
-
-**No manual deployment needed** - Updates automatically on every PR push
+**No manual deployment needed** - Fully automated, unlimited concurrent PRs supported
 
 ## Security Considerations
 

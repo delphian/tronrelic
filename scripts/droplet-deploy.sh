@@ -32,7 +32,10 @@
 ##   9. Verifies deployment
 ##
 
-set -e  # Exit on error
+set -euo pipefail  # Exit on error, undefined variables, and pipe failures
+
+# Track current operation for error reporting
+CURRENT_STEP="Initialization"
 
 # Source environment configuration
 SCRIPT_DIR="$(dirname "$0")"
@@ -46,6 +49,64 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 CYAN='\033[0;36m'
 NC='\033[0m' # No Color
+
+# Error handler - called when script fails
+cleanup_on_error() {
+    local exit_code=$?
+
+    # Don't run cleanup for successful exits or user cancellations
+    if [ $exit_code -eq 0 ] || [ $exit_code -eq 130 ]; then
+        return 0
+    fi
+
+    echo ""
+    echo -e "${RED}===================================================${NC}"
+    echo -e "${RED}  DEPLOYMENT FAILED${NC}"
+    echo -e "${RED}===================================================${NC}"
+    echo ""
+    echo -e "${RED}[ERROR]${NC} Deployment failed during: ${YELLOW}${CURRENT_STEP}${NC}"
+    echo -e "${RED}[ERROR]${NC} Exit code: $exit_code"
+    echo ""
+    echo -e "${YELLOW}Troubleshooting steps:${NC}"
+    echo "  1. Check the error messages above for specific details"
+    echo "  2. Verify the droplet is accessible: ssh $DROPLET_HOST"
+    echo "  3. Check droplet logs: ssh $DROPLET_HOST 'journalctl -xe'"
+    echo ""
+    echo -e "${YELLOW}Recovery options:${NC}"
+    echo "  • Retry deployment: $0 $ENV --force"
+    echo "  • Manual inspection: ssh $DROPLET_HOST"
+    echo "  • View recent errors: ssh $DROPLET_HOST 'dmesg | tail -50'"
+    echo ""
+    echo -e "${YELLOW}Common issues by step:${NC}"
+    case "$CURRENT_STEP" in
+        *"SSH"*)
+            echo "  - Verify SSH key is configured for the droplet"
+            echo "  - Check firewall allows port 22"
+            echo "  - Ensure droplet IP is correct in .env"
+            ;;
+        *"Docker"*)
+            echo "  - Check if apt is locked by another process"
+            echo "  - Verify droplet has internet connectivity"
+            echo "  - Ensure sufficient disk space: ssh $DROPLET_HOST 'df -h'"
+            ;;
+        *"GHCR"*|*"GitHub"*)
+            echo "  - Verify GitHub token has 'read:packages' scope"
+            echo "  - Check token hasn't expired"
+            echo "  - Ensure images exist: ghcr.io/$GITHUB_USERNAME/$GITHUB_REPO"
+            ;;
+        *"Container"*|*"compose"*)
+            echo "  - Check .env file has all required variables"
+            echo "  - Verify images were pulled successfully"
+            echo "  - Check container logs: ssh $DROPLET_HOST 'cd $DEPLOY_DIR && docker compose logs'"
+            ;;
+    esac
+    echo ""
+
+    exit $exit_code
+}
+
+# Set up error trap
+trap cleanup_on_error EXIT
 
 # Parse arguments
 if [[ $# -lt 1 ]]; then
@@ -96,7 +157,8 @@ log_step() {
 }
 
 # Check SSH connection
-log_step "STEP 1: Verifying SSH Connection"
+CURRENT_STEP="STEP 1: Verifying SSH Connection"
+log_step "$CURRENT_STEP"
 log_info "Testing connection to $DROPLET_HOST..."
 if ! remote_exec "echo 'SSH connection successful'" > /dev/null 2>&1; then
     log_error "Failed to connect to $DROPLET_HOST"
@@ -132,7 +194,8 @@ if [[ "$FORCE_DEPLOY" != true ]]; then
 fi
 
 # Collect required credentials
-log_step "STEP 2: Collecting Configuration"
+CURRENT_STEP="STEP 2: Collecting Configuration"
+log_step "$CURRENT_STEP"
 
 echo ""
 log_info "You will need:"
@@ -179,7 +242,8 @@ for key_var in "TRONGRID_KEY_1" "TRONGRID_KEY_2" "TRONGRID_KEY_3"; do
 done
 
 # Install Docker
-log_step "STEP 3: Installing Docker"
+CURRENT_STEP="STEP 3: Installing Docker"
+log_step "$CURRENT_STEP"
 log_info "Updating system packages..."
 remote_exec "apt update -qq"
 
@@ -198,7 +262,8 @@ remote_exec "docker compose version"
 log_success "Docker Compose is available"
 
 # Install and configure Nginx
-log_step "STEP 4: Installing and Configuring Nginx"
+CURRENT_STEP="STEP 4: Installing and Configuring Nginx"
+log_step "$CURRENT_STEP"
 log_info "Installing Nginx..."
 
 if remote_exec "command -v nginx" > /dev/null 2>&1; then
@@ -217,7 +282,8 @@ remote_exec "systemctl start nginx || systemctl restart nginx"
 log_success "Nginx configured and started"
 
 # Configure firewall
-log_step "STEP 5: Configuring Firewall"
+CURRENT_STEP="STEP 5: Configuring Firewall"
+log_step "$CURRENT_STEP"
 log_info "Setting up UFW firewall rules..."
 
 remote_exec "ufw allow 22/tcp comment 'SSH'"
@@ -230,7 +296,8 @@ log_info "Application ports 3000/4000 are NOT exposed - Nginx proxies all traffi
 remote_exec "ufw status"
 
 # Authenticate with GitHub Container Registry
-log_step "STEP 6: Authenticating with GitHub Container Registry"
+CURRENT_STEP="STEP 6: Authenticating with GitHub Container Registry"
+log_step "$CURRENT_STEP"
 log_info "Logging into ghcr.io..."
 
 if printf '%s\n' "$GITHUB_TOKEN" | ssh "$DROPLET_HOST" "docker login ghcr.io -u $GITHUB_USERNAME --password-stdin"; then
@@ -242,14 +309,16 @@ else
 fi
 
 # Create project directory
-log_step "STEP 7: Creating Project Directory"
+CURRENT_STEP="STEP 7: Creating Project Directory"
+log_step "$CURRENT_STEP"
 log_info "Creating $DEPLOY_DIR..."
 
 remote_exec "mkdir -p $DEPLOY_DIR"
 log_success "Project directory created"
 
 # Generate secure secrets
-log_step "STEP 8: Generating Secure Credentials"
+CURRENT_STEP="STEP 8: Generating Secure Credentials"
+log_step "$CURRENT_STEP"
 log_info "Generating random secrets..."
 
 ADMIN_TOKEN=$(openssl rand -hex 32)
@@ -281,7 +350,8 @@ if [[ "$FORCE_DEPLOY" != true ]]; then
 fi
 
 # Create .env file
-log_step "STEP 9: Creating ${ENV^^} Environment File"
+CURRENT_STEP="STEP 9: Creating ${ENV^^} Environment File"
+log_step "$CURRENT_STEP"
 log_info "Writing .env file..."
 
 # Determine SITE_URL based on environment
@@ -296,6 +366,11 @@ remote_exec "cat > $DEPLOY_DIR/.env << 'EOF'
 
 # Environment Identifier (controls Docker image tag and NODE_ENV)
 ENV=$ENV_TAG
+
+# Docker Image Configuration (required for docker-compose.yml)
+GITHUB_USERNAME=$GITHUB_USERNAME
+GITHUB_REPO=$GITHUB_REPO
+IMAGE_TAG=$ENV_TAG
 
 # Site URL
 SITE_URL=$SITE_URL
@@ -325,7 +400,8 @@ remote_exec "chmod 600 $DEPLOY_DIR/.env"
 log_success "Environment file created"
 
 # Copy docker-compose.yml from repo
-log_step "STEP 10: Copying Docker Compose Configuration"
+CURRENT_STEP="STEP 10: Copying Docker Compose Configuration"
+log_step "$CURRENT_STEP"
 log_info "Copying unified $COMPOSE_FILE to server..."
 
 # Copy the unified docker-compose.yml file from the local repo to the server
@@ -334,7 +410,8 @@ scp "$SCRIPT_DIR/../docker-compose.yml" "$DROPLET_HOST:$DEPLOY_DIR/"
 log_success "Docker Compose configuration copied"
 
 # Pull Docker images
-log_step "STEP 11: Pulling Docker Images"
+CURRENT_STEP="STEP 11: Pulling Docker Images"
+log_step "$CURRENT_STEP"
 log_info "This may take several minutes..."
 
 if remote_exec "cd $DEPLOY_DIR && docker compose pull"; then
@@ -349,7 +426,8 @@ else
 fi
 
 # Start containers
-log_step "STEP 12: Starting Docker Containers"
+CURRENT_STEP="STEP 12: Starting Docker Containers"
+log_step "$CURRENT_STEP"
 log_info "Starting all services..."
 
 if remote_exec "cd $DEPLOY_DIR && docker compose up -d"; then
@@ -364,7 +442,8 @@ log_info "Waiting for services to initialize (30 seconds)..."
 sleep 30
 
 # Check container status
-log_step "STEP 13: Verifying Deployment"
+CURRENT_STEP="STEP 13: Verifying Deployment"
+log_step "$CURRENT_STEP"
 log_info "Container status:"
 remote_exec "cd $DEPLOY_DIR && docker compose ps"
 echo ""
@@ -385,6 +464,7 @@ else
 fi
 
 # Final summary
+CURRENT_STEP="DEPLOYMENT COMPLETE"
 log_step "DEPLOYMENT COMPLETE!"
 
 echo ""

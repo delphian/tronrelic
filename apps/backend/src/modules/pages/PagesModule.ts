@@ -130,7 +130,7 @@ export class PagesModule implements IModule<IPagesModuleDependencies> {
      * serve uploaded files.
      *
      * The directory is created at {cwd}/public/uploads where cwd is the project
-     * root (/home/delphian/projects/tronrelic.com-beta).
+     * root (where package.json resides).
      *
      * @throws {Error} If directory creation fails due to permissions or disk issues
      */
