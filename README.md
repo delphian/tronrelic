@@ -24,8 +24,6 @@ Start all services with one command:
 - `./scripts/start.sh --docker` - Run all services in Docker containers
 - `./scripts/start.sh --force-build` - Clean rebuild from scratch
 
-**Production deployment:** See [docs/operations/operations.md](docs/operations/operations.md)
-
 ## Prerequisites
 
 - Node.js 20+
@@ -53,7 +51,7 @@ openssl rand -hex 32  # Paste into ADMIN_API_TOKEN in .env
 ## Architecture
 
 ```
-tronrelic.com-beta/
+tronrelic/
 ├── apps/
 │   ├── backend/              # Express API + Socket.IO + BullMQ workers
 │   │   ├── src/
@@ -111,31 +109,14 @@ tail -f .run/frontend.log
 
 **Admin dashboard:** http://localhost:3000/system (requires ADMIN_API_TOKEN)
 
-## Troubleshooting
-
-| Problem | Solution |
-|---------|----------|
-| Port already in use | `./scripts/stop.sh` |
-| Slow builds | `./scripts/start.sh --force-build` |
-| Stale cache | `rm -rf apps/frontend/.next && ./scripts/start.sh --force-build` |
-| Fresh database needed | `./scripts/start.sh --force-docker` |
-| Rate limit errors (429) | Verify all 3 `TRONGRID_API_KEY` set in `.env` |
-| Block sync stalled | Check admin dashboard, restart with `./scripts/stop.sh && ./scripts/start.sh` |
-
-**Comprehensive troubleshooting:** [docs/operations/operations.md](docs/operations/operations.md)
-
 ## Documentation
 
-| Topic | Documentation |
-|-------|--------------|
-| Environment setup | [docs/environment.md](docs/environment.md) |
-| Plugin development | [docs/plugins/plugins.md](docs/plugins/plugins.md) |
-| Frontend architecture | [docs/frontend/frontend.md](docs/frontend/frontend.md) |
-| System architecture | [docs/system/system.md](docs/system/system.md) |
-| TRON blockchain concepts | [docs/tron/tron.md](docs/tron/tron.md) |
-| Market system | [docs/markets/markets.md](docs/markets/markets.md) |
-| Deployment & operations | [docs/operations/operations.md](docs/operations/operations.md) |
-| Documentation standards | [docs/documentation.md](docs/documentation.md) |
+- [@environment.md](docs/environment.md) - Environment variable reference
+- [@tron.md](docs/tron/tron.md) - TRON blockchain concepts overview
+- [@frontend.md](docs/frontend/frontend.md) - Frontend system overview
+- [@plugins.md](docs/plugins/plugins.md) - Plugin system overview
+- [@system.md](docs/system/system.md) - System architecture overview
+- [@documentation.md](docs/documentation.md) - Documentation standards and 
 
 ## Tech Stack
 

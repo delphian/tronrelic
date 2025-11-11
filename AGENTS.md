@@ -2,15 +2,11 @@
 
 **Always load and apply these foundational documents first:**
 
-- [@AGENTS.md](AGENTS.md) - Project rules and agent delegation protocol
-- [@README.md](README.md) - Project overview and quick start
 - [@environment.md](docs/environment.md) - Environment variable reference
 - [@tron.md](docs/tron/tron.md) - TRON blockchain concepts overview
 - [@frontend.md](docs/frontend/frontend.md) - Frontend system overview
 - [@plugins.md](docs/plugins/plugins.md) - Plugin system overview
 - [@system.md](docs/system/system.md) - System architecture overview
-- [@markets.md](docs/markets/markets.md) - Market system overview
-- [@operations.md](docs/operations/operations.md) - Deployment and operations overview
 - [@TODO.md](docs/TODO.md) - Future requirements.
 - [@documentation.md](docs/documentation.md) - Documentation standards and writing conventions
 
@@ -89,13 +85,3 @@ When performing a clean rebuild of the entire project, always use the project sc
 The build system has dependencies between packages (types → plugins → backend/frontend). The start.sh script handles the correct build order automatically. Manual `npm run build` commands may compile packages in the wrong order, causing TypeScript resolution errors.
 
 **Never manually build individual packages** unless you understand the dependency graph. Always use `./scripts/start.sh --force-build` for clean rebuilds.
-
-## Playwright Tests
-- Always wait 10 minutes for tests to complete.
-- Always examine the attachment screenshot if available in results.
-
-## Git Workflow
-
-**Critical rule:** Never attempt to add files with `git add` or make commits with `git commit`. These operations are prohibited.
-
-**Commit messages:** You *may* provide a commit message automatically at your discretion if it seems like a suitable ending point has been reached (goal complete). Do not provide commit messages unless the work is genuinely finished and ready for review.
