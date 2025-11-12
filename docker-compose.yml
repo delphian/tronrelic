@@ -5,7 +5,6 @@
 #
 # Required .env variables:
 # - GITHUB_USERNAME: Your GitHub username (for GHCR image paths)
-# - GITHUB_REPO: Your repository name (for GHCR image paths)
 # - IMAGE_TAG: Docker image tag (defaults to 'production')
 # - ENV: Environment type (development or production)
 #
@@ -66,7 +65,7 @@ services:
 
     # Backend API Server
     backend:
-        image: ghcr.io/${GITHUB_USERNAME}/${GITHUB_REPO}/backend:${IMAGE_TAG:-production}
+        image: ghcr.io/${GITHUB_USERNAME}/tronrelic-backend:${IMAGE_TAG:-production}
         container_name: tronrelic-backend
         restart: always
         ports:
@@ -122,7 +121,7 @@ services:
 
     # Frontend Web Application
     frontend:
-        image: ghcr.io/${GITHUB_USERNAME}/${GITHUB_REPO}/frontend:${IMAGE_TAG:-production}
+        image: ghcr.io/${GITHUB_USERNAME}/tronrelic-frontend:${IMAGE_TAG:-production}
         container_name: tronrelic-frontend
         restart: always
         ports:
