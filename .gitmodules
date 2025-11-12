@@ -1,3 +1,0 @@
-[submodule "packages/plugins/resource-markets"]
-	path = packages/plugins/resource-markets
-	url = git@github.com:delphian/tronrelic-plugin-resource-markets.git

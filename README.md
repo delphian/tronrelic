@@ -46,7 +46,7 @@ openssl rand -hex 32  # Paste into ADMIN_API_TOKEN in .env
 
 **Complete configuration reference:** [docs/environment.md](docs/environment.md)
 
-**Note:** Never commit `.env` files. Private plugins in `packages/plugins/resource-markets` are optional and automatically skipped if not initialized.
+**Note:** Never commit `.env` files.
 
 ## Architecture
 
