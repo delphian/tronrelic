@@ -527,7 +527,7 @@ STORAGE_SECRET_ACCESS_KEY=<your-secret>
 
 ## Pre-Deployment Security
 
-Before deploying to production, review the security checklist in [README.md - Security Checklist](../README.md#security-checklist) and [operations-workflows.md - Production Setup](./operations/operations-workflows.md#production-setup-tronreliccom).
+Before deploying to production, review the security checklist in [README.md - Security Checklist](../README.md#security-checklist) and the deployment documentation in the [tronrelic-operations repository](../../docs/operations/operations.md).
 
 **Critical environment variable security practices:**
 - Generate secure tokens with `openssl rand -hex 32` (ADMIN_API_TOKEN, database passwords)

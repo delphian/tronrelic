@@ -8,13 +8,5 @@
 # Workflow files - any changes to GitHub Actions require review
 /.github/workflows/* @delphian
 
-# Security and deployment scripts
-/scripts/cloudflare-*.sh @delphian
-/scripts/droplet-*.sh @delphian
-
 # Environment configuration examples (not .env itself, which is gitignored)
 /.env.example @delphian
-
-# Documentation about security and operations
-/docs/operations/operations-cloudflare-setup.md @delphian
-/docs/operations/operations-server-info.md @delphian
