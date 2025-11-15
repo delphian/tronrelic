@@ -40,6 +40,16 @@ mkdir -p "${RUN_DIR}"
 echo -e "${GREEN}Starting TronRelic in npm development mode...${NC}"
 echo -e "${YELLOW}Mode: MongoDB/Redis in Docker + Backend/Frontend via npm${NC}"
 
+# Ensure npm dependencies are installed
+if [[ ! -d "${PROJECT_ROOT}/node_modules" ]]; then
+    echo -e "\n${YELLOW}node_modules not found. Installing dependencies...${NC}"
+    cd "${PROJECT_ROOT}"
+    npm install
+    echo -e "${GREEN}✓ Dependencies installed${NC}"
+else
+    echo -e "\n${GREEN}✓ Dependencies already installed${NC}"
+fi
+
 # Handle --force-build: clean all caches and dist directories
 if [[ "$FORCE_BUILD" == "true" ]]; then
     echo -e "\n${YELLOW}--force-build specified: Cleaning all build artifacts...${NC}"
