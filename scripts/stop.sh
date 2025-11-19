@@ -194,5 +194,5 @@ fi
 
 log INFO ""
 log INFO "To start services again, run:"
-log INFO "  ./scripts/start.sh --npm    # npm mode (recommended)"
-log INFO "  ./scripts/start.sh          # Docker mode"
+log INFO "  ./scripts/start.sh          # npm mode (default)"
+log INFO "  ./scripts/start.sh --docker # Docker mode"
