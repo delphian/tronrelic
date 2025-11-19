@@ -7,7 +7,7 @@ Open-source platform for TRON on-chain research and analytics. Monitor blockchai
 Start all services with one command:
 
 ```bash
-./scripts/start.sh --npm
+./scripts/start.sh
 ```
 
 **Access the application:**

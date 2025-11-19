@@ -21,7 +21,7 @@
         "clean": "rm -rf dist"
     },
     "dependencies": {
-        "@tronrelic/types": "file:../../types"
+        "@tronrelic/types": "*"
     },
     "devDependencies": {
         "@types/react": "^18.2.0",
