@@ -156,6 +156,10 @@ echo -e "  Backend PID: $BACKEND_PID (logs: .run/backend.log)"
 
 # Start frontend npm process
 echo -e "\n${GREEN}Starting frontend via npm...${NC}"
+# Export .env variables for Next.js config evaluation (needs SITE_BACKEND before loading)
+set -a
+source "${PROJECT_ROOT}/.env" 2>/dev/null || true
+set +a
 npm run dev --workspace apps/frontend > "${RUN_DIR}/frontend.log" 2>&1 &
 FRONTEND_PID=$!
 echo "$FRONTEND_PID" > "${RUN_DIR}/frontend.pid"
