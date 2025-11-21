@@ -104,7 +104,6 @@ export function WhaleDashboard({ initialSeries, initialHighlights }: WhaleDashbo
             // TODO: Re-enable once getWhaleTimeseries is implemented in lib/api
             // const updatedSeries = await getWhaleTimeseries(range);
             // setSeries(updatedSeries);
-            setError('Whale timeseries API not yet implemented');
         } catch (fetchError) {
             console.error(fetchError);
             setError(fetchError instanceof Error ? fetchError.message : 'Unable to load timeseries');
@@ -178,7 +177,7 @@ export function WhaleDashboard({ initialSeries, initialHighlights }: WhaleDashbo
                                     type="button"
                                     className={range === selectedRange ? 'is-active' : ''}
                                     onClick={() => onRangeChange(range)}
-                                    disabled={loading}
+                                    disabled={true}
                                 >
                                     {range}d
                                 </button>

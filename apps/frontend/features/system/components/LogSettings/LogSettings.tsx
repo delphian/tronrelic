@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import type { LogLevelName } from '@tronrelic/types';
-import { config as runtimeConfig } from '../../../../lib/config';
+import { getRuntimeConfig } from '../../../../lib/runtimeConfig';
 import { Button } from '../../../../components/ui/Button';
 import styles from './LogSettings.module.css';
 
@@ -62,6 +62,9 @@ export function LogSettings({ token }: Props) {
     const [error, setError] = useState<string | null>(null);
     const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
+    // Get runtime config for API URL
+    const runtimeConfig = getRuntimeConfig();
+
     /**
      * Fetches current system configuration from the backend.
      *
@@ -73,7 +76,7 @@ export function LogSettings({ token }: Props) {
         setError(null);
 
         try {
-            const response = await fetch(`${runtimeConfig.apiBaseUrl}/admin/system/config/system`, {
+            const response = await fetch(`${runtimeConfig.apiUrl}/admin/system/config/system`, {
                 method: 'GET',
                 headers: {
                     'Content-Type': 'application/json',
@@ -115,7 +118,7 @@ export function LogSettings({ token }: Props) {
         setSuccessMessage(null);
 
         try {
-            const response = await fetch(`${runtimeConfig.apiBaseUrl}/admin/system/config/system`, {
+            const response = await fetch(`${runtimeConfig.apiUrl}/admin/system/config/system`, {
                 method: 'PATCH',
                 headers: {
                     'Content-Type': 'application/json',
