@@ -417,7 +417,7 @@ export function createMockDatabaseService(): IDatabaseService & {
                                                 const values = groupDocs.map(doc => doc[fieldPath]).filter(v => v !== undefined);
                                                 if (values.length === 0) {
                                                     result[fieldName] = undefined;
-                                                } else if (values[0] instanceof Date) {
+                                                } else if (values.every(v => v instanceof Date)) {
                                                     // For Date objects, find the one with the minimum timestamp
                                                     result[fieldName] = values.reduce((min, val) => val < min ? val : min);
                                                 } else {
@@ -432,7 +432,7 @@ export function createMockDatabaseService(): IDatabaseService & {
                                                 const values = groupDocs.map(doc => doc[fieldPath]).filter(v => v !== undefined);
                                                 if (values.length === 0) {
                                                     result[fieldName] = undefined;
-                                                } else if (values[0] instanceof Date) {
+                                                } else if (values.every(v => v instanceof Date)) {
                                                     // For Date objects, find the one with the maximum timestamp
                                                     result[fieldName] = values.reduce((max, val) => val > max ? val : max);
                                                 } else {
