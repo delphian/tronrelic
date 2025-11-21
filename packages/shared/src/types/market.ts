@@ -55,6 +55,7 @@ export interface MarketAffiliateInfo {
   link: string;
   commission?: number;
   cookieDuration?: number;
+  trackingCode?: string;
 }
 
 export interface MarketStats {

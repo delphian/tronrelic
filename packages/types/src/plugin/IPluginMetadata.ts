@@ -84,6 +84,7 @@ export interface IPluginInfo {
         license?: string;
         backend?: boolean;
         frontend?: boolean;
+        adminUrl?: string;
     };
 
     /** Plugin state from database */

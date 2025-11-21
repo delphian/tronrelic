@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import type { LogLevelName } from '@tronrelic/types';
-import { config as runtimeConfig } from '../../../../lib/config';
+import { getRuntimeConfig } from '../../../../lib/runtimeConfig';
 import { Button } from '../../../../components/ui/Button';
 import styles from './LogSettings.module.css';
 
@@ -61,6 +61,9 @@ export function LogSettings({ token }: Props) {
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+    // Get runtime config for API URL
+    const runtimeConfig = getRuntimeConfig();
 
     /**
      * Fetches current system configuration from the backend.

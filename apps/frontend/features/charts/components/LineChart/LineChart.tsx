@@ -378,12 +378,13 @@ export function LineChart({
                 if (!point) {
                     return null;
                 }
-                return {
+                const tooltipItem: TooltipDatum = {
                     label: series.label,
                     value: point.value,
                     color: series.color ?? '#7C9BFF',
                     metadata: point.metadata
-                } satisfies TooltipDatum;
+                };
+                return tooltipItem;
             })
             .filter((item): item is TooltipDatum => Boolean(item));
 

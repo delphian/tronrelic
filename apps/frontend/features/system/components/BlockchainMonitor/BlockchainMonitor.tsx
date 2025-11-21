@@ -266,12 +266,12 @@ export function BlockchainMonitor({ token }: Props) {
         try {
             if (status.lastErrorAt) {
                 return new Date(status.lastErrorAt).toLocaleString();
-            } else if (typeof status.lastError === 'object' && status.lastError.at) {
+            } else if (status.lastError && typeof status.lastError === 'object' && status.lastError.at) {
                 return new Date(status.lastError.at).toLocaleString();
             }
         } catch (e) {
             // If date parsing fails, return the raw timestamp
-            return status.lastErrorAt || (typeof status.lastError === 'object' ? status.lastError.at : null);
+            return status.lastErrorAt || (status.lastError && typeof status.lastError === 'object' ? status.lastError.at : null);
         }
         return null;
     };
@@ -322,7 +322,7 @@ export function BlockchainMonitor({ token }: Props) {
                     </button>
                 </header>
 
-                {status?.lastError && (
+                {status && status.lastError && (
                     <div className={styles.error_alert}>
                         <div className={styles.error_alert__title}>⚠ Blockchain Sync Error</div>
                         <div className={styles.error_alert__message}>

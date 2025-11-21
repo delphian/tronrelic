@@ -3,11 +3,24 @@ declare const styles: {
     readonly header: string;
     readonly title: string;
     readonly subtitle: string;
+    readonly subtitleShort: string;
+    readonly subtitleFull: string;
+    readonly helpIcon: string;
     readonly container: string;
+    readonly cardHeader: string;
+    readonly cardTitle: string;
+    readonly cardSubtitle: string;
+    readonly summary: string;
+    readonly summaryItem: string;
+    readonly summaryLabel: string;
+    readonly summaryValue: string;
     readonly controls: string;
-    readonly periodSelector: string;
+    readonly controlRow: string;
     readonly label: string;
     readonly buttonGroup: string;
+    readonly periodButton: string;
+    readonly 'periodButton--active': string;
+    readonly periodSelector: string;
     readonly toggles: string;
     readonly toggleGroup: string;
     readonly toggle: string;
@@ -24,6 +37,9 @@ declare const styles: {
     readonly errorContainer: string;
     readonly errorText: string;
     readonly skeletonLoader: string;
+    readonly content_layout: string;
+    readonly content_main: string;
+    readonly content_sidebar: string;
 };
 
 export default styles;

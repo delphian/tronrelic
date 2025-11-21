@@ -227,7 +227,7 @@ export function SettingsCard({ context }: ISettingsCardProps) {
                             <ui.Input
                                 id="rateLimitPerUser"
                                 type="number"
-                                value={rateLimitPerUser}
+                                value={rateLimitPerUser.toString()}
                                 onChange={(e) => setRateLimitPerUser(parseInt(e.target.value, 10))}
                                 min={1}
                                 max={100}
@@ -251,7 +251,7 @@ export function SettingsCard({ context }: ISettingsCardProps) {
                             <ui.Input
                                 id="rateLimitWindow"
                                 type="number"
-                                value={rateLimitWindowMs / 1000}
+                                value={(rateLimitWindowMs / 1000).toString()}
                                 onChange={(e) => setRateLimitWindowMs(parseInt(e.target.value, 10) * 1000)}
                                 min={10}
                                 max={300}
