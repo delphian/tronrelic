@@ -35,9 +35,10 @@ interface IPageParams {
  * @param params - Next.js route params containing slug array
  * @returns Plugin page component wrapped in system layout
  */
-export default function PluginAdminPage({ params }: { params: IPageParams }) {
+export default async function PluginAdminPage({ params }: { params: Promise<IPageParams> }) {
     // Reconstruct full path including /system/plugins prefix
-    const slug = '/system/plugins/' + params.slug.join('/');
+    const { slug } = await params;
+    const fullSlug = '/system/plugins/' + slug.join('/');
 
-    return <PluginPageHandler slug={slug} />;
+    return <PluginPageHandler slug={fullSlug} />;
 }

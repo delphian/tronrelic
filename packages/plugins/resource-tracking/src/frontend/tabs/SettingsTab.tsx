@@ -76,7 +76,7 @@ export function SettingsTab({ context, settings, setSettings, onSave, saving }: 
                     type="number"
                     min={1}
                     max={365}
-                    value={settings.detailsRetentionDays}
+                    value={settings.detailsRetentionDays.toString()}
                     onChange={(e) =>
                         setSettings({ ...settings, detailsRetentionDays: parseInt(e.target.value, 10) })
                     }
@@ -98,7 +98,7 @@ export function SettingsTab({ context, settings, setSettings, onSave, saving }: 
                     type="number"
                     min={1}
                     max={24}
-                    value={settings.summationRetentionMonths}
+                    value={settings.summationRetentionMonths.toString()}
                     onChange={(e) =>
                         setSettings({ ...settings, summationRetentionMonths: parseInt(e.target.value, 10) })
                     }
@@ -120,7 +120,7 @@ export function SettingsTab({ context, settings, setSettings, onSave, saving }: 
                     type="number"
                     min={1}
                     max={24}
-                    value={settings.purgeFrequencyHours}
+                    value={settings.purgeFrequencyHours.toString()}
                     onChange={(e) =>
                         setSettings({ ...settings, purgeFrequencyHours: parseInt(e.target.value, 10) })
                     }
@@ -143,7 +143,7 @@ export function SettingsTab({ context, settings, setSettings, onSave, saving }: 
                     type="number"
                     min={100}
                     max={1000}
-                    value={settings.blocksPerInterval}
+                    value={settings.blocksPerInterval.toString()}
                     onChange={(e) =>
                         setSettings({ ...settings, blocksPerInterval: parseInt(e.target.value, 10) })
                     }

@@ -55,7 +55,7 @@ export function WhaleThresholdSettings({ config, onChange, context }: WhaleThres
                         <ui.Input
                             id="threshold-trx"
                             type="number"
-                            value={config.thresholdTRX}
+                            value={config.thresholdTRX.toString()}
                             onChange={handleThresholdChange}
                             min={0}
                             step={10000}

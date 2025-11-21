@@ -32,3 +32,4 @@ export const instructions_text: string;
 export const code_block: string;
 export const code_note: string;
 export const security_note: string;
+export const close_button: string;

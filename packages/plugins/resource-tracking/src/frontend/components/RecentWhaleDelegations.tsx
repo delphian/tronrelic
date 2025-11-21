@@ -237,7 +237,6 @@ export function RecentWhaleDelegations({
                         onClick={() => setCompactMode(!compactMode)}
                         icon={compactMode ? <Maximize2 size={16} /> : <Minimize2 size={16} />}
                         aria-label={compactMode ? 'Expand view' : 'Compact view'}
-                        title={compactMode ? 'Expand view' : 'Compact view'}
                     >
                         {compactMode ? 'Expand' : 'Compact'}
                     </ui.Button>

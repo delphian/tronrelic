@@ -4,6 +4,7 @@ declare const styles: {
     readonly title: string;
     readonly subtitle: string;
     readonly container: string;
+    readonly formContainer: string;
     readonly form: string;
     readonly field: string;
     readonly label: string;
@@ -12,6 +13,26 @@ declare const styles: {
     readonly messageSuccess: string;
     readonly messageError: string;
     readonly actions: string;
+    readonly infoPanel: string;
+    readonly infoPanelTitle: string;
+    readonly infoPanelText: string;
+    readonly infoPanelList: string;
+    readonly infoPanelActions: string;
+    readonly tabs: string;
+    readonly tab: string;
+    readonly tabActive: string;
+    readonly whaleSection: string;
+    readonly whaleSectionTitle: string;
+    readonly whaleSectionDescription: string;
+    readonly tableContainer: string;
+    readonly whaleTable: string;
+    readonly amountCell: string;
+    readonly energyBadge: string;
+    readonly bandwidthBadge: string;
+    readonly loadingContainer: string;
+    readonly errorContainer: string;
+    readonly emptyState: string;
+    readonly emptyStateHint: string;
     readonly skeletonLoader: string;
 };
 

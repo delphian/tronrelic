@@ -1,12 +1,15 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import {
-    getWhaleHighlights,
-    getWhaleTimeseries,
-    type TimeseriesPoint,
-    type WhaleHighlightRecord
-} from '../../../../lib/api';
+// TODO: These functions need to be implemented in lib/api
+// import {
+//     getWhaleHighlights,
+//     getWhaleTimeseries,
+//     type TimeseriesPoint,
+//     type WhaleHighlightRecord
+// } from '../../../../lib/api';
+type TimeseriesPoint = { date: string; value: number; max?: number; count?: number };
+type WhaleHighlightRecord = { txId: string; amountTRX: number; timestamp: string; fromAddress: string; toAddress: string; memo?: string };
 import { LineChart } from '../../../charts/components/LineChart';
 import { Card } from '../../../../components/ui/Card';
 import { Badge } from '../../../../components/ui/Badge';
@@ -78,14 +81,15 @@ export function WhaleDashboard({ initialSeries, initialHighlights }: WhaleDashbo
      * Initial data may be stale if page was cached by Next.js.
      */
     useEffect(() => {
-        void (async () => {
-            try {
-                const latestHighlights = await getWhaleHighlights(12);
-                setHighlights(latestHighlights);
-            } catch (highlightError) {
-                console.error(highlightError);
-            }
-        })();
+        // TODO: Re-enable once getWhaleHighlights is implemented in lib/api
+        // void (async () => {
+        //     try {
+        //         const latestHighlights = await getWhaleHighlights(12);
+        //         setHighlights(latestHighlights);
+        //     } catch (highlightError) {
+        //         console.error(highlightError);
+        //     }
+        // })();
     }, []);
 
     /**
@@ -97,8 +101,10 @@ export function WhaleDashboard({ initialSeries, initialHighlights }: WhaleDashbo
         setLoading(true);
         setError(null);
         try {
-            const updatedSeries = await getWhaleTimeseries(range);
-            setSeries(updatedSeries);
+            // TODO: Re-enable once getWhaleTimeseries is implemented in lib/api
+            // const updatedSeries = await getWhaleTimeseries(range);
+            // setSeries(updatedSeries);
+            setError('Whale timeseries API not yet implemented');
         } catch (fetchError) {
             console.error(fetchError);
             setError(fetchError instanceof Error ? fetchError.message : 'Unable to load timeseries');

@@ -59,6 +59,10 @@ export interface IUIComponents {
         className?: string;
         id?: string;
         name?: string;
+        min?: number;
+        max?: number;
+        step?: number;
+        'aria-label'?: string;
     }>;
 
     /** Client-side time rendering component (prevents SSR hydration mismatches) */

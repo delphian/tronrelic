@@ -73,7 +73,7 @@ export function LogSettings({ token }: Props) {
         setError(null);
 
         try {
-            const response = await fetch(`${runtimeConfig.apiUrl}/admin/system/config/system`, {
+            const response = await fetch(`${runtimeConfig.apiBaseUrl}/admin/system/config/system`, {
                 method: 'GET',
                 headers: {
                     'Content-Type': 'application/json',
@@ -115,7 +115,7 @@ export function LogSettings({ token }: Props) {
         setSuccessMessage(null);
 
         try {
-            const response = await fetch(`${runtimeConfig.apiUrl}/admin/system/config/system`, {
+            const response = await fetch(`${runtimeConfig.apiBaseUrl}/admin/system/config/system`, {
                 method: 'PATCH',
                 headers: {
                     'Content-Type': 'application/json',

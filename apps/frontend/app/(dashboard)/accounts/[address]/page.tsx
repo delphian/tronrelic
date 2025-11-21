@@ -22,9 +22,9 @@ interface AccountSnapshotResponse {
 }
 
 interface AccountPageProps {
-  params: {
+  params: Promise<{
     address: string;
-  };
+  }>;
 }
 
 async function fetchAccount(address: string): Promise<AccountSnapshotResponse> {
@@ -36,13 +36,15 @@ async function fetchAccount(address: string): Promise<AccountSnapshotResponse> {
 }
 
 export async function generateMetadata({ params }: AccountPageProps): Promise<Metadata> {
+  const { address } = await params;
   return {
-    title: `Account ${params.address}`
+    title: `Account ${address}`
   };
 }
 
 export default async function AccountPage({ params }: AccountPageProps): Promise<JSX.Element> {
-  const data = await fetchAccount(params.address);
+  const { address } = await params;
+  const data = await fetchAccount(address);
   const snapshot: AccountSnapshot = data.snapshot ?? {
     summary: {
       totalSent: 0,
@@ -52,7 +54,7 @@ export default async function AccountPage({ params }: AccountPageProps): Promise
     recentTransactions: []
   };
 
-  const normalizedAddress = params.address.toLowerCase();
+  const normalizedAddress = address.toLowerCase();
   const totalTransactions = snapshot.recentTransactions.length;
   const flowAggregates = snapshot.recentTransactions.reduce(
     (acc, transaction) => {
@@ -97,7 +99,7 @@ export default async function AccountPage({ params }: AccountPageProps): Promise
   return (
     <div className="page">
       <section className="page-header">
-        <h1 className="page-title">{params.address}</h1>
+        <h1 className="page-title">{address}</h1>
         <p className="page-subtitle">Summary of TRX flows, recent transactions, and quick bookmarking for this wallet.</p>
       </section>
         <div className="grid grid--cols-2" style={{ gap: '2rem' }}>
@@ -129,7 +131,7 @@ export default async function AccountPage({ params }: AccountPageProps): Promise
             </div>
           </Card>
 
-          <BookmarkPanel targetWallet={params.address} />
+          <BookmarkPanel targetWallet={address} />
         </div>
 
         <div className="grid grid--cols-2" style={{ gap: '2rem', marginTop: '2rem' }}>

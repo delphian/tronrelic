@@ -108,9 +108,19 @@ export async function MenuNavSSR({ namespace, ariaLabel }: IMenuNavSSRProps) {
 
         const data: IMenuApiResponse = await response.json();
 
+        // Import IMenuItem type from MenuNavClient
+        type IMenuItem = {
+            _id: string;
+            label: string;
+            url?: string;
+            order: number;
+            enabled: boolean;
+            children?: IMenuItem[];
+        };
+
         // Convert hierarchical menu nodes to client-side menu items
         // Recursively processes the tree structure to preserve parent-child relationships
-        const convertNode = (node: IMenuNode) => ({
+        const convertNode = (node: IMenuNode): IMenuItem => ({
             _id: node._id,
             label: node.label,
             url: node.url,

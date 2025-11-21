@@ -122,7 +122,7 @@ export function WhalesTab({ context, settings, setSettings, onSave, saving }: IW
                         min={100000}
                         max={100000000}
                         step={100000}
-                        value={settings.whaleThresholdTrx}
+                        value={settings.whaleThresholdTrx.toString()}
                         onChange={(e) =>
                             setSettings({ ...settings, whaleThresholdTrx: parseInt(e.target.value, 10) })
                         }

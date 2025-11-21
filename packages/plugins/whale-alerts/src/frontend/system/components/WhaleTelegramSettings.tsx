@@ -90,7 +90,7 @@ export function WhaleTelegramSettings({ config, onChange, context }: WhaleTelegr
                                 <ui.Input
                                     id="telegram-thread-id"
                                     type="number"
-                                    value={config.telegramThreadId || ''}
+                                    value={config.telegramThreadId?.toString() || ''}
                                     onChange={handleThreadIdChange}
                                     placeholder="Leave empty for main channel"
                                 />
