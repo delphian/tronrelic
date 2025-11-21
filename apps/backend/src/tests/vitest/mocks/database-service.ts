@@ -171,7 +171,7 @@ export function createMockDatabaseService(): IDatabaseService & {
             const data = ensureCollection(name);
 
             const collectionMock = {
-                find: (filter: Filter<T> = {} as Filter<T>) => {
+                find: vi.fn((filter: Filter<T> = {} as Filter<T>) => {
                     let sortOptions: Record<string, 1 | -1> | null = null;
                     let skipValue = 0;
                     let limitValue: number | undefined;
@@ -224,7 +224,7 @@ export function createMockDatabaseService(): IDatabaseService & {
                     };
 
                     return cursor;
-                },
+                }),
                 findOne: async (filter: Filter<T>) => {
                     checkInjectedError(name, 'findOne');
                     return data.find((doc: any) => matchesFilter(doc, filter)) || null;
@@ -320,59 +320,73 @@ export function createMockDatabaseService(): IDatabaseService & {
                                     const groupBy = stage.$group._id;
                                     const groups = new Map<any, any[]>();
 
+                                    // Helper function to evaluate aggregation expressions
+                                    const evaluateExpression = (expr: any, doc: any): any => {
+                                        if (expr === null || expr === undefined) {
+                                            return null;
+                                        }
+
+                                        // String field reference like "$fieldName"
+                                        if (typeof expr === 'string' && expr.startsWith('$')) {
+                                            return doc[expr.substring(1)];
+                                        }
+
+                                        // Constant value
+                                        if (typeof expr !== 'object') {
+                                            return expr;
+                                        }
+
+                                        // Object with operators
+                                        if (expr.$dateToString) {
+                                            const date = evaluateExpression(expr.$dateToString.date, doc);
+                                            if (date instanceof Date) {
+                                                // Simple format support - default to YYYY-MM-DD
+                                                // TODO: Implement expr.$dateToString.format parsing if needed
+                                                return date.toISOString().split('T')[0]; // YYYY-MM-DD
+                                            }
+                                            return null;
+                                        }
+
+                                        if (expr.$toDate) {
+                                            const value = evaluateExpression(expr.$toDate, doc);
+                                            return value instanceof Date ? value : new Date(value);
+                                        }
+
+                                        if (expr.$subtract && Array.isArray(expr.$subtract)) {
+                                            const [left, right] = expr.$subtract;
+                                            const leftVal = evaluateExpression(left, doc);
+                                            const rightVal = evaluateExpression(right, doc);
+                                            return leftVal - rightVal;
+                                        }
+
+                                        if (expr.$mod && Array.isArray(expr.$mod)) {
+                                            const [value, divisor] = expr.$mod;
+                                            const valueVal = evaluateExpression(value, doc);
+                                            const divisorVal = evaluateExpression(divisor, doc);
+                                            return valueVal % divisorVal;
+                                        }
+
+                                        // For complex objects without known operators, return as-is
+                                        return JSON.stringify(expr);
+                                    };
+
                                     // Group documents by _id expression
                                     results.forEach((doc: any) => {
-                                        let groupKey;
+                                        const groupKey = evaluateExpression(groupBy, doc);
+                                        const groupKeyStr = typeof groupKey === 'object' ? JSON.stringify(groupKey) : String(groupKey);
 
-                                        // Handle different _id expressions
-                                        if (typeof groupBy === 'object' && groupBy !== null) {
-                                            // Complex grouping expression (e.g., date bucketing)
-                                            groupKey = JSON.stringify(groupBy);
-
-                                            // For date bucketing with $subtract, $mod, etc.
-                                            if (groupBy.$subtract || groupBy.$toDate) {
-                                                // Simplified: extract timestamp field and bucket it
-                                                // This is a basic implementation that works for common cases
-                                                const timestampField = 'timestamp'; // Default field
-                                                const timestamp = doc[timestampField];
-
-                                                if (timestamp instanceof Date) {
-                                                    // Extract interval from pipeline if available
-                                                    // For now, use a simple bucketing strategy
-                                                    groupKey = timestamp.toISOString();
-                                                }
-                                            }
-                                        } else if (typeof groupBy === 'string' && groupBy.startsWith('$')) {
-                                            // Field reference like "$category"
-                                            const fieldName = groupBy.substring(1);
-                                            groupKey = doc[fieldName];
-                                        } else {
-                                            // Constant value (all documents in one group)
-                                            groupKey = groupBy;
+                                        if (!groups.has(groupKeyStr)) {
+                                            groups.set(groupKeyStr, []);
                                         }
-
-                                        if (!groups.has(groupKey)) {
-                                            groups.set(groupKey, []);
-                                        }
-                                        groups.get(groupKey)!.push(doc);
+                                        groups.get(groupKeyStr)!.push(doc);
                                     });
 
                                     // Apply aggregation operators
-                                    results = Array.from(groups.entries()).map(([key, groupDocs]) => {
+                                    results = Array.from(groups.entries()).map(([, groupDocs]) => {
                                         const result: any = {};
 
-                                        // Set _id field (ungrouped if constant)
-                                        if (typeof groupBy === 'object' && groupBy !== null) {
-                                            // For complex expressions, use the first doc's timestamp
-                                            const firstDoc = groupDocs[0];
-                                            if (firstDoc.timestamp) {
-                                                result._id = firstDoc.timestamp;
-                                            }
-                                        } else if (groupBy === null || groupBy === undefined) {
-                                            result._id = null;
-                                        } else {
-                                            result._id = key;
-                                        }
+                                        // Set _id field by re-evaluating the expression with first doc
+                                        result._id = evaluateExpression(groupBy, groupDocs[0]);
 
                                         // Process each field in $group
                                         for (const [fieldName, expr] of Object.entries(stage.$group)) {
