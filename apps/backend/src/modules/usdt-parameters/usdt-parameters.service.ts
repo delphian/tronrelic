@@ -62,11 +62,14 @@ export class UsdtParametersService implements IUsdtParametersService {
 
                 if (!this.cachedParams) {
                     logger.warn('No USDT parameters found in database, using fallback');
-                    return this.getFallbackParameters();
+                    this.cachedParams = this.getFallbackParameters();
+                    return this.cachedParams;
                 }
             } catch (error) {
                 logger.error({ error }, 'Failed to fetch USDT parameters from database');
-                return this.getFallbackParameters();
+                this.cachedParams = this.getFallbackParameters();
+                this.cacheExpiry = Date.now() + this.CACHE_TTL_MS;
+                return this.cachedParams;
             }
         }
 
