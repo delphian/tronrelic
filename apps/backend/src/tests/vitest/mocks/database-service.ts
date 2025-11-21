@@ -49,6 +49,7 @@
 import type { IDatabaseService } from '@tronrelic/types';
 import type { Collection, Document, Filter, UpdateFilter } from 'mongodb';
 import { ObjectId } from 'mongodb';
+import { vi } from 'vitest';
 import { matchesFilter } from './mongoose.js';
 
 /**
@@ -116,6 +117,11 @@ export function createMockDatabaseService(): IDatabaseService & {
     const collections = new Map<string, any[]>();
 
     /**
+     * Cached collection mocks to ensure same instance returned for same name.
+     */
+    const collectionMocks = new Map<string, any>();
+
+    /**
      * Key-value store for simple configuration.
      */
     const kvStore = new Map<string, any>();
@@ -153,14 +159,19 @@ export function createMockDatabaseService(): IDatabaseService & {
         // MongoDB Collection Access
         // ============================================================
 
-        getCollection<T extends Document = Document>(name: string): Collection<T> {
+        getCollection: vi.fn(<T extends Document = Document>(name: string): Collection<T> => {
+            // Return cached collection mock if it exists
+            if (collectionMocks.has(name)) {
+                return collectionMocks.get(name);
+            }
+
             // Mock collection implementation (minimal for now)
             // Most tests use the convenience methods (find, findOne, etc.)
             // rather than getCollection() directly
             const data = ensureCollection(name);
 
-            return {
-                find: (filter: Filter<T> = {} as Filter<T>) => {
+            const collectionMock = {
+                find: vi.fn((filter: Filter<T> = {} as Filter<T>) => {
                     let sortOptions: Record<string, 1 | -1> | null = null;
                     let skipValue = 0;
                     let limitValue: number | undefined;
@@ -213,7 +224,7 @@ export function createMockDatabaseService(): IDatabaseService & {
                     };
 
                     return cursor;
-                },
+                }),
                 findOne: async (filter: Filter<T>) => {
                     checkInjectedError(name, 'findOne');
                     return data.find((doc: any) => matchesFilter(doc, filter)) || null;
@@ -264,9 +275,227 @@ export function createMockDatabaseService(): IDatabaseService & {
                         return data.length;
                     }
                     return data.filter((doc: any) => matchesFilter(doc, filter)).length;
-                }
+                },
+                aggregate: vi.fn((pipeline: any[]) => {
+                    return {
+                        toArray: async () => {
+                            checkInjectedError(name, 'aggregate');
+
+                            // Start with all data
+                            let results = [...data];
+
+                            // Process each pipeline stage
+                            for (const stage of pipeline) {
+                                // $match stage - filter documents
+                                if (stage.$match) {
+                                    results = results.filter((doc: any) => matchesFilter(doc, stage.$match));
+                                }
+
+                                // $sort stage - sort documents
+                                if (stage.$sort) {
+                                    const sortFields = Object.entries(stage.$sort);
+                                    results = [...results].sort((a: any, b: any) => {
+                                        for (const [field, order] of sortFields) {
+                                            const aVal = a[field];
+                                            const bVal = b[field];
+                                            if (aVal < bVal) return order === 1 ? -1 : 1;
+                                            if (aVal > bVal) return order === 1 ? 1 : -1;
+                                        }
+                                        return 0;
+                                    });
+                                }
+
+                                // $skip stage - skip N documents
+                                if (stage.$skip) {
+                                    results = results.slice(stage.$skip);
+                                }
+
+                                // $limit stage - limit to N documents
+                                if (stage.$limit) {
+                                    results = results.slice(0, stage.$limit);
+                                }
+
+                                // $group stage - group and aggregate documents
+                                if (stage.$group) {
+                                    const groupBy = stage.$group._id;
+                                    const groups = new Map<any, any[]>();
+
+                                    // Helper function to evaluate aggregation expressions
+                                    const evaluateExpression = (expr: any, doc: any): any => {
+                                        if (expr === null || expr === undefined) {
+                                            return null;
+                                        }
+
+                                        // String field reference like "$fieldName"
+                                        if (typeof expr === 'string' && expr.startsWith('$')) {
+                                            return doc[expr.substring(1)];
+                                        }
+
+                                        // Constant value
+                                        if (typeof expr !== 'object') {
+                                            return expr;
+                                        }
+
+                                        // Object with operators
+                                        if (expr.$dateToString) {
+                                            const date = evaluateExpression(expr.$dateToString.date, doc);
+                                            if (date instanceof Date) {
+                                                // Simple format support - default to YYYY-MM-DD
+                                                // TODO: Implement expr.$dateToString.format parsing if needed
+                                                return date.toISOString().split('T')[0]; // YYYY-MM-DD
+                                            }
+                                            return null;
+                                        }
+
+                                        if (expr.$toDate) {
+                                            const value = evaluateExpression(expr.$toDate, doc);
+                                            return value instanceof Date ? value : new Date(value);
+                                        }
+
+                                        if (expr.$subtract && Array.isArray(expr.$subtract)) {
+                                            const [left, right] = expr.$subtract;
+                                            const leftVal = evaluateExpression(left, doc);
+                                            const rightVal = evaluateExpression(right, doc);
+                                            return leftVal - rightVal;
+                                        }
+
+                                        if (expr.$mod && Array.isArray(expr.$mod)) {
+                                            const [value, divisor] = expr.$mod;
+                                            const valueVal = evaluateExpression(value, doc);
+                                            const divisorVal = evaluateExpression(divisor, doc);
+                                            return valueVal % divisorVal;
+                                        }
+
+                                        // For complex objects without known operators, return as-is
+                                        return JSON.stringify(expr);
+                                    };
+
+                                    // Group documents by _id expression
+                                    results.forEach((doc: any) => {
+                                        const groupKey = evaluateExpression(groupBy, doc);
+                                        const groupKeyStr = typeof groupKey === 'object' ? JSON.stringify(groupKey) : String(groupKey);
+
+                                        if (!groups.has(groupKeyStr)) {
+                                            groups.set(groupKeyStr, []);
+                                        }
+                                        groups.get(groupKeyStr)!.push(doc);
+                                    });
+
+                                    // Apply aggregation operators
+                                    results = Array.from(groups.entries()).map(([, groupDocs]) => {
+                                        const result: any = {};
+
+                                        // Set _id field by re-evaluating the expression with first doc
+                                        result._id = evaluateExpression(groupBy, groupDocs[0]);
+
+                                        // Process each field in $group
+                                        for (const [fieldName, expr] of Object.entries(stage.$group)) {
+                                            if (fieldName === '_id') continue;
+
+                                            const exprObj = expr as any;
+
+                                            // $avg operator
+                                            if (exprObj.$avg) {
+                                                const fieldPath = exprObj.$avg.substring(1); // Remove $
+                                                const sum = groupDocs.reduce((acc, doc) => acc + (doc[fieldPath] || 0), 0);
+                                                result[fieldName] = groupDocs.length > 0 ? sum / groupDocs.length : 0;
+                                            }
+
+                                            // $sum operator
+                                            else if (exprObj.$sum) {
+                                                if (exprObj.$sum === 1) {
+                                                    result[fieldName] = groupDocs.length;
+                                                } else if (typeof exprObj.$sum === 'string' && exprObj.$sum.startsWith('$')) {
+                                                    const fieldPath = exprObj.$sum.substring(1);
+                                                    result[fieldName] = groupDocs.reduce((acc, doc) => acc + (doc[fieldPath] || 0), 0);
+                                                }
+                                            }
+
+                                            // $min operator
+                                            else if (exprObj.$min) {
+                                                const fieldPath = exprObj.$min.substring(1);
+                                                const values = groupDocs.map(doc => doc[fieldPath]).filter(v => v !== undefined);
+                                                result[fieldName] = values.length > 0 ? Math.min(...values) : undefined;
+                                            }
+
+                                            // $max operator
+                                            else if (exprObj.$max) {
+                                                const fieldPath = exprObj.$max.substring(1);
+                                                const values = groupDocs.map(doc => doc[fieldPath]).filter(v => v !== undefined);
+                                                result[fieldName] = values.length > 0 ? Math.max(...values) : undefined;
+                                            }
+
+                                            // $first operator
+                                            else if (exprObj.$first) {
+                                                const fieldPath = exprObj.$first.substring(1);
+                                                result[fieldName] = groupDocs[0]?.[fieldPath];
+                                            }
+
+                                            // $last operator
+                                            else if (exprObj.$last) {
+                                                const fieldPath = exprObj.$last.substring(1);
+                                                result[fieldName] = groupDocs[groupDocs.length - 1]?.[fieldPath];
+                                            }
+                                        }
+
+                                        return result;
+                                    });
+                                }
+
+                                // $project stage - reshape documents
+                                if (stage.$project) {
+                                    results = results.map((doc: any) => {
+                                        const projected: any = {};
+                                        for (const [field, value] of Object.entries(stage.$project)) {
+                                            if (value === 1) {
+                                                projected[field] = doc[field];
+                                            } else if (value === 0) {
+                                                // Exclude field (copy all except this one)
+                                                continue;
+                                            } else if (typeof value === 'string' && (value as string).startsWith('$')) {
+                                                // Field reference
+                                                const fieldName = (value as string).substring(1);
+                                                projected[field] = doc[fieldName];
+                                            } else if (typeof value === 'object') {
+                                                // Handle $dateToString
+                                                if ((value as any).$dateToString) {
+                                                    const dateField = (value as any).$dateToString.date;
+                                                    if (typeof dateField === 'string' && dateField.startsWith('$')) {
+                                                        const fieldName = dateField.substring(1);
+                                                        const dateValue = doc[fieldName];
+                                                        if (dateValue instanceof Date) {
+                                                            projected[field] = dateValue.toISOString();
+                                                        } else {
+                                                            projected[field] = dateValue;
+                                                        }
+                                                    }
+                                                } else {
+                                                    // Other expressions - just copy field reference
+                                                    if (typeof value === 'string' && (value as string).startsWith('$')) {
+                                                        const fieldName = (value as string).substring(1);
+                                                        projected[field] = doc[fieldName];
+                                                    } else {
+                                                        projected[field] = value;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        return projected;
+                                    });
+                                }
+                            }
+
+                            return results;
+                        }
+                    };
+                })
             } as any; // Minimal mock - extend as needed
-        },
+
+            // Cache the collection mock
+            collectionMocks.set(name, collectionMock);
+
+            return collectionMock;
+        }) as any,
 
         // ============================================================
         // Mongoose Model Registry (no-ops for most tests)
@@ -312,10 +541,10 @@ export function createMockDatabaseService(): IDatabaseService & {
         // Convenience CRUD Methods
         // ============================================================
 
-        async count<T extends Document = Document>(
+        count: vi.fn(async <T extends Document = Document>(
             collectionName: string,
             filter: Filter<T>
-        ): Promise<number> {
+        ): Promise<number> => {
             checkInjectedError(collectionName, 'count');
             const data = ensureCollection(collectionName);
 
@@ -324,13 +553,13 @@ export function createMockDatabaseService(): IDatabaseService & {
             }
 
             return data.filter((doc: any) => matchesFilter(doc, filter)).length;
-        },
+        }) as any,
 
-        async find<T extends Document = Document>(
+        find: vi.fn(async <T extends Document = Document>(
             collectionName: string,
             filter: Filter<T>,
             options?: { limit?: number; skip?: number; sort?: Record<string, 1 | -1> }
-        ): Promise<T[]> {
+        ): Promise<T[]> => {
             checkInjectedError(collectionName, 'find');
             const data = ensureCollection(collectionName);
 
@@ -364,7 +593,7 @@ export function createMockDatabaseService(): IDatabaseService & {
             }
 
             return results as T[];
-        },
+        }) as any,
 
         async findOne<T extends Document = Document>(
             collectionName: string,
@@ -485,6 +714,7 @@ export function createMockDatabaseService(): IDatabaseService & {
 
         clear(): void {
             collections.clear();
+            collectionMocks.clear();
             kvStore.clear();
             injectedErrors.clear();
         },
