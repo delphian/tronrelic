@@ -415,14 +415,30 @@ export function createMockDatabaseService(): IDatabaseService & {
                                             else if (exprObj.$min) {
                                                 const fieldPath = exprObj.$min.substring(1);
                                                 const values = groupDocs.map(doc => doc[fieldPath]).filter(v => v !== undefined);
-                                                result[fieldName] = values.length > 0 ? Math.min(...values) : undefined;
+                                                if (values.length === 0) {
+                                                    result[fieldName] = undefined;
+                                                } else if (values.every(v => v instanceof Date)) {
+                                                    // For Date objects, find the one with the minimum timestamp
+                                                    result[fieldName] = values.reduce((min, val) => val < min ? val : min);
+                                                } else {
+                                                    // For numbers, use Math.min
+                                                    result[fieldName] = Math.min(...values);
+                                                }
                                             }
 
                                             // $max operator
                                             else if (exprObj.$max) {
                                                 const fieldPath = exprObj.$max.substring(1);
                                                 const values = groupDocs.map(doc => doc[fieldPath]).filter(v => v !== undefined);
-                                                result[fieldName] = values.length > 0 ? Math.max(...values) : undefined;
+                                                if (values.length === 0) {
+                                                    result[fieldName] = undefined;
+                                                } else if (values.every(v => v instanceof Date)) {
+                                                    // For Date objects, find the one with the maximum timestamp
+                                                    result[fieldName] = values.reduce((max, val) => val > max ? val : max);
+                                                } else {
+                                                    // For numbers, use Math.max
+                                                    result[fieldName] = Math.max(...values);
+                                                }
                                             }
 
                                             // $first operator
