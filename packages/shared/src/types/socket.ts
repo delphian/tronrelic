@@ -1,4 +1,3 @@
-import type { MarketDocument } from './market.js';
 import type { TronTransactionDocument } from './transaction.js';
 import type { NotificationChannel } from './common.js';
 
@@ -22,11 +21,6 @@ export interface SocketSubscriptions {
     wallet: string;
     channels?: NotificationChannel[];
   };
-}
-
-export interface MarketUpdatePayload {
-  event: 'market:update';
-  payload: MarketDocument;
 }
 
 export interface TransactionAlertPayload {
@@ -84,7 +78,6 @@ export interface MemoUpdatePayload {
 }
 
 export type TronRelicSocketEvent =
-  | MarketUpdatePayload
   | TransactionAlertPayload
   | BlockNotificationPayload
   | CommentsUpdatePayload
