@@ -103,7 +103,7 @@ const DEFAULT_COLORS = ['#7C9BFF', '#5CE1E6', '#FF9F6E', '#F06EF0'];
 /**
  * Chart margins for axis labels and padding.
  */
-const MARGIN = { top: 24, right: 32, bottom: 36, left: 54 };
+const MARGIN = { top: 24, right: 32, bottom: 36, left: 64 };
 
 /**
  * Converts date string to Date object, handling various formats.
