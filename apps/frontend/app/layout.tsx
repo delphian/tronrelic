@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
+import { cookies } from 'next/headers';
 import { getServerConfig, type RuntimeConfig } from '../lib/serverConfig';
 import { buildMetadata, SITE_NAME } from '../lib/seo';
 import './globals.css';
@@ -102,8 +103,20 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
   // Fetch active themes for SSR injection
   const activeThemes = await fetchActiveThemes(runtimeConfig.apiUrl);
 
+  // Read theme preference from cookie for SSR (prevents flash)
+  const cookieStore = await cookies();
+  const themeCookie = cookieStore.get('theme');
+  const selectedThemeId = themeCookie?.value || null;
+
+  // Validate that selected theme is actually active
+  const isValidTheme =
+    typeof selectedThemeId === 'string' &&
+    selectedThemeId.trim() !== '' &&
+    activeThemes.some(t => t.id === selectedThemeId);
+  const dataThemeAttr = isValidTheme ? selectedThemeId : undefined;
+
   return (
-    <html lang="en">
+    <html lang="en" data-theme={dataThemeAttr}>
       <head>
         {/* Inject runtime configuration before any client scripts */}
         <script
