@@ -1,6 +1,9 @@
 {
     "name": "TronRelic",
     "short_name": "TronRelic",
+    "description": "Live TRON blockchain analytics and energy rental marketplace",
+    "start_url": "/",
+    "scope": "/",
     "icons": [
         {
             "src": "/images/favicon/android-icon-36x36.png",
