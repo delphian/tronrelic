@@ -60,12 +60,13 @@ export class ChainParametersService implements IChainParametersService {
                 this.cacheExpiry = Date.now() + this.CACHE_TTL_MS;
 
                 if (!this.cachedParams) {
-                    logger.warn('No chain parameters found in database, using fallback');
-                    return this.getFallbackParameters();
+                    const error = new Error('No chain parameters found in database. Chain parameters MUST be fetched from TronGrid before performing calculations.');
+                    logger.error(error.message);
+                    throw error;
                 }
             } catch (error) {
                 logger.error({ error }, 'Failed to fetch chain parameters from database');
-                return this.getFallbackParameters();
+                throw error;
             }
         }
 
@@ -106,20 +107,26 @@ export class ChainParametersService implements IChainParametersService {
      * Calculate APY for energy rental
      * Compares rental cost to staking value over time
      *
+     * Energy regenerates once per 24 hours, so minimum duration is 1 day.
+     * Sub-daily rentals are clamped to 1 day for APY calculation.
+     *
      * @param energy - Energy amount rented
      * @param sun - Rental price in SUN per energy unit
      * @param days - Rental duration in days
      * @returns APY as percentage (e.g., 15.5 for 15.5%)
      */
     getAPY(energy: number, sun: number, days: number): number {
-        if (!this.cachedParams || days === 0) {
+        if (!this.cachedParams || days <= 0) {
             return 0;
         }
 
         const trx = this.getTRXFromEnergy(energy);
         const cost = (energy * sun) / 1_000_000; // SUN to TRX
-        const dailyReturn = cost / days / trx;
-        return dailyReturn * 365 * 100; // APY as percentage
+
+        // Clamp duration to minimum 1 day (energy regeneration constraint)
+        const effectiveDays = Math.max(1, days);
+
+        return (cost / trx) * (365 / effectiveDays) * 100; // APY as percentage
     }
 
     /**
@@ -130,29 +137,5 @@ export class ChainParametersService implements IChainParametersService {
      */
     getEnergyFee(): number {
         return this.cachedParams?.parameters.energyFee ?? 100;
-    }
-
-    /**
-     * Fallback parameters when database is empty (first boot)
-     * Uses approximate network averages based on historical data
-     *
-     * @returns Fallback chain parameters with conservative estimates
-     */
-    private getFallbackParameters(): IChainParameters {
-        return {
-            network: 'mainnet',
-            parameters: {
-                totalEnergyLimit: 180_000_000_000,
-                totalEnergyCurrentLimit: 180_000_000_000,
-                totalFrozenForEnergy: 32_000_000_000_000_000, // 32M TRX in SUN
-                energyPerTrx: 5625, // Approximate ratio: 180B / 32M TRX
-                energyFee: 100,
-                totalBandwidthLimit: 43_200_000_000, // 43.2B bandwidth per day
-                totalFrozenForBandwidth: 43_200_000_000_000_000, // 43.2M TRX in SUN
-                bandwidthPerTrx: 1000 // Approximate ratio: 43.2B / 43.2M TRX
-            },
-            fetchedAt: new Date(),
-            createdAt: new Date()
-        };
     }
 }

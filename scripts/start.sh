@@ -269,7 +269,7 @@ if [[ "${FORCE_DOCKER}" == true ]]; then
   fi
 
   log INFO "Stopping and removing containers"
-  docker compose -f "${COMPOSE_FILE}" down -v
+  docker-compose -f "${COMPOSE_FILE}" down -v
 
   log INFO "Removing all TronRelic Docker images"
   # Remove images matching both naming patterns (old and new)
@@ -281,25 +281,25 @@ if [[ "${FORCE_BUILD}" == true ]]; then
   log INFO "Removing all TronRelic Docker images"
   docker images --format "{{.Repository}}:{{.Tag}}" | grep -E 'tronrelic|tronreliccom' | xargs -r docker rmi -f 2>/dev/null || true
 
-  log INFO "Building Docker images with docker compose (no cache)"
-  docker compose -f "${COMPOSE_FILE}" build --no-cache
+  log INFO "Building Docker images with docker-compose (no cache)"
+  docker-compose -f "${COMPOSE_FILE}" build --no-cache
 elif [[ "${FORCE_DOCKER}" == true ]]; then
-  log INFO "Building Docker images with docker compose"
-  docker compose -f "${COMPOSE_FILE}" build
+  log INFO "Building Docker images with docker-compose"
+  docker-compose -f "${COMPOSE_FILE}" build
 else
   # Check if images exist by looking for built images matching the project name
   # Docker Compose generates image names like: tronreliccom-beta-backend:latest
   if docker images --format "{{.Repository}}" | grep -q "tronrelic.*-backend"; then
     log INFO "Using existing Docker images (use --force-build to rebuild)"
   else
-    log INFO "Building Docker images with docker compose"
-    docker compose -f "${COMPOSE_FILE}" build
+    log INFO "Building Docker images with docker-compose"
+    docker-compose -f "${COMPOSE_FILE}" build
   fi
 fi
 
 # Start all services
 log INFO "Starting Docker Compose stack"
-docker compose -f "${COMPOSE_FILE}" up -d
+docker-compose -f "${COMPOSE_FILE}" up -d
 
 # Wait for services to become healthy
 log INFO "Waiting for services to become healthy..."
@@ -344,7 +344,7 @@ wait_for_healthy() {
 
   echo ""
   log ERROR "Timeout waiting for ${container} to become healthy"
-  log INFO "Check logs with: docker compose -f ${COMPOSE_FILE} logs ${container}"
+  log INFO "Check logs with: docker-compose -f ${COMPOSE_FILE} logs ${container}"
   return 1
 }
 
@@ -365,7 +365,7 @@ log INFO "Backend: http://localhost:4000"
 log INFO "Frontend: http://localhost:3000"
 log INFO ""
 log INFO "View logs with:"
-log INFO "  docker compose -f ${COMPOSE_FILE} logs -f"
+log INFO "  docker-compose -f ${COMPOSE_FILE} logs -f"
 log INFO ""
 log INFO "Stop services with:"
 log INFO "  ./scripts/stop.sh"

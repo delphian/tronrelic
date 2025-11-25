@@ -20,6 +20,7 @@ This guide keeps TronRelic’s documentation consistent, concise, and immediatel
 - Prefer active voice. ("Use `database.set` to seed defaults" instead of "Defaults should be seeded with `database.set`.")
 - Define any unavoidable domain terms once, then rely on that definition. Use exact terminology from `@tronrelic/types` and other shared packages to maintain consistency across the codebase.
 - Keep sentences short and scannable. Break up long explanations with bullet points or tables.
+- Documentation must be *authoritative* and *prescriptive*.
 
 ## Structure Template
 

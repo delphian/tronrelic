@@ -48,16 +48,16 @@ cd "${PROJECT_ROOT}"
 # Handle force options
 if [[ "$FORCE_DOCKER" == "true" ]]; then
     echo -e "\n${YELLOW}Force recreating containers...${NC}"
-    docker compose -f "${COMPOSE_FILE}" down -v
+    docker-compose -f "${COMPOSE_FILE}" down -v
 fi
 
 # Start containers
 if [[ "$FORCE_BUILD" == "true" ]]; then
     echo -e "\n${GREEN}Building and starting containers (--force-build)...${NC}"
-    docker compose -f "${COMPOSE_FILE}" up --build -d
+    docker-compose -f "${COMPOSE_FILE}" up --build -d
 else
     echo -e "\n${GREEN}Starting containers...${NC}"
-    docker compose -f "${COMPOSE_FILE}" up -d
+    docker-compose -f "${COMPOSE_FILE}" up -d
 fi
 
 # Wait for backend health check
@@ -111,12 +111,12 @@ fi
 
 echo -e ""
 echo -e "View logs:"
-echo -e "  All:      ${YELLOW}docker compose -f ${COMPOSE_FILE} logs -f${NC}"
+echo -e "  All:      ${YELLOW}docker-compose -f ${COMPOSE_FILE} logs -f${NC}"
 if docker ps --format '{{.Names}}' | grep -q "tronrelic-backend"; then
-    echo -e "  Backend:  ${YELLOW}docker compose -f ${COMPOSE_FILE} logs -f backend${NC}"
+    echo -e "  Backend:  ${YELLOW}docker-compose -f ${COMPOSE_FILE} logs -f backend${NC}"
 fi
 if docker ps --format '{{.Names}}' | grep -q "tronrelic-frontend"; then
-    echo -e "  Frontend: ${YELLOW}docker compose -f ${COMPOSE_FILE} logs -f frontend${NC}"
+    echo -e "  Frontend: ${YELLOW}docker-compose -f ${COMPOSE_FILE} logs -f frontend${NC}"
 fi
 echo -e ""
 echo -e "Stop: ${YELLOW}./scripts/stop.sh${NC}"

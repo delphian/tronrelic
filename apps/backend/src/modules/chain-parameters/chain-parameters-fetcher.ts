@@ -62,10 +62,14 @@ export class ChainParametersFetcher implements IChainParametersFetcher {
             const totalNetWeight = this.findParam(chainParams, 'getTotalNetWeight');
 
             // Calculate total frozen for energy
-            // NOTE: This is an approximation based on network averages
-            // A more accurate calculation would query account resources across validators
-            // For now, we use a conservative estimate of 32M TRX frozen network-wide
-            const totalFrozenForEnergy = 32_000_000_000_000_000; // 32M TRX in SUN
+            // WARNING: This is an ARBITRARY EXAMPLE demonstrating the mathematical calculation.
+            // DO NOT use this 32M TRX value as a fallback parameter - it does NOT represent real network state.
+            //
+            // REQUIRED: This value MUST be queried from actual network state (account resources across validators).
+            // Using this arbitrary example will produce incorrect energyPerTrx ratios and invalid APY calculations.
+            //
+            // TODO: Replace with actual query to network for totalFrozenForEnergy
+            const totalFrozenForEnergy = 32_000_000_000_000_000; // 32M TRX in SUN - ARBITRARY EXAMPLE ONLY
 
             // Calculate total frozen for bandwidth from network weight
             // totalNetWeight is in SUN (1 TRX = 1,000,000 SUN)
