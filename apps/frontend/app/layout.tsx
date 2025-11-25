@@ -19,20 +19,37 @@ interface IOrderedTheme {
 }
 
 /**
+ * Resolves the backend URL for SSR-to-backend communication.
+ *
+ * Uses SITE_BACKEND environment variable:
+ * - Docker: http://backend:4000 (container-to-container communication)
+ * - Local npm: http://localhost:4000 (direct localhost connection)
+ *
+ * @returns Backend URL for SSR fetch calls
+ */
+function getBackendUrl(): string {
+    return (process.env.SITE_BACKEND || 'http://localhost:4000').replace(/\/$/, '');
+}
+
+/**
  * Fetch active themes from backend API for SSR injection.
  *
  * This runs on every page load to ensure themes are always fresh.
  * The backend caches active themes in Redis for 1 hour to minimize
  * database queries and dependency sorting overhead.
  *
- * @param apiUrl - Runtime API URL from server config
+ * IMPORTANT: Uses internal Docker URL (SITE_BACKEND) for container-to-container
+ * communication during SSR. The external apiUrl doesn't resolve from inside containers.
+ *
  * @returns Array of active themes in dependency order
  */
-async function fetchActiveThemes(apiUrl: string): Promise<IOrderedTheme[]> {
+async function fetchActiveThemes(): Promise<IOrderedTheme[]> {
     try {
-        const response = await fetch(`${apiUrl}/system/themes/active`, {
+        const backendUrl = getBackendUrl();
+        const response = await fetch(`${backendUrl}/api/system/themes/active`, {
             // Disable Next.js caching - rely on backend Redis cache instead
-            cache: 'no-store'
+            cache: 'no-store',
+            signal: AbortSignal.timeout(5000) // 5 second timeout
         });
 
         if (!response.ok) {
@@ -100,8 +117,8 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
   // Fetch runtime configuration from backend (cached after first call)
   const runtimeConfig = await getServerConfig();
 
-  // Fetch active themes for SSR injection
-  const activeThemes = await fetchActiveThemes(runtimeConfig.apiUrl);
+  // Fetch active themes for SSR injection (uses internal Docker URL)
+  const activeThemes = await fetchActiveThemes();
 
   // Read theme preference from cookie for SSR (prevents flash)
   const cookieStore = await cookies();
