@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 import { cookies } from 'next/headers';
 import { getServerConfig, type RuntimeConfig } from '../lib/serverConfig';
+import { getServerSideApiUrl } from '../lib/api-url';
 import { buildMetadata, SITE_NAME } from '../lib/seo';
 import './globals.css';
 import { Providers } from './providers';
@@ -19,19 +20,6 @@ interface IOrderedTheme {
 }
 
 /**
- * Resolves the backend URL for SSR-to-backend communication.
- *
- * Uses SITE_BACKEND environment variable:
- * - Docker: http://backend:4000 (container-to-container communication)
- * - Local npm: http://localhost:4000 (direct localhost connection)
- *
- * @returns Backend URL for SSR fetch calls
- */
-function getBackendUrl(): string {
-    return (process.env.SITE_BACKEND || 'http://localhost:4000').replace(/\/$/, '');
-}
-
-/**
  * Fetch active themes from backend API for SSR injection.
  *
  * This runs on every page load to ensure themes are always fresh.
@@ -45,7 +33,7 @@ function getBackendUrl(): string {
  */
 async function fetchActiveThemes(): Promise<IOrderedTheme[]> {
     try {
-        const backendUrl = getBackendUrl();
+        const backendUrl = getServerSideApiUrl();
         const response = await fetch(`${backendUrl}/api/system/themes/active`, {
             // Disable Next.js caching - rely on backend Redis cache instead
             cache: 'no-store',
