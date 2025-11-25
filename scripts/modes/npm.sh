@@ -91,10 +91,10 @@ cd "${PROJECT_ROOT}"
 # Handle --force-docker: recreate containers and volumes
 if [[ "$FORCE_DOCKER" == "true" ]]; then
     echo -e "${YELLOW}--force-docker specified: Recreating containers and volumes...${NC}"
-    docker compose -f docker-compose.npm.yml down -v
+    docker-compose -f docker-compose.npm.yml down -v
 fi
 
-docker compose -f docker-compose.npm.yml up -d
+docker-compose -f docker-compose.npm.yml up -d
 
 # Wait for containers to be healthy
 echo -e "\n${GREEN}Waiting for containers to be healthy...${NC}"

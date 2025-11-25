@@ -169,15 +169,15 @@ fi
 stopped_any=false
 for compose_file in "${COMPOSE_FILES[@]}"; do
   # Check if any containers are running for this compose file
-  if docker compose -f "${compose_file}" ps -q 2>/dev/null | grep -q .; then
+  if docker-compose -f "${compose_file}" ps -q 2>/dev/null | grep -q .; then
     stopped_any=true
 
     if [[ "${REMOVE_VOLUMES}" == true ]]; then
       log WARN "Stopping containers and removing volumes for ${compose_file}"
-      docker compose -f "${compose_file}" down -v
+      docker-compose -f "${compose_file}" down -v
     else
       log INFO "Stopping containers for ${compose_file}"
-      docker compose -f "${compose_file}" down
+      docker-compose -f "${compose_file}" down
     fi
   fi
 done
@@ -192,7 +192,16 @@ else
   log INFO "No TronRelic containers were running"
 fi
 
+# Clean up dangling images (always runs, even if no containers were stopped)
+log INFO "Cleaning up dangling Docker images (runs unconditionally)..."
+if docker image prune -f >/dev/null 2>&1; then
+  log SUCCESS "Dangling images removed"
+else
+  log WARN "Failed to prune images (this is usually safe to ignore)"
+fi
+
 log INFO ""
+log INFO "Docker daemon left running (uses ~150-250MB RAM when idle)"
 log INFO "To start services again, run:"
 log INFO "  ./scripts/start.sh          # npm mode (default)"
 log INFO "  ./scripts/start.sh --docker # Docker mode"

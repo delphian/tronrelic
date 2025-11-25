@@ -57,20 +57,19 @@ export class UsdtParametersService implements IUsdtParametersService {
                 this.cachedParams = await UsdtParametersModel.findOne({ network: 'mainnet' })
                     .sort({ fetchedAt: -1 })
                     .lean();
-
-                this.cacheExpiry = Date.now() + this.CACHE_TTL_MS;
-
-                if (!this.cachedParams) {
-                    logger.warn('No USDT parameters found in database, using fallback');
-                    this.cachedParams = this.getFallbackParameters();
-                    return this.cachedParams;
-                }
             } catch (error) {
                 logger.error({ error }, 'Failed to fetch USDT parameters from database');
-                this.cachedParams = this.getFallbackParameters();
-                this.cacheExpiry = Date.now() + this.CACHE_TTL_MS;
-                return this.cachedParams;
+                throw error;
             }
+
+            if (!this.cachedParams) {
+                const error = new Error('No USDT parameters found in database. USDT parameters MUST be fetched from TronGrid before performing calculations.');
+                logger.error(error.message);
+                throw error;
+            }
+
+            // Only set cache expiry after successful fetch with valid data
+            this.cacheExpiry = Date.now() + this.CACHE_TTL_MS;
         }
 
         return this.cachedParams!;
@@ -118,24 +117,5 @@ export class UsdtParametersService implements IUsdtParametersService {
             logger.error({ error }, 'Failed to fetch USDT parameters last update time');
             return null;
         }
-    }
-
-    /**
-     * Fallback parameters when database is empty (first boot)
-     * Uses historically measured values as conservative estimates
-     *
-     * @returns Fallback USDT parameters with measured baseline values
-     */
-    private getFallbackParameters(): IUsdtParameters {
-        return {
-            network: 'mainnet',
-            contractAddress: 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t',
-            parameters: {
-                standardTransferEnergy: 64_285, // Measured from TronGrid API
-                firstTimeTransferEnergy: 128_570 // Conservative estimate: 2x standard
-            },
-            fetchedAt: new Date(),
-            createdAt: new Date()
-        };
     }
 }

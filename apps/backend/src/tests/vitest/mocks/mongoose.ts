@@ -121,6 +121,26 @@ export function matchesFilter(doc: any, filter: Filter<any>): boolean {
 }
 
 /**
+ * Creates a thenable object that mimics Mongoose Query behavior.
+ *
+ * Mongoose queries are thenable (have a .then() method), allowing them to be
+ * awaited directly without calling .exec(). This helper creates an object that:
+ * - Can be awaited directly (via .then())
+ * - Still supports .exec() for explicit execution
+ *
+ * @param resultFn - Function that returns the query result
+ * @returns Object with then() and exec() methods
+ */
+function createThenable<T>(resultFn: () => T | Promise<T>) {
+    return {
+        then: (resolve: (value: T) => void, reject?: (error: any) => void) => {
+            return Promise.resolve(resultFn()).then(resolve, reject);
+        },
+        exec: vi.fn(async () => resultFn())
+    };
+}
+
+/**
  * Chainable query builder for mock collections.
  *
  * Implements the MongoDB query builder pattern with support for:
@@ -319,12 +339,27 @@ export class MockMongooseModel {
      */
     public findOne(filter: Filter<any>) {
         const data = this.getData();
-        const doc = data.find((d: any) => matchesFilter(d, filter));
+        let result = data.find((d: any) => matchesFilter(d, filter));
 
         return {
-            lean: vi.fn(() => ({
-                exec: vi.fn(async () => doc || null)
-            }))
+            sort: vi.fn((sortSpec: Sort) => {
+                // If sorting and multiple matches, re-find with sort
+                const matches = data.filter((d: any) => matchesFilter(d, filter));
+                if (matches.length > 0) {
+                    const sortKey = Object.keys(sortSpec)[0];
+                    const sortOrder = (sortSpec as any)[sortKey];
+                    matches.sort((a, b) => {
+                        if (a[sortKey] < b[sortKey]) return sortOrder === 1 ? -1 : 1;
+                        if (a[sortKey] > b[sortKey]) return sortOrder === 1 ? 1 : -1;
+                        return 0;
+                    });
+                    result = matches[0];
+                }
+                return {
+                    lean: vi.fn(() => createThenable(() => result || null))
+                };
+            }),
+            lean: vi.fn(() => createThenable(() => result || null))
         };
     }
 
@@ -668,6 +703,31 @@ class MockMongooseSession {
 export function createMockMongooseModule() {
     // Return a factory that optionally accepts importOriginal
     return (importOriginal?: () => Promise<any>) => ({
+        // Mock Schema class (needed for model definitions)
+        Schema: class Schema {
+            static Types = {
+                ObjectId: 'ObjectId',
+                String: 'String',
+                Number: 'Number',
+                Boolean: 'Boolean',
+                Date: 'Date',
+                Mixed: 'Mixed',
+                Array: 'Array'
+            };
+
+            constructor(definition: any, options?: any) {
+                // No-op in tests - just needs to exist for model definitions
+            }
+            index(fields: any, options?: any) {
+                // No-op in tests - index creation is not needed
+                return this;
+            }
+        },
+        // Mock model() function to return MockMongooseModel instances
+        model: vi.fn((modelName: string, schema: any, collection?: string) => {
+            const collectionName = collection || modelName.toLowerCase() + 's';
+            return new MockMongooseModel(modelName, collectionName);
+        }),
         default: {
             /**
              * Start a new MongoDB session for transactions.
