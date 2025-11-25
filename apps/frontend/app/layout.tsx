@@ -78,6 +78,7 @@ export async function generateMetadata(): Promise<Metadata> {
     ...rootMetadata,
     metadataBase: new URL(siteUrl), // Uses runtime config, not build-time
     applicationName: SITE_NAME,
+    manifest: '/images/favicon/manifest.json',
     category: 'Technology',
     openGraph: {
       ...rootMetadata.openGraph,
