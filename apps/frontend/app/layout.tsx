@@ -108,7 +108,10 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
   const selectedThemeId = themeCookie?.value || null;
 
   // Validate that selected theme is actually active
-  const isValidTheme = selectedThemeId && activeThemes.some(t => t.id === selectedThemeId);
+  const isValidTheme =
+    typeof selectedThemeId === 'string' &&
+    selectedThemeId.trim() !== '' &&
+    activeThemes.some(t => t.id === selectedThemeId);
   const dataThemeAttr = isValidTheme ? selectedThemeId : undefined;
 
   return (
