@@ -57,18 +57,19 @@ export class UsdtParametersService implements IUsdtParametersService {
                 this.cachedParams = await UsdtParametersModel.findOne({ network: 'mainnet' })
                     .sort({ fetchedAt: -1 })
                     .lean();
-
-                this.cacheExpiry = Date.now() + this.CACHE_TTL_MS;
-
-                if (!this.cachedParams) {
-                    const error = new Error('No USDT parameters found in database. USDT parameters MUST be fetched from TronGrid before performing calculations.');
-                    logger.error(error.message);
-                    throw error;
-                }
             } catch (error) {
                 logger.error({ error }, 'Failed to fetch USDT parameters from database');
                 throw error;
             }
+
+            if (!this.cachedParams) {
+                const error = new Error('No USDT parameters found in database. USDT parameters MUST be fetched from TronGrid before performing calculations.');
+                logger.error(error.message);
+                throw error;
+            }
+
+            // Only set cache expiry after successful fetch with valid data
+            this.cacheExpiry = Date.now() + this.CACHE_TTL_MS;
         }
 
         return this.cachedParams!;
