@@ -135,16 +135,21 @@
     --duration-pulse: 2s;        /* Live indicator pulse */
     --duration-slide: 0.25s;     /* Toast slide-in */
 
-    /* Breakpoint Tokens */
-    --breakpoint-mobile: 768px;
-    --breakpoint-tablet: 1200px;
-    --breakpoint-desktop: 1440px;
+    /* Breakpoint Tokens (Asia-optimized, 2025)
+       - 360px is dominant mobile width in Asia (13.73% market share)
+       - Mobile tiers target mid-range Android devices common in Asian markets
+       - Desktop at 1200px aligns with common laptop displays */
+    --breakpoint-mobile-sm: 360px;   /* Legacy/very small devices */
+    --breakpoint-mobile-md: 480px;   /* Primary mobile target */
+    --breakpoint-mobile-lg: 768px;   /* Large phones, landscape */
+    --breakpoint-tablet: 1024px;     /* Tablets */
+    --breakpoint-desktop: 1200px;    /* Desktop and larger */
 
     /* Component Size Tokens */
     --button-height-sm: 34px;
     --button-height-md: 42px;
     --button-height-lg: 50px;
-    --icon-size-sm: 16px;
+    --icon-size-sm: 18px;
     --icon-size-md: 20px;
     --icon-size-lg: 24px;
     --icon-size-xl: 32px;

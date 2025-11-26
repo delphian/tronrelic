@@ -309,7 +309,7 @@ button:focus-visible {
   }
 }
 
-/* Mobile and below (matches --breakpoint-mobile: 768px) */
+/* Mobile and below (matches --breakpoint-mobile-lg: 768px) */
 @media (max-width: 768px) {
   .layout-nav {
     flex-direction: column;
@@ -323,6 +323,32 @@ button:focus-visible {
 
   main {
     padding: var(--spacing-10) var(--spacing-9) var(--spacing-14);
+  }
+
+  /*
+   * Remove .page padding on mobile viewports.
+   * Individual page CSS Modules may set padding at larger sizes,
+   * but on mobile we remove it to maximize content width.
+   * The main element provides edge spacing via its own padding.
+   */
+  .page {
+    padding: 0 !important;
+  }
+
+  /*
+   * Remove padding from market table container card on mobile.
+   * Maximizes table width on narrow screens.
+   */
+  .market-table-container {
+    padding: 0 !important;
+  }
+
+  /*
+   * Reduce table cell padding by 50% on mobile.
+   * Default: var(--spacing-6) var(--spacing-8) → Mobile: var(--spacing-3) var(--spacing-4)
+   */
+  :root {
+    --table-cell-padding: var(--spacing-3) var(--spacing-4);
   }
 
   .input-group {

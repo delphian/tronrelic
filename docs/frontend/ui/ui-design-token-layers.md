@@ -210,7 +210,42 @@ TronRelic's design tokens are implemented as CSS custom properties (CSS variable
 
 ### Breakpoints
 
-[Placeholder: Responsive breakpoint system]
+TronRelic uses an Asia-optimized breakpoint system designed for the dominant mobile viewport widths in Asian markets, where 360px devices represent 13.73% market share (vs 10.12% globally) due to mid-range Android popularity.
+
+| Token | Value | Target Devices |
+|-------|-------|----------------|
+| `--breakpoint-mobile-sm` | 360px | Legacy and very small devices |
+| `--breakpoint-mobile-md` | 480px | Primary mobile target (mid-range Android) |
+| `--breakpoint-mobile-lg` | 768px | Large phones, landscape orientation |
+| `--breakpoint-tablet` | 1024px | Tablets, small laptops |
+| `--breakpoint-desktop` | 1200px | Desktop displays and larger |
+
+**Usage in container queries (preferred):**
+```css
+.component {
+    container-type: inline-size;
+}
+
+@container (max-width: 480px) {
+    .component { /* Mobile-md and below */ }
+}
+
+@container (min-width: 768px) {
+    .component { /* Mobile-lg and above */ }
+}
+```
+
+**Usage in viewport media queries (global layout only):**
+```css
+@media (max-width: 767px) {
+    /* Mobile layout - use sparingly, prefer container queries */
+}
+```
+
+**Key design decisions:**
+- Container queries preferred over viewport media queries for component responsiveness
+- Mobile tiers (sm/md/lg) enable granular control for Asian market device diversity
+- 360px baseline captures the dominant mobile viewport in target markets
 
 ## Standardized Utility Classes
 
