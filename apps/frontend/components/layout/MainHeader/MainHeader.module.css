@@ -12,8 +12,7 @@
 .container {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    padding: var(--spacing-9) var(--container-padding-desktop) 0;
+    padding: var(--spacing-14) var(--spacing-15) 0;
     width: min(var(--breakpoint-desktop), 100%);
     margin: 0 auto;
     gap: var(--spacing-6);
@@ -27,8 +26,11 @@
 }
 
 .nav_section {
-    flex: 1;
-    min-width: 0; /* Allow flexbox to shrink */
+    margin-left: auto;
+    flex: 1 1 auto; /* Grow to fill available space, shrink as needed */
+    min-width: 40px; /* Reserve space for hamburger button */
+    display: flex;
+    justify-content: flex-end; /* Right-align contents (hamburger button) */
 }
 
 /* Wallet Container and Controls */
@@ -125,4 +127,23 @@
     color: var(--color-secondary, var(--color-primary));
     text-transform: uppercase;
     margin-left: var(--spacing-3);
+}
+
+/**
+ * Responsive breakpoints matching <main> tag padding.
+ * Ensures header alignment with main content at all screen sizes.
+ */
+
+/* Tablet and below (≤1200px) */
+@media (max-width: 1200px) {
+    .container {
+        padding: var(--spacing-12) var(--spacing-10) 0;
+    }
+}
+
+/* Mobile and below (≤768px) */
+@media (max-width: 768px) {
+    .container {
+        padding: var(--spacing-10) var(--spacing-9) 0;
+    }
 }

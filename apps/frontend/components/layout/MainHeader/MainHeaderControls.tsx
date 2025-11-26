@@ -59,13 +59,12 @@ export function MainHeaderControls() {
                     className={styles.connect_wallet_btn}
                     onClick={connect}
                     disabled={!providerDetected}
-                    aria-label="Connect wallet (coming soon)"
+                    aria-label="Connect wallet"
                 >
                     <span className={styles.wallet_icon}>
                         <Wallet size={18} />
                     </span>
                     Connect Wallet
-                    <span className={styles.coming_soon_badge}>Soon</span>
                 </button>
             )}
         </div>

@@ -14,8 +14,7 @@
     display: flex;
     flex-wrap: wrap;
     gap: var(--spacing-4);
-    border-bottom: var(--border-width-thin) solid var(--color-border);
-    padding-bottom: var(--spacing-4);
+    width: 100%; /* Fill parent so HamburgerMenu container query works */
 }
 
 .tab {
@@ -112,6 +111,9 @@
  * all children inline with indentation.
  */
 .hamburgerCategory {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
     margin-bottom: var(--spacing-4);
 }
 
@@ -123,8 +125,10 @@
     text-transform: uppercase;
     font-size: var(--font-size-xs);
     letter-spacing: 0.05em;
+    text-align: right;
 }
 
 .nestedHamburger {
-    padding-left: var(--spacing-6);
+    padding-right: var(--spacing-6);
+    text-align: right;
 }

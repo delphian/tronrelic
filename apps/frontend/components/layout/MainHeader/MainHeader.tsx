@@ -45,11 +45,11 @@ export async function MainHeader() {
                     TronRelic
                 </Link>
 
+                <MainHeaderControls />
+
                 <div className={styles.nav_section}>
                     <MenuNavSSR namespace="main" ariaLabel="Main navigation" />
                 </div>
-
-                <MainHeaderControls />
             </div>
         </header>
     );
