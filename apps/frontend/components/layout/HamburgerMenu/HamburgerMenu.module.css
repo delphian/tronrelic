@@ -20,7 +20,10 @@
  */
 .container {
     position: relative;
-    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end; /* Right-align hamburger button */
+    width: 100%; /* Fill parent so container query measures correctly */
 }
 
 /**
@@ -174,6 +177,7 @@
     padding: calc(var(--spacing-6) + 40px + var(--spacing-6)) var(--spacing-6) var(--spacing-6);
     display: flex;
     flex-direction: column;
+    align-items: flex-end;
     gap: var(--spacing-2);
 }
 
@@ -196,12 +200,11 @@
  */
 .menu_item > * {
     display: block;
-    width: 100%;
     padding: var(--spacing-5) var(--spacing-6);
     border-radius: var(--radius-sm);
     color: var(--color-text-muted);
     font-size: var(--font-size-base);
-    text-align: left;
+    text-align: right;
     text-decoration: none;
     background: transparent;
     border: none;

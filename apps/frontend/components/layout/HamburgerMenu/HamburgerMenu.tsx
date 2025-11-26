@@ -24,6 +24,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { Menu, X } from 'lucide-react';
 import styles from './HamburgerMenu.module.css';
 
@@ -101,8 +102,14 @@ export function HamburgerMenu({
     ariaLabel = 'Toggle navigation menu'
 }: IHamburgerMenuProps) {
     const [isOpen, setIsOpen] = useState(false);
+    const [isMounted, setIsMounted] = useState(false);
     const panelRef = useRef<HTMLDivElement>(null);
     const buttonRef = useRef<HTMLButtonElement>(null);
+
+    // Track mount state for portal rendering (SSR safety)
+    useEffect(() => {
+        setIsMounted(true);
+    }, []);
 
     /**
      * Generate unique instance ID for this component.
@@ -239,40 +246,46 @@ export function HamburgerMenu({
                 <div className={`${styles.normal_content} normal_content_${instanceId}`}>
                     {children}
                 </div>
-
-                {/* Backdrop overlay - only visible when menu is open */}
-                {isOpen && (
-                    <div className={styles.backdrop} aria-hidden="true" />
-                )}
-
-                {/* Slideout panel */}
-                <div
-                    ref={panelRef}
-                    id="hamburger-menu-panel"
-                    className={`${styles.panel} ${isOpen ? styles.panel_open : ''}`}
-                    role="dialog"
-                    aria-modal="true"
-                    aria-label="Navigation menu"
-                >
-                    {/* Close button */}
-                    <button
-                        className={styles.close_button}
-                        onClick={closeMenu}
-                        aria-label="Close menu"
-                    >
-                        <X size={24} />
-                    </button>
-
-                    {/* Menu items */}
-                    <nav className={styles.menu_items}>
-                        {items.map((item, index) => (
-                            <div key={index} className={styles.menu_item} onClick={closeMenu}>
-                                {item}
-                            </div>
-                        ))}
-                    </nav>
-                </div>
             </div>
+
+            {/* Portal: Backdrop and panel rendered at document.body for proper fixed positioning */}
+            {isMounted && createPortal(
+                <>
+                    {/* Backdrop overlay - only visible when menu is open */}
+                    {isOpen && (
+                        <div className={styles.backdrop} aria-hidden="true" />
+                    )}
+
+                    {/* Slideout panel */}
+                    <div
+                        ref={panelRef}
+                        id="hamburger-menu-panel"
+                        className={`${styles.panel} ${isOpen ? styles.panel_open : ''}`}
+                        role="dialog"
+                        aria-modal="true"
+                        aria-label="Navigation menu"
+                    >
+                        {/* Close button */}
+                        <button
+                            className={styles.close_button}
+                            onClick={closeMenu}
+                            aria-label="Close menu"
+                        >
+                            <X size={24} />
+                        </button>
+
+                        {/* Menu items */}
+                        <nav className={styles.menu_items}>
+                            {items.map((item, index) => (
+                                <div key={index} className={styles.menu_item} onClick={closeMenu}>
+                                    {item}
+                                </div>
+                            ))}
+                        </nav>
+                    </div>
+                </>,
+                document.body
+            )}
         </>
     );
 }
