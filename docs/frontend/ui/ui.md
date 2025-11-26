@@ -145,6 +145,7 @@ TronRelic implements an industry-standard token hierarchy used by Google (Materi
 | **Borders** | `--border-width-thin`, `--radius-sm`, `--radius-md`, `--radius-lg` | Border widths and radii |
 | **Shadows** | `--shadow-sm`, `--shadow-md`, `--shadow-lg` | Elevation shadows |
 | **Transitions** | `--transition-base` | Standard timing |
+| **Breakpoints** | `--breakpoint-mobile-sm` (360px), `--breakpoint-mobile-md` (480px), `--breakpoint-mobile-lg` (768px), `--breakpoint-tablet` (1024px), `--breakpoint-desktop` (1200px) | Asia-optimized responsive breakpoints |
 
 ### Common Utility Classes
 
