@@ -66,7 +66,7 @@ export function MainHeaderControls() {
                     </span>
                     <img
                         src="/images/tronlink/tronlink-64x64.jpg"
-                        alt=""
+                        alt="TronLink"
                         className={styles.wallet_icon_mobile}
                     />
                     <span className={styles.connect_text_full}>Connect Wallet</span>
