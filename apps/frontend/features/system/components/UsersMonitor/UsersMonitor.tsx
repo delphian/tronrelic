@@ -3,6 +3,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { config as runtimeConfig } from '../../../../lib/config';
 import { Button } from '../../../../components/ui/Button';
+import { ClientTime } from '../../../../components/ui/ClientTime';
 import styles from './UsersMonitor.module.css';
 
 interface WalletLink {
@@ -142,31 +143,6 @@ export function UsersMonitor({ token }: Props) {
 
     const totalPages = Math.ceil(total / limit);
 
-    const formatDate = (dateString: string) => {
-        return new Date(dateString).toLocaleDateString('en-US', {
-            month: 'short',
-            day: 'numeric',
-            year: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit'
-        });
-    };
-
-    const formatRelative = (dateString: string) => {
-        const date = new Date(dateString);
-        const now = new Date();
-        const diffMs = now.getTime() - date.getTime();
-        const diffMins = Math.floor(diffMs / (1000 * 60));
-        const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-        const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-
-        if (diffMins < 1) return 'just now';
-        if (diffMins < 60) return `${diffMins}m ago`;
-        if (diffHours < 24) return `${diffHours}h ago`;
-        if (diffDays < 7) return `${diffDays}d ago`;
-        return formatDate(dateString);
-    };
-
     return (
         <div className={styles.container}>
             <header className={styles.header}>
@@ -178,38 +154,38 @@ export function UsersMonitor({ token }: Props) {
 
             {stats && (
                 <div className={styles.stats}>
-                    <div className={styles.statCard}>
-                        <span className={styles.statValue}>{stats.totalUsers.toLocaleString()}</span>
-                        <span className={styles.statLabel}>Total Users</span>
+                    <div className={styles.stat_card}>
+                        <span className={styles.stat_value}>{stats.totalUsers.toLocaleString()}</span>
+                        <span className={styles.stat_label}>Total Users</span>
                     </div>
-                    <div className={styles.statCard}>
-                        <span className={styles.statValue}>{stats.activeToday.toLocaleString()}</span>
-                        <span className={styles.statLabel}>Active Today</span>
+                    <div className={styles.stat_card}>
+                        <span className={styles.stat_value}>{stats.activeToday.toLocaleString()}</span>
+                        <span className={styles.stat_label}>Active Today</span>
                     </div>
-                    <div className={styles.statCard}>
-                        <span className={styles.statValue}>{stats.activeThisWeek.toLocaleString()}</span>
-                        <span className={styles.statLabel}>Active This Week</span>
+                    <div className={styles.stat_card}>
+                        <span className={styles.stat_value}>{stats.activeThisWeek.toLocaleString()}</span>
+                        <span className={styles.stat_label}>Active This Week</span>
                     </div>
-                    <div className={styles.statCard}>
-                        <span className={styles.statValue}>{stats.usersWithWallets.toLocaleString()}</span>
-                        <span className={styles.statLabel}>With Wallets</span>
+                    <div className={styles.stat_card}>
+                        <span className={styles.stat_value}>{stats.usersWithWallets.toLocaleString()}</span>
+                        <span className={styles.stat_label}>With Wallets</span>
                     </div>
-                    <div className={styles.statCard}>
-                        <span className={styles.statValue}>{stats.totalWalletLinks.toLocaleString()}</span>
-                        <span className={styles.statLabel}>Wallet Links</span>
+                    <div className={styles.stat_card}>
+                        <span className={styles.stat_value}>{stats.totalWalletLinks.toLocaleString()}</span>
+                        <span className={styles.stat_label}>Wallet Links</span>
                     </div>
-                    <div className={styles.statCard}>
-                        <span className={styles.statValue}>{stats.averageWalletsPerUser.toFixed(2)}</span>
-                        <span className={styles.statLabel}>Avg Wallets/User</span>
+                    <div className={styles.stat_card}>
+                        <span className={styles.stat_value}>{stats.averageWalletsPerUser.toFixed(2)}</span>
+                        <span className={styles.stat_label}>Avg Wallets/User</span>
                     </div>
                 </div>
             )}
 
             <div className={styles.controls}>
-                <div className={styles.searchBox}>
+                <div className={styles.search_box}>
                     <input
                         type="text"
-                        className={styles.searchInput}
+                        className={styles.search_input}
                         placeholder="Search by UUID or wallet address..."
                         value={searchInput}
                         onChange={(e) => setSearchInput(e.target.value)}
@@ -237,64 +213,64 @@ export function UsersMonitor({ token }: Props) {
                 </div>
             ) : (
                 <>
-                    <div className={styles.userList}>
+                    <div className={styles.user_list}>
                         {users.map((user) => (
                             <div
                                 key={user.id}
-                                className={`${styles.userCard} ${expandedUserId === user.id ? styles.expanded : ''}`}
+                                className={`${styles.user_card} ${expandedUserId === user.id ? styles.expanded : ''}`}
                             >
                                 <div
-                                    className={styles.userHeader}
+                                    className={styles.user_header}
                                     onClick={() => setExpandedUserId(
                                         expandedUserId === user.id ? null : user.id
                                     )}
                                 >
-                                    <div className={styles.userInfo}>
-                                        <span className={styles.userId}>{user.id}</span>
-                                        <span className={styles.userMeta}>
+                                    <div className={styles.user_info}>
+                                        <span className={styles.user_id}>{user.id}</span>
+                                        <span className={styles.user_meta}>
                                             {user.wallets.length > 0 && (
-                                                <span className={styles.walletBadge}>
+                                                <span className={styles.wallet_badge}>
                                                     {user.wallets.length} wallet{user.wallets.length !== 1 ? 's' : ''}
                                                 </span>
                                             )}
-                                            <span className={styles.pageViews}>
+                                            <span className={styles.page_views}>
                                                 {user.activity.pageViews} views
                                             </span>
                                         </span>
                                     </div>
-                                    <div className={styles.userDates}>
-                                        <span className={styles.lastSeen}>
-                                            Last seen: {formatRelative(user.activity.lastSeen)}
+                                    <div className={styles.user_dates}>
+                                        <span className={styles.last_seen}>
+                                            Last seen: <ClientTime date={user.activity.lastSeen} format="relative" />
                                         </span>
-                                        <span className={styles.createdAt}>
-                                            Created: {formatDate(user.createdAt)}
+                                        <span className={styles.created_at}>
+                                            Created: <ClientTime date={user.createdAt} format="short" />
                                         </span>
                                     </div>
                                 </div>
 
                                 {expandedUserId === user.id && (
-                                    <div className={styles.userDetails}>
-                                        <div className={styles.detailSection}>
+                                    <div className={styles.user_details}>
+                                        <div className={styles.detail_section}>
                                             <h4>Wallets</h4>
                                             {user.wallets.length === 0 ? (
-                                                <p className={styles.noData}>No wallets linked</p>
+                                                <p className={styles.no_data}>No wallets linked</p>
                                             ) : (
-                                                <ul className={styles.walletList}>
+                                                <ul className={styles.wallet_list}>
                                                     {user.wallets.map((wallet) => (
-                                                        <li key={wallet.address} className={styles.walletItem}>
-                                                            <code className={styles.walletAddress}>
+                                                        <li key={wallet.address} className={styles.wallet_item}>
+                                                            <code className={styles.wallet_address}>
                                                                 {wallet.address}
                                                             </code>
                                                             {wallet.isPrimary && (
-                                                                <span className={styles.primaryBadge}>Primary</span>
+                                                                <span className={styles.primary_badge}>Primary</span>
                                                             )}
                                                             {wallet.label && (
-                                                                <span className={styles.walletLabel}>
+                                                                <span className={styles.wallet_label}>
                                                                     {wallet.label}
                                                                 </span>
                                                             )}
-                                                            <span className={styles.linkedAt}>
-                                                                Linked: {formatDate(wallet.linkedAt)}
+                                                            <span className={styles.linked_at}>
+                                                                Linked: <ClientTime date={wallet.linkedAt} format="short" />
                                                             </span>
                                                         </li>
                                                     ))}
@@ -302,9 +278,9 @@ export function UsersMonitor({ token }: Props) {
                                             )}
                                         </div>
 
-                                        <div className={styles.detailSection}>
+                                        <div className={styles.detail_section}>
                                             <h4>Preferences</h4>
-                                            <dl className={styles.prefsList}>
+                                            <dl className={styles.prefs_list}>
                                                 <dt>Theme</dt>
                                                 <dd>{user.preferences.theme || 'system'}</dd>
                                                 <dt>Notifications</dt>
@@ -316,13 +292,13 @@ export function UsersMonitor({ token }: Props) {
                                             </dl>
                                         </div>
 
-                                        <div className={styles.detailSection}>
+                                        <div className={styles.detail_section}>
                                             <h4>Activity</h4>
-                                            <dl className={styles.prefsList}>
+                                            <dl className={styles.prefs_list}>
                                                 <dt>First Seen</dt>
-                                                <dd>{formatDate(user.activity.firstSeen)}</dd>
+                                                <dd><ClientTime date={user.activity.firstSeen} format="short" /></dd>
                                                 <dt>Last Seen</dt>
-                                                <dd>{formatDate(user.activity.lastSeen)}</dd>
+                                                <dd><ClientTime date={user.activity.lastSeen} format="short" /></dd>
                                                 <dt>Page Views</dt>
                                                 <dd>{user.activity.pageViews.toLocaleString()}</dd>
                                             </dl>
@@ -342,7 +318,7 @@ export function UsersMonitor({ token }: Props) {
                         >
                             Previous
                         </Button>
-                        <span className={styles.pageInfo}>
+                        <span className={styles.page_info}>
                             Page {page} of {totalPages} ({total} users)
                         </span>
                         <Button
