@@ -57,7 +57,8 @@ const mockCollectionInstances = new Map<string, any>();
 /**
  * Shared filter matching logic for all mock operations.
  *
- * Supports MongoDB query operators: $in, $ne, RegExp, array contains, ObjectId comparison.
+ * Supports MongoDB query operators: $in, $ne, $or, $regex, $exists, $gte, $lte,
+ * RegExp, array contains, ObjectId comparison, and nested field paths.
  * Exported for reuse in custom IDatabaseService mocks.
  *
  * @param doc - Document to test
@@ -66,6 +67,16 @@ const mockCollectionInstances = new Map<string, any>();
  */
 export function matchesFilter(doc: any, filter: Filter<any>): boolean {
     return Object.entries(filter).every(([key, value]) => {
+        // Handle $or operator: { $or: [{ field1: value1 }, { field2: value2 }] }
+        if (key === '$or' && Array.isArray(value)) {
+            return value.some((subFilter: any) => matchesFilter(doc, subFilter));
+        }
+
+        // Handle $and operator: { $and: [{ field1: value1 }, { field2: value2 }] }
+        if (key === '$and' && Array.isArray(value)) {
+            return value.every((subFilter: any) => matchesFilter(doc, subFilter));
+        }
+
         // Handle ObjectId comparison
         if (key === '_id' && value instanceof ObjectId && doc._id instanceof ObjectId) {
             return doc._id.equals(value);
@@ -73,41 +84,85 @@ export function matchesFilter(doc: any, filter: Filter<any>): boolean {
 
         // Handle RegExp (for MongoDB regex queries like { mimeType: /^image\// })
         if (value instanceof RegExp) {
-            const docValue = doc[key];
+            const docValue = getNestedValue(doc, key);
             return docValue != null && value.test(String(docValue));
         }
 
-        // Handle $in operator: { field: { $in: [value1, value2] } }
-        if (value && typeof value === 'object' && '$in' in value) {
-            const inValues = (value as any).$in;
-            if (Array.isArray(doc[key])) {
-                // Document field is array - check if any value in doc array matches any value in $in array
-                return doc[key].some((docValue: any) => inValues.includes(docValue));
+        // Handle object-based operators
+        if (value && typeof value === 'object' && !(value instanceof ObjectId) && !(value instanceof Date)) {
+            // Handle $regex operator: { field: { $regex: 'pattern', $options: 'i' } }
+            if ('$regex' in value) {
+                const pattern = (value as any).$regex;
+                const options = (value as any).$options || '';
+                const regex = new RegExp(pattern, options);
+                const docValue = getNestedValue(doc, key);
+                return docValue != null && regex.test(String(docValue));
             }
-            // Document field is scalar - check if it matches any value in $in array
-            return inValues.includes(doc[key]);
-        }
 
-        // Handle $ne operator: { field: { $ne: value } }
-        if (value && typeof value === 'object' && '$ne' in value) {
-            const neValue = (value as any).$ne;
-            if (key === '_id') {
-                if (neValue instanceof ObjectId && doc._id instanceof ObjectId) {
-                    return !doc._id.equals(neValue);
+            // Handle $in operator: { field: { $in: [value1, value2] } }
+            if ('$in' in value) {
+                const inValues = (value as any).$in;
+                const docValue = getNestedValue(doc, key);
+                if (Array.isArray(docValue)) {
+                    // Document field is array - check if any value in doc array matches any value in $in array
+                    return docValue.some((dv: any) => inValues.includes(dv));
                 }
+                // Document field is scalar - check if it matches any value in $in array
+                return inValues.includes(docValue);
             }
-            return doc[key] !== neValue;
+
+            // Handle $ne operator: { field: { $ne: value } }
+            if ('$ne' in value) {
+                const neValue = (value as any).$ne;
+                const docValue = getNestedValue(doc, key);
+                if (key === '_id') {
+                    if (neValue instanceof ObjectId && doc._id instanceof ObjectId) {
+                        return !doc._id.equals(neValue);
+                    }
+                }
+                return docValue !== neValue;
+            }
+
+            // Handle $exists operator: { field: { $exists: true/false } }
+            if ('$exists' in value) {
+                const exists = (value as any).$exists;
+                const docValue = getNestedValue(doc, key);
+                return exists ? docValue !== undefined : docValue === undefined;
+            }
+
+            // Handle $gte operator: { field: { $gte: value } }
+            if ('$gte' in value) {
+                const gteValue = (value as any).$gte;
+                const docValue = getNestedValue(doc, key);
+                return docValue >= gteValue;
+            }
+
+            // Handle $lte operator: { field: { $lte: value } }
+            if ('$lte' in value) {
+                const lteValue = (value as any).$lte;
+                const docValue = getNestedValue(doc, key);
+                return docValue <= lteValue;
+            }
+
+            // Handle $gt operator: { field: { $gt: value } }
+            if ('$gt' in value) {
+                const gtValue = (value as any).$gt;
+                const docValue = getNestedValue(doc, key);
+                return docValue > gtValue;
+            }
+
+            // Handle $lt operator: { field: { $lt: value } }
+            if ('$lt' in value) {
+                const ltValue = (value as any).$lt;
+                const docValue = getNestedValue(doc, key);
+                return docValue < ltValue;
+            }
         }
 
-        // Handle nested field paths (e.g., 'user.name')
+        // Handle nested field paths (e.g., 'user.name' or 'wallets.address')
         if (key.includes('.')) {
-            const parts = key.split('.');
-            let current = doc;
-            for (const part of parts) {
-                if (current == null) return false;
-                current = current[part];
-            }
-            return current === value;
+            const docValue = getNestedValue(doc, key);
+            return docValue === value;
         }
 
         // Handle array contains queries (e.g., { oldSlugs: "/old-url" })
@@ -118,6 +173,43 @@ export function matchesFilter(doc: any, filter: Filter<any>): boolean {
         // Simple equality
         return doc[key] === value;
     });
+}
+
+/**
+ * Get a nested value from a document using dot notation.
+ * Handles both simple paths (e.g., 'user.name') and array element paths (e.g., 'wallets.address').
+ *
+ * @param doc - Document to get value from
+ * @param path - Dot-separated path
+ * @returns The value at the path, or undefined if not found
+ */
+function getNestedValue(doc: any, path: string): any {
+    const parts = path.split('.');
+    let current = doc;
+
+    for (const part of parts) {
+        if (current == null) return undefined;
+
+        // If current is an array, search for matching element
+        if (Array.isArray(current)) {
+            // For array fields, check if any element has the property
+            const values = current.map(item => item?.[part]).filter(v => v !== undefined);
+            if (values.length > 0) {
+                current = values;
+                continue;
+            }
+            return undefined;
+        }
+
+        current = current[part];
+    }
+
+    // If the final result is an array of values from array traversal, flatten for matching
+    if (Array.isArray(current) && current.length === 1) {
+        return current[0];
+    }
+
+    return current;
 }
 
 /**

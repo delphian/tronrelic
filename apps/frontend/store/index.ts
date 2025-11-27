@@ -5,6 +5,7 @@ import { blockchainReducer } from '../features/blockchain';
 import { uiReducer } from '../features/ui-state';
 import { realtimeReducer } from '../features/realtime';
 import { transactionReducer } from '../features/transactions';
+import { userReducer } from '../features/user';
 import themeReducer from '../features/system/themeSlice';
 
 declare global {
@@ -48,6 +49,7 @@ export const store = configureStore({
         ui: uiReducer,
         realtime: realtimeReducer,
         transactions: transactionReducer,
+        user: userReducer,
         theme: themeReducer
     },
     devTools: resolveDevToolsConfiguration()

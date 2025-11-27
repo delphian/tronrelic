@@ -143,6 +143,30 @@ export function createMockDatabaseService(): IDatabaseService & {
     }
 
     /**
+     * Deep clone a document to avoid reference sharing issues.
+     * Real MongoDB serializes/deserializes, so documents are always independent copies.
+     */
+    function deepClone<T>(obj: T): T {
+        if (obj === null || typeof obj !== 'object') {
+            return obj;
+        }
+        if (obj instanceof Date) {
+            return new Date(obj.getTime()) as unknown as T;
+        }
+        if (obj instanceof ObjectId) {
+            return new ObjectId(obj.toString()) as unknown as T;
+        }
+        if (Array.isArray(obj)) {
+            return obj.map(item => deepClone(item)) as unknown as T;
+        }
+        const cloned: any = {};
+        for (const key of Object.keys(obj)) {
+            cloned[key] = deepClone((obj as any)[key]);
+        }
+        return cloned;
+    }
+
+    /**
      * Check for injected errors and throw if found.
      */
     function checkInjectedError(collectionName: string, operation: string): void {
@@ -227,12 +251,15 @@ export function createMockDatabaseService(): IDatabaseService & {
                 }),
                 findOne: async (filter: Filter<T>) => {
                     checkInjectedError(name, 'findOne');
-                    return data.find((doc: any) => matchesFilter(doc, filter)) || null;
+                    const doc = data.find((doc: any) => matchesFilter(doc, filter));
+                    // Deep clone to avoid reference sharing (matches real MongoDB behavior)
+                    return doc ? deepClone(doc) : null;
                 },
                 insertOne: async (doc: any) => {
                     checkInjectedError(name, 'insertOne');
                     const id = doc._id || new ObjectId();
-                    const newDoc = { ...doc, _id: id };
+                    // Deep clone to avoid reference sharing (matches real MongoDB behavior)
+                    const newDoc = deepClone({ ...doc, _id: id });
                     data.push(newDoc);
                     return { insertedId: id, acknowledged: true };
                 },
@@ -242,7 +269,37 @@ export function createMockDatabaseService(): IDatabaseService & {
 
                     if (docIndex !== -1) {
                         const updateFields = (update as any).$set || {};
+                        const incFields = (update as any).$inc || {};
+                        const pushFields = (update as any).$push || {};
+
+                        // Apply $set
                         data[docIndex] = { ...data[docIndex], ...updateFields };
+
+                        // Apply $inc - increment numeric fields
+                        for (const [key, amount] of Object.entries(incFields)) {
+                            const parts = key.split('.');
+                            let obj = data[docIndex];
+                            for (let i = 0; i < parts.length - 1; i++) {
+                                if (obj[parts[i]] === undefined) obj[parts[i]] = {};
+                                obj = obj[parts[i]];
+                            }
+                            const lastKey = parts[parts.length - 1];
+                            obj[lastKey] = (obj[lastKey] || 0) + (amount as number);
+                        }
+
+                        // Apply $push - add to arrays
+                        for (const [key, value] of Object.entries(pushFields)) {
+                            const parts = key.split('.');
+                            let obj = data[docIndex];
+                            for (let i = 0; i < parts.length - 1; i++) {
+                                if (obj[parts[i]] === undefined) obj[parts[i]] = {};
+                                obj = obj[parts[i]];
+                            }
+                            const lastKey = parts[parts.length - 1];
+                            if (!Array.isArray(obj[lastKey])) obj[lastKey] = [];
+                            obj[lastKey].push(value);
+                        }
+
                         return { modifiedCount: 1, matchedCount: 1, acknowledged: true, upsertedCount: 0 };
                     }
 
@@ -408,6 +465,13 @@ export function createMockDatabaseService(): IDatabaseService & {
                                                 } else if (typeof exprObj.$sum === 'string' && exprObj.$sum.startsWith('$')) {
                                                     const fieldPath = exprObj.$sum.substring(1);
                                                     result[fieldName] = groupDocs.reduce((acc, doc) => acc + (doc[fieldPath] || 0), 0);
+                                                } else if (typeof exprObj.$sum === 'object' && exprObj.$sum.$size) {
+                                                    // Handle { $sum: { $size: '$arrayField' } }
+                                                    const fieldPath = exprObj.$sum.$size.substring(1);
+                                                    result[fieldName] = groupDocs.reduce((acc, doc) => {
+                                                        const arr = doc[fieldPath];
+                                                        return acc + (Array.isArray(arr) ? arr.length : 0);
+                                                    }, 0);
                                                 }
                                             }
 
@@ -504,6 +568,10 @@ export function createMockDatabaseService(): IDatabaseService & {
                             return results;
                         }
                     };
+                }),
+                createIndex: vi.fn(async (indexSpec: Record<string, 1 | -1>, options?: any) => {
+                    // No-op for tests - index creation is a schema concern, not data concern
+                    return 'mock_index_name';
                 })
             } as any; // Minimal mock - extend as needed
 

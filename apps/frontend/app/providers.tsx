@@ -8,6 +8,7 @@ import { ToastProvider } from '../components/ui/ToastProvider';
 import { ModalProvider } from '../components/ui/ModalProvider';
 import { PluginLoader } from '../components/plugins/PluginLoader';
 import { FrontendPluginContextProvider } from '../lib/frontendPluginContext';
+import { UserIdentityProvider } from '../components/user';
 
 export function Providers({ children }: { children: ReactNode }) {
   return (
@@ -16,8 +17,10 @@ export function Providers({ children }: { children: ReactNode }) {
         <ModalProvider>
           <FrontendPluginContextProvider>
             <SocketBridge />
-            <PluginLoader />
-            {children}
+            <UserIdentityProvider>
+              <PluginLoader />
+              {children}
+            </UserIdentityProvider>
           </FrontendPluginContextProvider>
         </ModalProvider>
       </ToastProvider>

@@ -214,6 +214,27 @@ The pages module provides custom content management capabilities, allowing admin
 - File upload validation with two-layer size enforcement
 - Module lifecycle and menu registration patterns
 
+### User Module
+
+The user module provides visitor identity management, enabling anonymous tracking via UUID with optional upgrade to verified TRON wallet addresses. Users start with client-generated UUIDs stored in cookies/localStorage, can link multiple wallets via TronLink signature verification, and have their preferences and activity tracked across sessions.
+
+**Key architectural decisions:**
+
+- **Anonymous-first identity** - UUID generated on first visit, no registration required
+- **Dual storage** - Cookie for SSR access, localStorage for client-side persistence
+- **Multi-wallet support** - One UUID can link to multiple TRON addresses with primary designation
+- **Cookie-based validation** - API endpoints validate cookie matches :id parameter for security
+- **Real-time sync** - WebSocket events push user updates to connected clients
+
+**See [system-modules-user.md](./system-modules-user.md) for complete details on:**
+- User module architecture and cookie-based authentication pattern
+- UserService singleton with Redis caching and tag invalidation
+- Database schema (users collection with wallets, preferences, activity)
+- REST API reference for public and admin endpoints
+- Frontend integration (UserIdentityProvider, Redux slice, SSR utilities)
+- Admin UI at `/system/users` for user management
+- Wallet linking via TronLink signature verification
+
 ### Testing Framework
 
 TronRelic uses Vitest for unit testing with comprehensive Mongoose mocking utilities that enable full database service testing without requiring a live MongoDB instance. The shared mock system provides complete implementations of MongoDB collections, Mongoose models, and chainable query builders.
@@ -294,6 +315,7 @@ curl -X PATCH \
 - [system-logging.md](./system-logging.md) - Logging system architecture, log levels, MongoDB persistence, and accessing historical logs
 - [system-menu.md](./system-menu.md) - Navigation menu system architecture, API reference, plugin integration, and event-driven updates
 - [system-modules-pages.md](./system-modules-pages.md) - Pages module for custom content management with markdown authoring, file uploads, and storage provider abstraction
+- [system-modules-user.md](./system-modules-user.md) - User module for visitor identity management with anonymous UUID tracking, wallet linking, and admin dashboard
 - [system-testing.md](./system-testing.md) - Testing framework guide with Vitest setup, Mongoose mocking utilities, and testing patterns
 
 **Related topics:**
