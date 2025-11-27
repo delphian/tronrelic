@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import type { UserController } from './user.controller.js';
+import { createRateLimiter } from '../../../api/middleware/rate-limit.js';
 
 /**
  * Create Express router for public user endpoints.
@@ -7,73 +8,97 @@ import type { UserController } from './user.controller.js';
  * All routes require cookie validation - the tronrelic_uid cookie must match
  * the :id parameter. Routes are mounted at /api/user.
  *
+ * Rate limits (per IP):
+ * - User identity/preferences: 30 requests/minute
+ * - Activity recording: 60 requests/minute
+ * - Wallet mutations: 10 requests/minute
+ *
  * @param controller - User controller instance
  * @returns Express router with public endpoints
  */
 export function createUserRouter(controller: UserController): Router {
     const router = Router();
 
+    // Rate limiters for different endpoint categories
+    const userRateLimiter = createRateLimiter({
+        windowSeconds: 60,
+        maxRequests: 30,
+        keyPrefix: 'user:identity'
+    });
+
+    const activityRateLimiter = createRateLimiter({
+        windowSeconds: 60,
+        maxRequests: 60,
+        keyPrefix: 'user:activity'
+    });
+
+    const walletRateLimiter = createRateLimiter({
+        windowSeconds: 60,
+        maxRequests: 10,
+        keyPrefix: 'user:wallet'
+    });
+
     // Apply cookie validation to all routes with :id parameter
     router.use('/:id', controller.validateCookie.bind(controller));
     router.use('/:id/*', controller.validateCookie.bind(controller));
 
     // ============================================================================
-    // User Identity Routes
+    // User Identity Routes (30 requests/minute)
     // ============================================================================
 
     /**
      * GET /api/user/:id
      * Get or create user by UUID
      */
-    router.get('/:id', controller.getUser.bind(controller));
+    router.get('/:id', userRateLimiter, controller.getUser.bind(controller));
 
     // ============================================================================
-    // Wallet Routes
+    // Wallet Routes (10 requests/minute)
     // ============================================================================
 
     /**
      * POST /api/user/:id/wallet/connect
      * Connect wallet to user without verification (step 1 of 2-step flow)
      */
-    router.post('/:id/wallet/connect', controller.connectWallet.bind(controller));
+    router.post('/:id/wallet/connect', walletRateLimiter, controller.connectWallet.bind(controller));
 
     /**
      * POST /api/user/:id/wallet
      * Link wallet to user with signature verification (step 2 of 2-step flow)
      */
-    router.post('/:id/wallet', controller.linkWallet.bind(controller));
+    router.post('/:id/wallet', walletRateLimiter, controller.linkWallet.bind(controller));
 
     /**
      * DELETE /api/user/:id/wallet/:address
      * Unlink wallet from user (requires signature)
      */
-    router.delete('/:id/wallet/:address', controller.unlinkWallet.bind(controller));
+    router.delete('/:id/wallet/:address', walletRateLimiter, controller.unlinkWallet.bind(controller));
 
     /**
      * PATCH /api/user/:id/wallet/:address/primary
-     * Set wallet as primary
+     * Set wallet as primary (requires signature)
      */
-    router.patch('/:id/wallet/:address/primary', controller.setPrimaryWallet.bind(controller));
+    router.patch('/:id/wallet/:address/primary', walletRateLimiter, controller.setPrimaryWallet.bind(controller));
 
     // ============================================================================
-    // Preferences Routes
+    // Preferences Routes (30 requests/minute)
     // ============================================================================
 
     /**
      * PATCH /api/user/:id/preferences
      * Update user preferences
      */
-    router.patch('/:id/preferences', controller.updatePreferences.bind(controller));
+    router.patch('/:id/preferences', userRateLimiter, controller.updatePreferences.bind(controller));
 
     // ============================================================================
-    // Activity Routes
+    // Activity Routes (60 requests/minute)
     // ============================================================================
 
     /**
      * POST /api/user/:id/activity
      * Record user activity
      */
-    router.post('/:id/activity', controller.recordActivity.bind(controller));
+    router.post('/:id/activity', activityRateLimiter, controller.recordActivity.bind(controller));
 
     return router;
 }

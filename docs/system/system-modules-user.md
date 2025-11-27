@@ -206,9 +206,10 @@ validateCookie(req: Request, res: Response, next: NextFunction): void {
 
 **Public endpoints (require cookie validation):**
 - `GET /api/user/:id` - Get or create user by UUID
-- `POST /api/user/:id/wallet` - Link wallet (requires signature)
+- `POST /api/user/:id/wallet/connect` - Connect wallet without verification (step 1)
+- `POST /api/user/:id/wallet` - Link wallet with signature verification (step 2)
 - `DELETE /api/user/:id/wallet/:address` - Unlink wallet (requires signature)
-- `PATCH /api/user/:id/wallet/:address/primary` - Set wallet as primary
+- `PATCH /api/user/:id/wallet/:address/primary` - Set primary wallet (requires signature)
 - `PATCH /api/user/:id/preferences` - Update preferences
 - `POST /api/user/:id/activity` - Record activity
 
@@ -264,9 +265,10 @@ interface UserState {
 
 **Available thunks:**
 - `initializeUser(userId)` - Fetch or create user
-- `linkWalletThunk({ userId, address, message, signature, timestamp })`
-- `unlinkWalletThunk({ userId, address, message, signature })`
-- `setPrimaryWalletThunk({ userId, address })`
+- `connectWalletThunk({ userId, address })` - Connect wallet without verification
+- `linkWalletThunk({ userId, address, message, signature, timestamp })` - Verify and link wallet
+- `unlinkWalletThunk({ userId, address, message, signature })` - Unlink wallet (requires signature)
+- `setPrimaryWalletThunk({ userId, address, message, signature })` - Set primary wallet (requires signature)
 - `updatePreferencesThunk({ userId, preferences })`
 - `recordActivityThunk(userId)`
 
@@ -433,20 +435,72 @@ await userModule.init({
 await userModule.run();
 ```
 
+## Security
+
+The user module implements multiple layers of protection against abuse and unauthorized access.
+
+### Authentication
+
+**Cookie-based validation** - Public endpoints require `tronrelic_uid` cookie to match the `:id` parameter in the URL. This prevents UUID enumeration and ensures users can only access their own data.
+
+**Signature verification** - Wallet mutation operations (link, unlink, set primary) require TronLink signature verification to prove wallet ownership. Signatures include timestamp for replay protection (5-minute expiry window).
+
+**Admin token** - Admin endpoints require `ADMIN_API_TOKEN` via `x-admin-token` header or `Authorization: Bearer` header.
+
+### Rate Limiting
+
+All public endpoints are rate-limited per IP address using Redis-backed sliding window counters:
+
+| Endpoint Category | Limit | Rationale |
+|-------------------|-------|-----------|
+| **User identity/preferences** | 30 requests/minute | Prevents user creation spam and preference flooding |
+| **Activity recording** | 60 requests/minute | Higher limit for legitimate navigation |
+| **Wallet mutations** | 10 requests/minute | Strict limit since wallet ops are infrequent |
+
+**Rate limit responses:**
+```json
+{
+    "error": "RATE_LIMIT",
+    "message": "Too many requests"
+}
+```
+
+HTTP status code `429` is returned when rate limit is exceeded.
+
+### Security Considerations
+
+**UUID as "knowledge" factor** - The security model relies on UUIDs being unguessable (122 bits of randomness). If an attacker learns a UUID (via logs, XSS, or user sharing), they can access that user's data by setting their own cookie. This is acceptable for anonymous-first identity but limits what sensitive operations should be tied to UUID alone.
+
+**Wallet operations require signatures** - All wallet mutations (link, unlink, set primary) require cryptographic signature verification. This ensures only the wallet owner can modify wallet relationships, regardless of UUID knowledge.
+
+**Admin bypass** - Admin endpoints can access any user data without cookie validation. Protect the `ADMIN_API_TOKEN` carefully.
+
 ## REST API Reference
 
 ### Public Endpoints
 
-All public endpoints require cookie validation - the `tronrelic_uid` cookie must match the `:id` parameter.
+All public endpoints require cookie validation - the `tronrelic_uid` cookie must match the `:id` parameter. Rate limits are applied per IP address.
 
-**Get or Create User:**
+**Get or Create User** *(30 req/min)*:
 ```
 GET /api/user/:id
 
 Response: IUser
 ```
 
-**Link Wallet:**
+**Connect Wallet** *(10 req/min)* - Step 1: Store wallet address without verification:
+```
+POST /api/user/:id/wallet/connect
+Content-Type: application/json
+
+{
+    "address": "TXyz..."
+}
+
+Response: IUser (wallet added with verified: false)
+```
+
+**Link Wallet** *(10 req/min)* - Step 2: Verify wallet ownership via signature:
 ```
 POST /api/user/:id/wallet
 Content-Type: application/json
@@ -458,10 +512,10 @@ Content-Type: application/json
     "timestamp": 1732646400000
 }
 
-Response: IUser
+Response: IUser (wallet updated to verified: true)
 ```
 
-**Unlink Wallet:**
+**Unlink Wallet** *(10 req/min)* - Requires signature:
 ```
 DELETE /api/user/:id/wallet/:address
 Content-Type: application/json
@@ -474,14 +528,20 @@ Content-Type: application/json
 Response: IUser
 ```
 
-**Set Primary Wallet:**
+**Set Primary Wallet** *(10 req/min)* - Requires signature:
 ```
 PATCH /api/user/:id/wallet/:address/primary
+Content-Type: application/json
+
+{
+    "message": "Set primary wallet: 1732646400000",
+    "signature": "0x..."
+}
 
 Response: IUser
 ```
 
-**Update Preferences:**
+**Update Preferences** *(30 req/min)*:
 ```
 PATCH /api/user/:id/preferences
 Content-Type: application/json
@@ -494,7 +554,7 @@ Content-Type: application/json
 Response: IUser
 ```
 
-**Record Activity:**
+**Record Activity** *(60 req/min)*:
 ```
 POST /api/user/:id/activity
 
