@@ -33,23 +33,61 @@ If plugins need access to user data in the future, create `IUserService` interfa
 
 The module follows TronRelic's layered architecture with cookie-based authentication for public endpoints and admin token authentication for admin endpoints.
 
-**Directory structure:**
+## File Structure
+
+The user module spans both backend and frontend with parallel directory structures:
+
+**Backend (`apps/backend/src/modules/user/`):**
 ```
 modules/user/
-├── api/                     # HTTP interface (Express routes and controller)
+├── index.ts                 # Public API exports
+├── UserModule.ts            # IModule implementation (lifecycle, DI)
+├── api/
+│   ├── index.ts             # Barrel exports
 │   ├── user.controller.ts   # Request handlers with cookie validation
-│   ├── user.routes.ts       # Public and admin router factories
-│   └── index.ts             # Barrel exports
-├── database/                # MongoDB schemas and type definitions
-│   ├── IUserDocument.ts     # User model with wallets and preferences
-│   └── index.ts             # Barrel exports
-├── services/                # Business logic layer
-│   ├── user.service.ts      # User CRUD, wallet linking, caching
-│   └── index.ts             # Barrel exports
-├── __tests__/              # Unit tests
-│   └── user.service.test.ts # Service tests with mocks
-├── UserModule.ts           # IModule implementation
-└── index.ts                # Public API exports
+│   └── user.routes.ts       # Public and admin router factories
+├── database/
+│   ├── index.ts             # Barrel exports
+│   └── IUserDocument.ts     # MongoDB document interface
+├── services/
+│   ├── index.ts             # Barrel exports
+│   └── user.service.ts      # Business logic (CRUD, wallet linking, caching)
+└── __tests__/
+    └── user.service.test.ts # Unit tests with mocks
+```
+
+**Frontend (`apps/frontend/modules/user/`):**
+```
+modules/user/
+├── index.ts                 # Barrel exports (all public API)
+├── slice.ts                 # Redux state management (actions, thunks, selectors)
+├── api/
+│   ├── index.ts             # Barrel exports
+│   └── client.ts            # API client functions (fetchUser, linkWallet, etc.)
+├── components/
+│   ├── index.ts             # Barrel exports
+│   └── UserIdentityProvider.tsx  # React provider for identity initialization
+├── lib/
+│   ├── index.ts             # Barrel exports
+│   ├── identity.ts          # UUID generation, cookie/localStorage management
+│   └── server.ts            # SSR utilities (getServerUserId, getServerUser)
+└── types/
+    ├── index.ts             # Barrel exports
+    └── user.types.ts        # TypeScript interfaces (IUserData, IWalletLink, etc.)
+```
+
+**Admin UI (`apps/frontend/features/system/`):**
+```
+features/system/components/UsersMonitor/
+├── UsersMonitor.tsx         # Admin dashboard component
+├── UsersMonitor.module.css  # Component styles
+└── index.ts                 # Barrel export
+```
+
+**Route page (`apps/frontend/app/`):**
+```
+app/(dashboard)/system/users/
+└── page.tsx                 # Next.js route rendering UsersMonitor
 ```
 
 **Key architectural patterns:**

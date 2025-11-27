@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation';
 import { Card } from '../../../components/ui/Card';
 import { Input } from '../../../components/ui/Input';
 import { Button } from '../../../components/ui/Button';
-import { BookmarkPanel } from '../../../features/accounts';
 
 export default function AccountsLandingPage() {
   const [address, setAddress] = useState('');
@@ -38,12 +37,8 @@ export default function AccountsLandingPage() {
               Analyze
             </Button>
           </div>
-          <p className="text-subtle" style={{ fontSize: '0.8rem' }}>
-            Tip: Bookmark wallets below to keep quick access to treasuries, whales, and contracts you care about.
-          </p>
         </div>
       </Card>
-      <BookmarkPanel />
     </div>
   );
 }

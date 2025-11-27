@@ -1,11 +1,10 @@
 import { configureStore } from '@reduxjs/toolkit';
 import memoReducer from './slices/memoSlice';
-import { walletReducer, bookmarkReducer } from '../features/accounts';
 import { blockchainReducer } from '../features/blockchain';
 import { uiReducer } from '../features/ui-state';
 import { realtimeReducer } from '../features/realtime';
 import { transactionReducer } from '../features/transactions';
-import { userReducer } from '../features/user';
+import { userReducer } from '../modules/user';
 import themeReducer from '../features/system/themeSlice';
 
 declare global {
@@ -43,8 +42,6 @@ function resolveDevToolsConfiguration(): false | Record<string, unknown> {
 export const store = configureStore({
     reducer: {
         memos: memoReducer,
-        wallet: walletReducer,
-        bookmarks: bookmarkReducer,
         blockchain: blockchainReducer,
         ui: uiReducer,
         realtime: realtimeReducer,

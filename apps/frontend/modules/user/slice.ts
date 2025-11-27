@@ -7,11 +7,7 @@
  */
 
 import { createSlice, createAsyncThunk, type PayloadAction } from '@reduxjs/toolkit';
-import type {
-    IUserData,
-    IWalletLink,
-    IUserPreferences
-} from '../../lib/userIdentity';
+import type { IUserData, IWalletLink, IUserPreferences } from './types';
 import {
     fetchUser,
     linkWallet as apiLinkWallet,
@@ -19,12 +15,17 @@ import {
     setPrimaryWallet as apiSetPrimaryWallet,
     updatePreferences as apiUpdatePreferences,
     recordActivity as apiRecordActivity
-} from '../../lib/userIdentity';
+} from './api';
 
 /**
  * Status of user identity operations.
  */
 export type UserStatus = 'idle' | 'loading' | 'succeeded' | 'failed';
+
+/**
+ * Status of TronLink wallet connection.
+ */
+export type WalletConnectionStatus = 'idle' | 'checking' | 'connecting' | 'connected' | 'error';
 
 /**
  * User identity state shape.
@@ -54,6 +55,31 @@ export interface UserState {
      * Whether initial identity has been established.
      */
     initialized: boolean;
+
+    // =========================================================================
+    // Wallet Connection State (TronLink session)
+    // =========================================================================
+
+    /**
+     * Currently connected TronLink wallet address (session-only, not persisted).
+     * This is the live connection to TronLink browser extension.
+     */
+    connectedAddress: string | null;
+
+    /**
+     * TronLink connection status.
+     */
+    connectionStatus: WalletConnectionStatus;
+
+    /**
+     * Whether TronLink provider is detected in the browser.
+     */
+    providerDetected: boolean;
+
+    /**
+     * Error message for wallet connection issues.
+     */
+    connectionError: string | null;
 }
 
 const initialState: UserState = {
@@ -61,7 +87,12 @@ const initialState: UserState = {
     userData: null,
     status: 'idle',
     error: null,
-    initialized: false
+    initialized: false,
+    // Wallet connection state
+    connectedAddress: null,
+    connectionStatus: 'idle',
+    providerDetected: false,
+    connectionError: null
 };
 
 // ============================================================================
@@ -243,6 +274,54 @@ const userSlice = createSlice({
          */
         resetUserState() {
             return initialState;
+        },
+
+        // =====================================================================
+        // Wallet Connection Actions
+        // =====================================================================
+
+        /**
+         * Set connected wallet address (TronLink session).
+         */
+        setConnectedAddress(state, action: PayloadAction<string | null>) {
+            state.connectedAddress = action.payload;
+        },
+
+        /**
+         * Set wallet connection status.
+         */
+        setConnectionStatus(state, action: PayloadAction<WalletConnectionStatus>) {
+            state.connectionStatus = action.payload;
+            if (action.payload !== 'error') {
+                state.connectionError = null;
+            }
+        },
+
+        /**
+         * Set wallet connection error.
+         */
+        setConnectionError(state, action: PayloadAction<string | null>) {
+            state.connectionError = action.payload;
+            if (action.payload) {
+                state.connectionStatus = 'error';
+            }
+        },
+
+        /**
+         * Set whether TronLink provider is detected.
+         */
+        setProviderDetected(state, action: PayloadAction<boolean>) {
+            state.providerDetected = action.payload;
+        },
+
+        /**
+         * Reset wallet connection state (disconnect from TronLink).
+         */
+        resetWalletConnection(state) {
+            state.connectedAddress = null;
+            state.connectionStatus = 'idle';
+            state.connectionError = null;
+            // Keep providerDetected as-is
         }
     },
     extraReducers: (builder) => {
@@ -396,6 +475,40 @@ export const selectHasWallets = (state: { user: UserState }): boolean =>
     (state.user.userData?.wallets?.length ?? 0) > 0;
 
 // ============================================================================
+// Wallet Connection Selectors
+// ============================================================================
+
+/**
+ * Select connected TronLink wallet address.
+ */
+export const selectConnectedAddress = (state: { user: UserState }): string | null =>
+    state.user.connectedAddress;
+
+/**
+ * Select wallet connection status.
+ */
+export const selectConnectionStatus = (state: { user: UserState }): WalletConnectionStatus =>
+    state.user.connectionStatus;
+
+/**
+ * Select whether TronLink provider is detected.
+ */
+export const selectProviderDetected = (state: { user: UserState }): boolean =>
+    state.user.providerDetected;
+
+/**
+ * Select wallet connection error.
+ */
+export const selectConnectionError = (state: { user: UserState }): string | null =>
+    state.user.connectionError;
+
+/**
+ * Select whether wallet is connected via TronLink.
+ */
+export const selectIsWalletConnected = (state: { user: UserState }): boolean =>
+    state.user.connectionStatus === 'connected' && state.user.connectedAddress !== null;
+
+// ============================================================================
 // Exports
 // ============================================================================
 
@@ -404,7 +517,13 @@ export const {
     setUserData,
     markInitialized,
     clearError,
-    resetUserState
+    resetUserState,
+    // Wallet connection actions
+    setConnectedAddress,
+    setConnectionStatus,
+    setConnectionError,
+    setProviderDetected,
+    resetWalletConnection
 } = userSlice.actions;
 
 export default userSlice.reducer;

@@ -6,7 +6,7 @@ import { getSocket, disconnectSocket } from '../../lib/socketClient';
 import { useAppDispatch, useAppSelector } from '../../store/hooks';
 import { prependMemo } from '../../store/slices/memoSlice';
 import { blockReceived } from '../../features/blockchain/slice';
-import { setUserData, selectUserId } from '../../features/user';
+import { setUserData, selectUserId } from '../../modules/user';
 import {
   connectionConnecting,
   connectionEstablished,
@@ -22,7 +22,7 @@ import type {
   MemoUpdatePayload,
   SocketSubscriptions
 } from '@tronrelic/shared';
-import type { IUserData } from '../../lib/userIdentity';
+import type { IUserData } from '../../modules/user';
 
 export function SocketBridge() {
   const dispatch = useAppDispatch();

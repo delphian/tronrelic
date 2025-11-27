@@ -6,7 +6,6 @@ export * from './notification-delivery-model.js';
 export * from './block-model.js';
 export * from './transaction-memo-model.js';
 export * from './sunpump-token-model.js';
-export * from './bookmark-model.js';
 export * from './token-model.js';
 export * from './delegation-flow-model.js';
 export * from './contract-activity-model.js';

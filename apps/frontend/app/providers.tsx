@@ -8,7 +8,7 @@ import { ToastProvider } from '../components/ui/ToastProvider';
 import { ModalProvider } from '../components/ui/ModalProvider';
 import { PluginLoader } from '../components/plugins/PluginLoader';
 import { FrontendPluginContextProvider } from '../lib/frontendPluginContext';
-import { UserIdentityProvider } from '../components/user';
+import { UserIdentityProvider } from '../modules/user';
 
 export function Providers({ children }: { children: ReactNode }) {
   return (

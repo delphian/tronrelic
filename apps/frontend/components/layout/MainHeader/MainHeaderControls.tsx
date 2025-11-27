@@ -15,7 +15,7 @@
 import { Wallet } from 'lucide-react';
 import { Button } from '../../ui/Button';
 import { ThemeToggle } from '../../ThemeToggle';
-import { useWallet } from '../../../features/accounts';
+import { useWallet } from '../../../modules/user';
 import styles from './MainHeader.module.css';
 
 /**

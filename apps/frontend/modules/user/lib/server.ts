@@ -8,7 +8,7 @@
  * ## Usage in Server Components
  *
  * ```typescript
- * import { getServerUserId, getServerUser } from '@/lib/serverUserIdentity';
+ * import { getServerUserId, getServerUser } from '@/modules/user';
  *
  * export default async function UserPage() {
  *     const userId = getServerUserId();
@@ -31,8 +31,8 @@
  */
 
 import { cookies } from 'next/headers';
-import { USER_ID_COOKIE_NAME, isValidUUID } from './userIdentity';
-import type { IUserData } from './userIdentity';
+import { USER_ID_COOKIE_NAME, isValidUUID } from './identity';
+import type { IUserData } from '../types';
 
 /**
  * Get user ID from cookies during SSR.

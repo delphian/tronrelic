@@ -1,5 +1,5 @@
 /**
- * User component exports.
+ * User module components barrel export.
  */
 
 export { UserIdentityProvider } from './UserIdentityProvider';

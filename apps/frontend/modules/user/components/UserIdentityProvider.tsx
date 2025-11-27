@@ -13,14 +13,14 @@
 
 import { useEffect, useRef } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
-import type { AppDispatch } from '../../store';
+import type { AppDispatch } from '../../../store';
 import {
     initializeUser,
     recordActivityThunk,
     selectUserInitialized,
     selectUserId
-} from '../../features/user';
-import { getOrCreateUserId } from '../../lib/userIdentity';
+} from '../slice';
+import { getOrCreateUserId } from '../lib';
 
 /**
  * Props for UserIdentityProvider.
