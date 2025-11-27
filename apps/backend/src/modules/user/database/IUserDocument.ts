@@ -5,14 +5,28 @@ import { ObjectId } from 'mongodb';
  *
  * Users can link multiple wallets to their anonymous UUID, enabling
  * cross-wallet preferences and unified activity tracking.
+ *
+ * Wallet connection follows a two-step flow:
+ * 1. Connect: Store address with verified=false (no signature required)
+ * 2. Verify: Update to verified=true after signature verification
+ *
+ * The `isPrimary` field is automatically maintained by UserService:
+ * 1. Primary = most recent lastUsed among verified wallets
+ * 2. Fallback = most recent lastUsed among unverified wallets (if no verified)
+ *
+ * External code should simply query for isPrimary=true.
  */
 export interface IWalletLink {
     /** Base58 TRON address (e.g., TRX7NJa...) */
     address: string;
-    /** Timestamp when wallet was linked */
+    /** Timestamp when wallet was first connected */
     linkedAt: Date;
-    /** Whether this is the user's primary wallet for display purposes */
+    /** Whether this is the default wallet for display (auto-maintained by UserService) */
     isPrimary: boolean;
+    /** Whether wallet ownership has been cryptographically verified via signature */
+    verified: boolean;
+    /** Timestamp of last connection/use (for primary wallet selection) */
+    lastUsed: Date;
 }
 
 /**

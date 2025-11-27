@@ -10,6 +10,7 @@ import { createSlice, createAsyncThunk, type PayloadAction } from '@reduxjs/tool
 import type { IUserData, IWalletLink, IUserPreferences } from './types';
 import {
     fetchUser,
+    connectWallet as apiConnectWallet,
     linkWallet as apiLinkWallet,
     unlinkWallet as apiUnlinkWallet,
     setPrimaryWallet as apiSetPrimaryWallet,
@@ -80,6 +81,13 @@ export interface UserState {
      * Error message for wallet connection issues.
      */
     connectionError: string | null;
+
+    /**
+     * Whether the connected wallet has been cryptographically verified.
+     * True = signature verified (linked to backend)
+     * False = connected but no signature (display-only)
+     */
+    walletVerified: boolean;
 }
 
 const initialState: UserState = {
@@ -92,7 +100,8 @@ const initialState: UserState = {
     connectedAddress: null,
     connectionStatus: 'idle',
     providerDetected: false,
-    connectionError: null
+    connectionError: null,
+    walletVerified: false
 };
 
 // ============================================================================
@@ -117,7 +126,29 @@ export const initializeUser = createAsyncThunk(
 );
 
 /**
- * Link a wallet to the current user.
+ * Connect a wallet to the current user (without verification).
+ * This is step 1 of the two-step wallet flow.
+ */
+export const connectWalletThunk = createAsyncThunk(
+    'user/connectWallet',
+    async (
+        payload: { userId: string; address: string },
+        { rejectWithValue }
+    ) => {
+        try {
+            const userData = await apiConnectWallet(payload.userId, payload.address);
+            return userData;
+        } catch (error) {
+            return rejectWithValue(
+                error instanceof Error ? error.message : 'Failed to connect wallet'
+            );
+        }
+    }
+);
+
+/**
+ * Link a wallet to the current user (with signature verification).
+ * This is step 2 of the two-step wallet flow.
  */
 export const linkWalletThunk = createAsyncThunk(
     'user/linkWallet',
@@ -321,7 +352,15 @@ const userSlice = createSlice({
             state.connectedAddress = null;
             state.connectionStatus = 'idle';
             state.connectionError = null;
+            state.walletVerified = false;
             // Keep providerDetected as-is
+        },
+
+        /**
+         * Set wallet verification status.
+         */
+        setWalletVerified(state, action: PayloadAction<boolean>) {
+            state.walletVerified = action.payload;
         }
     },
     extraReducers: (builder) => {
@@ -343,7 +382,22 @@ const userSlice = createSlice({
                 state.initialized = true; // Mark as initialized even on failure
             });
 
-        // Link wallet
+        // Connect wallet (unverified)
+        builder
+            .addCase(connectWalletThunk.pending, (state) => {
+                state.status = 'loading';
+                state.error = null;
+            })
+            .addCase(connectWalletThunk.fulfilled, (state, action) => {
+                state.status = 'succeeded';
+                state.userData = action.payload;
+            })
+            .addCase(connectWalletThunk.rejected, (state, action) => {
+                state.status = 'failed';
+                state.error = action.payload as string;
+            });
+
+        // Link wallet (verified)
         builder
             .addCase(linkWalletThunk.pending, (state) => {
                 state.status = 'loading';
@@ -508,6 +562,12 @@ export const selectConnectionError = (state: { user: UserState }): string | null
 export const selectIsWalletConnected = (state: { user: UserState }): boolean =>
     state.user.connectionStatus === 'connected' && state.user.connectedAddress !== null;
 
+/**
+ * Select whether connected wallet is cryptographically verified.
+ */
+export const selectWalletVerified = (state: { user: UserState }): boolean =>
+    state.user.walletVerified;
+
 // ============================================================================
 // Exports
 // ============================================================================
@@ -523,7 +583,8 @@ export const {
     setConnectionStatus,
     setConnectionError,
     setProviderDetected,
-    resetWalletConnection
+    resetWalletConnection,
+    setWalletVerified
 } = userSlice.actions;
 
 export default userSlice.reducer;

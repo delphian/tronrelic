@@ -233,6 +233,92 @@ export class UserService {
     // ==================== Wallet Linking ====================
 
     /**
+     * Connect a wallet to a user identity (without verification).
+     *
+     * Stores the wallet address as unverified. If wallet already exists,
+     * updates lastUsed timestamp. Automatically recalculates isPrimary.
+     *
+     * This is the first step in the two-step wallet flow:
+     * 1. Connect: Store address with verified=false (this method)
+     * 2. Verify: Update to verified=true via linkWallet()
+     *
+     * @param userId - UUID of user to connect wallet to
+     * @param address - Base58 TRON address
+     * @returns Updated user document
+     * @throws Error if user not found or address invalid
+     */
+    async connectWallet(userId: string, address: string): Promise<IUser> {
+        // Validate user exists
+        const doc = await this.collection.findOne({ id: userId });
+        if (!doc) {
+            throw new Error(`User with id "${userId}" not found`);
+        }
+
+        // Normalize address
+        let normalizedAddress: string;
+        try {
+            normalizedAddress = this.signatureService.normalizeAddress(address);
+        } catch {
+            throw new Error('Invalid TRON address format.');
+        }
+
+        // Check if wallet already linked to another user
+        const existingLink = await this.collection.findOne({
+            'wallets.address': normalizedAddress,
+            id: { $ne: userId }
+        });
+        if (existingLink) {
+            throw new Error('Wallet is already linked to another user identity.');
+        }
+
+        const now = new Date();
+        const existingWalletIndex = doc.wallets.findIndex(w => w.address === normalizedAddress);
+
+        if (existingWalletIndex >= 0) {
+            // Wallet already exists - update lastUsed
+            doc.wallets[existingWalletIndex].lastUsed = now;
+        } else {
+            // Add new unverified wallet
+            const walletLink: IWalletLink = {
+                address: normalizedAddress,
+                linkedAt: now,
+                isPrimary: false,
+                verified: false,
+                lastUsed: now
+            };
+            doc.wallets.push(walletLink);
+        }
+
+        // Recalculate primary wallet
+        this.recalculatePrimaryWallet(doc.wallets);
+
+        // Update database
+        await this.collection.updateOne(
+            { id: userId },
+            {
+                $set: {
+                    wallets: doc.wallets,
+                    updatedAt: now
+                }
+            }
+        );
+
+        this.logger.info({ userId, wallet: normalizedAddress, verified: false }, 'Wallet connected to user');
+
+        // Invalidate cache
+        await this.invalidateUserCache(userId);
+        await this.cacheService.set(
+            `${this.CACHE_KEY_WALLET_PREFIX}${normalizedAddress}`,
+            userId,
+            this.CACHE_TTL
+        );
+
+        // Fetch and return updated document
+        const updated = await this.collection.findOne({ id: userId });
+        return this.toPublicUser(updated!);
+    }
+
+    /**
      * Link a wallet to a user identity.
      *
      * Verifies wallet ownership via TronLink signature before linking.
@@ -277,30 +363,40 @@ export class UserService {
             throw new Error('Wallet is already linked to another user identity.');
         }
 
-        // Check if wallet already linked to this user
-        const alreadyLinked = doc.wallets.some(w => w.address === normalizedAddress);
-        if (alreadyLinked) {
-            // Already linked - just return current state
-            return this.toPublicUser(doc);
+        const nowDate = new Date();
+        const existingWalletIndex = doc.wallets.findIndex(w => w.address === normalizedAddress);
+
+        if (existingWalletIndex >= 0) {
+            // Wallet already connected - verify it and update lastUsed
+            doc.wallets[existingWalletIndex].verified = true;
+            doc.wallets[existingWalletIndex].lastUsed = nowDate;
+        } else {
+            // Add new verified wallet
+            const walletLink: IWalletLink = {
+                address: normalizedAddress,
+                linkedAt: nowDate,
+                isPrimary: false,
+                verified: true,
+                lastUsed: nowDate
+            };
+            doc.wallets.push(walletLink);
         }
 
-        // Create wallet link
-        const walletLink: IWalletLink = {
-            address: normalizedAddress,
-            linkedAt: new Date(),
-            isPrimary: doc.wallets.length === 0 // First wallet becomes primary
-        };
+        // Recalculate primary wallet
+        this.recalculatePrimaryWallet(doc.wallets);
 
         // Update database
         await this.collection.updateOne(
             { id: userId },
             {
-                $push: { wallets: walletLink },
-                $set: { updatedAt: new Date() }
+                $set: {
+                    wallets: doc.wallets,
+                    updatedAt: nowDate
+                }
             }
         );
 
-        this.logger.info({ userId, wallet: normalizedAddress }, 'Wallet linked to user');
+        this.logger.info({ userId, wallet: normalizedAddress, verified: true }, 'Wallet verified and linked to user');
 
         // Invalidate cache
         await this.invalidateUserCache(userId);
@@ -353,13 +449,10 @@ export class UserService {
         }
 
         // Remove wallet
-        const wasPrimary = doc.wallets[walletIndex].isPrimary;
         doc.wallets.splice(walletIndex, 1);
 
-        // If removed wallet was primary and others exist, promote first remaining
-        if (wasPrimary && doc.wallets.length > 0) {
-            doc.wallets[0].isPrimary = true;
-        }
+        // Recalculate primary wallet
+        this.recalculatePrimaryWallet(doc.wallets);
 
         // Update database
         await this.collection.updateOne(
@@ -386,7 +479,12 @@ export class UserService {
     /**
      * Set primary wallet for a user.
      *
-     * Does not require signature since it's just a display preference.
+     * Updates the wallet's lastUsed timestamp to make it the most recently used,
+     * then recalculates isPrimary using the standard algorithm.
+     *
+     * Note: If setting an unverified wallet but verified wallets exist, the
+     * most recent verified wallet will still be selected as primary.
+     * Verified wallets always take precedence.
      *
      * @param userId - UUID of user
      * @param address - Wallet address to set as primary
@@ -413,10 +511,11 @@ export class UserService {
             throw new Error('Wallet is not linked to this user.');
         }
 
-        // Update primary flags
-        doc.wallets.forEach((w, i) => {
-            w.isPrimary = i === walletIndex;
-        });
+        // Update lastUsed to make this wallet the most recently used
+        doc.wallets[walletIndex].lastUsed = new Date();
+
+        // Recalculate primary wallet using standard algorithm
+        this.recalculatePrimaryWallet(doc.wallets);
 
         // Update database
         await this.collection.updateOne(
@@ -666,6 +765,42 @@ export class UserService {
     }
 
     // ==================== Private Helpers ====================
+
+    /**
+     * Recalculate which wallet should be primary.
+     *
+     * Primary selection logic:
+     * 1. Most recent lastUsed among verified wallets
+     * 2. Fallback: Most recent lastUsed among unverified wallets (if no verified)
+     *
+     * Mutates the wallets array in place.
+     *
+     * @param wallets - Array of wallet links to update
+     */
+    private recalculatePrimaryWallet(wallets: IWalletLink[]): void {
+        if (wallets.length === 0) {
+            return;
+        }
+
+        // Reset all primary flags
+        wallets.forEach(w => { w.isPrimary = false; });
+
+        // Find verified wallets sorted by lastUsed descending
+        const verifiedWallets = wallets
+            .filter(w => w.verified)
+            .sort((a, b) => new Date(b.lastUsed).getTime() - new Date(a.lastUsed).getTime());
+
+        if (verifiedWallets.length > 0) {
+            // Primary = most recent verified wallet
+            verifiedWallets[0].isPrimary = true;
+            return;
+        }
+
+        // Fallback: most recent unverified wallet
+        const sortedByLastUsed = [...wallets]
+            .sort((a, b) => new Date(b.lastUsed).getTime() - new Date(a.lastUsed).getTime());
+        sortedByLastUsed[0].isPrimary = true;
+    }
 
     /**
      * Validate UUID v4 format.

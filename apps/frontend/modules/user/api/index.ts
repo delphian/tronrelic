@@ -5,6 +5,7 @@
 export {
     // User API functions
     fetchUser,
+    connectWallet,
     linkWallet,
     unlinkWallet,
     setPrimaryWallet,

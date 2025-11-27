@@ -19,10 +19,15 @@ export {
 // TronLink wallet provider utilities (client-side)
 export {
     getTronWeb,
+    getTronLink,
     assertTronWeb
 } from './tronWeb';
 
-export type { TronWebProvider } from './tronWeb';
+export type { TronWebProvider, TronLinkProvider, TronLinkRequestResponse } from './tronWeb';
+
+// SSR state building utilities (safe for client components)
+export { buildSSRUserState } from './ssr-state';
+export type { SSRUserData } from './ssr-state';
 
 // NOTE: Server-side utilities (getServerUserId, getServerUser, hasServerUserIdentity)
 // must be imported directly from './server' in Server Components only.

@@ -2,24 +2,54 @@
  * TronLink wallet provider interface and utilities.
  *
  * Provides type-safe access to the TronLink browser extension
- * via window.tronWeb. Used by useWallet hook for wallet connection.
+ * via window.tronWeb and window.tronLink.
+ *
+ * @see https://docs.tronlink.org/tronlink-wallet-extension/request-tronlink-extension/connect-website
  */
+
+/**
+ * Response from tron_requestAccounts method.
+ * @see https://docs.tronlink.org/tronlink-wallet-extension/request-tronlink-extension/connect-website
+ */
+export interface TronLinkRequestResponse {
+    /** Response code: 200=success, 4000=pending, 4001=rejected, null=locked */
+    code: 200 | 4000 | 4001 | null;
+    message: string;
+}
 
 export interface TronWebProvider {
     ready?: boolean;
     defaultAddress?: {
         base58?: string;
     };
-    request?: (args: { method: 'tron_requestAccounts' }) => Promise<void>;
+    request?: (args: { method: 'tron_requestAccounts' }) => Promise<TronLinkRequestResponse>;
     trx?: {
         signMessageV2?: (message: string) => Promise<string>;
     };
 }
 
+export interface TronLinkProvider {
+    ready?: boolean;
+    tronWeb?: TronWebProvider;
+    request?: (args: { method: 'tron_requestAccounts' }) => Promise<TronLinkRequestResponse>;
+}
+
 declare global {
     interface Window {
         tronWeb?: TronWebProvider;
+        tronLink?: TronLinkProvider;
     }
+}
+
+/**
+ * Get the TronLink provider from window.
+ * Returns undefined if not available (SSR or TronLink not installed).
+ */
+export function getTronLink(): TronLinkProvider | undefined {
+    if (typeof window === 'undefined') {
+        return undefined;
+    }
+    return window.tronLink;
 }
 
 /**

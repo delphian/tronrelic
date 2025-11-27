@@ -97,9 +97,50 @@ export class UserController {
     }
 
     /**
+     * POST /api/user/:id/wallet/connect
+     *
+     * Connect a wallet to user identity (without verification).
+     *
+     * This is the first step in the two-step wallet flow. Stores the
+     * wallet address as unverified. Use linkWallet to verify ownership.
+     *
+     * Requires: Cookie must match :id
+     * Body: { address }
+     * Response: IUser
+     */
+    async connectWallet(req: Request, res: Response): Promise<void> {
+        try {
+            const { id } = req.params;
+            const { address } = req.body;
+
+            if (!address) {
+                res.status(400).json({
+                    error: 'Missing required field',
+                    message: 'Request must include address'
+                });
+                return;
+            }
+
+            const user = await this.userService.connectWallet(id, address);
+
+            this.logger.info({ userId: id, wallet: address }, 'Wallet connected via API');
+            res.json(user);
+        } catch (error) {
+            this.logger.error({ error, userId: req.params.id }, 'Failed to connect wallet');
+            res.status(400).json({
+                error: 'Failed to connect wallet',
+                message: error instanceof Error ? error.message : 'Unknown error'
+            });
+        }
+    }
+
+    /**
      * POST /api/user/:id/wallet
      *
-     * Link a wallet to user identity.
+     * Link a wallet to user identity (with signature verification).
+     *
+     * Verifies wallet ownership via TronLink signature. If wallet was
+     * previously connected (unverified), updates it to verified.
      *
      * Requires: Cookie must match :id, wallet signature verification
      * Body: { address, message, signature, timestamp }

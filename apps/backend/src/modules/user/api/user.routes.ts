@@ -32,8 +32,14 @@ export function createUserRouter(controller: UserController): Router {
     // ============================================================================
 
     /**
+     * POST /api/user/:id/wallet/connect
+     * Connect wallet to user without verification (step 1 of 2-step flow)
+     */
+    router.post('/:id/wallet/connect', controller.connectWallet.bind(controller));
+
+    /**
      * POST /api/user/:id/wallet
-     * Link wallet to user (requires signature)
+     * Link wallet to user with signature verification (step 2 of 2-step flow)
      */
     router.post('/:id/wallet', controller.linkWallet.bind(controller));
 

@@ -26,7 +26,29 @@ export async function fetchUser(userId: string): Promise<IUserData> {
 }
 
 /**
- * Link a wallet to user identity.
+ * Connect a wallet to user identity (without verification).
+ *
+ * This is the first step in the two-step wallet flow. Stores the
+ * wallet address as unverified. Use linkWallet to verify ownership.
+ *
+ * @param userId - User UUID
+ * @param address - TRON wallet address
+ * @returns Updated user data
+ */
+export async function connectWallet(
+    userId: string,
+    address: string
+): Promise<IUserData> {
+    const response = await apiClient.post(
+        `/user/${userId}/wallet/connect`,
+        { address },
+        { withCredentials: true }
+    );
+    return response.data as IUserData;
+}
+
+/**
+ * Link a wallet to user identity (with signature verification).
  *
  * @param userId - User UUID
  * @param address - TRON wallet address
