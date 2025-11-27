@@ -66,6 +66,8 @@ export {
     setPrimaryWalletThunk,
     updatePreferencesThunk,
     recordActivityThunk,
+    loginThunk,
+    logoutThunk,
     // Selectors
     selectUserId,
     selectUserData,
@@ -76,6 +78,7 @@ export {
     selectUserError,
     selectUserInitialized,
     selectHasWallets,
+    selectIsLoggedIn,
     // Wallet connection selectors
     selectConnectedAddress,
     selectConnectionStatus,
@@ -99,6 +102,9 @@ export {
     setPrimaryWallet,
     updatePreferences,
     recordActivity,
+    // Login state functions
+    loginUser,
+    logoutUser,
     // Admin API functions
     adminListUsers,
     adminGetUserStats,

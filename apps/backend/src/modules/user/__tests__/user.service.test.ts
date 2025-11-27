@@ -304,6 +304,120 @@ describe('UserService', () => {
         });
     });
 
+    describe('login', () => {
+        it('should set isLoggedIn to true', async () => {
+            const user = await userService.getOrCreate(validUUID);
+            expect(user.isLoggedIn).toBe(false);
+
+            const loggedIn = await userService.login(validUUID);
+
+            expect(loggedIn.isLoggedIn).toBe(true);
+        });
+
+        it('should throw error for non-existent user', async () => {
+            await expect(userService.login(validUUID)).rejects.toThrow('User with id');
+        });
+
+        it('should invalidate cache after login', async () => {
+            await userService.getOrCreate(validUUID);
+
+            // Verify cache exists
+            let cached = await mockCache.get(`user:${validUUID}`);
+            expect(cached).toBeDefined();
+
+            // Login
+            await userService.login(validUUID);
+
+            // Cache should be invalidated
+            cached = await mockCache.get(`user:${validUUID}`);
+            expect(cached).toBeNull();
+        });
+
+        it('should log login action', async () => {
+            await userService.getOrCreate(validUUID);
+            mockLogger.clear();
+
+            await userService.login(validUUID);
+
+            const infoLogs = mockLogger.logs.filter(l => l.level === 'info');
+            const hasLoginLog = infoLogs.some(l => l.message?.includes('logged in'));
+            expect(hasLoginLog).toBe(true);
+        });
+    });
+
+    describe('logout', () => {
+        it('should set isLoggedIn to false', async () => {
+            await userService.getOrCreate(validUUID);
+            await userService.login(validUUID);
+            mockCache.clear();
+
+            const user = await userService.getById(validUUID);
+            expect(user?.isLoggedIn).toBe(true);
+
+            const loggedOut = await userService.logout(validUUID);
+
+            expect(loggedOut.isLoggedIn).toBe(false);
+        });
+
+        it('should preserve wallets after logout', async () => {
+            // Create user with wallet
+            await userService.getOrCreate(validUUID);
+            await userService.connectWallet(validUUID, 'T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwb');
+            await userService.login(validUUID);
+            mockCache.clear();
+
+            // Verify wallet exists
+            const beforeLogout = await userService.getById(validUUID);
+            expect(beforeLogout?.wallets.length).toBe(1);
+
+            // Logout
+            await userService.logout(validUUID);
+            mockCache.clear();
+
+            // Wallet should still exist
+            const afterLogout = await userService.getById(validUUID);
+            expect(afterLogout?.wallets.length).toBe(1);
+            expect(afterLogout?.isLoggedIn).toBe(false);
+        });
+
+        it('should throw error for non-existent user', async () => {
+            await expect(userService.logout(validUUID)).rejects.toThrow('User with id');
+        });
+
+        it('should invalidate cache after logout', async () => {
+            await userService.getOrCreate(validUUID);
+            await userService.login(validUUID);
+
+            // Verify cache exists after login
+            let cached = await mockCache.get(`user:${validUUID}`);
+            expect(cached).toBeNull(); // Already invalidated by login
+
+            // Re-fetch to populate cache
+            await userService.getById(validUUID);
+            cached = await mockCache.get(`user:${validUUID}`);
+            expect(cached).toBeDefined();
+
+            // Logout
+            await userService.logout(validUUID);
+
+            // Cache should be invalidated
+            cached = await mockCache.get(`user:${validUUID}`);
+            expect(cached).toBeNull();
+        });
+
+        it('should log logout action', async () => {
+            await userService.getOrCreate(validUUID);
+            await userService.login(validUUID);
+            mockLogger.clear();
+
+            await userService.logout(validUUID);
+
+            const infoLogs = mockLogger.logs.filter(l => l.level === 'info');
+            const hasLogoutLog = infoLogs.some(l => l.message?.includes('logged out'));
+            expect(hasLogoutLog).toBe(true);
+        });
+    });
+
     describe('recordActivity', () => {
         it('should increment page views', async () => {
             await userService.getOrCreate(validUUID);

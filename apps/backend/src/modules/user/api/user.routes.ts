@@ -100,6 +100,22 @@ export function createUserRouter(controller: UserController): Router {
      */
     router.post('/:id/activity', activityRateLimiter, controller.recordActivity.bind(controller));
 
+    // ============================================================================
+    // Login State Routes (30 requests/minute)
+    // ============================================================================
+
+    /**
+     * POST /api/user/:id/login
+     * Log in user (set isLoggedIn to true)
+     */
+    router.post('/:id/login', userRateLimiter, controller.login.bind(controller));
+
+    /**
+     * POST /api/user/:id/logout
+     * Log out user (set isLoggedIn to false)
+     */
+    router.post('/:id/logout', userRateLimiter, controller.logout.bind(controller));
+
     return router;
 }
 

@@ -3,17 +3,19 @@
 /**
  * WalletButton Component
  *
- * Self-contained wallet connection button with verification status display.
- * Shows different states based on connection and verification status:
- * - Not connected: "Connect Wallet" button with TronLink styling
- * - Connected, unverified: Wallet address with warning icon
- * - Connected, verified: Wallet address (no icon)
+ * Self-contained wallet connection button with login state display.
+ * Shows different states based on login status:
+ * - Logged out: "Connect" button with TronLink styling
+ * - Logged in: Wallet address with logout on click
  *
- * Handles error display via toast notifications when connection fails.
+ * When user clicks Connect, TronLink connects and login is called automatically.
+ * When user clicks their address (logged in), logout is called and TronLink disconnects.
+ *
+ * Note: isLoggedIn is a UI/feature gate - UUID tracking always continues.
  */
 
-import { useEffect } from 'react';
-import { AlertCircle, Wallet } from 'lucide-react';
+import { useEffect, useCallback, useState } from 'react';
+import { AlertCircle, Wallet, Loader2 } from 'lucide-react';
 import { Button } from '../../../../components/ui/Button';
 import { useToast } from '../../../../components/ui/ToastProvider';
 import { useWallet } from '../../hooks/useWallet';
@@ -28,18 +30,22 @@ function truncateWallet(address: string) {
 }
 
 /**
- * Wallet connection button with verification status display.
+ * Wallet connection button with login state display.
  */
 export function WalletButton() {
     const {
         address,
         connect,
-        disconnect,
+        login,
+        logout,
         connectionError,
         walletVerified,
-        connectionStatus
+        connectionStatus,
+        isLoggedIn
     } = useWallet();
     const { push } = useToast();
+    const [isLoggingIn, setIsLoggingIn] = useState(false);
+    const [isLoggingOut, setIsLoggingOut] = useState(false);
 
     // Display connection errors via toast
     useEffect(() => {
@@ -57,8 +63,45 @@ export function WalletButton() {
         }
     }, [connectionError, push]);
 
-    // Connected state - show address with verification indicator
-    if (address) {
+    /**
+     * Handle connect button click.
+     * Connects to TronLink, then auto-logs in.
+     */
+    const handleConnect = useCallback(async () => {
+        setIsLoggingIn(true);
+        try {
+            await connect();
+            // Auto-login after successful connection
+            await login();
+        } catch (error) {
+            console.error('Connect/login failed:', error);
+        } finally {
+            setIsLoggingIn(false);
+        }
+    }, [connect, login]);
+
+    /**
+     * Handle logout button click.
+     * Logs out (sets isLoggedIn=false) and disconnects TronLink session.
+     */
+    const handleLogout = useCallback(async () => {
+        setIsLoggingOut(true);
+        try {
+            await logout();
+        } catch (error) {
+            console.error('Logout failed:', error);
+            push({
+                tone: 'warning',
+                title: 'Logout Failed',
+                description: 'Unable to log out. Please try again.'
+            });
+        } finally {
+            setIsLoggingOut(false);
+        }
+    }, [logout, push]);
+
+    // Logged in state - show address with logout on click
+    if (isLoggedIn && address) {
         const buttonClasses = [styles.connected_btn];
         if (!walletVerified) buttonClasses.push(styles.unverified);
 
@@ -66,37 +109,48 @@ export function WalletButton() {
             <Button
                 variant="secondary"
                 size="sm"
-                onClick={disconnect}
+                onClick={handleLogout}
+                disabled={isLoggingOut}
                 className={buttonClasses.join(' ')}
             >
-                {!walletVerified && (
+                {isLoggingOut ? (
+                    <Loader2 size={14} className={styles.spinner} />
+                ) : !walletVerified ? (
                     <AlertCircle
                         size={14}
                         className={styles.unverified_icon}
                         aria-label="Wallet not verified"
                     />
-                )}
+                ) : null}
                 {truncateWallet(address)}
             </Button>
         );
     }
 
-    // Disconnected state - show connect button (responsive via parent container query)
+    // Logged out state - show connect button (responsive via parent container query)
+    const isConnecting = connectionStatus === 'connecting' || isLoggingIn;
+
     return (
         <button
             className={styles.connect_btn}
-            onClick={connect}
-            disabled={connectionStatus === 'connecting'}
+            onClick={handleConnect}
+            disabled={isConnecting}
             aria-label="Connect wallet"
         >
-            <span className={styles.wallet_icon}>
-                <Wallet size={18} />
-            </span>
-            <img
-                src="/images/tronlink/tronlink-64x64.jpg"
-                alt="TronLink"
-                className={styles.wallet_icon_mobile}
-            />
+            {isConnecting ? (
+                <Loader2 size={18} className={styles.spinner} />
+            ) : (
+                <>
+                    <span className={styles.wallet_icon}>
+                        <Wallet size={18} />
+                    </span>
+                    <img
+                        src="/images/tronlink/tronlink-64x64.jpg"
+                        alt="TronLink"
+                        className={styles.wallet_icon_mobile}
+                    />
+                </>
+            )}
             <span className={styles.connect_text_full}>Connect Wallet</span>
             <span className={styles.connect_text_short}>Connect</span>
         </button>

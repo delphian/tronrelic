@@ -144,6 +144,7 @@ export class UserService {
         const now = new Date();
         const newUser: Omit<IUserDocument, '_id'> = {
             id,
+            isLoggedIn: false,
             wallets: [],
             preferences: {},
             activity: {
@@ -596,6 +597,76 @@ export class UserService {
         return this.toPublicUser(updated!);
     }
 
+    // ==================== Login State ====================
+
+    /**
+     * Log in a user (set isLoggedIn to true).
+     *
+     * This is a UI/feature gate - it controls what is surfaced to the user,
+     * not their underlying identity. UUID tracking continues regardless.
+     *
+     * @param userId - UUID of user
+     * @returns Updated user document
+     * @throws Error if user not found
+     */
+    async login(userId: string): Promise<IUser> {
+        const doc = await this.collection.findOne({ id: userId });
+        if (!doc) {
+            throw new Error(`User with id "${userId}" not found`);
+        }
+
+        await this.collection.updateOne(
+            { id: userId },
+            {
+                $set: {
+                    isLoggedIn: true,
+                    updatedAt: new Date()
+                }
+            }
+        );
+
+        this.logger.info({ userId }, 'User logged in');
+
+        await this.invalidateUserCache(userId);
+
+        const updated = await this.collection.findOne({ id: userId });
+        return this.toPublicUser(updated!);
+    }
+
+    /**
+     * Log out a user (set isLoggedIn to false).
+     *
+     * This is a UI/feature gate - wallets and all other data remain intact.
+     * The user is still tracked by UUID under the hood.
+     *
+     * @param userId - UUID of user
+     * @returns Updated user document
+     * @throws Error if user not found
+     */
+    async logout(userId: string): Promise<IUser> {
+        const doc = await this.collection.findOne({ id: userId });
+        if (!doc) {
+            throw new Error(`User with id "${userId}" not found`);
+        }
+
+        await this.collection.updateOne(
+            { id: userId },
+            {
+                $set: {
+                    isLoggedIn: false,
+                    updatedAt: new Date()
+                }
+            }
+        );
+
+        this.logger.info({ userId }, 'User logged out');
+
+        await this.invalidateUserCache(userId);
+
+        const updated = await this.collection.findOne({ id: userId });
+        return this.toPublicUser(updated!);
+    }
+
     // ==================== Activity Tracking ====================
 
     /**
@@ -823,6 +894,7 @@ export class UserService {
     private toPublicUser(doc: IUserDocument | Omit<IUserDocument, '_id'>): IUser {
         return {
             id: doc.id,
+            isLoggedIn: doc.isLoggedIn ?? false,
             wallets: doc.wallets,
             preferences: doc.preferences,
             activity: doc.activity,

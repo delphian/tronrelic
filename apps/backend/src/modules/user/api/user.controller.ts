@@ -304,6 +304,66 @@ export class UserController {
     }
 
     // ============================================================================
+    // Login State Endpoints (require cookie validation)
+    // ============================================================================
+
+    /**
+     * POST /api/user/:id/login
+     *
+     * Log in a user (set isLoggedIn to true).
+     *
+     * This is a UI/feature gate - it controls what is surfaced to the user,
+     * not their underlying identity. UUID tracking continues regardless.
+     *
+     * Requires: Cookie must match :id
+     * Response: IUser
+     */
+    async login(req: Request, res: Response): Promise<void> {
+        try {
+            const { id } = req.params;
+
+            const user = await this.userService.login(id);
+
+            this.logger.info({ userId: id }, 'User logged in via API');
+            res.json(user);
+        } catch (error) {
+            this.logger.error({ error, userId: req.params.id }, 'Failed to log in user');
+            res.status(400).json({
+                error: 'Failed to log in',
+                message: error instanceof Error ? error.message : 'Unknown error'
+            });
+        }
+    }
+
+    /**
+     * POST /api/user/:id/logout
+     *
+     * Log out a user (set isLoggedIn to false).
+     *
+     * This is a UI/feature gate - wallets and all other data remain intact.
+     * The user is still tracked by UUID under the hood.
+     *
+     * Requires: Cookie must match :id
+     * Response: IUser
+     */
+    async logout(req: Request, res: Response): Promise<void> {
+        try {
+            const { id } = req.params;
+
+            const user = await this.userService.logout(id);
+
+            this.logger.info({ userId: id }, 'User logged out via API');
+            res.json(user);
+        } catch (error) {
+            this.logger.error({ error, userId: req.params.id }, 'Failed to log out user');
+            res.status(400).json({
+                error: 'Failed to log out',
+                message: error instanceof Error ? error.message : 'Unknown error'
+            });
+        }
+    }
+
+    // ============================================================================
     // Admin Endpoints (require admin token)
     // ============================================================================
 

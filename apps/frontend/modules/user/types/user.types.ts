@@ -10,6 +10,12 @@
  */
 export interface IUserData {
     id: string;
+    /**
+     * UI/feature gate controlling what is surfaced to the user.
+     * When false, frontend shows "Connect" button and hides logged-in features.
+     * UUID tracking continues regardless of this flag.
+     */
+    isLoggedIn: boolean;
     wallets: IWalletLink[];
     preferences: IUserPreferences;
     activity: IUserActivity;

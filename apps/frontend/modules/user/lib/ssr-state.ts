@@ -14,6 +14,7 @@ import type { IWalletLink } from '../types';
 export interface SSRUserData {
     userId: string;
     wallets: IWalletLink[];
+    isLoggedIn: boolean;
 }
 
 /**
@@ -38,6 +39,7 @@ export function buildSSRUserState(ssrData: SSRUserData): UserState {
         userId: ssrData.userId,
         userData: {
             id: ssrData.userId,
+            isLoggedIn: ssrData.isLoggedIn,
             wallets: ssrData.wallets,
             preferences: {},
             activity: {

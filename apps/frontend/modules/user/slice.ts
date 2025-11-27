@@ -15,7 +15,9 @@ import {
     unlinkWallet as apiUnlinkWallet,
     setPrimaryWallet as apiSetPrimaryWallet,
     updatePreferences as apiUpdatePreferences,
-    recordActivity as apiRecordActivity
+    recordActivity as apiRecordActivity,
+    loginUser as apiLoginUser,
+    logoutUser as apiLogoutUser
 } from './api';
 
 /**
@@ -260,6 +262,46 @@ export const recordActivityThunk = createAsyncThunk(
     }
 );
 
+/**
+ * Log in a user (set isLoggedIn to true).
+ *
+ * This is a UI/feature gate - it controls what is surfaced to the user,
+ * not their underlying identity. UUID tracking continues regardless.
+ */
+export const loginThunk = createAsyncThunk(
+    'user/login',
+    async (userId: string, { rejectWithValue }) => {
+        try {
+            const userData = await apiLoginUser(userId);
+            return userData;
+        } catch (error) {
+            return rejectWithValue(
+                error instanceof Error ? error.message : 'Failed to log in'
+            );
+        }
+    }
+);
+
+/**
+ * Log out a user (set isLoggedIn to false).
+ *
+ * This is a UI/feature gate - wallets and all other data remain intact.
+ * The user is still tracked by UUID under the hood.
+ */
+export const logoutThunk = createAsyncThunk(
+    'user/logout',
+    async (userId: string, { rejectWithValue }) => {
+        try {
+            const userData = await apiLogoutUser(userId);
+            return userData;
+        } catch (error) {
+            return rejectWithValue(
+                error instanceof Error ? error.message : 'Failed to log out'
+            );
+        }
+    }
+);
+
 // ============================================================================
 // Slice Definition
 // ============================================================================
@@ -465,6 +507,36 @@ const userSlice = createSlice({
             .addCase(recordActivityThunk.rejected, () => {
                 // Silently ignore activity recording failures
             });
+
+        // Login
+        builder
+            .addCase(loginThunk.pending, (state) => {
+                state.status = 'loading';
+                state.error = null;
+            })
+            .addCase(loginThunk.fulfilled, (state, action) => {
+                state.status = 'succeeded';
+                state.userData = action.payload;
+            })
+            .addCase(loginThunk.rejected, (state, action) => {
+                state.status = 'failed';
+                state.error = action.payload as string;
+            });
+
+        // Logout
+        builder
+            .addCase(logoutThunk.pending, (state) => {
+                state.status = 'loading';
+                state.error = null;
+            })
+            .addCase(logoutThunk.fulfilled, (state, action) => {
+                state.status = 'succeeded';
+                state.userData = action.payload;
+            })
+            .addCase(logoutThunk.rejected, (state, action) => {
+                state.status = 'failed';
+                state.error = action.payload as string;
+            });
     }
 });
 
@@ -527,6 +599,15 @@ export const selectUserInitialized = (state: { user: UserState }): boolean =>
  */
 export const selectHasWallets = (state: { user: UserState }): boolean =>
     (state.user.userData?.wallets?.length ?? 0) > 0;
+
+/**
+ * Select whether user is logged in (UI/feature gate).
+ *
+ * When false, frontend shows "Connect" button and hides logged-in features.
+ * UUID tracking continues regardless of this flag.
+ */
+export const selectIsLoggedIn = (state: { user: UserState }): boolean =>
+    state.user.userData?.isLoggedIn ?? false;
 
 // ============================================================================
 // Wallet Connection Selectors

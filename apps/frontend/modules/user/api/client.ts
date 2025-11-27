@@ -149,6 +149,46 @@ export async function recordActivity(userId: string): Promise<void> {
 }
 
 // ============================================================================
+// Login State Functions
+// ============================================================================
+
+/**
+ * Log in a user (set isLoggedIn to true).
+ *
+ * This is a UI/feature gate - it controls what is surfaced to the user,
+ * not their underlying identity. UUID tracking continues regardless.
+ *
+ * @param userId - User UUID
+ * @returns Updated user data
+ */
+export async function loginUser(userId: string): Promise<IUserData> {
+    const response = await apiClient.post(
+        `/user/${userId}/login`,
+        {},
+        { withCredentials: true }
+    );
+    return response.data as IUserData;
+}
+
+/**
+ * Log out a user (set isLoggedIn to false).
+ *
+ * This is a UI/feature gate - wallets and all other data remain intact.
+ * The user is still tracked by UUID under the hood.
+ *
+ * @param userId - User UUID
+ * @returns Updated user data
+ */
+export async function logoutUser(userId: string): Promise<IUserData> {
+    const response = await apiClient.post(
+        `/user/${userId}/logout`,
+        {},
+        { withCredentials: true }
+    );
+    return response.data as IUserData;
+}
+
+// ============================================================================
 // Admin API Functions
 // ============================================================================
 

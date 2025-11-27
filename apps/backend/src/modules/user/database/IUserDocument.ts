@@ -88,6 +88,12 @@ export interface IUserDocument {
     _id: ObjectId;
     /** UUID v4 primary identifier (client-generated, validated on server) */
     id: string;
+    /**
+     * UI/feature gate controlling what is surfaced to the user.
+     * When false, frontend shows "Connect" button and hides logged-in features.
+     * UUID tracking continues regardless of this flag.
+     */
+    isLoggedIn: boolean;
     /** Linked TRON wallet addresses */
     wallets: IWalletLink[];
     /** User preferences (theme, notifications, plugin-specific) */
@@ -141,6 +147,12 @@ export interface ILinkWalletInput {
 export interface IUser {
     /** UUID v4 identifier */
     id: string;
+    /**
+     * UI/feature gate controlling what is surfaced to the user.
+     * When false, frontend shows "Connect" button and hides logged-in features.
+     * UUID tracking continues regardless of this flag.
+     */
+    isLoggedIn: boolean;
     /** Linked wallet addresses */
     wallets: IWalletLink[];
     /** User preferences */

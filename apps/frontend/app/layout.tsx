@@ -119,12 +119,13 @@ async function fetchSSRUserData(): Promise<SSRUserData | null> {
 
     const userData = await getServerUser(userId);
     if (!userData) {
-      return { userId, wallets: [] };
+      return { userId, wallets: [], isLoggedIn: false };
     }
 
     return {
       userId,
-      wallets: userData.wallets || []
+      wallets: userData.wallets || [],
+      isLoggedIn: userData.isLoggedIn ?? false
     };
   } catch {
     return null;

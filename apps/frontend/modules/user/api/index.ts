@@ -11,6 +11,9 @@ export {
     setPrimaryWallet,
     updatePreferences,
     recordActivity,
+    // Login state functions
+    loginUser,
+    logoutUser,
     // Admin API functions
     adminListUsers,
     adminGetUserStats,

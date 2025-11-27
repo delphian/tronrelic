@@ -30,9 +30,12 @@ import {
     setWalletVerified,
     connectWalletThunk,
     linkWalletThunk,
+    loginThunk,
+    logoutThunk,
     selectUserId,
     selectUserInitialized,
     selectWallets,
+    selectIsLoggedIn,
     type WalletConnectionStatus
 } from '../slice';
 import { getTronWeb, getTronLink } from '../lib';
@@ -59,6 +62,9 @@ export function useWallet() {
 
     // Linked wallets from backend (for auto-verify check)
     const linkedWallets = useAppSelector(selectWallets);
+
+    // Login state (UI/feature gate)
+    const isLoggedIn = useAppSelector(selectIsLoggedIn);
 
     const detectionAttempts = useRef(0);
     const linkAttempted = useRef<string | null>(null);
@@ -314,6 +320,49 @@ export function useWallet() {
         return tronWeb.trx.signMessageV2(message);
     }, []);
 
+    /**
+     * Log in the user (set isLoggedIn to true).
+     *
+     * This is a UI/feature gate - it controls what is surfaced to the user,
+     * not their underlying identity. UUID tracking continues regardless.
+     */
+    const login = useCallback(async () => {
+        if (!userId) {
+            console.warn('Cannot login: user not initialized');
+            return;
+        }
+
+        try {
+            await dispatch(loginThunk(userId)).unwrap();
+        } catch (error) {
+            console.error('Login failed:', error);
+            throw error;
+        }
+    }, [dispatch, userId]);
+
+    /**
+     * Log out the user (set isLoggedIn to false).
+     *
+     * This is a UI/feature gate - wallets and all other data remain intact.
+     * Also disconnects from TronLink session.
+     */
+    const logout = useCallback(async () => {
+        if (!userId) {
+            console.warn('Cannot logout: user not initialized');
+            return;
+        }
+
+        try {
+            await dispatch(logoutThunk(userId)).unwrap();
+            // Also disconnect TronLink session
+            linkAttempted.current = null;
+            dispatch(resetWalletConnection());
+        } catch (error) {
+            console.error('Logout failed:', error);
+            throw error;
+        }
+    }, [dispatch, userId]);
+
     return {
         // State
         connectedAddress,
@@ -322,6 +371,7 @@ export function useWallet() {
         connectionError,
         walletVerified,
         isConnected: connectionStatus === 'connected' && connectedAddress !== null,
+        isLoggedIn,
 
         // Aliases for backwards compatibility
         address: connectedAddress,
@@ -333,6 +383,8 @@ export function useWallet() {
         connect,
         disconnect,
         signMessage,
-        setStatus
+        setStatus,
+        login,
+        logout
     } as const;
 }
