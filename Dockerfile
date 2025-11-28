@@ -63,25 +63,31 @@ RUN npm run build:plugin-frontends
 FROM node:20-slim AS backend
 WORKDIR /app
 
-# Install system dependencies for Playwright browsers
+# Install system dependencies for Playwright browsers (from npx playwright install-deps)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libnss3 \
-    libnspr4 \
-    libdbus-1-3 \
-    libatk1.0-0 \
+    ca-certificates \
+    libasound2 \
     libatk-bridge2.0-0 \
-    libcups2 \
-    libdrm2 \
-    libxkbcommon0 \
+    libatk1.0-0 \
     libatspi2.0-0 \
+    libcairo2 \
+    libcups2 \
+    libdbus-1-3 \
+    libdrm2 \
+    libgbm1 \
+    libglib2.0-0 \
+    libnspr4 \
+    libnss3 \
+    libpango-1.0-0 \
+    libx11-6 \
+    libxcb1 \
     libxcomposite1 \
     libxdamage1 \
+    libxext6 \
     libxfixes3 \
+    libxkbcommon0 \
     libxrandr2 \
-    libgbm1 \
-    libasound2 \
-    libpango-1.0-0 \
-    libcairo2 \
+    fonts-liberation \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy package files
