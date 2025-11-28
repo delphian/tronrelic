@@ -3,19 +3,18 @@
 /**
  * WalletButton Component
  *
- * Self-contained wallet connection button with login state display.
- * Shows different states based on login status:
- * - Logged out: "Connect" button with TronLink styling
- * - Logged in: Wallet address with logout on click
+ * Self-contained wallet connection button with two-step linking flow.
+ * Shows different states based on connection and verification status:
  *
- * When user clicks Connect, TronLink connects and login is called automatically.
- * When user clicks their address (logged in), logout is called and TronLink disconnects.
+ * 1. **Logged out**: "Connect" button - triggers TronLink account access
+ * 2. **Logged in, unverified**: Address with warning icon - click to verify via signature
+ * 3. **Logged in, verified**: Address - click to logout
  *
  * Note: isLoggedIn is a UI/feature gate - UUID tracking always continues.
  */
 
 import { useEffect, useCallback, useState } from 'react';
-import { AlertCircle, Wallet, Loader2 } from 'lucide-react';
+import { AlertCircle, Loader2, ShieldCheck } from 'lucide-react';
 import { Button } from '../../../../components/ui/Button';
 import { useToast } from '../../../../components/ui/ToastProvider';
 import { useWallet } from '../../hooks/useWallet';
@@ -36,6 +35,7 @@ export function WalletButton() {
     const {
         address,
         connect,
+        verify,
         login,
         logout,
         connectionError,
@@ -46,6 +46,7 @@ export function WalletButton() {
     const { push } = useToast();
     const [isLoggingIn, setIsLoggingIn] = useState(false);
     const [isLoggingOut, setIsLoggingOut] = useState(false);
+    const [isVerifying, setIsVerifying] = useState(false);
 
     // Display connection errors via toast
     useEffect(() => {
@@ -81,6 +82,36 @@ export function WalletButton() {
     }, [connect, login]);
 
     /**
+     * Handle verify button click.
+     * Ensures TronLink is connected, then requests signature.
+     *
+     * SSR hydrates wallet addresses from the database, but TronLink may not
+     * be connected yet. We must call connect() first to access the signing API.
+     * For whitelisted sites, connect() returns silently (no popup).
+     */
+    const handleVerify = useCallback(async () => {
+        setIsVerifying(true);
+        try {
+            await connect();
+            await verify();
+            push({
+                tone: 'success',
+                title: 'Wallet Verified',
+                description: 'Your wallet has been verified successfully.'
+            });
+        } catch (error) {
+            console.error('Verify failed:', error);
+            push({
+                tone: 'warning',
+                title: 'Verification Failed',
+                description: 'Unable to verify wallet. Please try again.'
+            });
+        } finally {
+            setIsVerifying(false);
+        }
+    }, [connect, verify, push]);
+
+    /**
      * Handle logout button click.
      * Logs out (sets isLoggedIn=false) and disconnects TronLink session.
      */
@@ -100,28 +131,50 @@ export function WalletButton() {
         }
     }, [logout, push]);
 
-    // Logged in state - show address with logout on click
-    if (isLoggedIn && address) {
-        const buttonClasses = [styles.connected_btn];
-        if (!walletVerified) buttonClasses.push(styles.unverified);
+    // Logged in, unverified state - show address with verify on click
+    if (isLoggedIn && address && !walletVerified) {
+        return (
+            <Button
+                variant="secondary"
+                size="sm"
+                onClick={handleVerify}
+                disabled={isVerifying}
+                className={`${styles.connected_btn} ${styles.unverified}`}
+                title="Click to verify wallet ownership"
+            >
+                {isVerifying ? (
+                    <Loader2 size={14} className={styles.spinner} />
+                ) : (
+                    <AlertCircle
+                        size={14}
+                        className={styles.unverified_icon}
+                        aria-label="Click to verify wallet"
+                    />
+                )}
+                {truncateWallet(address)}
+            </Button>
+        );
+    }
 
+    // Logged in, verified state - show address with logout on click
+    if (isLoggedIn && address) {
         return (
             <Button
                 variant="secondary"
                 size="sm"
                 onClick={handleLogout}
                 disabled={isLoggingOut}
-                className={buttonClasses.join(' ')}
+                className={styles.connected_btn}
             >
                 {isLoggingOut ? (
                     <Loader2 size={14} className={styles.spinner} />
-                ) : !walletVerified ? (
-                    <AlertCircle
+                ) : (
+                    <ShieldCheck
                         size={14}
-                        className={styles.unverified_icon}
-                        aria-label="Wallet not verified"
+                        className={styles.verified_icon}
+                        aria-label="Wallet verified"
                     />
-                ) : null}
+                )}
                 {truncateWallet(address)}
             </Button>
         );
@@ -140,19 +193,13 @@ export function WalletButton() {
             {isConnecting ? (
                 <Loader2 size={18} className={styles.spinner} />
             ) : (
-                <>
-                    <span className={styles.wallet_icon}>
-                        <Wallet size={18} />
-                    </span>
-                    <img
-                        src="/images/tronlink/tronlink-64x64.jpg"
-                        alt="TronLink"
-                        className={styles.wallet_icon_mobile}
-                    />
-                </>
+                <img
+                    src="/images/tronlink/tronlink-64x64.jpg"
+                    alt="TronLink"
+                    className={styles.wallet_icon}
+                />
             )}
-            <span className={styles.connect_text_full}>Connect Wallet</span>
-            <span className={styles.connect_text_short}>Connect</span>
+            Connect
         </button>
     );
 }

@@ -3,22 +3,22 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 40px;
-    height: 40px;
+    width: var(--icon-button-size-md);
+    height: var(--icon-button-size-md);
     padding: 0;
-    background: transparent;
-    border: var(--border-width-thin) solid var(--color-border);
-    border-radius: var(--radius-md);
-    color: var(--color-text-muted);
+    background: var(--icon-button-background);
+    border: var(--icon-button-border);
+    border-radius: var(--icon-button-border-radius);
+    color: var(--icon-button-color);
     cursor: pointer;
     transition: var(--transition-base);
     transition-property: background-color, border-color, color, transform;
 }
 
 .toggle:hover {
-    background: var(--color-surface-elevated);
-    border-color: var(--color-border-strong);
-    color: var(--color-text);
+    background: var(--icon-button-background-hover);
+    border: var(--icon-button-border-hover);
+    color: var(--icon-button-color-hover);
 }
 
 .toggle:active {
@@ -31,18 +31,18 @@
 }
 
 .icon {
-    width: 20px;
-    height: 20px;
+    width: var(--icon-size-md);
+    height: var(--icon-size-md);
 }
 
-.activeIndicator {
+.active_indicator {
     position: absolute;
-    top: 6px;
-    right: 6px;
-    width: 8px;
-    height: 8px;
+    top: var(--spacing-2);
+    right: var(--spacing-2);
+    width: var(--spacing-3);
+    height: var(--spacing-3);
     background: var(--color-primary);
-    border-radius: 50%;
+    border-radius: var(--radius-full);
     animation: pulse 2s ease-in-out infinite;
 }
 

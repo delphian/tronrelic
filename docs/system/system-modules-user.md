@@ -475,6 +475,28 @@ HTTP status code `429` is returned when rate limit is exceeded.
 
 **Admin bypass** - Admin endpoints can access any user data without cookie validation. Protect the `ADMIN_API_TOKEN` carefully.
 
+### Wallet Verification Trust Model
+
+Wallet linking follows a two-step flow where only the signature provides cryptographic proof of ownership:
+
+| Step | Action | Trust Level | What It Proves |
+|------|--------|-------------|----------------|
+| **Connect** | `tron_requestAccounts` | Unverified claim | User claims this address (no cryptographic proof) |
+| **Verify** | `signMessageV2` | Verified ownership | User controls the private key (cryptographic proof) |
+
+**Why unverified wallets are stored:**
+
+An unverified wallet address is semantically equivalent to an address obtained from TronLink's `tron_requestAccounts`—both are unverified claims without cryptographic proof. The `tron_requestAccounts` call is a technical prerequisite to access TronLink's signing API, not a security step. The signature is the only trust boundary.
+
+**UX principle: No popup before button click.**
+
+TronLink prompts only appear after explicit user action:
+
+1. User clicks "Connect" → TronLink prompts for account access → wallet stored as unverified
+2. User clicks to verify → TronLink prompts for signature → wallet marked verified
+
+SSR hydrates linked wallet addresses for display, but no TronLink API calls occur on page load. When the user clicks to verify an SSR-hydrated wallet, `connect()` is called first to ensure TronLink's signing API is accessible, then `verify()` requests the signature. For whitelisted sites, `connect()` returns silently (no popup). For non-whitelisted browsers/devices, both prompts appear sequentially after the single button click.
+
 ## REST API Reference
 
 ### Public Endpoints

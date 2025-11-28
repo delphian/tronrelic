@@ -1,21 +1,29 @@
 'use client';
 
 /**
- * TronLink wallet connection hook with auto-link to User Module.
+ * TronLink wallet connection hook with two-step linking to User Module.
  *
  * Provides wallet connection functionality via TronLink browser extension.
- * When a user connects their wallet, it is automatically linked to their
- * User Module identity in the backend.
+ * Wallet linking is a two-step process requiring explicit user action:
+ *
+ * 1. **Connect** - User clicks connect, TronLink prompts for account access,
+ *    wallet is stored as unverified in backend.
+ * 2. **Verify** - User clicks verify, TronLink prompts for signature,
+ *    wallet is marked as verified in backend.
  *
  * @example
  * ```tsx
- * const { connectedAddress, connect, disconnect, isConnected } = useWallet();
+ * const { connectedAddress, connect, verify, disconnect, isConnected, isVerified } = useWallet();
  *
- * return isConnected ? (
- *   <button onClick={disconnect}>{connectedAddress}</button>
- * ) : (
- *   <button onClick={connect}>Connect Wallet</button>
- * );
+ * if (!isConnected) {
+ *   return <button onClick={connect}>Connect Wallet</button>;
+ * }
+ *
+ * if (!isVerified) {
+ *   return <button onClick={verify}>Verify Wallet</button>;
+ * }
+ *
+ * return <button onClick={disconnect}>{connectedAddress}</button>;
  * ```
  */
 
@@ -70,7 +78,11 @@ export function useWallet() {
     const linkAttempted = useRef<string | null>(null);
 
     /**
-     * Detect TronLink provider and auto-connect if already authorized.
+     * Detect TronLink provider availability.
+     *
+     * Only checks if TronLink extension is installed, does NOT read wallet
+     * address or establish connection. Address reading happens exclusively
+     * in connect() when user clicks the connect button.
      */
     const detectProvider = useCallback(() => {
         if (typeof window === 'undefined') {
@@ -84,14 +96,7 @@ export function useWallet() {
         if (detected !== providerDetected) {
             dispatch(setProviderDetected(detected));
         }
-
-        // Auto-connect if TronLink is ready with an address
-        const address = tronLink?.tronWeb?.defaultAddress?.base58 ?? tronWeb?.defaultAddress?.base58;
-        if (address && address !== connectedAddress) {
-            dispatch(setConnectedAddress(address));
-            dispatch(setConnectionStatus('connected'));
-        }
-    }, [dispatch, connectedAddress, providerDetected]);
+    }, [dispatch, providerDetected]);
 
     /**
      * Poll for TronLink provider on mount.
@@ -117,17 +122,17 @@ export function useWallet() {
     }, [detectProvider, dispatch, connectedAddress, providerDetected]);
 
     /**
-     * Auto-link wallet to User Module when connected.
+     * Auto-link wallet to User Module when connected (step 1 only).
      *
-     * Two-step flow:
-     * 1. Connect: Store wallet as unverified in backend
-     * 2. Verify: Request signature and update to verified
+     * This only stores the wallet as unverified. Verification requires
+     * explicit user action via the verify() function.
      */
     useEffect(() => {
         // Only attempt link when:
         // 1. User is initialized (has userId)
         // 2. Wallet is connected
         // 3. We haven't already attempted to link this address
+        // 4. Wallet is not already linked (prevents SSR hydration triggering)
         if (!userInitialized || !userId || !connectedAddress) {
             return;
         }
@@ -136,56 +141,31 @@ export function useWallet() {
             return;
         }
 
+        // Skip if wallet is already linked (from SSR hydration or previous session)
+        const alreadyLinked = linkedWallets.some(w => w.address === connectedAddress);
+        if (alreadyLinked) {
+            return;
+        }
+
         linkAttempted.current = connectedAddress;
 
-        // Two-step wallet linking flow
-        const linkWallet = async () => {
-            // Step 1: Connect wallet (stores as unverified)
+        // Step 1 only: Connect wallet (stores as unverified)
+        const connectWallet = async () => {
             try {
                 await dispatch(connectWalletThunk({
                     userId,
                     address: connectedAddress
                 })).unwrap();
-                console.log(`Wallet ${connectedAddress} connected to user ${userId}`);
+                dispatch(setWalletVerified(false));
+                console.log(`Wallet ${connectedAddress} connected to user ${userId} (unverified)`);
             } catch (error) {
-                // Connection failed - could be invalid address or already linked to another user
                 console.warn('Failed to connect wallet:', error);
                 dispatch(setWalletVerified(false));
-                return;
-            }
-
-            // Step 2: Attempt verification (optional - user can reject)
-            try {
-                const tronWeb = getTronWeb();
-                if (!tronWeb?.trx?.signMessageV2) {
-                    console.warn('TronLink signature capability not available for verification');
-                    dispatch(setWalletVerified(false));
-                    return;
-                }
-
-                const timestamp = Date.now();
-                const message = `Link wallet ${connectedAddress} to TronRelic identity ${userId} at ${timestamp}`;
-                const signature = await tronWeb.trx.signMessageV2(message);
-
-                await dispatch(linkWalletThunk({
-                    userId,
-                    address: connectedAddress,
-                    message,
-                    signature,
-                    timestamp
-                })).unwrap();
-
-                dispatch(setWalletVerified(true));
-                console.log(`Wallet ${connectedAddress} verified and linked to user ${userId}`);
-            } catch (error) {
-                // Verification failed - wallet remains connected but unverified
-                dispatch(setWalletVerified(false));
-                console.warn('Wallet connected but not verified:', error);
             }
         };
 
-        linkWallet();
-    }, [dispatch, userId, userInitialized, connectedAddress]);
+        connectWallet();
+    }, [dispatch, userId, userInitialized, connectedAddress, linkedWallets]);
 
     /**
      * Auto-set verification status based on backend wallet state.
@@ -304,6 +284,52 @@ export function useWallet() {
     }, [dispatch]);
 
     /**
+     * Verify wallet ownership via TronLink signature (step 2).
+     *
+     * Requires wallet to be connected first. Prompts user to sign
+     * a message in TronLink to prove wallet ownership.
+     */
+    const verify = useCallback(async () => {
+        if (!userId || !connectedAddress) {
+            console.warn('Cannot verify: no user or wallet connected');
+            return;
+        }
+
+        const tronWeb = getTronWeb();
+        if (!tronWeb?.trx?.signMessageV2) {
+            dispatch(setConnectionError('TronLink signature capability not available.'));
+            return;
+        }
+
+        try {
+            setStatus('connecting');
+
+            const timestamp = Date.now();
+            const message = `Link wallet ${connectedAddress} to TronRelic identity ${userId} at ${timestamp}`;
+            const signature = await tronWeb.trx.signMessageV2(message);
+
+            await dispatch(linkWalletThunk({
+                userId,
+                address: connectedAddress,
+                message,
+                signature,
+                timestamp
+            })).unwrap();
+
+            dispatch(setWalletVerified(true));
+            setStatus('connected');
+            console.log(`Wallet ${connectedAddress} verified for user ${userId}`);
+        } catch (error) {
+            setStatus('connected');
+            const message = error instanceof Error
+                ? error.message
+                : 'Failed to verify wallet.';
+            dispatch(setConnectionError(message));
+            console.warn('Wallet verification failed:', error);
+        }
+    }, [dispatch, userId, connectedAddress, setStatus]);
+
+    /**
      * Sign a message using TronLink.
      * Used for wallet-verified actions.
      */
@@ -381,6 +407,7 @@ export function useWallet() {
 
         // Actions
         connect,
+        verify,
         disconnect,
         signMessage,
         setStatus,

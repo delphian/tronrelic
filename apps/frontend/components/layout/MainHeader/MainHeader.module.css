@@ -26,7 +26,6 @@
 }
 
 .nav_section {
-    margin-left: auto;
     flex: 1 1 auto; /* Grow to fill available space, shrink as needed */
     min-width: 40px; /* Reserve space for hamburger button */
     display: flex;
@@ -35,12 +34,10 @@
 
 /* Header Controls Container - establishes container context for child components */
 .controls {
-    container-type: inline-size;
-    container-name: header-controls;
     display: flex;
     align-items: center;
     gap: var(--spacing-5);
-    flex-shrink: 0;
+    flex: 0 0 auto; /* Don't grow, don't shrink, size to content */
 }
 
 /**
@@ -59,10 +56,5 @@
 @media (max-width: 768px) {
     .container {
         padding: var(--spacing-10) var(--spacing-9) 0;
-    }
-
-    /* Constrain controls width to trigger child container queries */
-    .controls {
-        max-width: 180px;
     }
 }
