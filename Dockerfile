@@ -59,11 +59,36 @@ RUN npm run build:plugin-frontends
 # ============================================
 # Stage 3: Backend Production Image
 # ============================================
-FROM node:20-alpine AS backend
+# Use Debian-slim instead of Alpine for Playwright browser support
+FROM node:20-slim AS backend
 WORKDIR /app
 
-# Install runtime dependencies only
-RUN apk add --no-cache libc6-compat
+# Install system dependencies for Playwright browsers (from npx playwright install-deps)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    libasound2 \
+    libatk-bridge2.0-0 \
+    libatk1.0-0 \
+    libatspi2.0-0 \
+    libcairo2 \
+    libcups2 \
+    libdbus-1-3 \
+    libdrm2 \
+    libgbm1 \
+    libglib2.0-0 \
+    libnspr4 \
+    libnss3 \
+    libpango-1.0-0 \
+    libx11-6 \
+    libxcb1 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxext6 \
+    libxfixes3 \
+    libxkbcommon0 \
+    libxrandr2 \
+    fonts-liberation \
+    && rm -rf /var/lib/apt/lists/*
 
 # Copy package files
 COPY package.json ./
@@ -75,6 +100,9 @@ COPY apps/backend/package.json ./apps/backend/
 
 # Install ALL dependencies (needed for building)
 RUN npm ci
+
+# Install Playwright browsers (required for market fetchers using Playwright)
+RUN npx playwright install chromium
 
 # Copy built artifacts and source from shared builder stage
 # Note: TypeScript project references with "composite": true need source files
