@@ -7,9 +7,6 @@ export function accountsRouter() {
   const controller = new AccountController(getRedisClient());
 
   router.get('/snapshot', controller.snapshot);
-  router.get('/bookmarks', controller.listBookmarks);
-  router.post('/bookmarks', controller.upsertBookmark);
-  router.delete('/bookmarks', controller.deleteBookmark);
 
   return router;
 }

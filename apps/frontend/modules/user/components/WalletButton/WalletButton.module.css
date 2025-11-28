@@ -1,0 +1,113 @@
+/**
+ * WalletButton Component CSS Module
+ *
+ * Styles for the wallet connection button with verification status.
+ * Includes connect button styling and unverified state indicators.
+ * Uses container queries for responsive behavior - responds to parent container.
+ */
+
+/**
+ * Connect Wallet Button - Premium Design
+ *
+ * Enhanced wallet connection button with strong visual hierarchy.
+ * Features theme-aware gradient, prominent icon, and clear states.
+ */
+.connect_btn {
+    position: relative;
+    background: linear-gradient(135deg, var(--color-primary-alpha-30), var(--color-primary-alpha-18));
+    border: var(--border-width-medium) solid var(--color-primary);
+    color: var(--color-text);
+    font-weight: var(--font-weight-semibold);
+    font-size: var(--font-size-base);
+    padding: var(--spacing-3) var(--spacing-9) var(--spacing-3) var(--spacing-8);
+    border-radius: var(--radius-full);
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacing-5);
+    cursor: pointer;
+    transition: all var(--transition-base);
+    box-shadow: var(--button-primary-shadow);
+    backdrop-filter: blur(var(--spacing-7));
+    white-space: nowrap;
+}
+
+.connect_btn:hover {
+    border-color: var(--color-primary-strong);
+    box-shadow: var(--button-primary-shadow-hover);
+    transform: translateY(-1px);
+}
+
+.connect_btn:focus-visible {
+    outline: var(--focus-outline-width) solid var(--focus-outline-color);
+    outline-offset: var(--focus-outline-offset);
+    box-shadow: var(--focus-shadow);
+}
+
+.connect_btn:disabled {
+    opacity: var(--opacity-50);
+    cursor: wait;
+}
+
+/**
+ * Wallet Icon Styling
+ *
+ * TronLink logo with subtle glow effect and minimal border treatment.
+ */
+.wallet_icon {
+    width: var(--icon-size-sm);
+    height: var(--icon-size-sm);
+    border-radius: var(--radius-xs);
+    border: var(--border-width-thin) solid var(--color-border);
+    filter: drop-shadow(0 0 var(--spacing-4) var(--color-primary-alpha-38));
+}
+
+/**
+ * Connected Wallet Button
+ *
+ * Ensures wallet address never wraps to multiple lines.
+ */
+.connected_btn {
+    white-space: nowrap;
+}
+
+/**
+ * Unverified Wallet Indicator
+ *
+ * Warning icon shown when wallet is connected but not cryptographically verified.
+ */
+.unverified_icon {
+    color: var(--color-warning);
+    flex-shrink: 0;
+    margin-right: var(--spacing-2);
+}
+
+/**
+ * Verified Wallet Indicator
+ *
+ * Security icon shown when wallet ownership is cryptographically verified.
+ */
+.verified_icon {
+    color: var(--color-success);
+    flex-shrink: 0;
+    margin-right: var(--spacing-2);
+}
+
+/**
+ * Loading Spinner
+ *
+ * Animated spinner for loading states during connect/logout.
+ */
+.spinner {
+    animation: spin 1s linear infinite;
+    flex-shrink: 0;
+}
+
+@keyframes spin {
+    from {
+        transform: rotate(0deg);
+    }
+    to {
+        transform: rotate(360deg);
+    }
+}
+

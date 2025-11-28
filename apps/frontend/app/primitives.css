@@ -93,6 +93,7 @@
     --shadow-lg: 0 28px 48px rgba(5, 12, 28, 0.55);
 
     /* Border Radius Tokens */
+    --radius-xs: 4px;       /* Minimal rounding for small elements */
     --radius-sm: 10px;
     --radius-md: 16px;
     --radius-lg: 24px;

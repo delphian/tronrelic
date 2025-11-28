@@ -174,7 +174,7 @@ export function ThemeToggle() {
                         title={`${theme.name}${isActive ? ' (Active)' : ''}`}
                     >
                         <IconComponent className={styles.icon} />
-                        {isActive && <span className={styles.activeIndicator} />}
+                        {isActive && <span className={styles.active_indicator} />}
                     </button>
                 );
             })}

@@ -5,9 +5,10 @@ import { getServerConfig, type RuntimeConfig } from '../lib/serverConfig';
 import { getServerSideApiUrl } from '../lib/api-url';
 import { buildMetadata, SITE_NAME } from '../lib/seo';
 import './globals.css';
-import { Providers } from './providers';
+import { Providers, type SSRUserData } from './providers';
 import { MainHeader } from '../components/layout/MainHeader';
 import { BlockTicker } from '../components/layout/BlockTicker';
+import { getServerUserId, getServerUser } from '../modules/user/lib/server';
 
 /**
  * Ordered theme for SSR injection.
@@ -101,12 +102,45 @@ export async function generateMetadata(): Promise<Metadata> {
   };
 }
 
+/**
+ * Fetch user data during SSR to prevent wallet button flash.
+ *
+ * If user has identity cookie, fetches their data including linked wallets.
+ * This allows the wallet button to render correctly on first paint.
+ *
+ * @returns SSR user data or null if no identity
+ */
+async function fetchSSRUserData(): Promise<SSRUserData | null> {
+  try {
+    const userId = await getServerUserId();
+    if (!userId) {
+      return null;
+    }
+
+    const userData = await getServerUser(userId);
+    if (!userData) {
+      return { userId, wallets: [], isLoggedIn: false };
+    }
+
+    return {
+      userId,
+      wallets: userData.wallets || [],
+      isLoggedIn: userData.isLoggedIn ?? false
+    };
+  } catch {
+    return null;
+  }
+}
+
 export default async function RootLayout({ children }: { children: ReactNode }) {
   // Fetch runtime configuration from backend (cached after first call)
   const runtimeConfig = await getServerConfig();
 
   // Fetch active themes for SSR injection (uses internal Docker URL)
   const activeThemes = await fetchActiveThemes();
+
+  // Fetch user data for SSR (prevents wallet button flash)
+  const ssrUserData = await fetchSSRUserData();
 
   // Read theme preference from cookie for SSR (prevents flash)
   const cookieStore = await cookies();
@@ -140,7 +174,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
         ))}
       </head>
       <body>
-        <Providers>
+        <Providers ssrUserData={ssrUserData}>
           <MainHeader />
           <BlockTicker />
           <main>

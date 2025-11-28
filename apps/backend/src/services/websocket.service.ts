@@ -173,6 +173,16 @@ export class WebSocketService implements IWebSocketService {
       }
     }
 
+    // Handle user identity subscriptions
+    if (payload.user?.userId) {
+      const userId = payload.user.userId.trim();
+      if (userId) {
+        const userRoom = `user:${userId}`;
+        socket.join(userRoom);
+        logger.debug({ socketId: socket.id, userRoom }, 'User identity subscription registered');
+      }
+    }
+
     // Handle plugin subscriptions (legacy object format)
     const registry = PluginWebSocketRegistry.getInstance();
     const pluginIds = registry.getAllPluginIds();
@@ -316,5 +326,30 @@ export class WebSocketService implements IWebSocketService {
 
     const room = `notifications:${walletId}`;
     this.io.to(room).emit(event.event, event.payload);
+  }
+
+  /**
+   * Emit an event to a specific user identity room.
+   *
+   * Used to push user updates (wallet linking, preferences changes) to connected clients.
+   *
+   * @param userId - User UUID to emit to
+   * @param event - Event object with event name and payload
+   */
+  public emitToUser(userId: string, event: { event: string; payload: any }) {
+    if (!this.io) {
+      logger.warn('Attempted to emit user event without WebSocket initialization');
+      return;
+    }
+
+    const id = userId.trim();
+    if (!id) {
+      logger.warn({ event: event.event }, 'Cannot emit user event without user id');
+      return;
+    }
+
+    const room = `user:${id}`;
+    this.io.to(room).emit(event.event, event.payload);
+    logger.debug({ userId, event: event.event }, 'User event emitted');
   }
 }

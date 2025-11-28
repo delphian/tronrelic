@@ -6,6 +6,7 @@ import { getSocket, disconnectSocket } from '../../lib/socketClient';
 import { useAppDispatch, useAppSelector } from '../../store/hooks';
 import { prependMemo } from '../../store/slices/memoSlice';
 import { blockReceived } from '../../features/blockchain/slice';
+import { setUserData, selectUserId } from '../../modules/user';
 import {
   connectionConnecting,
   connectionEstablished,
@@ -21,6 +22,7 @@ import type {
   MemoUpdatePayload,
   SocketSubscriptions
 } from '@tronrelic/shared';
+import type { IUserData } from '../../modules/user';
 
 export function SocketBridge() {
   const dispatch = useAppDispatch();
@@ -32,11 +34,14 @@ export function SocketBridge() {
   const desiredRef = useRef<SocketSubscriptions | null>(null);
   const commentThreadsRef = useRef<string[]>([]);
   const commentThreadSetRef = useRef<Set<string>>(new Set());
+  const userIdRef = useRef<string | null>(null);
+  const userSubscribedRef = useRef(false);
 
   const desired = useAppSelector(state => state.realtime.desired);
   const pending = useAppSelector(state => state.realtime.pending);
   const connectionStatus = useAppSelector(state => state.realtime.connection.status);
   const commentThreads = useAppSelector(state => state.realtime.subscriptions.commentThreads);
+  const userId = useAppSelector(selectUserId);
 
   useEffect(() => {
     desiredRef.current = desired ?? null;
@@ -45,6 +50,10 @@ export function SocketBridge() {
   useEffect(() => {
     commentThreadsRef.current = commentThreads;
   }, [commentThreads]);
+
+  useEffect(() => {
+    userIdRef.current = userId;
+  }, [userId]);
 
   useEffect(() => {
     const socket = getSocket();
@@ -135,6 +144,10 @@ export function SocketBridge() {
       dispatch(blockReceived(payload));
     };
 
+    const handleUserUpdate = (payload: IUserData) => {
+      dispatch(setUserData(payload));
+    };
+
     const handleVisibility = () => {
       if (document.visibilityState === 'visible' && !socket.connected && !manualDisconnectRef.current) {
         scheduleReconnect(true);
@@ -157,6 +170,7 @@ export function SocketBridge() {
     socket.on('pong', handlePong);
     socket.on('memo:new', handleMemoUpdate);
     socket.on('block:new', handleBlockUpdate);
+    socket.on('user:update', handleUserUpdate);
 
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
@@ -171,6 +185,7 @@ export function SocketBridge() {
       clearReconnectTimer();
       socket.off('memo:new', handleMemoUpdate);
       socket.off('block:new', handleBlockUpdate);
+      socket.off('user:update', handleUserUpdate);
       socket.off('connect', handleConnect);
       socket.off('disconnect', handleDisconnect);
       socket.off('connect_error', handleConnectError);
@@ -214,6 +229,22 @@ export function SocketBridge() {
 
     commentThreadSetRef.current = next;
   }, [commentThreads, connectionStatus]);
+
+  // Subscribe to user identity events when userId is available
+  useEffect(() => {
+    const socket = socketRef.current;
+    if (!socket || !socket.connected || !userId) {
+      return;
+    }
+
+    // Only subscribe once per user
+    if (userSubscribedRef.current && userIdRef.current === userId) {
+      return;
+    }
+
+    socket.emit('subscribe', { user: { userId } });
+    userSubscribedRef.current = true;
+  }, [userId, connectionStatus]);
 
   return null;
 }

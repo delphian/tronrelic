@@ -74,6 +74,28 @@
     --button-disabled-opacity: var(--opacity-55);
 
     /* ========================================================================
+     * ICON BUTTON COMPONENT TOKENS
+     * Square buttons containing only an icon (e.g., theme toggle, close buttons)
+     * ======================================================================== */
+
+    /* Icon Button - Padding around icon */
+    --icon-button-padding: var(--spacing-4);
+
+    /* Icon Button - Size Variants (icon + padding on both sides) */
+    --icon-button-size-sm: calc(var(--icon-size-sm) + var(--icon-button-padding) * 2);
+    --icon-button-size-md: calc(var(--icon-size-md) + var(--icon-button-padding) * 2);
+    --icon-button-size-lg: calc(var(--icon-size-lg) + var(--icon-button-padding) * 2);
+
+    /* Icon Button - Appearance */
+    --icon-button-background: transparent;
+    --icon-button-background-hover: var(--color-surface-elevated);
+    --icon-button-border: var(--border-width-thin) solid var(--color-border);
+    --icon-button-border-hover: var(--border-width-thin) solid var(--color-border-strong);
+    --icon-button-border-radius: var(--radius-md);
+    --icon-button-color: var(--color-text-muted);
+    --icon-button-color-hover: var(--color-text);
+
+    /* ========================================================================
      * CARD COMPONENT TOKENS
      * ======================================================================== */
 

@@ -26,123 +26,18 @@
 }
 
 .nav_section {
-    margin-left: auto;
     flex: 1 1 auto; /* Grow to fill available space, shrink as needed */
     min-width: 40px; /* Reserve space for hamburger button */
     display: flex;
     justify-content: flex-end; /* Right-align contents (hamburger button) */
 }
 
-/* Wallet Container and Controls */
+/* Header Controls Container - establishes container context for child components */
 .controls {
     display: flex;
     align-items: center;
     gap: var(--spacing-5);
-    flex-shrink: 0;
-}
-
-/**
- * Connect Wallet Button - Premium Design
- *
- * Enhanced wallet connection button with strong visual hierarchy and premium
- * appearance. Features a bold gradient, prominent icon treatment, and clear
- * disabled state communication. The design balances trust and modernity while
- * integrating a subtle "Coming Soon" indicator that doesn't overwhelm the CTA.
- *
- * Design decisions:
- * - Theme-aware gradient using primary color for consistency
- * - Larger icon with glow effect for immediate recognition
- * - Bold border to define button boundaries clearly
- * - Prominent shadow for elevation and importance
- * - Grayscale treatment for disabled state clarity
- */
-.connect_wallet_btn {
-    position: relative;
-    background: linear-gradient(135deg, var(--color-primary-alpha-30), var(--color-primary-alpha-18));
-    border: var(--border-width-medium) solid var(--color-primary);
-    color: var(--color-text);
-    font-weight: var(--font-weight-semibold);
-    font-size: var(--font-size-base);
-    padding: var(--spacing-3) var(--spacing-9) var(--spacing-3) var(--spacing-8);
-    border-radius: var(--radius-full);
-    display: inline-flex;
-    align-items: center;
-    gap: var(--spacing-5);
-    cursor: not-allowed;
-    transition: all var(--transition-base);
-    box-shadow: 0 4px 16px var(--color-primary-alpha-30),
-                0 2px 8px rgba(0, 0, 0, 0.3);
-    backdrop-filter: blur(12px);
-    opacity: var(--opacity-70);
-}
-
-.connect_wallet_btn:hover {
-    border-color: var(--color-primary-strong);
-    box-shadow: 0 6px 20px var(--color-primary-alpha-38),
-                0 3px 10px rgba(0, 0, 0, 0.35);
-    transform: translateY(-1px);
-    opacity: var(--opacity-80);
-}
-
-.connect_wallet_btn:focus-visible {
-    outline: var(--focus-outline-width) solid var(--focus-outline-color);
-    outline-offset: var(--focus-outline-offset);
-    box-shadow: var(--focus-shadow),
-                0 6px 20px var(--color-primary-alpha-38);
-    opacity: var(--opacity-85);
-}
-
-/**
- * Wallet Icon Styling
- *
- * Prominent icon treatment with enhanced glow effect to emphasize the wallet
- * connection action. The larger size and stronger shadow make the icon a
- * focal point while maintaining balance with the text.
- */
-.wallet_icon {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--color-primary);
-    filter: drop-shadow(0 0 6px var(--color-primary-alpha-38));
-}
-
-/* Mobile TronLink icon - hidden on desktop */
-.wallet_icon_mobile {
-    display: none;
-    width: var(--icon-size-sm);
-    height: var(--icon-size-sm);
-}
-
-/* Text variants for responsive display */
-.connect_text_short {
-    display: none;
-}
-
-.connect_text_full {
-    display: inline;
-}
-
-/**
- * Coming Soon Badge - Subtle Indicator
- *
- * Refined badge design that communicates feature status without competing
- * with the main button text. Uses muted colors and smaller scale to act as
- * supplementary information rather than primary content.
- */
-.coming_soon_badge {
-    display: inline-flex;
-    align-items: center;
-    padding: var(--spacing-1) var(--spacing-4);
-    background: var(--color-secondary-alpha-15, var(--color-primary-alpha-15));
-    border: var(--border-width-thin) solid var(--color-secondary, var(--color-primary));
-    border-radius: var(--radius-full);
-    font-size: var(--font-size-xs);
-    font-weight: var(--font-weight-bold);
-    letter-spacing: 0.06em;
-    color: var(--color-secondary, var(--color-primary));
-    text-transform: uppercase;
-    margin-left: var(--spacing-3);
+    flex: 0 0 auto; /* Don't grow, don't shrink, size to content */
 }
 
 /**
@@ -161,29 +56,5 @@
 @media (max-width: 768px) {
     .container {
         padding: var(--spacing-10) var(--spacing-9) 0;
-    }
-
-    /* Swap wallet icon for TronLink logo on mobile */
-    .wallet_icon {
-        display: none;
-    }
-
-    .wallet_icon_mobile {
-        display: block;
-    }
-
-    /* Shorten button text on mobile */
-    .connect_text_full {
-        display: none;
-    }
-
-    .connect_text_short {
-        display: inline;
-    }
-
-    /* Compact button padding on mobile */
-    .connect_wallet_btn {
-        padding: var(--spacing-3) var(--spacing-6);
-        font-size: var(--font-size-sm);
     }
 }

@@ -104,43 +104,6 @@ export async function getChatIgnoreList(wallet: string): Promise<string[]> {
   return ignoreList;
 }
 
-export interface BookmarkRecord {
-  ownerWallet: string;
-  targetWallet: string;
-  label?: string | null;
-  createdAt: string;
-  updatedAt: string;
-  _id?: string;
-}
-
-export interface BookmarkMutationPayload {
-  ownerWallet: string;
-  targetWallet: string;
-  label?: string | null;
-  message: string;
-  signature: string;
-}
-
-export async function getWalletBookmarks(wallet: string): Promise<BookmarkRecord[]> {
-  const response = await apiClient.get('/accounts/bookmarks', {
-    params: { wallet }
-  });
-  const { bookmarks } = response.data as { success: boolean; bookmarks: BookmarkRecord[] };
-  return bookmarks;
-}
-
-export async function upsertWalletBookmark(payload: BookmarkMutationPayload): Promise<BookmarkRecord[]> {
-  const response = await apiClient.post('/accounts/bookmarks', payload);
-  const { bookmarks } = response.data as { success: boolean; bookmarks: BookmarkRecord[] };
-  return bookmarks;
-}
-
-export async function deleteWalletBookmark(payload: BookmarkMutationPayload): Promise<BookmarkRecord[]> {
-  const response = await apiClient.delete('/accounts/bookmarks', { data: payload });
-  const { bookmarks } = response.data as { success: boolean; bookmarks: BookmarkRecord[] };
-  return bookmarks;
-}
-
 const adminHeaderKey = 'x-admin-token';
 
 function adminHeaders(token: string) {

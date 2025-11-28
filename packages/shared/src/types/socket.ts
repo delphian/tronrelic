@@ -21,6 +21,9 @@ export interface SocketSubscriptions {
     wallet: string;
     channels?: NotificationChannel[];
   };
+  user?: {
+    userId: string;
+  };
 }
 
 export interface TransactionAlertPayload {
@@ -77,9 +80,36 @@ export interface MemoUpdatePayload {
   };
 }
 
+export interface UserUpdatePayload {
+  event: 'user:update';
+  payload: {
+    id: string;
+    wallets: Array<{
+      address: string;
+      linkedAt: string;
+      isPrimary: boolean;
+      label?: string;
+    }>;
+    preferences: {
+      theme?: 'light' | 'dark' | 'system';
+      notifications?: boolean;
+      timezone?: string;
+      language?: string;
+    };
+    activity: {
+      lastSeen: string;
+      pageViews: number;
+      firstSeen: string;
+    };
+    createdAt: string;
+    updatedAt: string;
+  };
+}
+
 export type TronRelicSocketEvent =
   | TransactionAlertPayload
   | BlockNotificationPayload
   | CommentsUpdatePayload
   | ChatUpdatePayload
-  | MemoUpdatePayload;
+  | MemoUpdatePayload
+  | UserUpdatePayload;

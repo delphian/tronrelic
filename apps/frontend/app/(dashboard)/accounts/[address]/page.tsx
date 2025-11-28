@@ -2,7 +2,6 @@ import type { Metadata } from 'next';
 import type { TronTransactionDocument } from '@tronrelic/shared';
 import { Card } from '../../../../components/ui/Card';
 import { Badge } from '../../../../components/ui/Badge';
-import { BookmarkPanel } from '../../../../features/accounts';
 import { getApiUrl } from '../../../../lib/config';
 
 interface AccountSnapshotSummary {
@@ -100,39 +99,35 @@ export default async function AccountPage({ params }: AccountPageProps): Promise
     <div className="page">
       <section className="page-header">
         <h1 className="page-title">{address}</h1>
-        <p className="page-subtitle">Summary of TRX flows, recent transactions, and quick bookmarking for this wallet.</p>
+        <p className="page-subtitle">Summary of TRX flows and recent transactions for this wallet.</p>
       </section>
-        <div className="grid grid--cols-2" style={{ gap: '2rem' }}>
-          <Card>
-            <header style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap', alignItems: 'baseline' }}>
-              <div>
-                <h2 style={{ margin: 0 }}>Snapshot</h2>
-                <p className="text-subtle" style={{ margin: 0 }}>Aggregated resource posture since first observation.</p>
-              </div>
-              <Badge tone={netFlowTone}>{flowLabel}</Badge>
-            </header>
-            <div className="stat-grid" style={{ marginTop: '1.5rem' }}>
-              <Card tone="muted" padding="sm">
-                <div className="stat-card__label">Total sent</div>
-                <div className="stat-card__value">{snapshot.summary.totalSent.toLocaleString()} TRX</div>
-              </Card>
-              <Card tone="muted" padding="sm">
-                <div className="stat-card__label">Total received</div>
-                <div className="stat-card__value">{snapshot.summary.totalReceived.toLocaleString()} TRX</div>
-              </Card>
-              <Card tone="muted" padding="sm">
-                <div className="stat-card__label">Last active</div>
-                <div className="stat-card__value">{lastActiveText}</div>
-              </Card>
-              <Card tone="muted" padding="sm">
-                <div className="stat-card__label">Transactions tracked</div>
-                <div className="stat-card__value">{totalTransactions.toLocaleString()}</div>
-              </Card>
+        <Card>
+          <header style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap', alignItems: 'baseline' }}>
+            <div>
+              <h2 style={{ margin: 0 }}>Snapshot</h2>
+              <p className="text-subtle" style={{ margin: 0 }}>Aggregated resource posture since first observation.</p>
             </div>
-          </Card>
-
-          <BookmarkPanel targetWallet={address} />
-        </div>
+            <Badge tone={netFlowTone}>{flowLabel}</Badge>
+          </header>
+          <div className="stat-grid" style={{ marginTop: '1.5rem' }}>
+            <Card tone="muted" padding="sm">
+              <div className="stat-card__label">Total sent</div>
+              <div className="stat-card__value">{snapshot.summary.totalSent.toLocaleString()} TRX</div>
+            </Card>
+            <Card tone="muted" padding="sm">
+              <div className="stat-card__label">Total received</div>
+              <div className="stat-card__value">{snapshot.summary.totalReceived.toLocaleString()} TRX</div>
+            </Card>
+            <Card tone="muted" padding="sm">
+              <div className="stat-card__label">Last active</div>
+              <div className="stat-card__value">{lastActiveText}</div>
+            </Card>
+            <Card tone="muted" padding="sm">
+              <div className="stat-card__label">Transactions tracked</div>
+              <div className="stat-card__value">{totalTransactions.toLocaleString()}</div>
+            </Card>
+          </div>
+        </Card>
 
         <div className="grid grid--cols-2" style={{ gap: '2rem', marginTop: '2rem' }}>
           <Card tone="accent" padding="lg" className="stack">

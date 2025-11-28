@@ -14,7 +14,7 @@
     display: flex;
     flex-wrap: wrap;
     gap: var(--spacing-4);
-    width: 100%; /* Fill parent so HamburgerMenu container query works */
+    flex: 1; /* Grow to fill available space (flex-friendly for container queries) */
 }
 
 .tab {

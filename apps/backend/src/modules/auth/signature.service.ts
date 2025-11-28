@@ -15,9 +15,30 @@ export class SignatureService {
     return normalized;
   }
 
-  normalizeAddress(address: string) {
+  /**
+   * Normalize a TRON address to base58 format.
+   *
+   * Accepts both hex (41-prefixed) and base58 (T-prefixed) addresses.
+   *
+   * @param address - TRON address in hex or base58 format
+   * @returns Base58 encoded address
+   * @throws ValidationError if address format is invalid
+   */
+  normalizeAddress(address: string): string {
     try {
-      return tronWeb.utils.crypto.getBase58CheckAddress(address);
+      // Already base58 format (starts with T)
+      if (address.startsWith('T') && address.length === 34) {
+        // Validate it's a real address by round-tripping
+        const hex = tronWeb.address.toHex(address);
+        return tronWeb.address.fromHex(hex);
+      }
+
+      // Hex format (starts with 41 or 0x41)
+      if (address.startsWith('41') || address.startsWith('0x41')) {
+        return tronWeb.address.fromHex(address);
+      }
+
+      throw new Error('Unrecognized address format');
     } catch (error) {
       throw new ValidationError('Invalid TRON address provided', { address, error });
     }
