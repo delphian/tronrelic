@@ -1,3 +1,17 @@
+/**
+ * @fileoverview Application entry point with two-phase lifecycle.
+ *
+ * Orchestrates startup using a strict init/run separation pattern. All modules
+ * and services complete their init() phase before any starts run(), ensuring
+ * predictable startup and fail-fast behavior.
+ *
+ * This pattern applies to all initializable components—modules, services, and
+ * infrastructure. Components in "Supporting Functions" are legacy singletons
+ * awaiting migration to the two-phase pattern.
+ *
+ * @module index
+ */
+
 import http from 'node:http';
 import { env } from './config/env.js';
 import { createExpressApp } from './loaders/express.js';
@@ -16,272 +30,41 @@ import { UserModule } from './modules/user/index.js';
 import { BlockchainObserverService } from './services/blockchain-observer/index.js';
 import { SystemConfigService } from './services/system-config/index.js';
 import { CacheService } from './services/cache.service.js';
+import { ChainParametersFetcher } from './modules/chain-parameters/chain-parameters-fetcher.js';
+import { ChainParametersService } from './modules/chain-parameters/chain-parameters.service.js';
+import { UsdtParametersFetcher } from './modules/usdt-parameters/usdt-parameters-fetcher.js';
+import { UsdtParametersService } from './modules/usdt-parameters/usdt-parameters.service.js';
+import type { Express } from 'express';
+import type { IDatabaseService, IMenuService } from '@tronrelic/types';
+import axios from 'axios';
 
-async function bootstrap() {
+// ─────────────────────────────────────────────────────────────────────────────
+// Entry Point
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Main application entry point.
+ *
+ * Executes the complete startup sequence: infrastructure → modules → scheduler
+ * → plugins → server. Registers SIGINT handler for graceful shutdown.
+ *
+ * @throws Logs error and exits with code 1 if bootstrap fails
+ */
+async function bootstrap(): Promise<void> {
     try {
-        await connectDatabase();
-        const redis = createRedisClient();
-        await redis.connect();
+        const ctx = await bootstrapInit();
+        await bootstrapRun(ctx);
 
-        // Create Pino logger for logs module
-        const pinoLogger = createLogger();
-
-        // Initialize database module FIRST (two-phase: init creates services, run mounts routes)
-        logger.info({}, 'Initializing database module (phase 1: init)...');
-        const databaseModule = new DatabaseModule();
-
-        // Create Express app early so we can pass it to modules
-        // Note: At this point no routes are mounted yet, that happens in module run() phases
-        const app = createExpressApp(null as any); // Will update with database reference below
-
-        // Phase 1: Initialize database module (creates DatabaseService, initializes migrations)
-        await databaseModule.init({
-            logger: logger,
-            app: app
-        });
-        const coreDatabase = databaseModule.getDatabaseService();
-        logger.info({}, 'Database module initialized (services created, migrations scanned)');
-
-        // Now update the Express app with the actual database reference
-        // This is needed for routes that were created during createExpressApp()
-        (app as any).locals.database = coreDatabase;
-
-        // Initialize blockchain observer service BEFORE other modules
-        // This must happen early because routes depend on it
-        logger.info({}, 'Initializing blockchain observer service...');
-        const observerLogger = logger.child({ module: 'blockchain-observer' });
-        BlockchainObserverService.initialize(observerLogger);
-        logger.info({}, 'Blockchain observer service initialized');
-
-        // Initialize system configuration service with database dependency
-        logger.info({}, 'Initializing system configuration service...');
-        const configLogger = logger.child({ module: 'system-config' });
-        SystemConfigService.initialize(configLogger, coreDatabase);
-        logger.info({}, 'System configuration service initialized');
-
-        // Initialize logs module FIRST (before other modules need logging)
-        // This configures the logger singleton with MongoDB persistence
-        // Note: We only call init() here, run() happens later after menu module initializes
-        logger.info({}, 'Initializing logs module...');
-        const logsModule = new LogsModule();
-
-        await logsModule.init({
-            pinoLogger,
-            database: coreDatabase,
-            app
-        });
-        logger.info({}, 'Logs module initialized - logging with MongoDB persistence active');
-
-        // Create HTTP server (app was already created for logs module)
-        logger.info({}, 'Creating HTTP server...');
-        const server = http.createServer(app);
-        logger.info({}, 'HTTP server initialized');
-
-        // Initialize WebSocket BEFORE loading plugins so they can use it
-        if (env.ENABLE_WEBSOCKETS) {
-            WebSocketService.getInstance().initialize(server);
-        }
-        logger.info({}, 'WebSocketService initialized');
-
-        // Initialize menu module with database dependency injection
-        // Note: MenuService uses unprefixed collections (menu_nodes, menu_namespace_config)
-        // to maintain compatibility with existing admin tools and scripts
-        try {
-            const menuModule = new MenuModule();
-
-            // Phase 1: Initialize MenuModule (create services, load menu tree)
-            await menuModule.init({
-                database: coreDatabase,
-                app
-            });
-
-            // Phase 2: Run MenuModule (mount routes)
-            await menuModule.run();
-
-            // Now run logs module so it can register its menu item
-            // (MenuService is now available via getInstance())
-            await logsModule.run();
-            logger.info({}, 'Logs module menu registration complete');
-
-            // Get MenuService instance for other modules to use
-            const menuService = menuModule.getMenuService();
-
-            // Initialize pages module with all dependencies (database, cache, menu, app)
-            // Using two-phase initialization pattern: init() then run()
-            const redis = getRedisClient();
-            const cacheService = new CacheService(redis);
-            const pagesModule = new PagesModule();
-
-            // Phase 1: Initialize (create services, prepare resources)
-            await pagesModule.init({
-                database: coreDatabase,
-                cacheService,
-                menuService,
-                app
-            });
-
-            // Phase 2: Run (mount routes, register menu items)
-            await pagesModule.run();
-
-            // Initialize theme module with dependencies
-            const themeModule = new ThemeModule();
-
-            // Phase 1: Initialize (create services, prepare resources)
-            await themeModule.init({
-                database: coreDatabase,
-                cacheService,
-                menuService,
-                app
-            });
-
-            // Phase 2: Run (mount routes, register menu items)
-            await themeModule.run();
-
-            // Initialize user module with dependencies (database, cache, menu, app)
-            // Using two-phase initialization pattern: init() then run()
-            const userModule = new UserModule();
-
-            // Phase 1: Initialize (create services, prepare resources)
-            await userModule.init({
-                database: coreDatabase,
-                cacheService,
-                menuService,
-                app
-            });
-
-            // Phase 2: Run (mount routes, register menu items)
-            await userModule.run();
-
-            // Phase 2: Run database module (mount migration routes)
-            await databaseModule.run();
-            logger.info({}, 'Database module running (migration routes mounted)');
-
-            // ============================================================================
-            // TEMPORARY: Register remaining system monitoring menu items
-            // ============================================================================
-            // These menu items are for system monitoring pages that haven't been migrated
-            // to the module system yet. They are registered directly here as a temporary
-            // measure until each corresponding feature is converted to a proper module.
-            //
-            // TODO: As each system monitoring feature is migrated to a module, remove the
-            // corresponding menu registration from this section and add it to the module's
-            // run() phase (following the pattern in LogsModule.ts and PagesModule.ts).
-            //
-            // Pages still needing module migration:
-            // - Overview (system overview dashboard)
-            // - Blockchain (blockchain sync monitoring)
-            // - Scheduler (job scheduler management)
-            // - Markets (market data monitoring)
-            // - Config (configuration display)
-            // - Plugins (plugin management)
-            // - WebSockets (WebSocket statistics)
-            // ============================================================================
-            try {
-                logger.info({}, 'Registering temporary system monitoring menu items...');
-
-                // Overview - Main dashboard (order: 10)
-                await menuService.create({
-                    namespace: 'system',
-                    label: 'Overview',
-                    url: '/system/overview',
-                    icon: 'LayoutDashboard',
-                    order: 10,
-                    parent: null,
-                    enabled: true
-                    // persist defaults to false (memory-only entry)
-                });
-
-                // Config - Configuration display (order: 15)
-                await menuService.create({
-                    namespace: 'system',
-                    label: 'Config',
-                    url: '/system/config',
-                    icon: 'Settings',
-                    order: 15,
-                    parent: null,
-                    enabled: true
-                });
-
-                // Database menu item already registered by DatabaseModule (order: 20)
-
-                // Logs menu item already registered by LogsModule (order: 30)
-
-                // Scheduler - Job scheduler management (order: 35)
-                await menuService.create({
-                    namespace: 'system',
-                    label: 'Scheduler',
-                    url: '/system/scheduler',
-                    icon: 'Clock',
-                    order: 35,
-                    parent: null,
-                    enabled: true
-                });
-
-                // Blockchain - Blockchain sync status (order: 45)
-                await menuService.create({
-                    namespace: 'system',
-                    label: 'Blockchain',
-                    url: '/system/blockchain',
-                    icon: 'Blocks',
-                    order: 45,
-                    parent: null,
-                    enabled: true
-                });
-
-                // Markets menu item registered by resource-markets plugin (order: 50)
-
-                // Plugins - Plugin management (order: 65)
-                await menuService.create({
-                    namespace: 'system',
-                    label: 'Plugins',
-                    url: '/system/plugins',
-                    icon: 'Puzzle',
-                    order: 65,
-                    parent: null,
-                    enabled: true
-                });
-
-                // Pages menu item already registered by PagesModule (order: 40)
-
-                // WebSockets - WebSocket statistics (order: 70)
-                await menuService.create({
-                    namespace: 'system',
-                    label: 'WebSockets',
-                    url: '/system/websockets',
-                    icon: 'Radio',
-                    order: 70,
-                    parent: null,
-                    enabled: true
-                });
-
-                logger.info({}, 'Temporary system monitoring menu items registered');
-            } catch (menuError) {
-                logger.error({ menuError }, 'Failed to register temporary system menu items');
-                throw menuError;
-            }
-            // ============================================================================
-            // END TEMPORARY MENU REGISTRATIONS
-            // ============================================================================
-        } catch (error) {
-            logger.error({ error, stack: error instanceof Error ? error.stack : undefined }, 'Module initialization failed');
-            throw error;
-        }
-        logger.info({}, 'All core modules initialized');
-
-        // Initialize jobs (scheduler) BEFORE loading plugins so they can register scheduled tasks
         await initializeJobs();
-        logger.info({}, 'Scheduler initialized');
 
-        // Load plugins AFTER WebSocket and Scheduler are initialized so they can use both
         try {
             await logger.waitUntilInitialized();
             await loadPlugins();
         } catch (pluginError) {
-            logger.error({ pluginError, stack: pluginError instanceof Error ? pluginError.stack : undefined }, 'Plugin initialization failed')
+            logger.error({ pluginError, stack: pluginError instanceof Error ? pluginError.stack : undefined }, 'Plugin initialization failed');
         }
-        logger.info({}, 'Plugins initialized');
 
-        server.listen(env.PORT, () => {
+        ctx.server.listen(env.PORT, () => {
             logger.info({ port: env.PORT }, 'Server listening');
         });
 
@@ -298,3 +81,198 @@ async function bootstrap() {
 }
 
 void bootstrap();
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Two-Phase Lifecycle (applies to all modules and services)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Shared context passed from init phase to run phase.
+ *
+ * Contains all initialized infrastructure and module instances needed by the
+ * run phase. This typed contract ensures init produces everything run requires.
+ */
+interface BootstrapContext {
+    app: Express;
+    server: http.Server;
+    pinoLogger: ReturnType<typeof createLogger>;
+    coreDatabase: IDatabaseService;
+    menuService: IMenuService;
+    modules: {
+        database: DatabaseModule;
+        menu: MenuModule;
+        logs: LogsModule;
+        pages: PagesModule;
+        theme: ThemeModule;
+        user: UserModule;
+    };
+}
+
+/**
+ * Init Phase: Create services, prepare resources.
+ *
+ * All components complete init() before any starts run(). This two-phase
+ * pattern ensures predictable startup:
+ *
+ * - Init creates services and validates configuration (fail-fast)
+ * - Components can reference each other without timing dependencies
+ * - No routes are mounted, no side effects occur
+ *
+ * If any init() fails, the application exits before exposing partial state.
+ *
+ * @returns Context containing all initialized components and infrastructure
+ * @throws If database, redis, or any component init() fails
+ */
+async function bootstrapInit(): Promise<BootstrapContext> {
+    await connectDatabase();
+    const redis = createRedisClient();
+    await redis.connect();
+
+    const pinoLogger = createLogger();
+    const app = createExpressApp();
+    const server = http.createServer(app);
+
+    if (env.ENABLE_WEBSOCKETS) {
+        WebSocketService.getInstance().initialize(server);
+    }
+
+    // Database module first (others depend on it)
+    const databaseModule = new DatabaseModule();
+    await databaseModule.init({ logger, app });
+    const coreDatabase = databaseModule.getDatabaseService();
+    app.locals.database = coreDatabase;
+
+    await initializeCoreServices(coreDatabase);
+
+    // Menu module next (others need menuService)
+    const menuModule = new MenuModule();
+    await menuModule.init({ database: coreDatabase, app });
+    const menuService = menuModule.getMenuService();
+
+    const cacheService = new CacheService(getRedisClient());
+    const sharedDeps = { database: coreDatabase, cacheService, menuService, app };
+
+    const logsModule = new LogsModule();
+    const pagesModule = new PagesModule();
+    const themeModule = new ThemeModule();
+    const userModule = new UserModule();
+
+    await logsModule.init({ pinoLogger, database: coreDatabase, app });
+    await pagesModule.init(sharedDeps);
+    await themeModule.init(sharedDeps);
+    await userModule.init(sharedDeps);
+
+    return {
+        app,
+        server,
+        pinoLogger,
+        coreDatabase,
+        menuService,
+        modules: {
+            database: databaseModule,
+            menu: menuModule,
+            logs: logsModule,
+            pages: pagesModule,
+            theme: themeModule,
+            user: userModule,
+        },
+    };
+}
+
+/**
+ * Run Phase: Mount routes, register menus, start background tasks.
+ *
+ * Only called after all init() phases complete successfully. At this point:
+ *
+ * - All services exist and are fully configured
+ * - Cross-component dependencies are resolved (e.g., menuService available)
+ * - Safe to mount HTTP routes and register menu items
+ *
+ * Run order within this phase is flexible—components should not depend on
+ * other components' run() completing first.
+ *
+ * @param ctx - Bootstrap context from init phase containing all components
+ */
+async function bootstrapRun(ctx: BootstrapContext): Promise<void> {
+    const { modules, menuService } = ctx;
+
+    await modules.database.run();
+    await modules.menu.run();
+    await modules.logs.run();
+    await modules.pages.run();
+    await modules.theme.run();
+    await modules.user.run();
+
+    await registerTemporaryMenuItems(menuService);
+    logger.info({}, 'All modules initialized');
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Legacy Components (awaiting two-phase migration)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Initialize legacy singleton services awaiting two-phase migration.
+ *
+ * These core infrastructure services predate the init/run pattern and use
+ * single-call initialization. They should eventually be refactored into
+ * proper modules with separate init() and run() phases.
+ *
+ * @param coreDatabase - Database service instance for services that need persistence
+ * @throws If chain parameters or USDT parameters fail to initialize
+ * @todo Migrate these services to the two-phase lifecycle pattern
+ */
+async function initializeCoreServices(coreDatabase: IDatabaseService): Promise<void> {
+    BlockchainObserverService.initialize(logger.child({ module: 'blockchain-observer' }));
+    SystemConfigService.initialize(logger.child({ module: 'system-config' }), coreDatabase);
+
+    // Chain parameters: fetch from TronGrid first (populates DB), then warm cache
+    const chainParamsFetcher = new ChainParametersFetcher(axios, logger);
+    await chainParamsFetcher.fetch();
+    if (!await ChainParametersService.getInstance().init()) {
+        throw new Error('Chain parameters service failed to initialize');
+    }
+
+    // USDT parameters: same pattern
+    const usdtParamsFetcher = new UsdtParametersFetcher(axios, logger);
+    await usdtParamsFetcher.fetch();
+    if (!await UsdtParametersService.getInstance().init()) {
+        throw new Error('USDT parameters service failed to initialize');
+    }
+}
+
+/**
+ * Register system monitoring menu items not yet migrated to modules.
+ *
+ * Temporary registrations for system pages (Overview, Config, Scheduler, etc.)
+ * that will eventually move to dedicated modules. Each module should register
+ * its own menu items in its run() phase.
+ *
+ * @param menuService - Menu service instance for registering navigation items
+ * @todo Remove entries as each feature becomes a proper module
+ */
+async function registerTemporaryMenuItems(menuService: IMenuService): Promise<void> {
+    const items = [
+        { label: 'Overview', url: '/system/overview', icon: 'LayoutDashboard', order: 10 },
+        { label: 'Config', url: '/system/config', icon: 'Settings', order: 15 },
+        // Database (20), Logs (30) registered by their modules
+        { label: 'Scheduler', url: '/system/scheduler', icon: 'Clock', order: 35 },
+        // Pages (40) registered by PagesModule
+        { label: 'Blockchain', url: '/system/blockchain', icon: 'Blocks', order: 45 },
+        // Markets (50) registered by resource-markets plugin
+        { label: 'Plugins', url: '/system/plugins', icon: 'Puzzle', order: 65 },
+        { label: 'WebSockets', url: '/system/websockets', icon: 'Radio', order: 70 },
+    ];
+
+    for (const item of items) {
+        await menuService.create({
+            namespace: 'system',
+            label: item.label,
+            url: item.url,
+            icon: item.icon,
+            order: item.order,
+            parent: null,
+            enabled: true
+        });
+    }
+}
