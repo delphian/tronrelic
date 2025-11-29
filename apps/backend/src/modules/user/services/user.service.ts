@@ -726,10 +726,7 @@ export class UserService {
                     : new Date(activeSession.startedAt);
 
                 if (now.getTime() - lastActivity.getTime() < this.SESSION_TIMEOUT_MS) {
-                    // Session still active, just update duration
-                    activeSession.durationSeconds = Math.floor(
-                        (now.getTime() - new Date(activeSession.startedAt).getTime()) / 1000
-                    );
+                    // Session still active - return as-is (duration tracked by heartbeat)
                     return activeSession;
                 }
 
@@ -973,15 +970,17 @@ export class UserService {
                 (now.getTime() - new Date(activeSession.startedAt).getTime()) / 1000
             );
 
-            // Aggregate duration
-            activity.totalDurationSeconds += activeSession.durationSeconds;
-
+            // Use atomic update to avoid race conditions
             await this.collection.updateOne(
                 { id: userId },
                 {
                     $set: {
-                        activity,
+                        'activity.sessions.0': activeSession,
+                        'activity.lastSeen': now,
                         updatedAt: now
+                    },
+                    $inc: {
+                        'activity.totalDurationSeconds': activeSession.durationSeconds
                     }
                 }
             );
@@ -1071,21 +1070,13 @@ export class UserService {
 
     /**
      * Prune old sessions to keep array bounded.
-     * Aggregates duration from pruned sessions before removal.
+     *
+     * Duration is already aggregated into totalDurationSeconds when sessions
+     * end (via endSession or timeout), so we only need to truncate the array.
      */
     private pruneOldSessions(activity: IUserDocument['activity']): void {
         if (activity.sessions.length <= this.MAX_SESSIONS) {
             return;
-        }
-
-        // Get sessions to remove
-        const toRemove = activity.sessions.slice(this.MAX_SESSIONS);
-
-        // Aggregate duration from sessions being removed (if not already aggregated)
-        for (const session of toRemove) {
-            if (session.endedAt && session.durationSeconds > 0) {
-                // Duration already aggregated when session ended, skip
-            }
         }
 
         // Keep only the most recent sessions

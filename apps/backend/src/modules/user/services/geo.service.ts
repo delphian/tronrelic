@@ -35,8 +35,7 @@ export async function initGeoIP(): Promise<void> {
         const module = await import('geoip-lite');
         geoip = module.default || module;
     } catch {
-        console.warn('[GeoService] geoip-lite not installed. Country detection disabled.');
-        console.warn('[GeoService] Install with: npm install geoip-lite');
+        console.error('[GeoService] Failed to load geoip-lite. Country detection disabled.');
     }
 }
 
@@ -87,6 +86,7 @@ export function extractReferrerDomain(referrer: string | undefined): string | nu
  * Derive device category from user-agent string.
  *
  * Uses simple pattern matching - no fingerprinting, no full UA storage.
+ * Input is truncated to prevent ReDoS attacks from malicious user-agents.
  *
  * @param userAgent - User-agent header value
  * @returns Coarse device category
@@ -96,25 +96,32 @@ export function getDeviceCategory(userAgent: string | undefined): DeviceCategory
         return 'unknown';
     }
 
-    const ua = userAgent.toLowerCase();
+    // Truncate to prevent ReDoS attacks (500 chars is plenty for device detection)
+    const ua = userAgent.slice(0, 500).toLowerCase();
+
+    // Check for Android mobile (avoid ReDoS-prone `android.*mobile` pattern)
+    const isAndroid = ua.includes('android');
+    const hasMobile = ua.includes('mobile');
 
     // Check mobile first (most specific patterns)
     if (
-        /mobile|iphone|ipod|android.*mobile|windows phone|blackberry|opera mini|iemobile/i.test(ua)
+        /mobile|iphone|ipod|windows phone|blackberry|opera mini|iemobile/.test(ua) ||
+        (isAndroid && hasMobile)
     ) {
         return 'mobile';
     }
 
-    // Check tablet
+    // Check tablet (Android without 'mobile' keyword is typically tablet)
     if (
-        /tablet|ipad|android(?!.*mobile)|kindle|silk/i.test(ua)
+        /tablet|ipad|kindle|silk/.test(ua) ||
+        (isAndroid && !hasMobile)
     ) {
         return 'tablet';
     }
 
     // Default to desktop for other browsers
     if (
-        /mozilla|chrome|safari|firefox|edge|opera|msie|trident/i.test(ua)
+        /mozilla|chrome|safari|firefox|edge|opera|msie|trident/.test(ua)
     ) {
         return 'desktop';
     }
