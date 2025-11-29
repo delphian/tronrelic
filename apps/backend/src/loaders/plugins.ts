@@ -168,7 +168,8 @@ export async function loadPlugins(): Promise<void> {
     const usdtParametersService = UsdtParametersService.getInstance();
 
     // Warm caches before plugins start using these services
-    // This ensures synchronous methods (getEnergyFromTRX, getStandardTransferEnergy) have data available
+    // ChainParameters: ensures synchronous methods (getEnergyFromTRX) have data available
+    // UsdtParameters: ensures async methods (getStandardTransferEnergy) don't throw on first call
     await chainParametersService.init();
     await usdtParametersService.init();
 
