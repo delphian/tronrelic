@@ -7,8 +7,16 @@ import type {
     IUser,
     ICreateUserInput,
     ILinkWalletInput,
-    IUserPreferences
+    IUserPreferences,
+    IUserSession,
+    IPageVisit,
+    DeviceCategory
 } from '../database/index.js';
+import {
+    getCountryFromIP,
+    extractReferrerDomain,
+    getDeviceCategory
+} from './geo.service.js';
 import { SignatureService } from '../../auth/signature.service.js';
 
 /**
@@ -49,6 +57,15 @@ export class UserService {
     private readonly CACHE_KEY_PREFIX = 'user:';
     private readonly CACHE_KEY_WALLET_PREFIX = 'user:wallet:';
     private readonly CACHE_TTL = 3600; // 1 hour
+
+    /** Maximum sessions to retain per user (oldest pruned first) */
+    private readonly MAX_SESSIONS = 20;
+    /** Maximum pages to track per session */
+    private readonly MAX_PAGES_PER_SESSION = 100;
+    /** Maximum unique paths to track in pageViewsByPath */
+    private readonly MAX_TRACKED_PATHS = 50;
+    /** Session timeout in ms (30 minutes of inactivity = new session) */
+    private readonly SESSION_TIMEOUT_MS = 30 * 60 * 1000;
 
     /**
      * Create a user service.
@@ -150,8 +167,12 @@ export class UserService {
             activity: {
                 firstSeen: now,
                 lastSeen: now,
-                pageViews: 1,
-                sessionsCount: 1
+                pageViews: 0,
+                sessionsCount: 0,
+                totalDurationSeconds: 0,
+                sessions: [],
+                pageViewsByPath: {},
+                countryCounts: {}
             },
             createdAt: now,
             updatedAt: now
@@ -667,14 +688,318 @@ export class UserService {
         return this.toPublicUser(updated!);
     }
 
-    // ==================== Activity Tracking ====================
+    // ==================== Session & Activity Tracking ====================
 
     /**
-     * Record user activity (page view).
+     * Start a new session for a user.
      *
-     * Updates lastSeen timestamp and increments pageViews counter.
-     * Fire-and-forget operation - does not throw on failure.
+     * Creates a new session entry with device, referrer, and country info.
+     * If there's an active session within the timeout window, returns it instead.
      *
+     * @param userId - UUID of user
+     * @param clientIP - Client IP address (for country lookup, never stored)
+     * @param userAgent - User-agent header (for device detection, never stored raw)
+     * @param referrer - Referrer URL (domain extracted, full URL never stored)
+     * @returns The active session
+     */
+    async startSession(
+        userId: string,
+        clientIP?: string,
+        userAgent?: string,
+        referrer?: string
+    ): Promise<IUserSession> {
+        try {
+            const doc = await this.collection.findOne({ id: userId });
+            if (!doc) {
+                throw new Error(`User with id "${userId}" not found`);
+            }
+
+            // Initialize activity fields if missing (migration support)
+            const activity = this.ensureActivityFields(doc.activity);
+            const now = new Date();
+
+            // Check if there's an active session within timeout window
+            const activeSession = activity.sessions[0];
+            if (activeSession && !activeSession.endedAt) {
+                const lastActivity = activeSession.pages.length > 0
+                    ? new Date(activeSession.pages[activeSession.pages.length - 1].timestamp)
+                    : new Date(activeSession.startedAt);
+
+                if (now.getTime() - lastActivity.getTime() < this.SESSION_TIMEOUT_MS) {
+                    // Session still active - return as-is (duration tracked by heartbeat)
+                    return activeSession;
+                }
+
+                // Session timed out - close it
+                activeSession.endedAt = lastActivity;
+                activeSession.durationSeconds = Math.floor(
+                    (lastActivity.getTime() - new Date(activeSession.startedAt).getTime()) / 1000
+                );
+
+                // Aggregate duration before pruning
+                activity.totalDurationSeconds += activeSession.durationSeconds;
+            }
+
+            // Derive context from request (IP/UA never stored)
+            const device = getDeviceCategory(userAgent);
+            const referrerDomain = extractReferrerDomain(referrer);
+            const country = getCountryFromIP(clientIP);
+
+            // Track country distribution
+            if (country) {
+                activity.countryCounts[country] = (activity.countryCounts[country] || 0) + 1;
+            }
+
+            // Create new session
+            const newSession: IUserSession = {
+                startedAt: now,
+                endedAt: null,
+                durationSeconds: 0,
+                pages: [],
+                device,
+                referrerDomain,
+                country
+            };
+
+            // Add to front of sessions array
+            activity.sessions.unshift(newSession);
+            activity.sessionsCount++;
+            activity.lastSeen = now;
+
+            // Prune old sessions (keep last N)
+            this.pruneOldSessions(activity);
+
+            // Update database
+            await this.collection.updateOne(
+                { id: userId },
+                {
+                    $set: {
+                        activity,
+                        updatedAt: now
+                    }
+                }
+            );
+
+            await this.invalidateUserCache(userId);
+
+            this.logger.debug(
+                { userId, device, country, referrerDomain },
+                'Session started'
+            );
+
+            return newSession;
+        } catch (error) {
+            this.logger.warn({ userId, error }, 'Failed to start session');
+            throw error;
+        }
+    }
+
+    /**
+     * Record a page visit in the current session.
+     *
+     * @param userId - UUID of user
+     * @param path - Route path (e.g., '/accounts/TXyz...')
+     */
+    async recordPage(userId: string, path: string): Promise<void> {
+        try {
+            const doc = await this.collection.findOne({ id: userId });
+            if (!doc) {
+                return; // Silently ignore if user doesn't exist
+            }
+
+            const activity = this.ensureActivityFields(doc.activity);
+            const now = new Date();
+
+            // Get or create active session
+            let activeSession = activity.sessions[0];
+            if (!activeSession || activeSession.endedAt) {
+                // No active session - create a minimal one
+                activeSession = {
+                    startedAt: now,
+                    endedAt: null,
+                    durationSeconds: 0,
+                    pages: [],
+                    device: 'unknown',
+                    referrerDomain: null,
+                    country: null
+                };
+                activity.sessions.unshift(activeSession);
+                activity.sessionsCount++;
+            }
+
+            // Check session timeout
+            const lastActivity = activeSession.pages.length > 0
+                ? new Date(activeSession.pages[activeSession.pages.length - 1].timestamp)
+                : new Date(activeSession.startedAt);
+
+            if (now.getTime() - lastActivity.getTime() >= this.SESSION_TIMEOUT_MS) {
+                // Session timed out - close it and create new one
+                activeSession.endedAt = lastActivity;
+                activeSession.durationSeconds = Math.floor(
+                    (lastActivity.getTime() - new Date(activeSession.startedAt).getTime()) / 1000
+                );
+                activity.totalDurationSeconds += activeSession.durationSeconds;
+
+                activeSession = {
+                    startedAt: now,
+                    endedAt: null,
+                    durationSeconds: 0,
+                    pages: [],
+                    device: 'unknown',
+                    referrerDomain: null,
+                    country: null
+                };
+                activity.sessions.unshift(activeSession);
+                activity.sessionsCount++;
+            }
+
+            // Add page visit (if under limit)
+            if (activeSession.pages.length < this.MAX_PAGES_PER_SESSION) {
+                const pageVisit: IPageVisit = {
+                    path,
+                    timestamp: now
+                };
+                activeSession.pages.push(pageVisit);
+            }
+
+            // Update session duration
+            activeSession.durationSeconds = Math.floor(
+                (now.getTime() - new Date(activeSession.startedAt).getTime()) / 1000
+            );
+
+            // Update aggregate counters
+            activity.pageViews++;
+            activity.lastSeen = now;
+
+            // Update pageViewsByPath (with limit)
+            if (Object.keys(activity.pageViewsByPath).length < this.MAX_TRACKED_PATHS || activity.pageViewsByPath[path]) {
+                activity.pageViewsByPath[path] = (activity.pageViewsByPath[path] || 0) + 1;
+            }
+
+            // Prune old sessions
+            this.pruneOldSessions(activity);
+
+            // Update database
+            await this.collection.updateOne(
+                { id: userId },
+                {
+                    $set: {
+                        activity,
+                        updatedAt: now
+                    }
+                }
+            );
+
+            await this.invalidateUserCache(userId);
+        } catch (error) {
+            // Non-critical - log but don't throw
+            this.logger.warn({ userId, path, error }, 'Failed to record page visit');
+        }
+    }
+
+    /**
+     * Update session heartbeat (extends session duration).
+     *
+     * Called periodically by frontend to keep session alive and track duration.
+     *
+     * @param userId - UUID of user
+     */
+    async heartbeat(userId: string): Promise<void> {
+        try {
+            const doc = await this.collection.findOne({ id: userId });
+            if (!doc) {
+                return;
+            }
+
+            const activity = this.ensureActivityFields(doc.activity);
+            const now = new Date();
+
+            const activeSession = activity.sessions[0];
+            if (!activeSession || activeSession.endedAt) {
+                return; // No active session to update
+            }
+
+            // Update duration
+            activeSession.durationSeconds = Math.floor(
+                (now.getTime() - new Date(activeSession.startedAt).getTime()) / 1000
+            );
+            activity.lastSeen = now;
+
+            await this.collection.updateOne(
+                { id: userId },
+                {
+                    $set: {
+                        'activity.sessions.0.durationSeconds': activeSession.durationSeconds,
+                        'activity.lastSeen': now,
+                        updatedAt: now
+                    }
+                }
+            );
+
+            await this.invalidateUserCache(userId);
+        } catch (error) {
+            this.logger.warn({ userId, error }, 'Failed to update heartbeat');
+        }
+    }
+
+    /**
+     * End the current session explicitly.
+     *
+     * Called when user navigates away or closes the page.
+     *
+     * @param userId - UUID of user
+     */
+    async endSession(userId: string): Promise<void> {
+        try {
+            const doc = await this.collection.findOne({ id: userId });
+            if (!doc) {
+                return;
+            }
+
+            const activity = this.ensureActivityFields(doc.activity);
+            const now = new Date();
+
+            const activeSession = activity.sessions[0];
+            if (!activeSession || activeSession.endedAt) {
+                return; // No active session to end
+            }
+
+            // Close session
+            activeSession.endedAt = now;
+            activeSession.durationSeconds = Math.floor(
+                (now.getTime() - new Date(activeSession.startedAt).getTime()) / 1000
+            );
+
+            // Use atomic update to avoid race conditions
+            await this.collection.updateOne(
+                { id: userId },
+                {
+                    $set: {
+                        'activity.sessions.0': activeSession,
+                        'activity.lastSeen': now,
+                        updatedAt: now
+                    },
+                    $inc: {
+                        'activity.totalDurationSeconds': activeSession.durationSeconds
+                    }
+                }
+            );
+
+            await this.invalidateUserCache(userId);
+
+            this.logger.debug(
+                { userId, durationSeconds: activeSession.durationSeconds },
+                'Session ended'
+            );
+        } catch (error) {
+            this.logger.warn({ userId, error }, 'Failed to end session');
+        }
+    }
+
+    /**
+     * Legacy method - record simple activity without session context.
+     *
+     * @deprecated Use recordPage() for page-aware tracking
      * @param userId - UUID of user
      */
     async recordActivity(userId: string): Promise<void> {
@@ -692,19 +1017,16 @@ export class UserService {
                 }
             );
 
-            // Invalidate cache (user data changed)
             await this.invalidateUserCache(userId);
         } catch (error) {
-            // Log but don't throw - activity tracking is non-critical
             this.logger.warn({ userId, error }, 'Failed to record user activity');
         }
     }
 
     /**
-     * Record new session start.
+     * Legacy method - record simple session start.
      *
-     * Increments session counter. Called when user returns after inactivity.
-     *
+     * @deprecated Use startSession() for full session tracking
      * @param userId - UUID of user
      */
     async recordSession(userId: string): Promise<void> {
@@ -726,6 +1048,39 @@ export class UserService {
         } catch (error) {
             this.logger.warn({ userId, error }, 'Failed to record user session');
         }
+    }
+
+    // ==================== Session Helpers ====================
+
+    /**
+     * Ensure activity object has all required fields (migration support).
+     */
+    private ensureActivityFields(activity: any): IUserDocument['activity'] {
+        return {
+            firstSeen: activity.firstSeen || new Date(),
+            lastSeen: activity.lastSeen || new Date(),
+            pageViews: activity.pageViews || 0,
+            sessionsCount: activity.sessionsCount || 0,
+            totalDurationSeconds: activity.totalDurationSeconds || 0,
+            sessions: activity.sessions || [],
+            pageViewsByPath: activity.pageViewsByPath || {},
+            countryCounts: activity.countryCounts || {}
+        };
+    }
+
+    /**
+     * Prune old sessions to keep array bounded.
+     *
+     * Duration is already aggregated into totalDurationSeconds when sessions
+     * end (via endSession or timeout), so we only need to truncate the array.
+     */
+    private pruneOldSessions(activity: IUserDocument['activity']): void {
+        if (activity.sessions.length <= this.MAX_SESSIONS) {
+            return;
+        }
+
+        // Keep only the most recent sessions
+        activity.sessions = activity.sessions.slice(0, this.MAX_SESSIONS);
     }
 
     // ==================== Admin Operations ====================

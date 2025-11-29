@@ -190,8 +190,8 @@ describe('UserService', () => {
             expect(user.id).toBe(validUUID);
             expect(user.wallets).toEqual([]);
             expect(user.preferences).toEqual({});
-            expect(user.activity.pageViews).toBe(1);
-            expect(user.activity.sessionsCount).toBe(1);
+            expect(user.activity.pageViews).toBe(0);
+            expect(user.activity.sessionsCount).toBe(0);
             expect(user.createdAt).toBeInstanceOf(Date);
         });
 
