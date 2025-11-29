@@ -4,12 +4,27 @@ import { ChainParametersModel } from '../../database/models/chain-parameters-mod
 
 /**
  * Response from TronGrid /wallet/getchainparameters endpoint
+ * Contains protocol configuration parameters (fees, limits, governance settings)
  */
 interface TronGridChainParametersResponse {
     chainParameter: Array<{
         key: string;
         value: number;
     }>;
+}
+
+/**
+ * Response from TronGrid /wallet/getaccountresource endpoint
+ * Contains network-wide staking state (total TRX staked for energy/bandwidth)
+ *
+ * Note: This endpoint requires an address parameter but returns network-wide
+ * totals regardless of which address is queried.
+ */
+interface TronGridAccountResourceResponse {
+    TotalEnergyLimit: number;
+    TotalEnergyWeight: number;
+    TotalNetLimit: number;
+    TotalNetWeight: number;
 }
 
 /**
@@ -22,67 +37,78 @@ interface TronGridChainParametersResponse {
  * calculates the derived energyPerTrx ratio used by market fetchers.
  */
 export class ChainParametersFetcher implements IChainParametersFetcher {
-    private readonly TRONGRID_ENDPOINT = 'https://api.trongrid.io/wallet/getchainparameters';
+    private readonly CHAIN_PARAMS_ENDPOINT = 'https://api.trongrid.io/wallet/getchainparameters';
+    private readonly ACCOUNT_RESOURCE_ENDPOINT = 'https://api.trongrid.io/wallet/getaccountresource';
+
+    /**
+     * Placeholder address for getaccountresource API.
+     * The endpoint requires an address but returns network-wide totals regardless of which address is used.
+     * Using TRON Foundation address as a well-known, always-valid address.
+     */
+    private readonly PLACEHOLDER_ADDRESS = 'TRX6Q82wMqWNbCCiLqejbZe43wk1h1zJHm';
 
     constructor(private readonly http: AxiosInstance, private readonly logger: ISystemLogService) {}
 
     /**
-     * Fetch current chain parameters and save to database
-     * Calculates energyPerTrx ratio from network state
+     * Fetch current chain parameters and network state, then save to database.
+     * Calculates energyPerTrx ratio from live network staking data.
      *
      * Process:
-     * 1. Fetch chain parameters from TronGrid
-     * 2. Extract energy-related values
-     * 3. Calculate energyPerTrx ratio (totalEnergyLimit / totalFrozenForEnergy)
-     * 4. Save to MongoDB for service layer consumption
+     * 1. Fetch protocol parameters from TronGrid /wallet/getchainparameters (fees, governance settings)
+     * 2. Fetch network state from TronGrid /wallet/getaccountresource (total staked TRX)
+     * 3. Calculate energyPerTrx = TotalEnergyLimit / TotalEnergyWeight
+     * 4. Calculate bandwidthPerTrx = TotalNetLimit / TotalNetWeight
+     * 5. Save to MongoDB for service layer consumption
      *
-     * @returns Freshly fetched chain parameters
+     * @returns Freshly fetched chain parameters with live network state
      */
     async fetch(): Promise<IChainParameters> {
         try {
-            this.logger.info('Fetching chain parameters from TronGrid');
+            this.logger.info('Fetching chain parameters and network state from TronGrid');
 
-            const response = await this.http.post<TronGridChainParametersResponse>(
-                this.TRONGRID_ENDPOINT,
+            // Fetch protocol parameters (fees, limits, governance settings)
+            const paramsResponse = await this.http.post<TronGridChainParametersResponse>(
+                this.CHAIN_PARAMS_ENDPOINT,
                 {},
-                {
-                    timeout: 10000
-                }
+                { timeout: 10000 }
             );
 
-            const chainParams = response.data.chainParameter;
+            // Fetch network state (total staked TRX for energy/bandwidth)
+            const resourceResponse = await this.http.post<TronGridAccountResourceResponse>(
+                this.ACCOUNT_RESOURCE_ENDPOINT,
+                { address: this.PLACEHOLDER_ADDRESS, visible: true },
+                { timeout: 10000 }
+            );
 
-            // Extract energy-related parameters
-            const totalEnergyLimit = this.findParam(chainParams, 'getTotalEnergyLimit');
-            const totalEnergyCurrentLimit = this.findParam(chainParams, 'getTotalEnergyCurrentLimit');
+            const chainParams = paramsResponse.data.chainParameter;
+            const networkState = resourceResponse.data;
+
+            // Extract protocol parameters (fees)
             const energyFee = this.findParam(chainParams, 'getEnergyFee');
+            const totalEnergyCurrentLimit = this.findParam(chainParams, 'getTotalEnergyCurrentLimit');
 
-            // Extract bandwidth-related parameters
-            const totalBandwidthLimit = this.findParam(chainParams, 'getTotalNetLimit');
-            const totalNetWeight = this.findParam(chainParams, 'getTotalNetWeight');
+            // Extract network state - live staking data from getaccountresource
+            // TotalEnergyWeight/TotalNetWeight are in TRX (not SUN)
+            const totalEnergyLimit = networkState.TotalEnergyLimit;
+            const totalEnergyWeight = networkState.TotalEnergyWeight;
+            const totalBandwidthLimit = networkState.TotalNetLimit;
+            const totalNetWeight = networkState.TotalNetWeight;
 
-            // Calculate total frozen for energy
-            // WARNING: This is an ARBITRARY EXAMPLE demonstrating the mathematical calculation.
-            // DO NOT use this 32M TRX value as a fallback parameter - it does NOT represent real network state.
-            //
-            // REQUIRED: This value MUST be queried from actual network state (account resources across validators).
-            // Using this arbitrary example will produce incorrect energyPerTrx ratios and invalid APY calculations.
-            //
-            // TODO: Replace with actual query to network for totalFrozenForEnergy
-            const totalFrozenForEnergy = 32_000_000_000_000_000; // 32M TRX in SUN - ARBITRARY EXAMPLE ONLY
+            // Convert TRX to SUN for storage (1 TRX = 1,000,000 SUN)
+            // This maintains backward compatibility with existing database schema
+            const totalFrozenForEnergy = totalEnergyWeight * 1_000_000;
+            const totalFrozenForBandwidth = totalNetWeight * 1_000_000;
 
-            // Calculate total frozen for bandwidth from network weight
-            // totalNetWeight is in SUN (1 TRX = 1,000,000 SUN)
-            const totalFrozenForBandwidth = totalNetWeight;
+            // Calculate energy per TRX ratio using live network state
+            // energyPerTrx = TotalEnergyLimit / TotalEnergyWeight
+            const energyPerTrx = totalEnergyWeight > 0
+                ? totalEnergyLimit / totalEnergyWeight
+                : 0;
 
-            // Calculate energy per TRX ratio
-            const energyPerTrx = totalEnergyLimit / (totalFrozenForEnergy / 1_000_000);
-
-            // Calculate bandwidth per TRX ratio
-            // If totalNetWeight is 0, use approximation based on network averages
-            const bandwidthPerTrx = totalFrozenForBandwidth > 0
-                ? totalBandwidthLimit / (totalFrozenForBandwidth / 1_000_000)
-                : 1000; // Approximate fallback: 1000 bandwidth per TRX
+            // Calculate bandwidth per TRX ratio using live network state
+            const bandwidthPerTrx = totalNetWeight > 0
+                ? totalBandwidthLimit / totalNetWeight
+                : 0;
 
             const parameters: IChainParameters = {
                 network: 'mainnet',
@@ -105,13 +131,15 @@ export class ChainParametersFetcher implements IChainParametersFetcher {
 
             this.logger.info(
                 {
-                    energyPerTrx: energyPerTrx.toFixed(2),
+                    energyPerTrx: energyPerTrx.toFixed(4),
                     totalEnergyLimit,
+                    totalEnergyWeight,
                     energyFee,
-                    bandwidthPerTrx: bandwidthPerTrx.toFixed(2),
-                    totalBandwidthLimit
+                    bandwidthPerTrx: bandwidthPerTrx.toFixed(4),
+                    totalBandwidthLimit,
+                    totalNetWeight
                 },
-                'Chain parameters updated successfully'
+                'Chain parameters updated with live network state'
             );
 
             return parameters;

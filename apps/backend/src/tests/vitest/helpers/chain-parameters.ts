@@ -52,6 +52,16 @@ interface TronGridChainParametersResponse {
 }
 
 /**
+ * Response from TronGrid /wallet/getaccountresource endpoint
+ */
+interface TronGridAccountResourceResponse {
+    TotalEnergyLimit: number;
+    TotalEnergyWeight: number;
+    TotalNetLimit: number;
+    TotalNetWeight: number;
+}
+
+/**
  * Configuration for test chain parameters.
  */
 export interface ChainParametersTestConfig {
@@ -66,7 +76,7 @@ export interface ChainParametersTestConfig {
     /**
      * Energy obtained per 1 TRX staked
      * Only used when useLiveData is false
-     * Default: 210 (typical mainnet value)
+     * Default: 9.5 (realistic mainnet value based on ~19B TRX staked)
      */
     energyPerTrx?: number;
 
@@ -80,7 +90,7 @@ export interface ChainParametersTestConfig {
 
 const DEFAULT_TEST_CONFIG: Required<ChainParametersTestConfig> = {
     useLiveData: false,
-    energyPerTrx: 210,
+    energyPerTrx: 9.5,
     energyFee: 100
 };
 
@@ -91,6 +101,10 @@ let cachedLiveParams: IChainParameters | null = null;
 
 /**
  * Fetches live chain parameters from TronGrid API.
+ *
+ * Matches production ChainParametersFetcher logic:
+ * 1. Fetches protocol params from /wallet/getchainparameters (for energyFee)
+ * 2. Fetches network state from /wallet/getaccountresource (for TotalEnergyWeight, TotalNetWeight)
  *
  * Results are cached for the entire test run to avoid rate limiting.
  * Uses TRONGRID_API_KEY from environment if available.
@@ -108,37 +122,49 @@ async function fetchLiveChainParameters(): Promise<IChainParameters> {
         headers['TRON-PRO-API-KEY'] = process.env.TRONGRID_API_KEY;
     }
 
-    const response = await axios.post<TronGridChainParametersResponse>(
+    // Fetch protocol parameters (fees)
+    const paramsResponse = await axios.post<TronGridChainParametersResponse>(
         'https://api.trongrid.io/wallet/getchainparameters',
         {},
         { headers, timeout: 10000 }
     );
 
-    const chainParams = response.data.chainParameter;
+    // Fetch network state (total staked TRX)
+    const resourceResponse = await axios.post<TronGridAccountResourceResponse>(
+        'https://api.trongrid.io/wallet/getaccountresource',
+        { address: 'TRX6Q82wMqWNbCCiLqejbZe43wk1h1zJHm', visible: true },
+        { headers, timeout: 10000 }
+    );
 
-    // Extract parameters (matching ChainParametersFetcher logic)
+    const chainParams = paramsResponse.data.chainParameter;
+    const networkState = resourceResponse.data;
+
+    // Extract protocol parameters (matching ChainParametersFetcher logic)
     const findParam = (key: string): number => {
         const param = chainParams.find(p => p.key === key);
         return param?.value ?? 0;
     };
 
-    const totalEnergyLimit = findParam('getTotalEnergyLimit');
-    const totalEnergyCurrentLimit = findParam('getTotalEnergyCurrentLimit');
     const energyFee = findParam('getEnergyFee');
-    const totalBandwidthLimit = findParam('getTotalNetLimit');
-    const totalNetWeight = findParam('getTotalNetWeight');
+    const totalEnergyCurrentLimit = findParam('getTotalEnergyCurrentLimit');
 
-    // Use production's placeholder value for totalFrozenForEnergy
-    // TODO: Replace with actual network query when production implements it
-    const totalFrozenForEnergy = 32_000_000_000_000_000; // 32M TRX in SUN
+    // Extract network state - live staking data from getaccountresource
+    const totalEnergyLimit = networkState.TotalEnergyLimit;
+    const totalEnergyWeight = networkState.TotalEnergyWeight;
+    const totalBandwidthLimit = networkState.TotalNetLimit;
+    const totalNetWeight = networkState.TotalNetWeight;
 
-    const totalFrozenForBandwidth = totalNetWeight;
+    // Convert TRX to SUN for storage (1 TRX = 1,000,000 SUN)
+    const totalFrozenForEnergy = totalEnergyWeight * 1_000_000;
+    const totalFrozenForBandwidth = totalNetWeight * 1_000_000;
 
-    // Calculate ratios (matching production logic)
-    const energyPerTrx = totalEnergyLimit / (totalFrozenForEnergy / 1_000_000);
-    const bandwidthPerTrx = totalFrozenForBandwidth > 0
-        ? totalBandwidthLimit / (totalFrozenForBandwidth / 1_000_000)
-        : 1000;
+    // Calculate ratios using live network state
+    const energyPerTrx = totalEnergyWeight > 0
+        ? totalEnergyLimit / totalEnergyWeight
+        : 0;
+    const bandwidthPerTrx = totalNetWeight > 0
+        ? totalBandwidthLimit / totalNetWeight
+        : 0;
 
     cachedLiveParams = {
         network: 'mainnet',
@@ -203,18 +229,18 @@ export async function setupChainParametersForTests(
         // Integration test: fetch real data from TronGrid
         mockParams = await fetchLiveChainParameters();
     } else {
-        // Unit test: use configured/default values
+        // Unit test: use configured/default values with realistic network state
         mockParams = {
             network: 'mainnet',
             parameters: {
-                totalEnergyLimit: 90_000_000_000,
-                totalEnergyCurrentLimit: 90_000_000_000,
-                totalFrozenForEnergy: 10_000_000_000 * 1_000_000, // 10B TRX in SUN
+                totalEnergyLimit: 180_000_000_000,
+                totalEnergyCurrentLimit: 180_000_000_000,
+                totalFrozenForEnergy: 19_000_000_000_000_000, // ~19B TRX in SUN (realistic network average)
                 energyPerTrx: mergedConfig.energyPerTrx,
                 energyFee: mergedConfig.energyFee,
                 totalBandwidthLimit: 43_200_000_000,
-                totalFrozenForBandwidth: 5_000_000_000 * 1_000_000, // 5B TRX in SUN
-                bandwidthPerTrx: 1000
+                totalFrozenForBandwidth: 27_000_000_000_000_000, // ~27B TRX in SUN (realistic network average)
+                bandwidthPerTrx: 1.6
             },
             fetchedAt: new Date(),
             createdAt: new Date()

@@ -72,6 +72,12 @@ export interface RuntimeConfig {
     socketUrl: string;
     /** TRON blockchain chain parameters for energy/TRX conversions */
     chainParameters: ChainParametersConfig;
+    /**
+     * Indicates whether this config is using fallback values instead of live data.
+     * When true, chain parameters may be stale/approximate.
+     * UI should display a warning when this is true.
+     */
+    isUsingFallback: boolean;
 }
 
 /**
@@ -159,13 +165,14 @@ export async function getServerConfig(): Promise<RuntimeConfig> {
             chainParameters: {
                 totalEnergyLimit: 180_000_000_000,
                 totalEnergyCurrentLimit: 180_000_000_000,
-                totalFrozenForEnergy: 32_000_000_000_000_000, // 32M TRX in SUN
-                energyPerTrx: 5625, // Approximate ratio: 180B / 32M TRX
+                totalFrozenForEnergy: 19_000_000_000_000_000, // ~19B TRX staked for energy (network average)
+                energyPerTrx: 9.5, // 180B / 19B TRX (live network ratio)
                 energyFee: 100,
-                totalBandwidthLimit: 43_200_000_000, // 43.2B bandwidth per day
-                totalFrozenForBandwidth: 43_200_000_000_000_000, // 43.2M TRX in SUN
-                bandwidthPerTrx: 1000 // Approximate ratio: 43.2B / 43.2M TRX
-            }
+                totalBandwidthLimit: 43_200_000_000,
+                totalFrozenForBandwidth: 27_000_000_000_000_000, // ~27B TRX staked for bandwidth (network average)
+                bandwidthPerTrx: 1.6 // 43.2B / 27B TRX (live network ratio)
+            },
+            isUsingFallback: true
         };
 
         // Cache the fallback config (don't retry every request)
