@@ -16,6 +16,11 @@ import { UserModule } from './modules/user/index.js';
 import { BlockchainObserverService } from './services/blockchain-observer/index.js';
 import { SystemConfigService } from './services/system-config/index.js';
 import { CacheService } from './services/cache.service.js';
+import { ChainParametersFetcher } from './modules/chain-parameters/chain-parameters-fetcher.js';
+import { ChainParametersService } from './modules/chain-parameters/chain-parameters.service.js';
+import { UsdtParametersFetcher } from './modules/usdt-parameters/usdt-parameters-fetcher.js';
+import { UsdtParametersService } from './modules/usdt-parameters/usdt-parameters.service.js';
+import axios from 'axios';
 
 async function bootstrap() {
     try {
@@ -58,6 +63,46 @@ async function bootstrap() {
         const configLogger = logger.child({ module: 'system-config' });
         SystemConfigService.initialize(configLogger, coreDatabase);
         logger.info({}, 'System configuration service initialized');
+
+        // ============================================================================
+        // Chain Parameters Service - Two-phase initialization
+        // ============================================================================
+        // Phase 1 (init): Fetch chain parameters from TronGrid and save to database.
+        // This must happen before any service needs energy/TRX conversions.
+        // Phase 2 (run): Warm the service cache from database.
+        //
+        // Why fetch before init: The ChainParametersService.init() reads from MongoDB.
+        // On first boot (empty DB), we must populate the database first.
+        // ============================================================================
+        logger.info({}, 'Initializing chain parameters service (phase 1: fetch from TronGrid)...');
+        const chainParamsFetcher = new ChainParametersFetcher(axios, logger);
+        await chainParamsFetcher.fetch();
+        logger.info({}, 'Chain parameters fetched from TronGrid');
+
+        const chainParametersService = ChainParametersService.getInstance();
+        const chainParamsReady = await chainParametersService.init();
+        if (!chainParamsReady) {
+            throw new Error('Chain parameters service failed to initialize - cannot start without network parameters');
+        }
+        logger.info({}, 'Chain parameters service initialized (phase 2: cache warmed)');
+
+        // ============================================================================
+        // USDT Parameters Service - Two-phase initialization
+        // ============================================================================
+        // Same pattern as chain parameters: fetch first, then warm cache.
+        // Provides dynamic USDT transfer energy costs for market calculations.
+        // ============================================================================
+        logger.info({}, 'Initializing USDT parameters service (phase 1: fetch from TronGrid)...');
+        const usdtParamsFetcher = new UsdtParametersFetcher(axios, logger);
+        await usdtParamsFetcher.fetch();
+        logger.info({}, 'USDT parameters fetched from TronGrid');
+
+        const usdtParametersService = UsdtParametersService.getInstance();
+        const usdtParamsReady = await usdtParametersService.init();
+        if (!usdtParamsReady) {
+            throw new Error('USDT parameters service failed to initialize - cannot start without transfer costs');
+        }
+        logger.info({}, 'USDT parameters service initialized (phase 2: cache warmed)');
 
         // Initialize logs module FIRST (before other modules need logging)
         // This configures the logger singleton with MongoDB persistence
