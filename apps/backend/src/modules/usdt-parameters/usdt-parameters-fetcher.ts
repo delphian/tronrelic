@@ -1,6 +1,7 @@
 import type { AxiosInstance } from 'axios';
 import type { IUsdtParametersFetcher, IUsdtParameters, ISystemLogService } from '@tronrelic/types';
 import { UsdtParametersModel } from '../../database/models/usdt-parameters-model.js';
+import { toHexAddress } from '../../lib/tron-address.js';
 
 /**
  * USDT TRC20 contract address on TRON mainnet
@@ -129,13 +130,14 @@ export class UsdtParametersFetcher implements IUsdtParametersFetcher {
      * @returns Hex-encoded parameter string
      */
     private encodeTransferParameters(recipientAddress: string, amount: number): string {
-        // Convert base58 address to hex (remove 'T' prefix, use hex representation)
+        // Convert base58 address to hex using the tron-address utility
         // For TronGrid API with visible:true, we can use the address directly in the JSON
         // The parameter field expects: [32 bytes address padding][32 bytes amount]
 
-        // Convert address from base58 to hex (41-prefixed)
-        // TLa2f6VPqDgRE67v1736s7bJ8Ray5wYjU7 -> 0x74472e7d35395a6b5add427eecb7f4b62ad2b071
-        const addressHex = 'a614f803b6fd780986a42c78ec9c7f77e6ded13c'; // Hardcoded for now
+        // toHexAddress returns 41-prefixed hex (e.g., "41A614F803B6FD780986A42C78EC9C7F77E6DED13C")
+        // For ABI encoding, we need the 20-byte address without the 41 prefix, lowercase
+        const fullHex = toHexAddress(recipientAddress);
+        const addressHex = fullHex.slice(2).toLowerCase(); // Remove '41' prefix
 
         // Pad address to 32 bytes (64 hex chars)
         const paddedAddress = addressHex.padStart(64, '0');

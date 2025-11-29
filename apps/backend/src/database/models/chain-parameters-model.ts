@@ -45,6 +45,18 @@ const ChainParametersSchema = new Schema<IChainParametersDocument>(
             energyFee: {
                 type: Number,
                 required: true
+            },
+            totalBandwidthLimit: {
+                type: Number,
+                required: true
+            },
+            totalFrozenForBandwidth: {
+                type: Number,
+                required: true
+            },
+            bandwidthPerTrx: {
+                type: Number,
+                required: true
             }
         },
         fetchedAt: {

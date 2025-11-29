@@ -38,7 +38,8 @@ export function configRouter() {
      *     totalFrozenForEnergy: number,
      *     energyPerTrx: number,
      *     energyFee: number
-     *   }
+     *   },
+     *   isUsingFallback: boolean  // false when live data, true if frontend falls back to hardcoded values
      * }
      *
      * Caching:
@@ -69,7 +70,8 @@ export function configRouter() {
                     siteUrl,
                     apiUrl,
                     socketUrl,
-                    chainParameters: chainParams.parameters
+                    chainParameters: chainParams.parameters,
+                    isUsingFallback: false // Live data from backend
                 }
             });
         } catch (error) {

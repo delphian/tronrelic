@@ -34,6 +34,14 @@ export const migration: IMigration = {
         // Transform each legacy document
         for (const market of legacyMarkets) {
             // Calculate new pricing detail from legacy pricePerUnit
+            //
+            // NOTE: This example uses a hardcoded value (65000) for demonstration simplicity.
+            // In production migrations, consider whether you need:
+            // - A hardcoded value (captures the value at migration time - appropriate for historical data)
+            // - A dynamic value from UsdtParametersService (uses current blockchain state)
+            //
+            // For most migrations, hardcoded values are appropriate since the migration
+            // transforms data based on the state at the time it was written.
             const pricingDetail = {
                 minUsdtTransferCost: market.pricePerUnit * 65000 / 1_000_000, // Convert SUN to TRX
                 basePricePerUnit: market.pricePerUnit,
