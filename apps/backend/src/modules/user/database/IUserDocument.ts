@@ -45,19 +45,69 @@ export interface IUserPreferences {
 }
 
 /**
+ * A single page visit within a session.
+ */
+export interface IPageVisit {
+    /** Route path (e.g., '/accounts/TXyz...', '/markets') */
+    path: string;
+    /** Timestamp when page was loaded */
+    timestamp: Date;
+}
+
+/**
+ * Device category derived from user-agent.
+ * Coarse-grained to avoid fingerprinting.
+ */
+export type DeviceCategory = 'mobile' | 'tablet' | 'desktop' | 'unknown';
+
+/**
+ * A user session with engagement metrics.
+ *
+ * Sessions are bounded - only the last N are retained to prevent
+ * unbounded document growth. Older sessions are aggregated into
+ * lifetime totals before removal.
+ */
+export interface IUserSession {
+    /** Session start timestamp */
+    startedAt: Date;
+    /** Session end timestamp (null if active) */
+    endedAt: Date | null;
+    /** Duration in seconds (calculated on session end or heartbeat) */
+    durationSeconds: number;
+    /** Pages visited during this session (capped at 100 per session) */
+    pages: IPageVisit[];
+    /** Device category for this session */
+    device: DeviceCategory;
+    /** Referrer domain (e.g., 'twitter.com', 'google.com', null if direct) */
+    referrerDomain: string | null;
+    /** ISO 3166-1 alpha-2 country code (e.g., 'US', 'DE', 'JP') */
+    country: string | null;
+}
+
+/**
  * Activity tracking metrics for visitor analytics.
  *
  * Tracks engagement patterns without storing sensitive browsing details.
+ * Sessions array is bounded to last 20 sessions; older data is aggregated
+ * into lifetime totals.
  */
 export interface IUserActivity {
     /** Timestamp of first visit */
     firstSeen: Date;
     /** Timestamp of most recent activity */
     lastSeen: Date;
-    /** Total page views across all sessions */
+    /** Total page views across all sessions (lifetime aggregate) */
     pageViews: number;
-    /** Number of distinct sessions (browser open/close cycles) */
+    /** Number of distinct sessions (lifetime count) */
     sessionsCount: number;
+    /** Total engagement time in seconds (lifetime aggregate) */
+    totalDurationSeconds: number;
+    /** Recent sessions with detailed tracking (last 20, newest first) */
+    sessions: IUserSession[];
+    /** Aggregated page visit counts by path (lifetime, top 50 paths) */
+    pageViewsByPath: Record<string, number>;
+    /** Country distribution (lifetime, ISO codes to visit counts) */
+    countryCounts: Record<string, number>;
 }
 
 /**
@@ -130,6 +180,25 @@ export interface ILinkWalletInput {
     signature: string;
     /** Timestamp when signature was created (for replay protection) */
     timestamp: number;
+}
+
+/**
+ * Input for starting a new session.
+ * Device category and country are derived server-side from request headers.
+ */
+export interface IStartSessionInput {
+    /** Referrer URL (server extracts domain only) */
+    referrer?: string;
+    /** User-agent string (server derives device category, never stored raw) */
+    userAgent?: string;
+}
+
+/**
+ * Input for recording a page visit.
+ */
+export interface IRecordPageInput {
+    /** Route path (e.g., '/accounts/TXyz...') */
+    path: string;
 }
 
 /**

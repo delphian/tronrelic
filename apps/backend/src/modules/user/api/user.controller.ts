@@ -2,6 +2,7 @@ import type { Request, Response, NextFunction } from 'express';
 import type { ISystemLogService } from '@tronrelic/types';
 import type { UserService, IUserStats } from '../services/index.js';
 import type { IUser, IUserPreferences } from '../database/index.js';
+import { getClientIP } from '../services/index.js';
 
 /**
  * Cookie name for user identity.
@@ -288,6 +289,8 @@ export class UserController {
      *
      * Requires: Cookie must match :id
      * Response: { success: true }
+     *
+     * @deprecated Use POST /api/user/:id/session/page for session-aware tracking
      */
     async recordActivity(req: Request, res: Response): Promise<void> {
         try {
@@ -299,6 +302,123 @@ export class UserController {
         } catch (error) {
             // Don't fail on activity recording errors
             this.logger.warn({ error, userId: req.params.id }, 'Failed to record activity');
+            res.json({ success: true });
+        }
+    }
+
+    // ============================================================================
+    // Session Tracking Endpoints (require cookie validation)
+    // ============================================================================
+
+    /**
+     * POST /api/user/:id/session/start
+     *
+     * Start a new session or return the active session.
+     * Device, country, and referrer are derived from request headers.
+     *
+     * Requires: Cookie must match :id
+     * Response: { session: IUserSession }
+     */
+    async startSession(req: Request, res: Response): Promise<void> {
+        try {
+            const { id } = req.params;
+
+            // Extract request context (never stored raw)
+            const clientIP = getClientIP(req);
+            const userAgent = req.headers['user-agent'];
+            const referrer = req.headers['referer'] || req.body.referrer;
+
+            const session = await this.userService.startSession(
+                id,
+                clientIP,
+                userAgent,
+                referrer
+            );
+
+            res.json({ session });
+        } catch (error) {
+            this.logger.warn({ error, userId: req.params.id }, 'Failed to start session');
+            res.status(400).json({
+                error: 'Failed to start session',
+                message: error instanceof Error ? error.message : 'Unknown error'
+            });
+        }
+    }
+
+    /**
+     * POST /api/user/:id/session/page
+     *
+     * Record a page visit in the current session.
+     *
+     * Requires: Cookie must match :id
+     * Body: { path: string }
+     * Response: { success: true }
+     */
+    async recordPage(req: Request, res: Response): Promise<void> {
+        try {
+            const { id } = req.params;
+            const { path } = req.body;
+
+            if (!path || typeof path !== 'string') {
+                res.status(400).json({
+                    error: 'Invalid request',
+                    message: 'Body must include path string'
+                });
+                return;
+            }
+
+            await this.userService.recordPage(id, path);
+
+            res.json({ success: true });
+        } catch (error) {
+            // Non-critical - don't fail the request
+            this.logger.warn({ error, userId: req.params.id }, 'Failed to record page');
+            res.json({ success: true });
+        }
+    }
+
+    /**
+     * POST /api/user/:id/session/heartbeat
+     *
+     * Update session heartbeat to extend duration tracking.
+     * Should be called periodically (e.g., every 30 seconds).
+     *
+     * Requires: Cookie must match :id
+     * Response: { success: true }
+     */
+    async heartbeat(req: Request, res: Response): Promise<void> {
+        try {
+            const { id } = req.params;
+
+            await this.userService.heartbeat(id);
+
+            res.json({ success: true });
+        } catch (error) {
+            // Non-critical - don't fail the request
+            this.logger.warn({ error, userId: req.params.id }, 'Failed to record heartbeat');
+            res.json({ success: true });
+        }
+    }
+
+    /**
+     * POST /api/user/:id/session/end
+     *
+     * End the current session explicitly.
+     * Called when user navigates away or closes the page.
+     *
+     * Requires: Cookie must match :id
+     * Response: { success: true }
+     */
+    async endSession(req: Request, res: Response): Promise<void> {
+        try {
+            const { id } = req.params;
+
+            await this.userService.endSession(id);
+
+            res.json({ success: true });
+        } catch (error) {
+            // Non-critical - don't fail the request
+            this.logger.warn({ error, userId: req.params.id }, 'Failed to end session');
             res.json({ success: true });
         }
     }

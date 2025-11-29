@@ -96,9 +96,37 @@ export function createUserRouter(controller: UserController): Router {
 
     /**
      * POST /api/user/:id/activity
-     * Record user activity
+     * Record user activity (legacy - prefer session/page)
      */
     router.post('/:id/activity', activityRateLimiter, controller.recordActivity.bind(controller));
+
+    // ============================================================================
+    // Session Tracking Routes (60 requests/minute)
+    // ============================================================================
+
+    /**
+     * POST /api/user/:id/session/start
+     * Start new session or return active session
+     */
+    router.post('/:id/session/start', activityRateLimiter, controller.startSession.bind(controller));
+
+    /**
+     * POST /api/user/:id/session/page
+     * Record page visit in current session
+     */
+    router.post('/:id/session/page', activityRateLimiter, controller.recordPage.bind(controller));
+
+    /**
+     * POST /api/user/:id/session/heartbeat
+     * Update session heartbeat for duration tracking
+     */
+    router.post('/:id/session/heartbeat', activityRateLimiter, controller.heartbeat.bind(controller));
+
+    /**
+     * POST /api/user/:id/session/end
+     * End current session explicitly
+     */
+    router.post('/:id/session/end', activityRateLimiter, controller.endSession.bind(controller));
 
     // ============================================================================
     // Login State Routes (30 requests/minute)

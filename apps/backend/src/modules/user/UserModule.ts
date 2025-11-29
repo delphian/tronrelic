@@ -26,6 +26,7 @@ import type { Express, Router } from 'express';
 import type { ICacheService, IDatabaseService, IMenuService, IModule, IModuleMetadata } from '@tronrelic/types';
 import { logger } from '../../lib/logger.js';
 import { UserService } from './services/user.service.js';
+import { initGeoIP } from './services/geo.service.js';
 import { UserController } from './api/user.controller.js';
 import { createUserRouter, createAdminUserRouter } from './api/user.routes.js';
 import { requireAdmin } from '../../api/middleware/admin-auth.js';
@@ -151,6 +152,9 @@ export class UserModule implements IModule<IUserModuleDependencies> {
         this.cacheService = dependencies.cacheService;
         this.menuService = dependencies.menuService;
         this.app = dependencies.app;
+
+        // Initialize GeoIP lookup for country detection (non-blocking)
+        await initGeoIP();
 
         // Initialize UserService singleton with dependencies
         UserService.setDependencies(
