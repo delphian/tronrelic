@@ -70,6 +70,12 @@ export function createMockChainParameters(
 
     return {
         /**
+         * Initialize mock service (no-op for testing).
+         * Always returns true since mock data is immediately available.
+         */
+        init: vi.fn(async (): Promise<boolean> => true),
+
+        /**
          * Get mock chain parameters.
          * Returns fixed values for testing (no database dependency).
          */

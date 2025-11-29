@@ -44,6 +44,26 @@ export class ChainParametersService implements IChainParametersService {
     }
 
     /**
+     * Initialize the service by warming the cache from database.
+     *
+     * Call this at startup to ensure synchronous methods like getEnergyFromTRX()
+     * have data available immediately. Without this, those methods return 0 until
+     * something calls getParameters() (e.g., /api/config endpoint).
+     *
+     * @returns true if cache was warmed successfully, false if no data in DB yet
+     */
+    async init(): Promise<boolean> {
+        try {
+            await this.getParameters();
+            logger.info({ energyPerTrx: this.cachedParams?.parameters.energyPerTrx }, 'Chain parameters cache initialized');
+            return true;
+        } catch {
+            logger.warn('Chain parameters not yet available in database');
+            return false;
+        }
+    }
+
+    /**
      * Get latest chain parameters from cache or database
      * Cache refreshes every minute to balance performance vs freshness
      * Database is updated every 10 minutes by ChainParametersFetcher

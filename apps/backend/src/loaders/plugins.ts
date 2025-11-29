@@ -167,6 +167,12 @@ export async function loadPlugins(): Promise<void> {
     const chainParametersService = ChainParametersService.getInstance();
     const usdtParametersService = UsdtParametersService.getInstance();
 
+    // Warm caches before plugins start using these services
+    // ChainParameters: ensures synchronous methods (getEnergyFromTRX) have data available
+    // UsdtParameters: ensures async methods (getStandardTransferEnergy) don't throw on first call
+    await chainParametersService.init();
+    await usdtParametersService.init();
+
     // Create shared HTTP client for all plugins
     const httpClient = axios.create({
         timeout: 30000,
