@@ -35,7 +35,7 @@ import { ChainParametersService } from './modules/chain-parameters/chain-paramet
 import { UsdtParametersFetcher } from './modules/usdt-parameters/usdt-parameters-fetcher.js';
 import { UsdtParametersService } from './modules/usdt-parameters/usdt-parameters.service.js';
 import type { Express } from 'express';
-import type { IMenuService } from '@tronrelic/types';
+import type { IDatabaseService, IMenuService } from '@tronrelic/types';
 import axios from 'axios';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -96,7 +96,7 @@ interface BootstrapContext {
     app: Express;
     server: http.Server;
     pinoLogger: ReturnType<typeof createLogger>;
-    coreDatabase: any;
+    coreDatabase: IDatabaseService;
     menuService: IMenuService;
     modules: {
         database: DatabaseModule;
@@ -129,7 +129,7 @@ async function bootstrapInit(): Promise<BootstrapContext> {
     await redis.connect();
 
     const pinoLogger = createLogger();
-    const app = createExpressApp(null as any);
+    const app = createExpressApp();
     const server = http.createServer(app);
 
     if (env.ENABLE_WEBSOCKETS) {
@@ -140,7 +140,7 @@ async function bootstrapInit(): Promise<BootstrapContext> {
     const databaseModule = new DatabaseModule();
     await databaseModule.init({ logger, app });
     const coreDatabase = databaseModule.getDatabaseService();
-    (app as any).locals.database = coreDatabase;
+    app.locals.database = coreDatabase;
 
     await initializeCoreServices(coreDatabase);
 
@@ -222,7 +222,7 @@ async function bootstrapRun(ctx: BootstrapContext): Promise<void> {
  * @throws If chain parameters or USDT parameters fail to initialize
  * @todo Migrate these services to the two-phase lifecycle pattern
  */
-async function initializeCoreServices(coreDatabase: any): Promise<void> {
+async function initializeCoreServices(coreDatabase: IDatabaseService): Promise<void> {
     BlockchainObserverService.initialize(logger.child({ module: 'blockchain-observer' }));
     SystemConfigService.initialize(logger.child({ module: 'system-config' }), coreDatabase);
 
