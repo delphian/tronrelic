@@ -45,6 +45,26 @@ export class UsdtParametersService implements IUsdtParametersService {
     }
 
     /**
+     * Initialize the service by warming the cache from database.
+     *
+     * Call this at startup to ensure async methods like getStandardTransferEnergy()
+     * have data available immediately. Without this, callers may encounter errors
+     * if the database hasn't been populated yet.
+     *
+     * @returns true if cache was warmed successfully, false if no data in DB yet
+     */
+    async init(): Promise<boolean> {
+        try {
+            await this.getParameters();
+            logger.info({ standardTransferEnergy: this.cachedParams?.parameters.standardTransferEnergy }, 'USDT parameters cache initialized');
+            return true;
+        } catch {
+            logger.warn('USDT parameters not yet available in database');
+            return false;
+        }
+    }
+
+    /**
      * Get latest USDT parameters from cache or database
      * Cache refreshes every minute to balance performance vs freshness
      * Database is updated every 10 minutes by UsdtParametersFetcher

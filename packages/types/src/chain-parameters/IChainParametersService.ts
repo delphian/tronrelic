@@ -6,6 +6,13 @@ import type { IChainParameters } from './IChainParameters.js';
  */
 export interface IChainParametersService {
     /**
+     * Initialize the service by warming the cache from database.
+     * Call this at startup to ensure synchronous methods have data available.
+     * @returns true if cache was warmed successfully, false if no data in DB yet
+     */
+    init(): Promise<boolean>;
+
+    /**
      * Retrieve current chain parameters from cache or database
      * @returns Latest chain parameters
      */
