@@ -444,6 +444,7 @@
 .session_time {
     font-size: var(--font-size-2xs);
     color: var(--color-text-subtle);
+    flex-shrink: 0;
 }
 
 /* Top pages list */

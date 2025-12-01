@@ -507,13 +507,31 @@ export class UserController {
         try {
             const { limit, skip, search, filter } = req.query;
 
-            const limitNum = limit ? parseInt(limit as string, 10) : 50;
-            const skipNum = skip ? parseInt(skip as string, 10) : 0;
-            const filterType = (filter as UserFilterType) || 'all';
+            // Validate and clamp pagination parameters
+            const parsedLimit = limit ? parseInt(limit as string, 10) : 50;
+            const parsedSkip = skip ? parseInt(skip as string, 10) : 0;
+            const limitNum = Number.isNaN(parsedLimit) ? 50 : Math.min(Math.max(1, parsedLimit), 100);
+            const skipNum = Number.isNaN(parsedSkip) ? 0 : Math.max(0, parsedSkip);
+
+            // Validate filter type
+            const validFilters: UserFilterType[] = [
+                'all', 'power-users', 'one-time', 'returning', 'long-sessions',
+                'verified-wallet', 'multi-wallet', 'no-wallet', 'recently-connected',
+                'active-today', 'active-week', 'churned', 'new-users',
+                'mobile-users', 'desktop-users', 'multi-device',
+                'multi-region', 'single-region',
+                'feature-explorers', 'focused-users', 'referred-traffic',
+                'high-value', 'at-risk', 'conversion-candidates'
+            ];
+            const filterType = (filter as string) || 'all';
+            if (!validFilters.includes(filterType as UserFilterType)) {
+                res.status(400).json({ error: 'Invalid filter type' });
+                return;
+            }
 
             // Use filterUsers which handles both filter and search with AND logic
             const { users, filteredTotal } = await this.userService.filterUsers(
-                filterType,
+                filterType as UserFilterType,
                 limitNum,
                 skipNum,
                 search as string | undefined

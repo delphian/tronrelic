@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useState, useCallback } from 'react';
+import type { UserFilterType } from '@tronrelic/types';
 import { config as runtimeConfig } from '../../../../lib/config';
 import { Button } from '../../../../components/ui/Button';
 import { ClientTime } from '../../../../components/ui/ClientTime';
@@ -104,42 +105,6 @@ interface UsersResponse {
     filteredTotal: number;
     stats: UserStats;
 }
-
-/**
- * Available user filter types for the dropdown.
- */
-type UserFilterType =
-    | 'all'
-    // Engagement
-    | 'power-users'
-    | 'one-time'
-    | 'returning'
-    | 'long-sessions'
-    // Wallet Status
-    | 'verified-wallet'
-    | 'multi-wallet'
-    | 'no-wallet'
-    | 'recently-connected'
-    // Temporal
-    | 'active-today'
-    | 'active-week'
-    | 'churned'
-    | 'new-users'
-    // Device
-    | 'mobile-users'
-    | 'desktop-users'
-    | 'multi-device'
-    // Geographic
-    | 'multi-region'
-    | 'single-region'
-    // Behavioral
-    | 'feature-explorers'
-    | 'focused-users'
-    | 'referred-traffic'
-    // Quick Picks
-    | 'high-value'
-    | 'at-risk'
-    | 'conversion-candidates';
 
 /**
  * Filter option labels for display.
@@ -282,7 +247,7 @@ export function UsersMonitor({ token }: Props) {
 
     // Use filteredTotal for pagination when filter/search is active
     const displayTotal = (filter !== 'all' || search) ? filteredTotal : total;
-    const totalPages = Math.ceil(displayTotal / limit);
+    const totalPages = displayTotal > 0 ? Math.ceil(displayTotal / limit) : 1;
 
     return (
         <div className={styles.container}>
@@ -331,39 +296,39 @@ export function UsersMonitor({ token }: Props) {
                         aria-label="Filter users"
                     >
                         <option value="all">{FILTER_LABELS['all']}</option>
-                        <optgroup label="Engagement">
+                        <optgroup label="Engagement" aria-label="Engagement filters">
                             <option value="power-users">{FILTER_LABELS['power-users']}</option>
                             <option value="one-time">{FILTER_LABELS['one-time']}</option>
                             <option value="returning">{FILTER_LABELS['returning']}</option>
                             <option value="long-sessions">{FILTER_LABELS['long-sessions']}</option>
                         </optgroup>
-                        <optgroup label="Wallet Status">
+                        <optgroup label="Wallet Status" aria-label="Wallet status filters">
                             <option value="verified-wallet">{FILTER_LABELS['verified-wallet']}</option>
                             <option value="multi-wallet">{FILTER_LABELS['multi-wallet']}</option>
                             <option value="no-wallet">{FILTER_LABELS['no-wallet']}</option>
                             <option value="recently-connected">{FILTER_LABELS['recently-connected']}</option>
                         </optgroup>
-                        <optgroup label="Activity">
+                        <optgroup label="Activity" aria-label="Activity filters">
                             <option value="active-today">{FILTER_LABELS['active-today']}</option>
                             <option value="active-week">{FILTER_LABELS['active-week']}</option>
                             <option value="churned">{FILTER_LABELS['churned']}</option>
                             <option value="new-users">{FILTER_LABELS['new-users']}</option>
                         </optgroup>
-                        <optgroup label="Device">
+                        <optgroup label="Device" aria-label="Device filters">
                             <option value="mobile-users">{FILTER_LABELS['mobile-users']}</option>
                             <option value="desktop-users">{FILTER_LABELS['desktop-users']}</option>
                             <option value="multi-device">{FILTER_LABELS['multi-device']}</option>
                         </optgroup>
-                        <optgroup label="Geographic">
+                        <optgroup label="Geographic" aria-label="Geographic filters">
                             <option value="multi-region">{FILTER_LABELS['multi-region']}</option>
                             <option value="single-region">{FILTER_LABELS['single-region']}</option>
                         </optgroup>
-                        <optgroup label="Behavioral">
+                        <optgroup label="Behavioral" aria-label="Behavioral filters">
                             <option value="feature-explorers">{FILTER_LABELS['feature-explorers']}</option>
                             <option value="focused-users">{FILTER_LABELS['focused-users']}</option>
                             <option value="referred-traffic">{FILTER_LABELS['referred-traffic']}</option>
                         </optgroup>
-                        <optgroup label="Quick Picks">
+                        <optgroup label="Quick Picks" aria-label="Quick pick filters">
                             <option value="high-value">{FILTER_LABELS['high-value']}</option>
                             <option value="at-risk">{FILTER_LABELS['at-risk']}</option>
                             <option value="conversion-candidates">{FILTER_LABELS['conversion-candidates']}</option>
@@ -602,7 +567,7 @@ export function UsersMonitor({ token }: Props) {
                             Previous
                         </Button>
                         <span className={styles.page_info}>
-                            Page {page} of {totalPages} ({displayTotal.toLocaleString()} {filter !== 'all' || search ? 'matching' : 'users'})
+                            Page {page} of {totalPages} ({displayTotal.toLocaleString()} {filter !== 'all' || search ? 'matching' : (displayTotal === 1 ? 'user' : 'users')})
                         </span>
                         <Button
                             onClick={() => setPage(page + 1)}

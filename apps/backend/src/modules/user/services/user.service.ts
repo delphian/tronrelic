@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import type { Collection } from 'mongodb';
-import type { IDatabaseService, ICacheService, ISystemLogService } from '@tronrelic/types';
+import type { IDatabaseService, ICacheService, ISystemLogService, UserFilterType } from '@tronrelic/types';
 import type {
     IUserDocument,
     IWalletLink,
@@ -30,42 +30,6 @@ export interface IUserStats {
     activeThisWeek: number;
     averageWalletsPerUser: number;
 }
-
-/**
- * Available user filter types for admin dashboard.
- */
-export type UserFilterType =
-    | 'all'
-    // Engagement
-    | 'power-users'
-    | 'one-time'
-    | 'returning'
-    | 'long-sessions'
-    // Wallet Status
-    | 'verified-wallet'
-    | 'multi-wallet'
-    | 'no-wallet'
-    | 'recently-connected'
-    // Temporal
-    | 'active-today'
-    | 'active-week'
-    | 'churned'
-    | 'new-users'
-    // Device
-    | 'mobile-users'
-    | 'desktop-users'
-    | 'multi-device'
-    // Geographic
-    | 'multi-region'
-    | 'single-region'
-    // Behavioral
-    | 'feature-explorers'
-    | 'focused-users'
-    | 'referred-traffic'
-    // Quick Picks (compound)
-    | 'high-value'
-    | 'at-risk'
-    | 'conversion-candidates';
 
 /**
  * Service for managing visitor identity and wallet linking.
@@ -1181,11 +1145,15 @@ export class UserService {
         search?: string
     ): Promise<{ users: IUser[]; filteredTotal: number }> {
         const filterQuery = this.buildFilterQuery(filter);
-        const searchQuery = search
+        // Escape regex special characters to prevent ReDoS attacks
+        const escapedSearch = search
+            ? search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+            : '';
+        const searchQuery = escapedSearch
             ? {
                 $or: [
-                    { id: { $regex: search, $options: 'i' } },
-                    { 'wallets.address': { $regex: search, $options: 'i' } }
+                    { id: { $regex: escapedSearch, $options: 'i' } },
+                    { 'wallets.address': { $regex: escapedSearch, $options: 'i' } }
                 ]
             }
             : {};
@@ -1260,6 +1228,8 @@ export class UserService {
                 };
 
             case 'no-wallet':
+                // Note: This query is also used in 'conversion-candidates'.
+                // If wallet-related filters grow, extract to a shared constant.
                 return {
                     $or: [
                         { wallets: { $size: 0 } },
@@ -1295,6 +1265,9 @@ export class UserService {
                 };
 
             // ==================== Device ====================
+            // Note: Device/geographic/behavioral filters use $expr with array operations.
+            // If admin page performance degrades at scale, consider pre-computing metrics
+            // (e.g., deviceCounts, uniqueCountries, uniquePaths) on the user document.
             case 'mobile-users':
                 // Users where majority of sessions are mobile
                 return {
@@ -1343,13 +1316,16 @@ export class UserService {
                         $gte: [
                             {
                                 $size: {
-                                    $setUnion: {
-                                        $map: {
-                                            input: { $ifNull: ['$activity.sessions', []] },
-                                            as: 's',
-                                            in: '$$s.device'
-                                        }
-                                    }
+                                    $setUnion: [
+                                        {
+                                            $map: {
+                                                input: { $ifNull: ['$activity.sessions', []] },
+                                                as: 's',
+                                                in: '$$s.device'
+                                            }
+                                        },
+                                        []
+                                    ]
                                 }
                             },
                             2
@@ -1403,9 +1379,13 @@ export class UserService {
                 };
 
             case 'referred-traffic':
-                // Any session has a referrerDomain
+                // Any session has a referrerDomain (exists and not null)
                 return {
-                    'activity.sessions.referrerDomain': { $ne: null }
+                    'activity.sessions': {
+                        $elemMatch: {
+                            referrerDomain: { $exists: true, $ne: null }
+                        }
+                    }
                 };
 
             // ==================== Quick Picks (Compound) ====================
