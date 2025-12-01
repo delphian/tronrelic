@@ -1,5 +1,6 @@
 export { UserService } from './user.service.js';
 export type { IUserStats } from './user.service.js';
+export type { UserFilterType } from '@tronrelic/types';
 export {
     initGeoIP,
     getCountryFromIP,

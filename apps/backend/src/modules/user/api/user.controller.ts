@@ -1,6 +1,6 @@
 import type { Request, Response, NextFunction } from 'express';
 import type { ISystemLogService } from '@tronrelic/types';
-import type { UserService, IUserStats } from '../services/index.js';
+import type { UserService, IUserStats, UserFilterType } from '../services/index.js';
 import type { IUser, IUserPreferences } from '../database/index.js';
 import { getClientIP } from '../services/index.js';
 
@@ -490,35 +490,59 @@ export class UserController {
     /**
      * GET /api/admin/users
      *
-     * List all users with pagination.
+     * List all users with pagination and optional filtering.
      *
      * Query parameters:
      * - limit: Maximum results (default: 50)
      * - skip: Skip results for pagination (default: 0)
      * - search: Search by UUID or wallet address
+     * - filter: Filter by predefined criteria (e.g., 'power-users', 'no-wallet')
      *
-     * Response: { users: IUser[], total: number, stats: IUserStats }
+     * Filter and search work additively (AND logic). Applying a filter
+     * narrows the user set, then search refines within filtered results.
+     *
+     * Response: { users: IUser[], total: number, filteredTotal: number, stats: IUserStats }
      */
     async listUsers(req: Request, res: Response): Promise<void> {
         try {
-            const { limit, skip, search } = req.query;
+            const { limit, skip, search, filter } = req.query;
 
-            const limitNum = limit ? parseInt(limit as string, 10) : 50;
-            const skipNum = skip ? parseInt(skip as string, 10) : 0;
+            // Validate and clamp pagination parameters
+            const parsedLimit = limit ? parseInt(limit as string, 10) : 50;
+            const parsedSkip = skip ? parseInt(skip as string, 10) : 0;
+            const limitNum = Number.isNaN(parsedLimit) ? 50 : Math.min(Math.max(1, parsedLimit), 100);
+            const skipNum = Number.isNaN(parsedSkip) ? 0 : Math.max(0, parsedSkip);
 
-            let users: IUser[];
-            if (search) {
-                users = await this.userService.searchUsers(search as string, limitNum);
-            } else {
-                users = await this.userService.listUsers(limitNum, skipNum);
+            // Validate filter type
+            const validFilters: UserFilterType[] = [
+                'all', 'power-users', 'one-time', 'returning', 'long-sessions',
+                'verified-wallet', 'multi-wallet', 'no-wallet', 'recently-connected',
+                'active-today', 'active-week', 'churned', 'new-users',
+                'mobile-users', 'desktop-users', 'multi-device',
+                'multi-region', 'single-region',
+                'feature-explorers', 'focused-users', 'referred-traffic',
+                'high-value', 'at-risk', 'conversion-candidates'
+            ];
+            const filterType = (filter as string) || 'all';
+            if (!validFilters.includes(filterType as UserFilterType)) {
+                res.status(400).json({ error: 'Invalid filter type' });
+                return;
             }
+
+            // Use filterUsers which handles both filter and search with AND logic
+            const { users, filteredTotal } = await this.userService.filterUsers(
+                filterType as UserFilterType,
+                limitNum,
+                skipNum,
+                search as string | undefined
+            );
 
             const [total, stats] = await Promise.all([
                 this.userService.countUsers(),
                 this.userService.getStats()
             ]);
 
-            res.json({ users, total, stats });
+            res.json({ users, total, filteredTotal, stats });
         } catch (error) {
             this.logger.error({ error }, 'Failed to list users');
             res.status(500).json({

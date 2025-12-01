@@ -22,3 +22,4 @@ export type { IDatabaseService } from './database/IDatabaseService.js';
 export type { IMigration } from './database/IMigration.js';
 export type { IPage, IPageFile, IPageSettings, IStorageProvider, IPageService, IMarkdownService, IFrontmatterData, IParsedMarkdown } from './pages/index.js';
 export type { IModule, IModuleMetadata } from './module/index.js';
+export type { UserFilterType } from './user/index.js';
