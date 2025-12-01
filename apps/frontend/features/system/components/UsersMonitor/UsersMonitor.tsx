@@ -101,8 +101,82 @@ interface UserStats {
 interface UsersResponse {
     users: UserRecord[];
     total: number;
+    filteredTotal: number;
     stats: UserStats;
 }
+
+/**
+ * Available user filter types for the dropdown.
+ */
+type UserFilterType =
+    | 'all'
+    // Engagement
+    | 'power-users'
+    | 'one-time'
+    | 'returning'
+    | 'long-sessions'
+    // Wallet Status
+    | 'verified-wallet'
+    | 'multi-wallet'
+    | 'no-wallet'
+    | 'recently-connected'
+    // Temporal
+    | 'active-today'
+    | 'active-week'
+    | 'churned'
+    | 'new-users'
+    // Device
+    | 'mobile-users'
+    | 'desktop-users'
+    | 'multi-device'
+    // Geographic
+    | 'multi-region'
+    | 'single-region'
+    // Behavioral
+    | 'feature-explorers'
+    | 'focused-users'
+    | 'referred-traffic'
+    // Quick Picks
+    | 'high-value'
+    | 'at-risk'
+    | 'conversion-candidates';
+
+/**
+ * Filter option labels for display.
+ */
+const FILTER_LABELS: Record<UserFilterType, string> = {
+    'all': 'All Users',
+    // Engagement
+    'power-users': 'Power Users',
+    'one-time': 'One-Time Visitors',
+    'returning': 'Returning Users',
+    'long-sessions': 'Long Sessions (30m+)',
+    // Wallet Status
+    'verified-wallet': 'Verified Wallet',
+    'multi-wallet': 'Multi-Wallet (2+)',
+    'no-wallet': 'No Wallet',
+    'recently-connected': 'Recently Connected',
+    // Temporal
+    'active-today': 'Active Today',
+    'active-week': 'Active This Week',
+    'churned': 'Churned (30d inactive)',
+    'new-users': 'New Users (7d)',
+    // Device
+    'mobile-users': 'Mobile Users',
+    'desktop-users': 'Desktop Users',
+    'multi-device': 'Multi-Device',
+    // Geographic
+    'multi-region': 'Multi-Region (3+ countries)',
+    'single-region': 'Single Region',
+    // Behavioral
+    'feature-explorers': 'Feature Explorers (20+ pages)',
+    'focused-users': 'Focused Users (<5 pages)',
+    'referred-traffic': 'Referred Traffic',
+    // Quick Picks
+    'high-value': 'High Value Prospects',
+    'at-risk': 'At Risk (churned + wallet)',
+    'conversion-candidates': 'Conversion Candidates'
+};
 
 interface Props {
     token: string;
@@ -134,10 +208,12 @@ export function UsersMonitor({ token }: Props) {
     const [stats, setStats] = useState<UserStats | null>(null);
     const [loading, setLoading] = useState(true);
     const [total, setTotal] = useState(0);
+    const [filteredTotal, setFilteredTotal] = useState(0);
     const [page, setPage] = useState(1);
     const [limit] = useState(20);
     const [search, setSearch] = useState('');
     const [searchInput, setSearchInput] = useState('');
+    const [filter, setFilter] = useState<UserFilterType>('all');
     const [expandedUserId, setExpandedUserId] = useState<string | null>(null);
 
     const fetchUsers = useCallback(async () => {
@@ -148,6 +224,9 @@ export function UsersMonitor({ token }: Props) {
             params.set('skip', ((page - 1) * limit).toString());
             if (search) {
                 params.set('search', search);
+            }
+            if (filter !== 'all') {
+                params.set('filter', filter);
             }
 
             const response = await fetch(
@@ -166,13 +245,14 @@ export function UsersMonitor({ token }: Props) {
             const data: UsersResponse = await response.json();
             setUsers(data.users);
             setTotal(data.total);
+            setFilteredTotal(data.filteredTotal);
             setStats(data.stats);
         } catch (error) {
             console.error('Failed to fetch users:', error);
         } finally {
             setLoading(false);
         }
-    }, [token, page, limit, search]);
+    }, [token, page, limit, search, filter]);
 
     useEffect(() => {
         fetchUsers();
@@ -189,13 +269,20 @@ export function UsersMonitor({ token }: Props) {
         setPage(1);
     };
 
+    const handleFilterChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+        setFilter(e.target.value as UserFilterType);
+        setPage(1);
+    };
+
     const handleKeyDown = (e: React.KeyboardEvent) => {
         if (e.key === 'Enter') {
             handleSearch();
         }
     };
 
-    const totalPages = Math.ceil(total / limit);
+    // Use filteredTotal for pagination when filter/search is active
+    const displayTotal = (filter !== 'all' || search) ? filteredTotal : total;
+    const totalPages = Math.ceil(displayTotal / limit);
 
     return (
         <div className={styles.container}>
@@ -236,23 +323,70 @@ export function UsersMonitor({ token }: Props) {
             )}
 
             <div className={styles.controls}>
-                <div className={styles.search_box}>
-                    <input
-                        type="text"
-                        className={styles.search_input}
-                        placeholder="Search by UUID or wallet address..."
-                        value={searchInput}
-                        onChange={(e) => setSearchInput(e.target.value)}
-                        onKeyDown={handleKeyDown}
-                    />
-                    <Button onClick={handleSearch} size="sm">
-                        Search
-                    </Button>
-                    {search && (
-                        <Button onClick={handleClearSearch} size="sm" variant="ghost">
-                            Clear
+                <div className={styles.filter_row}>
+                    <select
+                        className={styles.filter_select}
+                        value={filter}
+                        onChange={handleFilterChange}
+                        aria-label="Filter users"
+                    >
+                        <option value="all">{FILTER_LABELS['all']}</option>
+                        <optgroup label="Engagement">
+                            <option value="power-users">{FILTER_LABELS['power-users']}</option>
+                            <option value="one-time">{FILTER_LABELS['one-time']}</option>
+                            <option value="returning">{FILTER_LABELS['returning']}</option>
+                            <option value="long-sessions">{FILTER_LABELS['long-sessions']}</option>
+                        </optgroup>
+                        <optgroup label="Wallet Status">
+                            <option value="verified-wallet">{FILTER_LABELS['verified-wallet']}</option>
+                            <option value="multi-wallet">{FILTER_LABELS['multi-wallet']}</option>
+                            <option value="no-wallet">{FILTER_LABELS['no-wallet']}</option>
+                            <option value="recently-connected">{FILTER_LABELS['recently-connected']}</option>
+                        </optgroup>
+                        <optgroup label="Activity">
+                            <option value="active-today">{FILTER_LABELS['active-today']}</option>
+                            <option value="active-week">{FILTER_LABELS['active-week']}</option>
+                            <option value="churned">{FILTER_LABELS['churned']}</option>
+                            <option value="new-users">{FILTER_LABELS['new-users']}</option>
+                        </optgroup>
+                        <optgroup label="Device">
+                            <option value="mobile-users">{FILTER_LABELS['mobile-users']}</option>
+                            <option value="desktop-users">{FILTER_LABELS['desktop-users']}</option>
+                            <option value="multi-device">{FILTER_LABELS['multi-device']}</option>
+                        </optgroup>
+                        <optgroup label="Geographic">
+                            <option value="multi-region">{FILTER_LABELS['multi-region']}</option>
+                            <option value="single-region">{FILTER_LABELS['single-region']}</option>
+                        </optgroup>
+                        <optgroup label="Behavioral">
+                            <option value="feature-explorers">{FILTER_LABELS['feature-explorers']}</option>
+                            <option value="focused-users">{FILTER_LABELS['focused-users']}</option>
+                            <option value="referred-traffic">{FILTER_LABELS['referred-traffic']}</option>
+                        </optgroup>
+                        <optgroup label="Quick Picks">
+                            <option value="high-value">{FILTER_LABELS['high-value']}</option>
+                            <option value="at-risk">{FILTER_LABELS['at-risk']}</option>
+                            <option value="conversion-candidates">{FILTER_LABELS['conversion-candidates']}</option>
+                        </optgroup>
+                    </select>
+                    <div className={styles.search_box}>
+                        <input
+                            type="text"
+                            className={styles.search_input}
+                            placeholder="Search by UUID or wallet address..."
+                            value={searchInput}
+                            onChange={(e) => setSearchInput(e.target.value)}
+                            onKeyDown={handleKeyDown}
+                        />
+                        <Button onClick={handleSearch} size="sm">
+                            Search
                         </Button>
-                    )}
+                        {search && (
+                            <Button onClick={handleClearSearch} size="sm" variant="ghost">
+                                Clear
+                            </Button>
+                        )}
+                    </div>
                 </div>
                 <Button onClick={fetchUsers} size="sm" variant="ghost">
                     Refresh
@@ -263,7 +397,13 @@ export function UsersMonitor({ token }: Props) {
                 <div className={styles.loading}>Loading users...</div>
             ) : users.length === 0 ? (
                 <div className={styles.empty}>
-                    {search ? `No users found matching "${search}"` : 'No users found'}
+                    {filter !== 'all' && search
+                        ? `No users found matching "${search}" in "${FILTER_LABELS[filter]}"`
+                        : filter !== 'all'
+                        ? `No users found for "${FILTER_LABELS[filter]}"`
+                        : search
+                        ? `No users found matching "${search}"`
+                        : 'No users found'}
                 </div>
             ) : (
                 <>
@@ -399,8 +539,8 @@ export function UsersMonitor({ token }: Props) {
                                                     {user.activity.sessions.slice(0, 5).map((session) => (
                                                         <div key={session.startedAt} className={styles.session_item}>
                                                             <div className={styles.session_header}>
-                                                                <span className={styles.session_device}>
-                                                                    {getDeviceEmoji(session.device)} {session.device}
+                                                                <span className={styles.session_device} title={session.device}>
+                                                                    {getDeviceEmoji(session.device)}
                                                                 </span>
                                                                 {session.country && (
                                                                     <span className={styles.session_country}>
@@ -409,7 +549,7 @@ export function UsersMonitor({ token }: Props) {
                                                                 )}
                                                                 {session.referrerDomain && (
                                                                     <span className={styles.session_referrer}>
-                                                                        from {session.referrerDomain}
+                                                                        {session.referrerDomain}
                                                                     </span>
                                                                 )}
                                                             </div>
@@ -462,7 +602,7 @@ export function UsersMonitor({ token }: Props) {
                             Previous
                         </Button>
                         <span className={styles.page_info}>
-                            Page {page} of {totalPages} ({total} users)
+                            Page {page} of {totalPages} ({displayTotal.toLocaleString()} {filter !== 'all' || search ? 'matching' : 'users'})
                         </span>
                         <Button
                             onClick={() => setPage(page + 1)}

@@ -1,5 +1,5 @@
 export { UserService } from './user.service.js';
-export type { IUserStats } from './user.service.js';
+export type { IUserStats, UserFilterType } from './user.service.js';
 export {
     initGeoIP,
     getCountryFromIP,

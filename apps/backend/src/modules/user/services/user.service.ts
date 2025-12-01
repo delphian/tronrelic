@@ -32,6 +32,42 @@ export interface IUserStats {
 }
 
 /**
+ * Available user filter types for admin dashboard.
+ */
+export type UserFilterType =
+    | 'all'
+    // Engagement
+    | 'power-users'
+    | 'one-time'
+    | 'returning'
+    | 'long-sessions'
+    // Wallet Status
+    | 'verified-wallet'
+    | 'multi-wallet'
+    | 'no-wallet'
+    | 'recently-connected'
+    // Temporal
+    | 'active-today'
+    | 'active-week'
+    | 'churned'
+    | 'new-users'
+    // Device
+    | 'mobile-users'
+    | 'desktop-users'
+    | 'multi-device'
+    // Geographic
+    | 'multi-region'
+    | 'single-region'
+    // Behavioral
+    | 'feature-explorers'
+    | 'focused-users'
+    | 'referred-traffic'
+    // Quick Picks (compound)
+    | 'high-value'
+    | 'at-risk'
+    | 'conversion-candidates';
+
+/**
  * Service for managing visitor identity and wallet linking.
  *
  * This singleton service handles user lifecycle including creation, wallet linking,
@@ -1124,6 +1160,284 @@ export class UserService {
             .toArray();
 
         return docs.map(doc => this.toPublicUser(doc));
+    }
+
+    /**
+     * Filter users by predefined criteria.
+     *
+     * Applies a filter query, optionally combined with a text search.
+     * Both filter and search work additively (AND logic).
+     *
+     * @param filter - Filter type to apply
+     * @param limit - Maximum results (default 50)
+     * @param skip - Pagination offset (default 0)
+     * @param search - Optional text search for UUID or wallet address
+     * @returns Filtered users and total count
+     */
+    async filterUsers(
+        filter: UserFilterType,
+        limit = 50,
+        skip = 0,
+        search?: string
+    ): Promise<{ users: IUser[]; filteredTotal: number }> {
+        const filterQuery = this.buildFilterQuery(filter);
+        const searchQuery = search
+            ? {
+                $or: [
+                    { id: { $regex: search, $options: 'i' } },
+                    { 'wallets.address': { $regex: search, $options: 'i' } }
+                ]
+            }
+            : {};
+
+        // Combine filter and search with AND logic
+        const combinedQuery = Object.keys(filterQuery).length > 0 && Object.keys(searchQuery).length > 0
+            ? { $and: [filterQuery, searchQuery] }
+            : { ...filterQuery, ...searchQuery };
+
+        const [docs, filteredTotal] = await Promise.all([
+            this.collection
+                .find(combinedQuery)
+                .sort({ 'activity.lastSeen': -1 })
+                .skip(skip)
+                .limit(limit)
+                .toArray(),
+            this.collection.countDocuments(combinedQuery)
+        ]);
+
+        return {
+            users: docs.map(doc => this.toPublicUser(doc)),
+            filteredTotal
+        };
+    }
+
+    /**
+     * Build MongoDB query for a filter type.
+     *
+     * @param filter - Filter type
+     * @returns MongoDB query object
+     */
+    private buildFilterQuery(filter: UserFilterType): object {
+        const now = new Date();
+        const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const weekAgo = new Date(todayStart);
+        weekAgo.setDate(weekAgo.getDate() - 7);
+        const thirtyDaysAgo = new Date(todayStart);
+        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+        switch (filter) {
+            // ==================== Engagement ====================
+            case 'power-users':
+                return {
+                    'activity.pageViews': { $gt: 100 },
+                    'activity.sessionsCount': { $gt: 10 }
+                };
+
+            case 'one-time':
+                return {
+                    'activity.sessionsCount': 1
+                };
+
+            case 'returning':
+                return {
+                    'activity.sessionsCount': { $gt: 1, $lte: 10 }
+                };
+
+            case 'long-sessions':
+                return {
+                    'activity.totalDurationSeconds': { $gt: 1800 } // 30 minutes
+                };
+
+            // ==================== Wallet Status ====================
+            case 'verified-wallet':
+                return {
+                    'wallets.verified': true
+                };
+
+            case 'multi-wallet':
+                return {
+                    'wallets.1': { $exists: true } // At least 2 wallets
+                };
+
+            case 'no-wallet':
+                return {
+                    $or: [
+                        { wallets: { $size: 0 } },
+                        { wallets: { $exists: false } }
+                    ]
+                };
+
+            case 'recently-connected':
+                return {
+                    'wallets.linkedAt': { $gte: weekAgo }
+                };
+
+            // ==================== Temporal ====================
+            case 'active-today':
+                return {
+                    'activity.lastSeen': { $gte: todayStart }
+                };
+
+            case 'active-week':
+                return {
+                    'activity.lastSeen': { $gte: weekAgo }
+                };
+
+            case 'churned':
+                return {
+                    'activity.lastSeen': { $lt: thirtyDaysAgo },
+                    'activity.sessionsCount': { $gt: 1 }
+                };
+
+            case 'new-users':
+                return {
+                    createdAt: { $gte: weekAgo }
+                };
+
+            // ==================== Device ====================
+            case 'mobile-users':
+                // Users where majority of sessions are mobile
+                return {
+                    $expr: {
+                        $gt: [
+                            {
+                                $size: {
+                                    $filter: {
+                                        input: '$activity.sessions',
+                                        as: 's',
+                                        cond: { $eq: ['$$s.device', 'mobile'] }
+                                    }
+                                }
+                            },
+                            {
+                                $divide: [{ $size: { $ifNull: ['$activity.sessions', []] } }, 2]
+                            }
+                        ]
+                    }
+                };
+
+            case 'desktop-users':
+                return {
+                    $expr: {
+                        $gt: [
+                            {
+                                $size: {
+                                    $filter: {
+                                        input: '$activity.sessions',
+                                        as: 's',
+                                        cond: { $eq: ['$$s.device', 'desktop'] }
+                                    }
+                                }
+                            },
+                            {
+                                $divide: [{ $size: { $ifNull: ['$activity.sessions', []] } }, 2]
+                            }
+                        ]
+                    }
+                };
+
+            case 'multi-device':
+                // Users with 2+ distinct device types in sessions
+                return {
+                    $expr: {
+                        $gte: [
+                            {
+                                $size: {
+                                    $setUnion: {
+                                        $map: {
+                                            input: { $ifNull: ['$activity.sessions', []] },
+                                            as: 's',
+                                            in: '$$s.device'
+                                        }
+                                    }
+                                }
+                            },
+                            2
+                        ]
+                    }
+                };
+
+            // ==================== Geographic ====================
+            case 'multi-region':
+                // Users with 3+ countries in countryCounts
+                return {
+                    $expr: {
+                        $gte: [
+                            { $size: { $objectToArray: { $ifNull: ['$activity.countryCounts', {}] } } },
+                            3
+                        ]
+                    }
+                };
+
+            case 'single-region':
+                return {
+                    $expr: {
+                        $eq: [
+                            { $size: { $objectToArray: { $ifNull: ['$activity.countryCounts', {}] } } },
+                            1
+                        ]
+                    }
+                };
+
+            // ==================== Behavioral ====================
+            case 'feature-explorers':
+                // Users with 20+ unique paths
+                return {
+                    $expr: {
+                        $gte: [
+                            { $size: { $objectToArray: { $ifNull: ['$activity.pageViewsByPath', {}] } } },
+                            20
+                        ]
+                    }
+                };
+
+            case 'focused-users':
+                // Users with less than 5 unique paths
+                return {
+                    $expr: {
+                        $and: [
+                            { $gt: [{ $size: { $objectToArray: { $ifNull: ['$activity.pageViewsByPath', {}] } } }, 0] },
+                            { $lt: [{ $size: { $objectToArray: { $ifNull: ['$activity.pageViewsByPath', {}] } } }, 5] }
+                        ]
+                    }
+                };
+
+            case 'referred-traffic':
+                // Any session has a referrerDomain
+                return {
+                    'activity.sessions.referrerDomain': { $ne: null }
+                };
+
+            // ==================== Quick Picks (Compound) ====================
+            case 'high-value':
+                // Verified wallet + active this week + pageViews > 50
+                return {
+                    'wallets.verified': true,
+                    'activity.lastSeen': { $gte: weekAgo },
+                    'activity.pageViews': { $gt: 50 }
+                };
+
+            case 'at-risk':
+                // Churned + has wallet
+                return {
+                    'activity.lastSeen': { $lt: thirtyDaysAgo },
+                    'wallets.0': { $exists: true }
+                };
+
+            case 'conversion-candidates':
+                // High engagement but no wallet
+                return {
+                    'activity.pageViews': { $gt: 50 },
+                    $or: [
+                        { wallets: { $size: 0 } },
+                        { wallets: { $exists: false } }
+                    ]
+                };
+
+            case 'all':
+            default:
+                return {};
+        }
     }
 
     /**
