@@ -363,9 +363,9 @@ export function UsersMonitor({ token }: Props) {
                                                 <dt>Page Views</dt>
                                                 <dd>{user.activity.pageViews.toLocaleString()}</dd>
                                                 <dt>Sessions</dt>
-                                                <dd>{user.activity.sessionsCount?.toLocaleString() ?? 0}</dd>
+                                                <dd>{user.activity.sessionsCount.toLocaleString()}</dd>
                                                 <dt>Total Time</dt>
-                                                <dd>{formatDuration(user.activity.totalDurationSeconds ?? 0)}</dd>
+                                                <dd>{formatDuration(user.activity.totalDurationSeconds)}</dd>
                                             </dl>
                                         </div>
 
@@ -396,8 +396,8 @@ export function UsersMonitor({ token }: Props) {
                                                 <p className={styles.no_data}>No session data</p>
                                             ) : (
                                                 <div className={styles.sessions_list}>
-                                                    {user.activity.sessions.slice(0, 5).map((session, idx) => (
-                                                        <div key={idx} className={styles.session_item}>
+                                                    {user.activity.sessions.slice(0, 5).map((session) => (
+                                                        <div key={session.startedAt} className={styles.session_item}>
                                                             <div className={styles.session_header}>
                                                                 <span className={styles.session_device}>
                                                                     {getDeviceEmoji(session.device)} {session.device}
