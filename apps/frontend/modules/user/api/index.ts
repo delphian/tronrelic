@@ -11,6 +11,11 @@ export {
     setPrimaryWallet,
     updatePreferences,
     recordActivity,
+    // Session tracking functions
+    startSession,
+    recordPage,
+    heartbeat,
+    endSession,
     // Login state functions
     loginUser,
     logoutUser,
@@ -19,3 +24,5 @@ export {
     adminGetUserStats,
     adminGetUser
 } from './client';
+
+export type { ISessionData } from './client';

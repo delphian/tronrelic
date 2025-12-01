@@ -6,10 +6,39 @@ import { Button } from '../../../../components/ui/Button';
 import { ClientTime } from '../../../../components/ui/ClientTime';
 import styles from './UsersMonitor.module.css';
 
+/**
+ * Format seconds into a human-readable duration string.
+ */
+function formatDuration(seconds: number): string {
+    if (seconds < 60) return `${seconds}s`;
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return `${minutes}m`;
+    const hours = Math.floor(minutes / 60);
+    const remainingMinutes = minutes % 60;
+    if (hours < 24) return remainingMinutes > 0 ? `${hours}h ${remainingMinutes}m` : `${hours}h`;
+    const days = Math.floor(hours / 24);
+    const remainingHours = hours % 24;
+    return remainingHours > 0 ? `${days}d ${remainingHours}h` : `${days}d`;
+}
+
+/**
+ * Get device emoji for display.
+ */
+function getDeviceEmoji(device: DeviceCategory): string {
+    switch (device) {
+        case 'mobile': return '📱';
+        case 'tablet': return '📲';
+        case 'desktop': return '🖥️';
+        default: return '❓';
+    }
+}
+
 interface WalletLink {
     address: string;
     linkedAt: string;
     isPrimary: boolean;
+    verified: boolean;
+    lastUsed: string;
     label?: string;
 }
 
@@ -20,10 +49,35 @@ interface UserPreferences {
     language?: string;
 }
 
+/** Device category derived from user-agent */
+type DeviceCategory = 'mobile' | 'tablet' | 'desktop' | 'unknown';
+
+/** A page visit within a session */
+interface PageVisit {
+    path: string;
+    timestamp: string;
+}
+
+/** A user session with engagement metrics */
+interface UserSession {
+    startedAt: string;
+    endedAt: string | null;
+    durationSeconds: number;
+    pages: PageVisit[];
+    device: DeviceCategory;
+    referrerDomain: string | null;
+    country: string | null;
+}
+
 interface UserActivity {
+    firstSeen: string;
     lastSeen: string;
     pageViews: number;
-    firstSeen: string;
+    sessionsCount: number;
+    totalDurationSeconds: number;
+    sessions: UserSession[];
+    pageViewsByPath: Record<string, number>;
+    countryCounts: Record<string, number>;
 }
 
 interface UserRecord {
@@ -261,9 +315,16 @@ export function UsersMonitor({ token }: Props) {
                                                             <code className={styles.wallet_address}>
                                                                 {wallet.address}
                                                             </code>
-                                                            {wallet.isPrimary && (
-                                                                <span className={styles.primary_badge}>Primary</span>
-                                                            )}
+                                                            <div className={styles.wallet_badges}>
+                                                                {wallet.isPrimary && (
+                                                                    <span className={styles.primary_badge}>Primary</span>
+                                                                )}
+                                                                {wallet.verified ? (
+                                                                    <span className={styles.verified_badge}>Verified</span>
+                                                                ) : (
+                                                                    <span className={styles.unverified_badge}>Unverified</span>
+                                                                )}
+                                                            </div>
                                                             {wallet.label && (
                                                                 <span className={styles.wallet_label}>
                                                                     {wallet.label}
@@ -301,7 +362,89 @@ export function UsersMonitor({ token }: Props) {
                                                 <dd><ClientTime date={user.activity.lastSeen} format="short" /></dd>
                                                 <dt>Page Views</dt>
                                                 <dd>{user.activity.pageViews.toLocaleString()}</dd>
+                                                <dt>Sessions</dt>
+                                                <dd>{user.activity.sessionsCount.toLocaleString()}</dd>
+                                                <dt>Total Time</dt>
+                                                <dd>{formatDuration(user.activity.totalDurationSeconds)}</dd>
                                             </dl>
+                                        </div>
+
+                                        {/* Country Distribution */}
+                                        <div className={styles.detail_section}>
+                                            <h4>Countries</h4>
+                                            {!user.activity.countryCounts || Object.keys(user.activity.countryCounts).length === 0 ? (
+                                                <p className={styles.no_data}>No country data</p>
+                                            ) : (
+                                                <div className={styles.country_list}>
+                                                    {Object.entries(user.activity.countryCounts)
+                                                        .sort(([, a], [, b]) => b - a)
+                                                        .slice(0, 10)
+                                                        .map(([country, count]) => (
+                                                            <div key={country} className={styles.country_item}>
+                                                                <span className={styles.country_code}>{country || 'Unknown'}</span>
+                                                                <span className={styles.country_count}>{count}</span>
+                                                            </div>
+                                                        ))}
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {/* Recent Sessions */}
+                                        <div className={styles.detail_section}>
+                                            <h4>Recent Sessions</h4>
+                                            {!user.activity.sessions || user.activity.sessions.length === 0 ? (
+                                                <p className={styles.no_data}>No session data</p>
+                                            ) : (
+                                                <div className={styles.sessions_list}>
+                                                    {user.activity.sessions.slice(0, 5).map((session) => (
+                                                        <div key={session.startedAt} className={styles.session_item}>
+                                                            <div className={styles.session_header}>
+                                                                <span className={styles.session_device}>
+                                                                    {getDeviceEmoji(session.device)} {session.device}
+                                                                </span>
+                                                                {session.country && (
+                                                                    <span className={styles.session_country}>
+                                                                        {session.country}
+                                                                    </span>
+                                                                )}
+                                                                {session.referrerDomain && (
+                                                                    <span className={styles.session_referrer}>
+                                                                        from {session.referrerDomain}
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                            <div className={styles.session_meta}>
+                                                                <span className={styles.session_duration}>
+                                                                    {formatDuration(session.durationSeconds)}
+                                                                </span>
+                                                                <span className={styles.session_time}>
+                                                                    <ClientTime date={session.startedAt} format="relative" />
+                                                                </span>
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {/* Top Pages */}
+                                        <div className={styles.detail_section}>
+                                            <h4>Top Pages</h4>
+                                            {!user.activity.pageViewsByPath || Object.keys(user.activity.pageViewsByPath).length === 0 ? (
+                                                <p className={styles.no_data}>No page data</p>
+                                            ) : (
+                                                <div className={styles.pages_list}>
+                                                    {Object.entries(user.activity.pageViewsByPath)
+                                                        .sort(([, a], [, b]) => b - a)
+                                                        .slice(0, 10)
+                                                        .map(([path, count]) => (
+                                                            <div key={path} className={styles.page_item}>
+                                                                <span className={styles.page_path}>{path}</span>
+                                                                <span className={styles.page_count}>{count}</span>
+                                                            </div>
+                                                        ))}
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
                                 )}
