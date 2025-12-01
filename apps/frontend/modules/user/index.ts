@@ -102,6 +102,11 @@ export {
     setPrimaryWallet,
     updatePreferences,
     recordActivity,
+    // Session tracking functions
+    startSession,
+    recordPage,
+    heartbeat,
+    endSession,
     // Login state functions
     loginUser,
     logoutUser,
@@ -110,6 +115,8 @@ export {
     adminGetUserStats,
     adminGetUser
 } from './api';
+
+export type { ISessionData } from './api';
 
 // =============================================================================
 // Identity Utilities (Client-side)
@@ -146,7 +153,7 @@ export type { TronWebProvider, SSRUserData } from './lib';
 // Hooks
 // =============================================================================
 
-export { useWallet } from './hooks';
+export { useWallet, useSessionTracking } from './hooks';
 
 // =============================================================================
 // Components

@@ -3,3 +3,4 @@
  */
 
 export { useWallet } from './useWallet';
+export { useSessionTracking } from './useSessionTracking';

@@ -139,10 +139,90 @@ export async function updatePreferences(
  * Record user activity (page view).
  *
  * @param userId - User UUID
+ * @deprecated Use startSession and recordPage for session-aware tracking
  */
 export async function recordActivity(userId: string): Promise<void> {
     await apiClient.post(
         `/user/${userId}/activity`,
+        {},
+        { withCredentials: true }
+    );
+}
+
+// ============================================================================
+// Session Tracking Functions
+// ============================================================================
+
+/**
+ * Session data returned from session/start endpoint.
+ */
+export interface ISessionData {
+    startedAt: string;
+    endedAt: string | null;
+    durationSeconds: number;
+    pages: Array<{ path: string; timestamp: string }>;
+    device: 'mobile' | 'tablet' | 'desktop' | 'unknown';
+    referrerDomain: string | null;
+    country: string | null;
+}
+
+/**
+ * Start a new session or return the active session.
+ * Device, country, and referrer are derived from request headers server-side.
+ *
+ * @param userId - User UUID
+ * @param referrer - Optional referrer URL (defaults to document.referrer)
+ * @returns Session data
+ */
+export async function startSession(
+    userId: string,
+    referrer?: string
+): Promise<ISessionData> {
+    const response = await apiClient.post(
+        `/user/${userId}/session/start`,
+        { referrer },
+        { withCredentials: true }
+    );
+    return response.data.session as ISessionData;
+}
+
+/**
+ * Record a page visit in the current session.
+ *
+ * @param userId - User UUID
+ * @param path - Route path (e.g., '/accounts/TXyz...')
+ */
+export async function recordPage(userId: string, path: string): Promise<void> {
+    await apiClient.post(
+        `/user/${userId}/session/page`,
+        { path },
+        { withCredentials: true }
+    );
+}
+
+/**
+ * Update session heartbeat to extend duration tracking.
+ * Should be called periodically (e.g., every 30 seconds).
+ *
+ * @param userId - User UUID
+ */
+export async function heartbeat(userId: string): Promise<void> {
+    await apiClient.post(
+        `/user/${userId}/session/heartbeat`,
+        {},
+        { withCredentials: true }
+    );
+}
+
+/**
+ * End the current session explicitly.
+ * Called when user navigates away or closes the page.
+ *
+ * @param userId - User UUID
+ */
+export async function endSession(userId: string): Promise<void> {
+    await apiClient.post(
+        `/user/${userId}/session/end`,
         {},
         { withCredentials: true }
     );

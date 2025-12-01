@@ -6,7 +6,7 @@
  * Initializes user identity on app mount by:
  * 1. Getting or creating UUID from cookie/localStorage
  * 2. Fetching or creating user record from backend
- * 3. Recording activity
+ * 3. Starting session tracking (captures country, device, referrer)
  *
  * Must be rendered inside Redux Provider and after SocketBridge.
  */
@@ -16,11 +16,11 @@ import { useDispatch, useSelector } from 'react-redux';
 import type { AppDispatch } from '../../../store';
 import {
     initializeUser,
-    recordActivityThunk,
     selectUserInitialized,
     selectUserId
 } from '../slice';
 import { getOrCreateUserId } from '../lib';
+import { useSessionTracking } from '../hooks';
 
 /**
  * Props for UserIdentityProvider.
@@ -87,23 +87,17 @@ export function UserIdentityProvider({
 
         // Initialize user in backend
         dispatch(initializeUser(id))
-            .then((result) => {
-                // Record activity after successful initialization
-                if (result.meta.requestStatus === 'fulfilled') {
-                    dispatch(recordActivityThunk(id));
-                }
-            })
             .catch(() => {
                 // Error handling is done in the slice
             });
     }, [dispatch, initialized, initialCookies]);
 
-    // Record activity on subsequent page views (when user is already initialized)
-    useEffect(() => {
-        if (initialized && userId) {
-            dispatch(recordActivityThunk(userId));
-        }
-    }, [dispatch, initialized, userId]);
+    // Session tracking handles page visits, heartbeats, and country/device capture
+    // Only enabled after user is initialized to ensure we have a valid userId
+    useSessionTracking({
+        userId: initialized ? userId : null,
+        enabled: initialized && !!userId
+    });
 
     return <>{children}</>;
 }
