@@ -327,12 +327,14 @@ export class UserController {
             const clientIP = getClientIP(req);
             const userAgent = req.headers['user-agent'];
             const referrer = req.headers['referer'] || req.body.referrer;
+            const screenWidth = typeof req.body.screenWidth === 'number' ? req.body.screenWidth : undefined;
 
             const session = await this.userService.startSession(
                 id,
                 clientIP,
                 userAgent,
-                referrer
+                referrer,
+                screenWidth
             );
 
             res.json({ session });

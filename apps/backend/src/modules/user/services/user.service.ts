@@ -15,7 +15,8 @@ import type {
 import {
     getCountryFromIP,
     extractReferrerDomain,
-    getDeviceCategory
+    getDeviceCategory,
+    getScreenSizeCategory
 } from './geo.service.js';
 import { SignatureService } from '../../auth/signature.service.js';
 
@@ -693,20 +694,22 @@ export class UserService {
     /**
      * Start a new session for a user.
      *
-     * Creates a new session entry with device, referrer, and country info.
+     * Creates a new session entry with device, referrer, country, and screen size info.
      * If there's an active session within the timeout window, returns it instead.
      *
      * @param userId - UUID of user
      * @param clientIP - Client IP address (for country lookup, never stored)
      * @param userAgent - User-agent header (for device detection, never stored raw)
      * @param referrer - Referrer URL (domain extracted, full URL never stored)
+     * @param screenWidth - Viewport width in pixels (client-provided)
      * @returns The active session
      */
     async startSession(
         userId: string,
         clientIP?: string,
         userAgent?: string,
-        referrer?: string
+        referrer?: string,
+        screenWidth?: number
     ): Promise<IUserSession> {
         try {
             const doc = await this.collection.findOne({ id: userId });
@@ -744,6 +747,7 @@ export class UserService {
             const device = getDeviceCategory(userAgent);
             const referrerDomain = extractReferrerDomain(referrer);
             const country = getCountryFromIP(clientIP);
+            const screenSize = getScreenSizeCategory(screenWidth);
 
             // Track country distribution
             if (country) {
@@ -757,6 +761,8 @@ export class UserService {
                 durationSeconds: 0,
                 pages: [],
                 device,
+                screenWidth: screenWidth ?? null,
+                screenSize,
                 referrerDomain,
                 country
             };
@@ -783,7 +789,7 @@ export class UserService {
             await this.invalidateUserCache(userId);
 
             this.logger.debug(
-                { userId, device, country, referrerDomain },
+                { userId, device, screenSize, country, referrerDomain },
                 'Session started'
             );
 
@@ -820,6 +826,8 @@ export class UserService {
                     durationSeconds: 0,
                     pages: [],
                     device: 'unknown',
+                    screenWidth: null,
+                    screenSize: 'unknown',
                     referrerDomain: null,
                     country: null
                 };
@@ -846,6 +854,8 @@ export class UserService {
                     durationSeconds: 0,
                     pages: [],
                     device: 'unknown',
+                    screenWidth: null,
+                    screenSize: 'unknown',
                     referrerDomain: null,
                     country: null
                 };
@@ -1269,41 +1279,46 @@ export class UserService {
             // If admin page performance degrades at scale, consider pre-computing metrics
             // (e.g., deviceCounts, uniqueCountries, uniquePaths) on the user document.
             case 'mobile-users':
-                // Users where majority of sessions are mobile
+                // Users where majority of sessions are on mobile
                 return {
                     $expr: {
                         $gt: [
                             {
                                 $size: {
                                     $filter: {
-                                        input: '$activity.sessions',
-                                        as: 's',
-                                        cond: { $eq: ['$$s.device', 'mobile'] }
+                                        input: { $ifNull: ['$activity.sessions', []] },
+                                        cond: { $eq: ['$$this.device', 'mobile'] }
                                     }
                                 }
                             },
                             {
-                                $divide: [{ $size: { $ifNull: ['$activity.sessions', []] } }, 2]
+                                $divide: [
+                                    { $size: { $ifNull: ['$activity.sessions', []] } },
+                                    2
+                                ]
                             }
                         ]
                     }
                 };
 
             case 'desktop-users':
+                // Users where majority of sessions are on desktop
                 return {
                     $expr: {
                         $gt: [
                             {
                                 $size: {
                                     $filter: {
-                                        input: '$activity.sessions',
-                                        as: 's',
-                                        cond: { $eq: ['$$s.device', 'desktop'] }
+                                        input: { $ifNull: ['$activity.sessions', []] },
+                                        cond: { $eq: ['$$this.device', 'desktop'] }
                                     }
                                 }
                             },
                             {
-                                $divide: [{ $size: { $ifNull: ['$activity.sessions', []] } }, 2]
+                                $divide: [
+                                    { $size: { $ifNull: ['$activity.sessions', []] } },
+                                    2
+                                ]
                             }
                         ]
                     }
@@ -1330,6 +1345,68 @@ export class UserService {
                             },
                             2
                         ]
+                    }
+                };
+
+            // ==================== Screen Size ====================
+            // Based on viewport width breakpoints from TronRelic design system
+            case 'screen-mobile-sm':
+                // < 360px (legacy devices)
+                return {
+                    'activity.sessions': {
+                        $elemMatch: {
+                            screenSize: 'mobile-sm'
+                        }
+                    }
+                };
+
+            case 'screen-mobile-md':
+                // 360-479px (primary mobile)
+                return {
+                    'activity.sessions': {
+                        $elemMatch: {
+                            screenSize: 'mobile-md'
+                        }
+                    }
+                };
+
+            case 'screen-mobile-lg':
+                // 480-767px (large phones)
+                return {
+                    'activity.sessions': {
+                        $elemMatch: {
+                            screenSize: 'mobile-lg'
+                        }
+                    }
+                };
+
+            case 'screen-tablet':
+                // 768-1023px (tablets)
+                return {
+                    'activity.sessions': {
+                        $elemMatch: {
+                            screenSize: 'tablet'
+                        }
+                    }
+                };
+
+            case 'screen-desktop':
+                // 1024-1199px (standard desktop)
+                return {
+                    'activity.sessions': {
+                        $elemMatch: {
+                            screenSize: 'desktop'
+                        }
+                    }
+                };
+
+            case 'screen-desktop-lg':
+                // >= 1200px (large desktop)
+                return {
+                    'activity.sessions': {
+                        $elemMatch: {
+                            screenSize: 'desktop-lg'
+                        }
                     }
                 };
 

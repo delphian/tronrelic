@@ -61,6 +61,20 @@ export interface IPageVisit {
 export type DeviceCategory = 'mobile' | 'tablet' | 'desktop' | 'unknown';
 
 /**
+ * Screen size category based on viewport width.
+ * Uses TronRelic's design system breakpoints (Asia-optimized).
+ *
+ * Breakpoint thresholds:
+ * - mobile-sm: < 360px (legacy devices)
+ * - mobile-md: 360-479px (primary mobile)
+ * - mobile-lg: 480-767px (large phones)
+ * - tablet: 768-1023px (tablets)
+ * - desktop: 1024-1199px (standard desktop)
+ * - desktop-lg: >= 1200px (large desktop)
+ */
+export type ScreenSizeCategory = 'mobile-sm' | 'mobile-md' | 'mobile-lg' | 'tablet' | 'desktop' | 'desktop-lg' | 'unknown';
+
+/**
  * A user session with engagement metrics.
  *
  * Sessions are bounded - only the last N are retained to prevent
@@ -76,8 +90,12 @@ export interface IUserSession {
     durationSeconds: number;
     /** Pages visited during this session (capped at 100 per session) */
     pages: IPageVisit[];
-    /** Device category for this session */
+    /** Device category for this session (derived from user-agent) */
     device: DeviceCategory;
+    /** Viewport width in pixels at session start (null if not provided) */
+    screenWidth: number | null;
+    /** Screen size category based on viewport width breakpoints */
+    screenSize: ScreenSizeCategory;
     /** Referrer domain (e.g., 'twitter.com', 'google.com', null if direct) */
     referrerDomain: string | null;
     /** ISO 3166-1 alpha-2 country code (e.g., 'US', 'DE', 'JP') */
@@ -191,6 +209,8 @@ export interface IStartSessionInput {
     referrer?: string;
     /** User-agent string (server derives device category, never stored raw) */
     userAgent?: string;
+    /** Viewport width in pixels (client-provided for accurate screen size tracking) */
+    screenWidth?: number;
 }
 
 /**

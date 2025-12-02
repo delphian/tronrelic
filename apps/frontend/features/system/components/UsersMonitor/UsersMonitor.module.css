@@ -236,11 +236,18 @@
     border-top: var(--border-width-thin) solid var(--color-border);
     background: var(--color-surface-elevated);
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-    gap: var(--spacing-7);
+    grid-template-columns: repeat(9, 1fr);
+    gap: var(--spacing-10);
+}
+
+.detail_section {
+    grid-column: span 3;
 }
 
 .detail_section h4 {
+    display: flex;
+    align-items: center;
+    min-height: 24px;
     font-size: var(--font-size-sm);
     font-weight: var(--font-weight-semibold);
     color: var(--color-text);
@@ -253,6 +260,87 @@
     font-size: var(--font-size-sm);
     color: var(--color-text-subtle);
     margin: 0;
+}
+
+/* Section width modifiers for 9-column grid layout */
+.detail_section__narrow {
+    grid-column: span 1;
+}
+
+.detail_section__sessions {
+    grid-column: span 5;
+}
+
+.detail_section__pages {
+    grid-column: span 3;
+}
+
+/* Section header with inline pagination */
+.section_header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    min-height: 24px;
+    margin-bottom: var(--spacing-5);
+    border-bottom: var(--border-width-thin) solid var(--color-border);
+}
+
+.section_header h4 {
+    margin: 0;
+    padding: 0;
+    border: none;
+}
+
+/* Session pagination controls */
+.session_pagination {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-3);
+}
+
+.session_nav_btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface);
+    color: var(--color-text);
+    font-size: var(--font-size-xs);
+    cursor: pointer;
+    transition: border-color 0.15s ease;
+}
+
+.session_nav_btn:hover:not(:disabled) {
+    border-color: var(--color-border-strong);
+    background: var(--color-surface-muted);
+}
+
+.session_nav_btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.session_page_info {
+    font-size: var(--font-size-2xs);
+    font-family: var(--font-mono);
+    color: var(--color-text-muted);
+    min-width: 32px;
+    text-align: center;
+}
+
+/* Responsive: adjust grid layout on narrow containers */
+@container users-monitor (max-width: 800px) {
+    .user_details {
+        grid-template-columns: repeat(3, 1fr);
+    }
+
+    .detail_section {
+        grid-column: span 3;
+    }
 }
 
 .wallet_list {
@@ -395,19 +483,18 @@
 .sessions_list {
     display: flex;
     flex-direction: column;
-    gap: var(--spacing-1);
+    gap: 0;
 }
 
 .session_item {
-    display: flex;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
     align-items: center;
     gap: var(--spacing-3);
-    padding: var(--spacing-2) var(--spacing-3);
-    background: var(--color-surface-muted);
-    border-radius: var(--radius-sm);
+    padding: var(--spacing-1) var(--spacing-3);
 }
 
-.session_header {
+.session_device_col {
     display: flex;
     align-items: center;
     gap: var(--spacing-3);
@@ -418,13 +505,13 @@
     color: var(--color-text);
 }
 
-.session_duration {
-    font-size: var(--font-size-xs);
-    font-weight: var(--font-weight-medium);
-    color: var(--color-primary);
+.session_screen {
+    font-size: var(--font-size-2xs);
+    font-family: var(--font-mono);
+    color: var(--color-text-subtle);
 }
 
-.session_meta {
+.session_referrer_col {
     display: flex;
     align-items: center;
     gap: var(--spacing-3);
@@ -439,6 +526,19 @@
 .session_referrer {
     font-size: var(--font-size-2xs);
     color: var(--color-text-subtle);
+}
+
+.session_meta {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--spacing-3);
+}
+
+.session_duration {
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
+    color: var(--color-primary);
 }
 
 .session_time {
@@ -534,6 +634,10 @@
 
     .user_details {
         grid-template-columns: 1fr;
+    }
+
+    .detail_section {
+        grid-column: span 1;
     }
 
     .pagination {

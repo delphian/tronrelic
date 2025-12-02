@@ -153,6 +153,9 @@ export async function recordActivity(userId: string): Promise<void> {
 // Session Tracking Functions
 // ============================================================================
 
+/** Screen size category based on viewport width breakpoints */
+export type ScreenSizeCategory = 'mobile-sm' | 'mobile-md' | 'mobile-lg' | 'tablet' | 'desktop' | 'desktop-lg' | 'unknown';
+
 /**
  * Session data returned from session/start endpoint.
  */
@@ -162,6 +165,8 @@ export interface ISessionData {
     durationSeconds: number;
     pages: Array<{ path: string; timestamp: string }>;
     device: 'mobile' | 'tablet' | 'desktop' | 'unknown';
+    screenWidth: number | null;
+    screenSize: ScreenSizeCategory;
     referrerDomain: string | null;
     country: string | null;
 }
@@ -169,18 +174,21 @@ export interface ISessionData {
 /**
  * Start a new session or return the active session.
  * Device, country, and referrer are derived from request headers server-side.
+ * Screen size is derived from the provided screenWidth using design system breakpoints.
  *
  * @param userId - User UUID
  * @param referrer - Optional referrer URL (defaults to document.referrer)
+ * @param screenWidth - Optional viewport width in pixels
  * @returns Session data
  */
 export async function startSession(
     userId: string,
-    referrer?: string
+    referrer?: string,
+    screenWidth?: number
 ): Promise<ISessionData> {
     const response = await apiClient.post(
         `/user/${userId}/session/start`,
-        { referrer },
+        { referrer, screenWidth },
         { withCredentials: true }
     );
     return response.data.session as ISessionData;
