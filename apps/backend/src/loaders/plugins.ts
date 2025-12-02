@@ -267,6 +267,14 @@ export async function loadPlugins(): Promise<void> {
                 pluginLogger.info('✓ Loaded plugin (no init hook)');
             }
 
+            // Register widgets if defined
+            if (plugin.widgets && plugin.widgets.length > 0) {
+                for (const widget of plugin.widgets) {
+                    await widgetService.register(widget, metadata.id);
+                }
+                pluginLogger.info(`✓ Registered ${plugin.widgets.length} widget(s)`);
+            }
+
             // Register API routes
             apiService.registerPluginRoutes(plugin);
         } catch (error) {
