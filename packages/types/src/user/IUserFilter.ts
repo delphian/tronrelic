@@ -5,6 +5,8 @@
  */
 export type UserFilterType =
     | 'all'
+    // Real-time
+    | 'live-now'
     // Engagement
     | 'power-users'
     | 'one-time'

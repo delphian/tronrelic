@@ -1204,6 +1204,17 @@ export class UserService {
         thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
         switch (filter) {
+            // ==================== Real-time ====================
+            case 'live-now':
+                // Users with an active session (endedAt is null)
+                return {
+                    'activity.sessions': {
+                        $elemMatch: {
+                            endedAt: null
+                        }
+                    }
+                };
+
             // ==================== Engagement ====================
             case 'power-users':
                 return {

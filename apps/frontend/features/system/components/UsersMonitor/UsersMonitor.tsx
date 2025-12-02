@@ -132,6 +132,8 @@ interface UsersResponse {
  */
 const FILTER_LABELS: Record<UserFilterType, string> = {
     'all': 'All Users',
+    // Real-time
+    'live-now': 'Live Now',
     // Engagement
     'power-users': 'Power Users',
     'one-time': 'One-Time Visitors',
@@ -355,6 +357,9 @@ export function UsersMonitor({ token }: Props) {
                         aria-label="Filter users"
                     >
                         <option value="all">{FILTER_LABELS['all']}</option>
+                        <optgroup label="Real-time" aria-label="Real-time filters">
+                            <option value="live-now">{FILTER_LABELS['live-now']}</option>
+                        </optgroup>
                         <optgroup label="Engagement" aria-label="Engagement filters">
                             <option value="power-users">{FILTER_LABELS['power-users']}</option>
                             <option value="one-time">{FILTER_LABELS['one-time']}</option>

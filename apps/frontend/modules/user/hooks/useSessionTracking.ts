@@ -7,6 +7,11 @@
  * - Sending heartbeats to track engagement duration
  * - Ending sessions on page unload
  *
+ * Referrer handling:
+ * - First checks for preserved referrer cookie (set by middleware during redirects)
+ * - Falls back to document.referrer if no cookie present
+ * - Clears the cookie after reading to prevent stale attribution
+ *
  * This hook should be used once at the app level, typically in a provider
  * that has access to the user ID.
  */
@@ -16,9 +21,66 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import { startSession, recordPage, heartbeat, endSession } from '../api';
+import { ORIGINAL_REFERRER_COOKIE } from '../../../middleware';
 
 /** Heartbeat interval in milliseconds (30 seconds) */
 const HEARTBEAT_INTERVAL = 30000;
+
+/**
+ * Get the preserved referrer from cookie and clear it.
+ *
+ * The middleware sets this cookie when redirecting requests that have
+ * an external referrer, preserving the original traffic source.
+ *
+ * @returns The preserved referrer URL or undefined
+ */
+function getAndClearPreservedReferrer(): string | undefined {
+    if (typeof document === 'undefined') {
+        return undefined;
+    }
+
+    // Parse cookies
+    const cookies = document.cookie.split(';').reduce((acc, cookie) => {
+        const [key, value] = cookie.trim().split('=');
+        if (key && value) {
+            acc[key] = decodeURIComponent(value);
+        }
+        return acc;
+    }, {} as Record<string, string>);
+
+    const preserved = cookies[ORIGINAL_REFERRER_COOKIE];
+
+    // Clear the cookie after reading
+    if (preserved) {
+        document.cookie = `${ORIGINAL_REFERRER_COOKIE}=; path=/; max-age=0`;
+    }
+
+    return preserved;
+}
+
+/**
+ * Get the effective referrer for session tracking.
+ *
+ * Priority:
+ * 1. Preserved referrer cookie (set by middleware during redirects)
+ * 2. document.referrer (standard browser referrer)
+ *
+ * @returns The referrer URL or undefined
+ */
+function getEffectiveReferrer(): string | undefined {
+    // Check for preserved referrer first (handles redirect case)
+    const preserved = getAndClearPreservedReferrer();
+    if (preserved) {
+        return preserved;
+    }
+
+    // Fall back to standard document.referrer
+    if (typeof document !== 'undefined' && document.referrer) {
+        return document.referrer;
+    }
+
+    return undefined;
+}
 
 interface UseSessionTrackingOptions {
     /** User UUID - tracking only runs when this is provided */
@@ -57,8 +119,8 @@ export function useSessionTracking({
         if (!userId) return;
 
         try {
-            // Pass document.referrer for first-visit tracking
-            const referrer = typeof document !== 'undefined' ? document.referrer : undefined;
+            // Get referrer (checks preserved cookie first, then document.referrer)
+            const referrer = getEffectiveReferrer();
             // Pass viewport width for screen size tracking
             const screenWidth = typeof window !== 'undefined' ? window.innerWidth : undefined;
             await startSession(userId, referrer, screenWidth);
