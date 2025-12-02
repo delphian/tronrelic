@@ -72,6 +72,44 @@ export const whaleAlertsBackendPlugin = definePlugin({
         // Register admin routes dynamically with context
         whaleAlertsBackendPlugin.adminRoutes = createAdminRoutes(context);
 
+        // Register example widget to show latest whale alerts on homepage
+        await context.widgetService.register({
+            id: 'whale-alerts:recent',
+            zone: 'main-after',
+            routes: ['/'],
+            order: 20,
+            title: 'Recent Whale Activity',
+            description: 'Latest large transactions on TRON network',
+            fetchData: async () => {
+                try {
+                    // Fetch latest 5 whale transactions
+                    const collection = context.database.getCollection<IWhaleTransaction>('transactions');
+                    const transactions = await collection
+                        .find({})
+                        .sort({ blockTimestamp: -1 })
+                        .limit(5)
+                        .toArray();
+
+                    return {
+                        transactions: transactions.map(tx => ({
+                            txId: tx.txId,
+                            fromAddress: tx.fromAddress,
+                            toAddress: tx.toAddress,
+                            amountTRX: tx.amountTRX,
+                            timestamp: tx.timestamp,
+                            pattern: tx.pattern
+                        })),
+                        count: transactions.length
+                    };
+                } catch (error) {
+                    context.logger.error('Failed to fetch whale transactions for widget', { error });
+                    return { transactions: [], count: 0 };
+                }
+            }
+        }, whaleAlertsManifest.id);
+
+        context.logger.info('Whale alerts widget registered');
+
         // Register WebSocket subscription handler
         context.websocket.onSubscribe(async (socket, roomName, payload) => {
             // roomName is already provided by the client (e.g., 'large-transfer', 'config-updates')

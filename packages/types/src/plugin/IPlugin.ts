@@ -6,6 +6,7 @@ import type { IMenuItemConfig } from './IMenuItemConfig.js';
 import type { IPageConfig } from './IPageConfig.js';
 import type { IApiRouteConfig } from './IApiRouteConfig.js';
 import type { IFrontendPluginContext } from './IFrontendPluginContext.js';
+import type { IWidgetConfig } from '../widget/IWidgetConfig.js';
 
 /**
  * Complete plugin definition for TronRelic plugin system.
@@ -197,6 +198,35 @@ export interface IPlugin {
 
     /** Admin UI configuration (deprecated: use menuItems + pages instead) */
     adminUI?: IAdminUIConfig;
+
+    /**
+     * Widget configurations for injecting UI into page zones.
+     *
+     * Widgets allow plugins to extend existing pages by injecting components into
+     * designated zones (e.g., 'main-after', 'sidebar-top'). Each widget specifies
+     * which routes it should appear on and provides an async data fetcher for SSR.
+     *
+     * Unlike pages (which own their full route), widgets extend existing pages by
+     * appearing in predefined zones. Multiple widgets can coexist in the same zone,
+     * sorted by their order property.
+     *
+     * @example
+     * ```typescript
+     * widgets: [
+     *     {
+     *         id: 'reddit-feed',
+     *         zone: 'main-after',
+     *         routes: ['/'],
+     *         order: 10,
+     *         title: 'Community Buzz',
+     *         fetchData: async () => {
+     *             return { posts: await getRedditPosts(5) };
+     *         }
+     *     }
+     * ]
+     * ```
+     */
+    widgets?: IWidgetConfig[];
 
     /**
      * Frontend component to auto-render in the app (e.g., toast handlers, event listeners).

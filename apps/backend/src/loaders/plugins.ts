@@ -20,6 +20,7 @@ import { MenuService } from '../modules/menu/menu.service.js';
 import { getScheduler } from '../jobs/index.js';
 import { ChainParametersService } from '../modules/chain-parameters/chain-parameters.service.js';
 import { UsdtParametersService } from '../modules/usdt-parameters/usdt-parameters.service.js';
+import { WidgetService } from '../services/widget/widget.service.js';
 import { getRedisClient } from './redis.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -168,6 +169,7 @@ export async function loadPlugins(): Promise<void> {
     // Caches are guaranteed warm at this point
     const chainParametersService = ChainParametersService.getInstance();
     const usdtParametersService = UsdtParametersService.getInstance();
+    const widgetService = WidgetService.getInstance(logger);
 
     // Create shared HTTP client for all plugins
     const httpClient = axios.create({
@@ -215,6 +217,7 @@ export async function loadPlugins(): Promise<void> {
                 scheduler: schedulerService as any, // May be null if scheduler disabled
                 chainParameters: chainParametersService,
                 usdtParameters: usdtParametersService,
+                widgetService,
                 logger: pluginLogger
             };
 
@@ -262,6 +265,14 @@ export async function loadPlugins(): Promise<void> {
                 pluginLogger.info('✓ Initialized plugin');
             } else {
                 pluginLogger.info('✓ Loaded plugin (no init hook)');
+            }
+
+            // Register widgets if defined
+            if (plugin.widgets && plugin.widgets.length > 0) {
+                for (const widget of plugin.widgets) {
+                    await widgetService.register(widget, metadata.id);
+                }
+                pluginLogger.info(`✓ Registered ${plugin.widgets.length} widget(s)`);
             }
 
             // Register API routes

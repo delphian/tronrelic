@@ -56,7 +56,10 @@ Plugins extend the frontend through:
 
 - **Menu items** - Navigation links with ordering, categorization, icons, and access control
 - **Pages** - React components rendered via dynamic catch-all routing
+- **Widget zones** - Inject UI components into designated zones on existing pages
 - **Context injection** - UI components, API client, charts, and WebSocket access without cross-workspace imports
+
+**SSR + Live Updates Pattern:** All visible plugin UI should follow the SSR + live updates pattern. Components render fully on the server for instant display (no loading flash), then hydrate on the client for interactivity. After hydration, components subscribe to WebSocket for real-time data updates. This pattern is documented in [plugins-frontend-context.md](./plugins-frontend-context.md#ssr--live-updates-pattern).
 
 **See [plugins-page-registration.md](./plugins-page-registration.md) for complete details on:**
 - Menu item and page configuration
@@ -64,9 +67,16 @@ Plugins extend the frontend through:
 - Plugin admin pages and settings screens
 - Migration from deprecated `adminUI` pattern
 
+**See [plugins-widget-zones.md](./plugins-widget-zones.md) for complete details on:**
+- Registering widgets to inject UI into page zones
+- Zone naming conventions and routing
+- Widget ordering and lifecycle management
+- Backend data fetching for widgets
+
 **See [plugins-frontend-context.md](./plugins-frontend-context.md) for complete details on:**
 - Using `IFrontendPluginContext` for dependency injection
 - Accessing UI components, charts, API client, and WebSocket
+- SSR + live updates pattern for plugin components
 - CSS Modules for plugin-scoped styles
 - Migration from cross-workspace imports
 
@@ -212,6 +222,7 @@ context.websocket.onSubscribe(async (socket, roomName, payload) => {
 - [plugins-system-architecture.md](./plugins-system-architecture.md) - Package layout, manifests, lifecycle hooks, admin interface
 - [plugins-blockchain-observers.md](./plugins-blockchain-observers.md) - Observer pattern, transaction processing, subscriptions
 - [plugins-page-registration.md](./plugins-page-registration.md) - Menu items, pages, routing, admin UI
+- [plugins-widget-zones.md](./plugins-widget-zones.md) - Widget zones for injecting UI into existing pages
 - [plugins-frontend-context.md](./plugins-frontend-context.md) - Context injection, UI components, API client, WebSocket
 - [plugins-api-registration.md](./plugins-api-registration.md) - REST routes, middleware, admin endpoints
 - [plugins-database.md](./plugins-database.md) - Scoped storage, indexes, key-value config

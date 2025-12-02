@@ -15,7 +15,13 @@ interface WhaleAlertsToastHandlerProps {
 }
 
 /**
- * Display toast notifications for whale transfers.
+ * Whale alerts plugin handler for toast notifications.
+ *
+ * This side-effect component subscribes to whale transfer events and displays
+ * toast notifications when large transfers are detected.
+ *
+ * Note: Widget components are registered via static exports in widgets/index.ts,
+ * enabling SSR. This component only handles runtime toast notifications.
  *
  * The handler subscribes to the plugin-namespaced 'large-transfer' event using the
  * plugin context's WebSocket client, which automatically prefixes events with the

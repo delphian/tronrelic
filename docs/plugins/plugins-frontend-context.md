@@ -630,6 +630,79 @@ interface TimeseriesPoint {
 }
 ```
 
+## SSR + Live Updates Pattern
+
+Server-side rendering (SSR) with live data updates is the preferred pattern for plugin UI components. This approach provides instant display without loading flash, while still supporting real-time data changes.
+
+### How It Works
+
+1. **Build time** - Generator creates static imports for plugin components
+2. **SSR** - Server renders components with pre-fetched data → HTML sent to browser
+3. **Hydration** - React takes over, components become interactive
+4. **Live updates** - Components subscribe to WebSocket for real-time data changes
+
+This pattern eliminates loading spinners on initial page load while still supporting dynamic data.
+
+### Component Pattern
+
+Plugin components that render visible UI should follow this pattern:
+
+```typescript
+'use client';
+
+import { useState, useEffect } from 'react';
+
+interface MyComponentProps {
+    initialData: MyData;  // SSR-provided data
+    context: IFrontendPluginContext;
+}
+
+export function MyPluginComponent({ initialData, context }: MyComponentProps) {
+    // Initialize state from SSR data - no loading state needed
+    const [data, setData] = useState(initialData);
+
+    useEffect(() => {
+        // After hydration, subscribe to live updates
+        const handleUpdate = (payload: MyData) => {
+            setData(payload);
+        };
+
+        context.websocket.on('update', handleUpdate);
+        return () => context.websocket.off('update', handleUpdate);
+    }, [context.websocket]);
+
+    // Render immediately - data is already present from SSR
+    return (
+        <context.ui.Card>
+            {data.items.map(item => (
+                <p key={item.id}>{item.title}</p>
+            ))}
+        </context.ui.Card>
+    );
+}
+```
+
+### Key Principles
+
+1. **Initialize state from SSR data** - Use `useState(initialData)` rather than `useState(null)` with a loading fetch
+2. **No loading spinners for initial render** - Data arrives with HTML, component renders immediately
+3. **WebSocket subscriptions in useEffect** - Client-side only, runs after hydration
+4. **State updates trigger re-renders** - Live data flows through normal React state
+
+### Static Imports for SSR
+
+Plugin components must be statically imported (not lazy-loaded) for SSR availability. The build-time generator scans plugin directories and creates static imports in generated registry files.
+
+Export components from standard locations so the generator can discover them:
+- Pages and UI components: `src/frontend/` directory
+- Widget components: `src/frontend/widgets/index.ts`
+
+After adding new components, regenerate the registry:
+
+```bash
+npm run generate:plugins --workspace apps/frontend
+```
+
 ## Best Practices
 
 ### ✅ Do:
@@ -644,6 +717,7 @@ interface TimeseriesPoint {
 - **Use utility classes from globals.css** - Leverage `.surface`, `.btn`, `.badge` for common patterns
 - **Reference CSS variables** - Use `var(--color-border)`, `var(--radius-md)` for consistency
 - **Use container queries in CSS Modules** - Component responsiveness based on container width
+- **Export widget components from standard location** - `src/frontend/widgets/index.ts` for SSR discovery
 
 ### ❌ Don't:
 
