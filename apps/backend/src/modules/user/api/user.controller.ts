@@ -517,12 +517,25 @@ export class UserController {
 
             // Validate filter type
             const validFilters: UserFilterType[] = [
-                'all', 'power-users', 'one-time', 'returning', 'long-sessions',
+                'all',
+                // Real-time
+                'live-now',
+                // Engagement
+                'power-users', 'one-time', 'returning', 'long-sessions',
+                // Wallet Status
                 'verified-wallet', 'multi-wallet', 'no-wallet', 'recently-connected',
+                // Temporal
                 'active-today', 'active-week', 'churned', 'new-users',
+                // Device
                 'mobile-users', 'desktop-users', 'multi-device',
+                // Screen Size
+                'screen-mobile-sm', 'screen-mobile-md', 'screen-mobile-lg',
+                'screen-tablet', 'screen-desktop', 'screen-desktop-lg',
+                // Geographic
                 'multi-region', 'single-region',
+                // Behavioral
                 'feature-explorers', 'focused-users', 'referred-traffic',
+                // Quick Picks
                 'high-value', 'at-risk', 'conversion-candidates'
             ];
             const filterType = (filter as string) || 'all';
