@@ -6,6 +6,6 @@
  * pages without modifying core page code.
  */
 
-export { WidgetZone } from './WidgetZone';
+export { WidgetZone, registerWidgetComponent, getWidgetComponent } from './WidgetZone';
 export { fetchWidgetsForRoute } from './fetchWidgetsForRoute';
 export type { WidgetData } from './types';

@@ -1,4 +1,78 @@
+import type { ComponentType } from 'react';
 import type { WidgetData } from './types';
+
+/**
+ * Widget component registry.
+ *
+ * Plugins register their widget components here during frontend initialization.
+ * Components receive pre-fetched data from SSR and render the widget UI.
+ */
+const widgetComponents: Map<string, ComponentType<{ data: unknown }>> = new Map();
+
+/**
+ * Register a widget component for rendering.
+ *
+ * Plugins call this during frontend initialization to associate their
+ * React component with a widget ID. When the widget zone renders,
+ * it looks up the component by ID and passes the pre-fetched data.
+ *
+ * @param widgetId - Unique widget identifier (matches backend registration)
+ * @param component - React component that renders the widget
+ *
+ * @example
+ * ```typescript
+ * // In plugin frontend initialization
+ * registerWidgetComponent('whale-alerts:recent', RecentWhalesWidget);
+ * ```
+ */
+export function registerWidgetComponent(
+    widgetId: string,
+    component: ComponentType<{ data: unknown }>
+): void {
+    widgetComponents.set(widgetId, component);
+}
+
+/**
+ * Get a registered widget component by ID.
+ *
+ * @param widgetId - Widget identifier to look up
+ * @returns Component if registered, undefined otherwise
+ */
+export function getWidgetComponent(widgetId: string): ComponentType<{ data: unknown }> | undefined {
+    return widgetComponents.get(widgetId);
+}
+
+/**
+ * Render a single widget with its registered component or fallback.
+ *
+ * If a component is registered for the widget, renders it with the data.
+ * In development, shows a debug view for unregistered widgets.
+ * In production, unregistered widgets render nothing.
+ */
+function WidgetRenderer({ widget }: { widget: WidgetData }) {
+    const Component = widgetComponents.get(widget.id);
+
+    if (Component) {
+        return <Component data={widget.data} />;
+    }
+
+    // Development fallback: show debug info for unregistered widgets
+    if (process.env.NODE_ENV === 'development') {
+        return (
+            <div className="surface surface--padding-md border border-dashed border-border">
+                <p className="text-sm text-muted mb-2">
+                    Widget: <code>{widget.id}</code> (no component registered)
+                </p>
+                <pre className="text-xs overflow-auto max-h-48 bg-surface-elevated p-2 rounded">
+                    {JSON.stringify(widget.data, null, 2)}
+                </pre>
+            </div>
+        );
+    }
+
+    // Production: render nothing for unregistered widgets
+    return null;
+}
 
 /**
  * Widget zone component for rendering plugin widgets.
@@ -44,14 +118,9 @@ export function WidgetZone({
                     data-plugin-id={widget.pluginId}
                 >
                     {widget.title && (
-                        <h2 className="text-2xl font-bold mb-4">{widget.title}</h2>
+                        <h2 className="text-xl font-semibold mb-4">{widget.title}</h2>
                     )}
-                    <div className="widget-content">
-                        {/* TODO: Render actual widget component from plugin */}
-                        <pre className="bg-surface-elevated p-4 rounded-lg overflow-auto">
-                            {JSON.stringify(widget.data, null, 2)}
-                        </pre>
-                    </div>
+                    <WidgetRenderer widget={widget} />
                 </div>
             ))}
         </div>

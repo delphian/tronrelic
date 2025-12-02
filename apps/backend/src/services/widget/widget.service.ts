@@ -5,6 +5,9 @@ import type {
     ISystemLogService
 } from '@tronrelic/types';
 
+/** Valid widget zone names for validation. */
+const VALID_ZONES = new Set(['main-before', 'main-after', 'sidebar-top', 'sidebar-bottom']);
+
 /**
  * Singleton service managing plugin widget registration and SSR data fetching.
  *
@@ -80,6 +83,16 @@ export class WidgetService implements IWidgetService {
      * @returns Promise that resolves when registration is complete
      */
     public async register(config: IWidgetConfig, pluginId: string): Promise<void> {
+        // Validate zone name
+        if (!VALID_ZONES.has(config.zone)) {
+            this.logger.warn('Widget registered with unknown zone', {
+                widgetId: config.id,
+                pluginId,
+                zone: config.zone,
+                validZones: Array.from(VALID_ZONES)
+            });
+        }
+
         // Clone config to avoid mutations
         const widgetConfig: IWidgetConfig = {
             ...config,
@@ -177,33 +190,33 @@ export class WidgetService implements IWidgetService {
             widgetCount: matchingWidgets.length
         });
 
+        const TIMEOUT_MS = 5000;
+
         // Fetch data for all matching widgets in parallel
         const widgetDataPromises = matchingWidgets.map(async (widget): Promise<IWidgetData | null> => {
             try {
-                // Add timeout to prevent slow widgets from blocking SSR
-                const timeoutMs = 5000; // 5 second timeout
-                const dataPromise = widget.fetchData();
+                // Use Promise.race for actual timeout enforcement
+                const rawData = await Promise.race([
+                    widget.fetchData(),
+                    new Promise<never>((_, reject) =>
+                        setTimeout(() => reject(new Error('Widget fetch timeout')), TIMEOUT_MS)
+                    )
+                ]);
 
-                // Use AbortController to clean up timeout when promise resolves
-                const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-
-                try {
-                    const data = await dataPromise;
-                    clearTimeout(timeoutId);
-
-                    return {
-                        id: widget.id,
-                        zone: widget.zone,
-                        pluginId: widget.pluginId!,
-                        order: widget.order ?? 100,
-                        title: widget.title,
-                        data
-                    };
-                } catch (fetchError) {
-                    clearTimeout(timeoutId);
-                    throw fetchError;
+                // Validate data is JSON-serializable
+                const data = this.validateSerializable(rawData, widget.id);
+                if (data === null) {
+                    return null;
                 }
+
+                return {
+                    id: widget.id,
+                    zone: widget.zone,
+                    pluginId: widget.pluginId!,
+                    order: widget.order ?? 100,
+                    title: widget.title,
+                    data
+                };
             } catch (error) {
                 this.logger.error('Widget data fetch failed', {
                     widgetId: widget.id,
@@ -235,6 +248,28 @@ export class WidgetService implements IWidgetService {
         });
 
         return widgetData;
+    }
+
+    /**
+     * Validate that data is JSON-serializable.
+     *
+     * Attempts a round-trip through JSON to catch non-serializable data
+     * (BigInt, circular references, functions) before SSR.
+     *
+     * @param data - Raw data from widget fetchData
+     * @param widgetId - Widget ID for error logging
+     * @returns Validated data or null if not serializable
+     */
+    private validateSerializable(data: unknown, widgetId: string): unknown {
+        try {
+            return JSON.parse(JSON.stringify(data));
+        } catch (error) {
+            this.logger.error('Widget returned non-serializable data', {
+                widgetId,
+                error: error instanceof Error ? error.message : String(error)
+            });
+            return null;
+        }
     }
 
     /**

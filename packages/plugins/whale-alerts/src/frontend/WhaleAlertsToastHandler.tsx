@@ -3,6 +3,8 @@
 import { useEffect, useRef } from 'react';
 import type { IFrontendPluginContext } from '@tronrelic/types';
 import { useToast } from '@tronrelic/frontend/components/ui/ToastProvider';
+import { registerWidgetComponent } from '@tronrelic/frontend/components/widgets';
+import { RecentWhalesWidget } from './widgets/RecentWhalesWidget';
 
 /**
  * Props for the whale alerts toast handler component.
@@ -15,7 +17,11 @@ interface WhaleAlertsToastHandlerProps {
 }
 
 /**
- * Display toast notifications for whale transfers.
+ * Whale alerts plugin handler for toasts and widget registration.
+ *
+ * This side-effect component handles two responsibilities:
+ * 1. Subscribes to whale transfer events and displays toast notifications
+ * 2. Registers the RecentWhalesWidget component for SSR widget zones
  *
  * The handler subscribes to the plugin-namespaced 'large-transfer' event using the
  * plugin context's WebSocket client, which automatically prefixes events with the
@@ -36,6 +42,9 @@ export function WhaleAlertsToastHandler({ context }: WhaleAlertsToastHandlerProp
 
     useEffect(() => {
         hydratedRef.current = true;
+
+        // Register widget component for SSR widget zones
+        registerWidgetComponent('whale-alerts:recent', RecentWhalesWidget);
     }, []);
 
     useEffect(() => {

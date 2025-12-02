@@ -1,6 +1,7 @@
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import { WidgetService } from '../../services/widget/widget.service.js';
 import { logger } from '../../lib/logger.js';
+import { requireAdmin } from '../middleware/admin-auth.js';
 
 /**
  * Widget API router.
@@ -71,8 +72,9 @@ export function widgetRouter(): Router {
      *
      * Get all registered widgets (without data fetching).
      *
-     * Useful for admin interfaces that need to display the widget registry.
-     * This endpoint does not execute fetchData() functions.
+     * Requires admin authentication. Useful for admin interfaces that need
+     * to display the widget registry. This endpoint does not execute
+     * fetchData() functions.
      *
      * Returns:
      * {
@@ -88,7 +90,7 @@ export function widgetRouter(): Router {
      *   ]
      * }
      */
-    router.get('/all', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    router.get('/all', requireAdmin, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
         try {
             const widgets = widgetService.getAllWidgets();
             res.json({ widgets });
@@ -105,8 +107,9 @@ export function widgetRouter(): Router {
      *
      * Get widgets for a specific zone (without data fetching).
      *
-     * Useful for admin interfaces that need to show which widgets are in each zone.
-     * This endpoint does not execute fetchData() functions.
+     * Requires admin authentication. Useful for admin interfaces that need
+     * to show which widgets are in each zone. This endpoint does not execute
+     * fetchData() functions.
      *
      * Returns:
      * {
@@ -123,7 +126,7 @@ export function widgetRouter(): Router {
      *   ]
      * }
      */
-    router.get('/zones/:zone', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    router.get('/zones/:zone', requireAdmin, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
         try {
             const { zone } = req.params;
             const widgets = widgetService.getWidgetsByZone(zone);
