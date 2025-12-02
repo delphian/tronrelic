@@ -1,5 +1,7 @@
 'use client';
 
+import { useState, useEffect } from 'react';
+
 /**
  * Recent Whale Activity Widget.
  *
@@ -98,10 +100,18 @@ function formatTimeAgo(dateString: string): string {
 /**
  * Recent Whale Activity widget component.
  *
+ * Uses isMounted pattern to prevent hydration mismatches with time-relative formatting.
+ * Server renders ISO timestamp, client shows relative time after hydration.
+ *
  * @param data - Pre-fetched widget data from SSR
  */
 export function RecentWhalesWidget({ data }: { data: unknown }) {
     const whaleData = data as RecentWhalesData;
+    const [isMounted, setIsMounted] = useState(false);
+
+    useEffect(() => {
+        setIsMounted(true);
+    }, []);
 
     if (!whaleData?.transactions || whaleData.transactions.length === 0) {
         return (
@@ -136,7 +146,7 @@ export function RecentWhalesWidget({ data }: { data: unknown }) {
                                 </div>
                             </div>
                             <div className="text-sm text-muted whitespace-nowrap">
-                                {formatTimeAgo(tx.timestamp)}
+                                {isMounted ? formatTimeAgo(tx.timestamp) : '—'}
                             </div>
                         </div>
                     </div>

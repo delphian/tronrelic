@@ -194,14 +194,17 @@ export class WidgetService implements IWidgetService {
 
         // Fetch data for all matching widgets in parallel
         const widgetDataPromises = matchingWidgets.map(async (widget): Promise<IWidgetData | null> => {
+            let timerId: NodeJS.Timeout | undefined;
             try {
-                // Use Promise.race for actual timeout enforcement
+                // Use Promise.race for actual timeout enforcement, and clear timer when done
+                const timeoutPromise = new Promise<never>((_, reject) => {
+                    timerId = setTimeout(() => reject(new Error('Widget fetch timeout')), TIMEOUT_MS);
+                });
                 const rawData = await Promise.race([
                     widget.fetchData(),
-                    new Promise<never>((_, reject) =>
-                        setTimeout(() => reject(new Error('Widget fetch timeout')), TIMEOUT_MS)
-                    )
+                    timeoutPromise
                 ]);
+                clearTimeout(timerId);
 
                 // Validate data is JSON-serializable
                 const data = this.validateSerializable(rawData, widget.id);
@@ -218,6 +221,7 @@ export class WidgetService implements IWidgetService {
                     data
                 };
             } catch (error) {
+                clearTimeout(timerId);
                 this.logger.error('Widget data fetch failed', {
                     widgetId: widget.id,
                     pluginId: widget.pluginId,

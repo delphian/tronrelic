@@ -46,11 +46,11 @@ export function widgetRouter(): Router {
      */
     router.get('/', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
         try {
-            const route = req.query.route as string;
+            const { route } = req.query;
 
-            if (!route) {
+            if (typeof route !== 'string' || !route) {
                 res.status(400).json({
-                    error: 'Route parameter is required'
+                    error: 'A single string `route` query parameter is required.'
                 });
                 return;
             }
