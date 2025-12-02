@@ -20,7 +20,7 @@
  * ```
  */
 
-import type { DeviceCategory } from '../database/index.js';
+import type { DeviceCategory, ScreenSizeCategory } from '../database/index.js';
 import type geoipLite from 'geoip-lite';
 
 // Dynamic import for geoip-lite (optional dependency)
@@ -149,4 +149,41 @@ export function getClientIP(req: { ip?: string; headers: Record<string, string |
 
     // Fall back to direct connection IP
     return req.ip;
+}
+
+/**
+ * Derive screen size category from viewport width.
+ *
+ * Uses TronRelic's design system breakpoints (Asia-optimized):
+ * - mobile-sm: < 360px (legacy devices)
+ * - mobile-md: 360-479px (primary mobile)
+ * - mobile-lg: 480-767px (large phones)
+ * - tablet: 768-1023px (tablets)
+ * - desktop: 1024-1199px (standard desktop)
+ * - desktop-lg: >= 1200px (large desktop)
+ *
+ * @param width - Viewport width in pixels
+ * @returns Screen size category
+ */
+export function getScreenSizeCategory(width: number | undefined | null): ScreenSizeCategory {
+    if (width === undefined || width === null || width <= 0) {
+        return 'unknown';
+    }
+
+    if (width < 360) {
+        return 'mobile-sm';
+    }
+    if (width < 480) {
+        return 'mobile-md';
+    }
+    if (width < 768) {
+        return 'mobile-lg';
+    }
+    if (width < 1024) {
+        return 'tablet';
+    }
+    if (width < 1200) {
+        return 'desktop';
+    }
+    return 'desktop-lg';
 }

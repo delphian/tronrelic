@@ -24,6 +24,13 @@ export type UserFilterType =
     | 'mobile-users'
     | 'desktop-users'
     | 'multi-device'
+    // Screen Size (based on viewport width breakpoints)
+    | 'screen-mobile-sm'   // < 360px (legacy devices)
+    | 'screen-mobile-md'   // 360-479px (primary mobile)
+    | 'screen-mobile-lg'   // 480-767px (large phones)
+    | 'screen-tablet'      // 768-1023px (tablets)
+    | 'screen-desktop'     // 1024-1199px (standard desktop)
+    | 'screen-desktop-lg'  // >= 1200px (large desktop)
     // Geographic
     | 'multi-region'
     | 'single-region'

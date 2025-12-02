@@ -34,6 +34,22 @@ function getDeviceEmoji(device: DeviceCategory): string {
     }
 }
 
+/**
+ * Get screen size display label.
+ */
+function getScreenSizeLabel(screenSize: ScreenSizeCategory, screenWidth: number | null): string {
+    const widthStr = screenWidth ? `${screenWidth}px` : '';
+    switch (screenSize) {
+        case 'mobile-sm': return widthStr ? `${widthStr} (SM)` : 'Mobile SM';
+        case 'mobile-md': return widthStr ? `${widthStr} (MD)` : 'Mobile MD';
+        case 'mobile-lg': return widthStr ? `${widthStr} (LG)` : 'Mobile LG';
+        case 'tablet': return widthStr ? `${widthStr} (Tab)` : 'Tablet';
+        case 'desktop': return widthStr ? `${widthStr} (Desk)` : 'Desktop';
+        case 'desktop-lg': return widthStr ? `${widthStr} (XL)` : 'Desktop LG';
+        default: return widthStr || '—';
+    }
+}
+
 interface WalletLink {
     address: string;
     linkedAt: string;
@@ -53,6 +69,9 @@ interface UserPreferences {
 /** Device category derived from user-agent */
 type DeviceCategory = 'mobile' | 'tablet' | 'desktop' | 'unknown';
 
+/** Screen size category based on viewport width breakpoints */
+type ScreenSizeCategory = 'mobile-sm' | 'mobile-md' | 'mobile-lg' | 'tablet' | 'desktop' | 'desktop-lg' | 'unknown';
+
 /** A page visit within a session */
 interface PageVisit {
     path: string;
@@ -66,6 +85,8 @@ interface UserSession {
     durationSeconds: number;
     pages: PageVisit[];
     device: DeviceCategory;
+    screenWidth: number | null;
+    screenSize: ScreenSizeCategory;
     referrerDomain: string | null;
     country: string | null;
 }
@@ -130,6 +151,13 @@ const FILTER_LABELS: Record<UserFilterType, string> = {
     'mobile-users': 'Mobile Users',
     'desktop-users': 'Desktop Users',
     'multi-device': 'Multi-Device',
+    // Screen Size
+    'screen-mobile-sm': 'Screen: Mobile SM (<360px)',
+    'screen-mobile-md': 'Screen: Mobile MD (360-479px)',
+    'screen-mobile-lg': 'Screen: Mobile LG (480-767px)',
+    'screen-tablet': 'Screen: Tablet (768-1023px)',
+    'screen-desktop': 'Screen: Desktop (1024-1199px)',
+    'screen-desktop-lg': 'Screen: Desktop LG (≥1200px)',
     // Geographic
     'multi-region': 'Multi-Region (3+ countries)',
     'single-region': 'Single Region',
@@ -180,6 +208,22 @@ export function UsersMonitor({ token }: Props) {
     const [searchInput, setSearchInput] = useState('');
     const [filter, setFilter] = useState<UserFilterType>('all');
     const [expandedUserId, setExpandedUserId] = useState<string | null>(null);
+    const [sessionPages, setSessionPages] = useState<Record<string, number>>({});
+
+    /** Sessions per page in the Recent Sessions section */
+    const SESSIONS_PER_PAGE = 5;
+
+    /**
+     * Get current session page for a user (1-indexed).
+     */
+    const getSessionPage = (userId: string): number => sessionPages[userId] || 1;
+
+    /**
+     * Set session page for a specific user.
+     */
+    const setSessionPage = (userId: string, page: number): void => {
+        setSessionPages(prev => ({ ...prev, [userId]: page }));
+    };
 
     const fetchUsers = useCallback(async () => {
         setLoading(true);
@@ -318,6 +362,14 @@ export function UsersMonitor({ token }: Props) {
                             <option value="mobile-users">{FILTER_LABELS['mobile-users']}</option>
                             <option value="desktop-users">{FILTER_LABELS['desktop-users']}</option>
                             <option value="multi-device">{FILTER_LABELS['multi-device']}</option>
+                        </optgroup>
+                        <optgroup label="Screen Size" aria-label="Screen size filters">
+                            <option value="screen-mobile-sm">{FILTER_LABELS['screen-mobile-sm']}</option>
+                            <option value="screen-mobile-md">{FILTER_LABELS['screen-mobile-md']}</option>
+                            <option value="screen-mobile-lg">{FILTER_LABELS['screen-mobile-lg']}</option>
+                            <option value="screen-tablet">{FILTER_LABELS['screen-tablet']}</option>
+                            <option value="screen-desktop">{FILTER_LABELS['screen-desktop']}</option>
+                            <option value="screen-desktop-lg">{FILTER_LABELS['screen-desktop-lg']}</option>
                         </optgroup>
                         <optgroup label="Geographic" aria-label="Geographic filters">
                             <option value="multi-region">{FILTER_LABELS['multi-region']}</option>
@@ -475,7 +527,7 @@ export function UsersMonitor({ token }: Props) {
                                         </div>
 
                                         {/* Country Distribution */}
-                                        <div className={styles.detail_section}>
+                                        <div className={`${styles.detail_section} ${styles.detail_section__narrow}`}>
                                             <h4>Countries</h4>
                                             {!user.activity.countryCounts || Object.keys(user.activity.countryCounts).length === 0 ? (
                                                 <p className={styles.no_data}>No country data</p>
@@ -495,26 +547,61 @@ export function UsersMonitor({ token }: Props) {
                                         </div>
 
                                         {/* Recent Sessions */}
-                                        <div className={styles.detail_section}>
-                                            <h4>Recent Sessions</h4>
+                                        <div className={`${styles.detail_section} ${styles.detail_section__sessions}`}>
+                                            <div className={styles.section_header}>
+                                                <h4>Recent Sessions</h4>
+                                                {user.activity.sessions && user.activity.sessions.length > SESSIONS_PER_PAGE && (
+                                                    <div className={styles.session_pagination}>
+                                                        <button
+                                                            className={styles.session_nav_btn}
+                                                            onClick={() => setSessionPage(user.id, getSessionPage(user.id) - 1)}
+                                                            disabled={getSessionPage(user.id) <= 1}
+                                                            aria-label="Previous sessions"
+                                                        >
+                                                            ←
+                                                        </button>
+                                                        <span className={styles.session_page_info}>
+                                                            {getSessionPage(user.id)}/{Math.ceil(user.activity.sessions.length / SESSIONS_PER_PAGE)}
+                                                        </span>
+                                                        <button
+                                                            className={styles.session_nav_btn}
+                                                            onClick={() => setSessionPage(user.id, getSessionPage(user.id) + 1)}
+                                                            disabled={getSessionPage(user.id) >= Math.ceil(user.activity.sessions.length / SESSIONS_PER_PAGE)}
+                                                            aria-label="Next sessions"
+                                                        >
+                                                            →
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </div>
                                             {!user.activity.sessions || user.activity.sessions.length === 0 ? (
                                                 <p className={styles.no_data}>No session data</p>
                                             ) : (
                                                 <div className={styles.sessions_list}>
-                                                    {user.activity.sessions.slice(0, 5).map((session) => (
+                                                    {user.activity.sessions
+                                                        .slice(
+                                                            (getSessionPage(user.id) - 1) * SESSIONS_PER_PAGE,
+                                                            getSessionPage(user.id) * SESSIONS_PER_PAGE
+                                                        )
+                                                        .map((session) => (
                                                         <div key={session.startedAt} className={styles.session_item}>
-                                                            <div className={styles.session_header}>
+                                                            <div className={styles.session_device_col}>
                                                                 <span className={styles.session_device} title={session.device}>
                                                                     {getDeviceEmoji(session.device)}
                                                                 </span>
-                                                                {session.country && (
-                                                                    <span className={styles.session_country}>
-                                                                        {session.country}
-                                                                    </span>
-                                                                )}
+                                                                <span className={styles.session_screen} title={`Screen: ${session.screenSize || 'unknown'}`}>
+                                                                    {getScreenSizeLabel(session.screenSize || 'unknown', session.screenWidth)}
+                                                                </span>
+                                                            </div>
+                                                            <div className={styles.session_referrer_col}>
                                                                 {session.referrerDomain && (
                                                                     <span className={styles.session_referrer}>
                                                                         {session.referrerDomain}
+                                                                    </span>
+                                                                )}
+                                                                {session.country && (
+                                                                    <span className={styles.session_country}>
+                                                                        {session.country}
                                                                     </span>
                                                                 )}
                                                             </div>
@@ -533,7 +620,7 @@ export function UsersMonitor({ token }: Props) {
                                         </div>
 
                                         {/* Top Pages */}
-                                        <div className={styles.detail_section}>
+                                        <div className={`${styles.detail_section} ${styles.detail_section__pages}`}>
                                             <h4>Top Pages</h4>
                                             {!user.activity.pageViewsByPath || Object.keys(user.activity.pageViewsByPath).length === 0 ? (
                                                 <p className={styles.no_data}>No page data</p>

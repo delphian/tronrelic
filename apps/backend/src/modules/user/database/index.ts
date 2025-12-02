@@ -4,6 +4,7 @@ export type {
     IUserPreferences,
     IPageVisit,
     DeviceCategory,
+    ScreenSizeCategory,
     IUserSession,
     IUserActivity,
     ICreateUserInput,

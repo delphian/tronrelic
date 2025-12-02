@@ -59,7 +59,9 @@ export function useSessionTracking({
         try {
             // Pass document.referrer for first-visit tracking
             const referrer = typeof document !== 'undefined' ? document.referrer : undefined;
-            await startSession(userId, referrer);
+            // Pass viewport width for screen size tracking
+            const screenWidth = typeof window !== 'undefined' ? window.innerWidth : undefined;
+            await startSession(userId, referrer, screenWidth);
             setSessionStarted(true);
             cleanupCalledRef.current = false;
 
