@@ -56,6 +56,7 @@ Plugins extend the frontend through:
 
 - **Menu items** - Navigation links with ordering, categorization, icons, and access control
 - **Pages** - React components rendered via dynamic catch-all routing
+- **Widget zones** - Inject UI components into designated zones on existing pages
 - **Context injection** - UI components, API client, charts, and WebSocket access without cross-workspace imports
 
 **See [plugins-page-registration.md](./plugins-page-registration.md) for complete details on:**
@@ -63,6 +64,12 @@ Plugins extend the frontend through:
 - Dynamic routing and registry system
 - Plugin admin pages and settings screens
 - Migration from deprecated `adminUI` pattern
+
+**See [plugins-widget-zones.md](./plugins-widget-zones.md) for complete details on:**
+- Registering widgets to inject UI into page zones
+- SSR data fetching for widgets
+- Zone naming conventions and routing
+- Widget ordering and lifecycle management
 
 **See [plugins-frontend-context.md](./plugins-frontend-context.md) for complete details on:**
 - Using `IFrontendPluginContext` for dependency injection
@@ -212,6 +219,7 @@ context.websocket.onSubscribe(async (socket, roomName, payload) => {
 - [plugins-system-architecture.md](./plugins-system-architecture.md) - Package layout, manifests, lifecycle hooks, admin interface
 - [plugins-blockchain-observers.md](./plugins-blockchain-observers.md) - Observer pattern, transaction processing, subscriptions
 - [plugins-page-registration.md](./plugins-page-registration.md) - Menu items, pages, routing, admin UI
+- [plugins-widget-zones.md](./plugins-widget-zones.md) - Widget zones for injecting UI into existing pages
 - [plugins-frontend-context.md](./plugins-frontend-context.md) - Context injection, UI components, API client, WebSocket
 - [plugins-api-registration.md](./plugins-api-registration.md) - REST routes, middleware, admin endpoints
 - [plugins-database.md](./plugins-database.md) - Scoped storage, indexes, key-value config
