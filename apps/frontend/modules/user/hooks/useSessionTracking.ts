@@ -39,20 +39,21 @@ function getAndClearPreservedReferrer(): string | undefined {
         return undefined;
     }
 
-    // Parse cookies
+    // Parse cookies (handles values containing '=' like URLs with query params)
     const cookies = document.cookie.split(';').reduce((acc, cookie) => {
-        const [key, value] = cookie.trim().split('=');
-        if (key && value) {
-            acc[key] = decodeURIComponent(value);
+        const parts = cookie.trim().split('=');
+        const key = parts.shift();
+        if (key) {
+            acc[key] = decodeURIComponent(parts.join('='));
         }
         return acc;
     }, {} as Record<string, string>);
 
     const preserved = cookies[ORIGINAL_REFERRER_COOKIE];
 
-    // Clear the cookie after reading
+    // Clear the cookie after reading (attributes must match original for proper deletion)
     if (preserved) {
-        document.cookie = `${ORIGINAL_REFERRER_COOKIE}=; path=/; max-age=0`;
+        document.cookie = `${ORIGINAL_REFERRER_COOKIE}=; path=/; max-age=0; secure; samesite=lax`;
     }
 
     return preserved;

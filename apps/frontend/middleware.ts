@@ -100,7 +100,7 @@ export function middleware(request: NextRequest) {
 
     if (rule) {
         const referer = request.headers.get('referer');
-        const host = request.headers.get('host') || '';
+        const host = request.nextUrl.host;
 
         // Create redirect response
         const redirectUrl = new URL(rule.destination, request.url);

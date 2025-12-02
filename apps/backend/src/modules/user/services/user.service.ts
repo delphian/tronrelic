@@ -1575,6 +1575,7 @@ export class UserService {
         await this.collection.createIndex({ id: 1 }, { unique: true });
         await this.collection.createIndex({ 'wallets.address': 1 });
         await this.collection.createIndex({ 'activity.lastSeen': 1 });
+        await this.collection.createIndex({ 'activity.sessions.endedAt': 1 });
 
         this.logger.info('User indexes created');
     }
