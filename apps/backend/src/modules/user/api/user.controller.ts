@@ -1,6 +1,7 @@
 import type { Request, Response, NextFunction } from 'express';
-import type { ISystemLogService } from '@tronrelic/types';
-import type { UserService, IUserStats, UserFilterType } from '../services/index.js';
+import { USER_FILTERS } from '@tronrelic/types';
+import type { ISystemLogService, UserFilterType } from '@tronrelic/types';
+import type { UserService, IUserStats } from '../services/index.js';
 import type { IUser, IUserPreferences } from '../database/index.js';
 import { getClientIP } from '../services/index.js';
 
@@ -515,31 +516,9 @@ export class UserController {
             const limitNum = Number.isNaN(parsedLimit) ? 50 : Math.min(Math.max(1, parsedLimit), 100);
             const skipNum = Number.isNaN(parsedSkip) ? 0 : Math.max(0, parsedSkip);
 
-            // Validate filter type
-            const validFilters: UserFilterType[] = [
-                'all',
-                // Real-time
-                'live-now',
-                // Engagement
-                'power-users', 'one-time', 'returning', 'long-sessions',
-                // Wallet Status
-                'verified-wallet', 'multi-wallet', 'no-wallet', 'recently-connected',
-                // Temporal
-                'active-today', 'active-week', 'churned', 'new-users',
-                // Device
-                'mobile-users', 'desktop-users', 'multi-device',
-                // Screen Size
-                'screen-mobile-sm', 'screen-mobile-md', 'screen-mobile-lg',
-                'screen-tablet', 'screen-desktop', 'screen-desktop-lg',
-                // Geographic
-                'multi-region', 'single-region',
-                // Behavioral
-                'feature-explorers', 'focused-users', 'referred-traffic',
-                // Quick Picks
-                'high-value', 'at-risk', 'conversion-candidates'
-            ];
+            // Validate filter type (USER_FILTERS is the single source of truth)
             const filterType = (filter as string) || 'all';
-            if (!validFilters.includes(filterType as UserFilterType)) {
+            if (!USER_FILTERS.includes(filterType as UserFilterType)) {
                 res.status(400).json({ error: 'Invalid filter type' });
                 return;
             }
