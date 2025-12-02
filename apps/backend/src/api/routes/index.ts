@@ -15,6 +15,7 @@ import { liveRouter } from './live.router.js';
 import { tokensRouter } from './tokens.router.js';
 import { systemRouter } from './system.router.js';
 import { configRouter } from './config.router.js';
+import { widgetRouter } from './widget.router.js';
 import pluginsRouter from './plugins.routes.js';
 import pluginManagementRouter from './plugin-management.routes.js';
 import { PluginApiService } from '../../services/plugin-api.service.js';
@@ -37,6 +38,7 @@ export function createApiRouter(database?: IDatabaseService) {
   router.use('/tokens', tokensRouter());
   router.use('/admin/system', systemRouter());
   router.use('/dashboard', dashboardRouter());
+  router.use('/widgets', widgetRouter());
   router.use('/plugins', pluginsRouter);
   router.use('/plugin-management', pluginManagementRouter);
 
