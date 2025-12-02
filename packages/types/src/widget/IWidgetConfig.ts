@@ -1,0 +1,116 @@
+/**
+ * Widget configuration for plugin-registered UI components.
+ *
+ * Defines widgets that plugins can inject into designated zones on existing pages.
+ * Each widget specifies its target zone, which routes it should appear on, display
+ * order, and an async data fetcher that runs during SSR to provide initial data.
+ *
+ * This enables plugins to extend core pages (e.g., displaying a Reddit feed widget
+ * on the homepage) without modifying core page code or breaking plugin isolation.
+ *
+ * @example
+ * ```typescript
+ * // In plugin backend init() hook
+ * await context.widgetService.register({
+ *     id: 'reddit-feed',
+ *     zone: 'main-after',
+ *     routes: ['/'],
+ *     order: 10,
+ *     title: 'Community Buzz',
+ *     fetchData: async () => {
+ *         return await redditService.getLatestPosts(5);
+ *     }
+ * });
+ * ```
+ */
+export interface IWidgetConfig {
+    /**
+     * Unique identifier for the widget.
+     *
+     * Should be namespaced to the plugin (e.g., 'reddit-sentiment:feed').
+     * Used for deduplication and widget management.
+     */
+    id: string;
+
+    /**
+     * Target zone where the widget should render.
+     *
+     * Standard zones:
+     * - 'main-before' - Above page content
+     * - 'main-after' - Below page content
+     * - 'sidebar-top' - Top of sidebar (if present)
+     * - 'sidebar-bottom' - Bottom of sidebar
+     */
+    zone: 'main-before' | 'main-after' | 'sidebar-top' | 'sidebar-bottom';
+
+    /**
+     * Array of URL paths where this widget should appear.
+     *
+     * Supports exact matches:
+     * - ['/'] - Only homepage
+     * - ['/dashboard'] - Only dashboard page
+     * - ['/markets', '/markets/detail'] - Multiple specific routes
+     *
+     * Use empty array to show on all routes: []
+     */
+    routes: string[];
+
+    /**
+     * Sort order within the zone (lower values render first).
+     *
+     * Multiple widgets in the same zone are sorted by this value.
+     * Default: 100
+     */
+    order?: number;
+
+    /**
+     * Optional display title for the widget.
+     *
+     * If provided, rendered as a heading above the widget content.
+     */
+    title?: string;
+
+    /**
+     * Optional description for admin interfaces and documentation.
+     *
+     * Not displayed to end users - used for widget management UIs.
+     */
+    description?: string;
+
+    /**
+     * Async function that fetches data for SSR rendering.
+     *
+     * Called during server-side rendering to provide initial widget data.
+     * The returned data is serialized and passed to the frontend component.
+     *
+     * This function should:
+     * - Return cached or precomputed data (avoid heavy computation)
+     * - Handle errors gracefully (return empty data rather than throwing)
+     * - Complete quickly (< 100ms recommended)
+     *
+     * The data can be any JSON-serializable structure.
+     *
+     * @returns Promise resolving to widget data (JSON-serializable)
+     *
+     * @example
+     * ```typescript
+     * fetchData: async () => {
+     *     try {
+     *         const posts = await database.findOne('reddit_cache', {});
+     *         return { posts: posts?.items || [] };
+     *     } catch (error) {
+     *         logger.error('Widget data fetch failed:', error);
+     *         return { posts: [] };
+     *     }
+     * }
+     * ```
+     */
+    fetchData: () => Promise<unknown>;
+
+    /**
+     * Plugin ID (set automatically by widget service).
+     *
+     * Injected during registration to track widget ownership.
+     */
+    pluginId?: string;
+}

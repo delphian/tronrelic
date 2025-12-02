@@ -10,6 +10,7 @@ import type { IMenuService } from '../menu/IMenuService.js';
 import type { ISchedulerService } from '../scheduler/ISchedulerService.js';
 import type { IChainParametersService } from '../chain-parameters/IChainParametersService.js';
 import type { IUsdtParametersService } from '../usdt-parameters/IUsdtParametersService.js';
+import type { IWidgetService } from '../widget/IWidgetService.js';
 import { ISystemLogService } from '../system-log/ISystemLogService.js';
 
 /**
@@ -60,6 +61,9 @@ export interface IPluginContext {
 
     /** USDT parameters service for accessing dynamic USDT transfer energy costs */
     usdtParameters: IUsdtParametersService;
+
+    /** Widget service for registering UI widgets that inject into page zones */
+    widgetService: IWidgetService;
 
     /** Structured logger scoped to the plugin for consistent telemetry */
     logger: ISystemLogService;
