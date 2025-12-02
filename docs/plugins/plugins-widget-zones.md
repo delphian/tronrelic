@@ -563,6 +563,82 @@ Widget components must follow these rules for proper SSR:
 6. **WebSocket subscriptions in useEffect**: Client-side only, after hydration
 7. **Match widget ID exactly**: Export key must match backend registration ID
 
+### Hydration Gotchas
+
+Hydration errors occur when server-rendered HTML differs from what React generates on first client render. Widgets are especially vulnerable because SSR data arrives via `fetchData()` but components can accidentally discard it.
+
+**Why initializing from SSR data matters:**
+
+```tsx
+// ✅ CORRECT: Initialize from SSR data (matches server render)
+export function MyWidget({ data }: { data: unknown }) {
+    const [items, setItems] = useState((data as MyData).items);
+    return <div>{items.map(i => <p key={i.id}>{i.text}</p>)}</div>;
+}
+
+// ❌ WRONG: Fetch fresh data on mount (causes hydration mismatch)
+export function MyWidget({ data }: { data: unknown }) {
+    const [items, setItems] = useState<Item[]>([]);  // Empty initial state
+    useEffect(() => {
+        fetch('/api/items').then(r => r.json()).then(setItems);
+    }, []);
+    return <div>{items.map(i => <p key={i.id}>{i.text}</p>)}</div>;
+}
+```
+
+The wrong pattern renders empty on the client (initial state `[]`) while the server rendered actual data—React detects the mismatch and throws an error.
+
+**Common triggers in widget components:**
+
+| Trigger | Example | Fix |
+|---------|---------|-----|
+| Fresh fetch on mount | `useEffect(() => fetch(...))` | Initialize state from `data` prop |
+| Timestamps | `new Date().toLocaleString()` | Use `ClientTime` component or defer until mounted |
+| Random IDs | `Math.random()` for keys | Use stable IDs from data |
+| Browser APIs | `window.innerWidth` | Check `typeof window !== 'undefined'` or defer |
+| localStorage | Reading user preferences | Initialize as null, update in useEffect |
+
+**The `isMounted` pattern for browser-only rendering:**
+
+When you must render something that differs between server and client (like user timezone), defer it until after hydration:
+
+```tsx
+export function MyWidget({ data }: { data: unknown }) {
+    const [items, setItems] = useState((data as MyData).items);
+    const [isMounted, setIsMounted] = useState(false);
+
+    useEffect(() => setIsMounted(true), []);
+
+    return (
+        <div>
+            {items.map(item => (
+                <div key={item.id}>
+                    <span>{item.value}</span>
+                    {/* Timezone-sensitive: only render after hydration */}
+                    <span>
+                        {isMounted
+                            ? new Date(item.updatedAt).toLocaleString()
+                            : item.updatedAt  // Show ISO string on server
+                        }
+                    </span>
+                </div>
+            ))}
+        </div>
+    );
+}
+```
+
+**Debugging hydration errors:**
+
+React 18 provides detailed mismatch warnings in dev mode:
+```
+Warning: Text content did not match. Server: "12/2/2025" Client: "2/12/2025"
+```
+
+This pinpoints the exact element. The fix is usually: defer that render until `isMounted` is true, or use the `ClientTime` component.
+
+**See [ui-component-styling.md](../frontend/ui/ui-component-styling.md#ssr-and-hydration) for comprehensive hydration guidance** including the `ClientTime` component, two-phase rendering pattern for charts, and additional best practices.
+
 ### Regenerating the Widget Registry
 
 After adding or modifying widget components, regenerate the registry:
@@ -612,6 +688,7 @@ This scans all plugins for `src/frontend/widgets/index.ts` files and creates sta
 - [Plugin Backend Context](./plugins-system-architecture.md) - Backend services and lifecycle hooks
 - [Plugin Frontend Context](./plugins-frontend-context.md) - Frontend dependency injection
 - [Menu Registration](./plugins-page-registration.md) - Registering navigation menu items
+- [SSR and Hydration](../frontend/ui/ui-component-styling.md#ssr-and-hydration) - Comprehensive hydration patterns including `ClientTime` component and two-phase rendering
 
 ## Future Enhancements
 
