@@ -341,18 +341,6 @@
     .detail_section {
         grid-column: span 3;
     }
-
-    .detail_section__narrow {
-        grid-column: span 3;
-    }
-
-    .detail_section__sessions {
-        grid-column: span 3;
-    }
-
-    .detail_section__pages {
-        grid-column: span 3;
-    }
 }
 
 .wallet_list {
@@ -648,10 +636,7 @@
         grid-template-columns: 1fr;
     }
 
-    .detail_section,
-    .detail_section__narrow,
-    .detail_section__sessions,
-    .detail_section__pages {
+    .detail_section {
         grid-column: span 1;
     }
 

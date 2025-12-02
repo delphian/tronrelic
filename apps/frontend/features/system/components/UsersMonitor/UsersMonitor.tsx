@@ -225,6 +225,21 @@ export function UsersMonitor({ token }: Props) {
         setSessionPages(prev => ({ ...prev, [userId]: page }));
     };
 
+    /**
+     * Toggle user card expansion. Resets session page when collapsing.
+     */
+    const toggleUserExpanded = (userId: string): void => {
+        const isCollapsing = expandedUserId === userId;
+        setExpandedUserId(isCollapsing ? null : userId);
+        if (isCollapsing) {
+            setSessionPages(prev => {
+                const next = { ...prev };
+                delete next[userId];
+                return next;
+            });
+        }
+    };
+
     const fetchUsers = useCallback(async () => {
         setLoading(true);
         try {
@@ -432,9 +447,7 @@ export function UsersMonitor({ token }: Props) {
                             >
                                 <div
                                     className={styles.user_header}
-                                    onClick={() => setExpandedUserId(
-                                        expandedUserId === user.id ? null : user.id
-                                    )}
+                                    onClick={() => toggleUserExpanded(user.id)}
                                 >
                                     <div className={styles.user_info}>
                                         <span className={styles.user_id}>{user.id}</span>

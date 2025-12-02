@@ -1279,22 +1279,48 @@ export class UserService {
             // If admin page performance degrades at scale, consider pre-computing metrics
             // (e.g., deviceCounts, uniqueCountries, uniquePaths) on the user document.
             case 'mobile-users':
-                // Users who have at least one mobile session
+                // Users where majority of sessions are on mobile
                 return {
-                    'activity.sessions': {
-                        $elemMatch: {
-                            device: 'mobile'
-                        }
+                    $expr: {
+                        $gt: [
+                            {
+                                $size: {
+                                    $filter: {
+                                        input: { $ifNull: ['$activity.sessions', []] },
+                                        cond: { $eq: ['$$this.device', 'mobile'] }
+                                    }
+                                }
+                            },
+                            {
+                                $divide: [
+                                    { $size: { $ifNull: ['$activity.sessions', []] } },
+                                    2
+                                ]
+                            }
+                        ]
                     }
                 };
 
             case 'desktop-users':
-                // Users who have at least one desktop session
+                // Users where majority of sessions are on desktop
                 return {
-                    'activity.sessions': {
-                        $elemMatch: {
-                            device: 'desktop'
-                        }
+                    $expr: {
+                        $gt: [
+                            {
+                                $size: {
+                                    $filter: {
+                                        input: { $ifNull: ['$activity.sessions', []] },
+                                        cond: { $eq: ['$$this.device', 'desktop'] }
+                                    }
+                                }
+                            },
+                            {
+                                $divide: [
+                                    { $size: { $ifNull: ['$activity.sessions', []] } },
+                                    2
+                                ]
+                            }
+                        ]
                     }
                 };
 
