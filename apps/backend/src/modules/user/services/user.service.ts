@@ -1204,6 +1204,17 @@ export class UserService {
         thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
         switch (filter) {
+            // ==================== Real-time ====================
+            case 'live-now':
+                // Users with an active session (endedAt is null)
+                return {
+                    'activity.sessions': {
+                        $elemMatch: {
+                            endedAt: null
+                        }
+                    }
+                };
+
             // ==================== Engagement ====================
             case 'power-users':
                 return {
@@ -1564,6 +1575,7 @@ export class UserService {
         await this.collection.createIndex({ id: 1 }, { unique: true });
         await this.collection.createIndex({ 'wallets.address': 1 });
         await this.collection.createIndex({ 'activity.lastSeen': 1 });
+        await this.collection.createIndex({ 'activity.sessions.endedAt': 1 });
 
         this.logger.info('User indexes created');
     }

@@ -109,61 +109,7 @@ const nextConfig = {
             },
         ];
     },
-    async redirects() {
-        const legacyToolPaths = [
-            '/tron-trx-energy-fee-calculator',
-            '/tools/staking-calculator',
-            '/tools/tronmoji',
-            '/tools/tron-custom-address-generator',
-            '/tools/signature-verification',
-            '/tools/hex-to-base58check',
-            '/tools/base58check-to-hex',
-        ];
-
-        const legacyArticleSlugs = [
-            '/tron-dex',
-            '/tron-latest-trc10-tokens',
-            '/tron-latest-trc10-exchanges',
-            '/tron-node-setup-guide',
-            '/tron-bandwidth-vs-energy',
-            '/tron-delegated-proof-of-stake',
-            '/tron-trc10-token',
-            '/tron-super-representatives',
-        ];
-
-        return [
-            {
-                source: '/rent-tron-energy/:path*',
-                destination: '/resource-markets',
-                permanent: true,
-            },
-            {
-                source: '/lp/rm/:path*',
-                destination: '/resource-markets',
-                permanent: true,
-            },
-            ...legacyToolPaths.map(path => ({
-                source: `${path}`,
-                destination: '/tools',
-                permanent: true,
-            })),
-            ...legacyToolPaths.map(path => ({
-                source: `${path}/:path*`,
-                destination: '/tools',
-                permanent: true,
-            })),
-            ...legacyArticleSlugs.map(path => ({
-                source: `${path}`,
-                destination: '/articles',
-                permanent: true,
-            })),
-            ...legacyArticleSlugs.map(path => ({
-                source: `${path}/:path*`,
-                destination: '/articles',
-                permanent: true,
-            })),
-        ];
-    },
+    // Redirects moved to middleware.ts for referrer preservation
 };
 
 export default nextConfig;
