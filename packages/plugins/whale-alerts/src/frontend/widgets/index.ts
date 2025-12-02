@@ -1,9 +1,22 @@
 /**
  * Whale alerts widget components.
  *
- * Widget components for SSR widget zones. These components are registered
- * with the widget system during plugin initialization and rendered by
- * WidgetZone components in the layout.
+ * Widget components for SSR widget zones. The widgetComponents export maps
+ * widget IDs (matching backend registration) to React components. This mapping
+ * is discovered at build time by the generator script, enabling SSR.
+ *
+ * After hydration, widget components can subscribe to WebSocket for live updates.
  */
 
-export { RecentWhalesWidget } from './RecentWhalesWidget';
+import type { ComponentType } from 'react';
+import { RecentWhalesWidget } from './RecentWhalesWidget';
+
+/**
+ * Widget component registry for this plugin.
+ *
+ * Keys must match the widget IDs used in backend registration.
+ * This export is discovered by the build-time generator script.
+ */
+export const widgetComponents: Record<string, ComponentType<{ data: unknown }>> = {
+    'whale-alerts:recent': RecentWhalesWidget
+};

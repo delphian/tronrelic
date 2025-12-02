@@ -380,12 +380,30 @@ Why it works:
 
 ## Frontend runtime flow
 
-Frontend plugins load on the client after the app is hydrated. We keep the process data-driven so the UI only initializes code that the backend says is available.
+Frontend plugins follow an SSR + live updates pattern where components render fully on the server for instant display, then hydrate on the client for interactivity and real-time data updates.
 
-1. `apps/frontend/scripts/generate-frontend-plugin-registry.mjs` runs before `next dev` or `next build`. It scans `packages/plugins/**/src/frontend/frontend.ts`, reads each manifest for the `id`, and generates `apps/frontend/components/plugins/plugins.generated.ts`.
-2. The generated module maps plugin ids to lazy importer functions. Imports target the source file (`packages/plugins/<id>/src/frontend/frontend`) so Next.js can bundle it natively.
-3. `PluginLoader` (rendered from `apps/frontend/app/providers.tsx`) mounts on every page. On mount it fetches `/api/plugins/manifests`, filters for `manifest.frontend === true`, then resolves each loader.
-4. Each frontend plugin export is expected to include the same manifest plus a React `component`. The loader renders those components invisibly so they can perform side effects such as listening to WebSockets or registering toasts.
+### Build-time Discovery
+
+1. `apps/frontend/scripts/generate-frontend-plugin-registry.mjs` runs before `next dev` or `next build`. It scans `packages/plugins/**/src/frontend/` directories for plugin components.
+2. The generator creates registry files with static imports, enabling components to be available during server-side rendering.
+3. Static imports (not lazy/dynamic) are required for SSR—lazy-loaded components aren't available when the server renders HTML.
+
+### SSR + Hydration Flow
+
+1. During SSR, the server renders plugin components with pre-fetched data. The complete HTML is sent to the browser.
+2. React hydrates the server-rendered HTML, making components interactive.
+3. After hydration, components can subscribe to WebSocket events for live data updates.
+4. State changes from WebSocket events trigger normal React re-renders.
+
+### Side-Effect Components
+
+Some plugin components exist purely for side effects (WebSocket listeners, toast handlers) rather than visible UI:
+
+1. `PluginLoader` (rendered from `apps/frontend/app/providers.tsx`) mounts on every page.
+2. On mount it fetches `/api/plugins/manifests`, filters for `manifest.frontend === true`, then resolves each plugin.
+3. Each frontend plugin export is expected to include the same manifest plus a React `component`. The loader renders those components invisibly so they can perform side effects such as listening to WebSockets or registering toasts.
+
+**Key principle:** All visible plugin UI should leverage SSR for instant display. Side-effect-only components run after hydration.
 
 ### Frontend implementation pattern
 

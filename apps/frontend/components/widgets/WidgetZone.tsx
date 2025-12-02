@@ -1,56 +1,17 @@
 import type { ComponentType } from 'react';
 import type { WidgetData } from './types';
-
-/**
- * Widget component registry.
- *
- * Plugins register their widget components here during frontend initialization.
- * Components receive pre-fetched data from SSR and render the widget UI.
- */
-const widgetComponents: Map<string, ComponentType<{ data: unknown }>> = new Map();
-
-/**
- * Register a widget component for rendering.
- *
- * Plugins call this during frontend initialization to associate their
- * React component with a widget ID. When the widget zone renders,
- * it looks up the component by ID and passes the pre-fetched data.
- *
- * @param widgetId - Unique widget identifier (matches backend registration)
- * @param component - React component that renders the widget
- *
- * @example
- * ```typescript
- * // In plugin frontend initialization
- * registerWidgetComponent('whale-alerts:recent', RecentWhalesWidget);
- * ```
- */
-export function registerWidgetComponent(
-    widgetId: string,
-    component: ComponentType<{ data: unknown }>
-): void {
-    widgetComponents.set(widgetId, component);
-}
-
-/**
- * Get a registered widget component by ID.
- *
- * @param widgetId - Widget identifier to look up
- * @returns Component if registered, undefined otherwise
- */
-export function getWidgetComponent(widgetId: string): ComponentType<{ data: unknown }> | undefined {
-    return widgetComponents.get(widgetId);
-}
+import { getWidgetComponent } from './widgets.generated';
 
 /**
  * Render a single widget with its registered component or fallback.
  *
- * If a component is registered for the widget, renders it with the data.
+ * Looks up the component from the statically-generated widget registry.
+ * If a component is registered, renders it with the SSR data.
  * In development, shows a debug view for unregistered widgets.
  * In production, unregistered widgets render nothing.
  */
 function WidgetRenderer({ widget }: { widget: WidgetData }) {
-    const Component = widgetComponents.get(widget.id);
+    const Component = getWidgetComponent(widget.id);
 
     if (Component) {
         return <Component data={widget.data} />;
@@ -62,6 +23,9 @@ function WidgetRenderer({ widget }: { widget: WidgetData }) {
             <div className="surface surface--padding-md border border-dashed border-border">
                 <p className="text-sm text-muted mb-2">
                     Widget: <code>{widget.id}</code> (no component registered)
+                </p>
+                <p className="text-xs text-muted mb-2">
+                    Export this widget from <code>src/frontend/widgets/index.ts</code>
                 </p>
                 <pre className="text-xs overflow-auto max-h-48 bg-surface-elevated p-2 rounded">
                     {JSON.stringify(widget.data, null, 2)}
@@ -75,18 +39,28 @@ function WidgetRenderer({ widget }: { widget: WidgetData }) {
 }
 
 /**
- * Widget zone component for rendering plugin widgets.
+ * Widget zone component for rendering plugin widgets with SSR support.
  *
- * Filters widgets by zone name and renders them in order. This component
- * is used in layout files to define widget injection points.
+ * This is a server component that renders plugin widgets during SSR.
+ * Widget components are statically imported at build time via the generated
+ * registry, enabling full server-side rendering without loading flash.
+ *
+ * After hydration, individual widget components can subscribe to WebSocket
+ * events for live data updates while maintaining the SSR-rendered initial state.
+ *
+ * SSR Flow:
+ * 1. Build time: Generator creates static imports in widgets.generated.ts
+ * 2. Request time: Layout fetches widget data from backend API
+ * 3. SSR: WidgetZone renders components with fresh data
+ * 4. Hydration: Widget components become interactive, can subscribe to WebSocket
  *
  * @param name - Zone identifier (e.g., 'main-after', 'sidebar-top')
  * @param widgets - Array of widget data from SSR fetch
  *
  * @example
  * ```tsx
- * // In layout.tsx
- * const widgets = await fetchWidgetsForRoute('/');
+ * // In layout.tsx (Server Component)
+ * const widgets = await fetchWidgetsForRoute(pathname);
  *
  * <WidgetZone name="main-after" widgets={widgets} />
  * ```

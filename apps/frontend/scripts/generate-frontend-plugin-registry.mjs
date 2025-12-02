@@ -7,7 +7,9 @@ const __dirname = dirname(__filename);
 const repoRoot = join(__dirname, '..', '..', '..');
 const pluginsRoot = join(repoRoot, 'packages', 'plugins');
 const outputPath = join(repoRoot, 'apps', 'frontend', 'components', 'plugins', 'plugins.generated.ts');
+const widgetsOutputPath = join(repoRoot, 'apps', 'frontend', 'components', 'widgets', 'widgets.generated.ts');
 const outputDir = dirname(outputPath);
+const widgetsOutputDir = dirname(widgetsOutputPath);
 
 /**
  * Discovers plugin directories with frontend entry points.
@@ -157,14 +159,168 @@ async function writeIfChanged(filePath, contents) {
 }
 
 /**
+ * Discovers plugin directories with widget component exports.
+ *
+ * Scans for plugins that have a src/frontend/widgets/index.ts file exporting
+ * widget components for SSR rendering.
+ */
+async function discoverWidgetDirectories() {
+    const directories = [];
+    const entries = await fs.readdir(pluginsRoot, { withFileTypes: true });
+
+    for (const entry of entries) {
+        if (!entry.isDirectory()) {
+            continue;
+        }
+
+        const directory = join(pluginsRoot, entry.name);
+
+        try {
+            await fs.access(directory);
+        } catch {
+            continue;
+        }
+
+        try {
+            await fs.access(join(directory, 'src', 'frontend', 'widgets', 'index.ts'));
+            directories.push(directory);
+        } catch {
+            // Plugin doesn't have widget components
+        }
+    }
+
+    return directories;
+}
+
+/**
+ * Collects widget component metadata for static import generation.
+ *
+ * Unlike plugin loaders which use dynamic imports, widget components use
+ * static imports so they're available during server-side rendering.
+ */
+async function collectWidgetMetadata() {
+    const directories = await discoverWidgetDirectories();
+    const metadata = [];
+
+    for (const directory of directories) {
+        const packageJsonPath = join(directory, 'package.json');
+        const manifestPath = join(directory, 'src', 'manifest.ts');
+        const widgetsEntry = join(directory, 'src', 'frontend', 'widgets', 'index.ts');
+        const packageJson = await readJson(packageJsonPath);
+        const pluginId = await readPluginId(manifestPath, packageJson.name.split('/').at(-1));
+        const relativeImportPath = relative(widgetsOutputDir, widgetsEntry).replace(/\\/g, '/');
+        const sanitizedImportPath = relativeImportPath.startsWith('.')
+            ? relativeImportPath
+            : `./${relativeImportPath}`;
+        const importPathWithoutExtension = sanitizedImportPath.replace(/\.ts$/, '');
+
+        metadata.push({
+            id: pluginId,
+            importPath: importPathWithoutExtension
+        });
+    }
+
+    return metadata;
+}
+
+/**
+ * Renders the TypeScript source for the widget registry module.
+ *
+ * Generates static imports for widget components, making them available
+ * during SSR. Each plugin exports a widgetComponents record mapping
+ * widget IDs to React components.
+ */
+function renderWidgetsModule(metadata) {
+    const header = `/**
+ * AUTO-GENERATED FILE. DO NOT EDIT.
+ *
+ * This module is produced by scripts/generate-frontend-plugin-registry.mjs
+ * and provides static imports for widget components enabling SSR.
+ *
+ * Widget components are statically imported (not lazy-loaded) so they're
+ * available during server-side rendering. This enables full widget HTML
+ * to be rendered on the server for instant display without loading flash.
+ */
+import type { ComponentType } from 'react';
+
+`;
+
+    if (metadata.length === 0) {
+        return `${header}/**
+ * Combined widget component registry from all plugins.
+ * Empty because no plugins export widget components.
+ */
+export const widgetComponentRegistry: Record<string, ComponentType<{ data: unknown }>> = {};
+
+/**
+ * Look up a widget component by ID.
+ */
+export function getWidgetComponent(widgetId: string): ComponentType<{ data: unknown }> | undefined {
+    return widgetComponentRegistry[widgetId];
+}
+`;
+    }
+
+    // Generate static imports for each plugin's widget components
+    const imports = metadata
+        .map(({ id, importPath }) => {
+            const safeId = id.replace(/[^a-zA-Z0-9_]/g, '_');
+            return `import { widgetComponents as ${safeId}_widgets } from '${importPath}';`;
+        })
+        .join('\n');
+
+    // Generate the merged registry
+    const registrySpread = metadata
+        .map(({ id }) => {
+            const safeId = id.replace(/[^a-zA-Z0-9_]/g, '_');
+            return `    ...${safeId}_widgets,`;
+        })
+        .join('\n');
+
+    const registry = `
+/**
+ * Combined widget component registry from all plugins.
+ *
+ * Maps widget IDs to their React components. Widget IDs must match
+ * the IDs used in backend widget registration.
+ */
+export const widgetComponentRegistry: Record<string, ComponentType<{ data: unknown }>> = {
+${registrySpread}
+};
+
+/**
+ * Look up a widget component by ID.
+ *
+ * @param widgetId - Widget identifier (e.g., 'whale-alerts:recent')
+ * @returns Component if registered, undefined otherwise
+ */
+export function getWidgetComponent(widgetId: string): ComponentType<{ data: unknown }> | undefined {
+    return widgetComponentRegistry[widgetId];
+}
+`;
+
+    return `${header}${imports}\n${registry}`;
+}
+
+/**
  * Orchestrates registry generation.
  *
- * It collects metadata, renders the module source, and persists it on disk. This keeps the frontend plugin registry synchronized with the filesystem.
+ * Generates both the plugin loader registry (lazy imports for pages/components)
+ * and the widget component registry (static imports for SSR).
  */
 async function run() {
-    const metadata = await collectPluginMetadata();
-    const moduleSource = renderModule(metadata);
-    await writeIfChanged(outputPath, moduleSource);
+    // Generate plugin loaders (lazy imports)
+    const pluginMetadata = await collectPluginMetadata();
+    const pluginModuleSource = renderModule(pluginMetadata);
+    await writeIfChanged(outputPath, pluginModuleSource);
+
+    // Generate widget component registry (static imports for SSR)
+    const widgetMetadata = await collectWidgetMetadata();
+    const widgetModuleSource = renderWidgetsModule(widgetMetadata);
+    await writeIfChanged(widgetsOutputPath, widgetModuleSource);
+
+    console.log(`✅ Generated plugin registry: ${pluginMetadata.length} plugins`);
+    console.log(`✅ Generated widget registry: ${widgetMetadata.length} plugins with widgets`);
 }
 
 void run();

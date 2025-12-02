@@ -41,6 +41,8 @@ Standard zones available in dashboard layout:
 | `sidebar-top` | Top of sidebar | High-priority sidebar widgets (future) |
 | `sidebar-bottom` | Bottom of sidebar | Secondary sidebar widgets (future) |
 
+**Zone validation:** The widget service validates zone names during registration. Unknown zones trigger a warning log but don't prevent registration, allowing future zone additions without breaking existing plugins.
+
 ## Backend: Widget Registration
 
 Plugins register widgets in their backend `init()` hook using `context.widgetService`:
@@ -121,13 +123,17 @@ fetchData: async () => {
 
 ## Frontend: Automatic Widget Rendering
 
-Widget zones are integrated into the dashboard layout and automatically render registered widgets:
+Widget zones are integrated into layouts and automatically render registered widgets for the current route:
 
 ```tsx
 // In apps/frontend/app/(dashboard)/layout.tsx
+import { headers } from 'next/headers';
+
 export default async function DashboardLayout({ children }) {
-    const widgets = await fetchWidgetsForRoute('/');
-    
+    const headersList = await headers();
+    const pathname = headersList.get('x-pathname') || '/';
+    const widgets = await fetchWidgetsForRoute(pathname);
+
     return (
         <div className="dashboard-layout">
             <WidgetZone name="main-before" widgets={widgets} />
@@ -138,11 +144,13 @@ export default async function DashboardLayout({ children }) {
 }
 ```
 
+**Per-route support:** Next.js middleware sets an `x-pathname` header on every request, allowing layouts to fetch widgets for the actual page route—not just the layout's base path. This means widgets with `routes: ['/system/users']` appear only on that specific page.
+
 The `WidgetZone` component:
 1. Filters widgets by zone name
 2. Sorts by order property
 3. Renders each widget with optional title
-4. Displays widget data (currently as JSON, plugin components coming soon)
+4. Renders custom React components when registered, falls back to JSON display in development
 
 ## Complete Example
 
@@ -312,8 +320,11 @@ export const myBackendPlugin = definePlugin({
 
 ### View All Registered Widgets
 
+**Requires admin authentication:**
+
 ```bash
-curl http://localhost:4000/api/widgets/all
+curl -H "X-Admin-Token: $ADMIN_API_TOKEN" \
+  http://localhost:4000/api/widgets/all
 ```
 
 Returns all registered widgets (without executing fetchData):
@@ -335,8 +346,11 @@ Returns all registered widgets (without executing fetchData):
 
 ### View Widgets by Zone
 
+**Requires admin authentication:**
+
 ```bash
-curl http://localhost:4000/api/widgets/zones/main-after
+curl -H "X-Admin-Token: $ADMIN_API_TOKEN" \
+  http://localhost:4000/api/widgets/zones/main-after
 ```
 
 Returns widgets in a specific zone:
@@ -374,36 +388,190 @@ Returns widgets matching a route with pre-fetched data:
 }
 ```
 
-## Frontend Widget Components (Coming Soon)
+## Frontend: Widget Components with SSR + Live Updates
 
-Currently, widgets display their data as formatted JSON. Future enhancement will add:
+Widget components render fully on the server (SSR) for instant display, then hydrate on the client for live data updates. This two-phase approach provides the best user experience: no loading flash on initial page load, plus real-time updates as data changes.
 
-```typescript
-// Plugin can provide custom React component
-widgets: [
-    {
-        id: 'reddit-feed',
-        zone: 'main-after',
-        routes: ['/'],
-        component: RedditFeedWidget,  // React component
-        fetchData: async () => ({ posts: [] })
-    }
-]
+### How It Works
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│ 1. BUILD TIME                                                    │
+│    Generator scans plugins/*/src/frontend/widgets/index.ts      │
+│    Creates static imports in widgets.generated.ts               │
+└─────────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────────┐
+│ 2. SSR (Every Page Request)                                      │
+│    Layout calls fetchWidgetsForRoute(pathname)                  │
+│    Backend executes fetchData() for matching widgets            │
+│    WidgetZone looks up component from static registry           │
+│    Component renders with fresh data → HTML sent to browser     │
+└─────────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────────┐
+│ 3. HYDRATION (Browser)                                           │
+│    React hydrates server-rendered HTML                          │
+│    Component becomes interactive                                │
+│    useEffect runs → WebSocket subscription established          │
+└─────────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────────┐
+│ 4. LIVE UPDATES (Ongoing)                                        │
+│    WebSocket event arrives                                      │
+│    Event handler calls setState                                 │
+│    Component re-renders with new data                           │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-The `RedditFeedWidget` component will receive pre-fetched data as props:
+### Exporting Widget Components
+
+Plugins export widget components from a standard location. The build-time generator discovers these exports and creates static imports for SSR.
+
+```typescript
+// packages/plugins/my-plugin/src/frontend/widgets/index.ts
+import type { ComponentType } from 'react';
+import { MyFeedWidget } from './MyFeedWidget';
+
+/**
+ * Widget component registry for this plugin.
+ * Keys must match widget IDs used in backend registration.
+ */
+export const widgetComponents: Record<string, ComponentType<{ data: unknown }>> = {
+    'my-plugin:feed': MyFeedWidget
+};
+```
+
+**Convention:** Export a `widgetComponents` object from `src/frontend/widgets/index.ts`. The generator scans this file at build time.
+
+### Creating Widget Components
+
+Widget components receive SSR-fetched data as the `data` prop. They render immediately (data is already present from SSR) and can optionally subscribe to WebSocket for live updates.
+
+#### Basic Widget (SSR only)
 
 ```tsx
-function RedditFeedWidget({ data }: { data: { posts: RedditPost[] } }) {
+// packages/plugins/my-plugin/src/frontend/widgets/MyFeedWidget.tsx
+'use client';
+
+interface FeedData {
+    posts: Array<{ id: string; title: string; timestamp: string }>;
+}
+
+export function MyFeedWidget({ data }: { data: unknown }) {
+    const feedData = data as FeedData;
+
+    if (!feedData?.posts?.length) {
+        return (
+            <div className="surface surface--padding-md text-center">
+                <p className="text-muted">No posts available</p>
+            </div>
+        );
+    }
+
     return (
-        <div className="reddit-feed">
-            {data.posts.map(post => (
-                <RedditPostCard key={post.id} post={post} />
+        <div className="surface">
+            {feedData.posts.map((post) => (
+                <div key={post.id} className="surface--padding-sm border-b border-border">
+                    <p className="font-semibold">{post.title}</p>
+                    <p className="text-sm text-muted">{post.timestamp}</p>
+                </div>
             ))}
         </div>
     );
 }
 ```
+
+#### Widget with Live Updates (SSR + WebSocket)
+
+```tsx
+// packages/plugins/whale-alerts/src/frontend/widgets/RecentWhalesWidget.tsx
+'use client';
+
+import { useState, useEffect } from 'react';
+
+interface WhaleTransaction {
+    txId: string;
+    fromAddress: string;
+    toAddress: string;
+    amountTRX: number;
+    timestamp: string;
+}
+
+interface WhaleData {
+    transactions: WhaleTransaction[];
+    count: number;
+}
+
+export function RecentWhalesWidget({ data }: { data: unknown }) {
+    // Initialize state with SSR data - no loading state needed
+    const [whaleData, setWhaleData] = useState<WhaleData>(data as WhaleData);
+
+    useEffect(() => {
+        // After hydration, subscribe to live updates via WebSocket
+        // Widget components can access websocket through global context or props
+        const handleNewTransaction = (transaction: WhaleTransaction) => {
+            setWhaleData(prev => ({
+                ...prev,
+                transactions: [transaction, ...prev.transactions].slice(0, 10),
+                count: prev.count + 1
+            }));
+        };
+
+        // Subscribe to plugin-namespaced events
+        // Implementation depends on your WebSocket setup
+
+        return () => {
+            // Cleanup subscription
+        };
+    }, []);
+
+    if (!whaleData?.transactions?.length) {
+        return (
+            <div className="surface surface--padding-md text-center">
+                <p className="text-muted">No recent whale activity</p>
+            </div>
+        );
+    }
+
+    return (
+        <div className="surface">
+            {whaleData.transactions.map((tx) => (
+                <div key={tx.txId} className="surface--padding-sm border-b border-border">
+                    <span className="font-semibold">
+                        {tx.amountTRX.toLocaleString()} TRX
+                    </span>
+                    <span className="text-sm text-muted font-mono ml-2">
+                        {tx.fromAddress.slice(0, 8)}... → {tx.toAddress.slice(0, 8)}...
+                    </span>
+                </div>
+            ))}
+        </div>
+    );
+}
+```
+
+### Component Requirements
+
+Widget components must follow these rules for proper SSR:
+
+1. **Export from standard location**: `src/frontend/widgets/index.ts`
+2. **Export `widgetComponents` object**: Maps widget IDs to components
+3. **Use `'use client'` directive**: Required for useState/useEffect
+4. **No loading states for initial data**: SSR data is already present
+5. **Initialize state from `data` prop**: `useState(data as MyType)`
+6. **WebSocket subscriptions in useEffect**: Client-side only, after hydration
+7. **Match widget ID exactly**: Export key must match backend registration ID
+
+### Regenerating the Widget Registry
+
+After adding or modifying widget components, regenerate the registry:
+
+```bash
+npm run generate:plugins --workspace apps/frontend
+```
+
+This scans all plugins for `src/frontend/widgets/index.ts` files and creates static imports in `widgets.generated.ts`.
 
 ## Troubleshooting
 
@@ -452,22 +620,17 @@ Planned improvements to the widget system:
 ### ✅ Implemented
 
 - Backend widget service with in-memory registry
-- SSR data fetching with timeout protection
+- SSR data fetching with timeout protection (5s limit via Promise.race)
 - Route-based widget filtering
 - Zone-based rendering in dashboard layout
 - Declarative and imperative widget registration
+- Per-route widget support via middleware (x-pathname header)
+- Custom widget components via `registerWidgetComponent()`
+- Zone validation with warning logging for unknown zones
+- JSON serialization validation for widget data
+- Admin authentication for introspection endpoints (`/api/widgets/all`, `/api/widgets/zones/:zone`)
 
 ### 🚧 Planned
-
-**Custom Widget Components** - Plugins provide React components:
-```typescript
-widgets: [{
-    id: 'my-widget',
-    zone: 'main-after',
-    component: MyWidgetComponent,
-    fetchData: async () => ({})
-}]
-```
 
 **Widget Size Hints** - Control widget layout:
 ```typescript
@@ -482,5 +645,3 @@ widgets: [{
 **User Customization** - Allow users to hide/reorder widgets via UI
 
 **More Zones** - Expand to header, footer, and page-specific zones
-
-**Per-Page Widgets** - Extract actual pathname from request context for per-page widget filtering
