@@ -38,7 +38,7 @@ export async function fetchWidgetsForRoute(route: string): Promise<WidgetData[]>
         const response = await fetch(url, {
             // Disable Next.js caching - widgets can have dynamic data
             cache: 'no-store',
-            signal: AbortSignal.timeout(5000) // 5 second timeout
+            signal: AbortSignal.timeout(6000) // 6 second timeout (backend has 5s, add 1s for network)
         });
 
         if (!response.ok) {

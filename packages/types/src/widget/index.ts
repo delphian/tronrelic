@@ -6,6 +6,6 @@
  * pages without modifying core page code.
  */
 
-export { IWidgetConfig } from './IWidgetConfig.js';
+export { IWidgetConfig, WIDGET_ZONES, type WidgetZone } from './IWidgetConfig.js';
 export { IWidgetData } from './IWidgetData.js';
 export { IWidgetService } from './IWidgetService.js';

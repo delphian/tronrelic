@@ -1,4 +1,22 @@
 /**
+ * Standard widget zone names.
+ *
+ * Defines the available zones where widgets can be injected. These zones
+ * are predefined injection points in the application layout.
+ */
+export const WIDGET_ZONES = {
+    MAIN_BEFORE: 'main-before',
+    MAIN_AFTER: 'main-after',
+    SIDEBAR_TOP: 'sidebar-top',
+    SIDEBAR_BOTTOM: 'sidebar-bottom'
+} as const;
+
+/**
+ * Widget zone name type derived from WIDGET_ZONES constant.
+ */
+export type WidgetZone = typeof WIDGET_ZONES[keyof typeof WIDGET_ZONES];
+
+/**
  * Widget configuration for plugin-registered UI components.
  *
  * Defines widgets that plugins can inject into designated zones on existing pages.
@@ -40,8 +58,10 @@ export interface IWidgetConfig {
      * - 'main-after' - Below page content
      * - 'sidebar-top' - Top of sidebar (if present)
      * - 'sidebar-bottom' - Bottom of sidebar
+     *
+     * Use WIDGET_ZONES constant for type-safe zone names.
      */
-    zone: 'main-before' | 'main-after' | 'sidebar-top' | 'sidebar-bottom';
+    zone: WidgetZone;
 
     /**
      * Array of URL paths where this widget should appear.

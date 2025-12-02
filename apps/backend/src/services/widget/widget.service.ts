@@ -183,20 +183,27 @@ export class WidgetService implements IWidgetService {
                 // Add timeout to prevent slow widgets from blocking SSR
                 const timeoutMs = 5000; // 5 second timeout
                 const dataPromise = widget.fetchData();
-                const timeoutPromise = new Promise((_, reject) =>
-                    setTimeout(() => reject(new Error('Widget data fetch timeout')), timeoutMs)
-                );
 
-                const data = await Promise.race([dataPromise, timeoutPromise]);
+                // Use AbortController to clean up timeout when promise resolves
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
-                return {
-                    id: widget.id,
-                    zone: widget.zone,
-                    pluginId: widget.pluginId!,
-                    order: widget.order ?? 100,
-                    title: widget.title,
-                    data
-                };
+                try {
+                    const data = await dataPromise;
+                    clearTimeout(timeoutId);
+
+                    return {
+                        id: widget.id,
+                        zone: widget.zone,
+                        pluginId: widget.pluginId!,
+                        order: widget.order ?? 100,
+                        title: widget.title,
+                        data
+                    };
+                } catch (fetchError) {
+                    clearTimeout(timeoutId);
+                    throw fetchError;
+                }
             } catch (error) {
                 this.logger.error('Widget data fetch failed', {
                     widgetId: widget.id,

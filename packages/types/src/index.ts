@@ -14,7 +14,7 @@ export type { IUsdtParametersService } from './usdt-parameters/IUsdtParametersSe
 export type { IUsdtParametersFetcher } from './usdt-parameters/IUsdtParametersFetcher.js';
 export type { ICacheService } from './services/ICacheService.js';
 export type { IMenuNode, IMenuNodeWithChildren, IMenuTree, IMenuValidation, MenuEventType, IMenuEvent, MenuEventSubscriber, IMenuService, IMenuNamespaceConfig } from './menu/index.js';
-export type { IWidgetConfig, IWidgetData, IWidgetService } from './widget/index.js';
+export { IWidgetConfig, WIDGET_ZONES, type WidgetZone, type IWidgetData, type IWidgetService } from './widget/index.js';
 export type { ISystemConfig, ISystemConfigService } from './system-config/index.js';
 export type { ISystemLogService, ISystemLogQuery, ISystemLogPaginatedResponse, ISaveLogData, LogLevel } from './system-log/index.js';
 export { LOG_LEVELS, shouldLog, type LogLevelName } from './system-log/index.js';
