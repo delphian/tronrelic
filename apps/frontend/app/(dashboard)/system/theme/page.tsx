@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useAppDispatch, useAppSelector } from '../../../../store/hooks';
 import { useSystemAuth } from '../../../../features/system';
 import {
@@ -213,6 +213,10 @@ export default function ThemePage() {
     // Loading state for fetching CSS variables when creating new theme
     const [loadingTemplate, setLoadingTemplate] = useState(false);
 
+    // Track pending new theme ID to prevent race conditions when user selects
+    // another theme while CSS variables are being fetched
+    const pendingNewThemeIdRef = useRef<string | null>(null);
+
     // Form fields are disabled until user clicks "New" or selects an existing theme
     const isFormDisabled = !selectedTheme && !formData.id;
 
@@ -247,42 +251,62 @@ export default function ThemePage() {
         dispatch(selectTheme(theme));
         dispatch(clearValidation());
 
-        if (!theme) {
-            // Generate new UUID for client-side creation with RFC4122 v4 compliant fallback
-            const newThemeId = crypto.randomUUID?.() ?? generateUUIDv4Fallback();
+        if (theme) {
+            // Selecting existing theme - cancel any pending new theme creation
+            pendingNewThemeIdRef.current = null;
+            return;
+        }
 
-            // Show loading state while fetching CSS variables
-            setLoadingTemplate(true);
+        // Generate new UUID for client-side creation with RFC4122 v4 compliant fallback
+        const newThemeId = crypto.randomUUID?.() ?? generateUUIDv4Fallback();
 
-            try {
-                // Fetch and parse CSS files to get all variables
-                const sections = await fetchCSSVariables();
+        // Track this new theme ID to detect if user selects another theme while loading
+        pendingNewThemeIdRef.current = newThemeId;
 
-                // Generate template with all variables organized by section
-                const cssTemplate = sections.length > 0
-                    ? generateThemeTemplate(newThemeId, sections)
-                    : `[data-theme="${newThemeId}"] {\n    /* Failed to load CSS variables - add your overrides here */\n    --color-primary: #4f8cff;\n}`;
+        // Show loading state while fetching CSS variables
+        setLoadingTemplate(true);
 
-                setFormData({
-                    id: newThemeId,
-                    name: 'New Theme',
-                    icon: '',
-                    css: cssTemplate,
-                    dependencies: [],
-                    isActive: false
-                });
-            } catch (err) {
-                console.error('Failed to fetch CSS variables:', err);
-                // Fallback to minimal template
-                setFormData({
-                    id: newThemeId,
-                    name: 'New Theme',
-                    icon: '',
-                    css: `[data-theme="${newThemeId}"] {\n    /* Failed to load CSS variables - add your overrides here */\n    --color-primary: #4f8cff;\n}`,
-                    dependencies: [],
-                    isActive: false
-                });
-            } finally {
+        try {
+            // Fetch and parse CSS files to get all variables
+            const sections = await fetchCSSVariables();
+
+            // Guard: if user selected another theme while fetching, abort
+            if (pendingNewThemeIdRef.current !== newThemeId) {
+                return;
+            }
+
+            // Generate template with all variables organized by section
+            const cssTemplate = sections.length > 0
+                ? generateThemeTemplate(newThemeId, sections)
+                : `[data-theme="${newThemeId}"] {\n    /* Failed to load CSS variables - add your overrides here */\n    --color-primary: #4f8cff;\n}`;
+
+            setFormData({
+                id: newThemeId,
+                name: 'New Theme',
+                icon: '',
+                css: cssTemplate,
+                dependencies: [],
+                isActive: false
+            });
+        } catch (err) {
+            // Guard: if user selected another theme while fetching, abort
+            if (pendingNewThemeIdRef.current !== newThemeId) {
+                return;
+            }
+
+            console.error('Failed to fetch CSS variables:', err);
+            // Fallback to minimal template
+            setFormData({
+                id: newThemeId,
+                name: 'New Theme',
+                icon: '',
+                css: `[data-theme="${newThemeId}"] {\n    /* Failed to load CSS variables - add your overrides here */\n    --color-primary: #4f8cff;\n}`,
+                dependencies: [],
+                isActive: false
+            });
+        } finally {
+            // Only clear loading if this is still the active new theme creation
+            if (pendingNewThemeIdRef.current === newThemeId) {
                 setLoadingTemplate(false);
             }
         }
