@@ -1203,7 +1203,7 @@ Before creating a new module, verify:
 **Detailed documentation:**
 - [pages/README.md](../../apps/backend/src/modules/pages/README.md) - Complete pages module architecture and patterns
 - [system-database-migrations.md](./system-database-migrations.md) - Migration system for schema evolution
-- [system-menu.md](./system-menu.md) - Menu service for navigation management
+- [system-modules-menu.md](./system-modules-menu.md) - Menu module for navigation management
 - [system-testing.md](./system-testing.md) - Testing framework with Vitest and Mongoose mocking
 
 **Related topics:**

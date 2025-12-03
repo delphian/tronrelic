@@ -46,7 +46,7 @@ await context.menuService.create({
 });
 ```
 
-**See [system-menu.md](../system/system-menu.md) for complete IMenuService documentation.**
+**See [system-modules-menu.md](../system/system-modules-menu.md) for complete IMenuService documentation.**
 
 ### 2. Page Registration (IPageConfig)
 
@@ -677,7 +677,7 @@ export function MyCustomMenu() {
 }
 ```
 
-**See [system-menu.md](../system/system-menu.md) for complete WebSocket event documentation.**
+**See [system-modules-menu.md](../system/system-modules-menu.md) for complete WebSocket event documentation.**
 
 ## Future Enhancements
 
@@ -740,7 +740,7 @@ Core implementation files:
   - `apps/backend/src/modules/menu/menu.service.ts` - MenuService implementation
   - `apps/backend/src/modules/menu/menu.routes.ts` - REST API endpoints
   - `packages/types/src/menu/IMenuService.ts` - Menu service interface
-  - **See [system-menu.md](../system/system-menu.md) for complete documentation**
+  - **See [system-modules-menu.md](../system/system-modules-menu.md) for complete documentation**
 
 - **Type definitions**:
   - `packages/types/src/plugin/IPageConfig.ts` - Page config interface
@@ -895,7 +895,7 @@ For developers working on the plugin system itself, here are the key files:
 ## Related Documentation
 
 **System documentation:**
-- [system-menu.md](../system/system-menu.md) - Backend menu service architecture, REST API endpoints, and WebSocket events
+- [system-modules-menu.md](../system/system-modules-menu.md) - Menu module architecture, REST API endpoints, and WebSocket events
 
 **Plugin documentation:**
 - [plugins.md](./plugins.md) - Plugin system overview

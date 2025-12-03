@@ -4,17 +4,29 @@
  * Provides tab-like navigation with active state highlighting for system monitoring pages.
  * Uses design system variables for consistent theming and spacing.
  *
- * When HamburgerMenu is enabled, it manages its own container query context.
- * The flex-wrap property allows tabs to wrap gracefully when hamburger is disabled
- * or before the container query triggers.
+ * The nav element constrains width to enable PriorityNav's IntersectionObserver
+ * to detect overflow. Items that don't fit are moved to a "More" dropdown.
+ * overflow: hidden and min-width: 0 are critical for flex items in grid cells.
  */
 
 .nav {
     display: flex;
-    flex-wrap: wrap;
     gap: var(--spacing-4);
     border-bottom: var(--border-width-thin) solid var(--color-border);
     padding-bottom: var(--spacing-4);
+    min-width: 0;
+    overflow: hidden;
+}
+
+/**
+ * Wrapping variant for fallback when PriorityNav is disabled.
+ *
+ * Restores flex-wrap behavior so items wrap naturally instead of being
+ * clipped. Used when overflow handling is disabled or during loading.
+ */
+.nav--wrap {
+    flex-wrap: wrap;
+    overflow: visible;
 }
 
 .tab {

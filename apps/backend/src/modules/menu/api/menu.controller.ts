@@ -1,6 +1,6 @@
 import type { Request, Response } from 'express';
 import { z } from 'zod';
-import { MenuService } from './menu.service.js';
+import { MenuService } from '../services/menu.service.js';
 
 /**
  * Zod schema for creating a new menu node.
@@ -79,9 +79,9 @@ const updateNodeSchema = z.object({
  * All fields are optional to allow partial configuration updates.
  */
 const namespaceConfigSchema = z.object({
-    hamburgerMenu: z.object({
+    overflow: z.object({
         enabled: z.boolean(),
-        triggerWidth: z.number().int().positive().max(2560)
+        collapseAtCount: z.number().int().min(1).max(20).optional()
     }).optional(),
     icons: z.object({
         enabled: z.boolean(),

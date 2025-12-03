@@ -16,7 +16,7 @@ import { PluginWebSocketManager } from '../services/plugin-websocket-manager.js'
 import { PluginWebSocketRegistry } from '../services/plugin-websocket-registry.js';
 import { CacheService } from '../services/cache.service.js';
 import { SystemConfigService } from '../services/system-config/index.js';
-import { MenuService } from '../modules/menu/menu.service.js';
+import { MenuService } from '../modules/menu/services/menu.service.js';
 import { getScheduler } from '../jobs/index.js';
 import { ChainParametersService } from '../modules/chain-parameters/chain-parameters.service.js';
 import { UsdtParametersService } from '../modules/usdt-parameters/usdt-parameters.service.js';

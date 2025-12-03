@@ -5,16 +5,28 @@
  * instances (main, system, footer, etc.). Uses design system variables for
  * consistent theming and spacing across all namespaces.
  *
- * When HamburgerMenu is enabled, it manages its own container query context.
- * The flex-wrap property allows tabs to wrap gracefully when hamburger is disabled
- * or before the container query triggers.
+ * The nav element constrains width to enable PriorityNav's IntersectionObserver
+ * to detect overflow. Items that don't fit are moved to a "More" dropdown.
+ * overflow: hidden and min-width: 0 are critical for flex items in grid cells.
  */
 
 .nav {
     display: flex;
-    flex-wrap: wrap;
     gap: var(--spacing-4);
-    flex: 1; /* Grow to fill available space (flex-friendly for container queries) */
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+}
+
+/**
+ * Wrapping variant for fallback when PriorityNav is disabled.
+ *
+ * Restores flex-wrap behavior so items wrap naturally instead of being
+ * clipped. Used when overflow handling is disabled or during loading.
+ */
+.nav--wrap {
+    flex-wrap: wrap;
+    overflow: visible;
 }
 
 .tab {
@@ -102,33 +114,4 @@
 
 .nested:last-child {
     margin-bottom: 0;
-}
-
-/**
- * Hamburger menu category styles.
- *
- * In the hamburger menu, categories are always expanded and show
- * all children inline with indentation.
- */
-.hamburgerCategory {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-    margin-bottom: var(--spacing-4);
-}
-
-.hamburgerCategoryLabel {
-    display: block;
-    font-weight: var(--font-weight-medium);
-    color: var(--color-text-secondary);
-    margin-bottom: var(--spacing-2);
-    text-transform: uppercase;
-    font-size: var(--font-size-xs);
-    letter-spacing: 0.05em;
-    text-align: right;
-}
-
-.nestedHamburger {
-    padding-right: var(--spacing-6);
-    text-align: right;
 }

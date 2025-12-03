@@ -991,7 +991,7 @@ The module creates `/public/uploads/` automatically during `init()`, but if runn
 
 **TronRelic module patterns:**
 - [system-modules.md](./system-modules.md) - Backend module system architecture and lifecycle patterns
-- [system-menu.md](./system-menu.md) - Menu service for navigation management
+- [system-modules-menu.md](./system-modules-menu.md) - Menu module for navigation management
 - [system-database-migrations.md](./system-database-migrations.md) - Database migration system for schema evolution
 
 **Related backend patterns:**

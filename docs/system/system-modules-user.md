@@ -876,7 +876,7 @@ dispatch(initializeUser(id)).then((result) => {
 
 **TronRelic module patterns:**
 - [system-modules.md](./system-modules.md) - Backend module system architecture and lifecycle patterns
-- [system-menu.md](./system-menu.md) - Menu service for navigation management
+- [system-modules-menu.md](./system-modules-menu.md) - Menu module for navigation management
 - [system-modules-pages.md](./system-modules-pages.md) - Pages module as reference implementation
 
 **Related frontend patterns:**

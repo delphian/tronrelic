@@ -10,10 +10,10 @@ import type {
     IDatabaseService,
     IMenuNamespaceConfig
 } from '@tronrelic/types';
-import { logger } from '../../lib/logger.js';
-import { WebSocketService } from '../../services/websocket.service.js';
+import { logger } from '../../../lib/logger.js';
+import { WebSocketService } from '../../../services/websocket.service.js';
 import { ObjectId } from 'mongodb';
-import type { IMenuNodeDocument, IMenuNamespaceConfigDocument } from './database/index.js';
+import type { IMenuNodeDocument, IMenuNamespaceConfigDocument } from '../database/index.js';
 
 /**
  * Singleton service managing the hierarchical menu system.
@@ -643,9 +643,8 @@ export class MenuService implements IMenuService {
         // Return defaults if no config found
         return {
             namespace: ns,
-            hamburgerMenu: {
-                enabled: true,
-                triggerWidth: 768
+            overflow: {
+                enabled: true
             },
             icons: {
                 enabled: true,
@@ -684,7 +683,7 @@ export class MenuService implements IMenuService {
         if (existing) {
             // Update existing config
             const updateDoc: Partial<IMenuNamespaceConfigDocument> = {
-                ...(config.hamburgerMenu !== undefined && { hamburgerMenu: config.hamburgerMenu }),
+                ...(config.overflow !== undefined && { overflow: config.overflow }),
                 ...(config.icons !== undefined && { icons: config.icons }),
                 ...(config.layout !== undefined && { layout: config.layout }),
                 ...(config.styling !== undefined && { styling: config.styling }),
@@ -712,7 +711,7 @@ export class MenuService implements IMenuService {
             // Create new config
             const docToInsert: Partial<IMenuNamespaceConfigDocument> = {
                 namespace,
-                hamburgerMenu: config.hamburgerMenu,
+                overflow: config.overflow,
                 icons: config.icons,
                 layout: config.layout,
                 styling: config.styling,
@@ -974,7 +973,7 @@ export class MenuService implements IMenuService {
         return {
             _id: doc._id.toString(),
             namespace: doc.namespace,
-            hamburgerMenu: doc.hamburgerMenu,
+            overflow: doc.overflow,
             icons: doc.icons,
             layout: doc.layout,
             styling: doc.styling,

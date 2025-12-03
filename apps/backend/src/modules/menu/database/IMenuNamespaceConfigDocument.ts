@@ -34,11 +34,11 @@ export interface IMenuNamespaceConfigDocument {
     namespace: string;
 
     /**
-     * Hamburger menu (collapsed mobile navigation) settings.
+     * Priority+ overflow navigation settings.
      */
-    hamburgerMenu?: {
+    overflow?: {
         enabled: boolean;
-        triggerWidth: number;
+        collapseAtCount?: number;
     };
 
     /**

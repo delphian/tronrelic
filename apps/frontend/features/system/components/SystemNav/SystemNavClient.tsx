@@ -9,9 +9,9 @@
  * menu items to be dynamically managed through the IMenuService without requiring
  * client-side fetching or hardcoded navigation arrays.
  *
- * Responsive behavior uses container queries to automatically switch between horizontal
- * tabs (wide containers) and hamburger menu (narrow containers) based on the namespace
- * configuration from the backend.
+ * Responsive behavior uses Priority+ navigation pattern with IntersectionObserver
+ * to automatically show as many items as fit, moving overflow items to a "More"
+ * dropdown based on the namespace configuration from the backend.
  *
  * @example
  * ```tsx
@@ -23,8 +23,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useMenuConfig } from '../../../../lib/hooks';
-import { HamburgerMenu } from '../../../../components/layout/HamburgerMenu';
+import { PriorityNav, useMenuConfig } from '../../../../modules/menu';
 import styles from './SystemNav.module.css';
 
 /**
@@ -85,9 +84,9 @@ interface ISystemNavClientProps {
  * Active state uses startsWith matching to highlight tabs for nested routes
  * (e.g., /system/pages/edit shows "Pages" tab as active).
  *
- * Responsive behavior uses container queries to automatically switch between horizontal
- * tabs (wide containers) and hamburger menu (narrow containers) based on the namespace
- * configuration.
+ * Responsive behavior uses Priority+ navigation with IntersectionObserver to
+ * automatically detect overflow and move items to a "More" dropdown based on
+ * available space and the namespace configuration.
  *
  * @param props - Component props
  * @param props.items - Menu items from server
@@ -102,61 +101,54 @@ export function SystemNavClient({ items }: ISystemNavClientProps) {
         .sort((a, b) => a.order - b.order);
 
     /**
-     * Generates menu items for the hamburger menu.
-     *
-     * Creates simplified link elements for display in the slideout panel.
+     * Renders a single navigation tab with active state highlighting.
      */
-    const hamburgerItems = visibleItems.map(item => (
-        <Link key={item._id} href={item.url}>
-            {item.label}
-        </Link>
-    ));
+    const renderTab = (item: IMenuItem) => {
+        const isActive = pathname.startsWith(item.url);
+        return (
+            <Link
+                key={item._id}
+                href={item.url}
+                className={`${styles.tab} ${isActive ? styles.active : ''}`}
+                aria-current={isActive ? 'page' : undefined}
+            >
+                {item.label}
+            </Link>
+        );
+    };
 
     /**
-     * Renders the navigation tabs.
-     *
-     * Creates the full tab bar with active state highlighting.
+     * Converts menu items to PriorityNav format.
      */
-    const navContent = (
-        <>
-            {visibleItems.map(item => {
-                const isActive = pathname.startsWith(item.url);
-                return (
-                    <Link
-                        key={item._id}
-                        href={item.url}
-                        className={`${styles.tab} ${isActive ? styles.active : ''}`}
-                        aria-current={isActive ? 'page' : undefined}
-                    >
-                        {item.label}
-                    </Link>
-                );
-            })}
-        </>
-    );
+    const priorityNavItems = visibleItems.map(item => ({
+        id: item._id,
+        node: renderTab(item)
+    }));
 
     /**
-     * Wraps navigation in HamburgerMenu if enabled.
+     * Wraps navigation in PriorityNav if overflow handling is enabled.
      *
-     * Uses container queries to automatically switch between full tabs and
-     * hamburger icon based on available width.
+     * Uses IntersectionObserver to detect which items fit and moves overflow
+     * to a "More" dropdown automatically.
      */
-    if (menuConfig.hamburgerMenu?.enabled && !menuConfig.loading) {
+    const overflowEnabled = menuConfig.overflow?.enabled ?? true;
+
+    if (overflowEnabled && !menuConfig.loading) {
         return (
             <nav className={styles.nav} aria-label="System monitoring navigation">
-                <HamburgerMenu
-                    triggerWidth={menuConfig.hamburgerMenu.triggerWidth}
-                    items={hamburgerItems}
-                >
-                    {navContent}
-                </HamburgerMenu>
+                <PriorityNav
+                    items={priorityNavItems}
+                    enabled={overflowEnabled}
+                    collapseAtCount={menuConfig.overflow?.collapseAtCount}
+                    moreButtonLabel="More system menu items"
+                />
             </nav>
         );
     }
 
     return (
-        <nav className={styles.nav} aria-label="System monitoring navigation">
-            {navContent}
+        <nav className={`${styles.nav} ${styles['nav--wrap']}`} aria-label="System monitoring navigation">
+            {visibleItems.map(item => renderTab(item))}
         </nav>
     );
 }

@@ -2,7 +2,7 @@
  * Configuration options for a menu namespace.
  *
  * Stores UI rendering preferences that control how a menu namespace is displayed,
- * including responsive behavior (hamburger menu), icon display settings, layout
+ * including overflow behavior (Priority+ navigation), icon display settings, layout
  * orientation, and styling hints. Each namespace can have independent configuration,
  * allowing different menus (main, footer, admin-sidebar) to have unique behaviors.
  *
@@ -26,33 +26,36 @@ export interface IMenuNamespaceConfig {
     namespace: string;
 
     /**
-     * Hamburger menu (collapsed mobile navigation) settings.
+     * Priority+ overflow navigation settings.
      *
-     * Controls when and how the menu collapses into a hamburger icon on smaller
-     * viewports. The `triggerWidth` uses container queries, not viewport width,
-     * allowing menus to collapse based on available space rather than screen size.
+     * Controls how the menu handles overflow when items don't fit in available space.
+     * Uses IntersectionObserver to automatically detect which items overflow and moves
+     * them behind a "More" button. This is more intelligent than fixed breakpoints
+     * because it adapts to actual content width rather than arbitrary pixel values.
      */
-    hamburgerMenu?: {
+    overflow?: {
         /**
-         * Whether hamburger menu is enabled for this namespace.
+         * Whether overflow handling is enabled for this namespace.
          *
-         * When false, the menu always displays in full expanded mode regardless of
-         * container width. Useful for sidebars or desktop-only navigation.
+         * When true, items that don't fit are moved to a "More" dropdown.
+         * When false, all items are always visible (may cause horizontal scroll).
+         * Defaults to true.
          */
         enabled: boolean;
 
         /**
-         * Container width in pixels that triggers hamburger mode.
+         * Minimum visible items before collapsing all to overflow.
          *
-         * When the menu container is narrower than this width, the menu collapses
-         * into a hamburger icon. Common values:
-         * - 640px - Collapse on mobile devices
-         * - 768px - Collapse on tablets and smaller
-         * - 1024px - Collapse on smaller laptops
+         * When the number of visible items falls below this threshold, all items
+         * collapse into the overflow menu to avoid "orphan" navigation items.
+         * This prevents awkward states like showing only 1-2 items with a "More" button.
          *
-         * Uses CSS container queries (@container) not media queries (@media).
+         * Common values:
+         * - 2 - Collapse when only 1 item would be visible
+         * - 3 - Collapse when only 1-2 items would be visible
+         * - undefined - Never collapse all (always show as many as fit)
          */
-        triggerWidth: number;
+        collapseAtCount?: number;
     };
 
     /**

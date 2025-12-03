@@ -14,8 +14,8 @@
 import type { Express, Router } from 'express';
 import type { IDatabaseService, IModule, IModuleMetadata } from '@tronrelic/types';
 import { logger } from '../../lib/logger.js';
-import { MenuService } from './menu.service.js';
-import { MenuController } from './menu.controller.js';
+import { MenuService } from './services/menu.service.js';
+import { MenuController } from './api/menu.controller.js';
 import { Router as ExpressRouter } from 'express';
 import { requireAdmin } from '../../api/middleware/admin-auth.js';
 

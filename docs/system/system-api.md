@@ -959,6 +959,6 @@ socket.on('subscription:error', (error) => {
 - [system-dashboard.md](./system-dashboard.md) - Web UI for accessing these endpoints
 - [system-scheduler-operations.md](./system-scheduler-operations.md) - Detailed scheduler control and cron syntax
 - [system-blockchain-sync-architecture.md](./system-blockchain-sync-architecture.md) - Blockchain sync implementation details
-- [system-menu.md](./system-menu.md) - Navigation menu system API endpoints and WebSocket events
+- [system-modules-menu.md](./system-modules-menu.md) - Menu module API endpoints and WebSocket events
 - [plugins/plugins-websocket-subscriptions.md](../plugins/plugins-websocket-subscriptions.md) - Plugin WebSocket patterns
 - [environment.md](../environment.md) - Environment variable configuration

@@ -159,7 +159,7 @@ The navigation menu system manages application-wide navigation through a central
 - **Dual persistence modes** - Database-backed entries and memory-only runtime entries
 - **Multiple namespaces** - Independent navigation contexts for different UI areas
 
-**See [system-menu.md](./system-menu.md) for complete details on:**
+**See [system-modules-menu.md](./system-modules-menu.md) for complete details on:**
 - Menu service architecture and singleton pattern
 - Menu node lifecycle (create, update, delete, reorder)
 - REST API endpoints for menu management
@@ -313,7 +313,7 @@ curl -X PATCH \
 - [system-dashboard.md](./system-dashboard.md) - Web dashboard UI guide with tab-by-tab feature documentation
 - [system-database-migrations.md](./system-database-migrations.md) - Database migration system architecture, REST API, admin UI, lifecycle documentation, and troubleshooting
 - [system-logging.md](./system-logging.md) - Logging system architecture, log levels, MongoDB persistence, and accessing historical logs
-- [system-menu.md](./system-menu.md) - Navigation menu system architecture, API reference, plugin integration, and event-driven updates
+- [system-modules-menu.md](./system-modules-menu.md) - Menu module architecture, API reference, plugin integration, and event-driven updates
 - [system-modules-pages.md](./system-modules-pages.md) - Pages module for custom content management with markdown authoring, file uploads, and storage provider abstraction
 - [system-modules-user.md](./system-modules-user.md) - User module for visitor identity management with anonymous UUID tracking, wallet linking, and admin dashboard
 - [system-testing.md](./system-testing.md) - Testing framework guide with Vitest setup, Mongoose mocking utilities, and testing patterns
