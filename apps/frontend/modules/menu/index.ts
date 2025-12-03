@@ -32,7 +32,7 @@ export { PriorityNav } from './components';
 export type { IPriorityNavProps, IPriorityNavItem } from './components';
 
 // Hooks
-export { useMenuConfig } from './hooks';
+export { useMenuConfig, useBodyScrollLock } from './hooks';
 
 // Types
 export type { IMenuNamespaceConfig, IUseMenuConfigResult } from './types';

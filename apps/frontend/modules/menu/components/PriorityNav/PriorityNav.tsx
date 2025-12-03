@@ -26,6 +26,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { MoreHorizontal, X } from 'lucide-react';
+import { useBodyScrollLock } from '../../hooks';
 import styles from './PriorityNav.module.css';
 
 /**
@@ -152,33 +153,8 @@ export function PriorityNav({
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, [isDropdownOpen, closeDropdown]);
 
-    /**
-     * Lock body scroll when dropdown is open on mobile.
-     *
-     * Prevents background page from scrolling when interacting with the
-     * bottom sheet. Uses both overflow:hidden and touch-action:none for
-     * comprehensive mobile scroll prevention.
-     */
-    useEffect(() => {
-        if (!isDropdownOpen) return;
-
-        // Check if we're on mobile (matches CSS media query breakpoint)
-        const isMobile = window.matchMedia('(max-width: 768px)').matches;
-        if (!isMobile) return;
-
-        // Store original values
-        const originalOverflow = document.body.style.overflow;
-        const originalTouchAction = document.body.style.touchAction;
-
-        // Lock scroll
-        document.body.style.overflow = 'hidden';
-        document.body.style.touchAction = 'none';
-
-        return () => {
-            document.body.style.overflow = originalOverflow;
-            document.body.style.touchAction = originalTouchAction;
-        };
-    }, [isDropdownOpen]);
+    // Lock body scroll when dropdown is open on mobile
+    useBodyScrollLock(isDropdownOpen);
 
     /**
      * Set up IntersectionObserver to detect overflow.

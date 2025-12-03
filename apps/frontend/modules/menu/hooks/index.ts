@@ -3,3 +3,4 @@
  */
 
 export { useMenuConfig } from './useMenuConfig';
+export { useBodyScrollLock } from './useBodyScrollLock';
