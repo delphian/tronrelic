@@ -26,6 +26,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { MoreHorizontal, X } from 'lucide-react';
+import { useBodyScrollLock } from '../../hooks';
 import styles from './PriorityNav.module.css';
 
 /**
@@ -151,6 +152,9 @@ export function PriorityNav({
         document.addEventListener('mousedown', handleClickOutside);
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, [isDropdownOpen, closeDropdown]);
+
+    // Lock body scroll when dropdown is open on mobile
+    useBodyScrollLock(isDropdownOpen);
 
     /**
      * Set up IntersectionObserver to detect overflow.
@@ -288,11 +292,12 @@ export function PriorityNav({
             {/* Dropdown portal */}
             {isMounted && isDropdownOpen && hasOverflow && createPortal(
                 <>
-                    {/* Backdrop */}
+                    {/* Backdrop - prevents interaction with page behind sheet */}
                     <div
                         className={styles.backdrop}
                         aria-hidden="true"
                         onClick={closeDropdown}
+                        onTouchMove={(e) => e.preventDefault()}
                     />
 
                     {/* Dropdown panel (bottom sheet on mobile) */}

@@ -28,7 +28,7 @@ import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { PriorityNav, useMenuConfig } from '../../../modules/menu';
+import { PriorityNav, useMenuConfig, useBodyScrollLock } from '../../../modules/menu';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import styles from './MenuNav.module.css';
 
@@ -181,6 +181,9 @@ export function MenuNavClient({ namespace, items, ariaLabel }: IMenuNavClientPro
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, [expandedCategoryId, closeDropdown]);
 
+    // Lock body scroll when category dropdown is open on mobile
+    useBodyScrollLock(!!expandedCategoryId);
+
     /**
      * Toggles a category's expanded state.
      */
@@ -329,11 +332,12 @@ export function MenuNavClient({ namespace, items, ariaLabel }: IMenuNavClientPro
 
         return createPortal(
             <>
-                {/* Backdrop */}
+                {/* Backdrop - prevents interaction with page behind sheet */}
                 <div
                     className={styles.categoryBackdrop}
                     aria-hidden="true"
                     onClick={closeDropdown}
+                    onTouchMove={(e) => e.preventDefault()}
                 />
                 {/* Dropdown panel */}
                 <div

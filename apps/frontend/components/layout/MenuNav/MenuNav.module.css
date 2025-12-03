@@ -122,11 +122,12 @@
 .categoryDropdown {
     position: fixed;
     min-width: 200px;
-    background: var(--color-surface-elevated);
-    border: var(--border-width-thin) solid var(--color-border);
+    background: var(--modal-dialog-background);
+    border: var(--modal-dialog-border);
     border-radius: var(--radius-md);
     padding: var(--spacing-2);
-    box-shadow: var(--shadow-md);
+    box-shadow: var(--shadow-xl);
+    backdrop-filter: blur(18px);
     z-index: calc(var(--z-index-modal) + 11);
     animation: categoryDropdown_fadeIn var(--transition-base) ease-out;
 }
@@ -139,6 +140,51 @@
     to {
         opacity: 1;
         transform: translateY(0);
+    }
+}
+
+/**
+ * Mobile bottom sheet transformation for category dropdown.
+ *
+ * On mobile viewports, the category dropdown transforms into a bottom sheet
+ * that slides up from the bottom, stacking above the PriorityNav bottom sheet.
+ * This provides consistent mobile UX and prevents positioning issues when
+ * categories are expanded from within the overflow menu.
+ *
+ * Note: Uses viewport media query because this element is portaled to document.body
+ * and not inside any container context.
+ */
+@media (max-width: 768px) {
+    .categoryBackdrop {
+        background: var(--backdrop-color);
+    }
+
+    .categoryDropdown {
+        top: auto !important;
+        right: 0 !important;
+        bottom: 0;
+        left: 0 !important;
+        width: 100%;
+        max-height: 60vh;
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+        overscroll-behavior: contain;
+        border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+        border-bottom: none;
+        padding: var(--spacing-6);
+        padding-top: var(--spacing-8);
+        animation: categoryDropdown_slideUp 0.25s ease-out;
+    }
+
+    @keyframes categoryDropdown_slideUp {
+        from {
+            opacity: 0;
+            transform: translateY(100%);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
     }
 }
 
