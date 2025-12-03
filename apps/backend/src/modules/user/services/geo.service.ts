@@ -83,6 +83,28 @@ export function extractReferrerDomain(referrer: string | undefined): string | nu
 }
 
 /**
+ * Check if a referrer URL is from the same domain as the site.
+ *
+ * Used to filter out internal referrers (e.g., when a user navigates
+ * between pages on the same site) from external referrers (e.g., when
+ * a user arrives from Twitter or Google).
+ *
+ * @param referrer - Full referrer URL to check
+ * @param siteUrl - Site URL to compare against (e.g., 'https://tronrelic.com')
+ * @returns True if referrer is from the same domain as siteUrl
+ */
+export function isInternalReferrer(referrer: string, siteUrl: string): boolean {
+    try {
+        const referrerDomain = new URL(referrer).hostname.replace(/^www\./, '');
+        const siteDomain = new URL(siteUrl).hostname.replace(/^www\./, '');
+        return referrerDomain === siteDomain;
+    } catch {
+        // If either URL is invalid, treat as not internal (safer to capture)
+        return false;
+    }
+}
+
+/**
  * Derive device category from user-agent string.
  *
  * Uses simple pattern matching - no fingerprinting, no full UA storage.
