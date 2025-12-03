@@ -1205,15 +1205,19 @@ export class UserService {
 
         switch (filter) {
             // ==================== Real-time ====================
-            case 'live-now':
-                // Users with an active session (endedAt is null)
+            case 'live-now': {
+                // Users with an active session AND recent activity within timeout window
+                // Sessions are closed lazily, so we must also check lastSeen timestamp
+                const timeoutThreshold = new Date(Date.now() - this.SESSION_TIMEOUT_MS);
                 return {
                     'activity.sessions': {
                         $elemMatch: {
                             endedAt: null
                         }
-                    }
+                    },
+                    'activity.lastSeen': { $gte: timeoutThreshold }
                 };
+            }
 
             // ==================== Engagement ====================
             case 'power-users':
