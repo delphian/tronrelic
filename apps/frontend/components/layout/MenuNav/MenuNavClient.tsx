@@ -24,7 +24,7 @@
  */
 'use client';
 
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -126,9 +126,9 @@ export function MenuNavClient({ namespace, items, ariaLabel }: IMenuNavClientPro
     const dropdownRef = useRef<HTMLDivElement>(null);
 
     // Sort by order and filter enabled items
-    const visibleItems = items
+    const visibleItems = useMemo(() => items
         .filter(item => item.enabled)
-        .sort((a, b) => a.order - b.order);
+        .sort((a, b) => a.order - b.order), [items]);
 
     // Track mount state for portal rendering (SSR safety)
     useEffect(() => {
@@ -190,6 +190,11 @@ export function MenuNavClient({ namespace, items, ariaLabel }: IMenuNavClientPro
 
     /**
      * Renders a link menu item.
+     *
+     * For nested links (inside category dropdowns), dispatches a mousedown event
+     * on document.body to trigger PriorityNav's click-outside handler. This ensures
+     * the "More" dropdown also closes when selecting a child link from a category
+     * that overflowed into the "More" menu.
      */
     const renderLinkItem = (item: IMenuItem, isNested = false): JSX.Element => {
         const isActive = item.url === '/'
@@ -202,7 +207,13 @@ export function MenuNavClient({ namespace, items, ariaLabel }: IMenuNavClientPro
                 href={item.url!}
                 className={`${styles.tab} ${isActive ? styles.active : ''} ${isNested ? styles.nested : ''}`}
                 aria-current={isActive ? 'page' : undefined}
-                onClick={() => isNested && closeDropdown()}
+                onClick={() => {
+                    if (isNested) {
+                        closeDropdown();
+                        // Trigger PriorityNav's click-outside handler to close "More" dropdown
+                        document.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+                    }
+                }}
             >
                 {item.label}
             </Link>
