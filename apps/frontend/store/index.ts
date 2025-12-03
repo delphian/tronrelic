@@ -47,7 +47,7 @@ function resolveDevToolsConfiguration(): false | Record<string, unknown> {
 
     return {
         name: 'TronRelic Frontend',
-        trace: true,
+        trace: process.env.NODE_ENV === 'development',
         traceLimit: 25
     };
 }
