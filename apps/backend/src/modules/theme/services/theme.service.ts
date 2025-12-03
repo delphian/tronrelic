@@ -152,11 +152,12 @@ export class ThemeService {
         }
 
         const now = new Date();
+        const normalizedCss = this.normalizeThemeCss(input.css, themeId);
         const theme: Omit<IThemeDocument, '_id'> = {
             id: themeId,
             name: input.name,
             icon: input.icon,
-            css: input.css,
+            css: normalizedCss,
             dependencies: input.dependencies || [],
             isActive: input.isActive || false,
             createdAt: now,
@@ -204,6 +205,11 @@ export class ThemeService {
             ...input,
             updatedAt: new Date()
         };
+
+        // Normalize CSS if being updated
+        if (updates.css) {
+            updates.css = this.normalizeThemeCss(updates.css, id);
+        }
 
         await this.collection.updateOne({ id }, { $set: updates });
 
@@ -514,6 +520,22 @@ export class ThemeService {
     private isValidUUID(str: string): boolean {
         const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
         return uuidRegex.test(str);
+    }
+
+    /**
+     * Normalize CSS to ensure data-theme selectors match the theme's UUID.
+     *
+     * Replaces any `[data-theme="..."]` selectors with the correct theme ID.
+     * This prevents mismatches when users edit CSS templates or copy from other themes.
+     *
+     * @param css - Raw CSS content
+     * @param themeId - Theme UUID that should be used in selectors
+     * @returns Normalized CSS with corrected data-theme selectors
+     */
+    private normalizeThemeCss(css: string, themeId: string): string {
+        // Match [data-theme="anything"] or [data-theme='anything']
+        const dataThemeRegex = /\[data-theme=["'][^"']*["']\]/g;
+        return css.replace(dataThemeRegex, `[data-theme="${themeId}"]`);
     }
 
     /**

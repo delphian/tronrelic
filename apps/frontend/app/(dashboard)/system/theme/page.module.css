@@ -87,8 +87,8 @@
 }
 
 .theme_list {
-    display: flex;
-    flex-direction: column;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
     gap: var(--spacing-5);
     list-style: none;
     padding: 0;
@@ -96,12 +96,15 @@
 }
 
 .theme_item {
-    padding: var(--spacing-7);
+    padding: var(--spacing-5);
     border: var(--border-width-thin) solid var(--color-border);
     border-radius: var(--radius-md);
     background: var(--color-surface);
     cursor: pointer;
     transition: border-color var(--transition-base), box-shadow var(--transition-base);
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-4);
 }
 
 .theme_item:hover {
@@ -118,32 +121,38 @@
 .theme_item_content {
     display: flex;
     flex-direction: column;
-    gap: var(--spacing-5);
+    gap: var(--spacing-3);
+    flex: 1;
 }
 
 .theme_item_header {
     display: flex;
     justify-content: space-between;
-    align-items: flex-start;
-    gap: var(--spacing-5);
+    align-items: center;
+    gap: var(--spacing-3);
 }
 
 .theme_name_wrapper {
     display: flex;
     align-items: center;
-    gap: var(--spacing-3);
+    gap: var(--spacing-2);
+    min-width: 0;
 }
 
 .theme_name {
-    font-size: var(--font-size-md);
+    font-size: var(--font-size-sm);
     font-weight: var(--font-weight-semibold);
     color: var(--color-text);
     margin: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .copy_uuid_button {
     opacity: 0;
     transition: opacity var(--transition-base);
+    flex-shrink: 0;
 }
 
 .theme_item:hover .copy_uuid_button,
@@ -154,21 +163,21 @@
 .theme_toggle {
     display: flex;
     align-items: center;
-    gap: var(--spacing-4);
-    font-size: var(--font-size-sm);
+    gap: var(--spacing-3);
+    font-size: var(--font-size-xs);
     color: var(--color-text-muted);
 }
 
 .theme_meta {
-    font-size: var(--font-size-xs);
-    color: var(--color-text-muted);
-    margin: 0;
+    display: none;
 }
 
 .theme_actions {
     display: flex;
-    gap: var(--spacing-4);
-    margin-top: var(--spacing-4);
+    gap: var(--spacing-3);
+    margin-top: auto;
+    padding-top: var(--spacing-3);
+    border-top: var(--border-width-thin) solid var(--color-border);
 }
 
 /* Right Panel: Editor */
@@ -371,4 +380,18 @@
     font-size: var(--font-size-sm);
     font-weight: var(--font-weight-medium);
     color: var(--color-text-muted);
+}
+
+/* Spinner animation for loading state */
+.spinner {
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    from {
+        transform: rotate(0deg);
+    }
+    to {
+        transform: rotate(360deg);
+    }
 }
