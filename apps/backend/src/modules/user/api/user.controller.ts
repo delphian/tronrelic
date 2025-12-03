@@ -339,7 +339,7 @@ export class UserController {
             const bodyReferrer = req.body.referrer;
             const headerReferrer = req.headers['referer'];
 
-            if (bodyReferrer) {
+            if (bodyReferrer && typeof bodyReferrer === 'string') {
                 // Frontend explicitly captured an external referrer
                 referrer = bodyReferrer;
             } else if (headerReferrer && typeof headerReferrer === 'string') {
@@ -349,8 +349,9 @@ export class UserController {
                     if (!isInternalReferrer(headerReferrer, siteUrl)) {
                         referrer = headerReferrer;
                     }
-                } catch {
+                } catch (error) {
                     // If we can't get site URL, skip header referrer to be safe
+                    this.logger.warn({ error, userId: id }, 'Failed to get site URL for referrer check; skipping header referrer');
                 }
             }
 
