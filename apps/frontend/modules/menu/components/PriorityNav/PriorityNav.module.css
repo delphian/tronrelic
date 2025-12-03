@@ -1,0 +1,324 @@
+/**
+ * PriorityNav Component Styles
+ *
+ * Styles for Priority+ navigation pattern with IntersectionObserver-based
+ * overflow detection. Items that don't fit are visually hidden and moved
+ * to the "More" dropdown.
+ */
+
+/**
+ * Root container.
+ *
+ * Uses flexbox for horizontal layout with overflow hidden to enable
+ * IntersectionObserver to detect clipped items. The overflow: hidden is
+ * critical - it constrains the container to its parent's width and allows
+ * IntersectionObserver to detect when items extend beyond the boundary.
+ */
+.container {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-2);
+    width: 100%;
+    min-width: 0;
+    overflow: hidden;
+}
+
+/**
+ * Primary navigation area.
+ *
+ * Contains all menu items. Overflow is hidden so IntersectionObserver
+ * can detect items that extend beyond the boundary.
+ */
+.primary {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-2);
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+}
+
+/**
+ * Individual navigation item wrapper.
+ *
+ * Each item is wrapped to enable IntersectionObserver tracking.
+ * Items are always in the DOM but visually hidden when in overflow.
+ */
+.item {
+    flex-shrink: 0;
+    white-space: nowrap;
+}
+
+/**
+ * Hidden state for overflow items.
+ *
+ * Uses visibility instead of display:none so IntersectionObserver
+ * can still track the element position.
+ */
+.item_hidden {
+    visibility: hidden;
+    position: absolute;
+    pointer-events: none;
+}
+
+/**
+ * "More" toggle button.
+ *
+ * Shows when overflow items exist. Displays item count badge.
+ */
+.more_button {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    gap: var(--spacing-1);
+    flex-shrink: 0;
+    padding: var(--spacing-2) var(--spacing-3);
+    border: none;
+    background: transparent;
+    color: var(--color-text-muted);
+    cursor: pointer;
+    border-radius: var(--radius-sm);
+    font-size: var(--font-size-sm);
+    transition: background-color var(--transition-base), color var(--transition-base);
+}
+
+.more_button_visible {
+    display: inline-flex;
+}
+
+.more_button:hover {
+    background: var(--button-secondary-background);
+    color: var(--color-text);
+}
+
+.more_button:focus-visible {
+    outline: var(--focus-outline-width) solid var(--focus-outline-color);
+    outline-offset: var(--focus-outline-offset);
+}
+
+/**
+ * Overflow count badge.
+ *
+ * Small pill showing number of hidden items.
+ */
+.more_count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 var(--spacing-1);
+    background: var(--color-primary);
+    color: var(--color-text-on-primary);
+    border-radius: var(--radius-full);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
+}
+
+/**
+ * Backdrop overlay for dropdown.
+ *
+ * Semi-transparent overlay to focus attention on dropdown.
+ */
+.backdrop {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: var(--backdrop-color);
+    z-index: var(--z-index-modal-backdrop);
+    animation: fadeIn var(--transition-base) ease-out;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
+}
+
+/**
+ * Dropdown panel.
+ *
+ * Fixed position panel showing overflow items. On desktop, appears as a
+ * positioned dropdown near the More button. On mobile (<768px viewport),
+ * transforms into a bottom sheet that slides up from the bottom of the screen.
+ *
+ * Note: Uses viewport media query because this element is portaled to document.body
+ * and not inside any container context. This is an exception to the container
+ * query preference for portaled/fixed elements.
+ */
+.dropdown {
+    position: fixed;
+    min-width: 200px;
+    max-width: min(320px, 90vw);
+    max-height: 60vh;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+    background: var(--modal-dialog-background);
+    border: var(--modal-dialog-border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-xl);
+    backdrop-filter: blur(18px);
+    z-index: var(--z-index-modal);
+    padding: var(--spacing-4);
+    animation: slideDown var(--transition-base) ease-out;
+}
+
+@keyframes slideDown {
+    from {
+        opacity: 0;
+        transform: translateY(-8px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/**
+ * Mobile bottom sheet transformation.
+ *
+ * On mobile viewports, the dropdown becomes a full-width bottom sheet
+ * that slides up from the bottom. This is the standard mobile UX pattern
+ * used by iOS/Android native apps for overflow menus.
+ */
+@media (max-width: 768px) {
+    .dropdown {
+        /* Position at bottom of viewport */
+        top: auto !important;
+        right: 0 !important;
+        bottom: 0;
+        left: 0;
+
+        /* Full width, constrained height */
+        width: 100%;
+        max-width: 100%;
+        min-width: 100%;
+        max-height: 70vh;
+
+        /* Bottom sheet styling */
+        border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+        border-bottom: none;
+        padding: var(--spacing-6);
+        padding-top: var(--spacing-8);
+
+        /* Slide up animation */
+        animation: slideUp 0.3s ease-out;
+    }
+
+    @keyframes slideUp {
+        from {
+            opacity: 0;
+            transform: translateY(100%);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+}
+
+/**
+ * Drag handle indicator for bottom sheet.
+ *
+ * Visual affordance showing the sheet can be dismissed.
+ * Only visible on mobile when dropdown is a bottom sheet.
+ */
+.drag_handle {
+    display: none;
+}
+
+@media (max-width: 768px) {
+    .drag_handle {
+        display: block;
+        position: absolute;
+        top: var(--spacing-3);
+        left: 50%;
+        transform: translateX(-50%);
+        width: 36px;
+        height: 4px;
+        background: var(--color-border-strong);
+        border-radius: var(--radius-full);
+    }
+}
+
+/**
+ * Close button in dropdown.
+ */
+.close_button {
+    position: absolute;
+    top: var(--spacing-2);
+    right: var(--spacing-2);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: var(--color-text-muted);
+    cursor: pointer;
+    border-radius: var(--radius-sm);
+    transition: background-color var(--transition-base), color var(--transition-base);
+}
+
+.close_button:hover {
+    background: var(--button-secondary-background);
+    color: var(--color-text);
+}
+
+.close_button:focus-visible {
+    outline: var(--focus-outline-width) solid var(--focus-outline-color);
+    outline-offset: var(--focus-outline-offset);
+}
+
+/**
+ * Dropdown items container.
+ */
+.dropdown_items {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-1);
+    padding-top: var(--spacing-6);
+}
+
+/**
+ * Individual dropdown item.
+ */
+.dropdown_item {
+    display: block;
+}
+
+/**
+ * Style dropdown item children (links, buttons).
+ */
+.dropdown_item > * {
+    display: block;
+    width: 100%;
+    padding: var(--spacing-3) var(--spacing-4);
+    border-radius: var(--radius-sm);
+    color: var(--color-text-muted);
+    font-size: var(--font-size-base);
+    text-decoration: none;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    text-align: left;
+    transition: color var(--transition-base), background-color var(--transition-base);
+}
+
+.dropdown_item > *:hover {
+    color: var(--color-text);
+    background: var(--button-secondary-background);
+}
+
+.dropdown_item > *:focus-visible {
+    outline: var(--focus-outline-width) solid var(--focus-outline-color);
+    outline-offset: var(--focus-outline-offset);
+}

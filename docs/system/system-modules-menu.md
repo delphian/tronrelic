@@ -1,6 +1,6 @@
-# Menu System
+# Menu Module
 
-TronRelic's menu system manages hierarchical navigation menus with event-driven validation, real-time WebSocket updates, and support for multiple independent menu trees (namespaces).
+The menu module manages hierarchical navigation menus with event-driven validation, real-time WebSocket updates, and support for multiple independent menu trees (namespaces). It implements the IModule interface with two-phase lifecycle initialization.
 
 ## Who This Document Is For
 

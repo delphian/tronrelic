@@ -9,9 +9,9 @@
  * menu items to be dynamically managed through the IMenuService without requiring
  * client-side fetching or hardcoded navigation arrays.
  *
- * Responsive behavior uses container queries to automatically switch between horizontal
- * tabs (wide containers) and hamburger menu (narrow containers) based on the namespace
- * configuration from the backend.
+ * Responsive behavior uses Priority+ navigation pattern with IntersectionObserver
+ * to automatically show as many items as fit, moving overflow items to a "More"
+ * dropdown based on the namespace configuration from the backend.
  *
  * @example
  * ```tsx
@@ -27,8 +27,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useMenuConfig } from '../../../lib/hooks';
-import { HamburgerMenu } from '../HamburgerMenu';
+import { PriorityNav, useMenuConfig } from '../../../modules/menu';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import styles from './MenuNav.module.css';
 
@@ -197,51 +196,38 @@ export function MenuNavClient({ namespace, items, ariaLabel }: IMenuNavClientPro
     };
 
     /**
-     * Generates menu items for the hamburger menu.
+     * Converts menu items to PriorityNav format.
      */
-    const renderHamburgerItem = (item: IMenuItem, isNested = false): JSX.Element => {
-        if (item.url) {
-            return (
-                <Link key={item._id} href={item.url} className={isNested ? styles.nestedHamburger : ''}>
-                    {item.label}
-                </Link>
-            );
-        }
-        // For categories in hamburger, show all children inline
-        if (item.children) {
-            return (
-                <div key={item._id} className={styles.hamburgerCategory}>
-                    <span className={styles.hamburgerCategoryLabel}>{item.label}</span>
-                    {item.children.map(child => renderHamburgerItem(child, true))}
-                </div>
-            );
-        }
-        return <span key={item._id}>{item.label}</span>;
-    };
+    const priorityNavItems = visibleItems.map(item => ({
+        id: item._id,
+        node: renderMenuItem(item)
+    }));
 
-    const hamburgerItems = visibleItems.map(item => renderHamburgerItem(item));
-    const navContent = <>{visibleItems.map(item => renderMenuItem(item))}</>;
     const navAriaLabel = ariaLabel || `${namespace} navigation`;
 
     /**
-     * Wraps navigation in HamburgerMenu if enabled.
+     * Wraps navigation in PriorityNav if overflow handling is enabled.
+     * Uses IntersectionObserver to detect which items fit and moves overflow
+     * to a "More" dropdown automatically.
      */
-    if (menuConfig.hamburgerMenu?.enabled && !menuConfig.loading) {
+    const overflowEnabled = menuConfig.overflow?.enabled ?? true;
+
+    if (overflowEnabled && !menuConfig.loading) {
         return (
             <nav className={styles.nav} aria-label={navAriaLabel}>
-                <HamburgerMenu
-                    triggerWidth={menuConfig.hamburgerMenu.triggerWidth}
-                    items={hamburgerItems}
-                >
-                    {navContent}
-                </HamburgerMenu>
+                <PriorityNav
+                    items={priorityNavItems}
+                    enabled={overflowEnabled}
+                    collapseAtCount={menuConfig.overflow?.collapseAtCount}
+                    moreButtonLabel={`More ${namespace} menu items`}
+                />
             </nav>
         );
     }
 
     return (
         <nav className={styles.nav} aria-label={navAriaLabel}>
-            {navContent}
+            {visibleItems.map(item => renderMenuItem(item))}
         </nav>
     );
 }

@@ -28,8 +28,8 @@
 
 export { MenuModule } from './MenuModule.js';
 export type { IMenuModuleDependencies } from './MenuModule.js';
-export { MenuService } from './menu.service.js';
-export { MenuController } from './menu.controller.js';
+export { MenuService } from './services/menu.service.js';
+export { MenuController } from './api/menu.controller.js';
 
 // Re-export types from @tronrelic/types for convenience
 export type {

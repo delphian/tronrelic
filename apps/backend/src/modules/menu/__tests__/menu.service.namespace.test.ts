@@ -8,7 +8,7 @@ import { ObjectId } from 'mongodb';
  * Mock WebSocketService for testing real-time updates.
  * Must be defined before MenuService import due to vi.mock hoisting.
  */
-vi.mock('../../../services/websocket.service.js', () => ({
+vi.mock('../../../../services/websocket.service.js', () => ({
     WebSocketService: {
         getInstance: vi.fn(() => ({
             emit: vi.fn()
@@ -17,7 +17,7 @@ vi.mock('../../../services/websocket.service.js', () => ({
 }));
 
 // Import MenuService AFTER mocking dependencies
-import { MenuService } from '../menu.service.js';
+import { MenuService } from '../services/menu.service.js';
 
 /**
  * Mock IDatabaseService implementation for testing MenuService.

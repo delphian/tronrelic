@@ -279,7 +279,7 @@ export default function MenuAdminPage() {
                     'X-Admin-Token': adminToken || ''
                 },
                 body: JSON.stringify({
-                    hamburgerMenu: config.hamburgerMenu,
+                    overflow: config.overflow,
                     icons: config.icons,
                     layout: config.layout,
                     styling: config.styling
@@ -835,54 +835,56 @@ function NamespaceConfigTab({
 }) {
     return (
         <div className={styles.content}>
-            {/* Hamburger Menu Configuration */}
+            {/* Overflow (Priority+) Configuration */}
             <section className={styles.section}>
-                <h2>Hamburger Menu</h2>
+                <h2>Overflow Handling</h2>
                 <p className={styles.sectionDesc}>
-                    Control when and how the menu collapses into a hamburger icon on smaller viewports.
+                    Control how menu items overflow into a "More" dropdown when they don't fit.
+                    Uses Priority+ navigation pattern with automatic detection.
                 </p>
 
                 <label className={styles.checkboxLabel}>
                     <input
                         type="checkbox"
-                        checked={config.hamburgerMenu?.enabled ?? true}
+                        checked={config.overflow?.enabled ?? true}
                         onChange={(e) =>
                             onConfigChange({
                                 ...config,
-                                hamburgerMenu: {
-                                    ...(config.hamburgerMenu || { triggerWidth: 768 }),
+                                overflow: {
+                                    ...(config.overflow || {}),
                                     enabled: e.target.checked
                                 }
                             })
                         }
                     />
-                    <span>Enable hamburger menu</span>
+                    <span>Enable overflow handling (Priority+ navigation)</span>
                 </label>
 
-                {config.hamburgerMenu?.enabled && (
+                {config.overflow?.enabled && (
                     <div className={styles.field}>
-                        <label htmlFor="triggerWidth">
-                            Trigger Width (px)
+                        <label htmlFor="collapseAtCount">
+                            Collapse At Count
                             <span className={styles.hint}>
-                                Container width that triggers hamburger mode
+                                Collapse all items to "More" when visible count falls below this (prevents orphan items)
                             </span>
                         </label>
                         <input
-                            id="triggerWidth"
+                            id="collapseAtCount"
                             type="number"
-                            min={320}
-                            max={2560}
-                            value={config.hamburgerMenu?.triggerWidth ?? 768}
+                            min={1}
+                            max={20}
+                            value={config.overflow?.collapseAtCount ?? ''}
                             onChange={(e) =>
                                 onConfigChange({
                                     ...config,
-                                    hamburgerMenu: {
-                                        enabled: config.hamburgerMenu?.enabled ?? true,
-                                        triggerWidth: parseInt(e.target.value, 10)
+                                    overflow: {
+                                        enabled: config.overflow?.enabled ?? true,
+                                        collapseAtCount: e.target.value ? parseInt(e.target.value, 10) : undefined
                                     }
                                 })
                             }
                             className={styles.input}
+                            placeholder="No minimum"
                         />
                     </div>
                 )}
