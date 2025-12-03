@@ -199,7 +199,7 @@ export function WalletButton() {
                     className={styles.wallet_icon}
                 />
             )}
-            Login
+            <span className={styles.login_text}>Login</span>
         </button>
     );
 }

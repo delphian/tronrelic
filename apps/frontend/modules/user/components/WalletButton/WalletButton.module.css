@@ -111,3 +111,24 @@
     }
 }
 
+/**
+ * Login Text
+ *
+ * Hidden on mobile to show icon-only button.
+ * Uses media query to match MainHeader responsive behavior.
+ */
+.login_text {
+    /* Visible by default */
+}
+
+/* Mobile (≤768px): Hide login text, show icon only */
+@media (max-width: 768px) {
+    .login_text {
+        display: none;
+    }
+
+    .connect_btn {
+        padding: var(--spacing-3) var(--spacing-5);
+    }
+}
+
