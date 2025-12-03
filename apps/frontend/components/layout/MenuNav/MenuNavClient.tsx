@@ -182,6 +182,30 @@ export function MenuNavClient({ namespace, items, ariaLabel }: IMenuNavClientPro
     }, [expandedCategoryId, closeDropdown]);
 
     /**
+     * Lock body scroll when category dropdown is open on mobile.
+     *
+     * Prevents background page from scrolling when interacting with the
+     * category bottom sheet on mobile devices.
+     */
+    useEffect(() => {
+        if (!expandedCategoryId) return;
+
+        const isMobile = window.matchMedia('(max-width: 768px)').matches;
+        if (!isMobile) return;
+
+        const originalOverflow = document.body.style.overflow;
+        const originalTouchAction = document.body.style.touchAction;
+
+        document.body.style.overflow = 'hidden';
+        document.body.style.touchAction = 'none';
+
+        return () => {
+            document.body.style.overflow = originalOverflow;
+            document.body.style.touchAction = originalTouchAction;
+        };
+    }, [expandedCategoryId]);
+
+    /**
      * Toggles a category's expanded state.
      */
     const toggleCategory = (categoryId: string) => {
@@ -329,11 +353,12 @@ export function MenuNavClient({ namespace, items, ariaLabel }: IMenuNavClientPro
 
         return createPortal(
             <>
-                {/* Backdrop */}
+                {/* Backdrop - prevents interaction with page behind sheet */}
                 <div
                     className={styles.categoryBackdrop}
                     aria-hidden="true"
                     onClick={closeDropdown}
+                    onTouchMove={(e) => e.preventDefault()}
                 />
                 {/* Dropdown panel */}
                 <div

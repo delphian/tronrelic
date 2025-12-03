@@ -188,7 +188,7 @@ export function WalletButton() {
             className={styles.connect_btn}
             onClick={handleConnect}
             disabled={isConnecting}
-            aria-label="Connect wallet"
+            aria-label="Login"
         >
             {isConnecting ? (
                 <Loader2 size={18} className={styles.spinner} />
@@ -199,7 +199,7 @@ export function WalletButton() {
                     className={styles.wallet_icon}
                 />
             )}
-            Connect
+            Login
         </button>
     );
 }

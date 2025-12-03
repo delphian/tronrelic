@@ -153,6 +153,34 @@ export function PriorityNav({
     }, [isDropdownOpen, closeDropdown]);
 
     /**
+     * Lock body scroll when dropdown is open on mobile.
+     *
+     * Prevents background page from scrolling when interacting with the
+     * bottom sheet. Uses both overflow:hidden and touch-action:none for
+     * comprehensive mobile scroll prevention.
+     */
+    useEffect(() => {
+        if (!isDropdownOpen) return;
+
+        // Check if we're on mobile (matches CSS media query breakpoint)
+        const isMobile = window.matchMedia('(max-width: 768px)').matches;
+        if (!isMobile) return;
+
+        // Store original values
+        const originalOverflow = document.body.style.overflow;
+        const originalTouchAction = document.body.style.touchAction;
+
+        // Lock scroll
+        document.body.style.overflow = 'hidden';
+        document.body.style.touchAction = 'none';
+
+        return () => {
+            document.body.style.overflow = originalOverflow;
+            document.body.style.touchAction = originalTouchAction;
+        };
+    }, [isDropdownOpen]);
+
+    /**
      * Set up IntersectionObserver to detect overflow.
      */
     useEffect(() => {
@@ -288,11 +316,12 @@ export function PriorityNav({
             {/* Dropdown portal */}
             {isMounted && isDropdownOpen && hasOverflow && createPortal(
                 <>
-                    {/* Backdrop */}
+                    {/* Backdrop - prevents interaction with page behind sheet */}
                     <div
                         className={styles.backdrop}
                         aria-hidden="true"
                         onClick={closeDropdown}
+                        onTouchMove={(e) => e.preventDefault()}
                     />
 
                     {/* Dropdown panel (bottom sheet on mobile) */}
