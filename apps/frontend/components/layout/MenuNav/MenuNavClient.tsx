@@ -107,9 +107,9 @@ interface IMenuNavClientProps {
  * Active state uses startsWith matching to highlight tabs for nested routes
  * (e.g., /system/pages/edit shows "Pages" tab as active).
  *
- * Responsive behavior uses container queries to automatically switch between horizontal
- * tabs (wide containers) and hamburger menu (narrow containers) based on the namespace
- * configuration.
+ * Responsive behavior uses Priority+ navigation with IntersectionObserver to
+ * automatically detect overflow and move items to a "More" dropdown based on
+ * available space and the namespace configuration.
  *
  * @param props - Component props
  * @param props.namespace - Menu namespace for config lookup
@@ -226,7 +226,7 @@ export function MenuNavClient({ namespace, items, ariaLabel }: IMenuNavClientPro
     }
 
     return (
-        <nav className={styles.nav} aria-label={navAriaLabel}>
+        <nav className={`${styles.nav} ${styles['nav--wrap']}`} aria-label={navAriaLabel}>
             {visibleItems.map(item => renderMenuItem(item))}
         </nav>
     );

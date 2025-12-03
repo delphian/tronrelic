@@ -86,6 +86,19 @@ export function useMenuConfig(namespace: string = 'main'): IUseMenuConfigResult 
             if (!c.namespace) {
                 throw new Error('Config missing required field: namespace');
             }
+
+            // Validate optional overflow field structure if present
+            if (c.overflow !== undefined) {
+                if (typeof c.overflow !== 'object' || c.overflow === null) {
+                    throw new Error('Config overflow must be an object');
+                }
+                if (typeof c.overflow.enabled !== 'boolean') {
+                    throw new Error('Config overflow.enabled must be a boolean');
+                }
+                if (c.overflow.collapseAtCount !== undefined && typeof c.overflow.collapseAtCount !== 'number') {
+                    throw new Error('Config overflow.collapseAtCount must be a number');
+                }
+            }
         }
 
         /**

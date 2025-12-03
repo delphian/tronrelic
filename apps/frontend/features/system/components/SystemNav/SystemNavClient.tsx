@@ -84,9 +84,9 @@ interface ISystemNavClientProps {
  * Active state uses startsWith matching to highlight tabs for nested routes
  * (e.g., /system/pages/edit shows "Pages" tab as active).
  *
- * Responsive behavior uses container queries to automatically switch between horizontal
- * tabs (wide containers) and hamburger menu (narrow containers) based on the namespace
- * configuration.
+ * Responsive behavior uses Priority+ navigation with IntersectionObserver to
+ * automatically detect overflow and move items to a "More" dropdown based on
+ * available space and the namespace configuration.
  *
  * @param props - Component props
  * @param props.items - Menu items from server
@@ -147,7 +147,7 @@ export function SystemNavClient({ items }: ISystemNavClientProps) {
     }
 
     return (
-        <nav className={styles.nav} aria-label="System monitoring navigation">
+        <nav className={`${styles.nav} ${styles['nav--wrap']}`} aria-label="System monitoring navigation">
             {visibleItems.map(item => renderTab(item))}
         </nav>
     );

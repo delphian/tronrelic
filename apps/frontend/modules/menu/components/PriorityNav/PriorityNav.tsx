@@ -23,7 +23,7 @@
  */
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { MoreHorizontal, X } from 'lucide-react';
 import styles from './PriorityNav.module.css';
@@ -102,6 +102,9 @@ export function PriorityNav({
 
     const dropdownRef = useRef<HTMLDivElement>(null);
     const moreButtonRef = useRef<HTMLButtonElement>(null);
+
+    // Stable dependency for observer setup - only recreate when item IDs change
+    const itemIds = useMemo(() => items.map(i => i.id).join(','), [items]);
 
     // Track mount state for portal rendering (SSR safety)
     useEffect(() => {
@@ -197,7 +200,7 @@ export function PriorityNav({
         return () => {
             observerRef.current?.disconnect();
         };
-    }, [enabled, items]);
+    }, [enabled, itemIds]);
 
     /**
      * Calculate which items should be visible vs in overflow.
@@ -220,18 +223,26 @@ export function PriorityNav({
         visibleItems.length < collapseAtCount &&
         overflowItems.length > 0;
 
-    const finalVisibleItems = shouldCollapseAll ? [] : visibleItems;
     const finalOverflowItems = shouldCollapseAll ? items : overflowItems;
 
     const hasOverflow = finalOverflowItems.length > 0;
 
     /**
-     * Store ref for an item element.
+     * Store ref for an item element and observe if observer exists.
+     *
+     * Handles dynamic item additions by observing new elements immediately
+     * when they're added to the DOM, rather than waiting for effect re-run.
      */
     const setItemRef = useCallback((id: string, element: HTMLDivElement | null) => {
         if (element) {
             itemRefs.current.set(id, element);
+            // Observe newly added elements immediately
+            observerRef.current?.observe(element);
         } else {
+            const existingElement = itemRefs.current.get(id);
+            if (existingElement) {
+                observerRef.current?.unobserve(existingElement);
+            }
             itemRefs.current.delete(id);
         }
     }, []);
@@ -285,6 +296,10 @@ export function PriorityNav({
                     />
 
                     {/* Dropdown panel (bottom sheet on mobile) */}
+                    {/* TODO: Consider using floating-ui for more robust positioning
+                        that handles edge cases like dropdowns near screen edges.
+                        Current manual getBoundingClientRect works but doesn't
+                        auto-flip when near viewport boundaries. */}
                     <div
                         ref={dropdownRef}
                         className={styles.dropdown}
