@@ -3,7 +3,8 @@ import { USER_FILTERS } from '@tronrelic/types';
 import type { ISystemLogService, UserFilterType } from '@tronrelic/types';
 import type { UserService, IUserStats } from '../services/index.js';
 import type { IUser, IUserPreferences } from '../database/index.js';
-import { getClientIP } from '../services/index.js';
+import { getClientIP, isInternalReferrer } from '../services/index.js';
+import { SystemConfigService } from '../../../services/system-config/system-config.service.js';
 
 /**
  * Cookie name for user identity.
@@ -327,8 +328,31 @@ export class UserController {
             // Extract request context (never stored raw)
             const clientIP = getClientIP(req);
             const userAgent = req.headers['user-agent'];
-            const referrer = req.headers['referer'] || req.body.referrer;
             const screenWidth = typeof req.body.screenWidth === 'number' ? req.body.screenWidth : undefined;
+
+            // Determine referrer with priority:
+            // 1. Body referrer (explicitly captured by frontend from cookie/document.referrer)
+            // 2. Header referer (fallback, but only if external)
+            // The header is always the current page URL making the API call, so we filter
+            // out internal referrers to avoid recording "tronrelic.com" as the source.
+            let referrer: string | undefined;
+            const bodyReferrer = req.body.referrer;
+            const headerReferrer = req.headers['referer'];
+
+            if (bodyReferrer) {
+                // Frontend explicitly captured an external referrer
+                referrer = bodyReferrer;
+            } else if (headerReferrer && typeof headerReferrer === 'string') {
+                // Only use header referrer if it's from an external domain
+                try {
+                    const siteUrl = await SystemConfigService.getInstance().getSiteUrl();
+                    if (!isInternalReferrer(headerReferrer, siteUrl)) {
+                        referrer = headerReferrer;
+                    }
+                } catch {
+                    // If we can't get site URL, skip header referrer to be safe
+                }
+            }
 
             const session = await this.userService.startSession(
                 id,

@@ -5,6 +5,7 @@ export {
     initGeoIP,
     getCountryFromIP,
     extractReferrerDomain,
+    isInternalReferrer,
     getDeviceCategory,
     getClientIP
 } from './geo.service.js';
