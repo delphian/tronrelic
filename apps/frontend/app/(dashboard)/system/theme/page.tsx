@@ -20,7 +20,7 @@ import { Button } from '../../../../components/ui/Button';
 import { Input } from '../../../../components/ui/Input';
 import { Badge } from '../../../../components/ui/Badge';
 import { useModal } from '../../../../components/ui/ModalProvider';
-import { IconPickerModal } from '../../../../components/ui/IconPickerModal';
+import { LazyIconPickerModal } from '../../../../components/ui/IconPickerModal';
 import { Plus, Trash2, X, CheckCircle, AlertTriangle, Copy, Loader2 } from 'lucide-react';
 import * as LucideIcons from 'lucide-react';
 import styles from './page.module.css';
@@ -374,7 +374,7 @@ export default function ThemePage() {
             title: 'Select Icon',
             size: 'lg',
             content: (
-                <IconPickerModal
+                <LazyIconPickerModal
                     selectedIcon={formData.icon}
                     onSelect={(iconName) => {
                         setFormData(prev => ({ ...prev, icon: iconName }));

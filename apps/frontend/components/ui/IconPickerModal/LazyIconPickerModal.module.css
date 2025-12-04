@@ -1,0 +1,35 @@
+/**
+ * Lazy Icon Picker Modal Loading Styles
+ *
+ * Scoped styles for the loading state shown while the icon library downloads.
+ * Uses design tokens for consistent theming.
+ */
+
+.loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: var(--spacing-12);
+    gap: var(--spacing-6);
+}
+
+.spinner {
+    animation: spin 1s linear infinite;
+    color: var(--color-text-muted);
+}
+
+.text {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-sm);
+    margin: 0;
+}
+
+@keyframes spin {
+    from {
+        transform: rotate(0deg);
+    }
+    to {
+        transform: rotate(360deg);
+    }
+}

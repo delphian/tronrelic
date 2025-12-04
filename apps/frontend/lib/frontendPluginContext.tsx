@@ -16,7 +16,7 @@ import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { ClientTime } from '../components/ui/ClientTime';
 import { Tooltip } from '../components/ui/Tooltip';
-import { IconPickerModal } from '../components/ui/IconPickerModal';
+import { LazyIconPickerModal as IconPickerModal } from '../components/ui/IconPickerModal';
 import { useModal as useModalHook } from '../components/ui/ModalProvider';
 import { LineChart } from '../features/charts/components/LineChart';
 import { SchedulerMonitor } from '../features/system/components/SchedulerMonitor';
