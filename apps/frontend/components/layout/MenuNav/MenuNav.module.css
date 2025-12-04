@@ -40,6 +40,7 @@
     transition: all var(--transition-base);
     cursor: pointer;
     font-size: var(--font-size-sm);
+    line-height: var(--line-height-normal);
 }
 
 .tab:hover {
@@ -74,6 +75,7 @@
     transition: all var(--transition-base);
     cursor: pointer;
     font-size: var(--font-size-sm);
+    line-height: var(--line-height-normal);
     display: inline-flex;
     align-items: center;
     gap: var(--spacing-2);
