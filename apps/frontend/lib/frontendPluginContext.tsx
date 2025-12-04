@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useMemo } from 'react';
+import React, { createContext, useContext, useMemo, Suspense } from 'react';
 import type {
     IFrontendPluginContext,
     IUIComponents,
@@ -16,7 +16,52 @@ import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { ClientTime } from '../components/ui/ClientTime';
 import { Tooltip } from '../components/ui/Tooltip';
-import { IconPickerModal } from '../components/ui/IconPickerModal';
+import dynamic from 'next/dynamic';
+import { Loader2 } from 'lucide-react';
+
+/**
+ * Loading placeholder for IconPickerModal while the icon library downloads.
+ */
+function IconPickerLoading() {
+    return (
+        <div style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '3rem',
+            gap: '1rem'
+        }}>
+            <Loader2 size={32} style={{ animation: 'spin 1s linear infinite' }} />
+            <p style={{ color: 'var(--color-text-secondary)', margin: 0 }}>
+                Loading icon library...
+            </p>
+            <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
+        </div>
+    );
+}
+
+/**
+ * Lazy-loaded IconPickerModal to avoid bundling all 1,637 Lucide icons
+ * with the main application. The full icon library (~568KB uncompressed)
+ * is only loaded when a user actually opens the icon picker.
+ */
+const LazyIconPickerModal = dynamic(
+    () => import('../components/ui/IconPickerModal').then(mod => mod.IconPickerModal),
+    { ssr: false }
+);
+
+/**
+ * Wrapper component that uses Suspense to properly handle loading state.
+ * This ensures the modal re-renders when the dynamic import resolves.
+ */
+function IconPickerModal(props: { selectedIcon?: string; onSelect: (iconName: string) => void; onClose: () => void }) {
+    return (
+        <Suspense fallback={<IconPickerLoading />}>
+            <LazyIconPickerModal {...props} />
+        </Suspense>
+    );
+}
 import { useModal as useModalHook } from '../components/ui/ModalProvider';
 import { LineChart } from '../features/charts/components/LineChart';
 import { SchedulerMonitor } from '../features/system/components/SchedulerMonitor';

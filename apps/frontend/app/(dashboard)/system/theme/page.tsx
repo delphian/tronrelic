@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback, useRef, Suspense } from 'react';
 import { useAppDispatch, useAppSelector } from '../../../../store/hooks';
 import { useSystemAuth } from '../../../../features/system';
 import {
@@ -20,8 +20,49 @@ import { Button } from '../../../../components/ui/Button';
 import { Input } from '../../../../components/ui/Input';
 import { Badge } from '../../../../components/ui/Badge';
 import { useModal } from '../../../../components/ui/ModalProvider';
-import { IconPickerModal } from '../../../../components/ui/IconPickerModal';
+import dynamic from 'next/dynamic';
 import { Plus, Trash2, X, CheckCircle, AlertTriangle, Copy, Loader2 } from 'lucide-react';
+
+/**
+ * Loading placeholder for IconPickerModal while the icon library downloads.
+ */
+function IconPickerLoading() {
+    return (
+        <div style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '3rem',
+            gap: '1rem'
+        }}>
+            <Loader2 size={32} style={{ animation: 'spin 1s linear infinite' }} />
+            <p style={{ color: 'var(--color-text-secondary)', margin: 0 }}>
+                Loading icon library...
+            </p>
+            <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
+        </div>
+    );
+}
+
+/**
+ * Lazy-loaded IconPickerModal to avoid bundling all Lucide icons with this page.
+ */
+const LazyIconPickerModal = dynamic(
+    () => import('../../../../components/ui/IconPickerModal').then(mod => mod.IconPickerModal),
+    { ssr: false }
+);
+
+/**
+ * Wrapper component that uses Suspense to properly handle loading state.
+ */
+function IconPickerModal(props: { selectedIcon?: string; onSelect: (iconName: string) => void; onClose: () => void }) {
+    return (
+        <Suspense fallback={<IconPickerLoading />}>
+            <LazyIconPickerModal {...props} />
+        </Suspense>
+    );
+}
 import * as LucideIcons from 'lucide-react';
 import styles from './page.module.css';
 
