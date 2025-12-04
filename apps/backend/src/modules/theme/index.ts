@@ -6,6 +6,10 @@ export type { IThemeModuleDependencies } from './ThemeModule.js';
 export { ThemeService } from './services/theme.service.js';
 export type { IOrderedTheme } from './services/theme.service.js';
 
+// Icon utilities
+export { getIconNode, isValidIconName, serializeIconNode } from './utils/icon-lookup.js';
+export type { IconNode, IconElement } from './utils/icon-lookup.js';
+
 // Validators
 export { ThemeValidator } from './validators/theme.validator.js';
 export type { IValidationResult } from './validators/theme.validator.js';
