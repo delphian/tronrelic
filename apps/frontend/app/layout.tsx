@@ -9,6 +9,7 @@ import { Providers, type SSRUserData } from './providers';
 import { MainHeader } from '../components/layout/MainHeader';
 import { BlockTicker } from '../components/layout/BlockTicker';
 import { getServerUserId, getServerUser } from '../modules/user/lib/server';
+import type { BlockSummary } from '../features/blockchain/slice';
 
 /**
  * Builds site-wide structured data for SEO.
@@ -53,12 +54,26 @@ function buildSiteStructuredData(siteUrl: string) {
 }
 
 /**
- * Ordered theme for SSR injection.
+ * SVG element definition matching lucide package format.
+ * Each tuple contains [elementType, attributes].
  */
-interface IOrderedTheme {
+type IconElement = [string, Record<string, string>];
+
+/**
+ * Array of SVG elements that compose an icon.
+ */
+type IconNode = IconElement[];
+
+/**
+ * Ordered theme for SSR injection.
+ * Includes pre-resolved SVG data to avoid bundling all Lucide icons.
+ */
+export interface IOrderedTheme {
     id: string;
     name: string;
     icon: string;
+    /** Pre-resolved SVG path data from backend */
+    iconSvg: IconNode | null;
     css: string;
 }
 
@@ -146,6 +161,39 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 /**
+ * Fetch latest block for SSR to enable immediate ticker rendering.
+ *
+ * Fetches the most recent indexed block from the backend API. This data
+ * is passed to BlockTicker to render immediately during SSR instead of
+ * waiting for WebSocket connection after hydration.
+ *
+ * IMPORTANT: Uses internal Docker URL (SITE_BACKEND) for container-to-container
+ * communication during SSR.
+ *
+ * @returns Block summary data or null if fetch fails
+ */
+async function fetchInitialBlock(): Promise<BlockSummary | null> {
+    try {
+        const backendUrl = getServerSideApiUrl();
+        const response = await fetch(`${backendUrl}/api/blockchain/latest`, {
+            cache: 'no-store',
+            signal: AbortSignal.timeout(3000) // 3 second timeout
+        });
+
+        if (!response.ok) {
+            console.error('Failed to fetch initial block:', response.status);
+            return null;
+        }
+
+        const data = await response.json();
+        return (data.block as BlockSummary) || null;
+    } catch (error) {
+        console.error('Error fetching initial block:', error);
+        return null;
+    }
+}
+
+/**
  * Fetch user data during SSR to prevent wallet button flash.
  *
  * If user has identity cookie, fetches their data including linked wallets.
@@ -176,14 +224,13 @@ async function fetchSSRUserData(): Promise<SSRUserData | null> {
 }
 
 export default async function RootLayout({ children }: { children: ReactNode }) {
-  // Fetch runtime configuration from backend (cached after first call)
-  const runtimeConfig = await getServerConfig();
-
-  // Fetch active themes for SSR injection (uses internal Docker URL)
-  const activeThemes = await fetchActiveThemes();
-
-  // Fetch user data for SSR (prevents wallet button flash)
-  const ssrUserData = await fetchSSRUserData();
+  // Parallelize SSR fetches to reduce TTFB - these are independent operations
+  const [runtimeConfig, activeThemes, ssrUserData, initialBlock] = await Promise.all([
+    getServerConfig(),
+    fetchActiveThemes(),
+    fetchSSRUserData(),
+    fetchInitialBlock()
+  ]);
 
   // Read theme preference from cookie for SSR (prevents flash)
   const cookieStore = await cookies();
@@ -225,8 +272,8 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
       </head>
       <body>
         <Providers ssrUserData={ssrUserData}>
-          <MainHeader />
-          <BlockTicker />
+          <MainHeader initialThemes={activeThemes} initialThemeId={selectedThemeId} />
+          <BlockTicker initialBlock={initialBlock} />
           <main>
             {children}
           </main>

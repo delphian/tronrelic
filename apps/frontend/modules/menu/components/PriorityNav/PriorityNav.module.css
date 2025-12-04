@@ -9,9 +9,10 @@
 /**
  * Root container.
  *
- * Uses flexbox for horizontal layout with overflow hidden to enable
- * IntersectionObserver to detect clipped items. The overflow: hidden is
- * critical - it constrains the container to its parent's width and allows
+ * Uses flexbox for horizontal layout with overflow-x: clip to enable
+ * IntersectionObserver to detect clipped items while allowing vertical
+ * content to render without clipping. The horizontal clip is critical -
+ * it constrains the container to its parent's width and allows
  * IntersectionObserver to detect when items extend beyond the boundary.
  */
 .container {
@@ -20,14 +21,16 @@
     gap: var(--spacing-2);
     width: 100%;
     min-width: 0;
-    overflow: hidden;
+    overflow-x: clip;
+    overflow-y: visible;
 }
 
 /**
  * Primary navigation area.
  *
- * Contains all menu items. Overflow is hidden so IntersectionObserver
- * can detect items that extend beyond the boundary.
+ * Contains all menu items. Horizontal overflow is clipped so IntersectionObserver
+ * can detect items that extend beyond the boundary; vertical overflow is visible
+ * to prevent clipping of tab borders and button content.
  */
 .primary {
     display: flex;
@@ -35,7 +38,8 @@
     gap: var(--spacing-2);
     flex: 1;
     min-width: 0;
-    overflow: hidden;
+    overflow-x: clip;
+    overflow-y: visible;
 }
 
 /**

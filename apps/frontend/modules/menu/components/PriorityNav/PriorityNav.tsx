@@ -77,6 +77,12 @@ export interface IPriorityNavProps {
      * @default "More menu items"
      */
     moreButtonLabel?: string;
+
+    /**
+     * Callback fired after IntersectionObserver completes first measurement.
+     * Use this to coordinate fade-in timing with parent components.
+     */
+    onInitialized?: () => void;
 }
 
 /**
@@ -91,15 +97,19 @@ export function PriorityNav({
     enabled = true,
     collapseAtCount,
     className = '',
-    moreButtonLabel = 'More menu items'
+    moreButtonLabel = 'More menu items',
+    onInitialized
 }: IPriorityNavProps) {
     const containerRef = useRef<HTMLDivElement>(null);
     const observerRef = useRef<IntersectionObserver | null>(null);
     const itemRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+    const hasCalledOnInitializedRef = useRef(false);
+    const observedItemsRef = useRef<Set<string>>(new Set());
 
     const [overflowIds, setOverflowIds] = useState<Set<string>>(new Set());
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
     const [isMounted, setIsMounted] = useState(false);
+    const [hasObserverFired, setHasObserverFired] = useState(false);
 
     const dropdownRef = useRef<HTMLDivElement>(null);
     const moreButtonRef = useRef<HTMLButtonElement>(null);
@@ -111,6 +121,19 @@ export function PriorityNav({
     useEffect(() => {
         setIsMounted(true);
     }, []);
+
+    /**
+     * Call onInitialized after overflow state has rendered.
+     *
+     * This effect runs AFTER the render that includes the new overflowIds,
+     * ensuring the DOM reflects the correct overflow state before fade-in.
+     */
+    useEffect(() => {
+        if (hasObserverFired && !hasCalledOnInitializedRef.current) {
+            hasCalledOnInitializedRef.current = true;
+            onInitialized?.();
+        }
+    }, [hasObserverFired, onInitialized]);
 
     /**
      * Close dropdown and return focus to More button.
@@ -167,6 +190,18 @@ export function PriorityNav({
 
         const container = containerRef.current;
 
+        // Handle empty items array - nothing to observe, initialize immediately
+        if (items.length === 0) {
+            setOverflowIds(new Set());
+            if (!hasObserverFired) {
+                setHasObserverFired(true);
+            }
+            return;
+        }
+
+        // Reset tracking for new item set
+        observedItemsRef.current = new Set();
+
         // Create observer that detects when items leave the container boundary
         observerRef.current = new IntersectionObserver(
             (entries) => {
@@ -176,6 +211,9 @@ export function PriorityNav({
                     entries.forEach((entry) => {
                         const id = entry.target.getAttribute('data-priority-nav-id');
                         if (!id) return;
+
+                        // Track that this item has been observed
+                        observedItemsRef.current.add(id);
 
                         if (entry.isIntersecting && entry.intersectionRatio >= 0.99) {
                             // Item is fully visible, remove from overflow
@@ -188,6 +226,12 @@ export function PriorityNav({
 
                     return next;
                 });
+
+                // Only signal initialization after ALL items have been observed
+                const allItemsObserved = items.every(item => observedItemsRef.current.has(item.id));
+                if (allItemsObserved && !hasObserverFired) {
+                    setHasObserverFired(true);
+                }
             },
             {
                 root: container,

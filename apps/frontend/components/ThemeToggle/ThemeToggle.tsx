@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect, createElement } from 'react';
-import { getRuntimeConfig } from '../../lib/runtimeConfig';
+import { useState, createElement } from 'react';
+import type { IOrderedTheme } from '../../app/layout';
 import styles from './ThemeToggle.module.css';
 
 /**
@@ -14,35 +14,6 @@ type IconElement = [string, Record<string, string>];
  * Array of SVG elements that compose an icon.
  */
 type IconNode = IconElement[];
-
-/**
- * Theme metadata from backend active themes endpoint.
- * Includes pre-resolved SVG data to avoid bundling all Lucide icons.
- */
-interface ITheme {
-    id: string;
-    name: string;
-    icon: string;
-    /** Pre-resolved SVG path data from backend */
-    iconSvg: IconNode | null;
-}
-
-/**
- * Get cookie value by name.
- *
- * @param name - Cookie name
- * @returns Cookie value or null if not found
- */
-function getCookie(name: string): string | null {
-    if (typeof document === 'undefined') return null;
-    const value = `; ${document.cookie}`;
-    const parts = value.split(`; ${name}=`);
-    if (parts.length === 2) {
-        const cookieValue = parts.pop()?.split(';').shift();
-        return cookieValue || null;
-    }
-    return null;
-}
 
 /**
  * Set cookie with 1 year expiration.
@@ -108,60 +79,43 @@ function renderIcon(iconNode: IconNode | null, className: string): JSX.Element |
 }
 
 /**
+ * Props for the ThemeToggle component.
+ */
+interface ThemeToggleProps {
+    /**
+     * Active themes passed from server component for SSR rendering.
+     * When provided, the component renders immediately without fetching.
+     */
+    initialThemes: IOrderedTheme[];
+    /**
+     * Currently selected theme ID from cookie, read during SSR.
+     * After hydration, client state takes over for theme switching.
+     */
+    initialThemeId: string | null;
+}
+
+/**
  * Theme toggle component that displays one button per active theme.
  *
- * Fetches active themes from `/api/system/themes/active`, persists selection via cookies,
- * and renders icons using pre-resolved SVG data from the backend. This eliminates the need
- * to bundle all ~1,867 Lucide icons (~562KB) on every page.
+ * SSR + Live Updates Pattern:
+ * - Receives theme data from server component for immediate rendering (no loading flash)
+ * - Renders icons using pre-resolved SVG data from the backend
+ * - After hydration, handles theme switching interactively via client state
+ *
+ * This eliminates the need to bundle all ~1,867 Lucide icons (~562KB) on every page
+ * and ensures theme toggle buttons are visible immediately on page load.
  *
  * When a theme button is clicked, it toggles that theme on/off. If toggled on, all other
  * themes are automatically disabled. The `data-theme` attribute is removed when no theme
  * is active.
  *
- * @returns {JSX.Element} One toggle button per active theme
+ * @param props - Component props including SSR theme data
+ * @returns One toggle button per active theme
  */
-export function ThemeToggle() {
-    const [themes, setThemes] = useState<ITheme[]>([]);
-    const [currentThemeId, setCurrentThemeId] = useState<string | null>(null);
-    const [mounted, setMounted] = useState(false);
-
-    // Fetch available themes on mount
-    useEffect(() => {
-        async function fetchThemes() {
-            const config = getRuntimeConfig();
-
-            try {
-                // Use active themes endpoint which includes iconSvg data
-                const response = await fetch(`${config.apiUrl}/system/themes/active`);
-                if (!response.ok) {
-                    console.error('Failed to fetch themes:', response.status);
-                    return;
-                }
-
-                const data = await response.json();
-                const activeThemes: ITheme[] = data.themes || [];
-                setThemes(activeThemes);
-
-                // Load saved theme preference from cookie
-                const savedThemeId = getCookie('theme');
-                const savedTheme = activeThemes.find(t => t.id === savedThemeId);
-
-                if (savedTheme) {
-                    setCurrentThemeId(savedTheme.id);
-                    applyTheme(savedTheme.id);
-                } else {
-                    // No theme active by default
-                    setCurrentThemeId(null);
-                    removeTheme();
-                }
-            } catch (error) {
-                console.error('Error fetching themes:', error);
-            }
-        }
-
-        setMounted(true);
-        void fetchThemes();
-    }, []);
+export function ThemeToggle({ initialThemes, initialThemeId }: ThemeToggleProps) {
+    // SSR + Live Updates: Initialize state from server-provided props
+    const [themes] = useState<IOrderedTheme[]>(initialThemes);
+    const [currentThemeId, setCurrentThemeId] = useState<string | null>(initialThemeId);
 
     /**
      * Apply theme by setting data-theme attribute on document root.
@@ -202,8 +156,8 @@ export function ThemeToggle() {
         }
     }
 
-    // Avoid hydration mismatch by not rendering until mounted
-    if (!mounted || themes.length === 0) {
+    // No themes available - render nothing
+    if (themes.length === 0) {
         return null;
     }
 

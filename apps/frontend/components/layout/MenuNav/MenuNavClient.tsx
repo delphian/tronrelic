@@ -122,6 +122,8 @@ export function MenuNavClient({ namespace, items, ariaLabel }: IMenuNavClientPro
     const menuConfig = useMenuConfig(namespace);
     const [expandedCategoryId, setExpandedCategoryId] = useState<string | null>(null);
     const [isMounted, setIsMounted] = useState(false);
+    const [hasInitialized, setHasInitialized] = useState(false);
+    const hasInitializedRef = useRef(false);
     const categoryButtonRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
     const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -130,10 +132,36 @@ export function MenuNavClient({ namespace, items, ariaLabel }: IMenuNavClientPro
         .filter(item => item.enabled)
         .sort((a, b) => a.order - b.order), [items]);
 
+    // Whether overflow handling (Priority+ nav) is enabled for this namespace
+    const overflowEnabled = menuConfig.overflow?.enabled ?? true;
+
     // Track mount state for portal rendering (SSR safety)
     useEffect(() => {
         setIsMounted(true);
     }, []);
+
+    /**
+     * Callback from PriorityNav when IntersectionObserver completes measurement.
+     * Triggers the fade-in transition by adding the initialized class.
+     */
+    const handlePriorityNavInitialized = useCallback(() => {
+        if (!hasInitializedRef.current) {
+            hasInitializedRef.current = true;
+            setHasInitialized(true);
+        }
+    }, []);
+
+    /**
+     * Initialize immediately when overflow is disabled.
+     *
+     * When overflowEnabled is false, PriorityNav isn't rendered and won't fire
+     * onInitialized. We must trigger fade-in manually to avoid invisible nav.
+     */
+    useEffect(() => {
+        if (!overflowEnabled) {
+            handlePriorityNavInitialized();
+        }
+    }, [overflowEnabled, handlePriorityNavInitialized]);
 
     /**
      * Close dropdown and return focus to the category button.
@@ -313,13 +341,6 @@ export function MenuNavClient({ namespace, items, ariaLabel }: IMenuNavClientPro
     const navAriaLabel = ariaLabel || `${namespace} navigation`;
 
     /**
-     * Wraps navigation in PriorityNav if overflow handling is enabled.
-     * Uses IntersectionObserver to detect which items fit and moves overflow
-     * to a "More" dropdown automatically.
-     */
-    const overflowEnabled = menuConfig.overflow?.enabled ?? true;
-
-    /**
      * Renders the category dropdown portal.
      * Portaled to document.body to escape overflow:hidden constraints.
      */
@@ -365,15 +386,21 @@ export function MenuNavClient({ namespace, items, ariaLabel }: IMenuNavClientPro
         );
     };
 
-    if (overflowEnabled && !menuConfig.loading) {
+    const navClassName = `${styles.nav} ${hasInitialized ? styles['nav--initialized'] : ''}`;
+
+    // Always render PriorityNav to maintain consistent single-row layout.
+    // The fallback wrapped layout caused vertical overflow during loading,
+    // creating a layout shift when switching to PriorityNav.
+    if (overflowEnabled) {
         return (
             <>
-                <nav className={styles.nav} aria-label={navAriaLabel}>
+                <nav className={navClassName} aria-label={navAriaLabel}>
                     <PriorityNav
                         items={priorityNavItems}
                         enabled={overflowEnabled}
                         collapseAtCount={menuConfig.overflow?.collapseAtCount}
                         moreButtonLabel={`More ${namespace} menu items`}
+                        onInitialized={handlePriorityNavInitialized}
                     />
                 </nav>
                 {renderCategoryDropdown()}
@@ -381,9 +408,10 @@ export function MenuNavClient({ namespace, items, ariaLabel }: IMenuNavClientPro
         );
     }
 
+    // Fallback only used when overflow is explicitly disabled
     return (
         <>
-            <nav className={`${styles.nav} ${styles['nav--wrap']}`} aria-label={navAriaLabel}>
+            <nav className={`${navClassName} ${styles['nav--wrap']}`} aria-label={navAriaLabel}>
                 {visibleItems.map(item => renderMenuItem(item))}
             </nav>
             {renderCategoryDropdown()}
