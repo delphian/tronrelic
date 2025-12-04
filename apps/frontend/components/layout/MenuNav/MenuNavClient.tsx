@@ -132,6 +132,9 @@ export function MenuNavClient({ namespace, items, ariaLabel }: IMenuNavClientPro
         .filter(item => item.enabled)
         .sort((a, b) => a.order - b.order), [items]);
 
+    // Whether overflow handling (Priority+ nav) is enabled for this namespace
+    const overflowEnabled = menuConfig.overflow?.enabled ?? true;
+
     // Track mount state for portal rendering (SSR safety)
     useEffect(() => {
         setIsMounted(true);
@@ -147,6 +150,18 @@ export function MenuNavClient({ namespace, items, ariaLabel }: IMenuNavClientPro
             setHasInitialized(true);
         }
     }, []);
+
+    /**
+     * Initialize immediately when overflow is disabled.
+     *
+     * When overflowEnabled is false, PriorityNav isn't rendered and won't fire
+     * onInitialized. We must trigger fade-in manually to avoid invisible nav.
+     */
+    useEffect(() => {
+        if (!overflowEnabled) {
+            handlePriorityNavInitialized();
+        }
+    }, [overflowEnabled, handlePriorityNavInitialized]);
 
     /**
      * Close dropdown and return focus to the category button.
@@ -324,13 +339,6 @@ export function MenuNavClient({ namespace, items, ariaLabel }: IMenuNavClientPro
     }));
 
     const navAriaLabel = ariaLabel || `${namespace} navigation`;
-
-    /**
-     * Wraps navigation in PriorityNav if overflow handling is enabled.
-     * Uses IntersectionObserver to detect which items fit and moves overflow
-     * to a "More" dropdown automatically.
-     */
-    const overflowEnabled = menuConfig.overflow?.enabled ?? true;
 
     /**
      * Renders the category dropdown portal.

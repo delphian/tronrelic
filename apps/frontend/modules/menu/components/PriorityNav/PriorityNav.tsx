@@ -190,6 +190,15 @@ export function PriorityNav({
 
         const container = containerRef.current;
 
+        // Handle empty items array - nothing to observe, initialize immediately
+        if (items.length === 0) {
+            setOverflowIds(new Set());
+            if (!hasObserverFired) {
+                setHasObserverFired(true);
+            }
+            return;
+        }
+
         // Reset tracking for new item set
         observedItemsRef.current = new Set();
 

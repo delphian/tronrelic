@@ -9,6 +9,7 @@ import { Providers, type SSRUserData } from './providers';
 import { MainHeader } from '../components/layout/MainHeader';
 import { BlockTicker } from '../components/layout/BlockTicker';
 import { getServerUserId, getServerUser } from '../modules/user/lib/server';
+import type { BlockSummary } from '../features/blockchain/slice';
 
 /**
  * Builds site-wide structured data for SEO.
@@ -171,7 +172,7 @@ export async function generateMetadata(): Promise<Metadata> {
  *
  * @returns Block summary data or null if fetch fails
  */
-async function fetchInitialBlock(): Promise<Record<string, unknown> | null> {
+async function fetchInitialBlock(): Promise<BlockSummary | null> {
     try {
         const backendUrl = getServerSideApiUrl();
         const response = await fetch(`${backendUrl}/api/blockchain/latest`, {
@@ -185,7 +186,7 @@ async function fetchInitialBlock(): Promise<Record<string, unknown> | null> {
         }
 
         const data = await response.json();
-        return data.block || null;
+        return (data.block as BlockSummary) || null;
     } catch (error) {
         console.error('Error fetching initial block:', error);
         return null;
@@ -272,7 +273,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
       <body>
         <Providers ssrUserData={ssrUserData}>
           <MainHeader initialThemes={activeThemes} initialThemeId={selectedThemeId} />
-          <BlockTicker initialBlock={initialBlock as any} />
+          <BlockTicker initialBlock={initialBlock} />
           <main>
             {children}
           </main>
