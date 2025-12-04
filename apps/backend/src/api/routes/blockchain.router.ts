@@ -26,6 +26,10 @@ export function blockchainRouter() {
         return controller;
     };
 
+    router.get('/latest', (req, res) => {
+        void getController().latestBlock(req, res);
+    });
+
     router.get('/transactions/latest', (req, res) => {
         void getController().latestTransactions(req, res);
     });

@@ -165,6 +165,15 @@ export class BlockchainService {
     }
 
     /**
+     * Retrieve the most recently processed block from the database.
+     * Returns block summary with transaction count and statistics for SSR rendering.
+     * Returns null if no blocks have been processed yet.
+     */
+    async getLatestBlock(): Promise<BlockFields | null> {
+        return BlockModel.findOne().sort({ blockNumber: -1 }).lean() as Promise<BlockFields | null>;
+    }
+
+    /**
      * Prune old transactions from the database to prevent unbounded growth.
      *
      * This method removes transactions older than the retention period (default 7 days) to keep database size manageable.

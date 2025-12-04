@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { CurrentBlock } from '../features/blockchain/components';
 import { buildMetadata } from '../lib/seo';
 import { getServerConfig } from '../lib/serverConfig';
+import { getApiUrl } from '../lib/config';
 
 export const dynamic = 'force-dynamic';
 
@@ -24,6 +25,18 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export default async function HomePage(): Promise<JSX.Element> {
+  // Fetch initial block data for SSR - component renders fully without loading flash
+  let initialBlock = null;
+  try {
+    const response = await fetch(getApiUrl('/blockchain/latest'), { cache: 'no-store' });
+    if (response.ok) {
+      const data = await response.json();
+      initialBlock = data.block;
+    }
+  } catch {
+    // SSR fetch failed - component will show loading state until WebSocket connects
+  }
+
   const faqSchema = {
     '@context': 'https://schema.org',
     '@type': 'FAQPage',
@@ -74,7 +87,7 @@ export default async function HomePage(): Promise<JSX.Element> {
   return (
     <div className="page">
       <section>
-        <CurrentBlock />
+        <CurrentBlock initialBlock={initialBlock} />
       </section>
       <script
         suppressHydrationWarning

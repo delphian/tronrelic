@@ -885,6 +885,10 @@ Verify your plugin UI renders correctly in:
 
 ## SSR and Hydration
 
+**Prerequisite:** All public-facing components must follow the SSR + Live Updates pattern—render fully on the server with real data (no loading spinners), then hydrate for interactivity. **See [react.md](../react/react.md#ssr--live-updates-pattern) for the complete implementation guide.**
+
+This section covers **hydration error prevention**—ensuring server and client renders match when your component already follows the SSR + Live Updates pattern.
+
 TronRelic uses Next.js with Server-Side Rendering (SSR), where components render twice: once on the server (Node.js) and once on the client (browser). If these two renders produce different HTML, React throws a hydration error that breaks the page.
 
 ### Common Hydration Pitfall: Timezone-Dependent Rendering

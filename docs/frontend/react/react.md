@@ -17,6 +17,218 @@ TronRelic's React architecture solves specific problems that arise when building
 
 Following these patterns ensures your components integrate seamlessly with TronRelic's state management, real-time updates, and plugin system.
 
+## SSR + Live Updates Pattern
+
+**This is the foundational rendering pattern for all public-facing TronRelic components.** Components must render fully on the server with real data (no loading flash), then hydrate on the client for interactivity and real-time updates.
+
+### Why SSR-First Rendering Matters
+
+Traditional client-side rendering shows loading spinners while fetching data:
+
+```
+User visits page → See loading spinner → Wait for API call → See content
+```
+
+TronRelic's SSR-first pattern eliminates this delay:
+
+```
+User visits page → See content immediately → WebSocket connects → Live updates flow
+```
+
+**Benefits:**
+- **No loading flash** - Data arrives with HTML, users see content instantly
+- **SEO-friendly** - Search engines index complete content
+- **Faster perceived performance** - First contentful paint includes actual data
+- **Progressive enhancement** - Pages work even if JavaScript fails to load
+
+**Risk of ignoring this pattern:**
+- Users see loading spinners on every page visit
+- Hydration errors when server HTML doesn't match client render
+- Poor perceived performance despite fast network
+- SEO penalties for content-sparse initial renders
+
+### How It Works
+
+**Step 1: Server component fetches data**
+
+```typescript
+// app/(dashboard)/markets/page.tsx (Server Component - no 'use client')
+import { getApiUrl } from '@/lib/config';
+import { MarketDashboard } from '../../../features/markets';
+
+export default async function MarketsPage() {
+    // Runs on server during SSR
+    const response = await fetch(getApiUrl('/markets/compare'));
+    const data = await response.json();
+
+    // Pass data as prop to client component
+    return <MarketDashboard initialMarkets={data.markets} />;
+}
+```
+
+**Step 2: Client component initializes state from props**
+
+```typescript
+// features/markets/components/MarketDashboard.tsx
+'use client';
+
+import { useState, useEffect } from 'react';
+
+interface Props {
+    initialMarkets: Market[];  // SSR data passed as prop
+}
+
+export function MarketDashboard({ initialMarkets }: Props) {
+    // Initialize state FROM the prop - NOT empty array
+    const [markets, setMarkets] = useState(initialMarkets);
+
+    // After hydration, subscribe to live updates
+    useEffect(() => {
+        const socket = getSocket();
+        socket.on('markets:updated', setMarkets);
+        return () => socket.off('markets:updated', setMarkets);
+    }, []);
+
+    // Render immediately - data is already present
+    return (
+        <div>
+            {markets.map(market => (
+                <MarketCard key={market.guid} {...market} />
+            ))}
+        </div>
+    );
+}
+```
+
+### Critical Rules
+
+| Rule | Correct | Wrong |
+|------|---------|-------|
+| **Initialize state from props** | `useState(initialData)` | `useState([])` then fetch |
+| **No loading states for initial data** | Render content immediately | Show "Loading..." on mount |
+| **Fetch in server components** | `async function Page()` | `useEffect(() => fetch())` |
+| **Client components receive data** | `<Component data={data} />` | Component fetches its own data |
+
+### Common Mistakes
+
+**Wrong: Empty initial state with client-side fetch**
+
+```typescript
+'use client';
+
+export function BadComponent() {
+    const [data, setData] = useState([]);  // Empty initial state
+    const [loading, setLoading] = useState(true);  // Loading state
+
+    useEffect(() => {
+        fetch('/api/data')
+            .then(r => r.json())
+            .then(setData)
+            .finally(() => setLoading(false));
+    }, []);
+
+    if (loading) return <div>Loading...</div>;  // Users see this flash
+
+    return <DataDisplay data={data} />;
+}
+```
+
+**Correct: Initialize from SSR props**
+
+```typescript
+'use client';
+
+export function GoodComponent({ initialData }: { initialData: Data[] }) {
+    const [data, setData] = useState(initialData);  // From SSR
+
+    useEffect(() => {
+        // Subscribe to live updates AFTER hydration
+        socket.on('data:updated', setData);
+        return () => socket.off('data:updated', setData);
+    }, []);
+
+    // No loading state - data is already present
+    return <DataDisplay data={data} />;
+}
+```
+
+**Wrong: Relying on Redux without SSR initialization**
+
+```typescript
+'use client';
+
+export function BadReduxComponent() {
+    // Redux state is empty during SSR
+    const data = useAppSelector(state => state.feature.data);
+
+    // Shows loading during SSR and until WebSocket populates Redux
+    if (!data) return <div>Waiting for data...</div>;
+
+    return <DataDisplay data={data} />;
+}
+```
+
+**Correct: Pass SSR data, sync to Redux after hydration**
+
+```typescript
+'use client';
+
+export function GoodReduxComponent({ initialData }: { initialData: Data }) {
+    const dispatch = useAppDispatch();
+    const data = useAppSelector(state => state.feature.data);
+
+    // Sync SSR data to Redux on mount
+    useEffect(() => {
+        if (initialData && !data) {
+            dispatch(setFeatureData(initialData));
+        }
+    }, [initialData, data, dispatch]);
+
+    // Use SSR data until Redux is populated
+    const displayData = data || initialData;
+
+    return <DataDisplay data={displayData} />;
+}
+```
+
+### When Loading States ARE Appropriate
+
+Loading states are appropriate for:
+
+- **User-triggered actions** - "Save" button shows spinner while saving
+- **Pagination/infinite scroll** - Loading more items after initial render
+- **Search results** - New search query fetches fresh data
+- **Optional data** - Secondary content that enhances but isn't required
+
+Loading states are NOT appropriate for:
+
+- **Initial page render** - Primary content should arrive with HTML
+- **Core page data** - The main purpose of the page should render immediately
+- **Navigation** - Moving between pages should show content, not spinners
+
+### Relationship to Hydration
+
+This SSR-first pattern works hand-in-hand with hydration safety:
+
+1. **Server renders with data** - HTML contains actual content
+2. **Client hydrates** - React attaches to server HTML (must match)
+3. **Live updates flow** - WebSocket/Redux updates state
+
+If you initialize with empty state (`useState([])`), the client render won't match the server render, causing hydration errors. The SSR-first pattern prevents this by ensuring server and client render identical content.
+
+**See [Hydration Error Prevention](#hydration-error-prevention) for timezone-specific concerns like date formatting.**
+
+### SSR + Live Updates Checklist
+
+Before shipping any public-facing component:
+
+- [ ] Server component fetches initial data (no client-side fetch for primary content)
+- [ ] Client component receives data as prop
+- [ ] State initialized from prop: `useState(initialData)`
+- [ ] No loading state for initial render
+- [ ] WebSocket/live updates established in `useEffect` (after hydration)
+- [ ] Empty states only shown when data is genuinely empty (not loading)
+
 ## Core React Patterns
 
 ### Context Provider System

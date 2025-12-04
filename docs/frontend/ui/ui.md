@@ -189,9 +189,15 @@ import { Info, TrendingUp, AlertCircle } from 'lucide-react';
 }
 ```
 
+### SSR + Live Updates Pattern
+
+**All public-facing components must render fully on the server with real data.** Server components fetch data and pass it to client components, which initialize state from props (not empty arrays). This eliminates loading spinners and ensures users see content immediately.
+
+**See [react.md](../react/react.md#ssr--live-updates-pattern) for the complete SSR + Live Updates implementation guide.**
+
 ### SSR Hydration for Timezone-Sensitive Data
 
-**Problem:** Dates render differently on server (UTC) vs client (user's local timezone), causing React hydration errors.
+When components follow the SSR + Live Updates pattern, timezone-sensitive data (dates, times) can cause hydration mismatches because server and client render different output.
 
 **Solution 1 - Static timestamps:** Use `ClientTime` component for simple timestamp display.
 
@@ -205,7 +211,7 @@ import { ClientTime } from '../../components/ui/ClientTime';
 
 **Solution 2 - Real-time data:** Use two-phase rendering pattern that shows relative time initially ("2h ago") then switches to absolute time ("10:31 PM") after live data flows.
 
-See `apps/frontend/features/blockchain/components/CurrentBlock/CurrentBlock.tsx` (lines 53, 77-81, 243-272) for reference implementation.
+**See [ui-component-styling.md](./ui-component-styling.md#ssr-and-hydration) for complete hydration guidance** including the `ClientTime` component, two-phase rendering pattern, and additional best practices.
 
 ## Pre-Ship Checklist
 

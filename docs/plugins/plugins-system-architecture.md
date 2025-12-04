@@ -380,7 +380,9 @@ Why it works:
 
 ## Frontend runtime flow
 
-Frontend plugins follow an SSR + live updates pattern where components render fully on the server for instant display, then hydrate on the client for interactivity and real-time data updates.
+Frontend plugins follow TronRelic's foundational SSR + Live Updates pattern: components render fully on the server with real data (no loading flash), then hydrate for interactivity and WebSocket subscriptions.
+
+**See [react.md](../frontend/react/react.md#ssr--live-updates-pattern) for the complete SSR + Live Updates implementation guide.**
 
 ### Build-time Discovery
 
@@ -403,7 +405,7 @@ Some plugin components exist purely for side effects (WebSocket listeners, toast
 2. On mount it fetches `/api/plugins/manifests`, filters for `manifest.frontend === true`, then resolves each plugin.
 3. Each frontend plugin export is expected to include the same manifest plus a React `component`. The loader renders those components invisibly so they can perform side effects such as listening to WebSockets or registering toasts.
 
-**Key principle:** All visible plugin UI should leverage SSR for instant display. Side-effect-only components run after hydration.
+**Key principle:** All visible plugin UI must follow the [SSR + Live Updates pattern](../frontend/react/react.md#ssr--live-updates-pattern) for instant display. Side-effect-only components run after hydration.
 
 ### Frontend implementation pattern
 
