@@ -15,7 +15,21 @@
     gap: var(--spacing-4);
     flex: 1;
     min-width: 0;
-    overflow: hidden;
+    overflow-x: clip;
+    overflow-y: visible;
+    opacity: 0;
+    transition: opacity 150ms ease-out;
+}
+
+/**
+ * Initialized state after client-side measurement.
+ *
+ * Nav starts invisible during SSR and hydration to prevent flash caused by
+ * switching between fallback (wrapped layout) and PriorityNav (overflow detection).
+ * Fades in after client initialization completes.
+ */
+.nav--initialized {
+    opacity: 1;
 }
 
 /**

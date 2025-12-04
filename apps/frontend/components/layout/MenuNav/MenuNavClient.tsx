@@ -122,6 +122,8 @@ export function MenuNavClient({ namespace, items, ariaLabel }: IMenuNavClientPro
     const menuConfig = useMenuConfig(namespace);
     const [expandedCategoryId, setExpandedCategoryId] = useState<string | null>(null);
     const [isMounted, setIsMounted] = useState(false);
+    const [hasInitialized, setHasInitialized] = useState(false);
+    const hasInitializedRef = useRef(false);
     const categoryButtonRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
     const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -133,6 +135,34 @@ export function MenuNavClient({ namespace, items, ariaLabel }: IMenuNavClientPro
     // Track mount state for portal rendering (SSR safety)
     useEffect(() => {
         setIsMounted(true);
+    }, []);
+
+    /**
+     * Fade in nav after mount and layout settles.
+     *
+     * Waits two animation frames for IntersectionObserver to measure overflow
+     * and layout to stabilize before fading in. PriorityNav is always rendered
+     * (no fallback switching), so we just need to wait for initial measurement.
+     */
+    useEffect(() => {
+        if (hasInitializedRef.current) {
+            return;
+        }
+
+        let rafId1: number;
+        let rafId2: number;
+
+        rafId1 = requestAnimationFrame(() => {
+            rafId2 = requestAnimationFrame(() => {
+                hasInitializedRef.current = true;
+                setHasInitialized(true);
+            });
+        });
+
+        return () => {
+            cancelAnimationFrame(rafId1);
+            cancelAnimationFrame(rafId2);
+        };
     }, []);
 
     /**
@@ -365,10 +395,15 @@ export function MenuNavClient({ namespace, items, ariaLabel }: IMenuNavClientPro
         );
     };
 
-    if (overflowEnabled && !menuConfig.loading) {
+    const navClassName = `${styles.nav} ${hasInitialized ? styles['nav--initialized'] : ''}`;
+
+    // Always render PriorityNav to maintain consistent single-row layout.
+    // The fallback wrapped layout caused vertical overflow during loading,
+    // creating a layout shift when switching to PriorityNav.
+    if (overflowEnabled) {
         return (
             <>
-                <nav className={styles.nav} aria-label={navAriaLabel}>
+                <nav className={navClassName} aria-label={navAriaLabel}>
                     <PriorityNav
                         items={priorityNavItems}
                         enabled={overflowEnabled}
@@ -381,9 +416,10 @@ export function MenuNavClient({ namespace, items, ariaLabel }: IMenuNavClientPro
         );
     }
 
+    // Fallback only used when overflow is explicitly disabled
     return (
         <>
-            <nav className={`${styles.nav} ${styles['nav--wrap']}`} aria-label={navAriaLabel}>
+            <nav className={`${navClassName} ${styles['nav--wrap']}`} aria-label={navAriaLabel}>
                 {visibleItems.map(item => renderMenuItem(item))}
             </nav>
             {renderCategoryDropdown()}

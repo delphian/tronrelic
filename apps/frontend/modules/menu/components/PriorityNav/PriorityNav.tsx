@@ -100,8 +100,6 @@ export function PriorityNav({
     const [overflowIds, setOverflowIds] = useState<Set<string>>(new Set());
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
     const [isMounted, setIsMounted] = useState(false);
-    const [hasInitialized, setHasInitialized] = useState(false);
-    const hasInitializedRef = useRef(false);
 
     const dropdownRef = useRef<HTMLDivElement>(null);
     const moreButtonRef = useRef<HTMLButtonElement>(null);
@@ -191,11 +189,6 @@ export function PriorityNav({
                     return next;
                 });
 
-                // Mark as initialized after first measurement pass to trigger fade-in
-                if (!hasInitializedRef.current) {
-                    hasInitializedRef.current = true;
-                    setHasInitialized(true);
-                }
             },
             {
                 root: container,
@@ -262,7 +255,7 @@ export function PriorityNav({
     return (
         <div
             ref={containerRef}
-            className={`${styles.container} ${hasInitialized ? styles['container--initialized'] : ''} ${className}`}
+            className={`${styles.container} ${className}`}
         >
             {/* Primary navigation items */}
             <div className={styles.primary}>
