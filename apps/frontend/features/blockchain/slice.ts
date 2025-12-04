@@ -164,9 +164,31 @@ const blockchainSlice = createSlice({
       state.status = 'ready';
       state.error = null;
     },
-    resetBlockchain: () => createInitialState()
+    resetBlockchain: () => createInitialState(),
+
+    /**
+     * Initialize Redux state with SSR block data.
+     * Called once on hydration when SSR data is available but Redux is empty.
+     * Does not override existing Redux data (WebSocket updates take precedence).
+     */
+    setInitialBlock(state, action: PayloadAction<BlockSummary>) {
+      // Only set if Redux doesn't already have data (SSR hydration case)
+      if (state.latestBlock) {
+        return;
+      }
+
+      const summary = action.payload;
+      state.latestBlock = summary;
+      state.history = [summary];
+      state.metrics = {
+        ...computeMetrics([summary]),
+        networkLagSeconds: computeNetworkLagSeconds(summary.timestamp)
+      };
+      state.status = 'ready';
+      state.lastUpdated = new Date().toISOString();
+    }
   }
 });
 
-export const { blockReceived, resetBlockchain, setError, setStatus } = blockchainSlice.actions;
+export const { blockReceived, resetBlockchain, setError, setStatus, setInitialBlock } = blockchainSlice.actions;
 export default blockchainSlice.reducer;

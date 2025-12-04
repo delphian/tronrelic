@@ -1,30 +1,47 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useAppSelector } from '../../../../store/hooks';
+import { useAppDispatch, useAppSelector } from '../../../../store/hooks';
+import { setInitialBlock } from '../../slice';
 import { Card } from '../../../../components/ui/Card';
 import { Badge } from '../../../../components/ui/Badge';
 import { cn } from '../../../../lib/cn';
 import { useRealtimeStatus } from '../../../realtime/hooks/useRealtimeStatus';
 import { LineChart } from '../../../charts/components/LineChart/LineChart';
 import { useTransactionTimeseries } from '../../hooks/useTransactionTimeseries';
+import type { BlockSummary } from '../../slice';
 import styles from './CurrentBlock.module.css';
+
+/**
+ * Props for the CurrentBlock component.
+ */
+interface CurrentBlockProps {
+    /**
+     * Initial block data passed from server component for SSR rendering.
+     * When provided, the component renders immediately without a loading flash.
+     * After hydration, live WebSocket updates take over.
+     */
+    initialBlock?: BlockSummary | null;
+}
 
 /**
  * CurrentBlock - Displays the currently processed blockchain block with detailed statistics
  *
- * This component subscribes to the blockchain Redux state and displays real-time
- * updates of the latest processed block. It shows:
+ * Follows the SSR + Live Updates pattern: renders fully on the server with real data
+ * (no loading flash), then hydrates for WebSocket-driven live updates.
+ *
+ * **SSR Flow:**
+ * 1. Server component fetches initial block from `/api/blockchain/latest`
+ * 2. Passes initialBlock prop to this client component
+ * 3. Component renders with data immediately (no "Loading..." state)
+ * 4. After hydration, syncs to Redux and subscribes to WebSocket updates
+ *
+ * **Display Features:**
  * - Block number and transaction count (highlighted metrics, with expandable graph)
  * - Detailed statistics (transfers, contract calls, delegations, stakes, etc.)
  * - Resource usage (energy and bandwidth consumption)
  * - Block timestamp and update freshness indicator
  * - Expandable transaction timeseries chart (Live/1d/7d/30d views)
- *
- * The component handles three states:
- * - **Loading** - Shows "Waiting for blockchain data" placeholder
- * - **Error/No data** - Shows "No block data available" message
- * - **Success** - Displays complete block information with metrics
  *
  * The block data is received via Socket.IO events (block:new) and stored in Redux
  * by the SocketBridge component, which ensures real-time updates as blocks are
@@ -36,13 +53,12 @@ import styles from './CurrentBlock.module.css';
  * - **1d/7d/30d** - Historical aggregated data fetched from backend API
  * Clicking the stat card again collapses the chart for a clean, compact view.
  *
- * The component is designed to be relocatable and can be placed anywhere in the
- * application layout. It uses the elevated Card variant for visual prominence.
- *
+ * @param props - Component properties including optional SSR initial block data
  * @returns A card displaying current block information or appropriate loading/error state
  */
-export function CurrentBlock() {
-    const latestBlock = useAppSelector(state => state.blockchain.latestBlock);
+export function CurrentBlock({ initialBlock }: CurrentBlockProps) {
+    const dispatch = useAppDispatch();
+    const reduxBlock = useAppSelector(state => state.blockchain.latestBlock);
     const status = useAppSelector(state => state.blockchain.status);
     const lastUpdated = useAppSelector(state => state.blockchain.lastUpdated);
     const blockHistory = useAppSelector(state => state.blockchain.history);
@@ -51,6 +67,19 @@ export function CurrentBlock() {
     const [showGraph, setShowGraph] = useState(false);
     const [selectedPeriod, setSelectedPeriod] = useState<'live' | 1 | 7 | 30>('live');
     const [hasReceivedLiveData, setHasReceivedLiveData] = useState(false);
+
+    // SSR + Live Updates: Use Redux data when available, fall back to SSR initial data
+    const latestBlock = reduxBlock || initialBlock;
+
+    // Sync SSR initial block to Redux on mount (enables history tracking)
+    useEffect(() => {
+        if (initialBlock && !reduxBlock) {
+            dispatch(setInitialBlock(initialBlock));
+        }
+    }, [initialBlock, reduxBlock, dispatch]);
+
+    // Derive effective status: if we have data from SSR, we're ready
+    const effectiveStatus = latestBlock ? 'ready' : status;
 
     // Only fetch from API when not in live mode
     const { data: timeseriesData, loading: timeseriesLoading, error: timeseriesError } = useTransactionTimeseries(
@@ -91,9 +120,9 @@ export function CurrentBlock() {
     }, [realtime.label, lastUpdated]);
 
     /**
-     * Loading state - blockchain data is being fetched.
+     * Loading state - only shown when no SSR data was provided and WebSocket hasn't connected yet.
      */
-    if (status === 'idle' || status === 'loading') {
+    if (effectiveStatus === 'idle' || effectiveStatus === 'loading') {
         return (
             <Card elevated>
                 <div className={styles['loading-state']}>
@@ -109,7 +138,7 @@ export function CurrentBlock() {
     /**
      * Error state - blockchain data failed to load or is unavailable.
      */
-    if (status === 'error' || !latestBlock) {
+    if (effectiveStatus === 'error' || !latestBlock) {
         return (
             <Card elevated tone="muted">
                 <div className={styles['error-state']}>

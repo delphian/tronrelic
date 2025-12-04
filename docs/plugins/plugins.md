@@ -59,7 +59,7 @@ Plugins extend the frontend through:
 - **Widget zones** - Inject UI components into designated zones on existing pages
 - **Context injection** - UI components, API client, charts, and WebSocket access without cross-workspace imports
 
-**SSR + Live Updates Pattern:** All visible plugin UI should follow the SSR + live updates pattern. Components render fully on the server for instant display (no loading flash), then hydrate on the client for interactivity. After hydration, components subscribe to WebSocket for real-time data updates. This pattern is documented in [plugins-frontend-context.md](./plugins-frontend-context.md#ssr--live-updates-pattern).
+**SSR + Live Updates Pattern:** All visible plugin UI must follow the SSR + Live Updates pattern. Components render fully on the server with real data (no loading flash), then hydrate for interactivity and WebSocket subscriptions. **See [react.md](../frontend/react/react.md#ssr--live-updates-pattern) for the complete implementation guide.**
 
 **See [plugins-page-registration.md](./plugins-page-registration.md) for complete details on:**
 - Menu item and page configuration

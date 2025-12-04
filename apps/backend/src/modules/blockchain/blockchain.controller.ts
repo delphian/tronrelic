@@ -17,6 +17,21 @@ export class BlockchainController {
     }
 
     /**
+     * GET /api/blockchain/latest
+     *
+     * Retrieves the most recently processed block with full statistics.
+     * Used for SSR rendering of the CurrentBlock component on the homepage.
+     * Returns null if no blocks have been processed yet.
+     *
+     * @param _req - Express request (no parameters required)
+     * @param res - Express response containing latest block or null
+     */
+    latestBlock = async (_req: Request, res: Response) => {
+        const block = await this.service.getLatestBlock();
+        res.json({ success: true, block });
+    };
+
+    /**
      * GET /api/blockchain/transactions/latest?limit=50
      *
      * Retrieves the most recent transactions from the database, sorted by timestamp

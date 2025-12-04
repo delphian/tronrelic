@@ -390,7 +390,9 @@ Returns widgets matching a route with pre-fetched data:
 
 ## Frontend: Widget Components with SSR + Live Updates
 
-Widget components render fully on the server (SSR) for instant display, then hydrate on the client for live data updates. This two-phase approach provides the best user experience: no loading flash on initial page load, plus real-time updates as data changes.
+Widget components follow TronRelic's foundational SSR + Live Updates pattern: render fully on the server with real data (no loading flash), then hydrate on the client for interactivity and live updates.
+
+**For the complete SSR + Live Updates pattern guide, see [react.md](../frontend/react/react.md#ssr--live-updates-pattern).** This section covers widget-specific implementation details.
 
 ### How It Works
 
@@ -553,7 +555,7 @@ export function RecentWhalesWidget({ data }: { data: unknown }) {
 
 ### Component Requirements
 
-Widget components must follow these rules for proper SSR:
+Widget components must follow the [SSR + Live Updates pattern](../frontend/react/react.md#ssr--live-updates-pattern) plus these widget-specific rules:
 
 1. **Export from standard location**: `src/frontend/widgets/index.ts`
 2. **Export `widgetComponents` object**: Maps widget IDs to components
@@ -566,6 +568,8 @@ Widget components must follow these rules for proper SSR:
 ### Hydration Gotchas
 
 Hydration errors occur when server-rendered HTML differs from what React generates on first client render. Widgets are especially vulnerable because SSR data arrives via `fetchData()` but components can accidentally discard it.
+
+**See [react.md](../frontend/react/react.md#common-mistakes) for common SSR mistakes and [ui-component-styling.md](../frontend/ui/ui-component-styling.md#ssr-and-hydration) for hydration error prevention.**
 
 **Why initializing from SSR data matters:**
 

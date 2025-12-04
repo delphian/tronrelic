@@ -10,6 +10,7 @@ Frontend developers joining the TronRelic project who need to quickly understand
 
 TronRelic's frontend follows strict architectural patterns that solve specific problems:
 
+- **SSR + Live Updates eliminates loading flash** - Components render fully on the server with real data, then hydrate for interactivity and WebSocket updates. Users see content immediately, not loading spinners.
 - **Feature-based organization prevents code sprawl** - Without clear boundaries, component files scatter across generic directories, making features hard to locate and maintain
 - **UI styling system enables consistency** - The three-layer design token system and CSS Modules prevent visual fragmentation and naming collisions across components
 - **Container queries enable plugin flexibility** - Viewport media queries fail when components render in sidebars, modals, or plugin contexts with constrained widths
@@ -18,6 +19,22 @@ TronRelic's frontend follows strict architectural patterns that solve specific p
 Following these patterns ensures your work integrates seamlessly and remains maintainable as the codebase grows.
 
 ## Core Architecture Principles
+
+### SSR + Live Updates Pattern
+
+**All public-facing components must render fully on the server with real data.** This is the foundational rendering pattern for TronRelic's frontend. Server components fetch data and pass it to client components as props. Client components initialize state from those props (not empty arrays), then establish WebSocket subscriptions for live updates after hydration.
+
+**The pattern eliminates loading spinners:**
+- Server component fetches data during SSR
+- Client component receives data as prop: `useState(initialData)`
+- HTML arrives with content, users see data immediately
+- After hydration, WebSocket provides real-time updates
+
+**See [react.md](./react/react.md#ssr--live-updates-pattern) for complete implementation guide including:**
+- Step-by-step server/client component setup
+- Critical rules and common mistakes
+- When loading states ARE appropriate
+- SSR + Live Updates checklist
 
 ### Feature-Based Organization
 
