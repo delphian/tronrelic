@@ -10,17 +10,39 @@
  * - MainHeaderControls (client) - Handles interactive wallet and theme features
  * - Fully responsive with hamburger menu support via MenuNav
  *
+ * SSR + Live Updates Pattern:
+ * - Theme data is fetched in layout.tsx and passed down for immediate rendering
+ * - Theme toggle buttons render with server data (no loading flash)
+ * - After hydration, client handles theme switching interactively
+ *
  * @example
  * ```tsx
  * // In app/layout.tsx
- * <MainHeader />
+ * <MainHeader initialThemes={themes} initialThemeId={selectedThemeId} />
  * ```
  */
 
 import Link from 'next/link';
+import type { IOrderedTheme } from '../../../app/layout';
 import { MenuNavSSR } from '../MenuNav';
 import { MainHeaderControls } from './MainHeaderControls';
 import styles from './MainHeader.module.css';
+
+/**
+ * Props for the MainHeader component.
+ */
+interface MainHeaderProps {
+    /**
+     * Active themes fetched during SSR for immediate toggle button rendering.
+     * Each theme includes pre-resolved SVG icon data from the backend.
+     */
+    initialThemes: IOrderedTheme[];
+    /**
+     * Currently selected theme ID from cookie, read during SSR.
+     * Null if no theme is active.
+     */
+    initialThemeId: string | null;
+}
 
 /**
  * Main site header with navigation and utility controls.
@@ -32,12 +54,12 @@ import styles from './MainHeader.module.css';
  * The header includes:
  * - Logo/home link (server-rendered)
  * - Database-driven navigation (MenuNavSSR - server-rendered)
- * - Theme toggle and wallet button (MainHeaderControls - client-rendered)
+ * - Theme toggle and wallet button (MainHeaderControls - client-rendered with SSR data)
  *
  * Responsive behavior uses container queries via MenuNav component to automatically
  * switch between horizontal navigation and hamburger menu.
  */
-export async function MainHeader() {
+export async function MainHeader({ initialThemes, initialThemeId }: MainHeaderProps) {
     return (
         <header className={styles.header}>
             <div className={styles.container}>
@@ -45,7 +67,10 @@ export async function MainHeader() {
                     TronRelic
                 </Link>
 
-                <MainHeaderControls />
+                <MainHeaderControls
+                    initialThemes={initialThemes}
+                    initialThemeId={initialThemeId}
+                />
 
                 <div className={styles.nav_section}>
                     <MenuNavSSR namespace="main" ariaLabel="Main navigation" />

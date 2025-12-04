@@ -53,12 +53,26 @@ function buildSiteStructuredData(siteUrl: string) {
 }
 
 /**
- * Ordered theme for SSR injection.
+ * SVG element definition matching lucide package format.
+ * Each tuple contains [elementType, attributes].
  */
-interface IOrderedTheme {
+type IconElement = [string, Record<string, string>];
+
+/**
+ * Array of SVG elements that compose an icon.
+ */
+type IconNode = IconElement[];
+
+/**
+ * Ordered theme for SSR injection.
+ * Includes pre-resolved SVG data to avoid bundling all Lucide icons.
+ */
+export interface IOrderedTheme {
     id: string;
     name: string;
     icon: string;
+    /** Pre-resolved SVG path data from backend */
+    iconSvg: IconNode | null;
     css: string;
 }
 
@@ -257,7 +271,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
       </head>
       <body>
         <Providers ssrUserData={ssrUserData}>
-          <MainHeader />
+          <MainHeader initialThemes={activeThemes} initialThemeId={selectedThemeId} />
           <BlockTicker initialBlock={initialBlock as any} />
           <main>
             {children}
