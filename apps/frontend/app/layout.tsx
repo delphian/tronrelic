@@ -176,14 +176,12 @@ async function fetchSSRUserData(): Promise<SSRUserData | null> {
 }
 
 export default async function RootLayout({ children }: { children: ReactNode }) {
-  // Fetch runtime configuration from backend (cached after first call)
-  const runtimeConfig = await getServerConfig();
-
-  // Fetch active themes for SSR injection (uses internal Docker URL)
-  const activeThemes = await fetchActiveThemes();
-
-  // Fetch user data for SSR (prevents wallet button flash)
-  const ssrUserData = await fetchSSRUserData();
+  // Parallelize SSR fetches to reduce TTFB - these are independent operations
+  const [runtimeConfig, activeThemes, ssrUserData] = await Promise.all([
+    getServerConfig(),
+    fetchActiveThemes(),
+    fetchSSRUserData()
+  ]);
 
   // Read theme preference from cookie for SSR (prevents flash)
   const cookieStore = await cookies();
