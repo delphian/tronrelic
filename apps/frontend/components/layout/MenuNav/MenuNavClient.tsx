@@ -138,31 +138,14 @@ export function MenuNavClient({ namespace, items, ariaLabel }: IMenuNavClientPro
     }, []);
 
     /**
-     * Fade in nav after mount and layout settles.
-     *
-     * Waits two animation frames for IntersectionObserver to measure overflow
-     * and layout to stabilize before fading in. PriorityNav is always rendered
-     * (no fallback switching), so we just need to wait for initial measurement.
+     * Callback from PriorityNav when IntersectionObserver completes measurement.
+     * Triggers the fade-in transition by adding the initialized class.
      */
-    useEffect(() => {
-        if (hasInitializedRef.current) {
-            return;
+    const handlePriorityNavInitialized = useCallback(() => {
+        if (!hasInitializedRef.current) {
+            hasInitializedRef.current = true;
+            setHasInitialized(true);
         }
-
-        let rafId1: number;
-        let rafId2: number;
-
-        rafId1 = requestAnimationFrame(() => {
-            rafId2 = requestAnimationFrame(() => {
-                hasInitializedRef.current = true;
-                setHasInitialized(true);
-            });
-        });
-
-        return () => {
-            cancelAnimationFrame(rafId1);
-            cancelAnimationFrame(rafId2);
-        };
     }, []);
 
     /**
@@ -409,6 +392,7 @@ export function MenuNavClient({ namespace, items, ariaLabel }: IMenuNavClientPro
                         enabled={overflowEnabled}
                         collapseAtCount={menuConfig.overflow?.collapseAtCount}
                         moreButtonLabel={`More ${namespace} menu items`}
+                        onInitialized={handlePriorityNavInitialized}
                     />
                 </nav>
                 {renderCategoryDropdown()}
