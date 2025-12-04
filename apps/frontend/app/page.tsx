@@ -1,20 +1,27 @@
+import type { Metadata } from 'next';
 import { CurrentBlock } from '../features/blockchain/components';
 import { buildMetadata } from '../lib/seo';
+import { getServerConfig } from '../lib/serverConfig';
 
 export const dynamic = 'force-dynamic';
 
-export const metadata = buildMetadata({
-  title: 'Live TRON Blockchain Activity & Energy Tools | TronRelic',
-  description: 'Explore live TRON network activity and discover the best way to rent energy. Powered by real-time graphs, alerts, and deep market data.',
-  path: '/',
-  keywords: [
-    'TRON analytics',
-    'TRON energy market',
-    'TRX staking tools',
-    'TRON blockchain monitoring',
-    'TRON delegation alerts'
-  ]
-});
+export async function generateMetadata(): Promise<Metadata> {
+  const { siteUrl } = await getServerConfig();
+
+  return buildMetadata({
+    siteUrl,
+    title: 'Live TRON Blockchain Activity & Energy Tools | TronRelic',
+    description: 'Explore live TRON network activity and discover the best way to rent energy. Powered by real-time graphs, alerts, and deep market data.',
+    path: '/',
+    keywords: [
+      'TRON analytics',
+      'TRON energy market',
+      'TRX staking tools',
+      'TRON blockchain monitoring',
+      'TRON delegation alerts'
+    ]
+  });
+}
 
 export default async function HomePage(): Promise<JSX.Element> {
   const faqSchema = {
