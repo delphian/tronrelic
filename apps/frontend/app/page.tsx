@@ -33,7 +33,8 @@ export default async function HomePage(): Promise<JSX.Element> {
       const data = await response.json();
       initialBlock = data.block;
     }
-  } catch {
+  } catch (error) {
+    console.error('Failed to fetch initial block for SSR:', error);
     // SSR fetch failed - component will show loading state until WebSocket connects
   }
 
