@@ -146,6 +146,39 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 /**
+ * Fetch latest block for SSR to enable immediate ticker rendering.
+ *
+ * Fetches the most recent indexed block from the backend API. This data
+ * is passed to BlockTicker to render immediately during SSR instead of
+ * waiting for WebSocket connection after hydration.
+ *
+ * IMPORTANT: Uses internal Docker URL (SITE_BACKEND) for container-to-container
+ * communication during SSR.
+ *
+ * @returns Block summary data or null if fetch fails
+ */
+async function fetchInitialBlock(): Promise<Record<string, unknown> | null> {
+    try {
+        const backendUrl = getServerSideApiUrl();
+        const response = await fetch(`${backendUrl}/api/blockchain/latest`, {
+            cache: 'no-store',
+            signal: AbortSignal.timeout(3000) // 3 second timeout
+        });
+
+        if (!response.ok) {
+            console.error('Failed to fetch initial block:', response.status);
+            return null;
+        }
+
+        const data = await response.json();
+        return data.block || null;
+    } catch (error) {
+        console.error('Error fetching initial block:', error);
+        return null;
+    }
+}
+
+/**
  * Fetch user data during SSR to prevent wallet button flash.
  *
  * If user has identity cookie, fetches their data including linked wallets.
@@ -177,10 +210,11 @@ async function fetchSSRUserData(): Promise<SSRUserData | null> {
 
 export default async function RootLayout({ children }: { children: ReactNode }) {
   // Parallelize SSR fetches to reduce TTFB - these are independent operations
-  const [runtimeConfig, activeThemes, ssrUserData] = await Promise.all([
+  const [runtimeConfig, activeThemes, ssrUserData, initialBlock] = await Promise.all([
     getServerConfig(),
     fetchActiveThemes(),
-    fetchSSRUserData()
+    fetchSSRUserData(),
+    fetchInitialBlock()
   ]);
 
   // Read theme preference from cookie for SSR (prevents flash)
@@ -224,7 +258,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
       <body>
         <Providers ssrUserData={ssrUserData}>
           <MainHeader />
-          <BlockTicker />
+          <BlockTicker initialBlock={initialBlock as any} />
           <main>
             {children}
           </main>

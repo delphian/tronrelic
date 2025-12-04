@@ -2,10 +2,26 @@
 
 import { useAppSelector } from '../../../store/hooks';
 import { cn } from '../../../lib/cn';
+import type { BlockSummary } from '../../../features/blockchain/slice';
 import styles from './BlockTicker.module.css';
 
 /**
+ * Props for the BlockTicker component.
+ */
+interface BlockTickerProps {
+    /**
+     * Initial block data passed from server component for SSR rendering.
+     * When provided, the ticker renders immediately without waiting for WebSocket.
+     * After hydration, live Redux updates take over.
+     */
+    initialBlock?: BlockSummary | null;
+}
+
+/**
  * BlockTicker - Compact real-time blockchain status ticker
+ *
+ * Follows the SSR + Live Updates pattern: renders with server-provided data
+ * immediately, then hydrates for WebSocket-driven live updates.
  *
  * Displays a horizontal ticker bar showing current blockchain metrics:
  * - **Block number** - Most recent indexed block (highlighted)
@@ -22,25 +38,21 @@ import styles from './BlockTicker.module.css';
  * version of the full CurrentBlock component, providing at-a-glance sync status
  * without consuming significant vertical space.
  *
- * The ticker bar is positioned below the navigation bar and remains hidden until
- * blockchain data is available (prevents flickering on initial load).
- *
  * Responsive design:
  * - Desktop: Full metrics with generous spacing
  * - Tablet: Reduced spacing, maintained visibility
  * - Mobile: Compact layout with horizontal scroll
  *
+ * @param props - Component properties including optional SSR initial block data
  * @returns A fixed-position ticker bar or null if no data available
  */
-export function BlockTicker() {
-    const latestBlock = useAppSelector(state => state.blockchain.latestBlock);
-    const status = useAppSelector(state => state.blockchain.status);
+export function BlockTicker({ initialBlock }: BlockTickerProps) {
+    const reduxBlock = useAppSelector(state => state.blockchain.latestBlock);
 
-    /**
-     * Don't render anything until blockchain data is loaded.
-     * Prevents empty ticker flashing during initial page load.
-     */
-    if (status === 'idle' || status === 'loading' || !latestBlock) {
+    // SSR + Live Updates: Use Redux data when available, fall back to SSR initial data
+    const latestBlock = reduxBlock || initialBlock;
+
+    if (!latestBlock) {
         return null;
     }
 
