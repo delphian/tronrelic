@@ -11,6 +11,48 @@ import { BlockTicker } from '../components/layout/BlockTicker';
 import { getServerUserId, getServerUser } from '../modules/user/lib/server';
 
 /**
+ * Builds site-wide structured data for SEO.
+ *
+ * Why structured data:
+ * - Organization schema establishes brand identity in Google's Knowledge Graph
+ * - WebSite schema enables sitelinks searchbox in search results
+ * - Both help Google understand the site structure and ownership
+ *
+ * @param siteUrl - Public site URL from runtime config
+ * @returns JSON-LD structured data object
+ */
+function buildSiteStructuredData(siteUrl: string) {
+  return {
+    '@context': 'https://schema.org',
+    '@graph': [
+      {
+        '@type': 'Organization',
+        '@id': `${siteUrl}/#organization`,
+        'name': 'TronRelic',
+        'url': siteUrl,
+        'logo': {
+          '@type': 'ImageObject',
+          'url': `${siteUrl}/images/favicon/ms-icon-310x310.png`
+        },
+        'sameAs': [
+          'https://twitter.com/TronRelic'
+        ]
+      },
+      {
+        '@type': 'WebSite',
+        '@id': `${siteUrl}/#website`,
+        'name': 'TronRelic',
+        'url': siteUrl,
+        'description': 'Live TRON blockchain analytics and energy rental marketplace',
+        'publisher': {
+          '@id': `${siteUrl}/#organization`
+        }
+      }
+    ]
+  };
+}
+
+/**
  * Ordered theme for SSR injection.
  */
 interface IOrderedTheme {
@@ -69,6 +111,7 @@ export async function generateMetadata(): Promise<Metadata> {
   const { siteUrl } = await getServerConfig();
 
   const rootMetadata = buildMetadata({
+    siteUrl,
     title: 'Live TRON Blockchain Stats – Track Activity & Rent Energy | TronRelic',
     description: 'Explore live TRON blockchain metrics on TronRelic, including recent large stakes, energy delegations, and new token creations. Compare real-time TRON energy rental rates to optimize your transactions.',
     path: '/',
@@ -161,6 +204,13 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
         <script
           dangerouslySetInnerHTML={{
             __html: `window.__RUNTIME_CONFIG__=${JSON.stringify(runtimeConfig)};`
+          }}
+        />
+        {/* Site-wide structured data for SEO (Organization + WebSite schemas) */}
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify(buildSiteStructuredData(runtimeConfig.siteUrl))
           }}
         />
         {/* Inject active themes in dependency order */}

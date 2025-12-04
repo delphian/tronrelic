@@ -2,6 +2,7 @@ import { v4 as uuidv4 } from 'uuid';
 import type { Collection } from 'mongodb';
 import type { IDatabaseService, ICacheService, ISystemLogService } from '@tronrelic/types';
 import type { IThemeDocument, ICreateThemeInput, IUpdateThemeInput } from '../database/index.js';
+import { getIconNode, type IconNode } from '../utils/icon-lookup.js';
 
 /**
  * Ordered theme for frontend injection.
@@ -11,6 +12,8 @@ export interface IOrderedTheme {
     id: string;
     name: string;
     icon: string;
+    /** Pre-resolved SVG path data to avoid bundling all Lucide icons on frontend */
+    iconSvg: IconNode | null;
     css: string;
 }
 
@@ -339,10 +342,12 @@ export class ThemeService {
         const ordered = this.sortThemesByDependencies(themes);
 
         // Extract only needed fields for frontend
+        // Include pre-resolved icon SVG data to avoid bundling all Lucide icons
         const result: IOrderedTheme[] = ordered.map(t => ({
             id: t.id,
             name: t.name,
             icon: t.icon,
+            iconSvg: getIconNode(t.icon),
             css: t.css
         }));
 

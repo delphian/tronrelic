@@ -578,8 +578,8 @@ describe('ThemeService', () => {
             const cachedTheme1 = await mockCache.get(`themes:id:${theme1.id}`);
             const cachedTheme2 = await mockCache.get(`themes:id:${theme2.id}`);
 
-            expect(cachedTheme1).toEqual({ id: theme1.id, name: theme1.name, icon: theme1.icon, css: theme1.css });
-            expect(cachedTheme2).toEqual({ id: theme2.id, name: theme2.name, icon: theme2.icon, css: theme2.css });
+            expect(cachedTheme1).toEqual({ id: theme1.id, name: theme1.name, icon: theme1.icon, iconSvg: expect.any(Array), css: theme1.css });
+            expect(cachedTheme2).toEqual({ id: theme2.id, name: theme2.name, icon: theme2.icon, iconSvg: expect.any(Array), css: theme2.css });
 
             // Verify tags
             const entry1 = mockCache.getEntry(`themes:id:${theme1.id}`);

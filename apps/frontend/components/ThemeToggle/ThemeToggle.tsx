@@ -1,18 +1,30 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import * as LucideIcons from 'lucide-react';
+import { useState, useEffect, createElement } from 'react';
 import { getRuntimeConfig } from '../../lib/runtimeConfig';
 import styles from './ThemeToggle.module.css';
 
 /**
- * Theme metadata from backend.
+ * SVG element definition matching lucide package format.
+ * Each tuple contains [elementType, attributes].
+ */
+type IconElement = [string, Record<string, string>];
+
+/**
+ * Array of SVG elements that compose an icon.
+ */
+type IconNode = IconElement[];
+
+/**
+ * Theme metadata from backend active themes endpoint.
+ * Includes pre-resolved SVG data to avoid bundling all Lucide icons.
  */
 interface ITheme {
     id: string;
     name: string;
     icon: string;
-    isActive: boolean;
+    /** Pre-resolved SVG path data from backend */
+    iconSvg: IconNode | null;
 }
 
 /**
@@ -56,12 +68,54 @@ function deleteCookie(name: string): void {
 }
 
 /**
+ * Render an icon from pre-resolved SVG path data.
+ *
+ * Uses createElement to build SVG elements from the lucide icon node format.
+ * This avoids importing lucide-react and its ~562KB bundle.
+ *
+ * @param iconNode - Array of [elementType, attributes] tuples
+ * @param className - CSS class for the SVG element
+ * @returns SVG element or null if no valid icon data
+ */
+function renderIcon(iconNode: IconNode | null, className: string): JSX.Element | null {
+    if (!iconNode || iconNode.length === 0) {
+        return null;
+    }
+
+    // Build SVG children from icon node data
+    const children = iconNode.map((element, index) => {
+        const [tag, attrs] = element;
+        return createElement(tag, { key: index, ...attrs });
+    });
+
+    // Wrap in SVG with standard lucide attributes
+    return createElement(
+        'svg',
+        {
+            xmlns: 'http://www.w3.org/2000/svg',
+            width: 24,
+            height: 24,
+            viewBox: '0 0 24 24',
+            fill: 'none',
+            stroke: 'currentColor',
+            strokeWidth: 2,
+            strokeLinecap: 'round',
+            strokeLinejoin: 'round',
+            className
+        },
+        children
+    );
+}
+
+/**
  * Theme toggle component that displays one button per active theme.
  *
- * Fetches active themes from `/api/system/themes`, persists selection via cookies,
- * and dynamically renders Lucide icons based on theme configuration. When a theme
- * button is clicked, it toggles that theme on/off. If toggled on, all other themes
- * are automatically disabled. The `data-theme` attribute is removed when no theme
+ * Fetches active themes from `/api/system/themes/active`, persists selection via cookies,
+ * and renders icons using pre-resolved SVG data from the backend. This eliminates the need
+ * to bundle all ~1,867 Lucide icons (~562KB) on every page.
+ *
+ * When a theme button is clicked, it toggles that theme on/off. If toggled on, all other
+ * themes are automatically disabled. The `data-theme` attribute is removed when no theme
  * is active.
  *
  * @returns {JSX.Element} One toggle button per active theme
@@ -77,16 +131,15 @@ export function ThemeToggle() {
             const config = getRuntimeConfig();
 
             try {
-                const response = await fetch(`${config.apiUrl}/system/themes`);
+                // Use active themes endpoint which includes iconSvg data
+                const response = await fetch(`${config.apiUrl}/system/themes/active`);
                 if (!response.ok) {
                     console.error('Failed to fetch themes:', response.status);
                     return;
                 }
 
                 const data = await response.json();
-                const allThemes: ITheme[] = data.themes || [];
-                // Only include active themes
-                const activeThemes = allThemes.filter(t => t.isActive);
+                const activeThemes: ITheme[] = data.themes || [];
                 setThemes(activeThemes);
 
                 // Load saved theme preference from cookie
@@ -157,11 +210,11 @@ export function ThemeToggle() {
     return (
         <>
             {themes.map((theme) => {
-                const IconComponent = (LucideIcons as any)[theme.icon];
+                const icon = renderIcon(theme.iconSvg, styles.icon);
                 const isActive = currentThemeId === theme.id;
 
                 // Skip if icon is invalid
-                if (!IconComponent) {
+                if (!icon) {
                     return null;
                 }
 
@@ -173,7 +226,7 @@ export function ThemeToggle() {
                         aria-label={`Theme: ${theme.name}. ${isActive ? 'Currently active. Click to disable.' : 'Click to enable.'}`}
                         title={`${theme.name}${isActive ? ' (Active)' : ''}`}
                     >
-                        <IconComponent className={styles.icon} />
+                        {icon}
                         {isActive && <span className={styles.active_indicator} />}
                     </button>
                 );

@@ -1,13 +1,20 @@
+import type { Metadata } from 'next';
 import { buildMetadata } from '../../../lib/seo';
+import { getServerConfig } from '../../../lib/serverConfig';
 
 export const revalidate = 3600;
 
-export const metadata = buildMetadata({
-  title: 'About TronRelic | Mission, Infrastructure & Wallet Security',
-  description: 'Learn how TronRelic blends MongoDB, WebSockets, and wallet-native authentication to deliver real-time TRON energy intelligence.',
-  path: '/about',
-  keywords: ['TronRelic team', 'TRON analytics platform', 'TRON energy tools']
-});
+export async function generateMetadata(): Promise<Metadata> {
+  const { siteUrl } = await getServerConfig();
+
+  return buildMetadata({
+    siteUrl,
+    title: 'About TronRelic | Mission, Infrastructure & Wallet Security',
+    description: 'Learn how TronRelic blends MongoDB, WebSockets, and wallet-native authentication to deliver real-time TRON energy intelligence.',
+    path: '/about',
+    keywords: ['TronRelic team', 'TRON analytics platform', 'TRON energy tools']
+  });
+}
 
 export default function AboutPage() {
   const items = [

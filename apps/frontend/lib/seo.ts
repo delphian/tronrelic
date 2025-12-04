@@ -1,20 +1,31 @@
 import type { Metadata } from 'next';
-import { config } from './config';
 
 export const SITE_NAME = 'TronRelic';
 
-const DEFAULT_SOCIAL_IMAGE = `${config.siteUrl}/images/favicon/ms-icon-310x310.png`;
-
-export function absoluteUrl(path: string = '/'): string {
+/**
+ * Constructs an absolute URL from a path using the provided site URL.
+ *
+ * Why siteUrl parameter:
+ * Previously used deprecated build-time config which leaked Docker internal hostnames
+ * (e.g., "http://backend:3000") into canonical URLs. Now requires explicit siteUrl
+ * from runtime config to ensure correct public URLs.
+ *
+ * @param siteUrl - Public site URL from runtime config (e.g., "https://tronrelic.com")
+ * @param path - Relative path or absolute URL
+ * @returns Absolute URL
+ */
+export function absoluteUrl(siteUrl: string, path: string = '/'): string {
   if (/^https?:\/\//i.test(path)) {
     return path;
   }
 
   const normalizedPath = path.startsWith('/') ? path : `/${path}`;
-  return `${config.siteUrl}${normalizedPath}`;
+  return `${siteUrl}${normalizedPath}`;
 }
 
 interface BuildMetadataOptions {
+  /** Public site URL from runtime config (e.g., "https://tronrelic.com") */
+  siteUrl: string;
   title: string;
   description: string;
   path?: string;
@@ -26,8 +37,15 @@ interface BuildMetadataOptions {
   canonical?: string;
 }
 
+/**
+ * Builds Next.js Metadata object with proper canonical URLs and Open Graph tags.
+ *
+ * Requires siteUrl from runtime config to construct absolute URLs correctly.
+ * This prevents Docker internal hostnames from leaking into SEO metadata.
+ */
 export function buildMetadata(options: BuildMetadataOptions): Metadata {
   const {
+    siteUrl,
     title,
     description,
     path = '/',
@@ -39,8 +57,8 @@ export function buildMetadata(options: BuildMetadataOptions): Metadata {
     canonical
   } = options;
 
-  const url = canonical ?? absoluteUrl(path);
-  const ogImage = image ?? DEFAULT_SOCIAL_IMAGE;
+  const url = canonical ?? absoluteUrl(siteUrl, path);
+  const ogImage = image ?? `${siteUrl}/images/og-image.jpg`;
 
   return {
     title,
@@ -82,7 +100,13 @@ export interface ArticleSummary {
   publishedAt?: string;
 }
 
-export function buildArticleListStructuredData(articles: ArticleSummary[]) {
+/**
+ * Builds structured data for article lists (Schema.org ItemList).
+ *
+ * @param siteUrl - Public site URL from runtime config
+ * @param articles - Array of article summaries
+ */
+export function buildArticleListStructuredData(siteUrl: string, articles: ArticleSummary[]) {
   return {
     '@context': 'https://schema.org',
     '@type': 'ItemList',
@@ -90,7 +114,7 @@ export function buildArticleListStructuredData(articles: ArticleSummary[]) {
       '@type': 'ListItem',
       position: index + 1,
       name: article.title,
-      url: absoluteUrl(article.href),
+      url: absoluteUrl(siteUrl, article.href),
       dateModified: article.updatedAt,
       ...(article.publishedAt ? { datePublished: article.publishedAt } : {})
     }))
