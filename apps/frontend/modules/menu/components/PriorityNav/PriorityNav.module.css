@@ -21,6 +21,19 @@
     width: 100%;
     min-width: 0;
     overflow: hidden;
+    opacity: 0;
+    transition: opacity 150ms ease-out;
+}
+
+/**
+ * Initialized state after IntersectionObserver measurement.
+ *
+ * Container starts invisible and fades in after the first measurement pass
+ * completes. This prevents the flash where all items briefly appear before
+ * overflow detection moves items to the "More" dropdown.
+ */
+.container--initialized {
+    opacity: 1;
 }
 
 /**
