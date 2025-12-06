@@ -18,7 +18,7 @@
         "@tronrelic/types": "file:../../packages/types",
         "axios": "^1.7.5",
         "lucide-react": "^0.545.0",
-        "next": "^15.5.6",
+        "next": "^15.5.7",
         "react": "^18.3.1",
         "react-dom": "^18.3.1",
         "react-redux": "^9.1.2",
