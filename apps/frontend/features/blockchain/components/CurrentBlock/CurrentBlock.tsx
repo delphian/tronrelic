@@ -162,11 +162,13 @@ export function CurrentBlock({ initialBlock }: CurrentBlockProps) {
                     <div className={styles['header-left']}>
                         <h2 className={styles.header__title}>
                             Current Block
-                            <span className={styles['header-blocktime']}>
-                                {formatBlockTime(latestBlock.timestamp)}
-                            </span>
+                            {isMounted && (
+                                <span className={styles['header-blocktime']}>
+                                    {formatBlockTime(latestBlock.timestamp)}
+                                </span>
+                            )}
                         </h2>
-                        {lastUpdated && (
+                        {isMounted && lastUpdated && (
                             <div className={styles.header__timestamp}>
                                 Updated {formatRelativeTime(lastUpdated)}
                             </div>
