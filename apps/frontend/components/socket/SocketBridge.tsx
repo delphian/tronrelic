@@ -89,6 +89,12 @@ export function SocketBridge() {
       }
     };
 
+    const clearInteractionListeners = () => {
+      INTERACTION_EVENTS.forEach(event => {
+        document.removeEventListener(event, handleInteraction);
+      });
+    };
+
     const resetReconnectState = () => {
       reconnectAttemptRef.current = 0;
       clearReconnectTimer();
@@ -131,9 +137,7 @@ export function SocketBridge() {
 
       // Clean up deferred state listeners
       clearCountdownInterval();
-      INTERACTION_EVENTS.forEach(event => {
-        document.removeEventListener(event, handleInteraction);
-      });
+      clearInteractionListeners();
 
       // Transition to connecting state and connect
       dispatch(connectionConnecting());
@@ -254,11 +258,7 @@ export function SocketBridge() {
       manualDisconnectRef.current = true;
       clearReconnectTimer();
       clearCountdownInterval();
-
-      // Clean up interaction listeners
-      INTERACTION_EVENTS.forEach(event => {
-        document.removeEventListener(event, handleInteraction);
-      });
+      clearInteractionListeners();
 
       socket.off('memo:new', handleMemoUpdate);
       socket.off('block:new', handleBlockUpdate);
