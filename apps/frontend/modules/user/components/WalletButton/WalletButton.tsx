@@ -8,12 +8,15 @@
  *
  * 1. **Logged out**: "Connect" button - triggers TronLink account access
  * 2. **Logged in, unverified**: Address with warning icon - click to verify via signature
- * 3. **Logged in, verified**: Address - click to logout
+ * 3. **Logged in, verified**: Address - click navigates to profile page
+ *
+ * Logout is handled from the user's profile page, not from this button.
  *
  * Note: isLoggedIn is a UI/feature gate - UUID tracking always continues.
  */
 
 import { useEffect, useCallback, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { AlertCircle, Loader2, ShieldCheck } from 'lucide-react';
 import { Button } from '../../../../components/ui/Button';
 import { useToast } from '../../../../components/ui/ToastProvider';
@@ -37,15 +40,14 @@ export function WalletButton() {
         connect,
         verify,
         login,
-        logout,
         connectionError,
         walletVerified,
         connectionStatus,
         isLoggedIn
     } = useWallet();
+    const router = useRouter();
     const { push } = useToast();
     const [isLoggingIn, setIsLoggingIn] = useState(false);
-    const [isLoggingOut, setIsLoggingOut] = useState(false);
     const [isVerifying, setIsVerifying] = useState(false);
 
     // Display connection errors via toast
@@ -112,24 +114,14 @@ export function WalletButton() {
     }, [connect, verify, push]);
 
     /**
-     * Handle logout button click.
-     * Logs out (sets isLoggedIn=false) and disconnects TronLink session.
+     * Handle profile navigation.
+     * Navigates to the user's profile page when wallet is verified.
      */
-    const handleLogout = useCallback(async () => {
-        setIsLoggingOut(true);
-        try {
-            await logout();
-        } catch (error) {
-            console.error('Logout failed:', error);
-            push({
-                tone: 'warning',
-                title: 'Logout Failed',
-                description: 'Unable to log out. Please try again.'
-            });
-        } finally {
-            setIsLoggingOut(false);
+    const handleNavigateToProfile = useCallback(() => {
+        if (address) {
+            router.push(`/u/${address}`);
         }
-    }, [logout, push]);
+    }, [address, router]);
 
     // Logged in, unverified state - show address with verify on click
     if (isLoggedIn && address && !walletVerified) {
@@ -156,25 +148,21 @@ export function WalletButton() {
         );
     }
 
-    // Logged in, verified state - show address with logout on click
+    // Logged in, verified state - show address, click navigates to profile
     if (isLoggedIn && address) {
         return (
             <Button
                 variant="secondary"
                 size="sm"
-                onClick={handleLogout}
-                disabled={isLoggingOut}
+                onClick={handleNavigateToProfile}
                 className={styles.connected_btn}
+                title="View your profile"
             >
-                {isLoggingOut ? (
-                    <Loader2 size={14} className={styles.spinner} />
-                ) : (
-                    <ShieldCheck
-                        size={14}
-                        className={styles.verified_icon}
-                        aria-label="Wallet verified"
-                    />
-                )}
+                <ShieldCheck
+                    size={14}
+                    className={styles.verified_icon}
+                    aria-label="Wallet verified"
+                />
                 {truncateWallet(address)}
             </Button>
         );

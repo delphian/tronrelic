@@ -58,6 +58,8 @@ export function buildSSRUserState(ssrData: SSRUserData): UserState {
         connectionStatus: primaryWallet ? 'connected' : 'idle',
         providerDetected: false, // Will be updated client-side
         connectionError: null,
-        walletVerified: primaryWallet?.verified ?? false
+        walletVerified: primaryWallet?.verified ?? false,
+        walletLoginRequired: false,
+        existingWalletOwner: null
     };
 }

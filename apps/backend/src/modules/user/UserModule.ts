@@ -28,7 +28,7 @@ import { logger } from '../../lib/logger.js';
 import { UserService } from './services/user.service.js';
 import { initGeoIP } from './services/geo.service.js';
 import { UserController } from './api/user.controller.js';
-import { createUserRouter, createAdminUserRouter } from './api/user.routes.js';
+import { createUserRouter, createAdminUserRouter, createProfileRouter } from './api/user.routes.js';
 import { requireAdmin } from '../../api/middleware/admin-auth.js';
 
 /**
@@ -214,6 +214,11 @@ export class UserModule implements IModule<IUserModuleDependencies> {
         this.app.use('/api/user', publicRouter);
         this.logger.info('Public user router mounted at /api/user');
 
+        // Create and mount profile router (IoC - public access, no auth required)
+        const profileRouter = this.createProfileRouter();
+        this.app.use('/api/profile', profileRouter);
+        this.logger.info('Profile router mounted at /api/profile');
+
         // Create and mount admin router (IoC - module attaches itself to app)
         // Apply requireAdmin middleware to all admin routes
         const adminRouter = this.createAdminRouter();
@@ -234,6 +239,19 @@ export class UserModule implements IModule<IUserModuleDependencies> {
      */
     private createPublicRouter(): Router {
         return createUserRouter(this.controller);
+    }
+
+    /**
+     * Create the profile router for public profile access.
+     *
+     * No authentication required - publicly accessible profile pages.
+     * The router is then mounted by the module itself using IoC pattern.
+     *
+     * @returns Express router with profile endpoints
+     * @internal
+     */
+    private createProfileRouter(): Router {
+        return createProfileRouter(this.controller);
     }
 
     /**

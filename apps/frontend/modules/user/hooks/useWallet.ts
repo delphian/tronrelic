@@ -36,6 +36,7 @@ import {
     setProviderDetected,
     resetWalletConnection,
     setWalletVerified,
+    clearWalletLoginRequired,
     connectWalletThunk,
     linkWalletThunk,
     loginThunk,
@@ -44,6 +45,8 @@ import {
     selectUserInitialized,
     selectWallets,
     selectIsLoggedIn,
+    selectWalletLoginRequired,
+    selectExistingWalletOwner,
     type WalletConnectionStatus
 } from '../slice';
 import { getTronWeb, getTronLink } from '../lib';
@@ -73,6 +76,10 @@ export function useWallet() {
 
     // Login state (UI/feature gate)
     const isLoggedIn = useAppSelector(selectIsLoggedIn);
+
+    // Wallet login required state (wallet belongs to another user)
+    const walletLoginRequired = useAppSelector(selectWalletLoginRequired);
+    const existingWalletOwner = useAppSelector(selectExistingWalletOwner);
 
     const detectionAttempts = useRef(0);
     const linkAttempted = useRef<string | null>(null);
@@ -288,6 +295,10 @@ export function useWallet() {
      *
      * Requires wallet to be connected first. Prompts user to sign
      * a message in TronLink to prove wallet ownership.
+     *
+     * When walletLoginRequired is true, this performs a login (identity swap)
+     * instead of linking to current user. The signature proves wallet ownership
+     * and the backend will return the existing user's data.
      */
     const verify = useCallback(async () => {
         if (!userId || !connectedAddress) {
@@ -305,10 +316,17 @@ export function useWallet() {
             setStatus('connecting');
 
             const timestamp = Date.now();
-            const message = `Link wallet ${connectedAddress} to TronRelic identity ${userId} at ${timestamp}`;
+
+            // Use different message format when logging in vs linking
+            // For login, we don't include userId in message since we're proving
+            // wallet ownership to swap to a different identity
+            const message = walletLoginRequired
+                ? `Login to TronRelic with wallet ${connectedAddress} at ${timestamp}`
+                : `Link wallet ${connectedAddress} to TronRelic identity ${userId} at ${timestamp}`;
+
             const signature = await tronWeb.trx.signMessageV2(message);
 
-            await dispatch(linkWalletThunk({
+            const result = await dispatch(linkWalletThunk({
                 userId,
                 address: connectedAddress,
                 message,
@@ -318,16 +336,21 @@ export function useWallet() {
 
             dispatch(setWalletVerified(true));
             setStatus('connected');
-            console.log(`Wallet ${connectedAddress} verified for user ${userId}`);
+
+            if (result.identitySwapped) {
+                console.log(`Logged in via wallet ${connectedAddress}, identity swapped to ${result.user.id}`);
+            } else {
+                console.log(`Wallet ${connectedAddress} verified for user ${userId}`);
+            }
         } catch (error) {
             setStatus('connected');
-            const message = error instanceof Error
+            const errorMessage = error instanceof Error
                 ? error.message
                 : 'Failed to verify wallet.';
-            dispatch(setConnectionError(message));
+            dispatch(setConnectionError(errorMessage));
             console.warn('Wallet verification failed:', error);
         }
-    }, [dispatch, userId, connectedAddress, setStatus]);
+    }, [dispatch, userId, connectedAddress, setStatus, walletLoginRequired]);
 
     /**
      * Sign a message using TronLink.
@@ -389,6 +412,18 @@ export function useWallet() {
         }
     }, [dispatch, userId]);
 
+    /**
+     * Cancel wallet login attempt.
+     *
+     * Called when user decides not to proceed with wallet-based login.
+     * Clears the login required state and disconnects from TronLink.
+     */
+    const cancelWalletLogin = useCallback(() => {
+        dispatch(clearWalletLoginRequired());
+        linkAttempted.current = null;
+        dispatch(resetWalletConnection());
+    }, [dispatch]);
+
     return {
         // State
         connectedAddress,
@@ -398,6 +433,10 @@ export function useWallet() {
         walletVerified,
         isConnected: connectionStatus === 'connected' && connectedAddress !== null,
         isLoggedIn,
+
+        // Wallet login required state
+        walletLoginRequired,
+        existingWalletOwner,
 
         // Aliases for backwards compatibility
         address: connectedAddress,
@@ -412,6 +451,7 @@ export function useWallet() {
         signMessage,
         setStatus,
         login,
-        logout
+        logout,
+        cancelWalletLogin
     } as const;
 }

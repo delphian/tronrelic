@@ -107,9 +107,13 @@ export class UserController {
      * This is the first step in the two-step wallet flow. Stores the
      * wallet address as unverified. Use linkWallet to verify ownership.
      *
+     * When wallet is already linked to another user, returns:
+     * { success: false, loginRequired: true, existingUserId: '...' }
+     * Frontend should then prompt for signature verification to login.
+     *
      * Requires: Cookie must match :id
      * Body: { address }
-     * Response: IUser
+     * Response: IConnectWalletResult
      */
     async connectWallet(req: Request, res: Response): Promise<void> {
         try {
@@ -124,10 +128,17 @@ export class UserController {
                 return;
             }
 
-            const user = await this.userService.connectWallet(id, address);
+            const result = await this.userService.connectWallet(id, address);
+
+            if (result.loginRequired) {
+                // Wallet belongs to another user - frontend should prompt for login
+                this.logger.info({ userId: id, wallet: address }, 'Wallet requires login via API');
+                res.json(result);
+                return;
+            }
 
             this.logger.info({ userId: id, wallet: address }, 'Wallet connected via API');
-            res.json(user);
+            res.json(result);
         } catch (error) {
             this.logger.error({ error, userId: req.params.id }, 'Failed to connect wallet');
             res.status(400).json({
@@ -145,9 +156,13 @@ export class UserController {
      * Verifies wallet ownership via TronLink signature. If wallet was
      * previously connected (unverified), updates it to verified.
      *
+     * If wallet belongs to another user, performs identity swap and returns:
+     * { user: IUser, identitySwapped: true, previousUserId: '...' }
+     * Frontend should update cookie/localStorage to the new user ID.
+     *
      * Requires: Cookie must match :id, wallet signature verification
      * Body: { address, message, signature, timestamp }
-     * Response: IUser
+     * Response: ILinkWalletResult
      */
     async linkWallet(req: Request, res: Response): Promise<void> {
         try {
@@ -162,15 +177,23 @@ export class UserController {
                 return;
             }
 
-            const user = await this.userService.linkWallet(id, {
+            const result = await this.userService.linkWallet(id, {
                 address,
                 message,
                 signature,
                 timestamp: Number(timestamp)
             });
 
-            this.logger.info({ userId: id, wallet: address }, 'Wallet linked via API');
-            res.json(user);
+            if (result.identitySwapped) {
+                this.logger.info(
+                    { previousUserId: result.previousUserId, newUserId: result.user.id, wallet: address },
+                    'Identity swapped via wallet login'
+                );
+            } else {
+                this.logger.info({ userId: id, wallet: address }, 'Wallet linked via API');
+            }
+
+            res.json(result);
         } catch (error) {
             this.logger.error({ error, userId: req.params.id }, 'Failed to link wallet');
             res.status(400).json({
@@ -506,6 +529,77 @@ export class UserController {
             this.logger.error({ error, userId: req.params.id }, 'Failed to log out user');
             res.status(400).json({
                 error: 'Failed to log out',
+                message: error instanceof Error ? error.message : 'Unknown error'
+            });
+        }
+    }
+
+    // ============================================================================
+    // Public Profile Endpoints (no authentication required)
+    // ============================================================================
+
+    /**
+     * GET /api/profile/:address
+     *
+     * Get public profile by verified wallet address.
+     *
+     * Returns 404 if:
+     * - No user has this wallet linked
+     * - Wallet exists but is not verified
+     *
+     * Response includes user UUID so frontend can determine if visitor is owner
+     * by comparing with their cookie.
+     *
+     * Response: { userId: string, address: string, createdAt: Date, isVerified: true }
+     */
+    async getProfile(req: Request, res: Response): Promise<void> {
+        try {
+            const { address } = req.params;
+
+            if (!address) {
+                res.status(400).json({
+                    error: 'Missing required parameter',
+                    message: 'Address is required'
+                });
+                return;
+            }
+
+            // Look up user by wallet address
+            const user = await this.userService.getByWallet(address);
+
+            if (!user) {
+                res.status(404).json({
+                    error: 'Profile not found',
+                    message: 'No profile exists for this wallet address'
+                });
+                return;
+            }
+
+            // Find the specific wallet and check if verified
+            const wallet = user.wallets.find(w =>
+                w.address.toLowerCase() === address.toLowerCase()
+            );
+
+            if (!wallet || !wallet.verified) {
+                res.status(404).json({
+                    error: 'Profile not found',
+                    message: 'No verified profile exists for this wallet address'
+                });
+                return;
+            }
+
+            // Return public profile data
+            // Include userId so frontend can compare with cookie to determine ownership
+            res.json({
+                userId: user.id,
+                address: wallet.address,
+                createdAt: user.createdAt,
+                isVerified: true
+            });
+        } catch (error) {
+            this.logger.error({ error, address: req.params.address }, 'Failed to get profile');
+            res.status(500).json({
+                error: 'Failed to get profile',
                 message: error instanceof Error ? error.message : 'Unknown error'
             });
         }

@@ -148,6 +148,36 @@ export function createUserRouter(controller: UserController): Router {
 }
 
 /**
+ * Create Express router for public profile endpoints.
+ *
+ * No authentication required - these are publicly accessible profile pages.
+ * Routes are mounted at /api/profile.
+ *
+ * Rate limits (per IP):
+ * - Profile lookups: 60 requests/minute
+ *
+ * @param controller - User controller instance
+ * @returns Express router with public profile endpoints
+ */
+export function createProfileRouter(controller: UserController): Router {
+    const router = Router();
+
+    const profileRateLimiter = createRateLimiter({
+        windowSeconds: 60,
+        maxRequests: 60,
+        keyPrefix: 'profile:lookup'
+    });
+
+    /**
+     * GET /api/profile/:address
+     * Get public profile by verified wallet address
+     */
+    router.get('/:address', profileRateLimiter, controller.getProfile.bind(controller));
+
+    return router;
+}
+
+/**
  * Create Express router for admin user endpoints.
  *
  * All routes require admin authentication (handled by parent router middleware).
