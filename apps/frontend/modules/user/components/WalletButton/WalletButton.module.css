@@ -27,7 +27,6 @@
     cursor: pointer;
     transition: all var(--transition-base);
     box-shadow: var(--button-primary-shadow);
-    backdrop-filter: blur(var(--spacing-7));
     white-space: nowrap;
 }
 

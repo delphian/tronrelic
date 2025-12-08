@@ -20,6 +20,22 @@
     position: relative;
 }
 
+/**
+ * Disable backdrop-filter blur on mobile devices for LCP performance.
+ *
+ * backdrop-filter: blur() is GPU-intensive and delays paint timing on
+ * throttled/mobile devices. PageSpeed tests show 2.7s delay (FCP 1.0s → LCP 3.7s)
+ * due to blur computation on simulated Moto G Power.
+ *
+ * Note: Using @media (not @container) intentionally - targeting device GPU
+ * capability via viewport proxy, not component layout responsiveness.
+ */
+@media (max-width: 768px) {
+    .card {
+        backdrop-filter: none;
+    }
+}
+
 .card:hover {
     border-color: var(--card-border-hover);
     box-shadow: var(--card-shadow-hover);

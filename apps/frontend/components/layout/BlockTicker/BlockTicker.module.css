@@ -9,7 +9,6 @@
     background: var(--color-surface);
     border-top: var(--border-width-thin) solid var(--color-border);
     border-bottom: var(--border-width-thin) solid var(--color-border);
-    backdrop-filter: blur(12px);
     margin-top: var(--spacing-4);
 }
 
