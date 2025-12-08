@@ -6,7 +6,7 @@ import { useAppSelector } from '../../../store/hooks';
 export type RealtimeTone = 'neutral' | 'success' | 'warning' | 'danger';
 
 export interface RealtimeStatusSummary {
-  status: 'idle' | 'connecting' | 'connected' | 'reconnecting' | 'disconnected';
+  status: 'idle' | 'deferred' | 'connecting' | 'connected' | 'reconnecting' | 'disconnected';
   label: string;
   tone: RealtimeTone;
   reconnectAttempts: number;
@@ -15,6 +15,7 @@ export interface RealtimeStatusSummary {
   isConnected: boolean;
   isReconnecting: boolean;
   isOffline: boolean;
+  isDeferred: boolean;
   lastConnectedAt: string | null;
   lastDisconnectedAt: string | null;
 }
@@ -27,6 +28,12 @@ export function useRealtimeStatus(): RealtimeStatusSummary {
     let label = 'Idle';
 
     switch (connection.status) {
+      case 'deferred': {
+        tone = 'warning';
+        const seconds = connection.deferredSecondsRemaining ?? 0;
+        label = `Live updates in ${seconds}s…`;
+        break;
+      }
       case 'connected':
         tone = 'success';
         label = 'Live';
@@ -64,6 +71,7 @@ export function useRealtimeStatus(): RealtimeStatusSummary {
       isConnected: connection.status === 'connected',
       isReconnecting: connection.status === 'reconnecting' || connection.status === 'connecting',
       isOffline: connection.status === 'disconnected',
+      isDeferred: connection.status === 'deferred',
       lastConnectedAt: connection.lastConnectedAt ?? null,
       lastDisconnectedAt: connection.lastDisconnectedAt ?? null
     };

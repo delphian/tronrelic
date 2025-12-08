@@ -3,6 +3,20 @@
 import { io, type Socket } from 'socket.io-client';
 import { getRuntimeConfig } from './runtimeConfig';
 
+/**
+ * Delay before WebSocket connection is established on page load.
+ *
+ * Why deferred connection:
+ * PageSpeed Insights runs in a sandboxed environment that cannot resolve DNS
+ * for WebSocket connections, causing console errors that reduce Best Practices
+ * scores. By deferring connection until user interaction (or this timeout),
+ * automated tests complete without triggering WebSocket errors.
+ *
+ * Real users typically interact within 1-2 seconds, triggering immediate connection.
+ * This timeout is the fallback for users who don't interact.
+ */
+export const WEBSOCKET_DEFER_TIMEOUT_MS = 5000;
+
 let socket: Socket | null = null;
 
 /**

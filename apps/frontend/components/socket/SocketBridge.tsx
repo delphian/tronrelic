@@ -2,12 +2,14 @@
 
 import { useEffect, useRef } from 'react';
 import type { Socket } from 'socket.io-client';
-import { getSocket, disconnectSocket } from '../../lib/socketClient';
+import { getSocket, disconnectSocket, WEBSOCKET_DEFER_TIMEOUT_MS } from '../../lib/socketClient';
 import { useAppDispatch, useAppSelector } from '../../store/hooks';
 import { prependMemo } from '../../store/slices/memoSlice';
 import { blockReceived } from '../../features/blockchain/slice';
 import { setUserData, selectUserId } from '../../modules/user';
 import {
+  connectionDeferred,
+  deferredCountdownTick,
   connectionConnecting,
   connectionEstablished,
   connectionDisconnected,
@@ -24,23 +26,8 @@ import type {
 } from '@tronrelic/shared';
 import type { IUserData } from '../../modules/user';
 
-/**
- * Detects if the current user agent is a bot/crawler.
- *
- * Why skip WebSocket for bots:
- * Lighthouse, Googlebot, and other crawlers cannot establish WebSocket connections
- * from their infrastructure. Failed connection attempts log errors to the browser
- * console (net::ERR_NAME_NOT_RESOLVED), which PageSpeed flags as "Browser errors"
- * affecting SEO scores. These are browser-level errors we cannot suppress.
- *
- * By detecting bots and skipping WebSocket entirely, we avoid console errors
- * while still providing full real-time functionality to actual users.
- */
-function isBot(): boolean {
-  if (typeof navigator === 'undefined') return true;
-  const ua = navigator.userAgent.toLowerCase();
-  return /lighthouse|googlebot|chrome-lighthouse|pagespeed|bingbot|yandexbot|baiduspider|facebookexternalhit|twitterbot|slackbot/.test(ua);
-}
+/** User interaction events that trigger immediate WebSocket connection */
+const INTERACTION_EVENTS = ['click', 'scroll', 'touchstart', 'keydown', 'mousemove'] as const;
 
 export function SocketBridge() {
   const dispatch = useAppDispatch();
@@ -54,6 +41,8 @@ export function SocketBridge() {
   const commentThreadSetRef = useRef<Set<string>>(new Set());
   const userIdRef = useRef<string | null>(null);
   const userSubscribedRef = useRef(false);
+  const connectionInitiatedRef = useRef(false);
+  const countdownIntervalRef = useRef<number | null>(null);
 
   const desired = useAppSelector(state => state.realtime.desired);
   const pending = useAppSelector(state => state.realtime.pending);
@@ -74,21 +63,36 @@ export function SocketBridge() {
   }, [userId]);
 
   useEffect(() => {
-    // Skip WebSocket for bots to avoid console errors from failed connections
-    if (isBot()) {
-      return;
-    }
-
     const socket = getSocket();
     socketRef.current = socket;
     manualDisconnectRef.current = false;
-    dispatch(connectionConnecting());
+    connectionInitiatedRef.current = false;
+
+    // Calculate initial countdown in seconds
+    const initialSeconds = Math.ceil(WEBSOCKET_DEFER_TIMEOUT_MS / 1000);
+    let secondsRemaining = initialSeconds;
+
+    // Start in deferred state with countdown
+    dispatch(connectionDeferred({ secondsRemaining: initialSeconds }));
 
     const clearReconnectTimer = () => {
       if (reconnectTimerRef.current !== null) {
         window.clearTimeout(reconnectTimerRef.current);
         reconnectTimerRef.current = null;
       }
+    };
+
+    const clearCountdownInterval = () => {
+      if (countdownIntervalRef.current !== null) {
+        window.clearInterval(countdownIntervalRef.current);
+        countdownIntervalRef.current = null;
+      }
+    };
+
+    const clearInteractionListeners = () => {
+      INTERACTION_EVENTS.forEach(event => {
+        document.removeEventListener(event, handleInteraction);
+      });
     };
 
     const resetReconnectState = () => {
@@ -119,6 +123,32 @@ export function SocketBridge() {
       }, delay);
 
       dispatch(reconnectAttempted({ attempt: nextAttempt, timestamp: new Date().toISOString() }));
+    };
+
+    /**
+     * Initiates WebSocket connection.
+     * Called on user interaction or when countdown reaches zero.
+     */
+    const initiateConnection = () => {
+      if (connectionInitiatedRef.current || manualDisconnectRef.current) {
+        return;
+      }
+      connectionInitiatedRef.current = true;
+
+      // Clean up deferred state listeners
+      clearCountdownInterval();
+      clearInteractionListeners();
+
+      // Transition to connecting state and connect
+      dispatch(connectionConnecting());
+      socket.connect();
+    };
+
+    /**
+     * Handles user interaction - triggers immediate connection.
+     */
+    const handleInteraction = () => {
+      initiateConnection();
     };
 
     const handleConnect = () => {
@@ -173,12 +203,15 @@ export function SocketBridge() {
 
     const handleVisibility = () => {
       if (document.visibilityState === 'visible' && !socket.connected && !manualDisconnectRef.current) {
-        scheduleReconnect(true);
+        // If connection was initiated, try to reconnect
+        if (connectionInitiatedRef.current) {
+          scheduleReconnect(true);
+        }
       }
     };
 
     const handleOnline = () => {
-      if (!socket.connected && !manualDisconnectRef.current) {
+      if (!socket.connected && !manualDisconnectRef.current && connectionInitiatedRef.current) {
         scheduleReconnect(true);
       }
     };
@@ -187,6 +220,7 @@ export function SocketBridge() {
       dispatch(connectionDisconnected({ reason: 'offline', timestamp: new Date().toISOString() }));
     };
 
+    // Set up socket event handlers
     socket.on('connect', handleConnect);
     socket.on('disconnect', handleDisconnect);
     socket.on('connect_error', handleConnectError);
@@ -195,17 +229,37 @@ export function SocketBridge() {
     socket.on('block:new', handleBlockUpdate);
     socket.on('user:update', handleUserUpdate);
 
+    // Set up browser event handlers
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
     document.addEventListener('visibilitychange', handleVisibility);
 
-    socket.connect();
+    // Set up interaction listeners for immediate connection
+    INTERACTION_EVENTS.forEach(event => {
+      document.addEventListener(event, handleInteraction, { once: true, passive: true });
+    });
+
+    // Set up countdown interval - tick every second
+    countdownIntervalRef.current = window.setInterval(() => {
+      secondsRemaining -= 1;
+
+      if (secondsRemaining <= 0) {
+        // Countdown complete - initiate connection
+        initiateConnection();
+      } else {
+        // Update countdown display
+        dispatch(deferredCountdownTick({ secondsRemaining }));
+      }
+    }, 1000);
 
     const trackedCommentThreads = commentThreadSetRef.current;
 
     return () => {
       manualDisconnectRef.current = true;
       clearReconnectTimer();
+      clearCountdownInterval();
+      clearInteractionListeners();
+
       socket.off('memo:new', handleMemoUpdate);
       socket.off('block:new', handleBlockUpdate);
       socket.off('user:update', handleUserUpdate);

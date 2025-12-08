@@ -16,7 +16,7 @@ export interface SubscriptionState {
 }
 
 export interface ConnectionState {
-  status: 'idle' | 'connecting' | 'connected' | 'reconnecting' | 'disconnected';
+  status: 'idle' | 'deferred' | 'connecting' | 'connected' | 'reconnecting' | 'disconnected';
   socketId?: string;
   reconnectAttempts: number;
   lastConnectedAt?: string;
@@ -27,6 +27,8 @@ export interface ConnectionState {
   averageLatencyMs?: number | null;
   latencySamples: number[];
   error?: string | null;
+  /** Seconds remaining before auto-connect (null when not in deferred state) */
+  deferredSecondsRemaining: number | null;
 }
 
 export interface RealtimeState {
@@ -56,7 +58,8 @@ const createInitialState = (): RealtimeState => ({
     latencySamples: [],
     error: null,
     lastLatencyMs: null,
-    averageLatencyMs: null
+    averageLatencyMs: null,
+    deferredSecondsRemaining: null
   },
   subscriptions: createEmptySubscriptions(),
   desired: null,
@@ -158,10 +161,21 @@ const realtimeSlice = createSlice({
   name: 'realtime',
   initialState,
   reducers: {
+    connectionDeferred(state, action: PayloadAction<{ secondsRemaining: number }>) {
+      state.connection.status = 'deferred';
+      state.connection.deferredSecondsRemaining = action.payload.secondsRemaining;
+      state.connection.error = null;
+    },
+    deferredCountdownTick(state, action: PayloadAction<{ secondsRemaining: number }>) {
+      if (state.connection.status === 'deferred') {
+        state.connection.deferredSecondsRemaining = action.payload.secondsRemaining;
+      }
+    },
     connectionConnecting(state) {
       state.connection.status = 'connecting';
       state.connection.lastAttemptAt = new Date().toISOString();
       state.connection.error = null;
+      state.connection.deferredSecondsRemaining = null;
     },
     connectionEstablished(state, action: PayloadAction<{ socketId?: string; timestamp?: string } | undefined>) {
       const payload = action.payload;
@@ -264,6 +278,8 @@ const realtimeSlice = createSlice({
 });
 
 export const {
+  connectionDeferred,
+  deferredCountdownTick,
   connectionConnecting,
   connectionEstablished,
   connectionDisconnected,
