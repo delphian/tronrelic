@@ -132,12 +132,7 @@ export class PluginWebSocketManager implements IPluginWebSocketManager {
         const fullEventName = `${this.pluginId}:${eventName}`;
 
         this.io.to(fullRoomName).emit(fullEventName, payload);
-
         this.trackEventEmission();
-        this.logger.debug(
-            { pluginId: this.pluginId, roomName, fullRoomName, eventName, fullEventName },
-            'Event emitted to plugin room'
-        );
     }
 
     /**
@@ -222,7 +217,7 @@ export class PluginWebSocketManager implements IPluginWebSocketManager {
             // Invoke plugin handler for validation/configuration
             await this.subscriptionHandler(socket, roomName, payload);
 
-            this.logger.info(
+            this.logger.debug(
                 { pluginId: this.pluginId, socketId: socket.id, roomName },
                 'Plugin subscription successful'
             );
@@ -281,10 +276,6 @@ export class PluginWebSocketManager implements IPluginWebSocketManager {
             this.logger.debug(
                 { pluginId: this.pluginId, socketId: socket.id, roomName, fullRoomName },
                 'Socket auto-left plugin room'
-            );
-            this.logger.info(
-                { pluginId: this.pluginId, socketId: socket.id },
-                'Plugin unsubscribe successful'
             );
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : 'Unknown unsubscribe error';

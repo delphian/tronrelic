@@ -1,0 +1,501 @@
+/**
+ * Energy Pools Page Styles
+ *
+ * Displays pool analytics with doughnut chart and expandable pool list.
+ * Uses container queries for responsive behavior.
+ */
+
+.page {
+    container-type: inline-size;
+    container-name: pools_page;
+    padding: var(--spacing-10);
+    max-width: 1400px;
+    margin: 0 auto;
+}
+
+/* Header */
+.header {
+    margin-bottom: var(--spacing-10);
+}
+
+.title {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-5);
+    font-size: var(--font-size-2xl);
+    font-weight: var(--font-weight-bold);
+    color: var(--color-text);
+    margin: 0 0 var(--spacing-5) 0;
+}
+
+.subtitle {
+    font-size: var(--font-size-base);
+    color: var(--color-text-muted);
+    margin: 0;
+    max-width: 600px;
+}
+
+/* Controls */
+.controls {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: var(--spacing-10);
+}
+
+.period_selector {
+    display: flex;
+    gap: var(--spacing-3);
+    background: var(--color-surface-muted);
+    padding: var(--spacing-3);
+    border-radius: var(--radius-md);
+}
+
+.period_button {
+    padding: var(--spacing-5) var(--spacing-7);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+    color: var(--color-text-muted);
+    background: transparent;
+    border: none;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.period_button:hover {
+    color: var(--color-text);
+    background: var(--color-surface);
+}
+
+.period_button_active {
+    color: var(--color-text);
+    background: var(--color-surface);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+/* Stats row */
+.stats_row {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: var(--spacing-7);
+    margin-bottom: var(--spacing-10);
+}
+
+@container pools_page (max-width: 700px) {
+    .stats_row {
+        grid-template-columns: 1fr;
+    }
+}
+
+.stat_card {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-7);
+    padding: var(--spacing-10);
+}
+
+.stat_icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 48px;
+    height: 48px;
+    border-radius: var(--radius-md);
+    background: var(--color-primary);
+    color: white;
+    flex-shrink: 0;
+}
+
+.stat_content {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-1);
+}
+
+.stat_value {
+    font-size: var(--font-size-xl);
+    font-weight: var(--font-weight-bold);
+    color: var(--color-text);
+}
+
+.stat_label {
+    font-size: var(--font-size-sm);
+    color: var(--color-text-muted);
+}
+
+/* Content layout */
+.content_layout {
+    display: grid;
+    grid-template-columns: 1fr 1.5fr;
+    gap: var(--spacing-10);
+}
+
+@container pools_page (max-width: 900px) {
+    .content_layout {
+        grid-template-columns: 1fr;
+    }
+}
+
+.chart_section {
+    min-width: 0;
+}
+
+.list_section {
+    min-width: 0;
+}
+
+.pools_card {
+    container-type: inline-size;
+    container-name: pools_card;
+}
+
+.section_title {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-5);
+    font-size: var(--font-size-lg);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text);
+    margin: 0 0 var(--spacing-10) 0;
+    padding-bottom: var(--spacing-7);
+    border-bottom: var(--border-width-thin) solid var(--color-border);
+}
+
+/* Pool list */
+.pool_list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-3);
+}
+
+.pool_item {
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    transition: border-color var(--transition-base), box-shadow var(--transition-base);
+}
+
+.pool_item--expanded {
+    border-color: var(--color-primary);
+    box-shadow: var(--shadow-sm);
+}
+
+.pool_row {
+    display: grid;
+    grid-template-columns: auto 1fr auto auto auto;
+    align-items: center;
+    gap: var(--spacing-7);
+    padding: var(--spacing-7) var(--spacing-10);
+    width: 100%;
+    background: transparent;
+    border: none;
+    text-align: left;
+    cursor: pointer;
+    transition: background-color 0.15s ease;
+}
+
+.pool_row:hover {
+    background: var(--color-surface-muted);
+}
+
+.pool_row--expanded {
+    background: var(--color-primary-alpha-10);
+    border-bottom: var(--border-width-thin) solid var(--color-primary-alpha-30);
+}
+
+.pool_row--expanded:hover {
+    background: var(--color-primary-alpha-15);
+}
+
+.pool_row:disabled {
+    cursor: default;
+}
+
+@container pools_card (max-width: 500px) {
+    .pool_row {
+        grid-template-columns: auto 1fr auto;
+    }
+
+    .pool_meta {
+        display: none;
+    }
+}
+
+.pool_rank {
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-bold);
+    color: var(--color-text-muted);
+    min-width: 32px;
+}
+
+.pool_info {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-1);
+    min-width: 0;
+}
+
+.pool_name {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-3);
+    font-size: var(--font-size-base);
+    font-weight: var(--font-weight-medium);
+    color: var(--color-text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.self_signed_icon {
+    flex-shrink: 0;
+    color: var(--color-text-muted);
+    opacity: 0.7;
+}
+
+.pool_address {
+    font-size: var(--font-size-xs);
+    color: var(--color-text-subtle);
+    font-family: monospace;
+}
+
+.pool_stats {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: var(--spacing-1);
+}
+
+.pool_volume {
+    font-size: var(--font-size-base);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-primary);
+}
+
+.pool_percentage {
+    font-size: var(--font-size-xs);
+    color: var(--color-text-muted);
+}
+
+.pool_meta {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: var(--spacing-1);
+    font-size: var(--font-size-xs);
+    color: var(--color-text-muted);
+}
+
+.pool_chevron {
+    color: var(--color-text-muted);
+}
+
+/* Pool details (expanded) */
+.pool_details {
+    padding: var(--spacing-10);
+    background: var(--color-surface-muted);
+}
+
+.details_loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--spacing-5);
+    padding: var(--spacing-10);
+    color: var(--color-text-muted);
+}
+
+.detail_section {
+    margin-bottom: var(--spacing-10);
+}
+
+.detail_section:last-child {
+    margin-bottom: 0;
+}
+
+.detail_title {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-5);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text);
+    margin: 0 0 var(--spacing-7) 0;
+}
+
+/* Members grid */
+.members_grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: var(--spacing-5);
+}
+
+.member_item {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-1);
+    padding: var(--spacing-5);
+    background: var(--color-surface);
+    border-radius: var(--radius-sm);
+}
+
+.member_address {
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+    color: var(--color-text);
+}
+
+.member_permission {
+    font-size: var(--font-size-xs);
+    color: var(--color-text-muted);
+}
+
+/* Delegations table */
+.delegations_table {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-3);
+}
+
+.delegation_row {
+    display: grid;
+    grid-template-columns: 70px 1fr auto auto auto;
+    align-items: center;
+    gap: var(--spacing-5);
+    padding: var(--spacing-5);
+    background: var(--color-surface);
+    border-radius: var(--radius-sm);
+    font-size: var(--font-size-sm);
+}
+
+@container pools_card (max-width: 400px) {
+    .delegation_row {
+        grid-template-columns: 1fr auto;
+    }
+
+    .delegation_time,
+    .delegation_duration {
+        display: none;
+    }
+}
+
+.delegation_time {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-xs);
+}
+
+.delegation_addresses {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-3);
+    color: var(--color-text);
+    min-width: 0;
+}
+
+.delegation_addresses span {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.arrow {
+    color: var(--color-text-muted);
+    flex-shrink: 0;
+}
+
+.delegation_amount {
+    font-weight: var(--font-weight-medium);
+    color: var(--color-primary);
+    white-space: nowrap;
+}
+
+.delegation_duration {
+    color: var(--color-text-muted);
+    white-space: nowrap;
+}
+
+.delegation_link {
+    color: var(--color-text-muted);
+    padding: var(--spacing-3);
+    border-radius: var(--radius-sm);
+    transition: color 0.15s ease, background-color 0.15s ease;
+}
+
+.delegation_link:hover {
+    color: var(--color-primary);
+    background: var(--color-surface-muted);
+}
+
+.no_details {
+    text-align: center;
+    padding: var(--spacing-10);
+    color: var(--color-text-muted);
+    font-size: var(--font-size-sm);
+}
+
+/* Loading state */
+.loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--spacing-7);
+    padding: var(--spacing-20);
+    color: var(--color-text-muted);
+}
+
+.spinner {
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+/* Error state */
+.error {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--spacing-7);
+    padding: var(--spacing-20);
+    color: var(--color-danger);
+}
+
+.retry_button {
+    padding: var(--spacing-5) var(--spacing-10);
+    background: var(--color-primary);
+    color: white;
+    border: none;
+    border-radius: var(--radius-md);
+    font-size: var(--font-size-sm);
+    cursor: pointer;
+    transition: background-color 0.15s ease;
+}
+
+.retry_button:hover {
+    background: var(--color-primary-hover);
+}
+
+/* Empty state */
+.empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--spacing-7);
+    padding: var(--spacing-15);
+    text-align: center;
+    color: var(--color-text-muted);
+}
+
+.empty_icon {
+    opacity: 0.5;
+}
+
+.empty_hint {
+    font-size: var(--font-size-sm);
+    max-width: 300px;
+}

@@ -6,6 +6,7 @@ import { Activity, AlertCircle } from 'lucide-react';
 import styles from './ResourceTrackingPage.module.css';
 import { ResourceDelegationsCard } from './ResourceDelegationsCard';
 import { RecentWhaleDelegations } from './components/RecentWhaleDelegations';
+import { PoolVolumeChart } from './components/PoolVolumeChart';
 
 /**
  * Card component imported from frontend context.
@@ -525,6 +526,10 @@ export function ResourceTrackingPage({ context }: { context: IFrontendPluginCont
                     />
                 </div>
                 <div className={styles.content_sidebar}>
+                    <PoolVolumeChart
+                        context={context}
+                        hours={24}
+                    />
                     <RecentWhaleDelegations
                         context={context}
                         limit={10}

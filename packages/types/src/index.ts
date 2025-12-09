@@ -26,3 +26,4 @@ export type { IPage, IPageFile, IPageSettings, IStorageProvider, IPageService, I
 export type { IModule, IModuleMetadata } from './module/index.js';
 export { USER_FILTERS } from './user/index.js';
 export type { UserFilterType } from './user/index.js';
+export type { ITronGridService, ITronGridAccountResponse, ITronGridAccountPermission } from './tron-grid/index.js';

@@ -1211,7 +1211,14 @@ export class BlockchainService {
             isTokenCreation: false
         };
 
-        const rawTransaction: ITransaction = { payload, snapshot, categories: emptyCategories, rawValue: value, info };
+        // Include Permission_id in rawValue for observers that need to distinguish pool-controlled delegations
+        // Permission_id >= 3 indicates the transaction was authorized by a custom permission (typically pool control)
+        const rawValue: Record<string, unknown> = {
+            ...value,
+            Permission_id: contract.Permission_id
+        };
+
+        const rawTransaction: ITransaction = { payload, snapshot, categories: emptyCategories, rawValue, info };
 
         return new ProcessedTransaction(rawTransaction);
     }
