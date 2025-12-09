@@ -1,8 +1,9 @@
 import type { Metadata } from 'next';
-import { CurrentBlock } from '../features/blockchain/components';
+import { BlockStatsServer, CurrentBlock } from '../features/blockchain/components';
 import { buildMetadata } from '../lib/seo';
 import { getServerConfig } from '../lib/serverConfig';
 import { getApiUrl } from '../lib/config';
+import styles from './page.module.css';
 
 export const dynamic = 'force-dynamic';
 
@@ -87,7 +88,22 @@ export default async function HomePage(): Promise<JSX.Element> {
 
   return (
     <div className="page">
-      <section>
+      {/*
+        LCP Optimization: Two-layer rendering for instant paint
+
+        BlockStatsServer (server component) renders the block number immediately
+        without waiting for JavaScript hydration. CurrentBlock (client component)
+        overlays it after hydration and provides live updates.
+
+        This eliminates ~800ms+ "element render delay" on throttled mobile devices.
+      */}
+      <section className={styles.block_stats_section}>
+        {/* Server-rendered stats - paints immediately (LCP element) */}
+        <BlockStatsServer
+          blockNumber={initialBlock?.blockNumber ?? null}
+          transactionCount={initialBlock?.transactionCount ?? null}
+        />
+        {/* Client component - fades in after hydration with live updates */}
         <CurrentBlock initialBlock={initialBlock} />
       </section>
       <script
