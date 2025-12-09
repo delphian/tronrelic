@@ -15,8 +15,8 @@
     /* Color Scheme */
     color-scheme: dark;
 
-    /* Typography - Font Family */
-    --font-body: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+    /* Typography - Font Family (system fonts for zero-latency rendering) */
+    --font-body: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
 
     /* Typography - Font Sizes (based on actual usage) */
     --font-size-xs: 0.72rem;     /* 11.52px - table headers, tiny labels */
