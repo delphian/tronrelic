@@ -1,6 +1,17 @@
+import dynamic from 'next/dynamic';
 import { definePlugin } from '@tronrelic/types';
 import { telegramBotManifest } from '../manifest';
-import { TelegramBotSettingsPage } from './TelegramBotSettingsPage';
+
+/**
+ * Lazily loaded page components.
+ *
+ * Using next/dynamic ensures CSS modules are code-split and only load when
+ * the page is actually visited. Without this, static imports cause plugin CSS
+ * to be bundled in shared chunks that load on every page (including homepage).
+ */
+const TelegramBotSettingsPage = dynamic(() =>
+    import('./TelegramBotSettingsPage').then(m => m.TelegramBotSettingsPage)
+);
 
 /**
  * Telegram Bot plugin frontend definition.
