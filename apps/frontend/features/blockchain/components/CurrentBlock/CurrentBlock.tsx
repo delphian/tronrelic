@@ -143,7 +143,7 @@ export function CurrentBlock({ initialBlock }: CurrentBlockProps) {
      */
     if (effectiveStatus === 'idle' || effectiveStatus === 'loading') {
         return (
-            <div className={wrapperClass}>
+            <div className={wrapperClass} data-hydrated={isMounted ? 'true' : undefined}>
                 <Card elevated>
                     <div className={styles['loading-state']}>
                         <h2 className={styles.header__title}>Current Block</h2>
@@ -161,7 +161,7 @@ export function CurrentBlock({ initialBlock }: CurrentBlockProps) {
      */
     if (effectiveStatus === 'error' || !latestBlock) {
         return (
-            <div className={wrapperClass}>
+            <div className={wrapperClass} data-hydrated={isMounted ? 'true' : undefined}>
                 <Card elevated tone="muted">
                     <div className={styles['error-state']}>
                         <h2 className={styles.header__title}>Current Block</h2>
@@ -178,7 +178,7 @@ export function CurrentBlock({ initialBlock }: CurrentBlockProps) {
      * Success state - display full block information.
      */
     return (
-        <div className={wrapperClass}>
+        <div className={wrapperClass} data-hydrated={isMounted ? 'true' : undefined}>
             <Card elevated>
             <div className={styles.container}>
                 {/* Header */}

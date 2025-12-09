@@ -1,6 +1,17 @@
+import dynamic from 'next/dynamic';
 import { definePlugin } from '@tronrelic/types';
 import { exampleDashboardManifest } from '../manifest';
-import { ExampleDashboardPage } from './ExampleDashboardPage';
+
+/**
+ * Lazily loaded page components.
+ *
+ * Using next/dynamic ensures CSS modules are code-split and only load when
+ * the page is actually visited. Without this, static imports cause plugin CSS
+ * to be bundled in shared chunks that load on every page (including homepage).
+ */
+const ExampleDashboardPage = dynamic(() =>
+    import('./ExampleDashboardPage').then(m => m.ExampleDashboardPage)
+);
 
 /**
  * Example Dashboard frontend plugin definition.

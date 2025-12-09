@@ -1,8 +1,22 @@
+import dynamic from 'next/dynamic';
 import { definePlugin } from '@tronrelic/types';
 import { resourceTrackingManifest } from '../manifest';
-import { ResourceTrackingPage } from './ResourceTrackingPage';
-import { ResourceTrackingSettingsPage } from './ResourceTrackingSettingsPage';
 import './styles.css';
+
+/**
+ * Lazily loaded page components.
+ *
+ * Using next/dynamic ensures CSS modules are code-split and only load when
+ * the page is actually visited. Without this, static imports cause plugin CSS
+ * to be bundled in shared chunks that load on every page (including homepage).
+ */
+const ResourceTrackingPage = dynamic(() =>
+    import('./ResourceTrackingPage').then(m => m.ResourceTrackingPage)
+);
+
+const ResourceTrackingSettingsPage = dynamic(() =>
+    import('./ResourceTrackingSettingsPage').then(m => m.ResourceTrackingSettingsPage)
+);
 
 /**
  * Resource Explorer frontend plugin definition.

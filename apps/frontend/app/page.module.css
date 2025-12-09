@@ -7,3 +7,18 @@
 .block_stats_section {
     position: relative;
 }
+
+/**
+ * LCP Optimization: Hide server-rendered placeholder after hydration.
+ *
+ * BlockStatsServer renders immediately for fast LCP paint. Once CurrentBlock
+ * hydrates (indicated by data-hydrated attribute), BlockStatsServer fades out
+ * so only the interactive client component remains visible.
+ *
+ * Uses :has() to detect hydration state and hide the preceding sibling.
+ * The transition provides a smooth visual handoff between components.
+ */
+.block_stats_section:has([data-hydrated="true"]) > [aria-hidden="true"] {
+    opacity: 0;
+    transition: opacity var(--transition-base);
+}
