@@ -114,6 +114,19 @@ const nextConfig = {
             },
         ];
     },
+    async headers() {
+        return [
+            {
+                source: '/images/:path*',
+                headers: [
+                    {
+                        key: 'Cache-Control',
+                        value: 'public, max-age=2592000, stale-while-revalidate=86400',
+                    },
+                ],
+            },
+        ];
+    },
     // Redirects moved to middleware.ts for referrer preservation
 };
 
