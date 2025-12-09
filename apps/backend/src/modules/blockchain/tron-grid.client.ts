@@ -54,6 +54,8 @@ export interface TronGridContract {
         type_url?: string;
     };
     type: string;
+    /** Permission ID used to authorize this transaction (0=owner, 1=witness, 2=active, 3+=custom) */
+    Permission_id?: number;
 }
 
 export interface TronGridTransaction {

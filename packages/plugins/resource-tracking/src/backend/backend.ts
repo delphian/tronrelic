@@ -7,18 +7,21 @@ import {
     type IHttpNext
 } from '@tronrelic/types';
 import { resourceTrackingManifest } from '../manifest.js';
-import type { IResourceTrackingConfig, ISummationData, IWhaleDelegation } from '../shared/types/index.js';
+import type { IResourceTrackingConfig, ISummationData, IWhaleDelegation, IPoolDelegation, IPoolDelegationHourly, IAddressBookEntry } from '../shared/types/index.js';
 import type { ISummationResponse } from '../shared/types/api.js';
 import { createResourceTrackingIndexes } from './install-indexes.js';
 import { runSummationJob } from './summation.job.js';
 import { runPurgeJob } from './purge.job.js';
 import { sampleSummations } from './utils/sampleSummations.js';
 import { getSummationCacheKey, getSummationCachePattern } from './utils/cacheKeys.js';
+import { PoolMembershipService } from './pool-membership.service.js';
+import { ADDRESS_BOOK_SEED_DATA } from './address-book-seed.js';
 
 // Store context and intervals for API handlers and lifecycle management
 let pluginContext: IPluginContext;
 let summationInterval: NodeJS.Timeout | null = null;
 let purgeInterval: NodeJS.Timeout | null = null;
+let poolMembershipService: PoolMembershipService | null = null;
 
 /**
  * Resource Explorer backend plugin implementation.
@@ -63,6 +66,25 @@ export const resourceTrackingBackendPlugin = definePlugin({
             context.logger.info({ config: defaultConfig }, 'Created default resource tracking configuration');
         }
 
+        // Seed address book with known pool/exchange names
+        const existingAddressBook = await context.database.find<IAddressBookEntry>('address-book', {}, { limit: 1 });
+        if (existingAddressBook.length === 0) {
+            context.logger.info({ count: ADDRESS_BOOK_SEED_DATA.length }, 'Seeding address book with known addresses');
+            for (const entry of ADDRESS_BOOK_SEED_DATA) {
+                try {
+                    await context.database.insertOne('address-book', {
+                        ...entry,
+                        createdAt: new Date(),
+                        updatedAt: new Date()
+                    });
+                } catch (error) {
+                    // Ignore duplicates
+                    context.logger.debug({ address: entry.address }, 'Address already exists in address book');
+                }
+            }
+            context.logger.info('Address book seeded successfully');
+        }
+
         context.logger.info('Resource-tracking plugin installed successfully');
     },
 
@@ -96,6 +118,39 @@ export const resourceTrackingBackendPlugin = definePlugin({
             context.logger.info('Deleted resource tracking configuration');
         } catch (error) {
             context.logger.warn({ error }, 'Failed to delete configuration');
+        }
+
+        // Drop pool tracking collections
+        try {
+            const poolDelegationsCollection = context.database.getCollection('pool-delegations');
+            await poolDelegationsCollection.drop();
+            context.logger.info('Dropped pool-delegations collection');
+        } catch (error) {
+            context.logger.warn({ error }, 'Failed to drop pool-delegations collection (may not exist)');
+        }
+
+        try {
+            const poolMembersCollection = context.database.getCollection('pool-members');
+            await poolMembersCollection.drop();
+            context.logger.info('Dropped pool-members collection');
+        } catch (error) {
+            context.logger.warn({ error }, 'Failed to drop pool-members collection (may not exist)');
+        }
+
+        try {
+            const addressBookCollection = context.database.getCollection('address-book');
+            await addressBookCollection.drop();
+            context.logger.info('Dropped address-book collection');
+        } catch (error) {
+            context.logger.warn({ error }, 'Failed to drop address-book collection (may not exist)');
+        }
+
+        try {
+            const poolDelegationsHourlyCollection = context.database.getCollection('pool-delegations-hourly');
+            await poolDelegationsHourlyCollection.drop();
+            context.logger.info('Dropped pool-delegations-hourly collection');
+        } catch (error) {
+            context.logger.warn({ error }, 'Failed to drop pool-delegations-hourly collection (may not exist)');
         }
 
         context.logger.info('Resource-tracking plugin uninstalled');
@@ -140,6 +195,9 @@ export const resourceTrackingBackendPlugin = definePlugin({
         }, purgeIntervalMs);
 
         context.logger.info({ intervalHours: config.purgeFrequencyHours }, 'Purge job started');
+
+        // Note: poolMembershipService is created in init(), which runs after enable()
+        // The service is started in init() after creation
     },
 
     /**
@@ -163,6 +221,12 @@ export const resourceTrackingBackendPlugin = definePlugin({
             purgeInterval = null;
             context.logger.info('Purge job stopped');
         }
+
+        // Stop pool membership discovery service
+        if (poolMembershipService) {
+            poolMembershipService.stop();
+            context.logger.info('Pool membership discovery service stopped');
+        }
     },
 
     /**
@@ -175,6 +239,9 @@ export const resourceTrackingBackendPlugin = definePlugin({
     init: async (context: IPluginContext) => {
         pluginContext = context;
 
+        // Create pool membership discovery service
+        poolMembershipService = new PoolMembershipService(context.database, context.logger);
+
         // Import and register the delegation transaction observer
         const { createDelegationTrackerObserver } = await import('./delegation-tracker.observer.js');
 
@@ -182,7 +249,9 @@ export const resourceTrackingBackendPlugin = definePlugin({
             context.BaseObserver,
             context.observerRegistry,
             context.database,
-            context.logger
+            context.websocket,
+            context.logger,
+            poolMembershipService
         );
 
         context.logger.info({ observerName: observer.getName() }, 'Delegation tracker observer initialized');
@@ -195,8 +264,8 @@ export const resourceTrackingBackendPlugin = definePlugin({
         // Clients subscribe to this room to receive notifications when new summation data is created
         context.websocket.onSubscribe(async (socket, roomName, payload) => {
             // Simple subscription with no payload validation required
-            // Room name is typically 'summation-updates'
-            context.logger.debug({ socketId: socket.id, roomName }, 'Client subscribed to resource tracking updates');
+            // Room name can be 'summation-updates' or 'pool-updates'
+            context.logger.info({ socketId: socket.id, roomName }, 'CLIENT SUBSCRIBED to resource tracking room');
 
             // Client is auto-joined to 'plugin:resource-tracking:{roomName}' before this handler runs
             // Send confirmation event back to client
@@ -234,7 +303,22 @@ export const resourceTrackingBackendPlugin = definePlugin({
             enabled: true
         });
 
-        context.logger.info('Navigation menu items registered (Analytics category and Resource Explorer)');
+        // Register Energy Pools under Analytics category
+        await context.menuService.create({
+            namespace: 'main',
+            label: 'Energy Pools',
+            url: '/energy-pools',
+            icon: 'Users',
+            order: 11,
+            parent: analyticsCategory._id!,
+            enabled: true
+        });
+
+        context.logger.info('Navigation menu items registered (Analytics category, Resource Explorer, and Energy Pools)');
+
+        // Start pool membership discovery service (must be after creation above)
+        poolMembershipService.start();
+        context.logger.info('Pool membership discovery service started');
     },
 
     /**
@@ -452,6 +536,338 @@ export const resourceTrackingBackendPlugin = definePlugin({
                 }
             },
             description: 'Get recent whale delegations (high-value resource delegations)'
+        },
+        // Pool tracking API routes
+        {
+            method: 'GET',
+            path: '/pools',
+            handler: async (req: IHttpRequest, res: IHttpResponse, next: IHttpNext) => {
+                try {
+                    const hours = Math.min(Number(req.query.hours) || 24, 168); // Max 7 days
+                    const since = new Date(Date.now() - hours * 60 * 60 * 1000);
+
+                    // Aggregate delegations by pool using $lookup join with pool-members
+                    // This matches the old system's approach: JOIN rm_delegation with rm_multisig at query time
+                    const collection = pluginContext.database.getCollection('pool-delegations');
+                    const membersCollectionName = pluginContext.database.getCollection('pool-members').collectionName;
+
+                    const pools = await collection.aggregate([
+                        // Filter to recent energy delegations
+                        { $match: { timestamp: { $gte: since }, resourceType: 1 } },
+
+                        // Join with pool-members to discover the controlling pool
+                        // Matches: pool-members.account = pool-delegations.fromAddress
+                        //      AND pool-members.permissionId = pool-delegations.permissionId
+                        {
+                            $lookup: {
+                                from: membersCollectionName,
+                                let: { fromAddr: '$fromAddress', permId: '$permissionId' },
+                                pipeline: [
+                                    {
+                                        $match: {
+                                            $expr: {
+                                                $and: [
+                                                    { $eq: ['$account', '$$fromAddr'] },
+                                                    { $eq: ['$permissionId', '$$permId'] }
+                                                ]
+                                            }
+                                        }
+                                    }
+                                ],
+                                as: 'poolMembership'
+                            }
+                        },
+
+                        // Extract pool address from lookup result (first match or null)
+                        {
+                            $addFields: {
+                                resolvedPool: { $arrayElemAt: ['$poolMembership.pool', 0] }
+                            }
+                        },
+
+                        // Group by resolved pool address
+                        {
+                            $group: {
+                                _id: '$resolvedPool',
+                                totalAmountSun: { $sum: { $abs: '$amountSun' } },
+                                delegationCount: { $sum: 1 },
+                                uniqueDelegators: { $addToSet: '$fromAddress' },
+                                uniqueRecipients: { $addToSet: '$toAddress' }
+                            }
+                        },
+
+                        // Project final fields
+                        {
+                            $project: {
+                                poolAddress: '$_id',
+                                totalAmountTrx: { $divide: ['$totalAmountSun', 1_000_000] },
+                                delegationCount: 1,
+                                delegatorCount: { $size: '$uniqueDelegators' },
+                                recipientCount: { $size: '$uniqueRecipients' }
+                            }
+                        },
+                        { $sort: { totalAmountTrx: -1 } },
+                        { $limit: 50 }
+                    ]).toArray();
+
+                    // Enrich with address book names
+                    const addressBook = await pluginContext.database.find<IAddressBookEntry>('address-book', {});
+                    const addressMap = new Map(addressBook.map(e => [e.address, e.name]));
+
+                    const enrichedPools = pools.map(pool => ({
+                        ...pool,
+                        poolName: pool.poolAddress ? addressMap.get(pool.poolAddress) ?? null : null
+                    }));
+
+                    res.json({ success: true, pools: enrichedPools, hours });
+                } catch (error) {
+                    next(error);
+                }
+            },
+            description: 'Get all pools with aggregated delegation stats'
+        },
+        {
+            method: 'GET',
+            path: '/pools/:address',
+            handler: async (req: IHttpRequest, res: IHttpResponse, next: IHttpNext) => {
+                try {
+                    const { address } = req.params;
+                    const hours = Math.min(Number(req.query.hours) || 24, 168);
+                    const since = new Date(Date.now() - hours * 60 * 60 * 1000);
+
+                    // Get pool stats
+                    const collection = pluginContext.database.getCollection('pool-delegations');
+                    const [stats] = await collection.aggregate([
+                        { $match: { poolAddress: address, timestamp: { $gte: since } } },
+                        {
+                            $group: {
+                                _id: null,
+                                totalAmountSun: { $sum: { $abs: '$amountSun' } },
+                                delegationCount: { $sum: 1 },
+                                uniqueDelegators: { $addToSet: '$fromAddress' },
+                                uniqueRecipients: { $addToSet: '$toAddress' }
+                            }
+                        }
+                    ]).toArray();
+
+                    // Get pool members (delegator accounts)
+                    const members = await pluginContext.database.find(
+                        'pool-members',
+                        { pool: address },
+                        { sort: { lastSeenAt: -1 }, limit: 100 }
+                    );
+
+                    // Get pool name from address book
+                    const addressEntry = await pluginContext.database.findOne<IAddressBookEntry>(
+                        'address-book',
+                        { address }
+                    );
+
+                    res.json({
+                        success: true,
+                        pool: {
+                            address,
+                            name: addressEntry?.name ?? null,
+                            totalAmountTrx: stats ? stats.totalAmountSun / 1_000_000 : 0,
+                            delegationCount: stats?.delegationCount ?? 0,
+                            delegatorCount: stats?.uniqueDelegators?.length ?? 0,
+                            recipientCount: stats?.uniqueRecipients?.length ?? 0
+                        },
+                        members,
+                        hours
+                    });
+                } catch (error) {
+                    next(error);
+                }
+            },
+            description: 'Get pool details and stats'
+        },
+        {
+            method: 'GET',
+            path: '/pools/:address/delegations',
+            handler: async (req: IHttpRequest, res: IHttpResponse, next: IHttpNext) => {
+                try {
+                    const { address } = req.params;
+                    const limit = Math.min(Number(req.query.limit) || 50, 200);
+                    const skip = Number(req.query.skip) || 0;
+
+                    const delegations = await pluginContext.database.find<IPoolDelegation>(
+                        'pool-delegations',
+                        { poolAddress: address },
+                        { sort: { timestamp: -1 }, limit, skip }
+                    );
+
+                    // Enrich with address book names
+                    const addressBook = await pluginContext.database.find<IAddressBookEntry>('address-book', {});
+                    const addressMap = new Map(addressBook.map(e => [e.address, e.name]));
+
+                    const enrichedDelegations = delegations.map(d => ({
+                        txId: d.txId,
+                        timestamp: d.timestamp,
+                        fromAddress: d.fromAddress,
+                        fromName: addressMap.get(d.fromAddress) ?? null,
+                        toAddress: d.toAddress,
+                        toName: addressMap.get(d.toAddress) ?? null,
+                        resourceType: d.resourceType === 1 ? 'ENERGY' : 'BANDWIDTH',
+                        amountTrx: Math.abs(d.amountSun) / 1_000_000,
+                        rentalPeriodMinutes: d.rentalPeriodMinutes,
+                        normalizedAmountTrx: d.normalizedAmountTrx
+                    }));
+
+                    res.json({ success: true, delegations: enrichedDelegations });
+                } catch (error) {
+                    next(error);
+                }
+            },
+            description: 'Get recent delegations for a pool'
+        },
+        {
+            method: 'GET',
+            path: '/pools/:address/members',
+            handler: async (req: IHttpRequest, res: IHttpResponse, next: IHttpNext) => {
+                try {
+                    const { address } = req.params;
+                    const limit = Math.min(Number(req.query.limit) || 100, 500);
+
+                    const members = await pluginContext.database.find(
+                        'pool-members',
+                        { pool: address },
+                        { sort: { lastSeenAt: -1 }, limit }
+                    );
+
+                    // Enrich with address book names
+                    const addressBook = await pluginContext.database.find<IAddressBookEntry>('address-book', {});
+                    const addressMap = new Map(addressBook.map(e => [e.address, e.name]));
+
+                    const enrichedMembers = members.map((m: any) => ({
+                        account: m.account,
+                        accountName: addressMap.get(m.account) ?? null,
+                        pool: m.pool,
+                        poolName: addressMap.get(m.pool) ?? null,
+                        permissionId: m.permissionId,
+                        permissionName: m.permissionName,
+                        discoveredAt: m.discoveredAt,
+                        lastSeenAt: m.lastSeenAt
+                    }));
+
+                    res.json({ success: true, members: enrichedMembers, count: enrichedMembers.length });
+                } catch (error) {
+                    next(error);
+                }
+            },
+            description: 'Get members (delegator accounts) for a pool'
+        },
+        {
+            method: 'GET',
+            path: '/pools/hourly-volume',
+            handler: async (req: IHttpRequest, res: IHttpResponse, next: IHttpNext) => {
+                try {
+                    const hours = Math.min(Number(req.query.hours) || 168, 720); // Default 7 days, max 30 days
+                    const poolAddress = req.query.pool as string | undefined;
+                    const resourceType = req.query.resourceType !== undefined
+                        ? Number(req.query.resourceType)
+                        : 1; // Default to ENERGY
+
+                    const since = Math.floor((Date.now() - hours * 60 * 60 * 1000) / 1000);
+
+                    // Build query filter
+                    const filter: Record<string, unknown> = {
+                        timestamp: { $gte: since },
+                        resourceType
+                    };
+
+                    if (poolAddress) {
+                        filter.poolAddress = poolAddress;
+                    }
+
+                    // Query hourly aggregates
+                    const hourlyData = await pluginContext.database.find<IPoolDelegationHourly>(
+                        'pool-delegations-hourly',
+                        filter,
+                        { sort: { timestamp: 1 } }
+                    );
+
+                    // Format response
+                    const formattedData = hourlyData.map(h => ({
+                        dateHour: h.dateHour,
+                        timestamp: h.timestamp,
+                        poolAddress: h.poolAddress,
+                        resourceType: h.resourceType === 1 ? 'ENERGY' : 'BANDWIDTH',
+                        totalAmountTrx: h.totalAmountTrx,
+                        totalNormalizedAmountTrx: h.totalNormalizedAmountTrx,
+                        delegationCount: h.delegationCount,
+                        uniqueDelegators: h.uniqueDelegators,
+                        uniqueRecipients: h.uniqueRecipients
+                    }));
+
+                    // Enrich with pool names if data includes pool addresses
+                    const addressBook = await pluginContext.database.find<IAddressBookEntry>('address-book', {});
+                    const addressMap = new Map(addressBook.map(e => [e.address, e.name]));
+
+                    const enrichedData = formattedData.map(h => ({
+                        ...h,
+                        poolName: h.poolAddress ? addressMap.get(h.poolAddress) ?? null : null
+                    }));
+
+                    res.json({
+                        success: true,
+                        data: enrichedData,
+                        hours,
+                        poolAddress: poolAddress ?? null,
+                        resourceType: resourceType === 1 ? 'ENERGY' : 'BANDWIDTH'
+                    });
+                } catch (error) {
+                    next(error);
+                }
+            },
+            description: 'Get hourly pool delegation volume data for historical charts'
+        },
+        {
+            method: 'GET',
+            path: '/address-book',
+            handler: async (req: IHttpRequest, res: IHttpResponse, next: IHttpNext) => {
+                try {
+                    const category = req.query.category as string | undefined;
+                    const filter: Record<string, unknown> = {};
+                    if (category && ['pool', 'exchange', 'notable', 'other'].includes(category)) {
+                        filter.category = category;
+                    }
+
+                    const entries = await pluginContext.database.find<IAddressBookEntry>(
+                        'address-book',
+                        filter,
+                        { sort: { name: 1 } }
+                    );
+
+                    res.json({ success: true, entries, count: entries.length });
+                } catch (error) {
+                    next(error);
+                }
+            },
+            description: 'Get address book entries with optional category filter'
+        },
+        {
+            method: 'GET',
+            path: '/address-book/:address',
+            handler: async (req: IHttpRequest, res: IHttpResponse, next: IHttpNext) => {
+                try {
+                    const { address } = req.params;
+                    const entry = await pluginContext.database.findOne<IAddressBookEntry>(
+                        'address-book',
+                        { address }
+                    );
+
+                    if (!entry) {
+                        res.status(404).json({ success: false, error: 'Address not found in address book' });
+                        return;
+                    }
+
+                    res.json({ success: true, entry });
+                } catch (error) {
+                    next(error);
+                }
+            },
+            description: 'Get address book entry by address'
         }
     ] as IApiRouteConfig[],
 

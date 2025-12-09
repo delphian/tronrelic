@@ -18,6 +18,10 @@ const ResourceTrackingSettingsPage = dynamic(() =>
     import('./ResourceTrackingSettingsPage').then(m => m.ResourceTrackingSettingsPage)
 );
 
+const PoolsPage = dynamic(() =>
+    import('./PoolsPage').then(m => m.PoolsPage)
+);
+
 /**
  * Resource Explorer frontend plugin definition.
  *
@@ -35,7 +39,7 @@ export const resourceTrackingFrontendPlugin = definePlugin({
     // No background component needed (no real-time WebSocket features yet)
     component: undefined,
 
-    // Register navigation menu item
+    // Register navigation menu items
     menuItems: [
         {
             label: 'Resources',
@@ -43,16 +47,29 @@ export const resourceTrackingFrontendPlugin = definePlugin({
             icon: 'Activity',
             category: 'analytics',
             order: 40
+        },
+        {
+            label: 'Energy Pools',
+            href: '/energy-pools',
+            icon: 'Users',
+            category: 'analytics',
+            order: 41
         }
     ],
 
-    // Register main resource tracking page
+    // Register main resource tracking pages
     pages: [
         {
             path: '/tron-resource-explorer',
             component: ResourceTrackingPage,
             title: 'Resource Explorer - TronRelic',
             description: 'Monitor TRON energy and bandwidth delegation trends'
+        },
+        {
+            path: '/energy-pools',
+            component: PoolsPage,
+            title: 'Energy Pools - TronRelic',
+            description: 'Track TRON energy rental pool activity and delegation patterns'
         }
     ],
 
