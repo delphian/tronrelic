@@ -19,10 +19,12 @@ export {
     // Login state functions
     loginUser,
     logoutUser,
+    // Public profile functions
+    fetchProfile,
     // Admin API functions
     adminListUsers,
     adminGetUserStats,
     adminGetUser
 } from './client';
 
-export type { ISessionData } from './client';
+export type { ISessionData, IConnectWalletResult, ILinkWalletResult, IPublicProfile } from './client';

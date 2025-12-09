@@ -19,6 +19,8 @@ import {
     loginUser as apiLoginUser,
     logoutUser as apiLogoutUser
 } from './api';
+import type { IConnectWalletResult, ILinkWalletResult } from './api';
+import { setUserIdCookie, USER_ID_STORAGE_KEY } from './lib';
 
 /**
  * Status of user identity operations.
@@ -90,6 +92,19 @@ export interface UserState {
      * False = connected but no signature (display-only)
      */
     walletVerified: boolean;
+
+    /**
+     * Whether wallet connection detected an existing owner requiring login.
+     * When true, frontend should prompt for signature to prove ownership
+     * and perform identity swap.
+     */
+    walletLoginRequired: boolean;
+
+    /**
+     * The existing user ID that owns the connected wallet (when walletLoginRequired=true).
+     * Used for display purposes only - actual swap happens via linkWallet.
+     */
+    existingWalletOwner: string | null;
 }
 
 const initialState: UserState = {
@@ -103,7 +118,9 @@ const initialState: UserState = {
     connectionStatus: 'idle',
     providerDetected: false,
     connectionError: null,
-    walletVerified: false
+    walletVerified: false,
+    walletLoginRequired: false,
+    existingWalletOwner: null
 };
 
 // ============================================================================
@@ -130,6 +147,9 @@ export const initializeUser = createAsyncThunk(
 /**
  * Connect a wallet to the current user (without verification).
  * This is step 1 of the two-step wallet flow.
+ *
+ * When wallet is already linked to another user, returns loginRequired=true.
+ * Frontend should then prompt for signature verification to login.
  */
 export const connectWalletThunk = createAsyncThunk(
     'user/connectWallet',
@@ -138,8 +158,8 @@ export const connectWalletThunk = createAsyncThunk(
         { rejectWithValue }
     ) => {
         try {
-            const userData = await apiConnectWallet(payload.userId, payload.address);
-            return userData;
+            const result = await apiConnectWallet(payload.userId, payload.address);
+            return result;
         } catch (error) {
             return rejectWithValue(
                 error instanceof Error ? error.message : 'Failed to connect wallet'
@@ -151,6 +171,9 @@ export const connectWalletThunk = createAsyncThunk(
 /**
  * Link a wallet to the current user (with signature verification).
  * This is step 2 of the two-step wallet flow.
+ *
+ * If wallet belongs to another user, performs identity swap and returns
+ * identitySwapped=true. Frontend will update cookie/localStorage to new ID.
  */
 export const linkWalletThunk = createAsyncThunk(
     'user/linkWallet',
@@ -165,14 +188,25 @@ export const linkWalletThunk = createAsyncThunk(
         { rejectWithValue }
     ) => {
         try {
-            const userData = await apiLinkWallet(
+            const result = await apiLinkWallet(
                 payload.userId,
                 payload.address,
                 payload.message,
                 payload.signature,
                 payload.timestamp
             );
-            return userData;
+
+            // Handle identity swap - update cookie and localStorage
+            if (result.identitySwapped && result.user) {
+                const newUserId = result.user.id;
+                setUserIdCookie(newUserId);
+                if (typeof localStorage !== 'undefined') {
+                    localStorage.setItem(USER_ID_STORAGE_KEY, newUserId);
+                }
+                console.log(`Identity swapped: ${result.previousUserId} -> ${newUserId}`);
+            }
+
+            return result;
         } catch (error) {
             return rejectWithValue(
                 error instanceof Error ? error.message : 'Failed to link wallet'
@@ -395,6 +429,8 @@ const userSlice = createSlice({
             state.connectionStatus = 'idle';
             state.connectionError = null;
             state.walletVerified = false;
+            state.walletLoginRequired = false;
+            state.existingWalletOwner = null;
             // Keep providerDetected as-is
         },
 
@@ -403,6 +439,24 @@ const userSlice = createSlice({
          */
         setWalletVerified(state, action: PayloadAction<boolean>) {
             state.walletVerified = action.payload;
+        },
+
+        /**
+         * Set wallet login required state.
+         * Called when connectWallet detects wallet belongs to another user.
+         */
+        setWalletLoginRequired(state, action: PayloadAction<{ required: boolean; existingUserId?: string }>) {
+            state.walletLoginRequired = action.payload.required;
+            state.existingWalletOwner = action.payload.existingUserId ?? null;
+        },
+
+        /**
+         * Clear wallet login required state.
+         * Called after successful login or when user cancels.
+         */
+        clearWalletLoginRequired(state) {
+            state.walletLoginRequired = false;
+            state.existingWalletOwner = null;
         }
     },
     extraReducers: (builder) => {
@@ -429,10 +483,23 @@ const userSlice = createSlice({
             .addCase(connectWalletThunk.pending, (state) => {
                 state.status = 'loading';
                 state.error = null;
+                state.walletLoginRequired = false;
+                state.existingWalletOwner = null;
             })
             .addCase(connectWalletThunk.fulfilled, (state, action) => {
                 state.status = 'succeeded';
-                state.userData = action.payload;
+                const result = action.payload as IConnectWalletResult;
+
+                if (result.loginRequired) {
+                    // Wallet belongs to another user - prompt for login
+                    state.walletLoginRequired = true;
+                    state.existingWalletOwner = result.existingUserId ?? null;
+                } else if (result.success && result.user) {
+                    // Wallet connected successfully
+                    state.userData = result.user;
+                    state.walletLoginRequired = false;
+                    state.existingWalletOwner = null;
+                }
             })
             .addCase(connectWalletThunk.rejected, (state, action) => {
                 state.status = 'failed';
@@ -447,7 +514,18 @@ const userSlice = createSlice({
             })
             .addCase(linkWalletThunk.fulfilled, (state, action) => {
                 state.status = 'succeeded';
-                state.userData = action.payload;
+                const result = action.payload as ILinkWalletResult;
+
+                // Update user data (either current user or swapped user)
+                state.userData = result.user;
+
+                if (result.identitySwapped) {
+                    // Identity was swapped - update userId to new identity
+                    state.userId = result.user.id;
+                    // Clear login required state
+                    state.walletLoginRequired = false;
+                    state.existingWalletOwner = null;
+                }
             })
             .addCase(linkWalletThunk.rejected, (state, action) => {
                 state.status = 'failed';
@@ -649,6 +727,18 @@ export const selectIsWalletConnected = (state: { user: UserState }): boolean =>
 export const selectWalletVerified = (state: { user: UserState }): boolean =>
     state.user.walletVerified;
 
+/**
+ * Select whether wallet login is required (wallet belongs to another user).
+ */
+export const selectWalletLoginRequired = (state: { user: UserState }): boolean =>
+    state.user.walletLoginRequired;
+
+/**
+ * Select the existing wallet owner ID (when walletLoginRequired=true).
+ */
+export const selectExistingWalletOwner = (state: { user: UserState }): string | null =>
+    state.user.existingWalletOwner;
+
 // ============================================================================
 // Exports
 // ============================================================================
@@ -665,7 +755,9 @@ export const {
     setConnectionError,
     setProviderDetected,
     resetWalletConnection,
-    setWalletVerified
+    setWalletVerified,
+    setWalletLoginRequired,
+    clearWalletLoginRequired
 } = userSlice.actions;
 
 export default userSlice.reducer;

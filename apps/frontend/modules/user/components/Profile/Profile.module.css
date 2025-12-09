@@ -1,0 +1,105 @@
+/**
+ * Profile Component Styles
+ *
+ * Styles for profile page views (owner and public).
+ * Uses container queries for responsive behavior.
+ */
+
+.container {
+    container-type: inline-size;
+    container-name: profile;
+}
+
+.header_row {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: var(--spacing-10);
+}
+
+.logout_btn {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-5);
+    padding: var(--spacing-5) var(--spacing-10);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+    color: var(--color-text-muted);
+    background: var(--color-surface);
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.logout_btn:hover:not(:disabled) {
+    color: var(--color-danger);
+    border-color: var(--color-danger);
+    background: var(--color-surface-elevated);
+}
+
+.logout_btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.spinner {
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+.placeholder {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: var(--spacing-16);
+    text-align: center;
+    min-height: 300px;
+    background: var(--color-surface);
+    border-radius: var(--radius-lg);
+    border: var(--border-width-thin) solid var(--color-border);
+}
+
+.placeholder_icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 80px;
+    height: 80px;
+    margin-bottom: var(--spacing-10);
+    color: var(--color-text-muted);
+    background: var(--color-surface-elevated);
+    border-radius: var(--radius-full);
+}
+
+.placeholder_title {
+    margin: 0 0 var(--spacing-5);
+    font-size: var(--font-size-lg);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text);
+}
+
+.placeholder_text {
+    margin: 0;
+    max-width: 400px;
+    font-size: var(--font-size-sm);
+    color: var(--color-text-muted);
+    line-height: var(--line-height-relaxed);
+}
+
+@container profile (max-width: 480px) {
+    .placeholder {
+        padding: var(--spacing-10);
+        min-height: 250px;
+    }
+
+    .placeholder_icon {
+        width: 64px;
+        height: 64px;
+    }
+}

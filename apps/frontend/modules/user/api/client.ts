@@ -9,6 +9,43 @@ import { apiClient } from '../../../lib/api';
 import type { IUserData, IUserPreferences, IUserStats } from '../types';
 
 // ============================================================================
+// Wallet Connection Result Types
+// ============================================================================
+
+/**
+ * Result of wallet connection attempt.
+ *
+ * When a wallet is already linked to another user, returns `loginRequired: true`
+ * with the existing user ID. The frontend should prompt for signature verification
+ * to prove wallet ownership before swapping identity.
+ */
+export interface IConnectWalletResult {
+    /** Whether connection succeeded (wallet now linked to this user) */
+    success: boolean;
+    /** Updated user data (when success=true) */
+    user?: IUserData;
+    /** Whether wallet is linked to another user and login is required */
+    loginRequired?: boolean;
+    /** The existing user ID that owns this wallet (when loginRequired=true) */
+    existingUserId?: string;
+}
+
+/**
+ * Result of wallet link/verification attempt.
+ *
+ * When identity swap occurs (wallet belonged to another user), returns
+ * `identitySwapped: true` with the existing user's data.
+ */
+export interface ILinkWalletResult {
+    /** The user data (either updated current user or swapped-to user) */
+    user: IUserData;
+    /** Whether identity was swapped to existing wallet owner */
+    identitySwapped?: boolean;
+    /** The previous user ID before swap (for cleanup on frontend) */
+    previousUserId?: string;
+}
+
+// ============================================================================
 // User API Functions
 // ============================================================================
 
@@ -31,31 +68,38 @@ export async function fetchUser(userId: string): Promise<IUserData> {
  * This is the first step in the two-step wallet flow. Stores the
  * wallet address as unverified. Use linkWallet to verify ownership.
  *
+ * When wallet is already linked to another user, returns loginRequired=true.
+ * Frontend should then prompt for signature verification to login.
+ *
  * @param userId - User UUID
  * @param address - TRON wallet address
- * @returns Updated user data
+ * @returns Connection result with success status or login requirement
  */
 export async function connectWallet(
     userId: string,
     address: string
-): Promise<IUserData> {
+): Promise<IConnectWalletResult> {
     const response = await apiClient.post(
         `/user/${userId}/wallet/connect`,
         { address },
         { withCredentials: true }
     );
-    return response.data as IUserData;
+    return response.data as IConnectWalletResult;
 }
 
 /**
  * Link a wallet to user identity (with signature verification).
+ *
+ * If wallet belongs to another user, performs identity swap and returns
+ * identitySwapped=true with the existing user's data. Frontend should
+ * update cookie/localStorage to the new user ID.
  *
  * @param userId - User UUID
  * @param address - TRON wallet address
  * @param message - Message that was signed
  * @param signature - TronLink signature
  * @param timestamp - Timestamp when signature was created
- * @returns Updated user data
+ * @returns Link result with user data and optional identity swap indicator
  */
 export async function linkWallet(
     userId: string,
@@ -63,13 +107,13 @@ export async function linkWallet(
     message: string,
     signature: string,
     timestamp: number
-): Promise<IUserData> {
+): Promise<ILinkWalletResult> {
     const response = await apiClient.post(
         `/user/${userId}/wallet`,
         { address, message, signature, timestamp },
         { withCredentials: true }
     );
-    return response.data as IUserData;
+    return response.data as ILinkWalletResult;
 }
 
 /**
@@ -274,6 +318,45 @@ export async function logoutUser(userId: string): Promise<IUserData> {
         { withCredentials: true }
     );
     return response.data as IUserData;
+}
+
+// ============================================================================
+// Public Profile Functions
+// ============================================================================
+
+/**
+ * Public profile data returned from the profile endpoint.
+ */
+export interface IPublicProfile {
+    /** UUID of the user who owns this profile */
+    userId: string;
+    /** Verified wallet address for this profile */
+    address: string;
+    /** When the user account was created */
+    createdAt: string;
+    /** Always true (only verified profiles are returned) */
+    isVerified: true;
+}
+
+/**
+ * Fetch public profile by wallet address.
+ *
+ * This endpoint is publicly accessible - no authentication required.
+ * Returns null if no verified profile exists for the given address.
+ *
+ * @param address - TRON wallet address
+ * @returns Profile data or null if not found
+ */
+export async function fetchProfile(address: string): Promise<IPublicProfile | null> {
+    try {
+        const response = await apiClient.get(`/profile/${address}`);
+        return response.data as IPublicProfile;
+    } catch (error) {
+        if ((error as { response?: { status: number } }).response?.status === 404) {
+            return null;
+        }
+        throw error;
+    }
 }
 
 // ============================================================================

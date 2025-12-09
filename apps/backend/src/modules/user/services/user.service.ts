@@ -33,6 +33,53 @@ export interface IUserStats {
 }
 
 /**
+ * Result of wallet connection attempt.
+ *
+ * When a wallet is already linked to another user, returns `loginRequired: true`
+ * with the existing user ID. The frontend should prompt for signature verification
+ * to prove wallet ownership before swapping identity.
+ */
+export interface IConnectWalletResult {
+    /** Whether connection succeeded (wallet now linked to this user) */
+    success: boolean;
+    /** Updated user data (when success=true) */
+    user?: IUser;
+    /** Whether wallet is linked to another user and login is required */
+    loginRequired?: boolean;
+    /** The existing user ID that owns this wallet (when loginRequired=true) */
+    existingUserId?: string;
+}
+
+/**
+ * Result of wallet link/verification attempt.
+ *
+ * When identity swap occurs (wallet belonged to another user), returns
+ * `identitySwapped: true` with the existing user's data.
+ */
+export interface ILinkWalletResult {
+    /** The user data (either updated current user or swapped-to user) */
+    user: IUser;
+    /** Whether identity was swapped to existing wallet owner */
+    identitySwapped?: boolean;
+    /** The previous user ID before swap (for cleanup on frontend) */
+    previousUserId?: string;
+}
+
+/**
+ * Public profile data for a verified wallet address.
+ */
+export interface IPublicProfile {
+    /** UUID of the user who owns this profile */
+    userId: string;
+    /** Verified wallet address for this profile */
+    address: string;
+    /** When the user account was created */
+    createdAt: Date;
+    /** Always true (only verified profiles are returned) */
+    isVerified: true;
+}
+
+/**
  * Service for managing visitor identity and wallet linking.
  *
  * This singleton service handles user lifecycle including creation, wallet linking,
@@ -45,6 +92,7 @@ export interface IUserStats {
  * - **Multi-wallet support**: One UUID can link to multiple TRON addresses
  * - **Server-side validation**: UUIDs are validated on server to prevent tampering
  * - **Cache strategy**: Individual user cache with 1-hour TTL, invalidated on updates
+ * - **Wallet-based login**: Users can recover identity by proving wallet ownership from new devices
  *
  * ## Future Extensibility
  *
@@ -253,6 +301,45 @@ export class UserService {
         return user;
     }
 
+    /**
+     * Get public profile by verified wallet address.
+     *
+     * Returns profile data only if the wallet is verified. Unverified wallets
+     * or non-existent addresses return null.
+     *
+     * @param address - Base58 TRON address
+     * @returns Public profile or null if not found/not verified
+     */
+    async getPublicProfile(address: string): Promise<IPublicProfile | null> {
+        // Normalize address using signature service (handles TRON address format)
+        let normalizedAddress: string;
+        try {
+            normalizedAddress = this.signatureService.normalizeAddress(address);
+        } catch {
+            return null;
+        }
+
+        // Look up user by wallet
+        const user = await this.getByWallet(normalizedAddress);
+        if (!user) {
+            return null;
+        }
+
+        // Find the specific wallet and check if verified
+        // Use normalized address for comparison (addresses are stored normalized)
+        const wallet = user.wallets.find(w => w.address === normalizedAddress);
+        if (!wallet || !wallet.verified) {
+            return null;
+        }
+
+        return {
+            userId: user.id,
+            address: wallet.address,
+            createdAt: user.createdAt,
+            isVerified: true
+        };
+    }
+
     // ==================== Wallet Linking ====================
 
     /**
@@ -265,12 +352,15 @@ export class UserService {
      * 1. Connect: Store address with verified=false (this method)
      * 2. Verify: Update to verified=true via linkWallet()
      *
+     * When wallet is already linked to another user, returns `loginRequired: true`
+     * instead of throwing an error. Frontend should prompt for signature to login.
+     *
      * @param userId - UUID of user to connect wallet to
      * @param address - Base58 TRON address
-     * @returns Updated user document
+     * @returns Connection result with success status or login requirement
      * @throws Error if user not found or address invalid
      */
-    async connectWallet(userId: string, address: string): Promise<IUser> {
+    async connectWallet(userId: string, address: string): Promise<IConnectWalletResult> {
         // Validate user exists
         const doc = await this.collection.findOne({ id: userId });
         if (!doc) {
@@ -291,7 +381,16 @@ export class UserService {
             id: { $ne: userId }
         });
         if (existingLink) {
-            throw new Error('Wallet is already linked to another user identity.');
+            // Wallet belongs to another user - require login via signature
+            this.logger.info(
+                { userId, wallet: normalizedAddress, existingUserId: existingLink.id },
+                'Wallet already linked to another user, login required'
+            );
+            return {
+                success: false,
+                loginRequired: true,
+                existingUserId: existingLink.id
+            };
         }
 
         const now = new Date();
@@ -338,21 +437,25 @@ export class UserService {
 
         // Fetch and return updated document
         const updated = await this.collection.findOne({ id: userId });
-        return this.toPublicUser(updated!);
+        return {
+            success: true,
+            user: this.toPublicUser(updated!)
+        };
     }
 
     /**
      * Link a wallet to a user identity.
      *
      * Verifies wallet ownership via TronLink signature before linking.
-     * Prevents duplicate wallet links (same wallet can only be linked to one user).
+     * If wallet belongs to another user, performs identity swap (returns
+     * existing user's data instead of current user).
      *
-     * @param userId - UUID of user to link wallet to
+     * @param userId - UUID of user attempting to link wallet
      * @param input - Wallet address, signature message, and signature
-     * @returns Updated user document
-     * @throws Error if signature invalid, user not found, or wallet already linked
+     * @returns Link result with user data and optional identity swap indicator
+     * @throws Error if signature invalid or user not found
      */
-    async linkWallet(userId: string, input: ILinkWalletInput): Promise<IUser> {
+    async linkWallet(userId: string, input: ILinkWalletInput): Promise<ILinkWalletResult> {
         // Validate user exists
         const doc = await this.collection.findOne({ id: userId });
         if (!doc) {
@@ -366,9 +469,10 @@ export class UserService {
             input.signature
         );
 
-        // Check message format (replay protection)
-        if (!input.message.includes(normalizedAddress) || !input.message.includes(userId)) {
-            throw new Error('Invalid message format. Message must include wallet address and user ID.');
+        // Check message format - must include wallet address
+        // Note: For identity swap (login), message may contain different userId
+        if (!input.message.includes(normalizedAddress)) {
+            throw new Error('Invalid message format. Message must include wallet address.');
         }
 
         // Check timestamp (prevent replay attacks - 5 minute window)
@@ -382,10 +486,43 @@ export class UserService {
             'wallets.address': normalizedAddress,
             id: { $ne: userId }
         });
+
         if (existingLink) {
-            throw new Error('Wallet is already linked to another user identity.');
+            // Wallet belongs to another user - perform identity swap
+            // User has proven wallet ownership via signature, so swap to existing identity
+            const nowDate = new Date();
+
+            // Update wallet atomically using positional operator to avoid race conditions
+            await this.collection.updateOne(
+                { id: existingLink.id, 'wallets.address': normalizedAddress },
+                {
+                    $set: {
+                        'wallets.$.lastUsed': nowDate,
+                        'wallets.$.verified': true,
+                        'activity.lastSeen': nowDate,
+                        updatedAt: nowDate
+                    }
+                }
+            );
+
+            this.logger.info(
+                { previousUserId: userId, newUserId: existingLink.id, wallet: normalizedAddress },
+                'Identity swap: user logged in via wallet ownership proof'
+            );
+
+            // Invalidate cache for the existing user
+            await this.invalidateUserCache(existingLink.id);
+
+            // Fetch and return the existing user's data
+            const updated = await this.collection.findOne({ id: existingLink.id });
+            return {
+                user: this.toPublicUser(updated!),
+                identitySwapped: true,
+                previousUserId: userId
+            };
         }
 
+        // Normal flow - link wallet to current user
         const nowDate = new Date();
         const existingWalletIndex = doc.wallets.findIndex(w => w.address === normalizedAddress);
 
@@ -431,7 +568,9 @@ export class UserService {
 
         // Fetch and return updated document
         const updated = await this.collection.findOne({ id: userId });
-        return this.toPublicUser(updated!);
+        return {
+            user: this.toPublicUser(updated!)
+        };
     }
 
     /**
