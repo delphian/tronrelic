@@ -53,7 +53,7 @@ function injectThemeCSS(themeId: string, themeName: string, css: string): void {
     if (typeof document === 'undefined') return;
 
     // Check if already injected
-    if (document.querySelector(`style[data-theme-id="${themeId}"]`)) {
+    if (document.querySelector(`style[data-theme-id="${CSS.escape(themeId)}"]`)) {
         return;
     }
 
@@ -182,10 +182,10 @@ export function ThemeToggle({ initialThemes, initialThemeId }: ThemeToggleProps)
             const theme = themes.find(t => t.id === themeId);
             if (theme) {
                 injectThemeCSS(theme.id, theme.name, theme.css);
+                setCurrentThemeId(themeId);
+                setCookie('theme', themeId);
+                applyTheme(themeId);
             }
-            setCurrentThemeId(themeId);
-            setCookie('theme', themeId);
-            applyTheme(themeId);
         }
     }
 
