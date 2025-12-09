@@ -1,12 +1,16 @@
 'use client';
 
+import type { IFrontendPluginContext } from '@tronrelic/types';
+
 /**
  * Example Dashboard Page Component.
  *
  * This component demonstrates how a plugin can provide a full page with custom UI.
  * It's rendered when users navigate to /example-dashboard via the plugin page registration system.
+ *
+ * @param props.context - Frontend plugin context providing access to UI components and services
  */
-export function ExampleDashboardPage() {
+export function ExampleDashboardPage({ context: _context }: { context: IFrontendPluginContext }) {
     return (
         <div className="container mx-auto px-4 py-8">
             <div className="max-w-4xl mx-auto">
