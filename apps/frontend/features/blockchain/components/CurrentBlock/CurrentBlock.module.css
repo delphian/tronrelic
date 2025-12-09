@@ -3,7 +3,23 @@
  *
  * Displays real-time blockchain block information with detailed statistics.
  * Shows block number, transactions, transfers, resource usage, and timestamps.
+ *
+ * Hydration transition: This component overlays BlockStatsServer after hydration.
+ * The wrapper starts with opacity 0 and transitions to 1 once React hydrates,
+ * providing a seamless handoff from server-rendered to client-rendered content.
  */
+
+/* Wrapper for hydration transition - positions above BlockStatsServer */
+.wrapper {
+    position: relative;
+    z-index: 1;
+    opacity: 0;
+    transition: opacity 0.15s ease-out;
+}
+
+.wrapper--hydrated {
+    opacity: 1;
+}
 
 .container {
     display: grid;

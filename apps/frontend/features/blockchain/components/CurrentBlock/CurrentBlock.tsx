@@ -1,16 +1,26 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import dynamic from 'next/dynamic';
 import { useAppDispatch, useAppSelector } from '../../../../store/hooks';
 import { setInitialBlock } from '../../slice';
 import { Card } from '../../../../components/ui/Card';
 import { Badge } from '../../../../components/ui/Badge';
 import { cn } from '../../../../lib/cn';
 import { useRealtimeStatus } from '../../../realtime/hooks/useRealtimeStatus';
-import { LineChart } from '../../../charts/components/LineChart/LineChart';
 import { useTransactionTimeseries } from '../../hooks/useTransactionTimeseries';
 import type { BlockSummary } from '../../slice';
 import styles from './CurrentBlock.module.css';
+
+/**
+ * Dynamically import LineChart to reduce initial bundle size.
+ * The chart is hidden by default (showGraph=false) so deferring its load
+ * removes the charting library from the critical rendering path.
+ */
+const LineChart = dynamic(
+    () => import('../../../charts/components/LineChart/LineChart').then(mod => mod.LineChart),
+    { ssr: false }
+);
 
 /**
  * Props for the CurrentBlock component.
@@ -120,18 +130,29 @@ export function CurrentBlock({ initialBlock }: CurrentBlockProps) {
     }, [realtime.label, lastUpdated]);
 
     /**
+     * Wrapper class for hydration transition.
+     * Starts invisible, fades in after React hydrates to seamlessly replace BlockStatsServer.
+     */
+    const wrapperClass = cn(
+        styles.wrapper,
+        isMounted && styles['wrapper--hydrated']
+    );
+
+    /**
      * Loading state - only shown when no SSR data was provided and WebSocket hasn't connected yet.
      */
     if (effectiveStatus === 'idle' || effectiveStatus === 'loading') {
         return (
-            <Card elevated>
-                <div className={styles['loading-state']}>
-                    <h2 className={styles.header__title}>Current Block</h2>
-                    <div className={styles['loading-state__message']}>
-                        Waiting for blockchain data...
+            <div className={wrapperClass}>
+                <Card elevated>
+                    <div className={styles['loading-state']}>
+                        <h2 className={styles.header__title}>Current Block</h2>
+                        <div className={styles['loading-state__message']}>
+                            Waiting for blockchain data...
+                        </div>
                     </div>
-                </div>
-            </Card>
+                </Card>
+            </div>
         );
     }
 
@@ -140,14 +161,16 @@ export function CurrentBlock({ initialBlock }: CurrentBlockProps) {
      */
     if (effectiveStatus === 'error' || !latestBlock) {
         return (
-            <Card elevated tone="muted">
-                <div className={styles['error-state']}>
-                    <h2 className={styles.header__title}>Current Block</h2>
-                    <div className={styles['error-state__message']}>
-                        No block data available
+            <div className={wrapperClass}>
+                <Card elevated tone="muted">
+                    <div className={styles['error-state']}>
+                        <h2 className={styles.header__title}>Current Block</h2>
+                        <div className={styles['error-state__message']}>
+                            No block data available
+                        </div>
                     </div>
-                </div>
-            </Card>
+                </Card>
+            </div>
         );
     }
 
@@ -155,7 +178,8 @@ export function CurrentBlock({ initialBlock }: CurrentBlockProps) {
      * Success state - display full block information.
      */
     return (
-        <Card elevated>
+        <div className={wrapperClass}>
+            <Card elevated>
             <div className={styles.container}>
                 {/* Header */}
                 <div className={styles.header}>
@@ -350,7 +374,8 @@ export function CurrentBlock({ initialBlock }: CurrentBlockProps) {
                     </div>
                 )}
             </div>
-        </Card>
+            </Card>
+        </div>
     );
 }
 
