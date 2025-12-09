@@ -260,15 +260,18 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
             __html: JSON.stringify(buildSiteStructuredData(runtimeConfig.siteUrl))
           }}
         />
-        {/* Inject active themes in dependency order */}
-        {activeThemes.map((theme) => (
-          <style
-            key={theme.id}
-            data-theme-id={theme.id}
-            data-theme-name={theme.name}
-            dangerouslySetInnerHTML={{ __html: theme.css }}
-          />
-        ))}
+        {/* Inject only the selected theme's CSS for faster first paint.
+            Other themes are lazy-loaded by ThemeToggle when user interacts. */}
+        {activeThemes
+          .filter(theme => theme.id === selectedThemeId)
+          .map((theme) => (
+            <style
+              key={theme.id}
+              data-theme-id={theme.id}
+              data-theme-name={theme.name}
+              dangerouslySetInnerHTML={{ __html: theme.css }}
+            />
+          ))}
       </head>
       <body>
         <Providers ssrUserData={ssrUserData}>
