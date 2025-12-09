@@ -8,11 +8,9 @@ import { ToastProvider } from '../components/ui/ToastProvider';
 import { ModalProvider } from '../components/ui/ModalProvider';
 import { PluginLoader } from '../components/plugins/PluginLoader';
 import { FrontendPluginContextProvider } from '../lib/frontendPluginContext';
-import {
-    UserIdentityProvider,
-    buildSSRUserState,
-    type SSRUserData
-} from '../modules/user';
+// Direct imports avoid pulling component CSS via barrel exports
+import { UserIdentityProvider } from '../modules/user/components/UserIdentityProvider';
+import { buildSSRUserState, type SSRUserData } from '../modules/user/lib';
 
 // Re-export SSRUserData for layout.tsx to use
 export type { SSRUserData };

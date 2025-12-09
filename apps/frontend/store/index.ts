@@ -1,10 +1,11 @@
 import { configureStore, combineReducers } from '@reduxjs/toolkit';
 import memoReducer from './slices/memoSlice';
-import { blockchainReducer } from '../features/blockchain';
-import { uiReducer } from '../features/ui-state';
-import { realtimeReducer } from '../features/realtime';
-import { transactionReducer } from '../features/transactions';
-import { userReducer, type UserState } from '../modules/user';
+// Direct slice imports avoid pulling component CSS via barrel exports
+import blockchainReducer from '../features/blockchain/slice';
+import uiReducer from '../features/ui-state/slice';
+import realtimeReducer from '../features/realtime/slice';
+import transactionReducer from '../features/transactions/slice';
+import userReducer, { type UserState } from '../modules/user/slice';
 import themeReducer from '../features/system/themeSlice';
 
 declare global {

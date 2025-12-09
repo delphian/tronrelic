@@ -39,6 +39,33 @@ function deleteCookie(name: string): void {
 }
 
 /**
+ * Inject theme CSS into document head if not already present.
+ *
+ * Lazy-loads theme CSS on first use to improve initial page load performance.
+ * Only the selected theme's CSS is injected during SSR; other themes are
+ * injected here when the user clicks a theme button.
+ *
+ * @param themeId - Theme UUID
+ * @param themeName - Theme display name
+ * @param css - Theme CSS content
+ */
+function injectThemeCSS(themeId: string, themeName: string, css: string): void {
+    if (typeof document === 'undefined') return;
+
+    // Check if already injected
+    if (document.querySelector(`style[data-theme-id="${CSS.escape(themeId)}"]`)) {
+        return;
+    }
+
+    // Create and inject style element
+    const style = document.createElement('style');
+    style.setAttribute('data-theme-id', themeId);
+    style.setAttribute('data-theme-name', themeName);
+    style.textContent = css;
+    document.head.appendChild(style);
+}
+
+/**
  * Render an icon from pre-resolved SVG path data.
  *
  * Uses createElement to build SVG elements from the lucide icon node format.
@@ -140,6 +167,8 @@ export function ThemeToggle({ initialThemes, initialThemeId }: ThemeToggleProps)
      * If toggling on, disables all other themes.
      * If toggling off, removes data-theme attribute.
      *
+     * Lazy-injects theme CSS on first use for improved initial page load.
+     *
      * @param themeId - Theme UUID to toggle
      */
     function toggleTheme(themeId: string): void {
@@ -149,10 +178,14 @@ export function ThemeToggle({ initialThemes, initialThemeId }: ThemeToggleProps)
             deleteCookie('theme');
             removeTheme();
         } else {
-            // Toggle on - apply this theme and disable others
-            setCurrentThemeId(themeId);
-            setCookie('theme', themeId);
-            applyTheme(themeId);
+            // Toggle on - inject CSS if needed, then apply theme
+            const theme = themes.find(t => t.id === themeId);
+            if (theme) {
+                injectThemeCSS(theme.id, theme.name, theme.css);
+                setCurrentThemeId(themeId);
+                setCookie('theme', themeId);
+                applyTheme(themeId);
+            }
         }
     }
 
