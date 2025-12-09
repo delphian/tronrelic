@@ -61,6 +61,10 @@ When an unknown delegator uses Permission_id >= 3, the plugin queries TronGrid t
 
 **Rate limiting:** 200ms delay between TronGrid calls, batch size of 10 accounts per cycle.
 
+**Self-signed delegations:** When `account === pool` (user delegating with their own custom permission rather than through an external pool), the record is stored with `selfSigned: true`. This allows distinguishing individual users from pool operators in aggregations and UI.
+
+**Unresolved memberships:** Pool membership may remain unresolved temporarily if TronGrid API fails. The aggregation falls back to using `fromAddress` as the grouping key until discovery succeeds.
+
 **Source:** `src/backend/pool-membership.service.ts`
 
 ### Summation Job

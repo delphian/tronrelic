@@ -236,12 +236,21 @@
 }
 
 .pool_name {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-3);
     font-size: var(--font-size-base);
     font-weight: var(--font-weight-medium);
     color: var(--color-text);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+}
+
+.self_signed_icon {
+    flex-shrink: 0;
+    color: var(--color-text-muted);
+    opacity: 0.7;
 }
 
 .pool_address {

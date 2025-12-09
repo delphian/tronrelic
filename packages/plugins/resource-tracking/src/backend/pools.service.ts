@@ -20,6 +20,8 @@ export interface IPoolAggregate {
     delegatorCount: number;
     recipientCount: number;
     poolName: string | null;
+    /** True if this is an individual using their own custom permission (not a pool) */
+    selfSigned: boolean;
 }
 
 /**
@@ -75,21 +77,33 @@ export async function aggregatePools(
             }
         },
 
-        // Extract pool address from lookup result
+        // Extract pool address and selfSigned flag from lookup result
         {
             $addFields: {
-                resolvedPool: { $arrayElemAt: ['$poolMembership.pool', 0] }
+                resolvedPool: {
+                    $ifNull: [
+                        { $arrayElemAt: ['$poolMembership.pool', 0] },
+                        '$fromAddress'
+                    ]
+                },
+                isSelfSigned: {
+                    $ifNull: [
+                        { $arrayElemAt: ['$poolMembership.selfSigned', 0] },
+                        false
+                    ]
+                }
             }
         },
 
-        // Group by resolved pool address
+        // Group by resolved pool address (or fromAddress when pool membership unknown)
         {
             $group: {
                 _id: '$resolvedPool',
                 totalAmountSun: { $sum: { $abs: '$amountSun' } },
                 delegationCount: { $sum: 1 },
                 uniqueDelegators: { $addToSet: '$fromAddress' },
-                uniqueRecipients: { $addToSet: '$toAddress' }
+                uniqueRecipients: { $addToSet: '$toAddress' },
+                selfSigned: { $first: '$isSelfSigned' }
             }
         },
 
@@ -100,7 +114,8 @@ export async function aggregatePools(
                 totalAmountTrx: { $divide: ['$totalAmountSun', 1_000_000] },
                 delegationCount: 1,
                 delegatorCount: { $size: '$uniqueDelegators' },
-                recipientCount: { $size: '$uniqueRecipients' }
+                recipientCount: { $size: '$uniqueRecipients' },
+                selfSigned: 1
             }
         },
         { $sort: { totalAmountTrx: -1 } },
@@ -122,7 +137,8 @@ export async function aggregatePools(
         delegationCount: pool.delegationCount as number,
         delegatorCount: pool.delegatorCount as number,
         recipientCount: pool.recipientCount as number,
-        poolName: pool.poolAddress ? addressMap.get(pool.poolAddress as string) ?? null : null
+        poolName: pool.poolAddress ? addressMap.get(pool.poolAddress as string) ?? null : null,
+        selfSigned: Boolean(pool.selfSigned)
     }));
 
     return {

@@ -11,7 +11,8 @@ import {
     ExternalLink,
     Zap,
     TrendingUp,
-    Clock
+    Clock,
+    User
 } from 'lucide-react';
 import { PoolVolumeChart } from './components/PoolVolumeChart';
 import styles from './PoolsPage.module.css';
@@ -26,6 +27,7 @@ interface IPoolData {
     delegationCount: number;
     delegatorCount: number;
     recipientCount: number;
+    selfSigned?: boolean;
 }
 
 /**
@@ -450,7 +452,16 @@ export function PoolsPage({ context }: { context: IFrontendPluginContext }) {
                                             >
                                                 <div className={styles.pool_rank}>#{index + 1}</div>
                                                 <div className={styles.pool_info}>
-                                                    <span className={styles.pool_name}>{formatPoolName(pool)}</span>
+                                                    <span className={styles.pool_name}>
+                                                        {formatPoolName(pool)}
+                                                        {pool.selfSigned && (
+                                                            <User
+                                                                size={14}
+                                                                className={styles.self_signed_icon}
+                                                                title="Individual (self-signed custom permission)"
+                                                            />
+                                                        )}
+                                                    </span>
                                                     <span className={styles.pool_address}>
                                                         {pool.poolAddress ? `${pool.poolAddress.slice(0, 10)}...` : 'Unknown'}
                                                     </span>

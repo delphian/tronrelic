@@ -18,6 +18,8 @@ export interface IPoolMember {
     permissionId: number;
     /** Permission name from TronGrid (e.g., "TronLending", "EnergyPool") */
     permissionName: string;
+    /** True if account === pool (user delegating with their own custom permission) */
+    selfSigned: boolean;
     /** When this membership was first discovered */
     discoveredAt: Date;
     /** Last time delegation activity was seen from this account */

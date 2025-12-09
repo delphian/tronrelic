@@ -230,14 +230,14 @@ export class PoolMembershipService {
                 if (permission.id < 2) continue;
 
                 for (const key of permission.keys ?? []) {
-                    // Skip if key is the account itself (self-signing)
-                    if (key.address === account) continue;
+                    const isSelfSigned = key.address === account;
 
                     const member: IPoolMember = {
                         account,
                         pool: key.address,
                         permissionId: permission.id,
                         permissionName: permission.permission_name ?? `Permission ${permission.id}`,
+                        selfSigned: isSelfSigned,
                         discoveredAt: new Date(),
                         lastSeenAt: new Date()
                     };
