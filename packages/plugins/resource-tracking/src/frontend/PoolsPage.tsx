@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import type { IFrontendPluginContext } from '@tronrelic/types';
 import {
     Users,
@@ -90,6 +90,9 @@ export function PoolsPage({ context }: { context: IFrontendPluginContext }) {
     const [poolMembers, setPoolMembers] = useState<Record<string, IPoolMember[]>>({});
     const [addressBook, setAddressBook] = useState<Record<string, IAddressBookEntry>>({});
     const [loadingDetails, setLoadingDetails] = useState<string | null>(null);
+
+    // Refs to pool list items for smooth scrolling when clicked from chart
+    const poolRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
     /**
      * Convert period string to hours for API request.
@@ -228,6 +231,7 @@ export function PoolsPage({ context }: { context: IFrontendPluginContext }) {
 
     /**
      * Toggle pool expansion and load details if needed.
+     * When expanding, smoothly scroll to the pool entry.
      */
     function handlePoolClick(poolAddress: string) {
         if (expandedPool === poolAddress) {
@@ -238,6 +242,13 @@ export function PoolsPage({ context }: { context: IFrontendPluginContext }) {
             if (!poolDelegations[poolAddress]) {
                 void loadPoolDetails(poolAddress);
             }
+            // Smooth scroll to the pool entry after state update renders
+            setTimeout(() => {
+                const element = poolRefs.current[poolAddress];
+                if (element) {
+                    element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }
+            }, 50);
         }
     }
 
@@ -274,8 +285,10 @@ export function PoolsPage({ context }: { context: IFrontendPluginContext }) {
 
     /**
      * Format rental duration from minutes.
+     * Returns em dash when duration is unavailable.
      */
-    function formatDuration(minutes: number): string {
+    function formatDuration(minutes: number | null | undefined): string {
+        if (minutes == null) return '—';
         if (minutes >= 1440) {
             const days = Math.floor(minutes / 1440);
             return `${days}d`;
@@ -424,9 +437,13 @@ export function PoolsPage({ context }: { context: IFrontendPluginContext }) {
                                     const percentage = totalVolume > 0 ? (pool.totalAmountTrx / totalVolume) * 100 : 0;
 
                                     return (
-                                        <div key={pool.poolAddress || index} className={styles.pool_item}>
+                                        <div
+                                            key={pool.poolAddress || index}
+                                            className={`${styles.pool_item} ${isExpanded ? styles['pool_item--expanded'] : ''}`}
+                                            ref={el => { if (pool.poolAddress) poolRefs.current[pool.poolAddress] = el; }}
+                                        >
                                             <button
-                                                className={styles.pool_row}
+                                                className={`${styles.pool_row} ${isExpanded ? styles['pool_row--expanded'] : ''}`}
                                                 onClick={() => pool.poolAddress && handlePoolClick(pool.poolAddress)}
                                                 disabled={!pool.poolAddress}
                                             >
