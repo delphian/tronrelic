@@ -131,12 +131,12 @@ export function CurrentBlock({ initialBlock }: CurrentBlockProps) {
 
     /**
      * Wrapper class for hydration transition.
-     * Starts invisible, fades in after React hydrates to seamlessly replace BlockStatsServer.
+     * Only applies opacity transition when SSR data exists (BlockStatsServer is rendering).
+     * When no SSR data, content is visible immediately without transition.
      */
-    const wrapperClass = cn(
-        styles.wrapper,
-        isMounted && styles['wrapper--hydrated']
-    );
+    const wrapperClass = initialBlock
+        ? cn(styles.wrapper, isMounted && styles['wrapper--hydrated'])
+        : undefined;
 
     /**
      * Loading state - only shown when no SSR data was provided and WebSocket hasn't connected yet.

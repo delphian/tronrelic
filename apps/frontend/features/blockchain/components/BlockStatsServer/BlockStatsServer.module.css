@@ -6,8 +6,9 @@
  * client component hydrates and takes over.
  *
  * The container uses absolute positioning so it paints in the same location
- * as CurrentBlock. After hydration, CurrentBlock fades in and this component
- * is hidden via the [data-hydrated] selector.
+ * as CurrentBlock. After hydration, CurrentBlock overlays this component
+ * using higher z-index (z-index: 1 vs z-index: 0). Both remain in the DOM
+ * but only CurrentBlock is visible and interactive.
  */
 
 .container {

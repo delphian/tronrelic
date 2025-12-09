@@ -3,6 +3,7 @@ import { BlockStatsServer, CurrentBlock } from '../features/blockchain/component
 import { buildMetadata } from '../lib/seo';
 import { getServerConfig } from '../lib/serverConfig';
 import { getApiUrl } from '../lib/config';
+import styles from './page.module.css';
 
 export const dynamic = 'force-dynamic';
 
@@ -96,7 +97,7 @@ export default async function HomePage(): Promise<JSX.Element> {
 
         This eliminates ~800ms+ "element render delay" on throttled mobile devices.
       */}
-      <section style={{ position: 'relative' }}>
+      <section className={styles.block_stats_section}>
         {/* Server-rendered stats - paints immediately (LCP element) */}
         <BlockStatsServer
           blockNumber={initialBlock?.blockNumber ?? null}
