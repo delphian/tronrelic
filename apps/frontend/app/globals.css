@@ -192,6 +192,17 @@ main {
   color: var(--color-text-subtle);
 }
 
+/* Inline text link - use in prose/descriptions where links need visual distinction */
+.link {
+  color: var(--color-primary);
+  text-decoration: underline;
+  transition: color var(--transition-base);
+}
+
+.link:hover {
+  color: var(--color-secondary);
+}
+
 .chip {
   display: inline-flex;
   align-items: center;

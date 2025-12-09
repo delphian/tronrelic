@@ -352,13 +352,14 @@ export function PoolsPage({ context }: { context: IFrontendPluginContext }) {
                 </h1>
                 <p className={styles.subtitle}>
                     Track delegation activity from TRON energy rental pools. Pools are detected by Permission_id &ge; 3 on delegation transactions.
+                    {' '}<a className="link" href="https://tronrelic.com/tron-permission-id-lending-pool-signals" target="_blank" rel="noopener noreferrer">Learn more</a>.
                 </p>
             </header>
 
-            {/* Period selector */}
+            {/* Period selector - 7d/30d temporarily disabled until hourly aggregate queries are implemented */}
             <div className={styles.controls}>
                 <div className={styles.period_selector}>
-                    {(['24h', '7d', '30d'] as TimePeriod[]).map((p) => (
+                    {(['24h'] as TimePeriod[]).map((p) => (
                         <button
                             key={p}
                             className={`${styles.period_button} ${period === p ? styles.period_button_active : ''}`}
