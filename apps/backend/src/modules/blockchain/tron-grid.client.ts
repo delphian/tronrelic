@@ -254,6 +254,23 @@ export interface TronGridDelegatedResourceResponse {
     delegatedResource?: TronGridDelegatedResourceEntry[];
 }
 
+export interface TronGridAccountPermission {
+    id: number;
+    permission_name?: string;
+    threshold?: number;
+    keys?: Array<{
+        address: string;
+        weight: number;
+    }>;
+}
+
+export interface TronGridAccountResponse {
+    address?: string;
+    balance?: number;
+    active_permission?: TronGridAccountPermission[];
+    owner_permission?: TronGridAccountPermission;
+}
+
 export class TronGridClient {
     private static instance: TronGridClient | null = null;
 
@@ -419,6 +436,26 @@ export class TronGridClient {
             });
         } catch (error) {
             logger.error({ error, fromAddress, toAddress }, 'Failed to fetch delegated resource');
+            return null;
+        }
+    }
+
+    /**
+     * Get account information including permissions.
+     * Used by plugins to discover pool memberships via active_permission keys.
+     */
+    async getAccount(address: string, visible = true): Promise<TronGridAccountResponse | null> {
+        try {
+            return await retry(
+                () => this.post<TronGridAccountResponse>('/wallet/getaccount', { address, visible }),
+                {
+                    ...blockchainConfig.retry,
+                    onRetry: (attempt, error) =>
+                        logger.warn({ attempt, error, address }, 'Retrying TronGrid getAccount')
+                }
+            );
+        } catch (error) {
+            logger.error({ error, address }, 'Failed to fetch account');
             return null;
         }
     }

@@ -9,26 +9,13 @@
  * The discovery process is asynchronous to avoid blocking transaction processing.
  * Pool memberships are cached in the database and rarely change, so lookups are
  * typically fast cache hits.
+ *
+ * Uses the shared TronGridClient via IPluginContext.tronGrid for consistent
+ * rate limiting, key rotation, and retry logic across the application.
  */
 
-import type { IPluginDatabase, ISystemLogService } from '@tronrelic/types';
+import type { IPluginDatabase, ISystemLogService, ITronGridService } from '@tronrelic/types';
 import type { IPoolMember } from '../shared/types/index.js';
-
-/**
- * TronGrid account response structure for permission discovery.
- */
-interface ITronGridAccountResponse {
-    address?: string;
-    active_permission?: Array<{
-        id: number;
-        permission_name?: string;
-        threshold?: number;
-        keys?: Array<{
-            address: string;
-            weight: number;
-        }>;
-    }>;
-}
 
 /**
  * Queued permission lookup item.
@@ -46,7 +33,7 @@ interface IPermissionLookupItem {
 export class PoolMembershipService {
     private readonly database: IPluginDatabase;
     private readonly logger: ISystemLogService;
-    private readonly tronGridBaseUrl = 'https://api.trongrid.io';
+    private readonly tronGrid: ITronGridService;
 
     /** Queue of accounts needing permission lookup */
     private lookupQueue: IPermissionLookupItem[] = [];
@@ -60,9 +47,10 @@ export class PoolMembershipService {
     /** Interval handle for periodic queue processing */
     private processInterval: NodeJS.Timeout | null = null;
 
-    constructor(database: IPluginDatabase, logger: ISystemLogService) {
+    constructor(database: IPluginDatabase, logger: ISystemLogService, tronGrid: ITronGridService) {
         this.database = database;
         this.logger = logger.child({ service: 'PoolMembershipService' });
+        this.tronGrid = tronGrid;
     }
 
     /**
@@ -178,8 +166,7 @@ export class PoolMembershipService {
         for (const item of batch) {
             try {
                 await this.discoverPoolsForAccount(item.account);
-                // Rate limit: 200ms between calls
-                await this.delay(200);
+                // TronGridClient handles rate limiting internally
             } catch (error) {
                 this.logger.error({ error, account: item.account }, 'Failed to discover pools for account');
             }
@@ -191,8 +178,8 @@ export class PoolMembershipService {
     /**
      * Discover pool memberships for a single account.
      *
-     * Calls TronGrid /wallet/getaccount to fetch permissions, then extracts
-     * pool addresses from active_permission[].keys[].address fields.
+     * Uses the shared TronGridClient to fetch account permissions with
+     * built-in rate limiting, key rotation, and retry logic.
      *
      * @param account - Account address to discover pools for
      * @returns Array of discovered pool memberships
@@ -201,27 +188,13 @@ export class PoolMembershipService {
         const members: IPoolMember[] = [];
 
         try {
-            const apiKey = process.env.TRONGRID_API_KEY ?? '';
-            const headers: Record<string, string> = {
-                'Content-Type': 'application/json'
-            };
+            const data = await this.tronGrid.getAccount(account);
 
-            if (apiKey) {
-                headers['TRON-PRO-API-KEY'] = apiKey;
-            }
-
-            const response = await fetch(`${this.tronGridBaseUrl}/wallet/getaccount`, {
-                method: 'POST',
-                headers,
-                body: JSON.stringify({ address: account, visible: true })
-            });
-
-            if (!response.ok) {
-                this.logger.warn({ account, status: response.status }, 'TronGrid request failed');
+            if (!data) {
+                this.logger.warn({ account }, 'TronGrid getAccount returned null');
                 return members;
             }
 
-            const data = await response.json() as ITronGridAccountResponse;
             const activePermissions = data.active_permission ?? [];
 
             for (const permission of activePermissions) {
@@ -286,13 +259,6 @@ export class PoolMembershipService {
             if ('code' in error.error && error.error.code === 11000) return true;
         }
         return false;
-    }
-
-    /**
-     * Helper to delay execution.
-     */
-    private delay(ms: number): Promise<void> {
-        return new Promise(resolve => setTimeout(resolve, ms));
     }
 
     /**

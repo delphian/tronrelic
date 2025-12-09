@@ -15,6 +15,7 @@ import { runPurgeJob } from './purge.job.js';
 import { sampleSummations } from './utils/sampleSummations.js';
 import { getSummationCacheKey, getSummationCachePattern } from './utils/cacheKeys.js';
 import { PoolMembershipService } from './pool-membership.service.js';
+import { aggregatePools } from './pools.service.js';
 import { ADDRESS_BOOK_SEED_DATA } from './address-book-seed.js';
 
 // Store context and intervals for API handlers and lifecycle management
@@ -121,37 +122,20 @@ export const resourceTrackingBackendPlugin = definePlugin({
         }
 
         // Drop pool tracking collections
-        try {
-            const poolDelegationsCollection = context.database.getCollection('pool-delegations');
-            await poolDelegationsCollection.drop();
-            context.logger.info('Dropped pool-delegations collection');
-        } catch (error) {
-            context.logger.warn({ error }, 'Failed to drop pool-delegations collection (may not exist)');
-        }
+        const dropCollection = async (name: string) => {
+            try {
+                const collection = context.database.getCollection(name);
+                await collection.drop();
+                context.logger.info(`Dropped ${name} collection`);
+            } catch (error) {
+                context.logger.warn({ error }, `Failed to drop ${name} collection (may not exist)`);
+            }
+        };
 
-        try {
-            const poolMembersCollection = context.database.getCollection('pool-members');
-            await poolMembersCollection.drop();
-            context.logger.info('Dropped pool-members collection');
-        } catch (error) {
-            context.logger.warn({ error }, 'Failed to drop pool-members collection (may not exist)');
-        }
-
-        try {
-            const addressBookCollection = context.database.getCollection('address-book');
-            await addressBookCollection.drop();
-            context.logger.info('Dropped address-book collection');
-        } catch (error) {
-            context.logger.warn({ error }, 'Failed to drop address-book collection (may not exist)');
-        }
-
-        try {
-            const poolDelegationsHourlyCollection = context.database.getCollection('pool-delegations-hourly');
-            await poolDelegationsHourlyCollection.drop();
-            context.logger.info('Dropped pool-delegations-hourly collection');
-        } catch (error) {
-            context.logger.warn({ error }, 'Failed to drop pool-delegations-hourly collection (may not exist)');
-        }
+        await dropCollection('pool-delegations');
+        await dropCollection('pool-members');
+        await dropCollection('address-book');
+        await dropCollection('pool-delegations-hourly');
 
         context.logger.info('Resource-tracking plugin uninstalled');
     },
@@ -239,8 +223,8 @@ export const resourceTrackingBackendPlugin = definePlugin({
     init: async (context: IPluginContext) => {
         pluginContext = context;
 
-        // Create pool membership discovery service
-        poolMembershipService = new PoolMembershipService(context.database, context.logger);
+        // Create pool membership discovery service with injected TronGrid client
+        poolMembershipService = new PoolMembershipService(context.database, context.logger, context.tronGrid);
 
         // Import and register the delegation transaction observer
         const { createDelegationTrackerObserver } = await import('./delegation-tracker.observer.js');
@@ -543,83 +527,10 @@ export const resourceTrackingBackendPlugin = definePlugin({
             path: '/pools',
             handler: async (req: IHttpRequest, res: IHttpResponse, next: IHttpNext) => {
                 try {
-                    const hours = Math.min(Number(req.query.hours) || 24, 168); // Max 7 days
-                    const since = new Date(Date.now() - hours * 60 * 60 * 1000);
-
-                    // Aggregate delegations by pool using $lookup join with pool-members
-                    // This matches the old system's approach: JOIN rm_delegation with rm_multisig at query time
-                    const collection = pluginContext.database.getCollection('pool-delegations');
-                    const membersCollectionName = pluginContext.database.getCollection('pool-members').collectionName;
-
-                    const pools = await collection.aggregate([
-                        // Filter to recent energy delegations
-                        { $match: { timestamp: { $gte: since }, resourceType: 1 } },
-
-                        // Join with pool-members to discover the controlling pool
-                        // Matches: pool-members.account = pool-delegations.fromAddress
-                        //      AND pool-members.permissionId = pool-delegations.permissionId
-                        {
-                            $lookup: {
-                                from: membersCollectionName,
-                                let: { fromAddr: '$fromAddress', permId: '$permissionId' },
-                                pipeline: [
-                                    {
-                                        $match: {
-                                            $expr: {
-                                                $and: [
-                                                    { $eq: ['$account', '$$fromAddr'] },
-                                                    { $eq: ['$permissionId', '$$permId'] }
-                                                ]
-                                            }
-                                        }
-                                    }
-                                ],
-                                as: 'poolMembership'
-                            }
-                        },
-
-                        // Extract pool address from lookup result (first match or null)
-                        {
-                            $addFields: {
-                                resolvedPool: { $arrayElemAt: ['$poolMembership.pool', 0] }
-                            }
-                        },
-
-                        // Group by resolved pool address
-                        {
-                            $group: {
-                                _id: '$resolvedPool',
-                                totalAmountSun: { $sum: { $abs: '$amountSun' } },
-                                delegationCount: { $sum: 1 },
-                                uniqueDelegators: { $addToSet: '$fromAddress' },
-                                uniqueRecipients: { $addToSet: '$toAddress' }
-                            }
-                        },
-
-                        // Project final fields
-                        {
-                            $project: {
-                                poolAddress: '$_id',
-                                totalAmountTrx: { $divide: ['$totalAmountSun', 1_000_000] },
-                                delegationCount: 1,
-                                delegatorCount: { $size: '$uniqueDelegators' },
-                                recipientCount: { $size: '$uniqueRecipients' }
-                            }
-                        },
-                        { $sort: { totalAmountTrx: -1 } },
-                        { $limit: 50 }
-                    ]).toArray();
-
-                    // Enrich with address book names
-                    const addressBook = await pluginContext.database.find<IAddressBookEntry>('address-book', {});
-                    const addressMap = new Map(addressBook.map(e => [e.address, e.name]));
-
-                    const enrichedPools = pools.map(pool => ({
-                        ...pool,
-                        poolName: pool.poolAddress ? addressMap.get(pool.poolAddress) ?? null : null
-                    }));
-
-                    res.json({ success: true, pools: enrichedPools, hours });
+                    const hoursParam = Number(req.query.hours);
+                    const hours = isNaN(hoursParam) ? 24 : Math.min(Math.max(hoursParam, 1), 168);
+                    const { pools, addressBook } = await aggregatePools(pluginContext.database, hours);
+                    res.json({ success: true, pools, addressBook, hours });
                 } catch (error) {
                     next(error);
                 }

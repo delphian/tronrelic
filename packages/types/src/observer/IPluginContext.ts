@@ -11,6 +11,7 @@ import type { ISchedulerService } from '../scheduler/ISchedulerService.js';
 import type { IChainParametersService } from '../chain-parameters/IChainParametersService.js';
 import type { IUsdtParametersService } from '../usdt-parameters/IUsdtParametersService.js';
 import type { IWidgetService } from '../widget/IWidgetService.js';
+import type { ITronGridService } from '../tron-grid/ITronGridService.js';
 import { ISystemLogService } from '../system-log/ISystemLogService.js';
 
 /**
@@ -64,6 +65,9 @@ export interface IPluginContext {
 
     /** Widget service for registering UI widgets that inject into page zones */
     widgetService: IWidgetService;
+
+    /** TronGrid service for querying TRON blockchain data with rate limiting and key rotation */
+    tronGrid: ITronGridService;
 
     /** Structured logger scoped to the plugin for consistent telemetry */
     logger: ISystemLogService;
