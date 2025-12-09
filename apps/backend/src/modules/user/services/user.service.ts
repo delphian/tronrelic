@@ -66,6 +66,20 @@ export interface ILinkWalletResult {
 }
 
 /**
+ * Public profile data for a verified wallet address.
+ */
+export interface IPublicProfile {
+    /** UUID of the user who owns this profile */
+    userId: string;
+    /** Verified wallet address for this profile */
+    address: string;
+    /** When the user account was created */
+    createdAt: Date;
+    /** Always true (only verified profiles are returned) */
+    isVerified: true;
+}
+
+/**
  * Service for managing visitor identity and wallet linking.
  *
  * This singleton service handles user lifecycle including creation, wallet linking,
@@ -287,6 +301,45 @@ export class UserService {
         return user;
     }
 
+    /**
+     * Get public profile by verified wallet address.
+     *
+     * Returns profile data only if the wallet is verified. Unverified wallets
+     * or non-existent addresses return null.
+     *
+     * @param address - Base58 TRON address
+     * @returns Public profile or null if not found/not verified
+     */
+    async getPublicProfile(address: string): Promise<IPublicProfile | null> {
+        // Normalize address using signature service (handles TRON address format)
+        let normalizedAddress: string;
+        try {
+            normalizedAddress = this.signatureService.normalizeAddress(address);
+        } catch {
+            return null;
+        }
+
+        // Look up user by wallet
+        const user = await this.getByWallet(normalizedAddress);
+        if (!user) {
+            return null;
+        }
+
+        // Find the specific wallet and check if verified
+        // Use normalized address for comparison (addresses are stored normalized)
+        const wallet = user.wallets.find(w => w.address === normalizedAddress);
+        if (!wallet || !wallet.verified) {
+            return null;
+        }
+
+        return {
+            userId: user.id,
+            address: wallet.address,
+            createdAt: user.createdAt,
+            isVerified: true
+        };
+    }
+
     // ==================== Wallet Linking ====================
 
     /**
@@ -439,23 +492,18 @@ export class UserService {
             // User has proven wallet ownership via signature, so swap to existing identity
             const nowDate = new Date();
 
-            // Update lastUsed on the existing user's wallet
-            const walletIndex = existingLink.wallets.findIndex(w => w.address === normalizedAddress);
-            if (walletIndex >= 0) {
-                existingLink.wallets[walletIndex].lastUsed = nowDate;
-                existingLink.wallets[walletIndex].verified = true;
-
-                await this.collection.updateOne(
-                    { id: existingLink.id },
-                    {
-                        $set: {
-                            wallets: existingLink.wallets,
-                            'activity.lastSeen': nowDate,
-                            updatedAt: nowDate
-                        }
+            // Update wallet atomically using positional operator to avoid race conditions
+            await this.collection.updateOne(
+                { id: existingLink.id, 'wallets.address': normalizedAddress },
+                {
+                    $set: {
+                        'wallets.$.lastUsed': nowDate,
+                        'wallets.$.verified': true,
+                        'activity.lastSeen': nowDate,
+                        updatedAt: nowDate
                     }
-                );
-            }
+                }
+            );
 
             this.logger.info(
                 { previousUserId: userId, newUserId: existingLink.id, wallet: normalizedAddress },

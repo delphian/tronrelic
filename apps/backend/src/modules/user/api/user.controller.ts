@@ -564,23 +564,9 @@ export class UserController {
                 return;
             }
 
-            // Look up user by wallet address
-            const user = await this.userService.getByWallet(address);
+            const profile = await this.userService.getPublicProfile(address);
 
-            if (!user) {
-                res.status(404).json({
-                    error: 'Profile not found',
-                    message: 'No profile exists for this wallet address'
-                });
-                return;
-            }
-
-            // Find the specific wallet and check if verified
-            const wallet = user.wallets.find(w =>
-                w.address.toLowerCase() === address.toLowerCase()
-            );
-
-            if (!wallet || !wallet.verified) {
+            if (!profile) {
                 res.status(404).json({
                     error: 'Profile not found',
                     message: 'No verified profile exists for this wallet address'
@@ -588,14 +574,7 @@ export class UserController {
                 return;
             }
 
-            // Return public profile data
-            // Include userId so frontend can compare with cookie to determine ownership
-            res.json({
-                userId: user.id,
-                address: wallet.address,
-                createdAt: user.createdAt,
-                isVerified: true
-            });
+            res.json(profile);
         } catch (error) {
             this.logger.error({ error, address: req.params.address }, 'Failed to get profile');
             res.status(500).json({

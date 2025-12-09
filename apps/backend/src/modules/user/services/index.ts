@@ -1,5 +1,5 @@
 export { UserService } from './user.service.js';
-export type { IUserStats, IConnectWalletResult, ILinkWalletResult } from './user.service.js';
+export type { IUserStats, IConnectWalletResult, ILinkWalletResult, IPublicProfile } from './user.service.js';
 export type { UserFilterType } from '@tronrelic/types';
 export {
     initGeoIP,

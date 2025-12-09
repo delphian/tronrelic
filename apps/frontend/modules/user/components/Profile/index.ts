@@ -5,6 +5,6 @@
  * from './ProfilePage' to avoid bundling issues with client components.
  */
 
-export type { ProfileData } from './ProfilePage';
+export type { IPublicProfile as ProfileData } from '../../api';
 export { ProfileOwnerView } from './ProfileOwnerView';
 export { ProfilePublicView } from './ProfilePublicView';

@@ -15,18 +15,9 @@ import { notFound } from 'next/navigation';
 import { cookies } from 'next/headers';
 import { getApiUrl } from '../../../../lib/config';
 import { USER_ID_COOKIE_NAME } from '../../lib/identity';
+import type { IPublicProfile } from '../../api';
 import { ProfileOwnerView } from './ProfileOwnerView';
 import { ProfilePublicView } from './ProfilePublicView';
-
-/**
- * Profile data returned from the backend API.
- */
-export interface ProfileData {
-    userId: string;
-    address: string;
-    createdAt: string;
-    isVerified: true;
-}
 
 /**
  * Props for the ProfilePage component.
@@ -41,7 +32,7 @@ interface ProfilePageProps {
  * @param address - TRON wallet address
  * @returns Profile data or null if not found
  */
-async function fetchProfile(address: string): Promise<ProfileData | null> {
+async function fetchProfile(address: string): Promise<IPublicProfile | null> {
     try {
         const response = await fetch(getApiUrl(`/profile/${address}`), {
             cache: 'no-store'
