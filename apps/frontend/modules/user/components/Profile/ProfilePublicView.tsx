@@ -9,7 +9,7 @@
  */
 'use client';
 
-import type { ProfileData } from './ProfilePage';
+import type { ProfileData } from './index';
 import styles from './Profile.module.css';
 
 /**

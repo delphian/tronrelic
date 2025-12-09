@@ -12,7 +12,7 @@
 import { useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { LogOut, Loader2 } from 'lucide-react';
-import type { ProfileData } from './ProfilePage';
+import type { ProfileData } from './index';
 import { useWallet } from '../../hooks/useWallet';
 import { useToast } from '../../../../components/ui/ToastProvider';
 import styles from './Profile.module.css';
