@@ -177,11 +177,13 @@ export function createDelegationTrackerObserver(
             // Whale detection: Check if delegation exceeds threshold
             await this.detectWhale(delegationRecord, scopedLogger);
 
+            // TEMPORARY: Pool tracking disabled pending investigation
+            // TODO: Re-enable pool tracking when ready
             // Pool tracking: Check if this is a pool-controlled delegation (Permission_id >= 3)
             const rawValue = transaction.rawValue as Record<string, unknown>;
             const permissionId = typeof rawValue?.Permission_id === 'number' ? rawValue.Permission_id : 0;
 
-            if (permissionId >= 3 && isDelegation) {
+            if (false && permissionId >= 3 && isDelegation) {
                 await this.trackPoolDelegation(
                     delegationRecord,
                     permissionId,
