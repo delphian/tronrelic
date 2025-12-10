@@ -455,11 +455,12 @@ export function PoolsPage({ context }: { context: IFrontendPluginContext }) {
                                                     <span className={styles.pool_name}>
                                                         {formatPoolName(pool)}
                                                         {pool.selfSigned && (
-                                                            <User
-                                                                size={14}
-                                                                className={styles.self_signed_icon}
-                                                                title="Individual (self-signed custom permission)"
-                                                            />
+                                                            <span title="Individual (self-signed custom permission)">
+                                                                <User
+                                                                    size={14}
+                                                                    className={styles.self_signed_icon}
+                                                                />
+                                                            </span>
                                                         )}
                                                     </span>
                                                     <span className={styles.pool_address}>
