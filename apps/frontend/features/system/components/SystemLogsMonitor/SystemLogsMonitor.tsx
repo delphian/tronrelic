@@ -76,7 +76,7 @@ export function SystemLogsMonitor({ token }: Props) {
     const [hasPrevPage, setHasPrevPage] = useState(false);
 
     // Filters
-    const [selectedLevels, setSelectedLevels] = useState<LogLevel[]>(['error', 'warn', 'info']);
+    const [selectedLevels, setSelectedLevels] = useState<LogLevel[]>(['error']);
     const [serviceFilter, setServiceFilter] = useState('');
 
     // Live polling (interval in milliseconds, 0 means disabled)

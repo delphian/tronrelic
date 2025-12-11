@@ -10,7 +10,7 @@ Load the project rules first. Read `README.md`, `AGENTS.md`, and any topic-speci
 
 1. **Lead with "why."** Clearly explain the purpose and risk of ignoring the guidance. Readers should know why the system exists before seeing implementation steps.
 2. **Follow with "how."** Describe the workflow in plain English paragraphs. Prefer brief executive summaries over bullet points or checklists.
-3. **Close with code.** Provide a single representative code snippet (if necessary) that reinforces the narrative. Keep it focused—no sprawling examples that require readers to infer intent.
+3. **Close with code.** Provide a single brief representative code snippet (if necessary) that reinforces the narrative. Keep it focused—no sprawling examples that require readers to infer intent.
 
 ## Tone and Language
 
