@@ -1,11 +1,9 @@
-import mongoose from 'mongoose';
 import type { IDatabaseService } from '@tronrelic/types';
 import { env } from '../config/env.js';
 import { SchedulerService } from '../services/scheduler.service.js';
 import { BlockchainService } from '../modules/blockchain/blockchain.service.js';
 import { logger } from '../lib/logger.js';
 import { CacheModel, type CacheDoc } from '../database/models/cache-model.js';
-import { DatabaseService } from '../modules/database/index.js';
 import { ChainParametersFetcher } from '../modules/chain-parameters/chain-parameters-fetcher.js';
 import { UsdtParametersFetcher } from '../modules/usdt-parameters/usdt-parameters-fetcher.js';
 import { SystemLogService } from '../modules/logs/index.js';
@@ -33,28 +31,26 @@ export function getScheduler(): SchedulerService | null {
  * the scheduler. The scheduler loads configuration from MongoDB and schedules
  * enabled jobs according to their configured intervals.
  *
+ * @param database - Shared database service instance from bootstrap
  * @returns {Promise<SchedulerService | null>} Scheduler instance or null if disabled
  */
-export async function initializeJobs(): Promise<SchedulerService | null> {
+export async function initializeJobs(database: IDatabaseService): Promise<SchedulerService | null> {
     if (!env.ENABLE_SCHEDULER) {
         logger.warn('Scheduler disabled by configuration');
         return null;
     }
 
-    // Create database service for scheduler and blockchain service
-    const jobsDatabase = new DatabaseService(logger.child({ module: 'jobs' }), mongoose.connection);
-
     // Register CacheModel for cache cleanup job
-    jobsDatabase.registerModel('caches', CacheModel);
+    database.registerModel('caches', CacheModel);
 
     // Inject database into BlockchainService BEFORE first getInstance() call
-    BlockchainService.setDependencies(jobsDatabase);
+    BlockchainService.setDependencies(database);
 
     const blockchainService = BlockchainService.getInstance();
-    const chainParametersFetcher = new ChainParametersFetcher(axios, logger, jobsDatabase);
-    const usdtParametersFetcher = new UsdtParametersFetcher(axios, logger, jobsDatabase);
+    const chainParametersFetcher = new ChainParametersFetcher(axios, logger, database);
+    const usdtParametersFetcher = new UsdtParametersFetcher(axios, logger, database);
 
-    scheduler = new SchedulerService(jobsDatabase);
+    scheduler = new SchedulerService(database);
 
     // Chain parameters: every 10 minutes
     scheduler.register('chain-parameters:fetch', '*/10 * * * *', async () => {
@@ -77,7 +73,7 @@ export async function initializeJobs(): Promise<SchedulerService | null> {
     });
 
     scheduler.register('cache:cleanup', '0 * * * *', async () => {
-        await jobsDatabase.deleteMany('caches', { expiresAt: { $lte: new Date() } });
+        await database.deleteMany('caches', { expiresAt: { $lte: new Date() } });
     });
 
     // System logs cleanup: every hour

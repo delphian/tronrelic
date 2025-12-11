@@ -5,13 +5,11 @@ import express from 'express';
 import helmet from 'helmet';
 import morgan from 'morgan';
 import type { Express } from 'express';
-import type { IDatabaseService } from '@tronrelic/types';
 import { requestContext } from '../api/middleware/request-context.js';
 import { errorHandler } from '../api/middleware/error-handler.js';
-import { createApiRouter } from '../api/routes/index.js';
 import { env } from '../config/env.js';
 
-export function createExpressApp(database?: IDatabaseService): Express {
+export function createExpressApp(): Express {
   const app = express();
 
   app.set('trust proxy', true);
@@ -82,7 +80,8 @@ export function createExpressApp(database?: IDatabaseService): Express {
     res.send('# Market metrics moved to plugin API\n# See: /api/plugins/resource-markets/system/platforms\n# See: /api/plugins/resource-markets/system/freshness\n');
   });
 
-  app.use('/api', createApiRouter(database));
+  // Note: API routes are mounted in bootstrapInit() after database is initialized
+  // This allows routers to receive the shared coreDatabase via dependency injection
 
   app.use(errorHandler);
   return app;

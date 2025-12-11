@@ -3,12 +3,12 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import axios from 'axios';
 import mongoose from 'mongoose';
-import type { IPluginContext, IPlugin } from '@tronrelic/types';
+import type { IPluginContext, IPlugin, IDatabaseService } from '@tronrelic/types';
 import { logger } from '../lib/logger.js';
 import { BlockchainObserverService } from '../services/blockchain-observer/index.js';
 import { BaseObserver } from '../modules/blockchain/observers/BaseObserver.js';
 import { WebSocketService } from '../services/websocket.service.js';
-import { PluginDatabaseService, DatabaseService } from '../modules/database/index.js';
+import { PluginDatabaseService } from '../modules/database/index.js';
 import { PluginApiService } from '../services/plugin-api.service.js';
 import { PluginMetadataService } from '../services/plugin-metadata.service.js';
 import { PluginManagerService } from '../services/plugin-manager.service.js';
@@ -147,17 +147,19 @@ async function loadAllPlugins(): Promise<IPlugin[]> {
  * 4. Init hook (every startup: register observers, menu items via context.menuService, start services)
  * 5. API route registration (expose REST endpoints)
  */
-export async function loadPlugins(): Promise<void> {
+/**
+ * Load and initialize all discovered plugins.
+ *
+ * @param database - Shared database service instance from bootstrap
+ */
+export async function loadPlugins(database: IDatabaseService): Promise<void> {
     await logger.waitUntilInitialized();
 
     const pluginList = await loadAllPlugins();
     const apiService = PluginApiService.getInstance();
 
-    // Create DatabaseService early so we can inject into services
-    const pluginLoaderDatabase = new DatabaseService(logger.child({ module: 'plugin-loader' }), mongoose.connection);
-
     // Inject database into PluginMetadataService before getInstance()
-    PluginMetadataService.setDependencies(pluginLoaderDatabase);
+    PluginMetadataService.setDependencies(database);
     const metadataService = PluginMetadataService.getInstance();
     const pluginManager = PluginManagerService.getInstance();
     const observerService = BlockchainObserverService.getInstance();
@@ -169,7 +171,7 @@ export async function loadPlugins(): Promise<void> {
     const wsRegistry = PluginWebSocketRegistry.getInstance();
     const io = websocketService.getIO();
     const redis = getRedisClient();
-    const cacheService = new CacheService(redis, pluginLoaderDatabase);
+    const cacheService = new CacheService(redis, database);
     const systemConfigService = SystemConfigService.getInstance();
     const menuService = MenuService.getInstance();
     const schedulerService = getScheduler();
@@ -180,7 +182,7 @@ export async function loadPlugins(): Promise<void> {
     const widgetService = WidgetService.getInstance(logger);
     const tronGridClient = TronGridClient.getInstance();
     // Ensure BlockchainService has database injected before getInstance() (may already be set by jobs/index.ts)
-    BlockchainService.setDependencies(pluginLoaderDatabase);
+    BlockchainService.setDependencies(database);
     const blockchainService = BlockchainService.getInstance();
 
     // Create shared HTTP client for all plugins

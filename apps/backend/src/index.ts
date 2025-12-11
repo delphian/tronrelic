@@ -34,6 +34,7 @@ import { ChainParametersFetcher } from './modules/chain-parameters/chain-paramet
 import { ChainParametersService } from './modules/chain-parameters/chain-parameters.service.js';
 import { UsdtParametersFetcher } from './modules/usdt-parameters/usdt-parameters-fetcher.js';
 import { UsdtParametersService } from './modules/usdt-parameters/usdt-parameters.service.js';
+import { createApiRouter } from './api/routes/index.js';
 import type { Express } from 'express';
 import type { IDatabaseService, IMenuService } from '@tronrelic/types';
 import axios from 'axios';
@@ -55,11 +56,11 @@ async function bootstrap(): Promise<void> {
         const ctx = await bootstrapInit();
         await bootstrapRun(ctx);
 
-        await initializeJobs();
+        await initializeJobs(ctx.coreDatabase);
 
         try {
             await logger.waitUntilInitialized();
-            await loadPlugins();
+            await loadPlugins(ctx.coreDatabase);
         } catch (pluginError) {
             logger.error({ pluginError, stack: pluginError instanceof Error ? pluginError.stack : undefined }, 'Plugin initialization failed');
         }
@@ -141,6 +142,10 @@ async function bootstrapInit(): Promise<BootstrapContext> {
     await databaseModule.init({ logger, app });
     const coreDatabase = databaseModule.getDatabaseService();
     app.locals.database = coreDatabase;
+
+    // Mount API routes now that coreDatabase exists
+    // Routers receive the shared database instance via dependency injection
+    app.use('/api', createApiRouter(coreDatabase));
 
     await initializeCoreServices(coreDatabase);
 
