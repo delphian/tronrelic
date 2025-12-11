@@ -122,8 +122,16 @@ export async function aggregatePools(
         { $limit: 50 }
     ]).toArray();
 
-    // Get address book for name resolution
-    const addressBookEntries = await database.find<IAddressBookEntry>('address-book', {});
+    // Get address book for name resolution (only fetch addresses we need)
+    // Issue #81: Previously fetched entire address-book collection; now uses $in for efficiency
+    const poolAddresses = pools
+        .map(p => p.poolAddress as string | null)
+        .filter((addr): addr is string => addr !== null);
+
+    const addressBookEntries = poolAddresses.length > 0
+        ? await database.find<IAddressBookEntry>('address-book', { address: { $in: poolAddresses } })
+        : [];
+
     const addressMap = new Map(addressBookEntries.map(e => [e.address, e.name]));
     const addressBook: Record<string, IAddressBookEntry> = {};
     for (const entry of addressBookEntries) {

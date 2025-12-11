@@ -66,7 +66,10 @@ export function createDelegationTrackerObserver(
         // Throttle pool updates to once per block (3 seconds)
         // Instead of emitting per-transaction, we aggregate and push once per block
         private lastPoolUpdateBlock = 0;
-        private poolUpdatePending = false;
+
+        // Track pending fire-and-forget aggregations to detect backlog (Issue #81)
+        private pendingPoolUpdates = 0;
+        private readonly MAX_PENDING_BEFORE_ERROR = 10;
 
         constructor() {
             super(scopedLogger);
@@ -177,13 +180,11 @@ export function createDelegationTrackerObserver(
             // Whale detection: Check if delegation exceeds threshold
             await this.detectWhale(delegationRecord, scopedLogger);
 
-            // TEMPORARY: Pool tracking disabled pending investigation
-            // TODO: Re-enable pool tracking when ready
             // Pool tracking: Check if this is a pool-controlled delegation (Permission_id >= 3)
             const rawValue = transaction.rawValue as Record<string, unknown>;
             const permissionId = typeof rawValue?.Permission_id === 'number' ? rawValue.Permission_id : 0;
 
-            if (false && permissionId >= 3 && isDelegation) {
+            if (permissionId >= 3 && isDelegation) {
                 await this.trackPoolDelegation(
                     delegationRecord,
                     permissionId,
@@ -343,27 +344,14 @@ export function createDelegationTrackerObserver(
                 await this.database.insertOne('pool-delegations', poolDelegation);
 
                 // Throttle WebSocket updates to once per block.
-                // When we see the first pool delegation in a new block, aggregate all pool data
-                // and push the full dataset to subscribers. This scales efficiently: 1 DB query
-                // broadcast to N clients, instead of N clients each polling the API.
+                // Fire-and-forget pattern: don't await aggregation to avoid blocking transaction processing.
+                // Issue #81: Awaiting aggregatePools() caused observer queue overflow at chain tip.
                 const currentBlock = delegation.blockNumber;
                 if (currentBlock && currentBlock > this.lastPoolUpdateBlock) {
                     this.lastPoolUpdateBlock = currentBlock;
 
-                    try {
-                        // Aggregate pool data (same query as /pools API endpoint)
-                        const poolsData = await aggregatePools(this.database, 24);
-
-                        // Push full aggregated data to all subscribers
-                        this.websocket.emitToRoom('pool-updates', 'pools:updated', poolsData);
-
-                        logger.debug({
-                            blockNumber: currentBlock,
-                            poolCount: poolsData.pools.length
-                        }, 'Emitted aggregated pool data');
-                    } catch (aggregateError) {
-                        logger.error({ error: aggregateError }, 'Failed to aggregate pools for WebSocket push');
-                    }
+                    // Fire and forget - don't block transaction processing
+                    void this.emitPoolUpdate(currentBlock);
                 }
 
                 logger.debug({
@@ -387,6 +375,40 @@ export function createDelegationTrackerObserver(
 
                 // Log error but don't throw - pool tracking failure shouldn't break transaction processing
                 logger.error({ error, txId: delegation.txId }, 'Failed to track pool delegation');
+            }
+        }
+
+        /**
+         * Emit aggregated pool data via WebSocket (fire-and-forget).
+         *
+         * Runs asynchronously to avoid blocking transaction processing. Tracks pending
+         * operations and logs errors if backlog exceeds threshold, indicating the
+         * aggregation queries are taking longer than the block interval.
+         *
+         * @param blockNumber - Block number that triggered this update
+         */
+        private async emitPoolUpdate(blockNumber: number): Promise<void> {
+            this.pendingPoolUpdates++;
+
+            if (this.pendingPoolUpdates >= this.MAX_PENDING_BEFORE_ERROR) {
+                scopedLogger.error({
+                    pendingCount: this.pendingPoolUpdates,
+                    blockNumber
+                }, 'Pool aggregation backlog critical - aggregations falling behind block production');
+            }
+
+            try {
+                const poolsData = await aggregatePools(this.database, 24);
+                this.websocket.emitToRoom('pool-updates', 'pools:updated', poolsData);
+
+                scopedLogger.debug({
+                    blockNumber,
+                    poolCount: poolsData.pools.length
+                }, 'Emitted aggregated pool data');
+            } catch (error) {
+                scopedLogger.error({ error, blockNumber }, 'Failed to aggregate pools for WebSocket push');
+            } finally {
+                this.pendingPoolUpdates--;
             }
         }
     }

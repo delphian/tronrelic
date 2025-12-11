@@ -50,12 +50,14 @@ export async function createResourceTrackingIndexes(context: IPluginContext): Pr
     // - txId unique index prevents duplicate pool delegation storage
     // - poolAddress + timestamp composite for pool-specific queries and charts
     // - timestamp descending for recent delegation queries
+    // - resourceType + timestamp composite optimizes aggregatePools() initial $match (Issue #81)
     const poolDelegationsCollection = database.getCollection('pool-delegations');
     await poolDelegationsCollection.createIndex({ txId: 1 }, { unique: true });
     await poolDelegationsCollection.createIndex({ poolAddress: 1, timestamp: -1 });
     await poolDelegationsCollection.createIndex({ timestamp: -1 });
     await poolDelegationsCollection.createIndex({ fromAddress: 1, timestamp: -1 });
     await poolDelegationsCollection.createIndex({ toAddress: 1, timestamp: -1 });
+    await poolDelegationsCollection.createIndex({ resourceType: 1, timestamp: -1 });
 
     logger.info('Created indexes for pool-delegations collection');
 
@@ -63,10 +65,12 @@ export async function createResourceTrackingIndexes(context: IPluginContext): Pr
     // - Compound unique on account + pool prevents duplicate memberships
     // - pool index for finding all members of a specific pool
     // - lastSeenAt for activity-based queries
+    // - account + permissionId composite supports $lookup in aggregatePools() (Issue #81)
     const poolMembersCollection = database.getCollection('pool-members');
     await poolMembersCollection.createIndex({ account: 1, pool: 1 }, { unique: true });
     await poolMembersCollection.createIndex({ pool: 1 });
     await poolMembersCollection.createIndex({ lastSeenAt: -1 });
+    await poolMembersCollection.createIndex({ account: 1, permissionId: 1 });
 
     logger.info('Created indexes for pool-members collection');
 
