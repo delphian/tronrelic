@@ -35,10 +35,12 @@ export async function runPurgeJob(database: IPluginDatabase, logger: ISystemLogS
 
         // Step 2: Purge raw pool-delegations older than 48 hours
         // Raw data is kept for recent detail views and real-time doughnut chart
+        // Uses createdAt (DB insertion time) not timestamp (blockchain tx time) to avoid
+        // immediately purging historical data during catch-up sync (Issue #81)
         const poolDelegationsCutoff = new Date(Date.now() - 48 * 60 * 60 * 1000);
         const poolDelegationsDeleted = await database.deleteMany(
             'pool-delegations',
-            { timestamp: { $lt: poolDelegationsCutoff } }
+            { createdAt: { $lt: poolDelegationsCutoff } }
         );
 
         logger.info(
@@ -51,12 +53,14 @@ export async function runPurgeJob(database: IPluginDatabase, logger: ISystemLogS
         );
 
         // Step 3: Purge old delegation transactions (general tracking)
+        // Uses createdAt (DB insertion time) not timestamp (blockchain tx time) to avoid
+        // immediately purging historical data during catch-up sync (Issue #81)
         const transactionCutoff = new Date();
         transactionCutoff.setDate(transactionCutoff.getDate() - detailsRetentionDays);
 
         const transactionsDeleted = await database.deleteMany(
             'transactions',
-            { timestamp: { $lt: transactionCutoff } }
+            { createdAt: { $lt: transactionCutoff } }
         );
 
         logger.info(

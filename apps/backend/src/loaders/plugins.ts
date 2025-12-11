@@ -22,6 +22,7 @@ import { ChainParametersService } from '../modules/chain-parameters/chain-parame
 import { UsdtParametersService } from '../modules/usdt-parameters/usdt-parameters.service.js';
 import { WidgetService } from '../services/widget/widget.service.js';
 import { TronGridClient } from '../modules/blockchain/tron-grid.client.js';
+import { BlockchainService } from '../modules/blockchain/blockchain.service.js';
 import { getRedisClient } from './redis.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -172,6 +173,7 @@ export async function loadPlugins(): Promise<void> {
     const usdtParametersService = UsdtParametersService.getInstance();
     const widgetService = WidgetService.getInstance(logger);
     const tronGridClient = TronGridClient.getInstance();
+    const blockchainService = BlockchainService.getInstance();
 
     // Create shared HTTP client for all plugins
     const httpClient = axios.create({
@@ -221,6 +223,7 @@ export async function loadPlugins(): Promise<void> {
                 usdtParameters: usdtParametersService,
                 widgetService,
                 tronGrid: tronGridClient,
+                blockchainService,
                 logger: pluginLogger
             };
 

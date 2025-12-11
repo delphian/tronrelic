@@ -12,6 +12,7 @@ import type { IChainParametersService } from '../chain-parameters/IChainParamete
 import type { IUsdtParametersService } from '../usdt-parameters/IUsdtParametersService.js';
 import type { IWidgetService } from '../widget/IWidgetService.js';
 import type { ITronGridService } from '../tron-grid/ITronGridService.js';
+import type { IBlockchainService } from '../blockchain/IBlockchainService.js';
 import { ISystemLogService } from '../system-log/ISystemLogService.js';
 
 /**
@@ -68,6 +69,9 @@ export interface IPluginContext {
 
     /** TronGrid service for querying TRON blockchain data with rate limiting and key rotation */
     tronGrid: ITronGridService;
+
+    /** Blockchain service for accessing sync state and processed block data */
+    blockchainService: IBlockchainService;
 
     /** Structured logger scoped to the plugin for consistent telemetry */
     logger: ISystemLogService;

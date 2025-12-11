@@ -7,7 +7,7 @@
  * frontend API polling.
  */
 
-import type { IPluginDatabase } from '@tronrelic/types';
+import type { IPluginDatabase, IBlockchainService } from '@tronrelic/types';
 import type { IAddressBookEntry } from '../shared/types/index.js';
 
 /**
@@ -40,15 +40,25 @@ export interface IPoolsData {
  * This function performs the same aggregation as the /pools API endpoint,
  * allowing it to be called from the observer to push data via WebSocket.
  *
+ * The time window is calculated relative to the most recently processed block,
+ * not wall-clock time. This ensures queries return consistent data aligned with
+ * what the blockchain sync has actually indexed, rather than missing recent
+ * activity when the sync is behind.
+ *
  * @param database - Plugin database service
+ * @param blockchainService - Blockchain service for sync state
  * @param hours - Number of hours to aggregate (default: 24)
  * @returns Aggregated pool data with address book for name resolution
  */
 export async function aggregatePools(
     database: IPluginDatabase,
+    blockchainService: IBlockchainService,
     hours: number = 24
 ): Promise<IPoolsData> {
-    const since = new Date(Date.now() - hours * 60 * 60 * 1000);
+    // Calculate time window relative to most recently processed block, not wall-clock time
+    const latestBlock = await blockchainService.getLatestBlock();
+    const referenceTime = latestBlock?.timestamp ?? new Date();
+    const since = new Date(referenceTime.getTime() - hours * 60 * 60 * 1000);
     const collection = database.getCollection('pool-delegations');
     const membersCollectionName = database.getCollection('pool-members').collectionName;
 
@@ -122,15 +132,8 @@ export async function aggregatePools(
         { $limit: 50 }
     ]).toArray();
 
-    // Get address book for name resolution (only fetch addresses we need)
-    // Issue #81: Previously fetched entire address-book collection; now uses $in for efficiency
-    const poolAddresses = pools
-        .map(p => p.poolAddress as string | null)
-        .filter((addr): addr is string => addr !== null);
-
-    const addressBookEntries = poolAddresses.length > 0
-        ? await database.find<IAddressBookEntry>('address-book', { address: { $in: poolAddresses } })
-        : [];
+    // Get address book for name resolution
+    const addressBookEntries = await database.find<IAddressBookEntry>('address-book', {});
 
     const addressMap = new Map(addressBookEntries.map(e => [e.address, e.name]));
     const addressBook: Record<string, IAddressBookEntry> = {};

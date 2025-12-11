@@ -4,7 +4,8 @@ import type {
     IBlockchainObserverService,
     IPluginDatabase,
     ISystemLogService,
-    IPluginWebSocketManager
+    IPluginWebSocketManager,
+    IBlockchainService
 } from '@tronrelic/types';
 import type { IDelegationTransaction, IWhaleDelegation, IResourceTrackingConfig, IPoolDelegation } from '../shared/types/index.js';
 import { PoolMembershipService } from './pool-membership.service.js';
@@ -34,6 +35,7 @@ import { aggregatePools } from './pools.service.js';
  * @param websocket - WebSocket manager for emitting real-time pool delegation events
  * @param logger - Structured logger scoped to the plugin so delegation logs stay contextualized
  * @param poolMembershipService - Service for discovering pool-to-account relationships
+ * @param blockchainService - Blockchain service for accessing sync state
  * @returns Instantiated delegation tracker observer ready to process transactions
  */
 export function createDelegationTrackerObserver(
@@ -42,7 +44,8 @@ export function createDelegationTrackerObserver(
     database: IPluginDatabase,
     websocket: IPluginWebSocketManager,
     logger: ISystemLogService,
-    poolMembershipService: PoolMembershipService
+    poolMembershipService: PoolMembershipService,
+    blockchainService: IBlockchainService
 ): IBaseObserver {
     const scopedLogger = logger.child({ observer: 'DelegationTrackerObserver' });
 
@@ -59,6 +62,7 @@ export function createDelegationTrackerObserver(
         private readonly database: IPluginDatabase;
         private readonly websocket: IPluginWebSocketManager;
         private readonly poolMembershipService: PoolMembershipService;
+        private readonly blockchainService: IBlockchainService;
         private config: IResourceTrackingConfig | null = null;
         private configLastLoaded = 0;
         private readonly CONFIG_CACHE_MS = 5 * 60 * 1000; // 5 minutes
@@ -76,6 +80,7 @@ export function createDelegationTrackerObserver(
             this.database = database;
             this.websocket = websocket;
             this.poolMembershipService = poolMembershipService;
+            this.blockchainService = blockchainService;
 
             // Subscribe to both delegation and reclaim transaction types
             observerRegistry.subscribeTransactionType('DelegateResourceContract', this);
@@ -398,7 +403,7 @@ export function createDelegationTrackerObserver(
             }
 
             try {
-                const poolsData = await aggregatePools(this.database, 24);
+                const poolsData = await aggregatePools(this.database, this.blockchainService, 24);
                 this.websocket.emitToRoom('pool-updates', 'pools:updated', poolsData);
 
                 scopedLogger.debug({

@@ -235,7 +235,8 @@ export const resourceTrackingBackendPlugin = definePlugin({
             context.database,
             context.websocket,
             context.logger,
-            poolMembershipService
+            poolMembershipService,
+            context.blockchainService
         );
 
         context.logger.info({ observerName: observer.getName() }, 'Delegation tracker observer initialized');
@@ -529,7 +530,7 @@ export const resourceTrackingBackendPlugin = definePlugin({
                 try {
                     const hoursParam = Number(req.query.hours);
                     const hours = isNaN(hoursParam) ? 24 : Math.min(Math.max(hoursParam, 1), 168);
-                    const { pools, addressBook } = await aggregatePools(pluginContext.database, hours);
+                    const { pools, addressBook } = await aggregatePools(pluginContext.database, pluginContext.blockchainService, hours);
                     res.json({ success: true, pools, addressBook, hours });
                 } catch (error) {
                     next(error);

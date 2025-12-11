@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { AnyBulkWriteOperation } from 'mongoose';
 import type { Redis as RedisClient } from 'ioredis';
 import type { TronTransactionDocument } from '@tronrelic/shared';
-import type { ITransaction, ITransactionPersistencePayload, ITransactionCategoryFlags } from '@tronrelic/types';
+import type { ITransaction, ITransactionPersistencePayload, ITransactionCategoryFlags, IBlockchainService } from '@tronrelic/types';
 import { ProcessedTransaction } from '@tronrelic/types';
 import { TransactionModel, type TransactionDoc, type TransactionFields } from '../../database/models/transaction-model.js';
 import { SyncStateModel, type SyncStateDoc, type SyncStateFields } from '../../database/models/sync-state-model.js';
@@ -76,7 +76,7 @@ type TransactionAnalysis = TransactionDoc['analysis'];
  * API overload while maintaining data integrity. The service also notifies observers via the observer registry
  * so plugins can react to specific transaction types without coupling to the core sync logic.
  */
-export class BlockchainService {
+export class BlockchainService implements IBlockchainService {
     private static instance: BlockchainService | null = null;
 
     private readonly redis: RedisClient;
