@@ -1,10 +1,12 @@
 import type { Redis as RedisClient } from 'ioredis';
-import type { FilterQuery } from 'mongoose';
+import type { IDatabaseService } from '@tronrelic/types';
+import type { FilterQuery, Model } from 'mongoose';
 import { TransactionModel, type TransactionDoc, type TransactionFields } from '../../database/models/transaction-model.js';
 import { CacheService } from '../../services/cache.service.js';
 
 const HIGH_AMOUNT_CACHE_TTL = 300;
 const LATEST_BY_TYPE_CACHE_TTL = 60;
+const TRANSACTIONS_COLLECTION = 'transactions';
 
 export interface SimplifiedTransaction {
   type: string;
@@ -16,9 +18,19 @@ export interface SimplifiedTransaction {
 
 export class TransactionAnalyticsService {
   private readonly cache: CacheService;
+  private readonly database: IDatabaseService;
 
-  constructor(redis: RedisClient) {
-    this.cache = new CacheService(redis);
+  constructor(redis: RedisClient, database: IDatabaseService) {
+    this.cache = new CacheService(redis, database);
+    this.database = database;
+    this.database.registerModel(TRANSACTIONS_COLLECTION, TransactionModel);
+  }
+
+  /**
+   * Get the registered Transaction model for database operations.
+   */
+  private getTransactionModel(): Model<TransactionDoc> {
+    return this.database.getModel<TransactionDoc>(TRANSACTIONS_COLLECTION);
   }
 
   async getHighAmountTransactions(minAmountTRX: number, limit = 100) {
@@ -28,7 +40,7 @@ export class TransactionAnalyticsService {
       return cached;
     }
 
-    const results = (await TransactionModel.find({ amountTRX: { $gte: minAmountTRX } })
+    const results = (await this.getTransactionModel().find({ amountTRX: { $gte: minAmountTRX } })
       .sort({ amountTRX: -1 })
       .limit(limit)
       .lean()) as TransactionFields[];
@@ -38,7 +50,7 @@ export class TransactionAnalyticsService {
   }
 
   async getAccountTransactions(address: string, skip = 0, limit = 50) {
-    return TransactionModel.find({
+    return this.getTransactionModel().find({
       $or: [{ 'from.address': address }, { 'to.address': address }]
     })
       .sort({ timestamp: -1 })
@@ -48,7 +60,7 @@ export class TransactionAnalyticsService {
   }
 
   async getTransactionsByIds(txIds: string[]) {
-    return TransactionModel.find({ txId: { $in: txIds } }).lean();
+    return this.getTransactionModel().find({ txId: { $in: txIds } }).lean();
   }
 
   async getLatestTransactionsByType(type: string, limit = 50) {
@@ -58,7 +70,7 @@ export class TransactionAnalyticsService {
       return cached;
     }
 
-    const results = (await TransactionModel.find({ type }).sort({ timestamp: -1 }).limit(limit).lean()) as TransactionFields[];
+    const results = (await this.getTransactionModel().find({ type }).sort({ timestamp: -1 }).limit(limit).lean()) as TransactionFields[];
     await this.cache.set(cacheKey, results, LATEST_BY_TYPE_CACHE_TTL, ['transactions-latest']);
     return results;
   }
@@ -79,7 +91,7 @@ export class TransactionAnalyticsService {
       filter = { $or: [{ 'from.address': address }, { 'to.address': address }] };
     }
 
-    const documents = (await TransactionModel.find(filter)
+    const documents = (await this.getTransactionModel().find(filter)
       .sort({ timestamp: -1 })
       .limit(sanitizedLimit)
       .lean()) as TransactionFields[];

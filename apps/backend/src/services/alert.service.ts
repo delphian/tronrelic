@@ -1,7 +1,10 @@
+import type { IDatabaseService } from '@tronrelic/types';
 import { logger } from '../lib/logger.js';
 import {
   TransactionMemoModel,
   SunPumpTokenModel,
+  type TransactionMemoDoc,
+  type SunPumpTokenDoc,
 } from '../database/models/index.js';
 import { TronGridClient, TronGridEvent } from '../modules/blockchain/tron-grid.client.js';
 import type { TransactionPersistencePayload } from '../modules/blockchain/blockchain.service.js';
@@ -9,6 +12,8 @@ import { WebSocketService } from './websocket.service.js';
 
 const SUNPUMP_FACTORY_ADDRESS = 'TTfvyrAz86hbZk5iDpKD78pqLGgi8C7AAw';
 const SUNPUMP_METHOD_SIGNATURE = '2f70d762';
+const MEMOS_COLLECTION = 'transaction_memos';
+const SUNPUMP_COLLECTION = 'sunpump_tokens';
 
 interface MemoRecord {
   txId: string;
@@ -43,9 +48,21 @@ interface SunPumpRecord {
 export class AlertService {
   private readonly tronClient: TronGridClient;
   private readonly websocket = WebSocketService.getInstance();
+  private readonly database: IDatabaseService;
 
-  constructor(tronClient?: TronGridClient) {
+  constructor(database: IDatabaseService, tronClient?: TronGridClient) {
+    this.database = database;
+    this.database.registerModel(MEMOS_COLLECTION, TransactionMemoModel);
+    this.database.registerModel(SUNPUMP_COLLECTION, SunPumpTokenModel);
     this.tronClient = tronClient ?? TronGridClient.getInstance();
+  }
+
+  private getMemoModel() {
+    return this.database.getModel<TransactionMemoDoc>(MEMOS_COLLECTION);
+  }
+
+  private getSunPumpModel() {
+    return this.database.getModel<SunPumpTokenDoc>(SUNPUMP_COLLECTION);
   }
 
   /**
@@ -106,15 +123,15 @@ export class AlertService {
     }));
 
     try {
-      const result = await TransactionMemoModel.bulkWrite(operations, { ordered: false });
+      const result = await this.getMemoModel().bulkWrite(operations, { ordered: false });
       const insertedIndexes = Object.keys(result.upsertedIds ?? {}).map(key => Number.parseInt(key, 10));
       if (insertedIndexes.length) {
         const insertedTxIds = insertedIndexes
           .map(index => memos[index]?.txId)
           .filter((txId): txId is string => Boolean(txId));
         if (insertedTxIds.length) {
-          const insertedDocs = await TransactionMemoModel.find({ txId: { $in: insertedTxIds } }).lean();
-          insertedDocs.forEach(doc => {
+          const insertedDocs = await this.getMemoModel().find({ txId: { $in: insertedTxIds } }).lean();
+          insertedDocs.forEach((doc: TransactionMemoDoc) => {
             this.websocket.emit({
               event: 'memo:new',
               payload: {
@@ -162,7 +179,7 @@ export class AlertService {
     }
 
     try {
-      await SunPumpTokenModel.bulkWrite(operations, { ordered: false });
+      await this.getSunPumpModel().bulkWrite(operations, { ordered: false });
     } catch (error) {
       logger.error({ error }, 'Failed to persist SunPump alerts');
     }

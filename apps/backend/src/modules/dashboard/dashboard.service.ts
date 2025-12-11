@@ -1,15 +1,33 @@
-import { TransactionMemoModel, TransactionModel } from '../../database/models/index.js';
+import type { IDatabaseService } from '@tronrelic/types';
+import type { Collection } from 'mongodb';
+import { TransactionMemoModel, TransactionModel, type TransactionDoc, type TransactionMemoDoc } from '../../database/models/index.js';
 import { ValidationError } from '../../lib/errors.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+const TRANSACTIONS_COLLECTION = 'transactions';
+const MEMOS_COLLECTION = 'transaction_memos';
 
 export class DashboardService {
+  private readonly database: IDatabaseService;
 
+  constructor(database: IDatabaseService) {
+    this.database = database;
+    this.database.registerModel(TRANSACTIONS_COLLECTION, TransactionModel);
+    this.database.registerModel(MEMOS_COLLECTION, TransactionMemoModel);
+  }
+
+  private getTransactionsCollection(): Collection<TransactionDoc> {
+    return this.database.getCollection<TransactionDoc>(TRANSACTIONS_COLLECTION);
+  }
+
+  private getMemoModel() {
+    return this.database.getModel<TransactionMemoDoc>(MEMOS_COLLECTION);
+  }
 
   async getDelegationTimeseries(days = 14) {
     const { start } = this.ensureRange(days);
 
-    const rows = await TransactionModel.aggregate<{
+    const rows = await this.getTransactionsCollection().aggregate<{
       _id: string;
       delegated: number;
       undelegated: number;
@@ -38,7 +56,7 @@ export class DashboardService {
         }
       },
       { $sort: { _id: 1 } }
-    ]);
+    ]).toArray();
 
     return rows.map(row => ({
       date: row._id,
@@ -51,7 +69,7 @@ export class DashboardService {
   async getStakingTimeseries(days = 14) {
     const { start } = this.ensureRange(days);
 
-    const rows = await TransactionModel.aggregate<{
+    const rows = await this.getTransactionsCollection().aggregate<{
       _id: string;
       staked: number;
       unstaked: number;
@@ -86,7 +104,7 @@ export class DashboardService {
         }
       },
       { $sort: { _id: 1 } }
-    ]);
+    ]).toArray();
 
     return rows.map(row => ({
       date: row._id,
@@ -97,7 +115,7 @@ export class DashboardService {
   }
 
   async getMemoFeed(limit = 50) {
-    return TransactionMemoModel.find()
+    return this.getMemoModel().find()
       .sort({ timestamp: -1 })
       .limit(Math.min(limit, 200))
       .lean();

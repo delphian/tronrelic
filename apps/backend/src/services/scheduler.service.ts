@@ -1,7 +1,8 @@
 import cron, { ScheduledTask } from 'node-cron';
+import type { IDatabaseService } from '@tronrelic/types';
 import { logger } from '../lib/logger.js';
-import { SchedulerConfigModel } from '../database/models/scheduler-config-model.js';
-import { SchedulerExecutionModel } from '../database/models/scheduler-execution-model.js';
+import { SchedulerConfigModel, type SchedulerConfigDoc } from '../database/models/scheduler-config-model.js';
+import { SchedulerExecutionModel, type SchedulerExecutionDoc } from '../database/models/scheduler-execution-model.js';
 
 export type CronJobHandler = () => Promise<void> | void;
 
@@ -40,6 +41,7 @@ interface RegisteredJob {
  * - Enable/disable jobs at runtime (updateJobConfig method)
  * - Execution tracking in MongoDB for observability
  * - Automatic config persistence on first registration
+ * - Overlap protection prevents concurrent executions of the same job
  *
  * **Usage Flow:**
  * 1. Code registers jobs with default schedules
@@ -62,7 +64,21 @@ interface RegisteredJob {
  */
 export class SchedulerService {
     private readonly jobs = new Map<string, RegisteredJob>();
+    private readonly runningJobs = new Set<string>();
     private started = false;
+    private readonly CONFIG_COLLECTION = 'scheduler_configs';
+    private readonly EXECUTION_COLLECTION = 'scheduler_executions';
+
+    /**
+     * Create a new scheduler service.
+     *
+     * @param database - Database service for MongoDB operations
+     */
+    constructor(private readonly database: IDatabaseService) {
+        // Register Mongoose models for schema validation
+        this.database.registerModel(this.CONFIG_COLLECTION, SchedulerConfigModel);
+        this.database.registerModel(this.EXECUTION_COLLECTION, SchedulerExecutionModel);
+    }
 
     /**
      * Registers a new scheduled job with default configuration.
@@ -134,11 +150,12 @@ export class SchedulerService {
         }
 
         // Load or create config from MongoDB
-        let config = await SchedulerConfigModel.findOne({ jobName: name });
+        const configModel = this.database.getModel<SchedulerConfigDoc>(this.CONFIG_COLLECTION);
+        let config = await configModel.findOne({ jobName: name });
 
         if (!config) {
             // First time seeing this job - create default config
-            config = await SchedulerConfigModel.create({
+            config = await configModel.create({
                 jobName: name,
                 enabled: true,
                 schedule: job.defaultSchedule,
@@ -168,17 +185,31 @@ export class SchedulerService {
     /**
      * Schedules a single job with node-cron.
      *
-     * Wraps the handler with execution tracking:
+     * Wraps the handler with execution tracking and overlap protection:
+     * - Skips execution if previous run is still in progress (prevents cascading failures)
      * - Creates execution record with status "running"
      * - Executes handler
      * - Updates record with success/failure status and duration
+     * - Removes job from running set in finally block (even on failure)
      *
      * @param {RegisteredJob} job - Job to schedule
      * @private
      */
     private scheduleJob(job: RegisteredJob): void {
         const task = cron.schedule(job.currentSchedule, async () => {
-            const execution = await SchedulerExecutionModel.create({
+            // Overlap protection: skip if job is already running
+            if (this.runningJobs.has(job.name)) {
+                logger.warn(
+                    { jobName: job.name },
+                    `Scheduled Job Skipped: ${job.name} - previous execution still running`
+                );
+                return;
+            }
+
+            this.runningJobs.add(job.name);
+
+            const executionModel = this.database.getModel<SchedulerExecutionDoc>(this.EXECUTION_COLLECTION);
+            const execution = await executionModel.create({
                 jobName: job.name,
                 startedAt: new Date(),
                 status: 'running',
@@ -228,6 +259,8 @@ export class SchedulerService {
                     },
                     `Scheduled Job Failed: ${job.name}`
                 );
+            } finally {
+                this.runningJobs.delete(job.name);
             }
         });
 
@@ -274,7 +307,7 @@ export class SchedulerService {
         }
 
         // Update MongoDB config
-        const updateDoc: any = { updatedAt: new Date() };
+        const updateDoc: Record<string, unknown> = { updatedAt: new Date() };
         if (updates.schedule !== undefined) {
             updateDoc.schedule = updates.schedule;
         }
@@ -285,7 +318,8 @@ export class SchedulerService {
             updateDoc.updatedBy = updates.updatedBy;
         }
 
-        await SchedulerConfigModel.updateOne({ jobName }, updateDoc, { upsert: true });
+        const configModel = this.database.getModel<SchedulerConfigDoc>(this.CONFIG_COLLECTION);
+        await configModel.updateOne({ jobName }, updateDoc, { upsert: true });
 
         // Determine if we need to reschedule
         const scheduleChanged = updates.schedule !== undefined && updates.schedule !== job.currentSchedule;

@@ -1,7 +1,11 @@
-import { TransactionModel } from '../../database/models/transaction-model.js';
+import type { Collection } from 'mongodb';
+import { TransactionModel, type TransactionDoc } from '../../database/models/transaction-model.js';
 import { CacheService } from '../../services/cache.service.js';
 import type { Redis as RedisClient } from 'ioredis';
+import type { IDatabaseService } from '@tronrelic/types';
 import { ValidationError } from '../../lib/errors.js';
+
+const TRANSACTIONS_COLLECTION = 'transactions';
 
 export interface AccountSnapshot {
   address: string;
@@ -15,9 +19,20 @@ export interface AccountSnapshot {
 
 export class AccountService {
   private readonly cache: CacheService;
+  private readonly database: IDatabaseService;
 
-  constructor(redis: RedisClient) {
-    this.cache = new CacheService(redis);
+  constructor(redis: RedisClient, database: IDatabaseService) {
+    this.cache = new CacheService(redis, database);
+    this.database = database;
+    this.database.registerModel(TRANSACTIONS_COLLECTION, TransactionModel);
+  }
+
+  private getTransactionModel() {
+    return this.database.getModel<TransactionDoc>(TRANSACTIONS_COLLECTION);
+  }
+
+  private getTransactionsCollection(): Collection<TransactionDoc> {
+    return this.database.getCollection<TransactionDoc>(TRANSACTIONS_COLLECTION);
   }
 
   async getAccountSnapshot(address: string): Promise<AccountSnapshot> {
@@ -31,14 +46,14 @@ export class AccountService {
       return cached;
     }
 
-    const recentTransactions = await TransactionModel.find({
+    const recentTransactions = await this.getTransactionModel().find({
       $or: [{ 'from.address': address }, { 'to.address': address }]
     })
       .sort({ timestamp: -1 })
       .limit(50)
       .lean();
 
-    const summary = await TransactionModel.aggregate([
+    const summary = await this.getTransactionsCollection().aggregate([
       {
         $match: {
           $or: [{ 'from.address': address }, { 'to.address': address }]
@@ -60,7 +75,7 @@ export class AccountService {
           lastActive: { $max: '$timestamp' }
         }
       }
-    ]);
+    ]).toArray();
 
     const snapshot: AccountSnapshot = {
       address,

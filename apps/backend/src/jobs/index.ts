@@ -1,8 +1,11 @@
+import mongoose from 'mongoose';
+import type { IDatabaseService } from '@tronrelic/types';
 import { env } from '../config/env.js';
 import { SchedulerService } from '../services/scheduler.service.js';
 import { BlockchainService } from '../modules/blockchain/blockchain.service.js';
 import { logger } from '../lib/logger.js';
-import { CacheModel } from '../database/models/cache-model.js';
+import { CacheModel, type CacheDoc } from '../database/models/cache-model.js';
+import { DatabaseService } from '../modules/database/index.js';
 import { ChainParametersFetcher } from '../modules/chain-parameters/chain-parameters-fetcher.js';
 import { UsdtParametersFetcher } from '../modules/usdt-parameters/usdt-parameters-fetcher.js';
 import { SystemLogService } from '../modules/logs/index.js';
@@ -38,11 +41,20 @@ export async function initializeJobs(): Promise<SchedulerService | null> {
         return null;
     }
 
-    const blockchainService = BlockchainService.getInstance();
-    const chainParametersFetcher = new ChainParametersFetcher(axios, logger);
-    const usdtParametersFetcher = new UsdtParametersFetcher(axios, logger);
+    // Create database service for scheduler and blockchain service
+    const jobsDatabase = new DatabaseService(logger.child({ module: 'jobs' }), mongoose.connection);
 
-    scheduler = new SchedulerService();
+    // Register CacheModel for cache cleanup job
+    jobsDatabase.registerModel('caches', CacheModel);
+
+    // Inject database into BlockchainService BEFORE first getInstance() call
+    BlockchainService.setDependencies(jobsDatabase);
+
+    const blockchainService = BlockchainService.getInstance();
+    const chainParametersFetcher = new ChainParametersFetcher(axios, logger, jobsDatabase);
+    const usdtParametersFetcher = new UsdtParametersFetcher(axios, logger, jobsDatabase);
+
+    scheduler = new SchedulerService(jobsDatabase);
 
     // Chain parameters: every 10 minutes
     scheduler.register('chain-parameters:fetch', '*/10 * * * *', async () => {
@@ -64,9 +76,9 @@ export async function initializeJobs(): Promise<SchedulerService | null> {
         await blockchainService.pruneOldTransactions(24 * 7, 2);
     });
 
-  scheduler.register('cache:cleanup', '0 * * * *', async () => {
-    await CacheModel.deleteMany({ expiresAt: { $lte: new Date() } });
-  });
+    scheduler.register('cache:cleanup', '0 * * * *', async () => {
+        await jobsDatabase.deleteMany('caches', { expiresAt: { $lte: new Date() } });
+    });
 
     // System logs cleanup: every hour
     scheduler.register('system-logs:cleanup', '0 * * * *', async () => {

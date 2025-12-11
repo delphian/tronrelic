@@ -1170,5 +1170,5 @@ process.exit(1)
 **Related topics:**
 - [system-scheduler-operations.md](./system-scheduler-operations.md) - How scheduler jobs work (similar control patterns)
 - [system-testing.md](./system-testing.md) - Testing framework for database services
-- [plugins-database.md](../plugins/plugins-database.md) - Plugin database access patterns
+- [system-database.md](./system-database.md) - Database access architecture
 - [environment.md](../environment.md) - `ADMIN_API_TOKEN` configuration

@@ -1,5 +1,6 @@
 import type { Request, Response } from 'express';
 import type { Redis as RedisClient } from 'ioredis';
+import type { IDatabaseService } from '@tronrelic/types';
 import { z } from 'zod';
 import { AccountService } from './account.service.js';
 
@@ -10,8 +11,8 @@ const snapshotSchema = z.object({
 export class AccountController {
   private readonly service: AccountService;
 
-  constructor(redis: RedisClient) {
-    this.service = new AccountService(redis);
+  constructor(redis: RedisClient, database: IDatabaseService) {
+    this.service = new AccountService(redis, database);
   }
 
   snapshot = async (req: Request, res: Response) => {

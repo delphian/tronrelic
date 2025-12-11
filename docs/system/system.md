@@ -68,6 +68,26 @@ The backend module system provides a structured pattern for permanent, core back
 - Module vs plugin decision matrix
 - Best practices and pre-implementation checklist
 
+### Database Access Architecture
+
+All database operations in TronRelic must go through `IDatabaseService`. This unified abstraction provides testability through mock implementations, consistent patterns across the codebase, and automatic namespace isolation for plugins. Direct imports of Mongoose models or raw MongoDB collections are prohibited.
+
+**Key architectural decisions:**
+
+- **Mandatory abstraction** - All consumers receive `IDatabaseService` via dependency injection, never direct Mongoose access
+- **Three-tier access** - Raw collections for flexibility, Mongoose models for validation, convenience methods for common CRUD
+- **Namespace isolation** - Plugins automatically get prefixed collections (`plugin_whale-alerts_subscriptions`)
+- **Testability** - Interface enables mock implementations without touching MongoDB
+
+**See [system-database.md](./system-database.md) for complete details on:**
+- Mandatory requirement and prohibited patterns
+- Three-tier access pattern (raw collections, Mongoose models, convenience methods)
+- Consumer-specific patterns for modules, services, and plugins
+- Namespace isolation and collection prefixing
+- Key-value storage API
+- Index creation and error handling
+- Pre-implementation checklist
+
 ### Blockchain Sync Architecture
 
 The blockchain sync service retrieves blocks from TronGrid, enriches transactions with market data and energy costs, and notifies all subscribed observers asynchronously. The architecture prioritizes consistency and error isolation over throughput, using serial requests with 200ms throttling to avoid overwhelming the network.
@@ -306,6 +326,7 @@ curl -X PATCH \
 ## Further Reading
 
 **Detailed documentation:**
+- [system-database.md](./system-database.md) - Database access architecture, mandatory IDatabaseService abstraction, three-tier access patterns, and namespace isolation
 - [system-modules.md](./system-modules.md) - Backend module system architecture, lifecycle patterns, dependency injection, and creating new modules
 - [system-blockchain-sync-architecture.md](./system-blockchain-sync-architecture.md) - Complete technical overview of block retrieval, transaction enrichment, observer notification, and performance characteristics
 - [system-scheduler-operations.md](./system-scheduler-operations.md) - Scheduler control, job management, troubleshooting, and configuration persistence

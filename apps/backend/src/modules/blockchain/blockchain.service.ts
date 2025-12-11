@@ -2,11 +2,11 @@ import { randomUUID } from 'node:crypto';
 import type { AnyBulkWriteOperation } from 'mongoose';
 import type { Redis as RedisClient } from 'ioredis';
 import type { TronTransactionDocument } from '@tronrelic/shared';
-import type { ITransaction, ITransactionPersistencePayload, ITransactionCategoryFlags, IBlockchainService } from '@tronrelic/types';
+import type { ITransaction, ITransactionPersistencePayload, ITransactionCategoryFlags, IDatabaseService } from '@tronrelic/types';
 import { ProcessedTransaction } from '@tronrelic/types';
 import { TransactionModel, type TransactionDoc, type TransactionFields } from '../../database/models/transaction-model.js';
 import { SyncStateModel, type SyncStateDoc, type SyncStateFields } from '../../database/models/sync-state-model.js';
-import { BlockModel, type BlockStats, type BlockFields } from '../../database/models/block-model.js';
+import { BlockModel, type BlockDoc, type BlockStats, type BlockFields } from '../../database/models/block-model.js';
 import { DelegationFlowModel, ContractActivityModel, TokenModel } from '../../database/models/index.js';
 import { QueueService } from '../../services/queue.service.js';
 import { blockchainConfig } from '../../config/blockchain.js';
@@ -75,16 +75,26 @@ type TransactionAnalysis = TransactionDoc['analysis'];
  * a BullMQ job queue to ensure serial block processing with proper rate limiting and error recovery, preventing
  * API overload while maintaining data integrity. The service also notifies observers via the observer registry
  * so plugins can react to specific transaction types without coupling to the core sync logic.
+ *
+ * Database access pattern:
+ * Uses IDatabaseService for all MongoDB operations, enabling testability through mock implementations.
+ * Models are registered for Mongoose schema validation and accessed via getModel() for complex operations.
  */
-export class BlockchainService implements IBlockchainService {
+export class BlockchainService {
     private static instance: BlockchainService | null = null;
+    private static database: IDatabaseService | null = null;
+
+    // Collection names for database operations
+    private static readonly TRANSACTIONS_COLLECTION = 'transactions';
+    private static readonly SYNC_STATE_COLLECTION = 'sync_states';
+    private static readonly BLOCKS_COLLECTION = 'blocks';
 
     private readonly redis: RedisClient;
     private readonly queue: QueueService<BlockSyncJob>;
     private readonly tronClient = TronGridClient.getInstance();
-    private readonly notifications = new NotificationService();
+    private readonly notifications: NotificationService;
     private readonly lockToken = randomUUID();
-    private readonly alerts = new AlertService(this.tronClient);
+    private readonly alerts: AlertService;
     private readonly priceService = PriceService.getInstance();
     private readonly addressInsights = new AddressInsightService();
     private readonly observerService = BlockchainObserverService.getInstance();
@@ -97,7 +107,10 @@ export class BlockchainService implements IBlockchainService {
      * double-retry overhead, and configures job cleanup to prevent unbounded Redis memory growth from completed jobs.
      */
     private constructor() {
+        const database = BlockchainService.getDatabase();
         this.redis = getRedisClient();
+        this.notifications = new NotificationService(database);
+        this.alerts = new AlertService(database, this.tronClient);
         this.queue = new QueueService<BlockSyncJob>(
             'block-sync',
             async job => {
@@ -121,6 +134,23 @@ export class BlockchainService implements IBlockchainService {
     }
 
     /**
+     * Set dependencies for the service singleton.
+     *
+     * Must be called before getInstance() to inject the database service.
+     * Typically called during application bootstrap in index.ts.
+     *
+     * @param database - Database service for MongoDB operations
+     */
+    public static setDependencies(database: IDatabaseService): void {
+        BlockchainService.database = database;
+
+        // Register Mongoose models for schema validation and query building
+        database.registerModel(BlockchainService.TRANSACTIONS_COLLECTION, TransactionModel);
+        database.registerModel(BlockchainService.SYNC_STATE_COLLECTION, SyncStateModel);
+        database.registerModel(BlockchainService.BLOCKS_COLLECTION, BlockModel);
+    }
+
+    /**
      * Get the singleton instance of the blockchain service.
      * Creates the service on first access and reuses it for all subsequent calls, ensuring a single job queue and observer registry across the application.
      */
@@ -131,6 +161,19 @@ export class BlockchainService implements IBlockchainService {
         return BlockchainService.instance;
     }
 
+
+    /**
+     * Get the database service, throwing if not initialized.
+     *
+     * @returns IDatabaseService instance
+     * @throws Error if setDependencies() has not been called
+     */
+    private static getDatabase(): IDatabaseService {
+        if (!BlockchainService.database) {
+            throw new Error('BlockchainService.setDependencies() must be called before using the service');
+        }
+        return BlockchainService.database;
+    }
 
     /**
      * Mark a block for temporary cooldown after exhausting retry attempts.
@@ -161,7 +204,8 @@ export class BlockchainService implements IBlockchainService {
      * Useful for API endpoints that display recent blockchain activity, sorted by timestamp descending to show newest first.
      */
     async getLatestTransactions(limit = 50): Promise<TransactionFields[]> {
-        return TransactionModel.find().sort({ timestamp: -1 }).limit(limit).lean() as Promise<TransactionFields[]>;
+        const model = BlockchainService.getDatabase().getModel<TransactionDoc>(BlockchainService.TRANSACTIONS_COLLECTION);
+        return model.find().sort({ timestamp: -1 }).limit(limit).lean() as Promise<TransactionFields[]>;
     }
 
     /**
@@ -170,7 +214,8 @@ export class BlockchainService implements IBlockchainService {
      * Returns null if no blocks have been processed yet.
      */
     async getLatestBlock(): Promise<BlockFields | null> {
-        return BlockModel.findOne().sort({ blockNumber: -1 }).lean() as Promise<BlockFields | null>;
+        const model = BlockchainService.getDatabase().getModel<BlockDoc>(BlockchainService.BLOCKS_COLLECTION);
+        return model.findOne().sort({ blockNumber: -1 }).lean() as Promise<BlockFields | null>;
     }
 
     /**
@@ -189,8 +234,10 @@ export class BlockchainService implements IBlockchainService {
         const batchMs = batchHours * 60 * 60 * 1000;
         const cutoffDate = new Date(Date.now() - retentionMs);
 
+        const txModel = BlockchainService.getDatabase().getModel<TransactionDoc>(BlockchainService.TRANSACTIONS_COLLECTION);
+
         // Find the oldest transaction timestamp
-        const oldestDoc = await TransactionModel.findOne({}, { timestamp: 1 })
+        const oldestDoc = await txModel.findOne({}, { timestamp: 1 })
             .sort({ timestamp: 1 })
             .lean() as TransactionFields | null;
 
@@ -212,7 +259,7 @@ export class BlockchainService implements IBlockchainService {
         const batchCutoff = new Date(oldestTimestamp.getTime() + batchMs);
 
         // Delete transactions older than cutoffDate AND within the batch window
-        const result = await TransactionModel.deleteMany({
+        const result = await txModel.deleteMany({
             timestamp: {
                 $lt: Math.min(batchCutoff.getTime(), cutoffDate.getTime())
             }
@@ -221,7 +268,7 @@ export class BlockchainService implements IBlockchainService {
         const deletedCount = result.deletedCount ?? 0;
 
         // Find the new oldest transaction
-        const newOldestDoc = await TransactionModel.findOne({}, { timestamp: 1 })
+        const newOldestDoc = await txModel.findOne({}, { timestamp: 1 })
             .sort({ timestamp: 1 })
             .lean() as TransactionFields | null;
 
@@ -449,10 +496,10 @@ export class BlockchainService implements IBlockchainService {
 
         pipeline.push({ $sort: { _id: 1 } });
 
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const results = await BlockModel.aggregate<AggregationResult>(pipeline as any);
+        const blocksCollection = BlockchainService.getDatabase().getCollection<BlockDoc>(BlockchainService.BLOCKS_COLLECTION);
+        const results = await blocksCollection.aggregate<AggregationResult>(pipeline).toArray();
 
-        return results.map(row => {
+        return results.map((row: AggregationResult) => {
             // Parse the date string and convert to ISO format with UTC timezone
             // MongoDB returns strings like "2025-10-13 01:00" without timezone info
             // We interpret these as UTC and convert to proper ISO 8601 format
@@ -482,7 +529,8 @@ export class BlockchainService implements IBlockchainService {
      * Returns the last successfully processed block number and backfill queue, or null if this is a fresh install.
      */
     private async getSyncState(): Promise<SyncStateFields | null> {
-        return SyncStateModel.findOne({ key: 'blockchain:last-block' }).lean() as Promise<SyncStateFields | null>;
+        const syncModel = BlockchainService.getDatabase().getModel<SyncStateDoc>(BlockchainService.SYNC_STATE_COLLECTION);
+        return syncModel.findOne({ key: 'blockchain:last-block' }).lean() as Promise<SyncStateFields | null>;
     }
 
     /**
@@ -548,9 +596,11 @@ export class BlockchainService implements IBlockchainService {
                 existingBackfill
             });
 
+            const syncModel = BlockchainService.getDatabase().getModel<SyncStateDoc>(BlockchainService.SYNC_STATE_COLLECTION);
+
             if (!targets.length) {
                 logger.debug({ lastProcessed, latestNetworkBlock }, 'No new blocks to schedule');
-                await SyncStateModel.updateOne(
+                await syncModel.updateOne(
                     { key: 'blockchain:last-block' },
                     {
                         $set: {
@@ -590,7 +640,7 @@ export class BlockchainService implements IBlockchainService {
                 );
             }
 
-            await SyncStateModel.updateOne(
+            await syncModel.updateOne(
                 { key: 'blockchain:last-block' },
                 {
                     $setOnInsert: { cursor: { blockNumber: lastProcessed } },
@@ -635,7 +685,8 @@ export class BlockchainService implements IBlockchainService {
                 }
 
                 // Store error state for monitoring (store as string for simplicity in sync errors)
-                await SyncStateModel.updateOne(
+                const errorSyncModel = BlockchainService.getDatabase().getModel<SyncStateDoc>(BlockchainService.SYNC_STATE_COLLECTION);
+                await errorSyncModel.updateOne(
                     { key: 'blockchain:last-block' },
                     {
                         $set: {
@@ -802,7 +853,8 @@ export class BlockchainService implements IBlockchainService {
         }
 
         const lowerBound = Math.max(lastProcessed - blockchainConfig.maxBackfillPerRun, 1);
-        const existing = await BlockModel.find({
+        const blockModel = BlockchainService.getDatabase().getModel<BlockDoc>(BlockchainService.BLOCKS_COLLECTION);
+        const existing = await blockModel.find({
             blockNumber: { $gte: lowerBound, $lt: lastProcessed }
         })
             .select('blockNumber')
@@ -935,10 +987,15 @@ export class BlockchainService implements IBlockchainService {
             timings.processTransactions = Date.now() - stageStart;
             timings.observerNotifications = observerNotifyTime;
 
+            // Get model references for database operations
+            const txModel = BlockchainService.getDatabase().getModel<TransactionDoc>(BlockchainService.TRANSACTIONS_COLLECTION);
+            const blockModel = BlockchainService.getDatabase().getModel<BlockDoc>(BlockchainService.BLOCKS_COLLECTION);
+            const syncModel = BlockchainService.getDatabase().getModel<SyncStateDoc>(BlockchainService.SYNC_STATE_COLLECTION);
+
             // Stage 5: Bulk write transactions to MongoDB
             stageStart = Date.now();
             if (operations.length) {
-                await TransactionModel.bulkWrite(operations, { ordered: false });
+                await txModel.bulkWrite(operations, { ordered: false });
             }
             timings.bulkWriteTransactions = Date.now() - stageStart;
 
@@ -949,7 +1006,7 @@ export class BlockchainService implements IBlockchainService {
 
             // Stage 7: Update BlockModel
             stageStart = Date.now();
-            await BlockModel.updateOne(
+            await blockModel.updateOne(
                 { blockNumber },
                 {
                     $set: {
@@ -969,7 +1026,7 @@ export class BlockchainService implements IBlockchainService {
 
             // Stage 8: Update SyncStateModel (initial update for cursor)
             stageStart = Date.now();
-            await SyncStateModel.updateOne(
+            await syncModel.updateOne(
                 { key: 'blockchain:last-block' },
                 {
                     $setOnInsert: {
@@ -979,7 +1036,7 @@ export class BlockchainService implements IBlockchainService {
                 { upsert: true }
             );
 
-            await SyncStateModel.updateOne(
+            await syncModel.updateOne(
                 { key: 'blockchain:last-block' },
                 {
                     $max: {
@@ -1023,7 +1080,7 @@ export class BlockchainService implements IBlockchainService {
             timings.total = Date.now() - startTotal;
 
             // Stage 12: Update timing metrics in SyncState (after all timings are calculated)
-            await SyncStateModel.updateOne(
+            await syncModel.updateOne(
                 { key: 'blockchain:last-block' },
                 {
                     $set: {
@@ -1098,7 +1155,8 @@ export class BlockchainService implements IBlockchainService {
 
             logger.info({ errorDoc }, 'Storing error in database');
 
-            await SyncStateModel.updateOne(
+            const errorSyncModel = BlockchainService.getDatabase().getModel<SyncStateDoc>(BlockchainService.SYNC_STATE_COLLECTION);
+            await errorSyncModel.updateOne(
                 { key: 'blockchain:last-block' },
                 {
                     $addToSet: { 'meta.backfillQueue': blockNumber },

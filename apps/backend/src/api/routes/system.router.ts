@@ -1,13 +1,17 @@
 import { Router } from 'express';
+import mongoose from 'mongoose';
 import { requireAdmin } from '../middleware/admin-auth.js';
 import { SystemMonitorController } from '../../modules/system/system-monitor.controller.js';
 import { getRedisClient } from '../../loaders/redis.js';
 import { PluginWebSocketRegistry } from '../../services/plugin-websocket-registry.js';
 import { createSystemLogRouter } from '../../modules/logs/index.js';
+import { DatabaseService } from '../../modules/database/index.js';
+import { logger } from '../../lib/logger.js';
 
 export function systemRouter() {
   const router = Router();
-  const controller = new SystemMonitorController(getRedisClient());
+  const database = new DatabaseService(logger.child({ module: 'system-router' }), mongoose.connection);
+  const controller = new SystemMonitorController(getRedisClient(), database);
   const wsRegistry = PluginWebSocketRegistry.getInstance();
 
   router.use(requireAdmin);

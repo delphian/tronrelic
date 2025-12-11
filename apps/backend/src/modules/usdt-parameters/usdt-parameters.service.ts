@@ -1,10 +1,12 @@
-import type { IUsdtParametersService, IUsdtParameters } from '@tronrelic/types';
-import { UsdtParametersModel } from '../../database/models/usdt-parameters-model.js';
+import type { IUsdtParametersService, IUsdtParameters, IDatabaseService } from '@tronrelic/types';
+import { UsdtParametersModel, type IUsdtParametersDocument } from '../../database/models/usdt-parameters-model.js';
 import { logger } from '../../lib/logger.js';
 
 /**
  * USDT Parameters Service
- * Provides cached USDT transaction energy costs for calculators and market fetchers
+ *
+ * Provides cached USDT transaction energy costs for calculators and market fetchers.
+ * Implements IUsdtParametersService interface.
  *
  * Why this exists:
  * Market fetchers and USDT transfer calculators need to know how much energy a USDT
@@ -13,20 +15,47 @@ import { logger } from '../../lib/logger.js';
  *
  * This is the single source of truth for USDT energy costs, replacing all hardcoded constants.
  *
+ * Database access pattern:
+ * Uses IDatabaseService for all MongoDB operations, enabling testability
+ * through mock implementations. The UsdtParametersModel is registered for
+ * Mongoose schema validation and query building.
+ *
  * Singleton pattern ensures all consumers share the same cache instance.
  */
 export class UsdtParametersService implements IUsdtParametersService {
     private static instance: UsdtParametersService | null = null;
+    private static database: IDatabaseService | null = null;
 
+    private readonly COLLECTION_NAME = 'usdtParameters';
     private cachedParams: IUsdtParameters | null = null;
     private cacheExpiry: number = 0;
     private readonly CACHE_TTL_MS = 60_000; // 1 minute
 
     /**
      * Private constructor to enforce singleton pattern.
-     * Use getInstance() to access the service.
+     * Use setDependencies() then getInstance() to access the service.
      */
     private constructor() {}
+
+    /**
+     * Set dependencies for the service singleton.
+     *
+     * Must be called before getInstance() to inject the database service.
+     * Typically called during application bootstrap in index.ts.
+     *
+     * @param database - Database service for MongoDB operations
+     */
+    public static setDependencies(database: IDatabaseService): void {
+        UsdtParametersService.database = database;
+
+        // Create instance if needed and register model
+        if (!UsdtParametersService.instance) {
+            UsdtParametersService.instance = new UsdtParametersService();
+        }
+
+        // Register Mongoose model for schema validation and query building
+        database.registerModel('usdtParameters', UsdtParametersModel);
+    }
 
     /**
      * Get the singleton instance of UsdtParametersService.
@@ -36,6 +65,7 @@ export class UsdtParametersService implements IUsdtParametersService {
      * database queries and improving performance.
      *
      * @returns Singleton instance of UsdtParametersService
+     * @throws Error if setDependencies() has not been called
      */
     public static getInstance(): UsdtParametersService {
         if (!UsdtParametersService.instance) {
@@ -65,16 +95,24 @@ export class UsdtParametersService implements IUsdtParametersService {
     }
 
     /**
-     * Get latest USDT parameters from cache or database
-     * Cache refreshes every minute to balance performance vs freshness
-     * Database is updated every 10 minutes by UsdtParametersFetcher
+     * Get latest USDT parameters from cache or database.
+     *
+     * Cache refreshes every minute to balance performance vs freshness.
+     * Database is updated every 10 minutes by UsdtParametersFetcher.
      *
      * @returns Latest USDT parameters from mainnet
+     * @throws Error if database service not initialized or no parameters found
      */
     async getParameters(): Promise<IUsdtParameters> {
         if (this.cacheExpiry < Date.now()) {
+            if (!UsdtParametersService.database) {
+                throw new Error('UsdtParametersService.setDependencies() must be called before using the service');
+            }
+
             try {
-                this.cachedParams = await UsdtParametersModel.findOne({ network: 'mainnet' })
+                // Use registered model for sort support (IDatabaseService.findOne doesn't support sort)
+                const model = UsdtParametersService.database.getModel<IUsdtParametersDocument>(this.COLLECTION_NAME);
+                this.cachedParams = await model.findOne({ network: 'mainnet' })
                     .sort({ fetchedAt: -1 })
                     .lean();
             } catch (error) {
@@ -126,8 +164,14 @@ export class UsdtParametersService implements IUsdtParametersService {
      * @returns Last update timestamp or null if no data exists
      */
     async getLastUpdateTime(): Promise<Date | null> {
+        if (!UsdtParametersService.database) {
+            logger.warn('UsdtParametersService.setDependencies() not called, returning null');
+            return null;
+        }
+
         try {
-            const latest = await UsdtParametersModel.findOne({ network: 'mainnet' })
+            const model = UsdtParametersService.database.getModel<IUsdtParametersDocument>(this.COLLECTION_NAME);
+            const latest = await model.findOne({ network: 'mainnet' })
                 .sort({ fetchedAt: -1 })
                 .select('fetchedAt')
                 .lean();

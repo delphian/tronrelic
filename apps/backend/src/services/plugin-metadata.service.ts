@@ -1,6 +1,8 @@
-import type { IPluginMetadata, IPluginManifest } from '@tronrelic/types';
-import { PluginMetadata } from '../database/models/PluginMetadata.js';
+import type { IPluginMetadata, IPluginManifest, IDatabaseService } from '@tronrelic/types';
+import { PluginMetadata, type IPluginMetadataDocument } from '../database/models/PluginMetadata.js';
 import { logger } from '../lib/logger.js';
+
+const PLUGIN_METADATA_COLLECTION = 'plugin_metadata';
 
 /**
  * Service for managing plugin metadata in the database.
@@ -11,6 +13,32 @@ import { logger } from '../lib/logger.js';
  */
 export class PluginMetadataService {
     private static instance: PluginMetadataService;
+    private static database: IDatabaseService;
+
+    /**
+     * Set dependencies for the service singleton.
+     *
+     * Must be called before getInstance(). Registers the PluginMetadata model
+     * with the database service.
+     *
+     * @param database - Database service instance
+     */
+    public static setDependencies(database: IDatabaseService): void {
+        PluginMetadataService.database = database;
+        database.registerModel(PLUGIN_METADATA_COLLECTION, PluginMetadata);
+    }
+
+    /**
+     * Get the database service instance.
+     *
+     * @throws Error if setDependencies() has not been called
+     */
+    private static getDatabase(): IDatabaseService {
+        if (!PluginMetadataService.database) {
+            throw new Error('PluginMetadataService.setDependencies() must be called before using the service');
+        }
+        return PluginMetadataService.database;
+    }
 
     /**
      * Get singleton instance of the plugin metadata service.
@@ -28,6 +56,13 @@ export class PluginMetadataService {
     }
 
     /**
+     * Get the registered PluginMetadata model for database operations.
+     */
+    private getModel() {
+        return PluginMetadataService.getDatabase().getModel<IPluginMetadataDocument>(PLUGIN_METADATA_COLLECTION);
+    }
+
+    /**
      * Register a discovered plugin in the database if it doesn't exist.
      *
      * Auto-discovered plugins are added with default states of installed: false
@@ -39,7 +74,7 @@ export class PluginMetadataService {
      */
     public async registerPlugin(manifest: IPluginManifest): Promise<IPluginMetadata> {
         try {
-            const existing = await PluginMetadata.findOne({ id: manifest.id });
+            const existing = await this.getModel().findOne({ id: manifest.id });
 
             if (existing) {
                 // Update title and version if they've changed
@@ -56,7 +91,7 @@ export class PluginMetadataService {
             }
 
             // Create new metadata entry with default disabled state
-            const metadata = await PluginMetadata.create({
+            const metadata = await this.getModel().create({
                 id: manifest.id,
                 title: manifest.title,
                 version: manifest.version,
@@ -90,7 +125,7 @@ export class PluginMetadataService {
      * @returns Plugin metadata if found, null otherwise
      */
     public async getMetadata(pluginId: string): Promise<IPluginMetadata | null> {
-        const metadata = await PluginMetadata.findOne({ id: pluginId });
+        const metadata = await this.getModel().findOne({ id: pluginId });
         return metadata ? this.toPlainObject(metadata) : null;
     }
 
@@ -100,8 +135,8 @@ export class PluginMetadataService {
      * @returns Array of all plugin metadata entries
      */
     public async getAllMetadata(): Promise<IPluginMetadata[]> {
-        const metadataList = await PluginMetadata.find({});
-        return metadataList.map(m => this.toPlainObject(m));
+        const metadataList = await this.getModel().find({});
+        return metadataList.map((m: IPluginMetadataDocument) => this.toPlainObject(m));
     }
 
     /**
@@ -113,8 +148,8 @@ export class PluginMetadataService {
      * @returns Array of metadata for plugins that are both installed and enabled
      */
     public async getActivePlugins(): Promise<IPluginMetadata[]> {
-        const metadataList = await PluginMetadata.find({ installed: true, enabled: true });
-        return metadataList.map(m => this.toPlainObject(m));
+        const metadataList = await this.getModel().find({ installed: true, enabled: true });
+        return metadataList.map((m: IPluginMetadataDocument) => this.toPlainObject(m));
     }
 
     /**
@@ -127,7 +162,7 @@ export class PluginMetadataService {
      * @returns Updated metadata
      */
     public async markInstalled(pluginId: string): Promise<IPluginMetadata> {
-        const metadata = await PluginMetadata.findOneAndUpdate(
+        const metadata = await this.getModel().findOneAndUpdate(
             { id: pluginId },
             {
                 installed: true,
@@ -172,7 +207,7 @@ export class PluginMetadataService {
             updateData.lastErrorAt = null;
         }
 
-        const metadata = await PluginMetadata.findOneAndUpdate(
+        const metadata = await this.getModel().findOneAndUpdate(
             { id: pluginId },
             updateData,
             { new: true }
@@ -196,7 +231,7 @@ export class PluginMetadataService {
      * @returns Updated metadata
      */
     public async markEnabled(pluginId: string): Promise<IPluginMetadata> {
-        const metadata = await PluginMetadata.findOneAndUpdate(
+        const metadata = await this.getModel().findOneAndUpdate(
             { id: pluginId },
             {
                 enabled: true,
@@ -225,7 +260,7 @@ export class PluginMetadataService {
      * @returns Updated metadata
      */
     public async markDisabled(pluginId: string): Promise<IPluginMetadata> {
-        const metadata = await PluginMetadata.findOneAndUpdate(
+        const metadata = await this.getModel().findOneAndUpdate(
             { id: pluginId },
             {
                 enabled: false,
@@ -257,7 +292,7 @@ export class PluginMetadataService {
     public async recordError(pluginId: string, error: string | Error): Promise<IPluginMetadata> {
         const errorMessage = error instanceof Error ? error.message : error;
 
-        const metadata = await PluginMetadata.findOneAndUpdate(
+        const metadata = await this.getModel().findOneAndUpdate(
             { id: pluginId },
             {
                 lastError: errorMessage,

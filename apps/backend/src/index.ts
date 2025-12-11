@@ -149,7 +149,7 @@ async function bootstrapInit(): Promise<BootstrapContext> {
     await menuModule.init({ database: coreDatabase, app });
     const menuService = menuModule.getMenuService();
 
-    const cacheService = new CacheService(getRedisClient());
+    const cacheService = new CacheService(getRedisClient(), coreDatabase);
     const sharedDeps = { database: coreDatabase, cacheService, menuService, app };
 
     const logsModule = new LogsModule();
@@ -226,15 +226,17 @@ async function initializeCoreServices(coreDatabase: IDatabaseService): Promise<v
     BlockchainObserverService.initialize(logger.child({ module: 'blockchain-observer' }));
     SystemConfigService.initialize(logger.child({ module: 'system-config' }), coreDatabase);
 
-    // Chain parameters: fetch from TronGrid first (populates DB), then warm cache
-    const chainParamsFetcher = new ChainParametersFetcher(axios, logger);
+    // Chain parameters: inject database, fetch from TronGrid first (populates DB), then warm cache
+    ChainParametersService.setDependencies(coreDatabase);
+    const chainParamsFetcher = new ChainParametersFetcher(axios, logger, coreDatabase);
     await chainParamsFetcher.fetch();
     if (!await ChainParametersService.getInstance().init()) {
         throw new Error('Chain parameters service failed to initialize');
     }
 
-    // USDT parameters: same pattern
-    const usdtParamsFetcher = new UsdtParametersFetcher(axios, logger);
+    // USDT parameters: inject database, fetch from TronGrid first (populates DB), then warm cache
+    UsdtParametersService.setDependencies(coreDatabase);
+    const usdtParamsFetcher = new UsdtParametersFetcher(axios, logger, coreDatabase);
     await usdtParamsFetcher.fetch();
     if (!await UsdtParametersService.getInstance().init()) {
         throw new Error('USDT parameters service failed to initialize');

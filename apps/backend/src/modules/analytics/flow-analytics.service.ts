@@ -1,5 +1,7 @@
 import type { Redis as RedisClient } from 'ioredis';
-import { TransactionModel } from '../../database/models/transaction-model.js';
+import type { IDatabaseService } from '@tronrelic/types';
+import type { Collection } from 'mongodb';
+import { TransactionModel, type TransactionDoc } from '../../database/models/transaction-model.js';
 import { CacheService } from '../../services/cache.service.js';
 import { ValidationError } from '../../lib/errors.js';
 
@@ -31,12 +33,30 @@ interface TotalsResponse {
 
 const CACHE_TTL_SECONDS = 600;
 const MAX_SERIES_RESULTS = 5000;
+const TRANSACTIONS_COLLECTION = 'transactions';
 
 export class FlowAnalyticsService {
   private readonly cache: CacheService;
+  private readonly database: IDatabaseService;
 
-  constructor(redis: RedisClient) {
-    this.cache = new CacheService(redis);
+  constructor(redis: RedisClient, database: IDatabaseService) {
+    this.cache = new CacheService(redis, database);
+    this.database = database;
+    this.database.registerModel(TRANSACTIONS_COLLECTION, TransactionModel);
+  }
+
+  /**
+   * Get the transactions collection for aggregate operations.
+   */
+  private getTransactionsCollection(): Collection<TransactionDoc> {
+    return this.database.getCollection<TransactionDoc>(TRANSACTIONS_COLLECTION);
+  }
+
+  /**
+   * Get the registered Transaction model for database operations.
+   */
+  private getTransactionModel() {
+    return this.database.getModel<TransactionDoc>(TRANSACTIONS_COLLECTION);
   }
 
   async getTotals(
@@ -70,7 +90,7 @@ export class FlowAnalyticsService {
 
     const counterpartField = direction === 'inflow' ? '$from.address' : '$to.address';
 
-    const aggregation = await TransactionModel.aggregate<{
+    const aggregation = await this.getTransactionsCollection().aggregate<{
       _id: string | null;
       amount: number;
       total: number;
@@ -83,9 +103,9 @@ export class FlowAnalyticsService {
           total: { $sum: 1 }
         }
       },
-  { $match: { _id: { $nin: [null, address] } } },
+      { $match: { _id: { $nin: [null, address] } } },
       { $sort: { amount: -1 } }
-    ]);
+    ]).toArray();
 
     const totals: FlowTotalsResult = {};
     for (const row of aggregation) {
@@ -134,7 +154,7 @@ export class FlowAnalyticsService {
       ]
     };
 
-    const documents = (await TransactionModel.find(match)
+    const documents = (await this.getTransactionModel().find(match)
       .sort({ timestamp: 1 })
       .limit(MAX_SERIES_RESULTS + 1)
       .lean()) as Array<{

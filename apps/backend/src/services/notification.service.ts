@@ -1,17 +1,21 @@
 import { createHash } from 'node:crypto';
 import type { TronRelicSocketEvent, NotificationChannel } from '@tronrelic/shared';
+import type { IDatabaseService } from '@tronrelic/types';
 import { WebSocketService } from './websocket.service.js';
 import {
   NotificationDeliveryModel,
   NotificationSubscriptionModel,
   type NotificationSubscriptionDoc,
-  type NotificationSubscriptionFields
+  type NotificationSubscriptionFields,
+  type NotificationDeliveryDoc
 } from '../database/models/index.js';
 import { logger } from '../lib/logger.js';
 import { resolveChannels, resolveThrottleMs } from '../config/notifications.js';
 import { EmailService } from './email.service.js';
 
 const TRONSCAN_TX_URL = 'https://tronscan.org/#/transaction/';
+const SUBSCRIPTIONS_COLLECTION = 'notification_subscriptions';
+const DELIVERIES_COLLECTION = 'notification_deliveries';
 
 interface UpdatePreferencesPayload {
   channels?: NotificationChannel[];
@@ -21,10 +25,25 @@ interface UpdatePreferencesPayload {
 }
 
 export class NotificationService {
+  private readonly database: IDatabaseService;
+
   constructor(
+    database: IDatabaseService,
     private readonly websocket = WebSocketService.getInstance(),
     private readonly email = new EmailService()
-  ) {}
+  ) {
+    this.database = database;
+    this.database.registerModel(SUBSCRIPTIONS_COLLECTION, NotificationSubscriptionModel);
+    this.database.registerModel(DELIVERIES_COLLECTION, NotificationDeliveryModel);
+  }
+
+  private getSubscriptionModel() {
+    return this.database.getModel<NotificationSubscriptionDoc>(SUBSCRIPTIONS_COLLECTION);
+  }
+
+  private getDeliveryModel() {
+    return this.database.getModel<NotificationDeliveryDoc>(DELIVERIES_COLLECTION);
+  }
 
   async broadcast(event: TronRelicSocketEvent) {
     this.websocket.emit(event);
@@ -36,7 +55,7 @@ export class NotificationService {
       return;
     }
 
-    const subscriptions = await NotificationSubscriptionModel.find({ wallet: { $in: uniqueWallets } }).lean() as NotificationSubscriptionFields[];
+    const subscriptions = await this.getSubscriptionModel().find({ wallet: { $in: uniqueWallets } }).lean() as NotificationSubscriptionFields[];
 
     if (!subscriptions.length) {
       return;
@@ -54,7 +73,7 @@ export class NotificationService {
   async updatePreferences(wallet: string, payload: UpdatePreferencesPayload) {
     const normalizedWallet = wallet.trim();
     const channels = resolveChannels(payload.channels);
-    await NotificationSubscriptionModel.updateOne(
+    await this.getSubscriptionModel().updateOne(
       { wallet: normalizedWallet },
       {
         wallet: normalizedWallet,
@@ -73,7 +92,7 @@ export class NotificationService {
       throw new Error('Wallet is required for preferences lookup');
     }
 
-    const doc = await NotificationSubscriptionModel.findOne({ wallet: normalizedWallet }).lean() as NotificationSubscriptionFields | null;
+    const doc = await this.getSubscriptionModel().findOne({ wallet: normalizedWallet }).lean() as NotificationSubscriptionFields | null;
     const channels = resolveChannels(doc?.channels);
     return {
       wallet: normalizedWallet,
@@ -111,7 +130,7 @@ export class NotificationService {
     subscription: NotificationSubscriptionDoc
   ) {
     const throttleMs = resolveThrottleMs(channel, subscription.throttleOverrides);
-    const record = await NotificationDeliveryModel.findOne({ wallet, channel, event: event.event }).lean();
+    const record = await this.getDeliveryModel().findOne({ wallet, channel, event: event.event }).lean();
     if (record) {
       const lastSentAt = record.lastSentAt instanceof Date ? record.lastSentAt : new Date(record.lastSentAt);
       const elapsed = Date.now() - lastSentAt.getTime();
@@ -140,7 +159,7 @@ export class NotificationService {
       return;
     }
 
-    await NotificationDeliveryModel.updateOne(
+    await this.getDeliveryModel().updateOne(
       { wallet, channel, event: event.event },
       {
         wallet,

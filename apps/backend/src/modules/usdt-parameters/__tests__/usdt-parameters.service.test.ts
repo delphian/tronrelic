@@ -12,11 +12,15 @@
  * - Service throws errors on database failures
  * - Valid parameters are cached correctly
  * - Cache expiry works as expected
+ *
+ * **Database Access Pattern:**
+ * The service uses IDatabaseService for all MongoDB operations. Tests mock
+ * the database service rather than the Mongoose model directly.
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { UsdtParametersService } from '../usdt-parameters.service.js';
-import { UsdtParametersModel } from '../../../database/models/usdt-parameters-model.js';
+import type { IDatabaseService } from '@tronrelic/types';
 
 // Mock the logger (follows pattern from migration tests)
 vi.mock('../../../lib/logger.js', () => ({
@@ -28,27 +32,73 @@ vi.mock('../../../lib/logger.js', () => ({
     }
 }));
 
-// Mock the Mongoose model
-vi.mock('../../../database/models/usdt-parameters-model.js', () => ({
-    UsdtParametersModel: {
-        findOne: vi.fn()
-    }
-}));
+/**
+ * Create a mock IDatabaseService with configurable model behavior.
+ *
+ * @param modelMock - Mock implementation for getModel().findOne()
+ * @returns Mock IDatabaseService
+ */
+function createMockDatabase(modelMock: any): IDatabaseService {
+    return {
+        registerModel: vi.fn(),
+        getModel: vi.fn().mockReturnValue(modelMock),
+        getCollection: vi.fn(),
+        find: vi.fn(),
+        findOne: vi.fn(),
+        create: vi.fn(),
+        updateMany: vi.fn(),
+        deleteMany: vi.fn(),
+        countDocuments: vi.fn()
+    } as unknown as IDatabaseService;
+}
+
+/**
+ * Create a chainable mock for Mongoose model.findOne().sort().lean() pattern.
+ *
+ * @param resolvedValue - Value to resolve from lean()
+ * @returns Mock with chainable sort() and lean() methods
+ */
+function createChainableFindOneMock(resolvedValue: any) {
+    return {
+        findOne: vi.fn().mockReturnValue({
+            sort: vi.fn().mockReturnValue({
+                lean: vi.fn().mockResolvedValue(resolvedValue),
+                select: vi.fn().mockReturnValue({
+                    lean: vi.fn().mockResolvedValue(resolvedValue)
+                })
+            })
+        })
+    };
+}
+
+/**
+ * Create a chainable mock that rejects with an error.
+ *
+ * @param error - Error to reject with
+ * @returns Mock with chainable methods that reject
+ */
+function createChainableFindOneErrorMock(error: Error) {
+    return {
+        findOne: vi.fn().mockReturnValue({
+            sort: vi.fn().mockReturnValue({
+                lean: vi.fn().mockRejectedValue(error)
+            })
+        })
+    };
+}
 
 describe('UsdtParametersService - Error Handling', () => {
-    let service: UsdtParametersService;
-
     beforeEach(() => {
-        // Reset singleton instance before each test
+        // Reset singleton instance and database before each test
         (UsdtParametersService as any).instance = null;
-
-        // Clear all mocks
+        (UsdtParametersService as any).database = null;
         vi.clearAllMocks();
     });
 
     afterEach(() => {
         // Clean up singleton after tests
         (UsdtParametersService as any).instance = null;
+        (UsdtParametersService as any).database = null;
     });
 
     /**
@@ -59,15 +109,13 @@ describe('UsdtParametersService - Error Handling', () => {
      * Using fallback values produces incorrect calculations.
      */
     it('should throw error when database is empty', async () => {
-        // Simulate empty database (first boot scenario)
-        const mockFindOne = vi.mocked(UsdtParametersModel.findOne);
-        mockFindOne.mockReturnValue({
-            sort: vi.fn().mockReturnValue({
-                lean: vi.fn().mockResolvedValue(null) // DB returns null
-            })
-        } as any);
+        // Create mock that returns null (empty database)
+        const modelMock = createChainableFindOneMock(null);
+        const mockDatabase = createMockDatabase(modelMock);
 
-        service = UsdtParametersService.getInstance();
+        // Initialize service with mock database
+        UsdtParametersService.setDependencies(mockDatabase);
+        const service = UsdtParametersService.getInstance();
 
         // Should throw error (not return fallback)
         await expect(service.getStandardTransferEnergy()).rejects.toThrow(
@@ -82,14 +130,13 @@ describe('UsdtParametersService - Error Handling', () => {
      * Database errors propagate as exceptions instead of silently using fallback values.
      */
     it('should throw error when database query fails', async () => {
-        const mockFindOne = vi.mocked(UsdtParametersModel.findOne);
-        mockFindOne.mockReturnValue({
-            sort: vi.fn().mockReturnValue({
-                lean: vi.fn().mockRejectedValue(new Error('DB connection failed'))
-            })
-        } as any);
+        // Create mock that rejects with error
+        const modelMock = createChainableFindOneErrorMock(new Error('DB connection failed'));
+        const mockDatabase = createMockDatabase(modelMock);
 
-        service = UsdtParametersService.getInstance();
+        // Initialize service with mock database
+        UsdtParametersService.setDependencies(mockDatabase);
+        const service = UsdtParametersService.getInstance();
 
         // Should throw database error (not return fallback)
         await expect(service.getStandardTransferEnergy()).rejects.toThrow('DB connection failed');
@@ -101,14 +148,11 @@ describe('UsdtParametersService - Error Handling', () => {
      * Tests the root method to ensure it throws instead of using fallback.
      */
     it('should throw error from getParameters() when database is empty', async () => {
-        const mockFindOne = vi.mocked(UsdtParametersModel.findOne);
-        mockFindOne.mockReturnValue({
-            sort: vi.fn().mockReturnValue({
-                lean: vi.fn().mockResolvedValue(null)
-            })
-        } as any);
+        const modelMock = createChainableFindOneMock(null);
+        const mockDatabase = createMockDatabase(modelMock);
 
-        service = UsdtParametersService.getInstance();
+        UsdtParametersService.setDependencies(mockDatabase);
+        const service = UsdtParametersService.getInstance();
 
         // Should throw error
         await expect(service.getParameters()).rejects.toThrow(
@@ -120,14 +164,11 @@ describe('UsdtParametersService - Error Handling', () => {
      * Test: First-time transfer energy also throws error when data unavailable.
      */
     it('should throw error from getFirstTimeTransferEnergy() when database is empty', async () => {
-        const mockFindOne = vi.mocked(UsdtParametersModel.findOne);
-        mockFindOne.mockReturnValue({
-            sort: vi.fn().mockReturnValue({
-                lean: vi.fn().mockResolvedValue(null)
-            })
-        } as any);
+        const modelMock = createChainableFindOneMock(null);
+        const mockDatabase = createMockDatabase(modelMock);
 
-        service = UsdtParametersService.getInstance();
+        UsdtParametersService.setDependencies(mockDatabase);
+        const service = UsdtParametersService.getInstance();
 
         // Should throw error
         await expect(service.getFirstTimeTransferEnergy()).rejects.toThrow(
@@ -137,15 +178,15 @@ describe('UsdtParametersService - Error Handling', () => {
 });
 
 describe('UsdtParametersService - Correct Behavior', () => {
-    let service: UsdtParametersService;
-
     beforeEach(() => {
         (UsdtParametersService as any).instance = null;
+        (UsdtParametersService as any).database = null;
         vi.clearAllMocks();
     });
 
     afterEach(() => {
         (UsdtParametersService as any).instance = null;
+        (UsdtParametersService as any).database = null;
     });
 
     /**
@@ -165,14 +206,11 @@ describe('UsdtParametersService - Correct Behavior', () => {
             createdAt: new Date()
         };
 
-        const mockFindOne = vi.mocked(UsdtParametersModel.findOne);
-        mockFindOne.mockReturnValue({
-            sort: vi.fn().mockReturnValue({
-                lean: vi.fn().mockResolvedValue(mockParams)
-            })
-        } as any);
+        const modelMock = createChainableFindOneMock(mockParams);
+        const mockDatabase = createMockDatabase(modelMock);
 
-        service = UsdtParametersService.getInstance();
+        UsdtParametersService.setDependencies(mockDatabase);
+        const service = UsdtParametersService.getInstance();
 
         // First call - fetches from DB
         const energy1 = await service.getStandardTransferEnergy();
@@ -182,8 +220,8 @@ describe('UsdtParametersService - Correct Behavior', () => {
         const energy2 = await service.getStandardTransferEnergy();
         expect(energy2).toBe(65_000);
 
-        // DB queried only once
-        expect(mockFindOne).toHaveBeenCalledOnce();
+        // DB queried only once (model.findOne called once)
+        expect(modelMock.findOne).toHaveBeenCalledOnce();
     });
 
     /**
@@ -203,18 +241,15 @@ describe('UsdtParametersService - Correct Behavior', () => {
             createdAt: new Date()
         };
 
-        const mockFindOne = vi.mocked(UsdtParametersModel.findOne);
-        mockFindOne.mockReturnValue({
-            sort: vi.fn().mockReturnValue({
-                lean: vi.fn().mockResolvedValue(mockParams)
-            })
-        } as any);
+        const modelMock = createChainableFindOneMock(mockParams);
+        const mockDatabase = createMockDatabase(modelMock);
 
-        service = UsdtParametersService.getInstance();
+        UsdtParametersService.setDependencies(mockDatabase);
+        const service = UsdtParametersService.getInstance();
 
         // First call - fetches from DB
         await service.getStandardTransferEnergy();
-        expect(mockFindOne).toHaveBeenCalledOnce();
+        expect(modelMock.findOne).toHaveBeenCalledOnce();
 
         // Fast-forward time past cache TTL (1 minute = 60,000 ms)
         vi.useFakeTimers();
@@ -222,7 +257,7 @@ describe('UsdtParametersService - Correct Behavior', () => {
 
         // Second call - should re-query DB
         await service.getStandardTransferEnergy();
-        expect(mockFindOne).toHaveBeenCalledTimes(2);
+        expect(modelMock.findOne).toHaveBeenCalledTimes(2);
 
         vi.useRealTimers();
     });
@@ -242,14 +277,11 @@ describe('UsdtParametersService - Correct Behavior', () => {
             createdAt: new Date()
         };
 
-        const mockFindOne = vi.mocked(UsdtParametersModel.findOne);
-        mockFindOne.mockReturnValue({
-            sort: vi.fn().mockReturnValue({
-                lean: vi.fn().mockResolvedValue(mockParams)
-            })
-        } as any);
+        const modelMock = createChainableFindOneMock(mockParams);
+        const mockDatabase = createMockDatabase(modelMock);
 
-        service = UsdtParametersService.getInstance();
+        UsdtParametersService.setDependencies(mockDatabase);
+        const service = UsdtParametersService.getInstance();
 
         // First call - fetches from DB
         const energy1 = await service.getFirstTimeTransferEnergy();
@@ -260,6 +292,6 @@ describe('UsdtParametersService - Correct Behavior', () => {
         expect(energy2).toBe(130_000);
 
         // DB queried only once
-        expect(mockFindOne).toHaveBeenCalledOnce();
+        expect(modelMock.findOne).toHaveBeenCalledOnce();
     });
 });

@@ -1,5 +1,7 @@
 import type { Redis as RedisClient } from 'ioredis';
-import { TransactionModel } from '../../database/models/transaction-model.js';
+import type { IDatabaseService } from '@tronrelic/types';
+import type { Collection } from 'mongodb';
+import { TransactionModel, type TransactionDoc } from '../../database/models/transaction-model.js';
 import { CacheService } from '../../services/cache.service.js';
 import { ValidationError } from '../../lib/errors.js';
 
@@ -31,6 +33,7 @@ export interface AccountTransactionsResult {
 const MAX_RANGE_RESULTS = 1000;
 const CACHE_TTL_SECONDS = 300;
 const MONTE_CARLO_SAMPLE_SIZE = 750;
+const TRANSACTIONS_COLLECTION = 'transactions';
 
 export interface MonteCarloCounterpartyEstimate {
   address: string;
@@ -66,9 +69,26 @@ interface TransactionLean {
 
 export class AccountAnalyticsService {
   private readonly cache: CacheService;
+  private readonly database: IDatabaseService;
 
-  constructor(redis: RedisClient) {
-    this.cache = new CacheService(redis);
+  constructor(redis: RedisClient, database: IDatabaseService) {
+    this.cache = new CacheService(redis, database);
+    this.database = database;
+    this.database.registerModel(TRANSACTIONS_COLLECTION, TransactionModel);
+  }
+
+  /**
+   * Get the transactions collection for aggregate operations.
+   */
+  private getTransactionsCollection(): Collection<TransactionDoc> {
+    return this.database.getCollection<TransactionDoc>(TRANSACTIONS_COLLECTION);
+  }
+
+  /**
+   * Get the registered Transaction model for database operations.
+   */
+  private getTransactionModel() {
+    return this.database.getModel<TransactionDoc>(TRANSACTIONS_COLLECTION);
   }
 
   async getRecentTransactions(address: string, limit: number, ignoreTrx: number): Promise<AccountTransactionsResult> {
@@ -83,7 +103,7 @@ export class AccountAnalyticsService {
       ]
     };
 
-    const documents = (await TransactionModel.find(match)
+    const documents = (await this.getTransactionModel().find(match)
       .sort({ timestamp: -1 })
       .limit(limit)
       .lean()) as TransactionLean[];
@@ -118,14 +138,14 @@ export class AccountAnalyticsService {
       ]
     };
 
-    const total = await TransactionModel.countDocuments(match);
+    const total = await this.getTransactionModel().countDocuments(match);
 
     let result: AccountTransactionsResult;
 
     if (total > MAX_RANGE_RESULTS) {
       result = await this.runMonteCarloAggregation(match, address, total);
     } else {
-      const documents = (await TransactionModel.find(match)
+      const documents = (await this.getTransactionModel().find(match)
         .sort({ timestamp: -1 })
         .limit(MAX_RANGE_RESULTS)
         .lean()) as TransactionLean[];
@@ -146,10 +166,10 @@ export class AccountAnalyticsService {
   ): Promise<AccountTransactionsResult> {
     const requestedSample = Math.min(populationSize, MONTE_CARLO_SAMPLE_SIZE);
     const sampleSize = Math.max(Math.floor(requestedSample), 1);
-    const sampleDocuments = (await TransactionModel.aggregate<TransactionLean>([
+    const sampleDocuments = await this.getTransactionsCollection().aggregate<TransactionLean>([
       { $match: match },
       { $sample: { size: sampleSize } }
-    ])) as TransactionLean[];
+    ]).toArray();
 
     if (sampleDocuments.length === 0) {
       return {

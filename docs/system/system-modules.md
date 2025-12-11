@@ -600,9 +600,9 @@ import { MyFeatureModule } from './modules/my-feature/index.js';
 
 // Inside bootstrap() function, after MenuService initialization:
 
-// Create cache service from Redis
+// Create cache service from Redis and database
 const redis = getRedisClient();
-const cacheService = new CacheService(redis);
+const cacheService = new CacheService(redis, coreDatabase);
 
 // Instantiate module
 const myFeatureModule = new MyFeatureModule();
