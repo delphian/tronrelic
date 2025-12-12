@@ -4,12 +4,9 @@ import type {
     IBlockchainObserverService,
     IPluginDatabase,
     ISystemLogService,
-    IPluginWebSocketManager,
-    IBlockchainService
+    IPluginWebSocketManager
 } from '@tronrelic/types';
-import type { IDelegationTransaction, IWhaleDelegation, IResourceTrackingConfig, IPoolDelegation } from '../shared/types/index.js';
-import { PoolMembershipService } from './pool-membership.service.js';
-import { aggregatePools } from './pools.service.js';
+import type { IDelegationTransaction, IWhaleDelegation, IResourceTrackingConfig } from '../shared/types/index.js';
 
 /**
  * Delegation Tracker Observer processes resource delegation and reclaim transactions.
@@ -32,10 +29,8 @@ import { aggregatePools } from './pools.service.js';
  * @param BaseObserver - Base observer class providing queue management and error isolation, needed to extend functionality for delegation tracking
  * @param observerRegistry - Registry for subscribing to specific transaction types, allows this observer to receive delegation events
  * @param database - Plugin-scoped database service for delegation transaction persistence with automatic collection prefixing
- * @param websocket - WebSocket manager for emitting real-time pool delegation events
+ * @param websocket - WebSocket manager for emitting real-time events
  * @param logger - Structured logger scoped to the plugin so delegation logs stay contextualized
- * @param poolMembershipService - Service for discovering pool-to-account relationships
- * @param blockchainService - Blockchain service for accessing sync state
  * @returns Instantiated delegation tracker observer ready to process transactions
  */
 export function createDelegationTrackerObserver(
@@ -43,9 +38,7 @@ export function createDelegationTrackerObserver(
     observerRegistry: IBlockchainObserverService,
     database: IPluginDatabase,
     websocket: IPluginWebSocketManager,
-    logger: ISystemLogService,
-    poolMembershipService: PoolMembershipService,
-    blockchainService: IBlockchainService
+    logger: ISystemLogService
 ): IBaseObserver {
     const scopedLogger = logger.child({ observer: 'DelegationTrackerObserver' });
 
@@ -61,26 +54,14 @@ export function createDelegationTrackerObserver(
         protected readonly name = 'DelegationTrackerObserver';
         private readonly database: IPluginDatabase;
         private readonly websocket: IPluginWebSocketManager;
-        private readonly poolMembershipService: PoolMembershipService;
-        private readonly blockchainService: IBlockchainService;
         private config: IResourceTrackingConfig | null = null;
         private configLastLoaded = 0;
         private readonly CONFIG_CACHE_MS = 5 * 60 * 1000; // 5 minutes
-
-        // Throttle pool updates to once per block (3 seconds)
-        // Instead of emitting per-transaction, we aggregate and push once per block
-        private lastPoolUpdateBlock = 0;
-
-        // Track pending fire-and-forget aggregations to detect backlog (Issue #81)
-        private pendingPoolUpdates = 0;
-        private readonly MAX_PENDING_BEFORE_ERROR = 10;
 
         constructor() {
             super(scopedLogger);
             this.database = database;
             this.websocket = websocket;
-            this.poolMembershipService = poolMembershipService;
-            this.blockchainService = blockchainService;
 
             // Subscribe to both delegation and reclaim transaction types
             observerRegistry.subscribeTransactionType('DelegateResourceContract', this);
@@ -184,19 +165,6 @@ export function createDelegationTrackerObserver(
 
             // Whale detection: Check if delegation exceeds threshold
             await this.detectWhale(delegationRecord, scopedLogger);
-
-            // Pool tracking: Check if this is a pool-controlled delegation (Permission_id >= 3)
-            const rawValue = transaction.rawValue as Record<string, unknown>;
-            const permissionId = typeof rawValue?.Permission_id === 'number' ? rawValue.Permission_id : 0;
-
-            if (permissionId >= 3 && isDelegation) {
-                await this.trackPoolDelegation(
-                    delegationRecord,
-                    permissionId,
-                    lockPeriod,
-                    scopedLogger
-                );
-            }
         }
 
         /**
@@ -289,131 +257,6 @@ export function createDelegationTrackerObserver(
 
                 // Log error but don't throw - whale detection failure shouldn't break transaction processing
                 logger.error({ error, txId: delegation.txId }, 'Failed to persist whale delegation');
-            }
-        }
-
-        /**
-         * Track pool-controlled delegations (Permission_id >= 3).
-         *
-         * Pool-controlled delegations are distinguished from direct user delegations
-         * because they are authorized by custom permissions granted to pool addresses.
-         * This method:
-         * 1. Discovers the controlling pool (async, may be null initially)
-         * 2. Persists to pool-delegations collection
-         * 3. Emits WebSocket event for real-time pool tracking charts
-         *
-         * @param delegation - The delegation record that was just persisted
-         * @param permissionId - Permission ID used to authorize this transaction
-         * @param lockPeriod - Lock period in blocks (optional)
-         * @param logger - Scoped logger for pool tracking events
-         */
-        private async trackPoolDelegation(
-            delegation: Omit<IDelegationTransaction, 'createdAt'>,
-            permissionId: number,
-            lockPeriod: number | undefined,
-            logger: ISystemLogService
-        ): Promise<void> {
-            try {
-                // Discover the controlling pool (may be null if not yet discovered)
-                const poolAddress = await this.poolMembershipService.getPoolForAccount(
-                    delegation.fromAddress,
-                    permissionId
-                );
-
-                // Calculate rental duration in minutes (TRON block time is 3 seconds)
-                const rentalPeriodMinutes = lockPeriod ? (lockPeriod * 3) / 60 : undefined;
-
-                // Calculate normalized amount (accounting for rental duration)
-                // Multi-day rentals provide more value due to daily energy regeneration
-                const amountTrx = Math.abs(delegation.amountSun) / 1_000_000;
-                const durationDays = rentalPeriodMinutes ? rentalPeriodMinutes / 60 / 24 : 1;
-                const normalizedAmountTrx = amountTrx * durationDays;
-
-                // Create pool delegation record
-                const poolDelegation: Omit<IPoolDelegation, 'createdAt'> = {
-                    txId: delegation.txId,
-                    timestamp: delegation.timestamp,
-                    blockNumber: delegation.blockNumber,
-                    fromAddress: delegation.fromAddress,
-                    toAddress: delegation.toAddress,
-                    poolAddress,
-                    resourceType: delegation.resourceType,
-                    amountSun: delegation.amountSun,
-                    permissionId,
-                    lockPeriod,
-                    rentalPeriodMinutes,
-                    normalizedAmountTrx
-                };
-
-                // Persist to pool-delegations collection
-                await this.database.insertOne('pool-delegations', poolDelegation);
-
-                // Throttle WebSocket updates to once per block.
-                // Fire-and-forget pattern: don't await aggregation to avoid blocking transaction processing.
-                // Issue #81: Awaiting aggregatePools() caused observer queue overflow at chain tip.
-                const currentBlock = delegation.blockNumber;
-                if (currentBlock && currentBlock > this.lastPoolUpdateBlock) {
-                    this.lastPoolUpdateBlock = currentBlock;
-
-                    // Fire and forget - don't block transaction processing
-                    void this.emitPoolUpdate(currentBlock);
-                }
-
-                logger.debug({
-                    txId: delegation.txId,
-                    poolAddress,
-                    permissionId,
-                    amountTrx,
-                    rentalPeriodMinutes
-                }, 'Pool delegation tracked');
-            } catch (error) {
-                // Check for duplicate key error
-                const isDuplicateError = error && typeof error === 'object' && (
-                    ('code' in error && error.code === 11000) ||
-                    ('error' in error && typeof error.error === 'object' && error.error && 'code' in error.error && error.error.code === 11000)
-                );
-
-                if (isDuplicateError) {
-                    logger.debug({ txId: delegation.txId }, 'Pool delegation already persisted');
-                    return;
-                }
-
-                // Log error but don't throw - pool tracking failure shouldn't break transaction processing
-                logger.error({ error, txId: delegation.txId }, 'Failed to track pool delegation');
-            }
-        }
-
-        /**
-         * Emit aggregated pool data via WebSocket (fire-and-forget).
-         *
-         * Runs asynchronously to avoid blocking transaction processing. Tracks pending
-         * operations and logs errors if backlog exceeds threshold, indicating the
-         * aggregation queries are taking longer than the block interval.
-         *
-         * @param blockNumber - Block number that triggered this update
-         */
-        private async emitPoolUpdate(blockNumber: number): Promise<void> {
-            this.pendingPoolUpdates++;
-
-            if (this.pendingPoolUpdates >= this.MAX_PENDING_BEFORE_ERROR) {
-                scopedLogger.error({
-                    pendingCount: this.pendingPoolUpdates,
-                    blockNumber
-                }, 'Pool aggregation backlog critical - aggregations falling behind block production');
-            }
-
-            try {
-                const poolsData = await aggregatePools(this.database, this.blockchainService, 24);
-                this.websocket.emitToRoom('pool-updates', 'pools:updated', poolsData);
-
-                scopedLogger.debug({
-                    blockNumber,
-                    poolCount: poolsData.pools.length
-                }, 'Emitted aggregated pool data');
-            } catch (error) {
-                scopedLogger.error({ error, blockNumber }, 'Failed to aggregate pools for WebSocket push');
-            } finally {
-                this.pendingPoolUpdates--;
             }
         }
     }

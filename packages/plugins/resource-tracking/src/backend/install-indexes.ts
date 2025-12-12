@@ -46,54 +46,5 @@ export async function createResourceTrackingIndexes(context: IPluginContext): Pr
 
     logger.info('Created indexes for whale-delegations collection');
 
-    // Index for pool-delegations collection (Permission_id >= 3 delegations)
-    // - txId unique index prevents duplicate pool delegation storage
-    // - poolAddress + timestamp composite for pool-specific queries and charts
-    // - timestamp descending for recent delegation queries
-    // - resourceType + timestamp composite optimizes aggregatePools() initial $match (Issue #81)
-    const poolDelegationsCollection = database.getCollection('pool-delegations');
-    await poolDelegationsCollection.createIndex({ txId: 1 }, { unique: true });
-    await poolDelegationsCollection.createIndex({ poolAddress: 1, timestamp: -1 });
-    await poolDelegationsCollection.createIndex({ timestamp: -1 });
-    await poolDelegationsCollection.createIndex({ fromAddress: 1, timestamp: -1 });
-    await poolDelegationsCollection.createIndex({ toAddress: 1, timestamp: -1 });
-    await poolDelegationsCollection.createIndex({ resourceType: 1, timestamp: -1 });
-
-    logger.info('Created indexes for pool-delegations collection');
-
-    // Index for pool-members collection (account-to-pool mappings)
-    // - Compound unique on account + pool prevents duplicate memberships
-    // - pool index for finding all members of a specific pool
-    // - lastSeenAt for activity-based queries
-    // - account + permissionId composite supports $lookup in aggregatePools() (Issue #81)
-    const poolMembersCollection = database.getCollection('pool-members');
-    await poolMembersCollection.createIndex({ account: 1, pool: 1 }, { unique: true });
-    await poolMembersCollection.createIndex({ pool: 1 });
-    await poolMembersCollection.createIndex({ lastSeenAt: -1 });
-    await poolMembersCollection.createIndex({ account: 1, permissionId: 1 });
-
-    logger.info('Created indexes for pool-members collection');
-
-    // Index for address-book collection (human-readable names)
-    // - address unique index for fast lookups
-    // - category index for filtering by type (pool, exchange, notable)
-    const addressBookCollection = database.getCollection('address-book');
-    await addressBookCollection.createIndex({ address: 1 }, { unique: true });
-    await addressBookCollection.createIndex({ category: 1 });
-
-    logger.info('Created indexes for address-book collection');
-
-    // Index for pool-delegations-hourly collection (aggregated hourly volumes per pool)
-    // - hourKey unique index for upsert operations during aggregation
-    // - poolAddress + timestamp for pool-specific historical queries
-    // - timestamp for time-range queries across all pools
-    const poolDelegationsHourlyCollection = database.getCollection('pool-delegations-hourly');
-    await poolDelegationsHourlyCollection.createIndex({ hourKey: 1 }, { unique: true });
-    await poolDelegationsHourlyCollection.createIndex({ poolAddress: 1, timestamp: -1 });
-    await poolDelegationsHourlyCollection.createIndex({ timestamp: -1 });
-    await poolDelegationsHourlyCollection.createIndex({ resourceType: 1, timestamp: -1 });
-
-    logger.info('Created indexes for pool-delegations-hourly collection');
-
     logger.info('Resource tracking indexes created successfully');
 }
