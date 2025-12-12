@@ -9,7 +9,3 @@ export type { IDelegationTransaction } from './IDelegationTransaction.js';
 export type { ISummationData } from './ISummationData.js';
 export type { IAggregationState } from './IAggregationState.js';
 export type { IWhaleDelegation } from './IWhaleDelegation.js';
-export type { IPoolDelegation } from './IPoolDelegation.js';
-export type { IPoolMember } from './IPoolMember.js';
-export type { IAddressBookEntry } from './IAddressBookEntry.js';
-export type { IPoolDelegationHourly } from './IPoolDelegationHourly.js';
