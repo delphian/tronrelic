@@ -98,6 +98,18 @@ export const resourceTrackingBackendPlugin = definePlugin({
             context.logger.warn({ error }, 'Failed to delete configuration');
         }
 
+        // Drop legacy pool tracking collections from older plugin versions
+        const legacyCollections = ['pool-delegations', 'pool-members', 'address-book', 'pool-delegations-hourly'];
+        for (const name of legacyCollections) {
+            try {
+                const collection = context.database.getCollection(name);
+                await collection.drop();
+                context.logger.info(`Dropped legacy collection: ${name}`);
+            } catch {
+                // Silently ignore - collection may not exist
+            }
+        }
+
         context.logger.info('Resource-tracking plugin uninstalled');
     },
 
