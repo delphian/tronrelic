@@ -259,5 +259,5 @@ Before writing new database service tests:
 - [mongoose.ts](../../apps/backend/src/tests/vitest/mocks/mongoose.ts) - Complete API reference and implementation details
 
 **Related topics:**
-- [plugins-database.md](../plugins/plugins-database.md) - Plugin database storage patterns and IPluginDatabase usage
+- [system-database.md](./system-database.md) - Database access architecture and IDatabaseService usage
 - [system.md](./system.md) - System architecture overview

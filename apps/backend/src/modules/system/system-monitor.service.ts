@@ -1,15 +1,21 @@
 import type { Redis as RedisClient } from 'ioredis';
+import type { IDatabaseService } from '@tronrelic/types';
 import * as os from 'os';
 import mongoose from 'mongoose';
 import { SyncStateModel, type SyncStateFields } from '../../database/models/sync-state-model.js';
-import { BlockModel, type BlockFields } from '../../database/models/block-model.js';
-import { TransactionModel } from '../../database/models/transaction-model.js';
-import { SchedulerExecutionModel, type ISchedulerExecutionFields } from '../../database/models/scheduler-execution-model.js';
+import { BlockModel, type BlockFields, type BlockDoc } from '../../database/models/block-model.js';
+import { TransactionModel, type TransactionDoc } from '../../database/models/transaction-model.js';
+import { SchedulerExecutionModel, type ISchedulerExecutionFields, type SchedulerExecutionDoc } from '../../database/models/scheduler-execution-model.js';
 import { TronGridClient } from '../blockchain/tron-grid.client.js';
 import { logger } from '../../lib/logger.js';
 import { env } from '../../config/env.js';
 import { getScheduler } from '../../jobs/index.js';
 import { blockchainConfig } from '../../config/blockchain.js';
+
+const SYNC_STATE_COLLECTION = 'sync_states';
+const BLOCKS_COLLECTION = 'blocks';
+const TRANSACTIONS_COLLECTION = 'transactions';
+const SCHEDULER_EXECUTIONS_COLLECTION = 'scheduler_executions';
 interface TimeoutResult<T> {
   timedOut: boolean;
   value?: T;
@@ -181,12 +187,39 @@ export interface ConfigurationValues {
 }
 
 export class SystemMonitorService {
-  constructor(private readonly redis: RedisClient) {}
+  private readonly database: IDatabaseService;
+
+  constructor(private readonly redis: RedisClient, database: IDatabaseService) {
+    this.database = database;
+    this.database.registerModel(SYNC_STATE_COLLECTION, SyncStateModel);
+    this.database.registerModel(BLOCKS_COLLECTION, BlockModel);
+    this.database.registerModel(TRANSACTIONS_COLLECTION, TransactionModel);
+    this.database.registerModel(SCHEDULER_EXECUTIONS_COLLECTION, SchedulerExecutionModel);
+  }
+
+  /**
+   * Get the registered model for database operations.
+   */
+  private getSyncStateModel() {
+    return this.database.getModel<SyncStateFields>(SYNC_STATE_COLLECTION);
+  }
+
+  private getBlockModel() {
+    return this.database.getModel<BlockDoc>(BLOCKS_COLLECTION);
+  }
+
+  private getTransactionModel() {
+    return this.database.getModel<TransactionDoc>(TRANSACTIONS_COLLECTION);
+  }
+
+  private getSchedulerExecutionModel() {
+    return this.database.getModel<SchedulerExecutionDoc>(SCHEDULER_EXECUTIONS_COLLECTION);
+  }
 
   private async computeBlockProcessingSnapshot(state: SyncStateFields | null): Promise<BlockProcessingSnapshot> {
     const sampleSize = blockchainConfig.metrics?.sampleSize ?? 180;
 
-    const blocks = await BlockModel.find(
+    const blocks = await this.getBlockModel().find(
       {},
       { blockNumber: 1, blockId: 1, processedAt: 1, timestamp: 1 }
     )
@@ -333,7 +366,7 @@ export class SystemMonitorService {
   }
 
   async getBlockchainSyncStatus(): Promise<BlockchainSyncStatus> {
-    const state = await SyncStateModel.findOne({ key: 'blockchain:last-block' }).lean() as SyncStateFields | null;
+    const state = await this.getSyncStateModel().findOne({ key: 'blockchain:last-block' }).lean() as SyncStateFields | null;
     const tronClient = TronGridClient.getInstance();
 
     let networkBlock: number | null = null;
@@ -422,7 +455,7 @@ export class SystemMonitorService {
   async getTransactionStats(): Promise<TransactionStats> {
     let total = 0;
     try {
-      total = await TransactionModel.estimatedDocumentCount();
+      total = await this.getTransactionModel().estimatedDocumentCount();
     } catch (error) {
       logger.warn({ error }, 'Failed to estimate transaction count');
     }
@@ -447,7 +480,7 @@ export class SystemMonitorService {
   }
 
   async getBlockProcessingMetrics(): Promise<BlockProcessingMetrics> {
-    const state = await SyncStateModel.findOne({ key: 'blockchain:last-block' }).lean() as SyncStateFields | null;
+    const state = await this.getSyncStateModel().findOne({ key: 'blockchain:last-block' }).lean() as SyncStateFields | null;
     const snapshot = await this.computeBlockProcessingSnapshot(state);
 
     const cursorBlockNumber = snapshot.lastProcessedBlockNumber;
@@ -489,7 +522,7 @@ export class SystemMonitorService {
 
     for (const config of jobConfigs) {
       // Get the most recent execution for this job
-      const lastExecution = await SchedulerExecutionModel.findOne({ jobName: config.name })
+      const lastExecution = await this.getSchedulerExecutionModel().findOne({ jobName: config.name })
         .sort({ startedAt: -1 })
         .lean() as ISchedulerExecutionFields | null;
 

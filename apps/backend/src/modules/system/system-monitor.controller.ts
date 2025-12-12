@@ -1,5 +1,6 @@
 import type { Request, Response } from 'express';
 import type { Redis as RedisClient } from 'ioredis';
+import type { IDatabaseService } from '@tronrelic/types';
 import { LOG_LEVELS, type LogLevelName } from '@tronrelic/types';
 import { SystemMonitorService } from './system-monitor.service.js';
 import { BlockchainService } from '../blockchain/blockchain.service.js';
@@ -10,8 +11,8 @@ import { SystemConfigService } from '../../services/system-config/index.js';
 export class SystemMonitorController {
   private readonly service: SystemMonitorService;
 
-  constructor(redis: RedisClient) {
-    this.service = new SystemMonitorService(redis);
+  constructor(redis: RedisClient, database: IDatabaseService) {
+    this.service = new SystemMonitorService(redis, database);
   }
 
   getBlockchainStatus = async (_req: Request, res: Response) => {

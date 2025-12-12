@@ -1,13 +1,14 @@
 import { Router } from 'express';
+import type { IDatabaseService } from '@tronrelic/types';
 import { requireAdmin } from '../middleware/admin-auth.js';
 import { SystemMonitorController } from '../../modules/system/system-monitor.controller.js';
 import { getRedisClient } from '../../loaders/redis.js';
 import { PluginWebSocketRegistry } from '../../services/plugin-websocket-registry.js';
 import { createSystemLogRouter } from '../../modules/logs/index.js';
 
-export function systemRouter() {
+export function systemRouter(database: IDatabaseService) {
   const router = Router();
-  const controller = new SystemMonitorController(getRedisClient());
+  const controller = new SystemMonitorController(getRedisClient(), database);
   const wsRegistry = PluginWebSocketRegistry.getInstance();
 
   router.use(requireAdmin);

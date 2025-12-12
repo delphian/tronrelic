@@ -1,5 +1,6 @@
 import type { Request, Response } from 'express';
 import type { Redis as RedisClient } from 'ioredis';
+import type { IDatabaseService } from '@tronrelic/types';
 import { z } from 'zod';
 import { TransactionAnalyticsService, type SimplifiedTransaction } from './transaction.service.js';
 import { AccountAnalyticsService } from './account-analytics.service.js';
@@ -58,10 +59,10 @@ export class TransactionController {
   private readonly accountService: AccountAnalyticsService;
   private readonly memoService: TransactionMemoService;
 
-  constructor(redis: RedisClient) {
-    this.transactionService = new TransactionAnalyticsService(redis);
-    this.accountService = new AccountAnalyticsService(redis);
-    this.memoService = new TransactionMemoService(redis);
+  constructor(redis: RedisClient, database: IDatabaseService) {
+    this.transactionService = new TransactionAnalyticsService(redis, database);
+    this.accountService = new AccountAnalyticsService(redis, database);
+    this.memoService = new TransactionMemoService(redis, database);
   }
 
   highAmounts = async (req: Request, res: Response) => {

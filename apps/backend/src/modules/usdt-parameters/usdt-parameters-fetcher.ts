@@ -1,7 +1,9 @@
 import type { AxiosInstance } from 'axios';
-import type { IUsdtParametersFetcher, IUsdtParameters, ISystemLogService } from '@tronrelic/types';
-import { UsdtParametersModel } from '../../database/models/usdt-parameters-model.js';
+import type { IUsdtParametersFetcher, IUsdtParameters, ISystemLogService, IDatabaseService } from '@tronrelic/types';
+import { UsdtParametersModel, type IUsdtParametersDocument } from '../../database/models/usdt-parameters-model.js';
 import { toHexAddress } from '../../lib/tron-address.js';
+
+const USDT_PARAMETERS_COLLECTION = 'usdtParameters';
 
 /**
  * USDT TRC20 contract address on TRON mainnet
@@ -43,8 +45,19 @@ interface TronGridConstantContractResponse {
  */
 export class UsdtParametersFetcher implements IUsdtParametersFetcher {
     private readonly TRONGRID_ENDPOINT = 'https://api.trongrid.io/wallet/triggerconstantcontract';
+    private readonly database: IDatabaseService;
 
-    constructor(private readonly http: AxiosInstance, private readonly logger: ISystemLogService) {}
+    constructor(private readonly http: AxiosInstance, private readonly logger: ISystemLogService, database: IDatabaseService) {
+        this.database = database;
+        this.database.registerModel(USDT_PARAMETERS_COLLECTION, UsdtParametersModel);
+    }
+
+    /**
+     * Get the registered USDT parameters model for database operations.
+     */
+    private getModel() {
+        return this.database.getModel<IUsdtParametersDocument>(USDT_PARAMETERS_COLLECTION);
+    }
 
     /**
      * Fetch current USDT transfer energy costs and save to database
@@ -103,7 +116,7 @@ export class UsdtParametersFetcher implements IUsdtParametersFetcher {
             };
 
             // Save to database
-            await UsdtParametersModel.create(parameters);
+            await this.getModel().create(parameters);
 
             this.logger.info(
                 {

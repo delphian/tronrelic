@@ -104,8 +104,8 @@ Every plugin gets an isolated MongoDB sandbox with automatic collection prefixin
 - **Lifecycle-aware setup** - Create indexes in `install()`, load config in `init()`
 - **Consistent API** - Framework-free helpers for CRUD operations
 
-**See [plugins-database.md](./plugins-database.md) for complete details on:**
-- Using `IPluginDatabase` for scoped storage
+**See [system-database.md](../system/system-database.md#plugins) for complete details on:**
+- Using `IDatabaseService` for scoped storage
 - Creating indexes and seeding defaults in install hook
 - Key-value storage patterns for configuration
 - Best practices for data modeling and cleanup
@@ -225,7 +225,7 @@ context.websocket.onSubscribe(async (socket, roomName, payload) => {
 - [plugins-widget-zones.md](./plugins-widget-zones.md) - Widget zones for injecting UI into existing pages
 - [plugins-frontend-context.md](./plugins-frontend-context.md) - Context injection, UI components, API client, WebSocket
 - [plugins-api-registration.md](./plugins-api-registration.md) - REST routes, middleware, admin endpoints
-- [plugins-database.md](./plugins-database.md) - Scoped storage, indexes, key-value config
+- [system-database.md](../system/system-database.md#plugins) - Scoped storage, indexes, key-value config
 - [plugins-websocket-subscriptions.md](./plugins-websocket-subscriptions.md) - Real-time subscriptions, rooms, event namespacing
 
 **Related topics:**

@@ -217,7 +217,7 @@ See [Adding or updating a plugin](#adding-or-updating-a-plugin) for the full wal
 ## Related Documentation
 
 - **[Plugin Frontend Context](./plugins-frontend-context.md)** - UI dependency injection, CSS guidance, and context usage patterns.
-- **[Plugin Database Access](./plugins-database.md)** - Namespaced storage helpers and lifecycle considerations.
+- **[Database Access Architecture](../system/system-database.md#plugins)** - Namespaced storage helpers and lifecycle considerations.
 - **[Plugin Page Registration](./plugins-page-registration.md)** - Navigation and routing contracts for frontend surfaces.
 - **[Plugin Blockchain Observer Pattern](./plugins-blockchain-observers.md)** - Observer lifecycle and transaction handling patterns.
 - **[Plugin API Registration](./plugins-api-registration.md)** - REST route wiring, middleware patterns, and handler contracts.
@@ -268,7 +268,7 @@ Plugins never reach into `apps/backend/src` directly. Instead they rely on the i
 - `observerRegistry` lets a plugin subscribe to TRON transaction types and receive enriched transactions (typed as `ITransaction` from `@tronrelic/types`).
 - `websocketService` exposes `emit` and `emitToWallet` so plugins can broadcast real-time events.
 - `BaseObserver` gives plugins the queueing, back-pressure, and telemetry scaffolding used throughout the blockchain pipeline (injected as a constructor, not imported directly).
-- `database` provides scoped MongoDB access with automatic collection prefixing for data persistence (see [Plugin Database Access](./plugins-database.md)).
+- `database` provides scoped MongoDB access with automatic collection prefixing for data persistence (see [Database Access Architecture](../system/system-database.md#plugins)).
 - `logger` delivers a plugin-scoped child logger so every log line includes plugin metadata without manual bindings (see [system-logging.md](../system/system-logging.md) for logging best practices).
 
 This contract keeps plugins decoupled from implementation details while still giving them powerful capabilities.

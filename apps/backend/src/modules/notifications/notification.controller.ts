@@ -1,4 +1,5 @@
 import type { Request, Response } from 'express';
+import type { IDatabaseService } from '@tronrelic/types';
 import { z } from 'zod';
 import { NotificationService } from '../../services/notification.service.js';
 
@@ -20,7 +21,11 @@ const preferencesSchema = z.object({
 });
 
 export class NotificationController {
-  private readonly service = new NotificationService();
+  private readonly service: NotificationService;
+
+  constructor(database: IDatabaseService) {
+    this.service = new NotificationService(database);
+  }
 
   updatePreferences = async (req: Request, res: Response) => {
     const body = preferencesSchema.parse(req.body);

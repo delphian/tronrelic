@@ -1,8 +1,10 @@
 import type { Redis as RedisClient } from 'ioredis';
+import type { IDatabaseService } from '@tronrelic/types';
 import { CacheService } from '../../services/cache.service.js';
-import { SunPumpTokenModel } from '../../database/models/sunpump-token-model.js';
+import { SunPumpTokenModel, type SunPumpTokenDoc } from '../../database/models/sunpump-token-model.js';
 
 const CACHE_TTL_SECONDS = 60 * 5;
+const SUNPUMP_COLLECTION = 'sunpump_tokens';
 
 interface SunPumpCachePayload {
   cache: number;
@@ -20,9 +22,16 @@ export interface SunPumpTokenResponse {
 
 export class TokensService {
   private readonly cache: CacheService;
+  private readonly database: IDatabaseService;
 
-  constructor(redis: RedisClient) {
-    this.cache = new CacheService(redis);
+  constructor(redis: RedisClient, database: IDatabaseService) {
+    this.cache = new CacheService(redis, database);
+    this.database = database;
+    this.database.registerModel(SUNPUMP_COLLECTION, SunPumpTokenModel);
+  }
+
+  private getSunPumpModel() {
+    return this.database.getModel<SunPumpTokenDoc>(SUNPUMP_COLLECTION);
   }
 
   async getRecentSunPumpTokens(limit: number): Promise<SunPumpCachePayload> {
@@ -33,12 +42,12 @@ export class TokensService {
       return cached;
     }
 
-    const documents = await SunPumpTokenModel.find()
+    const documents = await this.getSunPumpModel().find()
       .sort({ timestamp: -1 })
       .limit(sanitizedLimit)
       .lean();
 
-    const tokens: SunPumpTokenResponse[] = documents.map(doc => ({
+    const tokens: SunPumpTokenResponse[] = documents.map((doc: SunPumpTokenDoc) => ({
       transaction_timestamp: doc.timestamp instanceof Date ? doc.timestamp.getTime() : new Date(doc.timestamp).getTime(),
       transaction_id: doc.txId,
       token_owner: doc.ownerAddress,

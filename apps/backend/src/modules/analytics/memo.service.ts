@@ -1,11 +1,14 @@
 import crypto from 'node:crypto';
 import type { Redis as RedisClient } from 'ioredis';
-import type { FilterQuery } from 'mongoose';
+import type { IDatabaseService } from '@tronrelic/types';
+import type { FilterQuery, Model } from 'mongoose';
 import { TransactionMemoModel, type TransactionMemoDoc } from '../../database/models/transaction-memo-model.js';
 import { CacheService } from '../../services/cache.service.js';
 import { toBase58Address } from '../../lib/tron-address.js';
 
 const CACHE_TTL_SECONDS = 60 * 5;
+const MEMOS_COLLECTION = 'transaction_memos';
+
 interface MemoCachePayload {
   cache: number;
   memos: MemoResponse[];
@@ -28,9 +31,19 @@ export interface MemoRecentParams {
 
 export class TransactionMemoService {
   private readonly cache: CacheService;
+  private readonly database: IDatabaseService;
 
-  constructor(redis: RedisClient) {
-    this.cache = new CacheService(redis);
+  constructor(redis: RedisClient, database: IDatabaseService) {
+    this.cache = new CacheService(redis, database);
+    this.database = database;
+    this.database.registerModel(MEMOS_COLLECTION, TransactionMemoModel);
+  }
+
+  /**
+   * Get the registered TransactionMemo model for database operations.
+   */
+  private getMemoModel(): Model<TransactionMemoDoc> {
+    return this.database.getModel<TransactionMemoDoc>(MEMOS_COLLECTION);
   }
 
   async getRecentMemos(params: MemoRecentParams): Promise<MemoCachePayload> {
@@ -58,7 +71,7 @@ export class TransactionMemoService {
       ];
     }
 
-    const documents = await TransactionMemoModel.find(query)
+    const documents = await this.getMemoModel().find(query)
       .sort({ timestamp: -1 })
       .limit(limit * 3)
       .lean();

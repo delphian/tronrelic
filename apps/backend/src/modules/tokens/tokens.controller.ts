@@ -1,5 +1,6 @@
 import type { Request, Response } from 'express';
 import type { Redis as RedisClient } from 'ioredis';
+import type { IDatabaseService } from '@tronrelic/types';
 import { z } from 'zod';
 import { TokensService } from './tokens.service.js';
 
@@ -10,8 +11,8 @@ const sunPumpSchema = z.object({
 export class TokensController {
   private readonly service: TokensService;
 
-  constructor(redis: RedisClient) {
-    this.service = new TokensService(redis);
+  constructor(redis: RedisClient, database: IDatabaseService) {
+    this.service = new TokensService(redis, database);
   }
 
   sunpumpRecent = async (req: Request, res: Response) => {

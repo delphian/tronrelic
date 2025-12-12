@@ -34,6 +34,7 @@ import { ChainParametersFetcher } from './modules/chain-parameters/chain-paramet
 import { ChainParametersService } from './modules/chain-parameters/chain-parameters.service.js';
 import { UsdtParametersFetcher } from './modules/usdt-parameters/usdt-parameters-fetcher.js';
 import { UsdtParametersService } from './modules/usdt-parameters/usdt-parameters.service.js';
+import { createApiRouter } from './api/routes/index.js';
 import type { Express } from 'express';
 import type { IDatabaseService, IMenuService } from '@tronrelic/types';
 import axios from 'axios';
@@ -55,11 +56,11 @@ async function bootstrap(): Promise<void> {
         const ctx = await bootstrapInit();
         await bootstrapRun(ctx);
 
-        await initializeJobs();
+        await initializeJobs(ctx.coreDatabase);
 
         try {
             await logger.waitUntilInitialized();
-            await loadPlugins();
+            await loadPlugins(ctx.coreDatabase);
         } catch (pluginError) {
             logger.error({ pluginError, stack: pluginError instanceof Error ? pluginError.stack : undefined }, 'Plugin initialization failed');
         }
@@ -142,6 +143,10 @@ async function bootstrapInit(): Promise<BootstrapContext> {
     const coreDatabase = databaseModule.getDatabaseService();
     app.locals.database = coreDatabase;
 
+    // Mount API routes now that coreDatabase exists
+    // Routers receive the shared database instance via dependency injection
+    app.use('/api', createApiRouter(coreDatabase));
+
     await initializeCoreServices(coreDatabase);
 
     // Menu module next (others need menuService)
@@ -149,7 +154,7 @@ async function bootstrapInit(): Promise<BootstrapContext> {
     await menuModule.init({ database: coreDatabase, app });
     const menuService = menuModule.getMenuService();
 
-    const cacheService = new CacheService(getRedisClient());
+    const cacheService = new CacheService(getRedisClient(), coreDatabase);
     const sharedDeps = { database: coreDatabase, cacheService, menuService, app };
 
     const logsModule = new LogsModule();
@@ -226,15 +231,17 @@ async function initializeCoreServices(coreDatabase: IDatabaseService): Promise<v
     BlockchainObserverService.initialize(logger.child({ module: 'blockchain-observer' }));
     SystemConfigService.initialize(logger.child({ module: 'system-config' }), coreDatabase);
 
-    // Chain parameters: fetch from TronGrid first (populates DB), then warm cache
-    const chainParamsFetcher = new ChainParametersFetcher(axios, logger);
+    // Chain parameters: inject database, fetch from TronGrid first (populates DB), then warm cache
+    ChainParametersService.setDependencies(coreDatabase);
+    const chainParamsFetcher = new ChainParametersFetcher(axios, logger, coreDatabase);
     await chainParamsFetcher.fetch();
     if (!await ChainParametersService.getInstance().init()) {
         throw new Error('Chain parameters service failed to initialize');
     }
 
-    // USDT parameters: same pattern
-    const usdtParamsFetcher = new UsdtParametersFetcher(axios, logger);
+    // USDT parameters: inject database, fetch from TronGrid first (populates DB), then warm cache
+    UsdtParametersService.setDependencies(coreDatabase);
+    const usdtParamsFetcher = new UsdtParametersFetcher(axios, logger, coreDatabase);
     await usdtParamsFetcher.fetch();
     if (!await UsdtParametersService.getInstance().init()) {
         throw new Error('USDT parameters service failed to initialize');

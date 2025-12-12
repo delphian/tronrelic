@@ -1,12 +1,13 @@
 import { Router } from 'express';
+import type { IDatabaseService } from '@tronrelic/types';
 import { TransactionController } from '../../modules/analytics/transaction.controller.js';
 import { getRedisClient } from '../../loaders/redis.js';
 import { asyncHandler } from '../middleware/async-handler.js';
 import { createRateLimiter } from '../middleware/rate-limit.js';
 
-export function transactionsRouter() {
+export function transactionsRouter(database: IDatabaseService) {
   const router = Router();
-  const controller = new TransactionController(getRedisClient());
+  const controller = new TransactionController(getRedisClient(), database);
 
   // Rate limiting for public endpoints (60 requests per minute per IP)
   const rateLimiter = createRateLimiter({

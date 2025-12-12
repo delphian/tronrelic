@@ -1,5 +1,6 @@
 import type { Request, Response } from 'express';
 import type { Redis as RedisClient } from 'ioredis';
+import type { IDatabaseService } from '@tronrelic/types';
 import { z } from 'zod';
 import { CalculatorService } from './calculator.service.js';
 import { SignatureService } from '../auth/signature.service.js';
@@ -24,8 +25,8 @@ export class CalculatorController {
   private readonly calculator: CalculatorService;
   private readonly signatureService = new SignatureService();
 
-  constructor(redis: RedisClient) {
-    this.calculator = new CalculatorService(redis);
+  constructor(redis: RedisClient, database: IDatabaseService) {
+    this.calculator = new CalculatorService(redis, database);
   }
 
   estimateEnergy = async (req: Request, res: Response) => {

@@ -1,6 +1,8 @@
 import type { AxiosInstance } from 'axios';
-import type { IChainParametersFetcher, IChainParameters, ISystemLogService } from '@tronrelic/types';
-import { ChainParametersModel } from '../../database/models/chain-parameters-model.js';
+import type { IChainParametersFetcher, IChainParameters, ISystemLogService, IDatabaseService } from '@tronrelic/types';
+import { ChainParametersModel, type IChainParametersDocument } from '../../database/models/chain-parameters-model.js';
+
+const CHAIN_PARAMETERS_COLLECTION = 'chainParameters';
 
 /**
  * Response from TronGrid /wallet/getchainparameters endpoint
@@ -47,7 +49,19 @@ export class ChainParametersFetcher implements IChainParametersFetcher {
      */
     private readonly PLACEHOLDER_ADDRESS = 'TRX6Q82wMqWNbCCiLqejbZe43wk1h1zJHm';
 
-    constructor(private readonly http: AxiosInstance, private readonly logger: ISystemLogService) {}
+    private readonly database: IDatabaseService;
+
+    constructor(private readonly http: AxiosInstance, private readonly logger: ISystemLogService, database: IDatabaseService) {
+        this.database = database;
+        this.database.registerModel(CHAIN_PARAMETERS_COLLECTION, ChainParametersModel);
+    }
+
+    /**
+     * Get the registered chain parameters model for database operations.
+     */
+    private getModel() {
+        return this.database.getModel<IChainParametersDocument>(CHAIN_PARAMETERS_COLLECTION);
+    }
 
     /**
      * Fetch current chain parameters and network state, then save to database.
@@ -127,7 +141,7 @@ export class ChainParametersFetcher implements IChainParametersFetcher {
             };
 
             // Save to database
-            await ChainParametersModel.create(parameters);
+            await this.getModel().create(parameters);
 
             this.logger.info(
                 {

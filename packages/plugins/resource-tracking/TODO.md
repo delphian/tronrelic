@@ -312,5 +312,5 @@ protected async process(transaction: ITransaction) {
 
 - **Plugin System Architecture**: [docs/plugins/plugins.md](../../../docs/plugins/plugins.md)
 - **Blockchain Observers**: [docs/plugins/plugins-blockchain-observers.md](../../../docs/plugins/plugins-blockchain-observers.md)
-- **Plugin Database Access**: [docs/plugins/plugins-database.md](../../../docs/plugins/plugins-database.md)
+- **Database Access Architecture**: [docs/system/system-database.md](../../../docs/system/system-database.md#plugins)
 - **TRON Delegation Transactions**: [docs/tron/tron.md](../../../docs/tron/tron.md)

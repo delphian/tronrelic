@@ -1,6 +1,8 @@
 import type { Redis as RedisClient } from 'ioredis';
+import type { IDatabaseService } from '@tronrelic/types';
+import type { Collection } from 'mongodb';
 import { CacheService } from '../../services/cache.service.js';
-import { TransactionModel } from '../../database/models/transaction-model.js';
+import { TransactionModel, type TransactionDoc } from '../../database/models/transaction-model.js';
 import { TronGridClient } from '../blockchain/tron-grid.client.js';
 import { logger } from '../../lib/logger.js';
 
@@ -71,14 +73,25 @@ const DEFAULT_ENERGY_PRICE_SUN = 420;
 const ENERGY_STATS_TTL_SECONDS = 60 * 60; // 1 hour
 const NETWORK_SNAPSHOT_TTL_SECONDS = 60 * 5; // 5 minutes
 const ENERGY_LOOKBACK_MS = 1000 * 60 * 60 * 24 * 30; // 30 days
+const TRANSACTIONS_COLLECTION = 'transactions';
 
 export class CalculatorService {
   private readonly cache: CacheService;
+  private readonly database: IDatabaseService;
   private readonly tronGridClient: TronGridClient;
 
-  constructor(redis: RedisClient, deps?: { tronGridClient?: TronGridClient }) {
-    this.cache = new CacheService(redis);
+  constructor(redis: RedisClient, database: IDatabaseService, deps?: { tronGridClient?: TronGridClient }) {
+    this.cache = new CacheService(redis, database);
+    this.database = database;
+    this.database.registerModel(TRANSACTIONS_COLLECTION, TransactionModel);
     this.tronGridClient = deps?.tronGridClient ?? TronGridClient.getInstance();
+  }
+
+  /**
+   * Get the transactions collection for aggregate operations.
+   */
+  private getTransactionsCollection(): Collection<TransactionDoc> {
+    return this.database.getCollection<TransactionDoc>(TRANSACTIONS_COLLECTION);
   }
 
   async estimateEnergy(input: EnergyEstimateInput): Promise<EnergyEstimate> {
@@ -143,7 +156,7 @@ export class CalculatorService {
     const lookback = new Date(Date.now() - ENERGY_LOOKBACK_MS);
 
     try {
-      const results = await TransactionModel.aggregate<{
+      const results = await this.getTransactionsCollection().aggregate<{
         avgEnergy: number;
         maxEnergy: number;
         sampleSize: number;
@@ -163,7 +176,7 @@ export class CalculatorService {
             sampleSize: { $sum: 1 }
           }
         }
-      ]).exec();
+      ]).toArray();
 
       const stats = results?.[0];
       const avgEnergy = stats?.avgEnergy ?? this.getDefaultComplexity(normalizedType);

@@ -1,31 +1,59 @@
-import type { IChainParametersService, IChainParameters } from '@tronrelic/types';
-import { ChainParametersModel } from '../../database/models/chain-parameters-model.js';
+import type { IChainParametersService, IChainParameters, IDatabaseService } from '@tronrelic/types';
+import { ChainParametersModel, type IChainParametersDocument } from '../../database/models/chain-parameters-model.js';
 import { logger } from '../../lib/logger.js';
 
 /**
  * Chain Parameters Service
- * Provides cached TRON network parameters for energy/TRX conversions
- * Implements ITrEnergyAdapter interface for use by market fetchers
+ *
+ * Provides cached TRON network parameters for energy/TRX conversions.
+ * Implements IChainParametersService interface for use by market fetchers.
  *
  * Why this exists:
  * Market fetchers need to convert between TRX and energy amounts based on current
  * network conditions. This service maintains fresh chain parameters from the database
  * and provides conversion methods that reflect real-time staking ratios.
  *
+ * Database access pattern:
+ * Uses IDatabaseService for all MongoDB operations, enabling testability
+ * through mock implementations. The ChainParametersModel is registered for
+ * Mongoose schema validation and query building.
+ *
  * Singleton pattern ensures all consumers share the same cache instance.
  */
 export class ChainParametersService implements IChainParametersService {
     private static instance: ChainParametersService | null = null;
+    private static database: IDatabaseService | null = null;
 
+    private readonly COLLECTION_NAME = 'chainParameters';
     private cachedParams: IChainParameters | null = null;
     private cacheExpiry: number = 0;
     private readonly CACHE_TTL_MS = 60_000; // 1 minute
 
     /**
      * Private constructor to enforce singleton pattern.
-     * Use getInstance() to access the service.
+     * Use setDependencies() then getInstance() to access the service.
      */
     private constructor() {}
+
+    /**
+     * Set dependencies for the service singleton.
+     *
+     * Must be called before getInstance() to inject the database service.
+     * Typically called during application bootstrap in index.ts.
+     *
+     * @param database - Database service for MongoDB operations
+     */
+    public static setDependencies(database: IDatabaseService): void {
+        ChainParametersService.database = database;
+
+        // Create instance if needed and register model
+        if (!ChainParametersService.instance) {
+            ChainParametersService.instance = new ChainParametersService();
+        }
+
+        // Register Mongoose model for schema validation and query building
+        database.registerModel('chainParameters', ChainParametersModel);
+    }
 
     /**
      * Get the singleton instance of ChainParametersService.
@@ -35,6 +63,7 @@ export class ChainParametersService implements IChainParametersService {
      * database queries and improving performance.
      *
      * @returns Singleton instance of ChainParametersService
+     * @throws Error if setDependencies() has not been called
      */
     public static getInstance(): ChainParametersService {
         if (!ChainParametersService.instance) {
@@ -64,16 +93,24 @@ export class ChainParametersService implements IChainParametersService {
     }
 
     /**
-     * Get latest chain parameters from cache or database
-     * Cache refreshes every minute to balance performance vs freshness
-     * Database is updated every 10 minutes by ChainParametersFetcher
+     * Get latest chain parameters from cache or database.
+     *
+     * Cache refreshes every minute to balance performance vs freshness.
+     * Database is updated every 10 minutes by ChainParametersFetcher.
      *
      * @returns Latest chain parameters from mainnet
+     * @throws Error if database service not initialized or no parameters found
      */
     async getParameters(): Promise<IChainParameters> {
         if (this.cacheExpiry < Date.now()) {
+            if (!ChainParametersService.database) {
+                throw new Error('ChainParametersService.setDependencies() must be called before using the service');
+            }
+
             try {
-                this.cachedParams = await ChainParametersModel.findOne({ network: 'mainnet' })
+                // Use registered model for sort support (IDatabaseService.findOne doesn't support sort)
+                const model = ChainParametersService.database.getModel<IChainParametersDocument>(this.COLLECTION_NAME);
+                this.cachedParams = await model.findOne({ network: 'mainnet' })
                     .sort({ fetchedAt: -1 })
                     .lean();
             } catch (error) {
