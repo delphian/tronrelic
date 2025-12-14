@@ -91,7 +91,7 @@ export abstract class BaseBlockObserver implements IBaseBlockObserver {
         if (this.queue.length >= BaseBlockObserver.MAX_QUEUE_SIZE) {
             const droppedBlocks = this.queue.length;
             const droppedTransactions = this.queue.reduce((sum, block) => sum + block.transactionCount, 0);
-            this.totalDropped += droppedBlocks;
+            this.totalDropped += droppedTransactions;
 
             this.logger.error(
                 {
