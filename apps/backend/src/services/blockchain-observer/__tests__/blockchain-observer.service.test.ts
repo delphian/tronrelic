@@ -579,7 +579,7 @@ describe('BlockchainObserverService', () => {
             // Verify accumulator contains transactions (internal state, tested via flush)
         });
 
-        it('should clear batch accumulator', () => {
+        it('should clear batch accumulator', async () => {
             const tx1 = createMockTransaction('TransferContract', 'tx1');
             service.accumulateForBatch(tx1);
 
@@ -589,7 +589,7 @@ describe('BlockchainObserverService', () => {
             const batchObserver = new MockBatchObserver('batch');
             service.subscribeTransactionTypeBatch('TransferContract', batchObserver);
 
-            service.flushBatches();
+            await service.flushBatches();
 
             // No batch should be delivered after clear
             expect(batchObserver.getEnqueuedBatches()).toHaveLength(0);

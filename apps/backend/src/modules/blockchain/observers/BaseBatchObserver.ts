@@ -4,9 +4,9 @@ import type { IBaseBatchObserver, IObserverStats, ISystemLogService, ITransactio
  * Base class for batch transaction observers.
  *
  * Provides queue management with overflow protection for incoming transaction batch processing.
- * When the queue exceeds MAX_QUEUE_SIZE batches, it automatically logs an error and clears itself
- * to prevent memory issues. Observers should extend this class and implement the abstract
- * processBatch method to handle batch-specific logic.
+ * When the queue exceeds MAX_QUEUE_SIZE batches, incoming batches are dropped and logged
+ * to prevent memory issues while preserving queued work. Observers should extend this class
+ * and implement the abstract processBatch method to handle batch-specific logic.
  *
  * Batch observers receive all transactions of a subscribed type from a block at once, enabling
  * efficient bulk operations such as batch database inserts or aggregated analytics.
@@ -78,28 +78,27 @@ export abstract class BaseBatchObserver implements IBaseBatchObserver {
      * Enqueue a batch of transactions for processing.
      *
      * Adds the transaction array to the internal queue and triggers processing if not already
-     * running. If the queue exceeds MAX_QUEUE_SIZE batches, logs an error and clears the queue
-     * to prevent memory overflow.
+     * running. If the queue exceeds MAX_QUEUE_SIZE batches, the incoming batch is dropped and
+     * logged to prevent memory overflow while preserving existing queued work.
      *
      * @param transactions - Array of enriched transactions to process as a batch
      */
     public async enqueueBatch(transactions: ITransaction[]): Promise<void> {
         if (this.queue.length >= BaseBatchObserver.MAX_QUEUE_SIZE) {
-            const droppedBatches = this.queue.length;
-            const droppedTransactions = this.queue.reduce((sum, batch) => sum + batch.length, 0);
+            const droppedTransactions = transactions.length;
             this.totalDropped += droppedTransactions;
 
             this.logger.error(
                 {
                     observer: this.name,
                     queueSize: this.queue.length,
-                    droppedBatches,
+                    droppedBatches: 1,
                     droppedTransactions,
                     totalDropped: this.totalDropped
                 },
-                'Batch observer queue overflow - clearing queue to prevent memory issues'
+                'Batch observer queue overflow - dropping incoming batch to prevent memory issues'
             );
-            this.queue = [];
+            return;
         }
 
         this.queue.push(transactions);

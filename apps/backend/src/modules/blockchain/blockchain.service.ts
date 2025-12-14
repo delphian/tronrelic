@@ -1003,7 +1003,7 @@ export class BlockchainService implements IBlockchainService {
                 parentHash: block.block_header.raw_data.parentHash,
                 witnessAddress: TronGridClient.toBase58Address(block.block_header.raw_data.witness_address) ?? 'unknown',
                 timestamp: blockTime,
-                transactionCount: transactions.length,
+                transactionCount: processed.length,
                 size: block.size,
                 transactions: processed
             };

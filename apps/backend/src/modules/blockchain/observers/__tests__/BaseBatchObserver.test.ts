@@ -366,26 +366,28 @@ describe('BaseBatchObserver', () => {
     });
 
     describe('Queue Overflow Protection', () => {
-        it('should clear queue and log error when exceeding MAX_QUEUE_SIZE', async () => {
+        it('should drop incoming batch and log error when queue is at MAX_QUEUE_SIZE', async () => {
             // Set processing delay to allow queue to fill
             observer.setProcessingDelay(5000);
 
             // Enqueue first batch to start slow processing
             await observer.enqueueBatch(createMockBatch(1));
 
-            // Fill queue past max (100 batches) - need 101 to exceed since first is processing
-            for (let i = 0; i < 101; i++) {
+            // Fill queue to max (100 batches)
+            for (let i = 0; i < 100; i++) {
                 await observer.enqueueBatch(createMockBatch(1));
             }
 
-            // Wait a bit for overflow detection
-            await new Promise(resolve => setTimeout(resolve, 50));
+            // This batch should be dropped (queue is now at 100)
+            await observer.enqueueBatch(createMockBatch(3));
 
             expect(mockLogger.error).toHaveBeenCalledWith(
                 expect.objectContaining({
-                    observer: 'TestBatchObserver'
+                    observer: 'TestBatchObserver',
+                    droppedBatches: 1,
+                    droppedTransactions: 3
                 }),
-                'Batch observer queue overflow - clearing queue to prevent memory issues'
+                'Batch observer queue overflow - dropping incoming batch to prevent memory issues'
             );
         });
 
@@ -395,15 +397,32 @@ describe('BaseBatchObserver', () => {
             // Start processing
             await observer.enqueueBatch(createMockBatch(5));
 
-            // Fill queue past max - need 101 batches to exceed max of 100
-            for (let i = 0; i < 101; i++) {
-                await observer.enqueueBatch(createMockBatch(2));
+            // Fill queue to max (100 batches)
+            for (let i = 0; i < 100; i++) {
+                await observer.enqueueBatch(createMockBatch(1));
             }
 
-            await new Promise(resolve => setTimeout(resolve, 50));
+            // This batch of 4 transactions should be dropped
+            await observer.enqueueBatch(createMockBatch(4));
 
             const stats = observer.getStats();
-            expect(stats.totalDropped).toBeGreaterThan(0);
+            expect(stats.totalDropped).toBe(4);
+        });
+
+        it('should preserve existing queue when dropping incoming batch', async () => {
+            observer.setProcessingDelay(5000);
+
+            // Start processing first batch
+            await observer.enqueueBatch(createMockBatch(1));
+
+            // Fill queue to max
+            for (let i = 0; i < 100; i++) {
+                await observer.enqueueBatch(createMockBatch(1));
+            }
+
+            // Queue depth should still be 100 (not cleared)
+            const stats = observer.getStats();
+            expect(stats.queueDepth).toBe(100);
         });
     });
 

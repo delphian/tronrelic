@@ -360,44 +360,63 @@ describe('BaseBlockObserver', () => {
     });
 
     describe('Queue Overflow Protection', () => {
-        it('should clear queue and log error when exceeding MAX_QUEUE_SIZE', async () => {
+        it('should drop incoming block and log error when queue is at MAX_QUEUE_SIZE', async () => {
             // Set processing delay to allow queue to fill
             observer.setProcessingDelay(5000);
 
             // Enqueue first block to start slow processing
             await observer.enqueueBlock(createMockBlockData(100, 1));
 
-            // Fill queue past max (50 blocks) - need 51 to exceed since first is processing
-            for (let i = 0; i < 51; i++) {
+            // Fill queue to max (50 blocks)
+            for (let i = 0; i < 50; i++) {
                 await observer.enqueueBlock(createMockBlockData(101 + i, 1));
             }
 
-            // Wait a bit for overflow detection
-            await new Promise(resolve => setTimeout(resolve, 50));
+            // This block should be dropped (queue is now at 50)
+            await observer.enqueueBlock(createMockBlockData(200, 7));
 
             expect(mockLogger.error).toHaveBeenCalledWith(
                 expect.objectContaining({
-                    observer: 'TestBlockObserver'
+                    observer: 'TestBlockObserver',
+                    droppedBlocks: 1,
+                    droppedTransactions: 7
                 }),
-                'Block observer queue overflow - clearing queue to prevent memory issues'
+                'Block observer queue overflow - dropping incoming block to prevent memory issues'
             );
         });
 
-        it('should track dropped blocks count on overflow', async () => {
+        it('should track dropped transactions count on overflow', async () => {
             observer.setProcessingDelay(5000);
 
             // Start processing
             await observer.enqueueBlock(createMockBlockData(100, 5));
 
-            // Fill queue past max - need 51 blocks to exceed max of 50
-            for (let i = 0; i < 51; i++) {
-                await observer.enqueueBlock(createMockBlockData(101 + i, 2));
+            // Fill queue to max (50 blocks)
+            for (let i = 0; i < 50; i++) {
+                await observer.enqueueBlock(createMockBlockData(101 + i, 1));
             }
 
-            await new Promise(resolve => setTimeout(resolve, 50));
+            // This block of 10 transactions should be dropped
+            await observer.enqueueBlock(createMockBlockData(200, 10));
 
             const stats = observer.getStats();
-            expect(stats.totalDropped).toBeGreaterThan(0);
+            expect(stats.totalDropped).toBe(10);
+        });
+
+        it('should preserve existing queue when dropping incoming block', async () => {
+            observer.setProcessingDelay(5000);
+
+            // Start processing first block
+            await observer.enqueueBlock(createMockBlockData(100, 1));
+
+            // Fill queue to max
+            for (let i = 0; i < 50; i++) {
+                await observer.enqueueBlock(createMockBlockData(101 + i, 1));
+            }
+
+            // Queue depth should still be 50 (not cleared)
+            const stats = observer.getStats();
+            expect(stats.queueDepth).toBe(50);
         });
     });
 

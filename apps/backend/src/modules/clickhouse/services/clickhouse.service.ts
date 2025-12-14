@@ -334,7 +334,7 @@ export class ClickHouseService implements IClickHouseService {
                     LIMIT 100
                 `,
                 query_params: {
-                    lastPollTime: this.lastErrorPollTime.getTime()
+                    lastPollTime: this.lastErrorPollTime.toISOString()
                 },
                 format: 'JSONEachRow'
             });
@@ -350,7 +350,13 @@ export class ClickHouseService implements IClickHouseService {
                 rows: number;
             }>();
 
-            this.logger.info({ errorCount: errorRows.length }, 'Polled ClickHouse async insert log');
+            if (errorRows.length === 0) {
+                // No errors, advance poll time to current time
+                this.lastErrorPollTime = new Date();
+                return;
+            }
+
+            this.logger.info({ errorCount: errorRows.length }, 'ClickHouse async insert errors detected');
 
             for (const row of errorRows) {
                 this.logger.error({
@@ -363,14 +369,9 @@ export class ClickHouseService implements IClickHouseService {
                 }, 'ClickHouse async insert failed');
             }
 
-            if (errorRows.length > 0) {
-                // Update last poll time to the most recent error
-                const lastError = errorRows[errorRows.length - 1];
-                this.lastErrorPollTime = new Date(lastError.event_time);
-            } else {
-                // No errors, update to current time
-                this.lastErrorPollTime = new Date();
-            }
+            // Update last poll time to the most recent error
+            const lastError = errorRows[errorRows.length - 1];
+            this.lastErrorPollTime = new Date(lastError.event_time);
         } catch (error) {
             // Don't spam logs if polling fails - just warn once
             this.logger.warn({ error }, 'Failed to poll async insert errors');

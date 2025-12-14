@@ -4,9 +4,9 @@ import type { IBaseBlockObserver, IBlockData, IObserverStats, ISystemLogService 
  * Base class for block-level observers.
  *
  * Provides queue management with overflow protection for incoming block processing.
- * When the queue exceeds MAX_QUEUE_SIZE blocks, it automatically logs an error and clears itself
- * to prevent memory issues. Observers should extend this class and implement the abstract
- * processBlock method to handle block-specific logic.
+ * When the queue exceeds MAX_QUEUE_SIZE blocks, incoming blocks are dropped and logged
+ * to prevent memory issues while preserving queued work. Observers should extend this class
+ * and implement the abstract processBlock method to handle block-specific logic.
  *
  * Block observers receive entire blocks with all their transactions after processing completes,
  * enabling cross-transaction analysis, block-level metrics calculation, or operations that
@@ -82,28 +82,27 @@ export abstract class BaseBlockObserver implements IBaseBlockObserver {
      * Enqueue a block for processing.
      *
      * Adds the block data to the internal queue and triggers processing if not already
-     * running. If the queue exceeds MAX_QUEUE_SIZE blocks, logs an error and clears the queue
-     * to prevent memory overflow.
+     * running. If the queue exceeds MAX_QUEUE_SIZE blocks, the incoming block is dropped and
+     * logged to prevent memory overflow while preserving existing queued work.
      *
      * @param blockData - Block metadata and all enriched transactions
      */
     public async enqueueBlock(blockData: IBlockData): Promise<void> {
         if (this.queue.length >= BaseBlockObserver.MAX_QUEUE_SIZE) {
-            const droppedBlocks = this.queue.length;
-            const droppedTransactions = this.queue.reduce((sum, block) => sum + block.transactionCount, 0);
+            const droppedTransactions = blockData.transactionCount;
             this.totalDropped += droppedTransactions;
 
             this.logger.error(
                 {
                     observer: this.name,
                     queueSize: this.queue.length,
-                    droppedBlocks,
+                    droppedBlocks: 1,
                     droppedTransactions,
                     totalDropped: this.totalDropped
                 },
-                'Block observer queue overflow - clearing queue to prevent memory issues'
+                'Block observer queue overflow - dropping incoming block to prevent memory issues'
             );
-            this.queue = [];
+            return;
         }
 
         this.queue.push(blockData);
