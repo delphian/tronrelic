@@ -1,7 +1,7 @@
 /// <reference types="vitest" />
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import type { IDatabaseService } from '@tronrelic/types';
+import type { IDatabaseService, IMigrationContext } from '@tronrelic/types';
 import type { IMigrationMetadata } from '../types.js';
 import { MigrationTracker } from '../MigrationTracker.js';
 import { createMockMongooseModule } from '../../../../tests/vitest/mocks/mongoose.js';
@@ -223,7 +223,7 @@ describe('MigrationExecutor', () => {
             await executor.executeMigration(migration);
 
             expect(upFunction).toHaveBeenCalledTimes(1);
-            expect(upFunction).toHaveBeenCalledWith(mockDatabase);
+            expect(upFunction).toHaveBeenCalledWith({ database: mockDatabase, clickhouse: undefined });
         });
 
         /**
@@ -468,7 +468,7 @@ describe('MigrationExecutor', () => {
          * during execution.
          */
         it('should provide database service to migration', async () => {
-            let receivedDatabase: IDatabaseService | null = null;
+            let receivedContext: IMigrationContext | null = null;
 
             const migration: IMigrationMetadata = {
                 id: '001_test',
@@ -478,15 +478,16 @@ describe('MigrationExecutor', () => {
                 filePath: '/test/001.ts',
                 timestamp: new Date(),
                 dependencies: [],
-                up: vi.fn(async (database) => {
-                    receivedDatabase = database;
-                    await database.createIndex('test', { field: 1 });
+                up: vi.fn(async (context) => {
+                    receivedContext = context;
+                    await context.database.createIndex('test', { field: 1 });
                 })
             };
 
             await executor.executeMigration(migration);
 
-            expect(receivedDatabase).toBe(mockDatabase);
+            expect(receivedContext).not.toBeNull();
+            expect(receivedContext!.database).toBe(mockDatabase);
         });
 
         /**
@@ -506,10 +507,10 @@ describe('MigrationExecutor', () => {
                 filePath: '/test/001.ts',
                 timestamp: new Date(),
                 dependencies: [],
-                up: vi.fn(async (database) => {
-                    await database.createIndex('users', { email: 1 }, { unique: true });
-                    await database.set('migration_version', '1.0.0');
-                    await database.createIndex('users', { createdAt: -1 });
+                up: vi.fn(async (context) => {
+                    await context.database.createIndex('users', { email: 1 }, { unique: true });
+                    await context.database.set('migration_version', '1.0.0');
+                    await context.database.createIndex('users', { createdAt: -1 });
                 })
             };
 
