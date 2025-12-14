@@ -6,7 +6,7 @@ import mongoose from 'mongoose';
 import type { IPluginContext, IPlugin, IDatabaseService } from '@tronrelic/types';
 import { logger } from '../lib/logger.js';
 import { BlockchainObserverService } from '../services/blockchain-observer/index.js';
-import { BaseObserver } from '../modules/blockchain/observers/BaseObserver.js';
+import { BaseObserver, BaseBatchObserver, BaseBlockObserver } from '../modules/blockchain/observers/index.js';
 import { WebSocketService } from '../services/websocket.service.js';
 import { PluginDatabaseService } from '../modules/database/index.js';
 import { PluginApiService } from '../services/plugin-api.service.js';
@@ -230,6 +230,8 @@ export async function loadPlugins(database: IDatabaseService): Promise<void> {
                 websocketService,
                 websocket: websocketManager as any, // Will be defined if io exists
                 BaseObserver,
+                BaseBatchObserver,
+                BaseBlockObserver,
                 database,
                 clickhouse: clickhouseService,
                 cache: cacheService,

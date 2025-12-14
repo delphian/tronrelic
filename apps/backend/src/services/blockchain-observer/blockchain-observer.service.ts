@@ -1,4 +1,13 @@
-import type { IBlockchainObserverService, IBaseObserver, IObserverStats, ISystemLogService, ITransaction } from '@tronrelic/types';
+import type {
+    IBlockchainObserverService,
+    IBaseObserver,
+    IBaseBatchObserver,
+    IBaseBlockObserver,
+    IBlockData,
+    IObserverStats,
+    ISystemLogService,
+    ITransaction
+} from '@tronrelic/types';
 
 type TransactionType = ITransaction['payload']['type'];
 
@@ -32,7 +41,17 @@ export class BlockchainObserverService implements IBlockchainObserverService {
     private static instance: BlockchainObserverService | null = null;
     private logger: ISystemLogService;
 
+    // Individual transaction subscribers (existing)
     private transactionTypeSubscribers = new Map<TransactionType, Set<IBaseObserver>>();
+
+    // Batch subscribers - receive all transactions of a type from a block at once
+    private batchTypeSubscribers = new Map<TransactionType, Set<IBaseBatchObserver>>();
+
+    // Block subscribers - receive entire blocks with all transactions
+    private blockSubscribers = new Set<IBaseBlockObserver>();
+
+    // Batch accumulator - collects transactions by type during block processing
+    private batchAccumulator = new Map<TransactionType, ITransaction[]>();
 
     /**
      * Initialize the blockchain observer service.
@@ -198,38 +217,6 @@ export class BlockchainObserverService implements IBlockchainObserverService {
     }
 
     /**
-     * Get detailed performance statistics for all observers.
-     *
-     * Aggregates real-time metrics from all registered observers including queue depth,
-     * processing times, error rates, and throughput. This provides comprehensive monitoring
-     * data for performance analysis, alerting, and debugging observer behavior.
-     *
-     * Each observer maintains its own statistics (see BaseObserver.getStats()) tracking:
-     * - Total transactions processed and dropped
-     * - Current queue depth and overflow status
-     * - Average processing time and error counts
-     * - Error rate percentage
-     *
-     * This method collects statistics from all unique observer instances regardless of how
-     * many transaction types they subscribe to (observers can subscribe to multiple types).
-     *
-     * @returns Array of statistics objects, one per observer instance
-     */
-    public getAllObserverStats(): IObserverStats[] {
-        const allObservers = new Set<IBaseObserver>();
-
-        // Collect all unique observer instances across all subscription types
-        for (const subscribers of this.transactionTypeSubscribers.values()) {
-            for (const observer of subscribers) {
-                allObservers.add(observer);
-            }
-        }
-
-        // Get stats from each observer
-        return Array.from(allObservers).map(observer => observer.getStats());
-    }
-
-    /**
      * Get aggregated statistics across all observers.
      *
      * Provides system-wide metrics by combining data from all observers. Useful for
@@ -309,6 +296,223 @@ export class BlockchainObserverService implements IBlockchainObserverService {
         };
     }
 
+    // =========================================================================
+    // Batch Subscription Methods
+    // =========================================================================
+
+    /**
+     * Subscribe a batch observer to a specific transaction type.
+     *
+     * Registers the observer to receive batched notifications containing all transactions
+     * of the specified type from each block. Instead of receiving individual transactions,
+     * the observer receives a single call with an array of all matching transactions after
+     * the block completes processing.
+     *
+     * @param transactionType - The transaction type to observe (e.g., 'TransferContract')
+     * @param observer - The batch observer instance to notify with transaction arrays
+     */
+    public subscribeTransactionTypeBatch(transactionType: string, observer: IBaseBatchObserver): void {
+        const subscribers = this.batchTypeSubscribers.get(transactionType as TransactionType) ?? new Set();
+        subscribers.add(observer);
+        this.batchTypeSubscribers.set(transactionType as TransactionType, subscribers);
+
+        this.logger.info(
+            {
+                transactionType,
+                observerName: observer.getName(),
+                totalBatchSubscribers: subscribers.size
+            },
+            'Batch observer subscribed to transaction type'
+        );
+    }
+
+    /**
+     * Accumulate a transaction for batch notification.
+     *
+     * Called during block processing to collect transactions by type. After all transactions
+     * in a block are processed, flushBatches() delivers accumulated transactions to batch
+     * subscribers. This method is synchronous and fast - it only stores a reference.
+     *
+     * @param transaction - The enriched transaction to accumulate
+     */
+    public accumulateForBatch(transaction: ITransaction): void {
+        const txType = transaction.payload.type;
+        const batch = this.batchAccumulator.get(txType) ?? [];
+        batch.push(transaction);
+        this.batchAccumulator.set(txType, batch);
+    }
+
+    /**
+     * Clear the batch accumulator.
+     *
+     * Called at the start of each block to reset the accumulator before processing
+     * transactions. Ensures batch observers receive transactions from only one block.
+     */
+    public clearBatchAccumulator(): void {
+        this.batchAccumulator.clear();
+    }
+
+    /**
+     * Flush accumulated batches to batch subscribers.
+     *
+     * Called after all transactions in a block have been processed and accumulated.
+     * Delivers each transaction type's batch to subscribed batch observers using
+     * fire-and-forget semantics.
+     */
+    public async flushBatches(): Promise<void> {
+        for (const [txType, transactions] of this.batchAccumulator.entries()) {
+            if (transactions.length === 0) {
+                continue;
+            }
+
+            const subscribers = this.batchTypeSubscribers.get(txType);
+            if (!subscribers || subscribers.size === 0) {
+                continue;
+            }
+
+            // Fire and forget - don't wait for batch observers to complete
+            const notifications = Array.from(subscribers).map(async observer => {
+                try {
+                    await observer.enqueueBatch(transactions);
+                } catch (error) {
+                    this.logger.error(
+                        {
+                            observer: observer.getName(),
+                            transactionType: txType,
+                            batchSize: transactions.length,
+                            error
+                        },
+                        'Failed to enqueue batch to observer'
+                    );
+                }
+            });
+
+            void Promise.all(notifications);
+        }
+
+        // Clear accumulator after flush
+        this.batchAccumulator.clear();
+    }
+
+    /**
+     * Get batch subscription statistics.
+     *
+     * Returns subscriber counts by transaction type for batch observers.
+     */
+    public getBatchSubscriptionStats(): Record<string, number> {
+        const stats: Record<string, number> = {};
+
+        for (const [type, subscribers] of this.batchTypeSubscribers.entries()) {
+            stats[type] = subscribers.size;
+        }
+
+        return stats;
+    }
+
+    // =========================================================================
+    // Block Subscription Methods
+    // =========================================================================
+
+    /**
+     * Subscribe a block observer to receive entire blocks.
+     *
+     * Registers the observer to receive complete block data including all enriched
+     * transactions after each block finishes processing. Enables cross-transaction
+     * analysis and block-level metrics calculation.
+     *
+     * @param observer - The block observer instance to notify with block data
+     */
+    public subscribeBlock(observer: IBaseBlockObserver): void {
+        this.blockSubscribers.add(observer);
+
+        this.logger.info(
+            {
+                observerName: observer.getName(),
+                totalBlockSubscribers: this.blockSubscribers.size
+            },
+            'Block observer subscribed'
+        );
+    }
+
+    /**
+     * Notify all block subscribers of a completed block.
+     *
+     * Called after block processing completes with the full block data and all
+     * enriched transactions. Uses fire-and-forget semantics to avoid blocking
+     * the blockchain sync pipeline.
+     *
+     * @param blockData - Block metadata and all enriched transactions
+     */
+    public async notifyBlock(blockData: IBlockData): Promise<void> {
+        if (this.blockSubscribers.size === 0) {
+            return;
+        }
+
+        // Fire and forget - don't wait for block observers to complete
+        const notifications = Array.from(this.blockSubscribers).map(async observer => {
+            try {
+                await observer.enqueueBlock(blockData);
+            } catch (error) {
+                this.logger.error(
+                    {
+                        observer: observer.getName(),
+                        blockNumber: blockData.blockNumber,
+                        transactionCount: blockData.transactionCount,
+                        error
+                    },
+                    'Failed to enqueue block to observer'
+                );
+            }
+        });
+
+        void Promise.all(notifications);
+    }
+
+    /**
+     * Get block subscription statistics.
+     *
+     * Returns the count of block observers subscribed.
+     */
+    public getBlockSubscriptionStats(): { subscriberCount: number } {
+        return {
+            subscriberCount: this.blockSubscribers.size
+        };
+    }
+
+    // =========================================================================
+    // Enhanced Statistics (includes batch and block observers)
+    // =========================================================================
+
+    /**
+     * Get detailed performance statistics for all observers (including batch and block).
+     *
+     * Overrides the base method to include batch and block observers in the statistics.
+     */
+    public getAllObserverStats(): IObserverStats[] {
+        const allObservers = new Set<IBaseObserver>();
+
+        // Collect individual transaction observers
+        for (const subscribers of this.transactionTypeSubscribers.values()) {
+            for (const observer of subscribers) {
+                allObservers.add(observer);
+            }
+        }
+
+        // Collect batch observers
+        for (const subscribers of this.batchTypeSubscribers.values()) {
+            for (const observer of subscribers) {
+                allObservers.add(observer);
+            }
+        }
+
+        // Collect block observers
+        for (const observer of this.blockSubscribers) {
+            allObservers.add(observer);
+        }
+
+        return Array.from(allObservers).map(observer => observer.getStats());
+    }
+
     /**
      * Reset service state (for testing only).
      *
@@ -321,6 +525,9 @@ export class BlockchainObserverService implements IBlockchainObserverService {
     public static resetForTesting(): void {
         if (BlockchainObserverService.instance) {
             BlockchainObserverService.instance.transactionTypeSubscribers.clear();
+            BlockchainObserverService.instance.batchTypeSubscribers.clear();
+            BlockchainObserverService.instance.blockSubscribers.clear();
+            BlockchainObserverService.instance.batchAccumulator.clear();
             BlockchainObserverService.instance = null;
         }
     }

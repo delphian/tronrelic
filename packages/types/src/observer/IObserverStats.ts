@@ -28,4 +28,20 @@ export interface IObserverStats {
     lastErrorAt: string | null;
     /** Current error rate (errors / total processed) */
     errorRate: number;
+
+    // Optional batch observer metrics (only present for batch observers)
+    /** Total number of batches processed (batch observers only) */
+    batchesProcessed?: number;
+    /** Average number of transactions per batch (batch observers only) */
+    avgBatchSize?: number;
+    /** Maximum batch size observed (batch observers only) */
+    maxBatchSize?: number;
+
+    // Optional block observer metrics (only present for block observers)
+    /** Total number of blocks processed (block observers only) */
+    blocksProcessed?: number;
+    /** Average number of transactions per block (block observers only) */
+    avgTransactionsPerBlock?: number;
+    /** Maximum transactions in a single block (block observers only) */
+    maxTransactionsInBlock?: number;
 }

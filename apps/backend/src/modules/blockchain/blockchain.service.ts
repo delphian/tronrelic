@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { AnyBulkWriteOperation } from 'mongoose';
 import type { Redis as RedisClient } from 'ioredis';
 import type { TronTransactionDocument } from '@tronrelic/shared';
-import type { ITransaction, ITransactionPersistencePayload, ITransactionCategoryFlags, IDatabaseService, IBlockchainService } from '@tronrelic/types';
+import type { ITransaction, ITransactionPersistencePayload, ITransactionCategoryFlags, IDatabaseService, IBlockchainService, IBlockData } from '@tronrelic/types';
 import { ProcessedTransaction } from '@tronrelic/types';
 import { TransactionModel, type TransactionDoc, type TransactionFields } from '../../database/models/transaction-model.js';
 import { SyncStateModel, type SyncStateDoc, type SyncStateFields } from '../../database/models/sync-state-model.js';
@@ -959,6 +959,9 @@ export class BlockchainService implements IBlockchainService {
             const processed: ProcessedTransaction[] = [];
             const operations: AnyBulkWriteOperation<TransactionDoc>[] = [];
 
+            // Clear batch accumulator at start of each block for batch observers
+            this.observerService.clearBatchAccumulator();
+
             for (const transaction of transactions) {
                 try {
                     // Pass null for info - energy/bandwidth metrics will be undefined, but all core data is available
@@ -979,6 +982,8 @@ export class BlockchainService implements IBlockchainService {
                     // Notify observers of the processed transaction
                     const notifyStart = Date.now();
                     await this.observerService.notifyTransaction(result);
+                    // Accumulate for batch observers (sync, fast - just stores reference)
+                    this.observerService.accumulateForBatch(result);
                     observerNotifyTime += (Date.now() - notifyStart);
                 } catch (transactionError) {
                     logger.warn({ blockNumber, txId: transaction?.txID, transactionError }, 'Failed to process transaction - skipping');
@@ -986,6 +991,23 @@ export class BlockchainService implements IBlockchainService {
             }
             timings.processTransactions = Date.now() - stageStart;
             timings.observerNotifications = observerNotifyTime;
+
+            // Stage 4b: Notify batch and block observers
+            // Flush accumulated batches to batch observers
+            await this.observerService.flushBatches();
+
+            // Build block data and notify block observers
+            const blockData: IBlockData = {
+                blockNumber,
+                blockId: block.blockID,
+                parentHash: block.block_header.raw_data.parentHash,
+                witnessAddress: TronGridClient.toBase58Address(block.block_header.raw_data.witness_address) ?? 'unknown',
+                timestamp: blockTime,
+                transactionCount: transactions.length,
+                size: block.size,
+                transactions: processed
+            };
+            await this.observerService.notifyBlock(blockData);
 
             // Get model references for database operations
             const txModel = BlockchainService.getDatabase().getModel<TransactionDoc>(BlockchainService.TRANSACTIONS_COLLECTION);

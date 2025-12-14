@@ -1,7 +1,7 @@
 /// <reference types="vitest" />
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import type { IBaseObserver, IObserverStats, ISystemLogService, ITransaction } from '@tronrelic/types';
+import type { IBaseObserver, IBaseBatchObserver, IBaseBlockObserver, IBlockData, IObserverStats, ISystemLogService, ITransaction } from '@tronrelic/types';
 import { BlockchainObserverService } from '../blockchain-observer.service.js';
 
 /**
@@ -522,4 +522,484 @@ describe('BlockchainObserverService', () => {
             expect(observer.getEnqueuedTransactions().length).toBe(50);
         });
     });
+
+    // =========================================================================
+    // Batch Observer Tests
+    // =========================================================================
+
+    describe('Batch Observer Subscription', () => {
+        it('should subscribe batch observer to transaction type', () => {
+            const batchObserver = new MockBatchObserver('batch-observer');
+
+            service.subscribeTransactionTypeBatch('TransferContract', batchObserver);
+
+            expect(mockLogger.info).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    transactionType: 'TransferContract',
+                    observerName: 'batch-observer',
+                    totalBatchSubscribers: 1
+                }),
+                'Batch observer subscribed to transaction type'
+            );
+        });
+
+        it('should allow multiple batch observers for same transaction type', () => {
+            const observer1 = new MockBatchObserver('batch-1');
+            const observer2 = new MockBatchObserver('batch-2');
+
+            service.subscribeTransactionTypeBatch('TransferContract', observer1);
+            service.subscribeTransactionTypeBatch('TransferContract', observer2);
+
+            const stats = service.getBatchSubscriptionStats();
+            expect(stats['TransferContract']).toBe(2);
+        });
+
+        it('should track batch subscriptions separately from regular subscriptions', () => {
+            const regularObserver = new MockObserver('regular');
+            const batchObserver = new MockBatchObserver('batch');
+
+            service.subscribeTransactionType('TransferContract', regularObserver);
+            service.subscribeTransactionTypeBatch('TransferContract', batchObserver);
+
+            expect(service.getSubscriptionStats()['TransferContract']).toBe(1);
+            expect(service.getBatchSubscriptionStats()['TransferContract']).toBe(1);
+        });
+    });
+
+    describe('Batch Accumulation and Flushing', () => {
+        it('should accumulate transactions by type', () => {
+            const tx1 = createMockTransaction('TransferContract', 'tx1');
+            const tx2 = createMockTransaction('TransferContract', 'tx2');
+            const tx3 = createMockTransaction('TriggerSmartContract', 'tx3');
+
+            service.accumulateForBatch(tx1);
+            service.accumulateForBatch(tx2);
+            service.accumulateForBatch(tx3);
+
+            // Verify accumulator contains transactions (internal state, tested via flush)
+        });
+
+        it('should clear batch accumulator', () => {
+            const tx1 = createMockTransaction('TransferContract', 'tx1');
+            service.accumulateForBatch(tx1);
+
+            service.clearBatchAccumulator();
+
+            // Verify by flushing - no notifications should occur
+            const batchObserver = new MockBatchObserver('batch');
+            service.subscribeTransactionTypeBatch('TransferContract', batchObserver);
+
+            service.flushBatches();
+
+            // No batch should be delivered after clear
+            expect(batchObserver.getEnqueuedBatches()).toHaveLength(0);
+        });
+
+        it('should flush accumulated batches to batch observers', async () => {
+            const batchObserver = new MockBatchObserver('batch-observer');
+            service.subscribeTransactionTypeBatch('TransferContract', batchObserver);
+
+            // Accumulate transactions
+            service.accumulateForBatch(createMockTransaction('TransferContract', 'tx1'));
+            service.accumulateForBatch(createMockTransaction('TransferContract', 'tx2'));
+            service.accumulateForBatch(createMockTransaction('TransferContract', 'tx3'));
+
+            await service.flushBatches();
+            await new Promise(resolve => setTimeout(resolve, 10));
+
+            const batches = batchObserver.getEnqueuedBatches();
+            expect(batches).toHaveLength(1);
+            expect(batches[0]).toHaveLength(3);
+        });
+
+        it('should flush different transaction types to their respective observers', async () => {
+            const transferObserver = new MockBatchObserver('transfer-batch');
+            const triggerObserver = new MockBatchObserver('trigger-batch');
+
+            service.subscribeTransactionTypeBatch('TransferContract', transferObserver);
+            service.subscribeTransactionTypeBatch('TriggerSmartContract', triggerObserver);
+
+            service.accumulateForBatch(createMockTransaction('TransferContract', 'tx1'));
+            service.accumulateForBatch(createMockTransaction('TransferContract', 'tx2'));
+            service.accumulateForBatch(createMockTransaction('TriggerSmartContract', 'tx3'));
+
+            await service.flushBatches();
+            await new Promise(resolve => setTimeout(resolve, 10));
+
+            expect(transferObserver.getEnqueuedBatches()[0]).toHaveLength(2);
+            expect(triggerObserver.getEnqueuedBatches()[0]).toHaveLength(1);
+        });
+
+        it('should clear accumulator after flush', async () => {
+            const batchObserver = new MockBatchObserver('batch');
+            service.subscribeTransactionTypeBatch('TransferContract', batchObserver);
+
+            service.accumulateForBatch(createMockTransaction('TransferContract', 'tx1'));
+            await service.flushBatches();
+            await new Promise(resolve => setTimeout(resolve, 10));
+
+            // Flush again - should be empty
+            await service.flushBatches();
+            await new Promise(resolve => setTimeout(resolve, 10));
+
+            // Only one batch should have been delivered
+            expect(batchObserver.getEnqueuedBatches()).toHaveLength(1);
+        });
+
+        it('should handle batch observer errors without affecting other observers', async () => {
+            const goodObserver = new MockBatchObserver('good-batch');
+            const badObserver = new MockBatchObserver('bad-batch', true);
+
+            service.subscribeTransactionTypeBatch('TransferContract', goodObserver);
+            service.subscribeTransactionTypeBatch('TransferContract', badObserver);
+
+            service.accumulateForBatch(createMockTransaction('TransferContract', 'tx1'));
+            await service.flushBatches();
+            await new Promise(resolve => setTimeout(resolve, 10));
+
+            expect(goodObserver.getEnqueuedBatches()).toHaveLength(1);
+            expect(mockLogger.error).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    observer: 'bad-batch',
+                    transactionType: 'TransferContract'
+                }),
+                'Failed to enqueue batch to observer'
+            );
+        });
+
+        it('should not flush empty batches', async () => {
+            const batchObserver = new MockBatchObserver('batch');
+            service.subscribeTransactionTypeBatch('TransferContract', batchObserver);
+
+            // Flush without accumulating anything
+            await service.flushBatches();
+            await new Promise(resolve => setTimeout(resolve, 10));
+
+            expect(batchObserver.getEnqueuedBatches()).toHaveLength(0);
+        });
+    });
+
+    // =========================================================================
+    // Block Observer Tests
+    // =========================================================================
+
+    describe('Block Observer Subscription', () => {
+        it('should subscribe block observer', () => {
+            const blockObserver = new MockBlockObserver('block-observer');
+
+            service.subscribeBlock(blockObserver);
+
+            expect(mockLogger.info).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    observerName: 'block-observer',
+                    totalBlockSubscribers: 1
+                }),
+                'Block observer subscribed'
+            );
+        });
+
+        it('should allow multiple block observers', () => {
+            const observer1 = new MockBlockObserver('block-1');
+            const observer2 = new MockBlockObserver('block-2');
+
+            service.subscribeBlock(observer1);
+            service.subscribeBlock(observer2);
+
+            const stats = service.getBlockSubscriptionStats();
+            expect(stats.subscriberCount).toBe(2);
+        });
+    });
+
+    describe('Block Notification', () => {
+        it('should notify block observers of completed blocks', async () => {
+            const blockObserver = new MockBlockObserver('block-observer');
+            service.subscribeBlock(blockObserver);
+
+            const blockData = createMockBlockData(12345, 5);
+            await service.notifyBlock(blockData);
+            await new Promise(resolve => setTimeout(resolve, 10));
+
+            const blocks = blockObserver.getEnqueuedBlocks();
+            expect(blocks).toHaveLength(1);
+            expect(blocks[0].blockNumber).toBe(12345);
+            expect(blocks[0].transactions).toHaveLength(5);
+        });
+
+        it('should notify all subscribed block observers', async () => {
+            const observer1 = new MockBlockObserver('block-1');
+            const observer2 = new MockBlockObserver('block-2');
+
+            service.subscribeBlock(observer1);
+            service.subscribeBlock(observer2);
+
+            const blockData = createMockBlockData(100, 3);
+            await service.notifyBlock(blockData);
+            await new Promise(resolve => setTimeout(resolve, 10));
+
+            expect(observer1.getEnqueuedBlocks()).toHaveLength(1);
+            expect(observer2.getEnqueuedBlocks()).toHaveLength(1);
+        });
+
+        it('should handle block observer errors without affecting other observers', async () => {
+            const goodObserver = new MockBlockObserver('good-block');
+            const badObserver = new MockBlockObserver('bad-block', true);
+
+            service.subscribeBlock(goodObserver);
+            service.subscribeBlock(badObserver);
+
+            const blockData = createMockBlockData(100, 2);
+            await service.notifyBlock(blockData);
+            await new Promise(resolve => setTimeout(resolve, 10));
+
+            expect(goodObserver.getEnqueuedBlocks()).toHaveLength(1);
+            expect(mockLogger.error).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    observer: 'bad-block',
+                    blockNumber: 100
+                }),
+                'Failed to enqueue block to observer'
+            );
+        });
+
+        it('should return immediately with no subscribers', async () => {
+            const blockData = createMockBlockData(100, 5);
+
+            const startTime = Date.now();
+            await service.notifyBlock(blockData);
+            const duration = Date.now() - startTime;
+
+            expect(duration).toBeLessThan(50);
+        });
+    });
+
+    // =========================================================================
+    // Enhanced Statistics Tests
+    // =========================================================================
+
+    describe('Enhanced Statistics (includes batch and block observers)', () => {
+        it('should include batch observers in getAllObserverStats', () => {
+            const regularObserver = new MockObserver('regular');
+            const batchObserver = new MockBatchObserver('batch');
+
+            service.subscribeTransactionType('TransferContract', regularObserver);
+            service.subscribeTransactionTypeBatch('TransferContract', batchObserver);
+
+            const allStats = service.getAllObserverStats();
+            expect(allStats).toHaveLength(2);
+
+            const names = allStats.map(s => s.name);
+            expect(names).toContain('regular');
+            expect(names).toContain('batch');
+        });
+
+        it('should include block observers in getAllObserverStats', () => {
+            const regularObserver = new MockObserver('regular');
+            const blockObserver = new MockBlockObserver('block');
+
+            service.subscribeTransactionType('TransferContract', regularObserver);
+            service.subscribeBlock(blockObserver);
+
+            const allStats = service.getAllObserverStats();
+            expect(allStats).toHaveLength(2);
+
+            const names = allStats.map(s => s.name);
+            expect(names).toContain('regular');
+            expect(names).toContain('block');
+        });
+
+        it('should deduplicate observers across all subscription types', () => {
+            const observer = new MockObserver('multi-type');
+
+            service.subscribeTransactionType('TransferContract', observer);
+            service.subscribeTransactionType('TriggerSmartContract', observer);
+
+            const allStats = service.getAllObserverStats();
+            expect(allStats).toHaveLength(1);
+        });
+
+        it('should aggregate stats from all observer types', () => {
+            const regular = new MockObserver('regular');
+            const batch = new MockBatchObserver('batch');
+            const block = new MockBlockObserver('block');
+
+            regular.setStats({ totalProcessed: 100 });
+            batch.setStats({ totalProcessed: 50 });
+            block.setStats({ totalProcessed: 25 });
+
+            service.subscribeTransactionType('TransferContract', regular);
+            service.subscribeTransactionTypeBatch('TransferContract', batch);
+            service.subscribeBlock(block);
+
+            const aggregate = service.getAggregateStats();
+            expect(aggregate.totalObservers).toBe(3);
+            expect(aggregate.totalProcessed).toBe(175); // 100 + 50 + 25
+        });
+    });
+
+    describe('Reset For Testing', () => {
+        it('should clear batch and block subscriptions on reset', () => {
+            const batchObserver = new MockBatchObserver('batch');
+            const blockObserver = new MockBlockObserver('block');
+
+            service.subscribeTransactionTypeBatch('TransferContract', batchObserver);
+            service.subscribeBlock(blockObserver);
+
+            expect(service.getBatchSubscriptionStats()['TransferContract']).toBe(1);
+            expect(service.getBlockSubscriptionStats().subscriberCount).toBe(1);
+
+            BlockchainObserverService.resetForTesting();
+
+            // Re-initialize for next assertion
+            service = BlockchainObserverService.initialize(mockLogger);
+
+            expect(service.getBatchSubscriptionStats()).toEqual({});
+            expect(service.getBlockSubscriptionStats().subscriberCount).toBe(0);
+        });
+    });
 });
+
+// =========================================================================
+// Mock Classes for Batch and Block Observers
+// =========================================================================
+
+/**
+ * Mock batch observer implementation for testing.
+ */
+class MockBatchObserver implements IBaseBatchObserver {
+    private enqueuedBatches: ITransaction[][] = [];
+    private shouldThrowError = false;
+    private mockStats: IObserverStats;
+
+    constructor(
+        private name: string,
+        throwError = false
+    ) {
+        this.shouldThrowError = throwError;
+        this.mockStats = {
+            name: this.name,
+            queueDepth: 0,
+            totalProcessed: 0,
+            totalErrors: 0,
+            totalDropped: 0,
+            avgProcessingTimeMs: 0,
+            minProcessingTimeMs: 0,
+            maxProcessingTimeMs: 0,
+            lastProcessedAt: null,
+            lastErrorAt: null,
+            errorRate: 0,
+            batchesProcessed: 0,
+            avgBatchSize: 0,
+            maxBatchSize: 0
+        };
+    }
+
+    public getName(): string {
+        return this.name;
+    }
+
+    public async enqueue(transaction: ITransaction): Promise<void> {
+        await this.enqueueBatch([transaction]);
+    }
+
+    public async enqueueBatch(transactions: ITransaction[]): Promise<void> {
+        if (this.shouldThrowError) {
+            throw new Error(`Mock error from ${this.name}`);
+        }
+        this.enqueuedBatches.push([...transactions]);
+        this.mockStats.totalProcessed += transactions.length;
+        this.mockStats.batchesProcessed = (this.mockStats.batchesProcessed || 0) + 1;
+    }
+
+    public getStats(): IObserverStats {
+        return this.mockStats;
+    }
+
+    public getEnqueuedBatches(): ITransaction[][] {
+        return this.enqueuedBatches;
+    }
+
+    public setStats(stats: Partial<IObserverStats>): void {
+        this.mockStats = { ...this.mockStats, ...stats };
+    }
+}
+
+/**
+ * Mock block observer implementation for testing.
+ */
+class MockBlockObserver implements IBaseBlockObserver {
+    private enqueuedBlocks: IBlockData[] = [];
+    private shouldThrowError = false;
+    private mockStats: IObserverStats;
+
+    constructor(
+        private name: string,
+        throwError = false
+    ) {
+        this.shouldThrowError = throwError;
+        this.mockStats = {
+            name: this.name,
+            queueDepth: 0,
+            totalProcessed: 0,
+            totalErrors: 0,
+            totalDropped: 0,
+            avgProcessingTimeMs: 0,
+            minProcessingTimeMs: 0,
+            maxProcessingTimeMs: 0,
+            lastProcessedAt: null,
+            lastErrorAt: null,
+            errorRate: 0,
+            blocksProcessed: 0,
+            avgTransactionsPerBlock: 0,
+            maxTransactionsInBlock: 0
+        };
+    }
+
+    public getName(): string {
+        return this.name;
+    }
+
+    public async enqueue(_transaction: ITransaction): Promise<void> {
+        // Block observers don't process individual transactions
+    }
+
+    public async enqueueBlock(blockData: IBlockData): Promise<void> {
+        if (this.shouldThrowError) {
+            throw new Error(`Mock error from ${this.name}`);
+        }
+        this.enqueuedBlocks.push({ ...blockData });
+        this.mockStats.totalProcessed += 1;
+        this.mockStats.blocksProcessed = (this.mockStats.blocksProcessed || 0) + 1;
+    }
+
+    public getStats(): IObserverStats {
+        return this.mockStats;
+    }
+
+    public getEnqueuedBlocks(): IBlockData[] {
+        return this.enqueuedBlocks;
+    }
+
+    public setStats(stats: Partial<IObserverStats>): void {
+        this.mockStats = { ...this.mockStats, ...stats };
+    }
+}
+
+/**
+ * Create a mock block data object for testing.
+ */
+function createMockBlockData(blockNumber: number, transactionCount: number): IBlockData {
+    const transactions = Array.from({ length: transactionCount }, (_, i) =>
+        createMockTransaction('TransferContract', `block_${blockNumber}_tx_${i}`)
+    );
+
+    return {
+        blockNumber,
+        blockId: `block_id_${blockNumber}`,
+        parentHash: `parent_hash_${blockNumber - 1}`,
+        witnessAddress: 'TMockWitnessAddress',
+        timestamp: new Date(),
+        transactionCount,
+        size: 1000 + transactionCount * 100,
+        transactions
+    };
+}
