@@ -49,6 +49,7 @@ services:
         environment:
             - CLICKHOUSE_DB=tronrelic
             - CLICKHOUSE_USER=default
+            - CLICKHOUSE_PASSWORD=
             - CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1
         volumes:
             - tronrelic-clickhouse-data:/var/lib/clickhouse
@@ -59,7 +60,7 @@ services:
                 soft: 262144
                 hard: 262144
         healthcheck:
-            test: ["CMD", "clickhouse-client", "--query", "SELECT 1"]
+            test: ["CMD", "clickhouse-client", "--user", "${CLICKHOUSE_USER:-default}", "--password", "${CLICKHOUSE_PASSWORD:-}", "--query", "SELECT 1"]
             interval: 10s
             timeout: 5s
             retries: 5

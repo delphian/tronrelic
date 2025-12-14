@@ -150,11 +150,9 @@ async function bootstrapInit(): Promise<BootstrapContext> {
     await clickHouseModule.init({ logger, app });
 
     // Inject ClickHouse into database service for migrations targeting ClickHouse
-    if (clickHouseModule.isEnabled()) {
-        const clickhouse = clickHouseModule.getClickHouseService();
-        if (clickhouse) {
-            coreDatabase.setClickHouseService(clickhouse);
-        }
+    const clickhouse = clickHouseModule.getClickHouseService();
+    if (clickhouse) {
+        coreDatabase.setClickHouseService(clickhouse);
     }
 
     // Mount API routes now that coreDatabase exists
