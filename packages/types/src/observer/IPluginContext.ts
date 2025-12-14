@@ -3,6 +3,7 @@ import type { IBlockchainObserverService } from './IBlockchainObserverService.js
 import type { IWebSocketService } from './IWebSocketService.js';
 import type { IBaseObserver } from './IBaseObserver.js';
 import type { IDatabaseService } from '../database/IDatabaseService.js';
+import type { IClickHouseService } from '../clickhouse/IClickHouseService.js';
 import type { IPluginWebSocketManager } from './IPluginWebSocketManager.js';
 import type { ICacheService } from '../services/ICacheService.js';
 import type { ISystemConfigService } from '../system-config/ISystemConfigService.js';
@@ -45,6 +46,22 @@ export interface IPluginContext {
 
     /** Plugin-scoped database access with automatic collection prefixing */
     database: IDatabaseService;
+
+    /**
+     * ClickHouse analytical database service.
+     *
+     * Optional - only available if CLICKHOUSE_HOST is configured. Use for
+     * time-series data, high-volume analytics, and aggregation workloads
+     * that benefit from columnar storage.
+     *
+     * Check for undefined before using:
+     * ```typescript
+     * if (context.clickhouse) {
+     *     const results = await context.clickhouse.query('SELECT ...');
+     * }
+     * ```
+     */
+    clickhouse?: IClickHouseService;
 
     /** Cache service for Redis-backed key-value storage with TTL and tagging */
     cache: ICacheService;

@@ -104,13 +104,14 @@ attempts=0
 while [[ $attempts -lt $max_attempts ]]; do
     mongo_health=$(docker inspect --format='{{.State.Health.Status}}' tronrelic-mongo 2>/dev/null || echo "starting")
     redis_health=$(docker inspect --format='{{.State.Health.Status}}' tronrelic-redis 2>/dev/null || echo "starting")
+    clickhouse_health=$(docker inspect --format='{{.State.Health.Status}}' tronrelic-clickhouse 2>/dev/null || echo "starting")
 
-    if [[ "$mongo_health" == "healthy" && "$redis_health" == "healthy" ]]; then
+    if [[ "$mongo_health" == "healthy" && "$redis_health" == "healthy" && "$clickhouse_health" == "healthy" ]]; then
         echo -e "${GREEN}✓ All containers are healthy${NC}"
         break
     fi
 
-    echo "  MongoDB: $mongo_health, Redis: $redis_health (attempt $((attempts + 1))/$max_attempts)"
+    echo "  MongoDB: $mongo_health, Redis: $redis_health, ClickHouse: $clickhouse_health (attempt $((attempts + 1))/$max_attempts)"
     sleep 2
     attempts=$((attempts + 1))
 done
@@ -249,8 +250,9 @@ echo -e "  Backend:  ${YELLOW}tail -f .run/backend.log${NC}"
 echo -e "  Frontend: ${YELLOW}tail -f .run/frontend.log${NC}"
 echo -e ""
 echo -e "Containers:"
-echo -e "  MongoDB:  ${YELLOW}docker logs -f tronrelic-mongo${NC}"
-echo -e "  Redis:    ${YELLOW}docker logs -f tronrelic-redis${NC}"
+echo -e "  MongoDB:    ${YELLOW}docker logs -f tronrelic-mongo${NC}"
+echo -e "  Redis:      ${YELLOW}docker logs -f tronrelic-redis${NC}"
+echo -e "  ClickHouse: ${YELLOW}docker logs -f tronrelic-clickhouse${NC}"
 echo -e ""
 echo -e "Stop: ${YELLOW}./scripts/stop.sh${NC}"
 echo -e "${GREEN}========================================${NC}"

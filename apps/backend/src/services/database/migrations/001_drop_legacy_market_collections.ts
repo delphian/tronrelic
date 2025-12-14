@@ -1,4 +1,4 @@
-import type { IMigration, IDatabaseService } from '@tronrelic/types';
+import type { IMigration, IMigrationContext } from '@tronrelic/types';
 
 /**
  * Drop legacy market system collections after migration to resource-markets plugin.
@@ -37,7 +37,7 @@ export const migration: IMigration = {
     description: 'Drop legacy market system collections after migration to resource-markets plugin. Removes markets, market_price_history, market_reliability, market_reliability_history, and market_affiliate collections. Historical data will be lost.',
     dependencies: [],
 
-    async up(database: IDatabaseService): Promise<void> {
+    async up(context: IMigrationContext): Promise<void> {
         const collectionsToRemove = [
             'markets',
             'market_price_history',
@@ -50,7 +50,7 @@ export const migration: IMigration = {
             try {
                 // Attempt to drop the collection
                 // MongoDB will throw if collection doesn't exist
-                const collection = database.getCollection(collectionName);
+                const collection = context.database.getCollection(collectionName);
                 await collection.drop();
                 console.log(`[Migration] Dropped collection: ${collectionName}`);
             } catch (error) {

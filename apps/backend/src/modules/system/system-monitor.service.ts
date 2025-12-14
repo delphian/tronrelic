@@ -157,6 +157,13 @@ export interface RedisStatus {
   hitRate: number | null;
 }
 
+export interface ClickHouseStatus {
+  connected: boolean;
+  responseTime: number | null;
+  tableCount: number;
+  databaseSize: number | null;
+}
+
 export interface ServerMetrics {
   uptime: number;
   memoryUsage: {
@@ -677,6 +684,80 @@ export class SystemMonitorService {
       activeConnections: 0, // Would need tracking
       requestRate: null,
       errorRate: null
+    };
+  }
+
+  /**
+   * Get ClickHouse database connection status and metrics.
+   *
+   * Returns connection state, response time from ping, table count, and database size.
+   * Handles cases where ClickHouse is not initialized (returns disconnected status).
+   */
+  async getClickHouseStatus(): Promise<ClickHouseStatus> {
+    const { ClickHouseService } = await import('../clickhouse/services/clickhouse.service.js');
+
+    // Check if ClickHouse service is initialized
+    if (!ClickHouseService.isInitialized()) {
+      return {
+        connected: false,
+        responseTime: null,
+        tableCount: 0,
+        databaseSize: null
+      };
+    }
+
+    const clickhouse = ClickHouseService.getInstance();
+    const connected = clickhouse.isConnected();
+
+    let responseTime: number | null = null;
+    let tableCount = 0;
+    let databaseSize: number | null = null;
+
+    if (connected) {
+      // Measure ping response time
+      const start = Date.now();
+      const pingResult = await raceWithTimeout(clickhouse.ping(), 2000);
+      if (!pingResult.timedOut && !pingResult.error && pingResult.value) {
+        responseTime = Date.now() - start;
+      } else if (pingResult.timedOut) {
+        logger.warn('ClickHouse ping timed out after 2000ms');
+      }
+
+      // Get table count
+      try {
+        const tables = await clickhouse.query<{ count: string }>(`
+          SELECT count() as count
+          FROM system.tables
+          WHERE database = currentDatabase()
+        `);
+        tableCount = tables.length > 0 ? parseInt(tables[0].count, 10) : 0;
+      } catch (error) {
+        logger.error({ error }, 'Failed to fetch ClickHouse table count');
+      }
+
+      // Get database size
+      try {
+        const sizeResult = await clickhouse.query<{ total_bytes: string }>(`
+          SELECT sum(total_bytes) as total_bytes
+          FROM system.tables
+          WHERE database = currentDatabase()
+        `);
+        if (sizeResult.length > 0) {
+          const bytes = sizeResult[0].total_bytes;
+          databaseSize = bytes ? parseInt(bytes, 10) : 0;
+        } else {
+          databaseSize = 0;
+        }
+      } catch (error) {
+        logger.error({ error }, 'Failed to fetch ClickHouse database size');
+      }
+    }
+
+    return {
+      connected,
+      responseTime,
+      tableCount,
+      databaseSize
     };
   }
 

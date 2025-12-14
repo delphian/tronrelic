@@ -21,7 +21,8 @@ export type { ISystemLogService, ISystemLogQuery, ISystemLogPaginatedResponse, I
 export { LOG_LEVELS, shouldLog, type LogLevelName } from './system-log/index.js';
 export type { ISchedulerService, CronJobHandler } from './scheduler/ISchedulerService.js';
 export type { IDatabaseService } from './database/IDatabaseService.js';
-export type { IMigration } from './database/IMigration.js';
+export type { IMigration, IMigrationContext, MigrationTarget } from './database/IMigration.js';
+export type { IClickHouseService } from './clickhouse/index.js';
 export type { IPage, IPageFile, IPageSettings, IStorageProvider, IPageService, IMarkdownService, IFrontmatterData, IParsedMarkdown } from './pages/index.js';
 export type { IModule, IModuleMetadata } from './module/index.js';
 export { USER_FILTERS } from './user/index.js';

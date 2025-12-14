@@ -30,6 +30,7 @@ export function systemRouter(database: IDatabaseService) {
 
   // System health endpoints
   router.get('/health/database', controller.getDatabaseStatus);
+  router.get('/health/clickhouse', controller.getClickHouseStatus);
   router.get('/health/redis', controller.getRedisStatus);
   router.get('/health/server', controller.getServerMetrics);
 
