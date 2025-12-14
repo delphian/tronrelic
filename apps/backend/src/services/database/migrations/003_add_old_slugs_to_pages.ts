@@ -1,4 +1,4 @@
-import type { IMigration, IDatabaseService } from '@tronrelic/types';
+import type { IMigration, IMigrationContext } from '@tronrelic/types';
 
 /**
  * Add oldSlugs field and index to pages collection for redirect support.
@@ -34,8 +34,8 @@ export const migration: IMigration = {
     description: 'Add oldSlugs field and index to pages collection for redirect support. Adds empty oldSlugs array to all existing pages and creates index for fast redirect lookups.',
     dependencies: [],
 
-    async up(database: IDatabaseService): Promise<void> {
-        const pagesCollection = database.getCollection('pages');
+    async up(context: IMigrationContext): Promise<void> {
+        const pagesCollection = context.database.getCollection('pages');
 
         // Step 1: Add oldSlugs field to all existing pages
         try {

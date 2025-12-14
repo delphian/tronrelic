@@ -1,4 +1,32 @@
 import type { IDatabaseService } from './IDatabaseService.js';
+import type { IClickHouseService } from '../clickhouse/IClickHouseService.js';
+
+/**
+ * Target database for migration execution.
+ *
+ * - `mongodb` (default): Migration executes against MongoDB via IDatabaseService
+ * - `clickhouse`: Migration executes against ClickHouse via IClickHouseService
+ */
+export type MigrationTarget = 'mongodb' | 'clickhouse';
+
+/**
+ * Context provided to migration up() function.
+ *
+ * Contains access to both database services. Migrations targeting MongoDB
+ * use the `database` property; migrations targeting ClickHouse use the
+ * `clickhouse` property.
+ *
+ * **Note:** The `clickhouse` property is undefined if ClickHouse is not
+ * configured. Migrations targeting ClickHouse will be skipped with a
+ * warning in this case.
+ */
+export interface IMigrationContext {
+    /** MongoDB database service (always available) */
+    database: IDatabaseService;
+
+    /** ClickHouse service (undefined if not configured) */
+    clickhouse?: IClickHouseService;
+}
 
 /**
  * Database migration interface for schema evolution and data transformations.
@@ -109,6 +137,46 @@ export interface IMigration {
     description: string;
 
     /**
+     * Target database for this migration.
+     *
+     * - `mongodb` (default): Migration executes against MongoDB
+     * - `clickhouse`: Migration executes against ClickHouse
+     *
+     * When targeting ClickHouse, the migration's up() function should use
+     * `context.clickhouse` instead of `context.database`. If ClickHouse is
+     * not configured, the migration will be skipped with a warning.
+     *
+     * @default 'mongodb'
+     *
+     * @example
+     * ```typescript
+     * // MongoDB migration (default, target can be omitted)
+     * export const migration: IMigration = {
+     *     id: '001_create_users',
+     *     description: 'Create users collection',
+     *     target: 'mongodb',  // Optional, this is the default
+     *     async up(context) {
+     *         await context.database.createIndex('users', { email: 1 }, { unique: true });
+     *     }
+     * };
+     *
+     * // ClickHouse migration
+     * export const migration: IMigration = {
+     *     id: '001_create_delegations',
+     *     description: 'Create delegations table in ClickHouse',
+     *     target: 'clickhouse',
+     *     async up(context) {
+     *         await context.clickhouse!.exec(`
+     *             CREATE TABLE delegations (...)
+     *             ENGINE = MergeTree()
+     *         `);
+     *     }
+     * };
+     * ```
+     */
+    target?: MigrationTarget;
+
+    /**
      * Optional array of migration IDs that must execute before this migration.
      *
      * The migration system uses these dependencies to build a topological execution order,
@@ -203,21 +271,22 @@ export interface IMigration {
      * - Test migrations against realistic datasets
      * - Log progress for long-running migrations
      *
-     * @param database - Database service with CRUD operations, index management, and raw collection access
+     * @param context - Migration context with access to MongoDB and optionally ClickHouse
      * @returns Promise that resolves when migration completes successfully
      * @throws Error if migration fails (triggers transaction rollback and stops execution)
      *
      * @example
      * ```typescript
-     * async up(database: IDatabaseService): Promise<void> {
-     *     // Example 1: Create index
-     *     await database.createIndex('transactions',
+     * // MongoDB migration
+     * async up(context: IMigrationContext): Promise<void> {
+     *     // Create index
+     *     await context.database.createIndex('transactions',
      *         { blockNumber: 1, timestamp: -1 },
      *         { name: 'idx_block_time' }
      *     );
      *
-     *     // Example 2: Data transformation with raw collection access
-     *     const collection = database.getCollection('users');
+     *     // Data transformation with raw collection access
+     *     const collection = context.database.getCollection('users');
      *     const users = await collection.find({ legacy: true }).toArray();
      *
      *     for (const user of users) {
@@ -229,14 +298,22 @@ export interface IMigration {
      *             }
      *         );
      *     }
+     * }
      *
-     *     // Example 3: Validation before operation
-     *     const configExists = await database.findOne('system_config', { key: 'version' });
-     *     if (!configExists) {
-     *         throw new Error('System config not initialized. Run migration 001_init_config first.');
-     *     }
+     * // ClickHouse migration
+     * async up(context: IMigrationContext): Promise<void> {
+     *     await context.clickhouse!.exec(`
+     *         CREATE TABLE IF NOT EXISTS delegations (
+     *             txId String,
+     *             timestamp DateTime64(3),
+     *             poolAddress Nullable(String)
+     *         )
+     *         ENGINE = MergeTree()
+     *         ORDER BY (timestamp, poolAddress)
+     *         TTL timestamp + INTERVAL 90 DAY
+     *     `);
      * }
      * ```
      */
-    up(database: IDatabaseService): Promise<void>;
+    up(context: IMigrationContext): Promise<void>;
 }

@@ -24,6 +24,7 @@ import { loadPlugins } from './loaders/plugins.js';
 import { MenuModule } from './modules/menu/index.js';
 import { LogsModule } from './modules/logs/index.js';
 import { DatabaseModule } from './modules/database/index.js';
+import { ClickHouseModule } from './modules/clickhouse/index.js';
 import { PagesModule } from './modules/pages/index.js';
 import { ThemeModule } from './modules/theme/index.js';
 import { UserModule } from './modules/user/index.js';
@@ -101,6 +102,7 @@ interface BootstrapContext {
     menuService: IMenuService;
     modules: {
         database: DatabaseModule;
+        clickhouse: ClickHouseModule;
         menu: MenuModule;
         logs: LogsModule;
         pages: PagesModule;
@@ -143,6 +145,18 @@ async function bootstrapInit(): Promise<BootstrapContext> {
     const coreDatabase = databaseModule.getDatabaseService();
     app.locals.database = coreDatabase;
 
+    // ClickHouse module (optional, skips if CLICKHOUSE_HOST not configured)
+    const clickHouseModule = new ClickHouseModule();
+    await clickHouseModule.init({ logger, app });
+
+    // Inject ClickHouse into database service for migrations targeting ClickHouse
+    if (clickHouseModule.isEnabled()) {
+        const clickhouse = clickHouseModule.getClickHouseService();
+        if (clickhouse) {
+            coreDatabase.setClickHouseService(clickhouse);
+        }
+    }
+
     // Mount API routes now that coreDatabase exists
     // Routers receive the shared database instance via dependency injection
     app.use('/api', createApiRouter(coreDatabase));
@@ -175,6 +189,7 @@ async function bootstrapInit(): Promise<BootstrapContext> {
         menuService,
         modules: {
             database: databaseModule,
+            clickhouse: clickHouseModule,
             menu: menuModule,
             logs: logsModule,
             pages: pagesModule,
@@ -202,6 +217,7 @@ async function bootstrapRun(ctx: BootstrapContext): Promise<void> {
     const { modules, menuService } = ctx;
 
     await modules.database.run();
+    await modules.clickhouse.run();
     await modules.menu.run();
     await modules.logs.run();
     await modules.pages.run();

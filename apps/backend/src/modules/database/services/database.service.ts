@@ -1,6 +1,6 @@
 import type { Connection } from 'mongoose';
 import type { Collection, Document, Filter, UpdateFilter, IndexDescription, CreateIndexesOptions } from 'mongodb';
-import type { IDatabaseService, ISystemLogService } from '@tronrelic/types';
+import type { IDatabaseService, ISystemLogService, IClickHouseService } from '@tronrelic/types';
 import { MigrationScanner } from '../migration/MigrationScanner.js';
 import { MigrationTracker } from '../migration/MigrationTracker.js';
 import { MigrationExecutor } from '../migration/MigrationExecutor.js';
@@ -61,6 +61,9 @@ export class DatabaseService implements IDatabaseService {
     private discoveredMigrations: IMigrationMetadata[] = [];
     private pendingMigrations: IMigrationMetadata[] = [];
     private migrationsInitialized = false;
+
+    // Optional ClickHouse service for migrations targeting ClickHouse
+    private clickhouse?: IClickHouseService;
 
     /**
      * Create a database service instance.
@@ -490,7 +493,7 @@ export class DatabaseService implements IDatabaseService {
             // Initialize migration components
             this.migrationScanner = new MigrationScanner();
             this.migrationTracker = new MigrationTracker(this);
-            this.migrationExecutor = new MigrationExecutor(this, this.migrationTracker);
+            this.migrationExecutor = new MigrationExecutor(this, this.migrationTracker, this.clickhouse);
 
             // Ensure migration tracker indexes exist
             await this.migrationTracker.ensureIndexes();
@@ -514,6 +517,28 @@ export class DatabaseService implements IDatabaseService {
         } catch (error) {
             this.logger.error({ error }, 'Failed to initialize migration system');
             throw error;
+        }
+    }
+
+    /**
+     * Set the ClickHouse service for migrations targeting ClickHouse.
+     *
+     * This method should be called after ClickHouse module initialization
+     * to enable ClickHouse-targeted migrations. If ClickHouse is not configured,
+     * migrations with target: 'clickhouse' will be skipped with a warning.
+     *
+     * The method recreates the MigrationExecutor with the new ClickHouse reference
+     * if migrations have already been initialized.
+     *
+     * @param clickhouse - ClickHouse service instance
+     */
+    public setClickHouseService(clickhouse: IClickHouseService): void {
+        this.clickhouse = clickhouse;
+
+        // Recreate executor if migrations already initialized
+        if (this.migrationsInitialized && this.migrationTracker) {
+            this.migrationExecutor = new MigrationExecutor(this, this.migrationTracker, this.clickhouse);
+            this.logger.info('ClickHouse service injected into migration executor');
         }
     }
 

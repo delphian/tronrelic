@@ -39,6 +39,32 @@ services:
             retries: 5
             start_period: 5s
 
+    # ClickHouse Analytical Database
+    clickhouse:
+        image: clickhouse/clickhouse-server:24.3
+        container_name: tronrelic-clickhouse
+        restart: unless-stopped
+        ports:
+            - "8123:8123"
+        environment:
+            - CLICKHOUSE_DB=tronrelic
+            - CLICKHOUSE_USER=default
+            - CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1
+        volumes:
+            - tronrelic-clickhouse-data:/var/lib/clickhouse
+        networks:
+            - tronrelic-network
+        ulimits:
+            nofile:
+                soft: 262144
+                hard: 262144
+        healthcheck:
+            test: ["CMD", "clickhouse-client", "--query", "SELECT 1"]
+            interval: 10s
+            timeout: 5s
+            retries: 5
+            start_period: 10s
+
 networks:
     tronrelic-network:
         driver: bridge
@@ -47,4 +73,6 @@ volumes:
     tronrelic-mongo-data:
         driver: local
     tronrelic-redis-data:
+        driver: local
+    tronrelic-clickhouse-data:
         driver: local

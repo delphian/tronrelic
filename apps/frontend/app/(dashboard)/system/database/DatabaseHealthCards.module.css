@@ -1,33 +1,60 @@
 /**
  * DatabaseHealthCards component styles.
  *
- * Provides compact card layout for MongoDB health metrics at the top of the
- * database migrations page. Uses container queries for responsive behavior
- * and design tokens for consistent styling.
+ * Provides compact card layout for database health metrics at the top of the
+ * database page. Displays MongoDB and ClickHouse status in separate labeled
+ * sections. Uses container queries for responsive behavior and design tokens
+ * for consistent styling.
  */
+
+.section {
+    background: var(--color-surface);
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-lg);
+    padding: var(--spacing-9);
+    margin-bottom: var(--spacing-7);
+}
+
+.section_header {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-4);
+    margin-bottom: var(--spacing-7);
+}
+
+.section_icon {
+    color: var(--color-primary);
+}
+
+.section_title {
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text-muted);
+    text-transform: uppercase;
+    letter-spacing: var(--letter-spacing-wide);
+}
 
 .cards {
     container-type: inline-size;
     container-name: health-cards;
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: var(--spacing-md);
-    margin-bottom: var(--spacing-lg);
+    grid-template-columns: repeat(4, 1fr);
+    gap: var(--spacing-5);
 }
 
 .card {
-    background: var(--color-surface-default);
-    border: 1px solid var(--color-border-subtle);
+    background: var(--color-surface-muted);
+    border: var(--border-width-thin) solid var(--color-border);
     border-radius: var(--radius-md);
-    padding: var(--spacing-md);
+    padding: var(--spacing-7);
     display: flex;
     align-items: center;
-    gap: var(--spacing-md);
-    transition: border-color 0.2s ease;
+    gap: var(--spacing-5);
+    transition: border-color var(--transition-fast), background-color var(--transition-fast);
 }
 
 .card:hover {
-    border-color: var(--color-border-default);
+    border-color: var(--color-border-strong);
 }
 
 .card_icon {
@@ -36,7 +63,7 @@
     justify-content: center;
     width: 40px;
     height: 40px;
-    background: var(--color-surface-subtle);
+    background: var(--color-surface-elevated);
     border-radius: var(--radius-sm);
     color: var(--color-text-muted);
     flex-shrink: 0;
@@ -45,36 +72,39 @@
 .card_content {
     display: flex;
     flex-direction: column;
-    gap: var(--spacing-xs);
+    gap: var(--spacing-1);
     min-width: 0;
 }
 
 .card_label {
-    font-size: var(--font-size-sm);
+    font-size: var(--font-size-xs);
     color: var(--color-text-muted);
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
+    text-transform: uppercase;
+    letter-spacing: var(--letter-spacing-wide);
 }
 
 .card_value {
     font-size: var(--font-size-lg);
-    font-weight: 600;
-    color: var(--color-text-default);
+    font-weight: var(--font-weight-bold);
+    color: var(--color-text);
 }
 
 .loading {
     color: var(--color-text-muted);
     font-size: var(--font-size-sm);
+    padding: var(--spacing-7);
 }
 
 /* Connection status color variants */
 .card_healthy {
-    border-color: var(--color-success-border);
-    background: var(--color-success-surface);
+    border-color: var(--color-success-alpha-45);
+    background: var(--color-success-alpha-18);
 }
 
 .card_healthy .card_icon {
-    background: var(--color-success-subtle);
-    color: var(--color-success-text);
+    background: var(--color-success-alpha-18);
+    color: var(--color-success);
 }
 
 .card_healthy .card_value {
@@ -82,13 +112,13 @@
 }
 
 .card_danger {
-    border-color: var(--color-danger-border);
-    background: var(--color-danger-surface);
+    border-color: var(--color-danger-alpha-50);
+    background: var(--color-danger-alpha-18);
 }
 
 .card_danger .card_icon {
-    background: var(--color-danger-subtle);
-    color: var(--color-danger-text);
+    background: var(--color-danger-alpha-18);
+    color: var(--color-danger);
 }
 
 .card_danger .card_value {
@@ -96,13 +126,13 @@
 }
 
 /* Responsive adjustments using container queries */
-@container health-cards (max-width: 600px) {
+@container health-cards (max-width: 500px) {
     .cards {
-        grid-template-columns: 1fr;
+        grid-template-columns: repeat(2, 1fr);
     }
 }
 
-@container health-cards (min-width: 601px) and (max-width: 900px) {
+@container health-cards (min-width: 501px) and (max-width: 800px) {
     .cards {
         grid-template-columns: repeat(2, 1fr);
     }

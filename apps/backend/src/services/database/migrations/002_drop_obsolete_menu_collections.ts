@@ -1,4 +1,4 @@
-import type { IMigration, IDatabaseService } from '@tronrelic/types';
+import type { IMigration, IMigrationContext } from '@tronrelic/types';
 
 /**
  * Drop obsolete menu collections created by incorrect database prefixing.
@@ -45,7 +45,7 @@ export const migration: IMigration = {
     description: 'Drop obsolete menu collections (core_menu_nodes, plugin_core_menu_nodes, menunodes) created by incorrect database prefixing. Preserves authoritative menu_nodes collection.',
     dependencies: [],
 
-    async up(database: IDatabaseService): Promise<void> {
+    async up(context: IMigrationContext): Promise<void> {
         const collectionsToRemove = [
             'core_menu_nodes',
             'plugin_core_menu_nodes',
@@ -56,7 +56,7 @@ export const migration: IMigration = {
             try {
                 // Attempt to drop the collection
                 // MongoDB will throw if collection doesn't exist
-                const collection = database.getCollection(collectionName);
+                const collection = context.database.getCollection(collectionName);
                 await collection.drop();
                 console.log(`[Migration] Dropped obsolete collection: ${collectionName}`);
             } catch (error) {

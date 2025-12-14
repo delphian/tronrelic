@@ -10,7 +10,7 @@
 .tabs {
     display: flex;
     gap: var(--spacing-2);
-    border-bottom: 2px solid var(--color-border);
+    border-bottom: var(--border-width-medium) solid var(--color-border);
 }
 
 .tab {
@@ -20,18 +20,18 @@
     padding: var(--spacing-4) var(--spacing-6);
     background: transparent;
     border: none;
-    border-bottom: 3px solid transparent;
-    margin-bottom: -2px;
+    border-bottom: var(--border-width-medium) solid transparent;
+    margin-bottom: calc(-1 * var(--border-width-medium));
     color: var(--color-text-muted);
     font-size: var(--font-size-md);
     font-weight: var(--font-weight-medium);
     cursor: pointer;
-    transition: all 0.15s ease;
+    transition: all var(--transition-fast);
 }
 
 .tab:hover {
     color: var(--color-text);
-    background: var(--color-surface-hover);
+    background: var(--color-surface-elevated);
 }
 
 .tab:focus {
@@ -159,7 +159,7 @@
 }
 
 .group_header:hover {
-    background: var(--color-surface-hover);
+    background: var(--color-surface-elevated);
 }
 
 .group_title {
@@ -283,7 +283,7 @@
 }
 
 .table tbody tr:hover {
-    background: var(--color-surface-hover);
+    background: var(--table-row-background-hover);
 }
 
 .table td {
@@ -307,7 +307,7 @@
     padding: var(--spacing-5);
     background: var(--color-surface-muted);
     border-radius: var(--radius-sm);
-    border-left: 3px solid var(--color-danger);
+    border-left: var(--border-width-medium) solid var(--color-danger);
 }
 
 .error_message {

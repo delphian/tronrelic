@@ -102,6 +102,11 @@ export class SystemMonitorController {
     res.json({ success: true, status });
   };
 
+  getClickHouseStatus = async (_req: Request, res: Response) => {
+    const status = await this.service.getClickHouseStatus();
+    res.json({ success: true, status });
+  };
+
   getServerMetrics = async (_req: Request, res: Response) => {
     const metrics = await this.service.getServerMetrics();
     res.json({ success: true, metrics });

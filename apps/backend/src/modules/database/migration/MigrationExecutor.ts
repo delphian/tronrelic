@@ -1,5 +1,5 @@
 import mongoose from 'mongoose';
-import type { IDatabaseService } from '@tronrelic/types';
+import type { IDatabaseService, IClickHouseService, IMigrationContext } from '@tronrelic/types';
 import type { IMigrationMetadata } from './types.js';
 import { MigrationTracker } from './MigrationTracker.js';
 import { logger } from '../../../lib/logger.js';
@@ -46,18 +46,58 @@ import { logger } from '../../../lib/logger.js';
  */
 export class MigrationExecutor {
     private readonly database: IDatabaseService;
+    private readonly clickhouse?: IClickHouseService;
     private readonly tracker: MigrationTracker;
     private isExecuting = false;
 
     /**
      * Create a new migration executor.
      *
-     * @param database - Database service for migration.up() method
+     * @param database - Database service for MongoDB migrations
      * @param tracker - Migration tracker for recording execution results
+     * @param clickhouse - Optional ClickHouse service for ClickHouse migrations
      */
-    constructor(database: IDatabaseService, tracker: MigrationTracker) {
+    constructor(
+        database: IDatabaseService,
+        tracker: MigrationTracker,
+        clickhouse?: IClickHouseService
+    ) {
         this.database = database;
         this.tracker = tracker;
+        this.clickhouse = clickhouse;
+    }
+
+    /**
+     * Build the migration context for executing migrations.
+     *
+     * @returns IMigrationContext with database and optionally ClickHouse
+     */
+    private buildMigrationContext(): IMigrationContext {
+        return {
+            database: this.database,
+            clickhouse: this.clickhouse
+        };
+    }
+
+    /**
+     * Check if a migration can be executed based on its target.
+     *
+     * ClickHouse migrations are skipped if ClickHouse is not configured.
+     *
+     * @param migration - Migration to check
+     * @returns Object with canExecute flag and optional skip reason
+     */
+    private checkMigrationTarget(migration: IMigrationMetadata): { canExecute: boolean; skipReason?: string } {
+        const target = migration.target || 'mongodb';
+
+        if (target === 'clickhouse' && !this.clickhouse) {
+            return {
+                canExecute: false,
+                skipReason: 'ClickHouse not configured (CLICKHOUSE_HOST not set)'
+            };
+        }
+
+        return { canExecute: true };
     }
 
     /**
@@ -121,6 +161,17 @@ export class MigrationExecutor {
     public async executeMigration(migration: IMigrationMetadata): Promise<void> {
         if (this.isExecuting) {
             throw new Error('Cannot execute migration: Another migration is already running');
+        }
+
+        // Check if migration can be executed based on target
+        const targetCheck = this.checkMigrationTarget(migration);
+        if (!targetCheck.canExecute) {
+            logger.warn({
+                migrationId: migration.id,
+                target: migration.target || 'mongodb',
+                reason: targetCheck.skipReason
+            }, 'Skipping migration (target not available)');
+            return;
         }
 
         this.isExecuting = true;
@@ -220,11 +271,12 @@ export class MigrationExecutor {
      */
     private async executeWithTransactionSupport(migration: IMigrationMetadata, startTime: number): Promise<void> {
         const session = await mongoose.startSession();
+        const context = this.buildMigrationContext();
 
         try {
             await session.withTransaction(async () => {
-                // Execute the migration
-                await migration.up(this.database);
+                // Execute the migration with context
+                await migration.up(context);
             });
 
             // Transaction committed successfully
@@ -278,9 +330,11 @@ export class MigrationExecutor {
      * @throws Error if migration fails
      */
     private async executeWithoutTransaction(migration: IMigrationMetadata, startTime: number): Promise<void> {
+        const context = this.buildMigrationContext();
+
         try {
-            // Execute the migration (no transaction protection)
-            await migration.up(this.database);
+            // Execute the migration with context (no transaction protection)
+            await migration.up(context);
 
             const duration = Date.now() - startTime;
             await this.tracker.recordSuccess(migration, duration);

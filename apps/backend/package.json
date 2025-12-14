@@ -15,6 +15,7 @@
     "markets:regression": "tsx ../../scripts/compare-market-fetchers.ts --json"
   },
   "dependencies": {
+    "@clickhouse/client": "^1.8.1",
     "@tronrelic/shared": "file:../../packages/shared",
     "@tronrelic/types": "file:../../packages/types",
     "axios": "^1.7.5",
