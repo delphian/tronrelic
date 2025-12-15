@@ -113,6 +113,14 @@ export class ClickHouseService implements IClickHouseService {
             database,
             username,
             password,
+            // Keep connections alive to avoid cold-start latency spikes
+            // Under memory pressure, connection re-establishment can take 1-6 seconds
+            keep_alive: {
+                enabled: true,
+                idle_socket_ttl: 60000 // Keep idle sockets for 60 seconds
+            },
+            // Request timeout for individual operations (prevents hung connections)
+            request_timeout: 30000,
             clickhouse_settings: {
                 // Enable async inserts for better write throughput
                 // Inserts are buffered and flushed in batches

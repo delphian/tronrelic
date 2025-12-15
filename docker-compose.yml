@@ -139,6 +139,8 @@ services:
                 condition: service_healthy
             redis:
                 condition: service_healthy
+            clickhouse:
+                condition: service_healthy
         networks:
             - tronrelic-network
         volumes:
