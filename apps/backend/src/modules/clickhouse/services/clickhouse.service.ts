@@ -303,6 +303,9 @@ export class ClickHouseService implements IClickHouseService {
         }
     }
 
+    /** Timeout for error polling queries in milliseconds */
+    private static readonly ERROR_POLL_QUERY_TIMEOUT_MS = 5000;
+
     /**
      * Poll system.asynchronous_insert_log for errors since last check.
      *
@@ -316,28 +319,40 @@ export class ClickHouseService implements IClickHouseService {
         }
 
         try {
-            const errors = await this.client.query({
-                query: `
-                    SELECT
-                        event_time,
-                        database,
-                        table,
-                        format,
-                        status,
-                        exception,
-                        bytes,
-                        rows
-                    FROM system.asynchronous_insert_log
-                    WHERE (status = 'ParsingError' OR status = 'FlushError')
-                      AND event_time > {lastPollTime:DateTime64(3)}
-                    ORDER BY event_time ASC
-                    LIMIT 100
-                `,
-                query_params: {
-                    lastPollTime: this.lastErrorPollTime.toISOString()
-                },
-                format: 'JSONEachRow'
-            });
+            // Use AbortController to enforce query timeout
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => {
+                controller.abort();
+            }, ClickHouseService.ERROR_POLL_QUERY_TIMEOUT_MS);
+
+            let errors;
+            try {
+                errors = await this.client.query({
+                    query: `
+                        SELECT
+                            event_time,
+                            database,
+                            table,
+                            format,
+                            status,
+                            exception,
+                            bytes,
+                            rows
+                        FROM system.asynchronous_insert_log
+                        WHERE (status = 'ParsingError' OR status = 'FlushError')
+                          AND event_time > {lastPollTime:DateTime64(3)}
+                        ORDER BY event_time ASC
+                        LIMIT 100
+                    `,
+                    query_params: {
+                        lastPollTime: this.lastErrorPollTime.toISOString()
+                    },
+                    format: 'JSONEachRow',
+                    abort_signal: controller.signal
+                });
+            } finally {
+                clearTimeout(timeoutId);
+            }
 
             const errorRows = await errors.json<{
                 event_time: string;
@@ -373,8 +388,15 @@ export class ClickHouseService implements IClickHouseService {
             const lastError = errorRows[errorRows.length - 1];
             this.lastErrorPollTime = new Date(lastError.event_time);
         } catch (error) {
-            // Don't spam logs if polling fails - just warn once
-            this.logger.warn({ error }, 'Failed to poll async insert errors');
+            // Check if this was a timeout (abort)
+            if (error instanceof Error && error.name === 'AbortError') {
+                this.logger.error(
+                    { timeoutMs: ClickHouseService.ERROR_POLL_QUERY_TIMEOUT_MS },
+                    'ClickHouse error polling query timed out'
+                );
+            } else {
+                this.logger.warn({ error }, 'Failed to poll async insert errors');
+            }
         }
     }
 }
