@@ -6,7 +6,8 @@ import type {
     IBlockData,
     IObserverStats,
     ISystemLogService,
-    ITransaction
+    ITransaction,
+    TransactionBatches
 } from '@tronrelic/types';
 
 type TransactionType = ITransaction['payload']['type'];
@@ -44,8 +45,8 @@ export class BlockchainObserverService implements IBlockchainObserverService {
     // Individual transaction subscribers (existing)
     private transactionTypeSubscribers = new Map<TransactionType, Set<IBaseObserver>>();
 
-    // Batch subscribers - receive all transactions of a type from a block at once
-    private batchTypeSubscribers = new Map<TransactionType, Set<IBaseBatchObserver>>();
+    // Batch subscribers - maps each observer to its subscribed transaction types
+    private batchObserverTypes = new Map<IBaseBatchObserver, Set<TransactionType>>();
 
     // Block subscribers - receive entire blocks with all transactions
     private blockSubscribers = new Set<IBaseBlockObserver>();
@@ -301,28 +302,35 @@ export class BlockchainObserverService implements IBlockchainObserverService {
     // =========================================================================
 
     /**
-     * Subscribe a batch observer to a specific transaction type.
+     * Subscribe a batch observer to one or more transaction types.
      *
      * Registers the observer to receive batched notifications containing all transactions
-     * of the specified type from each block. Instead of receiving individual transactions,
-     * the observer receives a single call with an array of all matching transactions after
-     * the block completes processing.
+     * of the specified types from each block. Instead of receiving individual transactions,
+     * the observer receives a single call with a record mapping transaction types to arrays
+     * of matching transactions after the block completes processing.
      *
-     * @param transactionType - The transaction type to observe (e.g., 'TransferContract')
-     * @param observer - The batch observer instance to notify with transaction arrays
+     * Observers receive exactly one callback per block containing all subscribed types that
+     * had transactions. Empty types are omitted from the payload.
+     *
+     * @param transactionTypes - Array of transaction types to observe (e.g., ['DelegateResourceContract', 'UnDelegateResourceContract'])
+     * @param observer - The batch observer instance to notify with transaction batches
      */
-    public subscribeTransactionTypeBatch(transactionType: string, observer: IBaseBatchObserver): void {
-        const subscribers = this.batchTypeSubscribers.get(transactionType as TransactionType) ?? new Set();
-        subscribers.add(observer);
-        this.batchTypeSubscribers.set(transactionType as TransactionType, subscribers);
+    public subscribeTransactionTypesBatch(transactionTypes: string[], observer: IBaseBatchObserver): void {
+        const subscribedTypes = this.batchObserverTypes.get(observer) ?? new Set<TransactionType>();
+
+        for (const type of transactionTypes) {
+            subscribedTypes.add(type as TransactionType);
+        }
+
+        this.batchObserverTypes.set(observer, subscribedTypes);
 
         this.logger.info(
             {
-                transactionType,
+                transactionTypes,
                 observerName: observer.getName(),
-                totalBatchSubscribers: subscribers.size
+                totalSubscribedTypes: subscribedTypes.size
             },
-            'Batch observer subscribed to transaction type'
+            'Batch observer subscribed to transaction types'
         );
     }
 
@@ -356,39 +364,54 @@ export class BlockchainObserverService implements IBlockchainObserverService {
      * Flush accumulated batches to batch subscribers.
      *
      * Called after all transactions in a block have been processed and accumulated.
-     * Delivers each transaction type's batch to subscribed batch observers using
-     * fire-and-forget semantics.
+     * Builds a combined payload for each observer containing all subscribed types that
+     * had transactions (empty types are omitted). Each observer receives exactly one
+     * callback per block with all its subscribed transaction types grouped together.
+     *
+     * Uses fire-and-forget semantics to avoid blocking the blockchain sync pipeline.
      */
     public async flushBatches(): Promise<void> {
-        for (const [txType, transactions] of this.batchAccumulator.entries()) {
-            if (transactions.length === 0) {
+        // Build combined payload for each observer based on their subscribed types
+        const notifications: Promise<void>[] = [];
+
+        for (const [observer, subscribedTypes] of this.batchObserverTypes.entries()) {
+            // Build the combined batch containing only types that have transactions
+            const combinedBatch: TransactionBatches = {};
+
+            for (const txType of subscribedTypes) {
+                const transactions = this.batchAccumulator.get(txType);
+                if (transactions && transactions.length > 0) {
+                    combinedBatch[txType] = transactions;
+                }
+            }
+
+            // Skip if no subscribed types had transactions
+            if (Object.keys(combinedBatch).length === 0) {
                 continue;
             }
 
-            const subscribers = this.batchTypeSubscribers.get(txType);
-            if (!subscribers || subscribers.size === 0) {
-                continue;
-            }
-
-            // Fire and forget - don't wait for batch observers to complete
-            const notifications = Array.from(subscribers).map(async observer => {
+            // Fire and forget - don't wait for batch observer to complete
+            const notification = (async () => {
                 try {
-                    await observer.enqueueBatch(transactions);
+                    await observer.enqueueBatch(combinedBatch);
                 } catch (error) {
+                    const totalTransactions = Object.values(combinedBatch).reduce((sum, arr) => sum + arr.length, 0);
                     this.logger.error(
                         {
                             observer: observer.getName(),
-                            transactionType: txType,
-                            batchSize: transactions.length,
+                            transactionTypes: Object.keys(combinedBatch),
+                            totalTransactions,
                             error
                         },
                         'Failed to enqueue batch to observer'
                     );
                 }
-            });
+            })();
 
-            void Promise.all(notifications);
+            notifications.push(notification);
         }
+
+        void Promise.all(notifications);
 
         // Clear accumulator after flush
         this.batchAccumulator.clear();
@@ -398,12 +421,16 @@ export class BlockchainObserverService implements IBlockchainObserverService {
      * Get batch subscription statistics.
      *
      * Returns subscriber counts by transaction type for batch observers.
+     * Since observers can now subscribe to multiple types, this counts
+     * how many observers are subscribed to each type.
      */
     public getBatchSubscriptionStats(): Record<string, number> {
         const stats: Record<string, number> = {};
 
-        for (const [type, subscribers] of this.batchTypeSubscribers.entries()) {
-            stats[type] = subscribers.size;
+        for (const [_observer, subscribedTypes] of this.batchObserverTypes.entries()) {
+            for (const type of subscribedTypes) {
+                stats[type] = (stats[type] ?? 0) + 1;
+            }
         }
 
         return stats;
@@ -499,10 +526,8 @@ export class BlockchainObserverService implements IBlockchainObserverService {
         }
 
         // Collect batch observers
-        for (const subscribers of this.batchTypeSubscribers.values()) {
-            for (const observer of subscribers) {
-                allObservers.add(observer);
-            }
+        for (const observer of this.batchObserverTypes.keys()) {
+            allObservers.add(observer);
         }
 
         // Collect block observers
@@ -525,7 +550,7 @@ export class BlockchainObserverService implements IBlockchainObserverService {
     public static resetForTesting(): void {
         if (BlockchainObserverService.instance) {
             BlockchainObserverService.instance.transactionTypeSubscribers.clear();
-            BlockchainObserverService.instance.batchTypeSubscribers.clear();
+            BlockchainObserverService.instance.batchObserverTypes.clear();
             BlockchainObserverService.instance.blockSubscribers.clear();
             BlockchainObserverService.instance.batchAccumulator.clear();
             BlockchainObserverService.instance = null;

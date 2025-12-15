@@ -71,17 +71,20 @@ export interface IBlockchainObserverService {
     // Batch subscription methods
 
     /**
-     * Subscribe a batch observer to a specific transaction type.
+     * Subscribe a batch observer to one or more transaction types.
      *
      * Registers the observer to receive batched notifications containing all transactions
-     * of the specified type from each block. Instead of receiving individual transactions,
-     * the observer receives a single call with an array of all matching transactions after
-     * the block completes processing.
+     * of the specified types from each block. Instead of receiving individual transactions,
+     * the observer receives a single call with a record mapping transaction types to arrays
+     * of matching transactions after the block completes processing.
      *
-     * @param transactionType - The transaction type to observe (e.g., 'TransferContract')
-     * @param observer - The batch observer instance to notify with transaction arrays
+     * Observers receive exactly one callback per block containing all subscribed types that
+     * had transactions. Empty types are omitted from the payload.
+     *
+     * @param transactionTypes - Array of transaction types to observe (e.g., ['DelegateResourceContract', 'UnDelegateResourceContract'])
+     * @param observer - The batch observer instance to notify with transaction batches
      */
-    subscribeTransactionTypeBatch(transactionType: string, observer: IBaseBatchObserver): void;
+    subscribeTransactionTypesBatch(transactionTypes: string[], observer: IBaseBatchObserver): void;
 
     /**
      * Accumulate a transaction for batch notification.

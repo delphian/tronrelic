@@ -6,7 +6,7 @@
  * emit real-time updates, and monitor observer performance.
  */
 export type { IBaseObserver } from './IBaseObserver.js';
-export type { IBaseBatchObserver } from './IBaseBatchObserver.js';
+export type { IBaseBatchObserver, TransactionBatches } from './IBaseBatchObserver.js';
 export type { IBaseBlockObserver } from './IBaseBlockObserver.js';
 export type { IBlockData } from './IBlockData.js';
 export type { IBlockchainObserverService } from './IBlockchainObserverService.js';

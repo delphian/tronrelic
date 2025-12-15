@@ -1,4 +1,4 @@
-import type { IBaseBatchObserver, IObserverStats, ISystemLogService, ITransaction } from '@tronrelic/types';
+import type { IBaseBatchObserver, IObserverStats, ISystemLogService, ITransaction, TransactionBatches } from '@tronrelic/types';
 
 /**
  * Base class for batch transaction observers.
@@ -8,15 +8,16 @@ import type { IBaseBatchObserver, IObserverStats, ISystemLogService, ITransactio
  * to prevent memory issues while preserving queued work. Observers should extend this class
  * and implement the abstract processBatch method to handle batch-specific logic.
  *
- * Batch observers receive all transactions of a subscribed type from a block at once, enabling
- * efficient bulk operations such as batch database inserts or aggregated analytics.
+ * Batch observers subscribe to one or more transaction types and receive all matching
+ * transactions from a block at once, grouped by type. This enables efficient bulk operations
+ * such as batch database inserts, aggregated analytics, and atomic cross-type processing.
  *
  * Automatically tracks performance metrics including processing time, queue depth, error rates,
  * and batch-specific statistics like average batch size.
  */
 export abstract class BaseBatchObserver implements IBaseBatchObserver {
     private static readonly MAX_QUEUE_SIZE = 100;
-    private queue: ITransaction[][] = [];
+    private queue: TransactionBatches[] = [];
     private isProcessing = false;
 
     protected abstract readonly name: string;
@@ -51,49 +52,54 @@ export abstract class BaseBatchObserver implements IBaseBatchObserver {
     }
 
     /**
-     * Process a batch of transactions.
+     * Process a batch of transactions grouped by type.
      *
      * This method is called for each batch of transactions that matches the observer's
      * subscription criteria. Implementations should be idempotent and handle errors gracefully
      * as failures do not block blockchain processing. The method is async fire-and-forget -
      * errors are logged but not propagated.
      *
-     * @param transactions - Array of enriched transactions of the subscribed type from a single block
+     * @param batches - Record mapping transaction types to arrays of enriched transactions from a single block
      */
-    protected abstract processBatch(transactions: ITransaction[]): Promise<void>;
+    protected abstract processBatch(batches: TransactionBatches): Promise<void>;
 
     /**
      * Enqueue a single transaction for processing.
      *
      * For compatibility with IBaseObserver, but batch observers should primarily receive
-     * transactions via enqueueBatch(). This method wraps the single transaction in an array.
+     * transactions via enqueueBatch(). This method wraps the single transaction in a batch
+     * record keyed by its transaction type.
      *
      * @param transaction - The enriched transaction to process
      */
     public async enqueue(transaction: ITransaction): Promise<void> {
-        await this.enqueueBatch([transaction]);
+        const batches: TransactionBatches = {
+            [transaction.payload.type]: [transaction]
+        };
+        await this.enqueueBatch(batches);
     }
 
     /**
      * Enqueue a batch of transactions for processing.
      *
-     * Adds the transaction array to the internal queue and triggers processing if not already
+     * Adds the transaction batches to the internal queue and triggers processing if not already
      * running. If the queue exceeds MAX_QUEUE_SIZE batches, the incoming batch is dropped and
      * logged to prevent memory overflow while preserving existing queued work.
      *
-     * @param transactions - Array of enriched transactions to process as a batch
+     * @param batches - Record mapping transaction types to arrays of enriched transactions
      */
-    public async enqueueBatch(transactions: ITransaction[]): Promise<void> {
+    public async enqueueBatch(batches: TransactionBatches): Promise<void> {
+        const totalTransactions = Object.values(batches).reduce((sum, arr) => sum + arr.length, 0);
+
         if (this.queue.length >= BaseBatchObserver.MAX_QUEUE_SIZE) {
-            const droppedTransactions = transactions.length;
-            this.totalDropped += droppedTransactions;
+            this.totalDropped += totalTransactions;
 
             this.logger.error(
                 {
                     observer: this.name,
                     queueSize: this.queue.length,
                     droppedBatches: 1,
-                    droppedTransactions,
+                    droppedTransactions: totalTransactions,
                     totalDropped: this.totalDropped
                 },
                 'Batch observer queue overflow - dropping incoming batch to prevent memory issues'
@@ -101,7 +107,7 @@ export abstract class BaseBatchObserver implements IBaseBatchObserver {
             return;
         }
 
-        this.queue.push(transactions);
+        this.queue.push(batches);
 
         if (!this.isProcessing) {
             void this.processQueue();
@@ -126,18 +132,21 @@ export abstract class BaseBatchObserver implements IBaseBatchObserver {
 
         try {
             while (this.queue.length > 0) {
-                const batch = this.queue.shift();
-                if (!batch || batch.length === 0) {
+                const batches = this.queue.shift();
+                if (!batches || Object.keys(batches).length === 0) {
                     continue;
                 }
 
+                // Count total transactions across all types in this batch
+                const transactionCount = Object.values(batches).reduce((sum, arr) => sum + arr.length, 0);
+
                 const startTime = Date.now();
                 try {
-                    await this.processBatch(batch);
+                    await this.processBatch(batches);
 
                     // Track successful processing
                     const processingTimeMs = Date.now() - startTime;
-                    this.totalProcessed += batch.length;
+                    this.totalProcessed += transactionCount;
                     this.totalProcessingTimeMs += processingTimeMs;
                     this.minProcessingTimeMs = Math.min(this.minProcessingTimeMs, processingTimeMs);
                     this.maxProcessingTimeMs = Math.max(this.maxProcessingTimeMs, processingTimeMs);
@@ -145,8 +154,8 @@ export abstract class BaseBatchObserver implements IBaseBatchObserver {
 
                     // Track batch-specific statistics
                     this.batchesProcessed += 1;
-                    this.totalTransactionsInBatches += batch.length;
-                    this.maxBatchSize = Math.max(this.maxBatchSize, batch.length);
+                    this.totalTransactionsInBatches += transactionCount;
+                    this.maxBatchSize = Math.max(this.maxBatchSize, transactionCount);
                 } catch (error) {
                     // Track error
                     this.totalErrors += 1;
@@ -155,7 +164,8 @@ export abstract class BaseBatchObserver implements IBaseBatchObserver {
                     this.logger.error(
                         {
                             observer: this.name,
-                            batchSize: batch.length,
+                            batchSize: transactionCount,
+                            transactionTypes: Object.keys(batches),
                             error,
                             totalErrors: this.totalErrors,
                             errorRate: this.calculateErrorRate()

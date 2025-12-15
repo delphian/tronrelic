@@ -1,7 +1,7 @@
 /// <reference types="vitest" />
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import type { IBaseObserver, IBaseBatchObserver, IBaseBlockObserver, IBlockData, IObserverStats, ISystemLogService, ITransaction } from '@tronrelic/types';
+import type { IBaseObserver, IBaseBatchObserver, IBaseBlockObserver, IBlockData, IObserverStats, ISystemLogService, ITransaction, TransactionBatches } from '@tronrelic/types';
 import { BlockchainObserverService } from '../blockchain-observer.service.js';
 
 /**
@@ -528,18 +528,18 @@ describe('BlockchainObserverService', () => {
     // =========================================================================
 
     describe('Batch Observer Subscription', () => {
-        it('should subscribe batch observer to transaction type', () => {
+        it('should subscribe batch observer to transaction types', () => {
             const batchObserver = new MockBatchObserver('batch-observer');
 
-            service.subscribeTransactionTypeBatch('TransferContract', batchObserver);
+            service.subscribeTransactionTypesBatch(['TransferContract'], batchObserver);
 
             expect(mockLogger.info).toHaveBeenCalledWith(
                 expect.objectContaining({
-                    transactionType: 'TransferContract',
+                    transactionTypes: ['TransferContract'],
                     observerName: 'batch-observer',
-                    totalBatchSubscribers: 1
+                    totalSubscribedTypes: 1
                 }),
-                'Batch observer subscribed to transaction type'
+                'Batch observer subscribed to transaction types'
             );
         });
 
@@ -547,8 +547,8 @@ describe('BlockchainObserverService', () => {
             const observer1 = new MockBatchObserver('batch-1');
             const observer2 = new MockBatchObserver('batch-2');
 
-            service.subscribeTransactionTypeBatch('TransferContract', observer1);
-            service.subscribeTransactionTypeBatch('TransferContract', observer2);
+            service.subscribeTransactionTypesBatch(['TransferContract'], observer1);
+            service.subscribeTransactionTypesBatch(['TransferContract'], observer2);
 
             const stats = service.getBatchSubscriptionStats();
             expect(stats['TransferContract']).toBe(2);
@@ -559,10 +559,23 @@ describe('BlockchainObserverService', () => {
             const batchObserver = new MockBatchObserver('batch');
 
             service.subscribeTransactionType('TransferContract', regularObserver);
-            service.subscribeTransactionTypeBatch('TransferContract', batchObserver);
+            service.subscribeTransactionTypesBatch(['TransferContract'], batchObserver);
 
             expect(service.getSubscriptionStats()['TransferContract']).toBe(1);
             expect(service.getBatchSubscriptionStats()['TransferContract']).toBe(1);
+        });
+
+        it('should allow subscribing to multiple types in single call', () => {
+            const batchObserver = new MockBatchObserver('multi-type-observer');
+
+            service.subscribeTransactionTypesBatch(
+                ['DelegateResourceContract', 'UnDelegateResourceContract'],
+                batchObserver
+            );
+
+            const stats = service.getBatchSubscriptionStats();
+            expect(stats['DelegateResourceContract']).toBe(1);
+            expect(stats['UnDelegateResourceContract']).toBe(1);
         });
     });
 
@@ -587,7 +600,7 @@ describe('BlockchainObserverService', () => {
 
             // Verify by flushing - no notifications should occur
             const batchObserver = new MockBatchObserver('batch');
-            service.subscribeTransactionTypeBatch('TransferContract', batchObserver);
+            service.subscribeTransactionTypesBatch(['TransferContract'], batchObserver);
 
             await service.flushBatches();
 
@@ -597,7 +610,7 @@ describe('BlockchainObserverService', () => {
 
         it('should flush accumulated batches to batch observers', async () => {
             const batchObserver = new MockBatchObserver('batch-observer');
-            service.subscribeTransactionTypeBatch('TransferContract', batchObserver);
+            service.subscribeTransactionTypesBatch(['TransferContract'], batchObserver);
 
             // Accumulate transactions
             service.accumulateForBatch(createMockTransaction('TransferContract', 'tx1'));
@@ -609,15 +622,15 @@ describe('BlockchainObserverService', () => {
 
             const batches = batchObserver.getEnqueuedBatches();
             expect(batches).toHaveLength(1);
-            expect(batches[0]).toHaveLength(3);
+            expect(batchObserver.getTransactionsOfType('TransferContract')).toHaveLength(3);
         });
 
         it('should flush different transaction types to their respective observers', async () => {
             const transferObserver = new MockBatchObserver('transfer-batch');
             const triggerObserver = new MockBatchObserver('trigger-batch');
 
-            service.subscribeTransactionTypeBatch('TransferContract', transferObserver);
-            service.subscribeTransactionTypeBatch('TriggerSmartContract', triggerObserver);
+            service.subscribeTransactionTypesBatch(['TransferContract'], transferObserver);
+            service.subscribeTransactionTypesBatch(['TriggerSmartContract'], triggerObserver);
 
             service.accumulateForBatch(createMockTransaction('TransferContract', 'tx1'));
             service.accumulateForBatch(createMockTransaction('TransferContract', 'tx2'));
@@ -626,13 +639,33 @@ describe('BlockchainObserverService', () => {
             await service.flushBatches();
             await new Promise(resolve => setTimeout(resolve, 10));
 
-            expect(transferObserver.getEnqueuedBatches()[0]).toHaveLength(2);
-            expect(triggerObserver.getEnqueuedBatches()[0]).toHaveLength(1);
+            expect(transferObserver.getTransactionsOfType('TransferContract')).toHaveLength(2);
+            expect(triggerObserver.getTransactionsOfType('TriggerSmartContract')).toHaveLength(1);
+        });
+
+        it('should deliver multiple types in single callback for multi-type subscribers', async () => {
+            const multiTypeObserver = new MockBatchObserver('multi-type');
+            service.subscribeTransactionTypesBatch(
+                ['DelegateResourceContract', 'UnDelegateResourceContract'],
+                multiTypeObserver
+            );
+
+            service.accumulateForBatch(createMockTransaction('DelegateResourceContract', 'tx1'));
+            service.accumulateForBatch(createMockTransaction('DelegateResourceContract', 'tx2'));
+            service.accumulateForBatch(createMockTransaction('UnDelegateResourceContract', 'tx3'));
+
+            await service.flushBatches();
+            await new Promise(resolve => setTimeout(resolve, 10));
+
+            // Should receive exactly ONE callback with both types
+            expect(multiTypeObserver.getEnqueuedBatches()).toHaveLength(1);
+            expect(multiTypeObserver.getTransactionsOfType('DelegateResourceContract')).toHaveLength(2);
+            expect(multiTypeObserver.getTransactionsOfType('UnDelegateResourceContract')).toHaveLength(1);
         });
 
         it('should clear accumulator after flush', async () => {
             const batchObserver = new MockBatchObserver('batch');
-            service.subscribeTransactionTypeBatch('TransferContract', batchObserver);
+            service.subscribeTransactionTypesBatch(['TransferContract'], batchObserver);
 
             service.accumulateForBatch(createMockTransaction('TransferContract', 'tx1'));
             await service.flushBatches();
@@ -650,8 +683,8 @@ describe('BlockchainObserverService', () => {
             const goodObserver = new MockBatchObserver('good-batch');
             const badObserver = new MockBatchObserver('bad-batch', true);
 
-            service.subscribeTransactionTypeBatch('TransferContract', goodObserver);
-            service.subscribeTransactionTypeBatch('TransferContract', badObserver);
+            service.subscribeTransactionTypesBatch(['TransferContract'], goodObserver);
+            service.subscribeTransactionTypesBatch(['TransferContract'], badObserver);
 
             service.accumulateForBatch(createMockTransaction('TransferContract', 'tx1'));
             await service.flushBatches();
@@ -661,7 +694,7 @@ describe('BlockchainObserverService', () => {
             expect(mockLogger.error).toHaveBeenCalledWith(
                 expect.objectContaining({
                     observer: 'bad-batch',
-                    transactionType: 'TransferContract'
+                    transactionTypes: ['TransferContract']
                 }),
                 'Failed to enqueue batch to observer'
             );
@@ -669,13 +702,32 @@ describe('BlockchainObserverService', () => {
 
         it('should not flush empty batches', async () => {
             const batchObserver = new MockBatchObserver('batch');
-            service.subscribeTransactionTypeBatch('TransferContract', batchObserver);
+            service.subscribeTransactionTypesBatch(['TransferContract'], batchObserver);
 
             // Flush without accumulating anything
             await service.flushBatches();
             await new Promise(resolve => setTimeout(resolve, 10));
 
             expect(batchObserver.getEnqueuedBatches()).toHaveLength(0);
+        });
+
+        it('should omit types with no transactions from callback payload', async () => {
+            const multiTypeObserver = new MockBatchObserver('multi-type');
+            service.subscribeTransactionTypesBatch(
+                ['DelegateResourceContract', 'UnDelegateResourceContract'],
+                multiTypeObserver
+            );
+
+            // Only accumulate one type
+            service.accumulateForBatch(createMockTransaction('DelegateResourceContract', 'tx1'));
+
+            await service.flushBatches();
+            await new Promise(resolve => setTimeout(resolve, 10));
+
+            const batches = multiTypeObserver.getEnqueuedBatches();
+            expect(batches).toHaveLength(1);
+            expect(batches[0]['DelegateResourceContract']).toBeDefined();
+            expect(batches[0]['UnDelegateResourceContract']).toBeUndefined();
         });
     });
 
@@ -782,7 +834,7 @@ describe('BlockchainObserverService', () => {
             const batchObserver = new MockBatchObserver('batch');
 
             service.subscribeTransactionType('TransferContract', regularObserver);
-            service.subscribeTransactionTypeBatch('TransferContract', batchObserver);
+            service.subscribeTransactionTypesBatch(['TransferContract'], batchObserver);
 
             const allStats = service.getAllObserverStats();
             expect(allStats).toHaveLength(2);
@@ -827,7 +879,7 @@ describe('BlockchainObserverService', () => {
             block.setStats({ totalProcessed: 25 });
 
             service.subscribeTransactionType('TransferContract', regular);
-            service.subscribeTransactionTypeBatch('TransferContract', batch);
+            service.subscribeTransactionTypesBatch(['TransferContract'], batch);
             service.subscribeBlock(block);
 
             const aggregate = service.getAggregateStats();
@@ -841,7 +893,7 @@ describe('BlockchainObserverService', () => {
             const batchObserver = new MockBatchObserver('batch');
             const blockObserver = new MockBlockObserver('block');
 
-            service.subscribeTransactionTypeBatch('TransferContract', batchObserver);
+            service.subscribeTransactionTypesBatch(['TransferContract'], batchObserver);
             service.subscribeBlock(blockObserver);
 
             expect(service.getBatchSubscriptionStats()['TransferContract']).toBe(1);
@@ -866,7 +918,7 @@ describe('BlockchainObserverService', () => {
  * Mock batch observer implementation for testing.
  */
 class MockBatchObserver implements IBaseBatchObserver {
-    private enqueuedBatches: ITransaction[][] = [];
+    private enqueuedBatches: TransactionBatches[] = [];
     private shouldThrowError = false;
     private mockStats: IObserverStats;
 
@@ -898,15 +950,25 @@ class MockBatchObserver implements IBaseBatchObserver {
     }
 
     public async enqueue(transaction: ITransaction): Promise<void> {
-        await this.enqueueBatch([transaction]);
+        const batches: TransactionBatches = {
+            [transaction.payload.type]: [transaction]
+        };
+        await this.enqueueBatch(batches);
     }
 
-    public async enqueueBatch(transactions: ITransaction[]): Promise<void> {
+    public async enqueueBatch(batches: TransactionBatches): Promise<void> {
         if (this.shouldThrowError) {
             throw new Error(`Mock error from ${this.name}`);
         }
-        this.enqueuedBatches.push([...transactions]);
-        this.mockStats.totalProcessed += transactions.length;
+        // Deep copy the batches
+        const copy: TransactionBatches = {};
+        for (const [type, transactions] of Object.entries(batches)) {
+            copy[type] = [...transactions];
+        }
+        this.enqueuedBatches.push(copy);
+
+        const totalTransactions = Object.values(batches).reduce((sum, arr) => sum + arr.length, 0);
+        this.mockStats.totalProcessed += totalTransactions;
         this.mockStats.batchesProcessed = (this.mockStats.batchesProcessed || 0) + 1;
     }
 
@@ -914,8 +976,29 @@ class MockBatchObserver implements IBaseBatchObserver {
         return this.mockStats;
     }
 
-    public getEnqueuedBatches(): ITransaction[][] {
+    public getEnqueuedBatches(): TransactionBatches[] {
         return this.enqueuedBatches;
+    }
+
+    /**
+     * Helper to get total transaction count across all enqueued batches.
+     */
+    public getTotalTransactionCount(): number {
+        return this.enqueuedBatches.reduce((total, batch) =>
+            total + Object.values(batch).reduce((sum, arr) => sum + arr.length, 0), 0);
+    }
+
+    /**
+     * Helper to get all transactions of a specific type from enqueued batches.
+     */
+    public getTransactionsOfType(type: string): ITransaction[] {
+        const result: ITransaction[] = [];
+        for (const batch of this.enqueuedBatches) {
+            if (batch[type]) {
+                result.push(...batch[type]);
+            }
+        }
+        return result;
     }
 
     public setStats(stats: Partial<IObserverStats>): void {
