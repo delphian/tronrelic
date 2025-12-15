@@ -31,6 +31,15 @@ export class ClickHouseService implements IClickHouseService {
     private logger: ISystemLogService;
     private connected: boolean = false;
 
+    /** Interval handle for async insert error polling */
+    private errorPollInterval: ReturnType<typeof setInterval> | null = null;
+
+    /** Timestamp of last polled error to avoid duplicates */
+    private lastErrorPollTime: Date = new Date();
+
+    /** Polling interval in milliseconds (default: 30 seconds) */
+    private static readonly ERROR_POLL_INTERVAL_MS = 30_000;
+
     /**
      * Private constructor - use setDependencies() and getInstance().
      *
@@ -122,6 +131,9 @@ export class ClickHouseService implements IClickHouseService {
 
         this.connected = true;
         this.logger.info({ host, database }, 'Connected to ClickHouse');
+
+        // Start polling for async insert errors
+        this.startErrorPolling();
     }
 
     /**
@@ -236,6 +248,9 @@ export class ClickHouseService implements IClickHouseService {
             return;
         }
 
+        // Stop error polling
+        this.stopErrorPolling();
+
         try {
             await this.client.close();
             this.connected = false;
@@ -254,5 +269,112 @@ export class ClickHouseService implements IClickHouseService {
      */
     getClient(): ClickHouseClient {
         return this.client;
+    }
+
+    /**
+     * Start periodic polling for async insert errors.
+     *
+     * ClickHouse async inserts (wait_for_async_insert: 0) return immediately
+     * without waiting for confirmation. Errors occur in background processing
+     * and are logged to system.asynchronous_insert_log. This polling surfaces
+     * those errors in our application logs.
+     */
+    private startErrorPolling(): void {
+        if (this.errorPollInterval) {
+            return;
+        }
+
+        this.lastErrorPollTime = new Date();
+        this.errorPollInterval = setInterval(() => {
+            void this.pollAsyncInsertErrors();
+        }, ClickHouseService.ERROR_POLL_INTERVAL_MS);
+
+        this.logger.info('Started async insert error polling');
+    }
+
+    /**
+     * Stop the error polling interval.
+     */
+    private stopErrorPolling(): void {
+        if (this.errorPollInterval) {
+            clearInterval(this.errorPollInterval);
+            this.errorPollInterval = null;
+            this.logger.info('Stopped async insert error polling');
+        }
+    }
+
+    /**
+     * Poll system.asynchronous_insert_log for errors since last check.
+     *
+     * Queries ClickHouse's internal log table for failed async inserts and
+     * surfaces them as error logs in our application. Only retrieves errors
+     * newer than the last poll to avoid duplicate logging.
+     */
+    private async pollAsyncInsertErrors(): Promise<void> {
+        if (!this.connected) {
+            return;
+        }
+
+        try {
+            const errors = await this.client.query({
+                query: `
+                    SELECT
+                        event_time,
+                        database,
+                        table,
+                        format,
+                        status,
+                        exception,
+                        bytes,
+                        rows
+                    FROM system.asynchronous_insert_log
+                    WHERE (status = 'ParsingError' OR status = 'FlushError')
+                      AND event_time > {lastPollTime:DateTime64(3)}
+                    ORDER BY event_time ASC
+                    LIMIT 100
+                `,
+                query_params: {
+                    lastPollTime: this.lastErrorPollTime.toISOString()
+                },
+                format: 'JSONEachRow'
+            });
+
+            const errorRows = await errors.json<{
+                event_time: string;
+                database: string;
+                table: string;
+                format: string;
+                status: string;
+                exception: string;
+                bytes: number;
+                rows: number;
+            }>();
+
+            if (errorRows.length === 0) {
+                // No errors, advance poll time to current time
+                this.lastErrorPollTime = new Date();
+                return;
+            }
+
+            this.logger.info({ errorCount: errorRows.length }, 'ClickHouse async insert errors detected');
+
+            for (const row of errorRows) {
+                this.logger.error({
+                    table: `${row.database}.${row.table}`,
+                    status: row.status,
+                    format: row.format,
+                    bytes: row.bytes,
+                    rows: row.rows,
+                    exception: row.exception.substring(0, 500)
+                }, 'ClickHouse async insert failed');
+            }
+
+            // Update last poll time to the most recent error
+            const lastError = errorRows[errorRows.length - 1];
+            this.lastErrorPollTime = new Date(lastError.event_time);
+        } catch (error) {
+            // Don't spam logs if polling fails - just warn once
+            this.logger.warn({ error }, 'Failed to poll async insert errors');
+        }
     }
 }

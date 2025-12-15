@@ -2,6 +2,8 @@ import type { AxiosInstance } from 'axios';
 import type { IBlockchainObserverService } from './IBlockchainObserverService.js';
 import type { IWebSocketService } from './IWebSocketService.js';
 import type { IBaseObserver } from './IBaseObserver.js';
+import type { IBaseBatchObserver } from './IBaseBatchObserver.js';
+import type { IBaseBlockObserver } from './IBaseBlockObserver.js';
 import type { IDatabaseService } from '../database/IDatabaseService.js';
 import type { IClickHouseService } from '../clickhouse/IClickHouseService.js';
 import type { IPluginWebSocketManager } from './IPluginWebSocketManager.js';
@@ -43,6 +45,22 @@ export interface IPluginContext {
      * with plugin metadata baked in.
      */
     BaseObserver: abstract new (logger: ISystemLogService) => IBaseObserver;
+
+    /**
+     * Base batch observer class constructor for plugins to extend.
+     *
+     * Batch observers receive all transactions of a subscribed type from a block at once,
+     * enabling efficient bulk processing patterns such as batch database inserts.
+     */
+    BaseBatchObserver: abstract new (logger: ISystemLogService) => IBaseBatchObserver;
+
+    /**
+     * Base block observer class constructor for plugins to extend.
+     *
+     * Block observers receive entire blocks with all their transactions after processing
+     * completes, enabling cross-transaction analysis and block-level metrics calculation.
+     */
+    BaseBlockObserver: abstract new (logger: ISystemLogService) => IBaseBlockObserver;
 
     /** Plugin-scoped database access with automatic collection prefixing */
     database: IDatabaseService;
