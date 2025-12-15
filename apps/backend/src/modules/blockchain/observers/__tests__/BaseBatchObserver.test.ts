@@ -1,7 +1,7 @@
 /// <reference types="vitest" />
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import type { ISystemLogService, ITransaction, IObserverStats } from '@tronrelic/types';
+import type { ISystemLogService, ITransaction, IObserverStats, TransactionBatches } from '@tronrelic/types';
 import { BaseBatchObserver } from '../BaseBatchObserver.js';
 
 /**
@@ -49,7 +49,7 @@ class MockLogger implements ISystemLogService {
  */
 class TestBatchObserver extends BaseBatchObserver {
     protected readonly name = 'TestBatchObserver';
-    public processedBatches: ITransaction[][] = [];
+    public processedBatches: TransactionBatches[] = [];
     private shouldThrowError = false;
     private processingDelayMs = 0;
 
@@ -61,7 +61,7 @@ class TestBatchObserver extends BaseBatchObserver {
         this.processingDelayMs = delayMs;
     }
 
-    protected async processBatch(transactions: ITransaction[]): Promise<void> {
+    protected async processBatch(batches: TransactionBatches): Promise<void> {
         if (this.processingDelayMs > 0) {
             await new Promise(resolve => setTimeout(resolve, this.processingDelayMs));
         }
@@ -70,11 +70,37 @@ class TestBatchObserver extends BaseBatchObserver {
             throw new Error('Test error from batch processing');
         }
 
-        this.processedBatches.push([...transactions]);
+        // Deep copy the batches
+        const copy: TransactionBatches = {};
+        for (const [type, transactions] of Object.entries(batches)) {
+            copy[type] = [...transactions];
+        }
+        this.processedBatches.push(copy);
     }
 
     public clearProcessed(): void {
         this.processedBatches = [];
+    }
+
+    /**
+     * Helper to count total transactions across all processed batches.
+     */
+    public getTotalTransactionCount(): number {
+        return this.processedBatches.reduce((total, batch) =>
+            total + Object.values(batch).reduce((sum, arr) => sum + arr.length, 0), 0);
+    }
+
+    /**
+     * Helper to get all transactions of a specific type from processed batches.
+     */
+    public getTransactionsOfType(type: string): ITransaction[] {
+        const result: ITransaction[] = [];
+        for (const batch of this.processedBatches) {
+            if (batch[type]) {
+                result.push(...batch[type]);
+            }
+        }
+        return result;
     }
 }
 
@@ -114,10 +140,37 @@ function createMockTransaction(type: string, txId?: string): ITransaction {
  * @param type - Transaction type
  * @returns Array of mock transactions
  */
-function createMockBatch(count: number, type: string = 'TransferContract'): ITransaction[] {
+function createMockTransactionArray(count: number, type: string = 'TransferContract'): ITransaction[] {
     return Array.from({ length: count }, (_, i) =>
         createMockTransaction(type, `batch_tx_${i}`)
     );
+}
+
+/**
+ * Create a TransactionBatches object for testing.
+ *
+ * @param count - Number of transactions to create
+ * @param type - Transaction type
+ * @returns TransactionBatches object with single type
+ */
+function createMockBatch(count: number, type: string = 'TransferContract'): TransactionBatches {
+    return {
+        [type]: createMockTransactionArray(count, type)
+    };
+}
+
+/**
+ * Create a multi-type TransactionBatches object for testing.
+ *
+ * @param typeCounts - Object mapping transaction types to counts
+ * @returns TransactionBatches with multiple types
+ */
+function createMultiTypeBatch(typeCounts: Record<string, number>): TransactionBatches {
+    const batches: TransactionBatches = {};
+    for (const [type, count] of Object.entries(typeCounts)) {
+        batches[type] = createMockTransactionArray(count, type);
+    }
+    return batches;
 }
 
 describe('BaseBatchObserver', () => {
@@ -158,7 +211,7 @@ describe('BaseBatchObserver', () => {
             await new Promise(resolve => setTimeout(resolve, 50));
 
             expect(observer.processedBatches).toHaveLength(1);
-            expect(observer.processedBatches[0]).toHaveLength(5);
+            expect(observer.getTransactionsOfType('TransferContract')).toHaveLength(5);
         });
 
         it('should process multiple batches serially', async () => {
@@ -173,13 +226,11 @@ describe('BaseBatchObserver', () => {
             await new Promise(resolve => setTimeout(resolve, 100));
 
             expect(observer.processedBatches).toHaveLength(3);
-            expect(observer.processedBatches[0]).toHaveLength(3);
-            expect(observer.processedBatches[1]).toHaveLength(5);
-            expect(observer.processedBatches[2]).toHaveLength(2);
+            expect(observer.getTotalTransactionCount()).toBe(10); // 3 + 5 + 2
         });
 
         it('should handle empty batches gracefully', async () => {
-            await observer.enqueueBatch([]);
+            await observer.enqueueBatch({});
 
             await new Promise(resolve => setTimeout(resolve, 50));
 
@@ -202,6 +253,21 @@ describe('BaseBatchObserver', () => {
 
             expect(observer.processedBatches).toHaveLength(2);
         });
+
+        it('should handle multi-type batches', async () => {
+            const batch = createMultiTypeBatch({
+                'DelegateResourceContract': 3,
+                'UnDelegateResourceContract': 2
+            });
+
+            await observer.enqueueBatch(batch);
+            await new Promise(resolve => setTimeout(resolve, 50));
+
+            expect(observer.processedBatches).toHaveLength(1);
+            expect(observer.getTransactionsOfType('DelegateResourceContract')).toHaveLength(3);
+            expect(observer.getTransactionsOfType('UnDelegateResourceContract')).toHaveLength(2);
+            expect(observer.getTotalTransactionCount()).toBe(5);
+        });
     });
 
     describe('Single Transaction Enqueue (IBaseObserver compatibility)', () => {
@@ -213,8 +279,9 @@ describe('BaseBatchObserver', () => {
             await new Promise(resolve => setTimeout(resolve, 50));
 
             expect(observer.processedBatches).toHaveLength(1);
-            expect(observer.processedBatches[0]).toHaveLength(1);
-            expect(observer.processedBatches[0][0].payload.txId).toBe('single_tx');
+            const transactions = observer.getTransactionsOfType('TransferContract');
+            expect(transactions).toHaveLength(1);
+            expect(transactions[0].payload.txId).toBe('single_tx');
         });
     });
 
