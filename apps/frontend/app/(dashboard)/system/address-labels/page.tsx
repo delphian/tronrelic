@@ -10,70 +10,37 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Plus, Search, Download, Upload, Trash2, Edit, Check, X, Tag, Tags } from 'lucide-react';
+import { Plus, Download, Upload, Tags } from 'lucide-react';
 import { useSystemAuth } from '../../../../features/system';
 import { Card } from '../../../../components/ui/Card';
 import { Button } from '../../../../components/ui/Button';
-import { Badge } from '../../../../components/ui/Badge';
+import {
+    LabelStats,
+    CreateLabelForm,
+    ImportLabelsForm,
+    LabelCard,
+    LabelFilters,
+    type AddressLabel,
+    type LabelStatsType,
+    type CreateLabelFormState,
+    type ImportResult
+} from './components';
 import styles from './page.module.css';
 
 /**
- * Address label data from the API.
+ * Initial state for the create form.
  */
-interface AddressLabel {
-    address: string;
-    label: string;
-    category: string;
-    tags: string[];
-    source: string;
-    sourceType: string;
-    confidence: number;
-    verified: boolean;
-    tronMetadata?: {
-        superRepresentative?: boolean;
-        energyProvider?: boolean;
-        contractType?: string;
-        tokenSymbol?: string;
-        tokenName?: string;
-    };
-    notes?: string;
-    createdAt: string;
-    updatedAt: string;
-}
-
-/**
- * Statistics from the API.
- */
-interface LabelStats {
-    total: number;
-    byCategory: Record<string, number>;
-    bySourceType: Record<string, number>;
-    verified: number;
-    unverified: number;
-}
-
-/**
- * Category options for the select dropdown.
- */
-const CATEGORIES = [
-    { value: 'exchange', label: 'Exchange' },
-    { value: 'whale', label: 'Whale' },
-    { value: 'contract', label: 'Contract' },
-    { value: 'institution', label: 'Institution' },
-    { value: 'risk', label: 'Risk' },
-    { value: 'user', label: 'User' },
-    { value: 'unknown', label: 'Unknown' }
-];
-
-/**
- * Source type options.
- */
-const SOURCE_TYPES = [
-    { value: 'system', label: 'System' },
-    { value: 'user', label: 'User' },
-    { value: 'plugin', label: 'Plugin' },
-    { value: 'import', label: 'Import' }
-];
+const INITIAL_CREATE_FORM: CreateLabelFormState = {
+    address: '',
+    label: '',
+    category: 'unknown',
+    tags: '',
+    source: 'system',
+    sourceType: 'system',
+    confidence: 50,
+    verified: false,
+    notes: ''
+};
 
 /**
  * Address labels management page.
@@ -84,13 +51,14 @@ const SOURCE_TYPES = [
  * - Editing existing labels
  * - Deleting labels
  * - Viewing statistics
+ * - Import/export functionality
  */
 export default function AddressLabelsPage() {
     const { token } = useSystemAuth();
 
     // List state
     const [labels, setLabels] = useState<AddressLabel[]>([]);
-    const [stats, setStats] = useState<LabelStats | null>(null);
+    const [stats, setStats] = useState<LabelStatsType | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
@@ -107,17 +75,7 @@ export default function AddressLabelsPage() {
 
     // Create form state
     const [showCreateForm, setShowCreateForm] = useState(false);
-    const [createForm, setCreateForm] = useState({
-        address: '',
-        label: '',
-        category: 'unknown',
-        tags: '',
-        source: 'system',
-        sourceType: 'system',
-        confidence: 50,
-        verified: false,
-        notes: ''
-    });
+    const [createForm, setCreateForm] = useState<CreateLabelFormState>(INITIAL_CREATE_FORM);
     const [createLoading, setCreateLoading] = useState(false);
 
     // Edit state
@@ -128,12 +86,7 @@ export default function AddressLabelsPage() {
     const [showImportForm, setShowImportForm] = useState(false);
     const [importFile, setImportFile] = useState<File | null>(null);
     const [importLoading, setImportLoading] = useState(false);
-    const [importResult, setImportResult] = useState<{
-        imported: number;
-        updated: number;
-        failed: number;
-        errors: { address: string; error: string }[];
-    } | null>(null);
+    const [importResult, setImportResult] = useState<ImportResult | null>(null);
 
     /**
      * Fetch labels from the admin API.
@@ -187,7 +140,7 @@ export default function AddressLabelsPage() {
                 const data = await response.json();
                 setStats(data.stats);
             }
-        } catch (err) {
+        } catch {
             // Stats are non-critical, don't show error
         }
     }, [token]);
@@ -217,18 +170,7 @@ export default function AddressLabelsPage() {
                 throw new Error(`Failed to create label: ${response.statusText}`);
             }
 
-            // Reset form and refresh
-            setCreateForm({
-                address: '',
-                label: '',
-                category: 'unknown',
-                tags: '',
-                source: 'system',
-                sourceType: 'system',
-                confidence: 50,
-                verified: false,
-                notes: ''
-            });
+            setCreateForm(INITIAL_CREATE_FORM);
             setShowCreateForm(false);
             fetchLabels();
             fetchStats();
@@ -337,6 +279,11 @@ export default function AddressLabelsPage() {
     };
 
     /**
+     * Maximum file size for import (5MB).
+     */
+    const MAX_IMPORT_FILE_SIZE = 5 * 1024 * 1024;
+
+    /**
      * Import labels from uploaded JSON file.
      */
     const handleImport = async () => {
@@ -346,6 +293,11 @@ export default function AddressLabelsPage() {
         setImportResult(null);
 
         try {
+            // Validate file size before parsing
+            if (importFile.size > MAX_IMPORT_FILE_SIZE) {
+                throw new Error(`File too large. Maximum size is ${MAX_IMPORT_FILE_SIZE / 1024 / 1024}MB`);
+            }
+
             const text = await importFile.text();
             const labels = JSON.parse(text);
 
@@ -438,246 +390,41 @@ export default function AddressLabelsPage() {
             </header>
 
             {/* Statistics */}
-            {stats && (
-                <div className={styles.statsGrid}>
-                    <Card padding="md">
-                        <div className={styles.statCard}>
-                            <span className={styles.statValue}>{stats.total}</span>
-                            <span className={styles.statLabel}>Total Labels</span>
-                        </div>
-                    </Card>
-                    <Card padding="md">
-                        <div className={styles.statCard}>
-                            <span className={styles.statValue}>{stats.verified}</span>
-                            <span className={styles.statLabel}>Verified</span>
-                        </div>
-                    </Card>
-                    <Card padding="md">
-                        <div className={styles.statCard}>
-                            <span className={styles.statValue}>
-                                {stats.byCategory['exchange'] || 0}
-                            </span>
-                            <span className={styles.statLabel}>Exchanges</span>
-                        </div>
-                    </Card>
-                    <Card padding="md">
-                        <div className={styles.statCard}>
-                            <span className={styles.statValue}>
-                                {stats.byCategory['whale'] || 0}
-                            </span>
-                            <span className={styles.statLabel}>Whales</span>
-                        </div>
-                    </Card>
-                </div>
-            )}
+            {stats && <LabelStats stats={stats} />}
 
             {/* Create Form */}
             {showCreateForm && (
-                <Card padding="lg">
-                    <h2 className={styles.formTitle}>Create New Label</h2>
-                    <div className={styles.formGrid}>
-                        <div className={styles.formField}>
-                            <label>Address *</label>
-                            <input
-                                type="text"
-                                value={createForm.address}
-                                onChange={e => setCreateForm({ ...createForm, address: e.target.value })}
-                                placeholder="T..."
-                                className={styles.input}
-                            />
-                        </div>
-                        <div className={styles.formField}>
-                            <label>Label *</label>
-                            <input
-                                type="text"
-                                value={createForm.label}
-                                onChange={e => setCreateForm({ ...createForm, label: e.target.value })}
-                                placeholder="e.g., Binance Hot Wallet"
-                                className={styles.input}
-                            />
-                        </div>
-                        <div className={styles.formField}>
-                            <label>Category</label>
-                            <select
-                                value={createForm.category}
-                                onChange={e => setCreateForm({ ...createForm, category: e.target.value })}
-                                className={styles.select}
-                            >
-                                {CATEGORIES.map(cat => (
-                                    <option key={cat.value} value={cat.value}>{cat.label}</option>
-                                ))}
-                            </select>
-                        </div>
-                        <div className={styles.formField}>
-                            <label>Source Type</label>
-                            <select
-                                value={createForm.sourceType}
-                                onChange={e => setCreateForm({ ...createForm, sourceType: e.target.value })}
-                                className={styles.select}
-                            >
-                                {SOURCE_TYPES.map(st => (
-                                    <option key={st.value} value={st.value}>{st.label}</option>
-                                ))}
-                            </select>
-                        </div>
-                        <div className={styles.formField}>
-                            <label>Tags (comma-separated)</label>
-                            <input
-                                type="text"
-                                value={createForm.tags}
-                                onChange={e => setCreateForm({ ...createForm, tags: e.target.value })}
-                                placeholder="cex, hot-wallet"
-                                className={styles.input}
-                            />
-                        </div>
-                        <div className={styles.formField}>
-                            <label>Confidence (0-100)</label>
-                            <input
-                                type="number"
-                                value={createForm.confidence}
-                                onChange={e => setCreateForm({ ...createForm, confidence: parseInt(e.target.value) || 50 })}
-                                min={0}
-                                max={100}
-                                className={styles.input}
-                            />
-                        </div>
-                        <div className={styles.formFieldFull}>
-                            <label>Notes</label>
-                            <textarea
-                                value={createForm.notes}
-                                onChange={e => setCreateForm({ ...createForm, notes: e.target.value })}
-                                placeholder="Additional context..."
-                                className={styles.textarea}
-                            />
-                        </div>
-                        <div className={styles.formFieldFull}>
-                            <label className={styles.checkbox}>
-                                <input
-                                    type="checkbox"
-                                    checked={createForm.verified}
-                                    onChange={e => setCreateForm({ ...createForm, verified: e.target.checked })}
-                                />
-                                <span>Verified</span>
-                            </label>
-                        </div>
-                    </div>
-                    <div className={styles.formActions}>
-                        <Button
-                            variant="secondary"
-                            onClick={() => setShowCreateForm(false)}
-                        >
-                            Cancel
-                        </Button>
-                        <Button
-                            variant="primary"
-                            onClick={handleCreate}
-                            loading={createLoading}
-                            disabled={!createForm.address || !createForm.label}
-                        >
-                            Create Label
-                        </Button>
-                    </div>
-                </Card>
+                <CreateLabelForm
+                    form={createForm}
+                    loading={createLoading}
+                    onFormChange={setCreateForm}
+                    onCreate={handleCreate}
+                    onCancel={() => setShowCreateForm(false)}
+                />
             )}
 
             {/* Import Form */}
             {showImportForm && (
-                <Card padding="lg">
-                    <h2 className={styles.formTitle}>Import Labels</h2>
-                    <p className={styles.importDescription}>
-                        Upload a JSON file containing an array of address labels.
-                        Each label must have: address, label, category, source, sourceType.
-                    </p>
-                    <div className={styles.importForm}>
-                        <input
-                            type="file"
-                            accept=".json"
-                            onChange={e => setImportFile(e.target.files?.[0] || null)}
-                            className={styles.fileInput}
-                        />
-                        {importFile && (
-                            <span className={styles.fileName}>{importFile.name}</span>
-                        )}
-                    </div>
-                    {importResult && (
-                        <div className={styles.importResult}>
-                            <Badge tone="success">{importResult.imported} imported</Badge>
-                            <Badge tone="neutral">{importResult.updated} updated</Badge>
-                            {importResult.failed > 0 && (
-                                <Badge tone="danger">{importResult.failed} failed</Badge>
-                            )}
-                            {importResult.errors.length > 0 && (
-                                <div className={styles.importErrors}>
-                                    {importResult.errors.slice(0, 5).map((err, i) => (
-                                        <div key={i} className={styles.importError}>
-                                            <code>{err.address}</code>: {err.error}
-                                        </div>
-                                    ))}
-                                    {importResult.errors.length > 5 && (
-                                        <div className={styles.importError}>
-                                            ...and {importResult.errors.length - 5} more errors
-                                        </div>
-                                    )}
-                                </div>
-                            )}
-                        </div>
-                    )}
-                    <div className={styles.formActions}>
-                        <Button variant="secondary" onClick={closeImportForm}>
-                            Close
-                        </Button>
-                        <Button
-                            variant="primary"
-                            onClick={handleImport}
-                            loading={importLoading}
-                            disabled={!importFile}
-                        >
-                            Import
-                        </Button>
-                    </div>
-                </Card>
+                <ImportLabelsForm
+                    file={importFile}
+                    loading={importLoading}
+                    result={importResult}
+                    onFileChange={setImportFile}
+                    onImport={handleImport}
+                    onClose={closeImportForm}
+                />
             )}
 
             {/* Filters */}
-            <Card padding="md">
-                <div className={styles.filters}>
-                    <div className={styles.filterGroup}>
-                        <select
-                            value={categoryFilter}
-                            onChange={e => { setCategoryFilter(e.target.value); setPage(1); }}
-                            className={styles.select}
-                        >
-                            <option value="">All Categories</option>
-                            {CATEGORIES.map(cat => (
-                                <option key={cat.value} value={cat.value}>{cat.label}</option>
-                            ))}
-                        </select>
-                        <select
-                            value={sourceTypeFilter}
-                            onChange={e => { setSourceTypeFilter(e.target.value); setPage(1); }}
-                            className={styles.select}
-                        >
-                            <option value="">All Sources</option>
-                            {SOURCE_TYPES.map(st => (
-                                <option key={st.value} value={st.value}>{st.label}</option>
-                            ))}
-                        </select>
-                    </div>
-                    <div className={styles.searchBox}>
-                        <input
-                            type="text"
-                            value={searchInput}
-                            onChange={e => setSearchInput(e.target.value)}
-                            onKeyDown={e => e.key === 'Enter' && handleSearch()}
-                            placeholder="Search labels..."
-                            className={styles.input}
-                        />
-                        <Button variant="secondary" size="sm" onClick={handleSearch}>
-                            <Search size={16} />
-                        </Button>
-                    </div>
-                </div>
-            </Card>
+            <LabelFilters
+                categoryFilter={categoryFilter}
+                sourceTypeFilter={sourceTypeFilter}
+                searchInput={searchInput}
+                onCategoryChange={value => { setCategoryFilter(value); setPage(1); }}
+                onSourceTypeChange={value => { setSourceTypeFilter(value); setPage(1); }}
+                onSearchChange={setSearchInput}
+                onSearch={handleSearch}
+            />
 
             {/* Error */}
             {error && (
@@ -695,95 +442,17 @@ export default function AddressLabelsPage() {
                 ) : (
                     <div className={styles.labelsList}>
                         {labels.map(label => (
-                            <div key={`${label.address}-${label.source}`} className={styles.labelCard}>
-                                {editingAddress === label.address ? (
-                                    // Edit mode
-                                    <div className={styles.editForm}>
-                                        <input
-                                            type="text"
-                                            value={editForm.label ?? label.label}
-                                            onChange={e => setEditForm({ ...editForm, label: e.target.value })}
-                                            className={styles.input}
-                                        />
-                                        <select
-                                            value={editForm.category ?? label.category}
-                                            onChange={e => setEditForm({ ...editForm, category: e.target.value })}
-                                            className={styles.select}
-                                        >
-                                            {CATEGORIES.map(cat => (
-                                                <option key={cat.value} value={cat.value}>{cat.label}</option>
-                                            ))}
-                                        </select>
-                                        <div className={styles.editActions}>
-                                            <Button
-                                                variant="ghost"
-                                                size="sm"
-                                                onClick={() => { setEditingAddress(null); setEditForm({}); }}
-                                            >
-                                                <X size={16} />
-                                            </Button>
-                                            <Button
-                                                variant="primary"
-                                                size="sm"
-                                                onClick={() => handleUpdate(label.address, label.source)}
-                                            >
-                                                <Check size={16} />
-                                            </Button>
-                                        </div>
-                                    </div>
-                                ) : (
-                                    // Display mode
-                                    <>
-                                        <div className={styles.labelHeader}>
-                                            <div className={styles.labelInfo}>
-                                                <span className={styles.labelName}>{label.label}</span>
-                                                <Badge tone={label.verified ? 'success' : 'neutral'}>
-                                                    {label.category}
-                                                </Badge>
-                                                {label.verified && (
-                                                    <Badge tone="success">Verified</Badge>
-                                                )}
-                                            </div>
-                                            <div className={styles.labelActions}>
-                                                <Button
-                                                    variant="ghost"
-                                                    size="sm"
-                                                    onClick={() => { setEditingAddress(label.address); setEditForm({}); }}
-                                                >
-                                                    <Edit size={14} />
-                                                </Button>
-                                                <Button
-                                                    variant="ghost"
-                                                    size="sm"
-                                                    onClick={() => handleDelete(label.address, label.source)}
-                                                >
-                                                    <Trash2 size={14} />
-                                                </Button>
-                                            </div>
-                                        </div>
-                                        <div className={styles.labelAddress}>
-                                            <code>{label.address}</code>
-                                        </div>
-                                        <div className={styles.labelMeta}>
-                                            <span>Source: {label.source} ({label.sourceType})</span>
-                                            <span>Confidence: {label.confidence}%</span>
-                                        </div>
-                                        {label.tags.length > 0 && (
-                                            <div className={styles.labelTags}>
-                                                {label.tags.map(tag => (
-                                                    <span key={tag} className={styles.tag}>
-                                                        <Tag size={12} />
-                                                        {tag}
-                                                    </span>
-                                                ))}
-                                            </div>
-                                        )}
-                                        {label.notes && (
-                                            <div className={styles.labelNotes}>{label.notes}</div>
-                                        )}
-                                    </>
-                                )}
-                            </div>
+                            <LabelCard
+                                key={`${label.address}-${label.source}`}
+                                label={label}
+                                isEditing={editingAddress === label.address}
+                                editForm={editForm}
+                                onEdit={() => { setEditingAddress(label.address); setEditForm({}); }}
+                                onEditChange={setEditForm}
+                                onSave={() => handleUpdate(label.address, label.source)}
+                                onCancelEdit={() => { setEditingAddress(null); setEditForm({}); }}
+                                onDelete={() => handleDelete(label.address, label.source)}
+                            />
                         ))}
                     </div>
                 )}

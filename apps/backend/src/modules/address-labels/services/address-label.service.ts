@@ -153,6 +153,10 @@ export class AddressLabelService implements IAddressLabelService {
     async create(input: ICreateAddressLabelInput): Promise<IAddressLabel> {
         const now = new Date();
 
+        // Note: We intentionally skip TRON address format validation (base58check, 'T' prefix,
+        // length, checksum). Full validation is complex and the system tolerates invalid entries
+        // gracefully - labels for non-existent addresses simply never match blockchain data.
+        // This also allows flexibility for edge cases like contract addresses or future formats.
         const doc: Omit<IAddressLabelDocument, '_id'> = {
             address: input.address.trim(),
             label: input.label.trim(),
@@ -287,12 +291,21 @@ export class AddressLabelService implements IAddressLabelService {
         if (updates.verified !== undefined) updateDoc.verified = updates.verified;
         if (updates.notes !== undefined) updateDoc.notes = updates.notes?.trim();
 
-        // Merge metadata objects
-        if (updates.tronMetadata !== undefined) {
-            updateDoc['tronMetadata'] = updates.tronMetadata;
-        }
-        if (updates.customMetadata !== undefined) {
-            updateDoc['customMetadata'] = updates.customMetadata;
+        // Merge metadata objects with existing values (as documented in IUpdateAddressLabelInput)
+        if (updates.tronMetadata !== undefined || updates.customMetadata !== undefined) {
+            const existing = await this.collection.findOne({ address, source });
+            if (existing) {
+                if (updates.tronMetadata !== undefined) {
+                    updateDoc['tronMetadata'] = { ...existing.tronMetadata, ...updates.tronMetadata };
+                }
+                if (updates.customMetadata !== undefined) {
+                    updateDoc['customMetadata'] = { ...existing.customMetadata, ...updates.customMetadata };
+                }
+            } else {
+                // No existing doc, just use provided values
+                if (updates.tronMetadata !== undefined) updateDoc['tronMetadata'] = updates.tronMetadata;
+                if (updates.customMetadata !== undefined) updateDoc['customMetadata'] = updates.customMetadata;
+            }
         }
 
         const result = await this.collection.findOneAndUpdate(

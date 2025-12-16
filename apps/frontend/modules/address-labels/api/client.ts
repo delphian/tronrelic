@@ -55,7 +55,8 @@ export async function fetchLabel(address: string): Promise<ILabelData | null> {
 
             labelCache.set(address, labelData);
             return labelData;
-        } catch {
+        } catch (error) {
+            console.error('Failed to fetch address label:', error);
             labelCache.set(address, null);
             return null;
         } finally {
@@ -94,8 +95,9 @@ export async function prefetchLabels(addresses: string[]): Promise<Map<string, I
                     labelCache.set(address, label);
                 }
             }
-        } catch {
-            // Ignore errors, labels will be fetched individually
+        } catch (error) {
+            console.error('Failed to prefetch address labels:', error);
+            // Labels will be fetched individually as fallback
         }
     }
 

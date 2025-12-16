@@ -8,6 +8,7 @@
 import type { Request, Response, NextFunction } from 'express';
 import type {
     ISystemLogService,
+    IAddressLabel,
     IAddressLabelFilter,
     ICreateAddressLabelInput,
     IUpdateAddressLabelInput,
@@ -91,7 +92,7 @@ export class AddressLabelController {
             const labels = await this.labelService.findByAddresses(addresses);
 
             // Convert Map to object for JSON serialization
-            const result: Record<string, unknown> = {};
+            const result: Record<string, IAddressLabel> = {};
             for (const [address, label] of labels) {
                 result[address] = label;
             }
@@ -236,8 +237,8 @@ export class AddressLabelController {
                 return;
             }
 
-            if (!source) {
-                res.status(400).json({ error: 'Source is required to identify the label' });
+            if (!source || typeof source !== 'string') {
+                res.status(400).json({ error: 'Source is required and must be a string' });
                 return;
             }
 
@@ -369,6 +370,57 @@ export class AddressLabelController {
     // =========================================================================
 
     /**
+     * Sanitize metadata object to prevent XSS, prototype pollution, and storage abuse.
+     *
+     * - Filters dangerous keys (__proto__, constructor, prototype)
+     * - Allows only primitive values (string, number, boolean, null)
+     * - Limits nesting depth to prevent deeply nested payloads
+     * - Returns undefined if input is not a valid object
+     */
+    private sanitizeMetadata(
+        input: unknown,
+        maxDepth: number = 3,
+        currentDepth: number = 0
+    ): Record<string, unknown> | undefined {
+        if (input === null || input === undefined) {
+            return undefined;
+        }
+
+        if (typeof input !== 'object' || Array.isArray(input)) {
+            return undefined;
+        }
+
+        if (currentDepth >= maxDepth) {
+            return undefined;
+        }
+
+        const dangerous = new Set(['__proto__', 'constructor', 'prototype']);
+        const result: Record<string, unknown> = {};
+
+        for (const [key, value] of Object.entries(input as Record<string, unknown>)) {
+            // Skip dangerous keys
+            if (dangerous.has(key)) {
+                continue;
+            }
+
+            // Allow primitives
+            if (value === null || typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+                result[key] = value;
+            }
+            // Recursively sanitize nested objects
+            else if (typeof value === 'object' && !Array.isArray(value)) {
+                const sanitized = this.sanitizeMetadata(value, maxDepth, currentDepth + 1);
+                if (sanitized !== undefined) {
+                    result[key] = sanitized;
+                }
+            }
+            // Skip arrays and other types for safety
+        }
+
+        return Object.keys(result).length > 0 ? result : undefined;
+    }
+
+    /**
      * Parse and validate create input from request body.
      */
     private parseCreateInput(body: unknown): ICreateAddressLabelInput | null {
@@ -402,14 +454,18 @@ export class AddressLabelController {
             address: input.address,
             label: input.label,
             category: input.category as AddressCategory,
-            tags: Array.isArray(input.tags) ? input.tags : [],
+            tags: Array.isArray(input.tags)
+                ? input.tags.filter((tag): tag is string => typeof tag === 'string').map(tag => tag.trim())
+                : [],
             source: input.source,
             sourceType: input.sourceType as AddressLabelSourceType,
-            confidence: typeof input.confidence === 'number' ? input.confidence : 50,
+            confidence: typeof input.confidence === 'number'
+                ? Math.max(0, Math.min(100, input.confidence))
+                : 50,
             verified: typeof input.verified === 'boolean' ? input.verified : false,
-            tronMetadata: input.tronMetadata as ICreateAddressLabelInput['tronMetadata'],
+            tronMetadata: this.sanitizeMetadata(input.tronMetadata) as ICreateAddressLabelInput['tronMetadata'],
             notes: typeof input.notes === 'string' ? input.notes : undefined,
-            customMetadata: input.customMetadata as Record<string, unknown>
+            customMetadata: this.sanitizeMetadata(input.customMetadata)
         };
     }
 }
