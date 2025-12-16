@@ -1,0 +1,497 @@
+/**
+ * Address Labels Admin Page Styles
+ *
+ * Management interface for blockchain address labels.
+ * Uses container queries for responsive behavior.
+ */
+
+.container {
+    container-type: inline-size;
+    container-name: address-labels;
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-10);
+    padding: var(--spacing-10);
+}
+
+/* Header */
+.header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: var(--spacing-7);
+}
+
+.titleSection {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--spacing-7);
+}
+
+.titleIcon {
+    color: var(--color-primary);
+    margin-top: var(--spacing-3);
+}
+
+.title {
+    font-size: var(--font-size-2xl);
+    font-weight: var(--font-weight-bold);
+    color: var(--color-text);
+    margin: 0;
+}
+
+.subtitle {
+    font-size: var(--font-size-sm);
+    color: var(--color-text-muted);
+    margin: var(--spacing-3) 0 0;
+}
+
+.headerActions {
+    display: flex;
+    gap: var(--spacing-5);
+}
+
+/* Stats Grid */
+.statsGrid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: var(--spacing-7);
+}
+
+.statCard {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--spacing-3);
+    text-align: center;
+}
+
+.statValue {
+    font-size: var(--font-size-2xl);
+    font-weight: var(--font-weight-bold);
+    color: var(--color-primary);
+}
+
+.statLabel {
+    font-size: var(--font-size-sm);
+    color: var(--color-text-muted);
+}
+
+/* Create Form */
+.formTitle {
+    font-size: var(--font-size-lg);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text);
+    margin: 0 0 var(--spacing-10);
+}
+
+.formGrid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: var(--spacing-7);
+}
+
+.formField {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-3);
+}
+
+.formField label {
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+    color: var(--color-text-muted);
+}
+
+.formFieldFull {
+    grid-column: 1 / -1;
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-3);
+}
+
+.formFieldFull label {
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+    color: var(--color-text-muted);
+}
+
+.formActions {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--spacing-5);
+    margin-top: var(--spacing-10);
+    padding-top: var(--spacing-7);
+    border-top: var(--border-width-thin) solid var(--color-border);
+}
+
+/* Import Form */
+.importDescription {
+    font-size: var(--font-size-sm);
+    color: var(--color-text-muted);
+    margin: 0 0 var(--spacing-10);
+}
+
+.importForm {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-7);
+    margin-bottom: var(--spacing-7);
+}
+
+.fileInput {
+    font-size: var(--font-size-sm);
+    color: var(--color-text);
+}
+
+.fileInput::file-selector-button {
+    padding: var(--spacing-5) var(--spacing-7);
+    background: var(--button-secondary-background);
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-md);
+    color: var(--color-text);
+    font-size: var(--font-size-sm);
+    cursor: pointer;
+    margin-right: var(--spacing-7);
+}
+
+.fileInput::file-selector-button:hover {
+    background: var(--button-secondary-hover);
+}
+
+.fileName {
+    font-size: var(--font-size-sm);
+    color: var(--color-text-muted);
+}
+
+.importResult {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--spacing-5);
+    padding: var(--spacing-7);
+    background: var(--color-surface-muted);
+    border-radius: var(--radius-md);
+    margin-bottom: var(--spacing-7);
+}
+
+.importErrors {
+    width: 100%;
+    margin-top: var(--spacing-5);
+    padding-top: var(--spacing-5);
+    border-top: var(--border-width-thin) solid var(--color-border);
+}
+
+.importError {
+    font-size: var(--font-size-sm);
+    color: var(--color-danger);
+    margin-bottom: var(--spacing-3);
+}
+
+.importError code {
+    font-family: var(--font-family-mono);
+    background: var(--color-surface);
+    padding: var(--spacing-1) var(--spacing-3);
+    border-radius: var(--radius-sm);
+}
+
+/* Inputs */
+.input {
+    padding: var(--spacing-5) var(--spacing-7);
+    background: var(--input-background);
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-md);
+    color: var(--color-text);
+    font-size: var(--font-size-base);
+    outline: none;
+    transition: border-color 0.2s ease;
+}
+
+.input:focus {
+    border-color: var(--input-border-focus);
+}
+
+.input::placeholder {
+    color: var(--color-text-subtle);
+}
+
+.select {
+    padding: var(--spacing-5) var(--spacing-7);
+    background: var(--input-background);
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-md);
+    color: var(--color-text);
+    font-size: var(--font-size-base);
+    outline: none;
+    cursor: pointer;
+}
+
+.select:focus {
+    border-color: var(--input-border-focus);
+}
+
+.textarea {
+    padding: var(--spacing-5) var(--spacing-7);
+    background: var(--input-background);
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-md);
+    color: var(--color-text);
+    font-size: var(--font-size-base);
+    outline: none;
+    resize: vertical;
+    min-height: 80px;
+}
+
+.textarea:focus {
+    border-color: var(--input-border-focus);
+}
+
+.checkbox {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-5);
+    cursor: pointer;
+}
+
+.checkbox input {
+    width: 18px;
+    height: 18px;
+    cursor: pointer;
+}
+
+/* Filters */
+.filters {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: var(--spacing-7);
+}
+
+.filterGroup {
+    display: flex;
+    gap: var(--spacing-5);
+}
+
+.searchBox {
+    display: flex;
+    gap: var(--spacing-3);
+}
+
+.searchBox .input {
+    width: 240px;
+}
+
+/* Error and loading states */
+.error {
+    color: var(--color-danger);
+    font-size: var(--font-size-sm);
+}
+
+.loading {
+    text-align: center;
+    color: var(--color-text-muted);
+    padding: var(--spacing-15);
+}
+
+.empty {
+    text-align: center;
+    color: var(--color-text-muted);
+    padding: var(--spacing-15);
+}
+
+/* Labels List */
+.labelsList {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-5);
+}
+
+.labelCard {
+    padding: var(--spacing-7);
+    background: var(--color-surface-muted);
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-md);
+}
+
+.labelHeader {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: var(--spacing-7);
+    margin-bottom: var(--spacing-5);
+}
+
+.labelInfo {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-5);
+    flex-wrap: wrap;
+}
+
+.labelName {
+    font-size: var(--font-size-base);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text);
+}
+
+.labelActions {
+    display: flex;
+    gap: var(--spacing-3);
+}
+
+.labelAddress {
+    margin-bottom: var(--spacing-5);
+}
+
+.labelAddress code {
+    font-family: var(--font-family-mono);
+    font-size: var(--font-size-sm);
+    color: var(--color-secondary);
+    background: var(--color-surface);
+    padding: var(--spacing-1) var(--spacing-3);
+    border-radius: var(--radius-sm);
+}
+
+.labelMeta {
+    display: flex;
+    gap: var(--spacing-7);
+    font-size: var(--font-size-sm);
+    color: var(--color-text-muted);
+    margin-bottom: var(--spacing-5);
+}
+
+.labelTags {
+    display: flex;
+    gap: var(--spacing-3);
+    flex-wrap: wrap;
+    margin-bottom: var(--spacing-5);
+}
+
+.tag {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacing-2);
+    padding: var(--spacing-1) var(--spacing-5);
+    background: var(--color-surface);
+    border-radius: var(--radius-full);
+    font-size: var(--font-size-xs);
+    color: var(--color-text-muted);
+}
+
+.labelNotes {
+    font-size: var(--font-size-sm);
+    color: var(--color-text-muted);
+    font-style: italic;
+    padding-top: var(--spacing-5);
+    border-top: var(--border-width-thin) solid var(--color-border);
+}
+
+/* Edit form inline */
+.editForm {
+    display: flex;
+    gap: var(--spacing-5);
+    align-items: center;
+}
+
+.editForm .input {
+    flex: 1;
+}
+
+.editForm .select {
+    width: 150px;
+}
+
+.editActions {
+    display: flex;
+    gap: var(--spacing-3);
+}
+
+/* Pagination */
+.pagination {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: var(--spacing-7);
+    margin-top: var(--spacing-10);
+    padding-top: var(--spacing-7);
+    border-top: var(--border-width-thin) solid var(--color-border);
+}
+
+.pageInfo {
+    font-size: var(--font-size-sm);
+    color: var(--color-text-muted);
+}
+
+/* Container queries for responsiveness */
+@container address-labels (max-width: 768px) {
+    .container {
+        padding: var(--spacing-7);
+    }
+
+    .header {
+        flex-direction: column;
+    }
+
+    .headerActions {
+        flex-wrap: wrap;
+    }
+
+    .importForm {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .statsGrid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    .formGrid {
+        grid-template-columns: 1fr;
+    }
+
+    .filters {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .filterGroup {
+        flex-wrap: wrap;
+    }
+
+    .searchBox {
+        width: 100%;
+    }
+
+    .searchBox .input {
+        flex: 1;
+        width: auto;
+    }
+
+    .labelMeta {
+        flex-direction: column;
+        gap: var(--spacing-3);
+    }
+
+    .editForm {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .editForm .select {
+        width: 100%;
+    }
+}
+
+@container address-labels (max-width: 480px) {
+    .statsGrid {
+        grid-template-columns: 1fr;
+    }
+
+    .labelHeader {
+        flex-direction: column;
+    }
+
+    .labelActions {
+        align-self: flex-end;
+    }
+}

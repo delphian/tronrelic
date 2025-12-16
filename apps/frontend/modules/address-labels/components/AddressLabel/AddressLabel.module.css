@@ -1,0 +1,95 @@
+/**
+ * AddressLabel Component Styles
+ *
+ * Displays labeled blockchain addresses with category indicators.
+ */
+
+.container {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacing-2);
+    font-family: inherit;
+}
+
+.size_sm {
+    font-size: var(--font-size-xs);
+}
+
+.size_md {
+    font-size: var(--font-size-sm);
+}
+
+.size_lg {
+    font-size: var(--font-size-base);
+}
+
+.icon {
+    flex-shrink: 0;
+}
+
+.label {
+    font-weight: var(--font-weight-medium);
+    color: var(--color-text);
+}
+
+.verified {
+    color: var(--color-success);
+    flex-shrink: 0;
+}
+
+.address {
+    color: var(--color-text-muted);
+    font-family: var(--font-family-mono);
+}
+
+.addressOnly code {
+    font-family: var(--font-family-mono);
+    color: var(--color-secondary);
+    background: var(--color-surface);
+    padding: var(--spacing-1) var(--spacing-3);
+    border-radius: var(--radius-sm);
+}
+
+.externalLink {
+    color: var(--color-text-subtle);
+    flex-shrink: 0;
+    margin-left: var(--spacing-1);
+}
+
+.link {
+    text-decoration: none;
+    color: inherit;
+    transition: opacity 0.15s ease;
+}
+
+.link:hover {
+    opacity: 0.8;
+}
+
+.link:hover .externalLink {
+    color: var(--color-primary);
+}
+
+.loading {
+    display: inline-block;
+    width: 60px;
+    height: 1em;
+    background: linear-gradient(
+        90deg,
+        var(--color-surface-muted) 0%,
+        var(--color-surface) 50%,
+        var(--color-surface-muted) 100%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+    border-radius: var(--radius-sm);
+}
+
+@keyframes shimmer {
+    0% {
+        background-position: 200% 0;
+    }
+    100% {
+        background-position: -200% 0;
+    }
+}

@@ -28,6 +28,7 @@ import { ClickHouseModule } from './modules/clickhouse/index.js';
 import { PagesModule } from './modules/pages/index.js';
 import { ThemeModule } from './modules/theme/index.js';
 import { UserModule } from './modules/user/index.js';
+import { AddressLabelsModule } from './modules/address-labels/index.js';
 import { BlockchainObserverService } from './services/blockchain-observer/index.js';
 import { SystemConfigService } from './services/system-config/index.js';
 import { CacheService } from './services/cache.service.js';
@@ -108,6 +109,7 @@ interface BootstrapContext {
         pages: PagesModule;
         theme: ThemeModule;
         user: UserModule;
+        addressLabels: AddressLabelsModule;
     };
 }
 
@@ -173,11 +175,13 @@ async function bootstrapInit(): Promise<BootstrapContext> {
     const pagesModule = new PagesModule();
     const themeModule = new ThemeModule();
     const userModule = new UserModule();
+    const addressLabelsModule = new AddressLabelsModule();
 
     await logsModule.init({ pinoLogger, database: coreDatabase, app });
     await pagesModule.init(sharedDeps);
     await themeModule.init(sharedDeps);
     await userModule.init(sharedDeps);
+    await addressLabelsModule.init(sharedDeps);
 
     return {
         app,
@@ -193,6 +197,7 @@ async function bootstrapInit(): Promise<BootstrapContext> {
             pages: pagesModule,
             theme: themeModule,
             user: userModule,
+            addressLabels: addressLabelsModule,
         },
     };
 }
@@ -221,6 +226,7 @@ async function bootstrapRun(ctx: BootstrapContext): Promise<void> {
     await modules.pages.run();
     await modules.theme.run();
     await modules.user.run();
+    await modules.addressLabels.run();
 
     await registerTemporaryMenuItems(menuService);
     logger.info({}, 'All modules initialized');
