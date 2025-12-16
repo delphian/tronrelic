@@ -29,3 +29,4 @@ export { USER_FILTERS } from './user/index.js';
 export type { UserFilterType } from './user/index.js';
 export type { ITronGridService, ITronGridAccountResponse, ITronGridAccountPermission } from './tron-grid/index.js';
 export type { IBlockStats, IBlock, IBlockchainService, ITransactionTimeseriesPoint } from './blockchain/index.js';
+export type { IAddressLabel, IResolvedAddressLabel, AddressCategory, AddressLabelSourceType, ITronAddressMetadata, IAddressLabelService, ICreateAddressLabelInput, IUpdateAddressLabelInput, IAddressLabelFilter, IAddressLabelImportResult, IAddressLabelListResult } from './address-label/index.js';

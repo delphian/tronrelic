@@ -16,6 +16,7 @@ import type { IUsdtParametersService } from '../usdt-parameters/IUsdtParametersS
 import type { IWidgetService } from '../widget/IWidgetService.js';
 import type { ITronGridService } from '../tron-grid/ITronGridService.js';
 import type { IBlockchainService } from '../blockchain/IBlockchainService.js';
+import type { IAddressLabelService } from '../address-label/IAddressLabelService.js';
 import { ISystemLogService } from '../system-log/ISystemLogService.js';
 
 /**
@@ -107,6 +108,9 @@ export interface IPluginContext {
 
     /** Blockchain service for accessing sync state and processed block data */
     blockchainService: IBlockchainService;
+
+    /** Address label service for looking up and contributing blockchain address labels */
+    addressLabelService: IAddressLabelService;
 
     /** Structured logger scoped to the plugin for consistent telemetry */
     logger: ISystemLogService;

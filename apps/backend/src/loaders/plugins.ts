@@ -24,6 +24,7 @@ import { WidgetService } from '../services/widget/widget.service.js';
 import { TronGridClient } from '../modules/blockchain/tron-grid.client.js';
 import { BlockchainService } from '../modules/blockchain/blockchain.service.js';
 import { ClickHouseService } from '../modules/clickhouse/services/clickhouse.service.js';
+import { AddressLabelService } from '../modules/address-labels/services/address-label.service.js';
 import { getRedisClient } from './redis.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -186,6 +187,9 @@ export async function loadPlugins(database: IDatabaseService): Promise<void> {
     BlockchainService.setDependencies(database);
     const blockchainService = BlockchainService.getInstance();
 
+    // Get AddressLabelService (initialized by AddressLabelsModule in bootstrap)
+    const addressLabelService = AddressLabelService.getInstance();
+
     // Get ClickHouse service if initialized (optional)
     const clickhouseService = ClickHouseService.isInitialized()
         ? ClickHouseService.getInstance()
@@ -243,6 +247,7 @@ export async function loadPlugins(database: IDatabaseService): Promise<void> {
                 widgetService,
                 tronGrid: tronGridClient,
                 blockchainService,
+                addressLabelService,
                 logger: pluginLogger
             };
 

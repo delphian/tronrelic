@@ -731,6 +731,127 @@ Create `README.md` in the module directory following the pattern established in 
 - Pre-implementation checklist
 - Related documentation links
 
+## Frontend Module Structure
+
+When a module requires frontend code (components, API clients, types, or utilities), place it in a parallel structure under `apps/frontend/modules/<module-name>/`. Do NOT place module-specific code in `components/ui/` - that directory is reserved for generic UI primitives (Button, Badge, Card) that have no module dependencies.
+
+### Why Separate Frontend Modules from UI Components
+
+The distinction matters because:
+
+- **Module code fetches from module APIs** - An `AddressLabel` component that calls `/api/address-labels/` is tied to the address-labels module and belongs in `modules/address-labels/`
+- **UI primitives are generic** - A `Button` component has no API dependencies and can be used anywhere, so it belongs in `components/ui/`
+- **Colocated code is discoverable** - When frontend code lives alongside its backend module (conceptually), developers know where to find related functionality
+
+### Frontend Module Directory Structure
+
+```
+apps/frontend/modules/<module-name>/
+├── index.ts                 # Barrel exports (public API)
+├── api/
+│   ├── index.ts             # Barrel exports
+│   └── client.ts            # API client functions (fetch, prefetch, etc.)
+├── components/
+│   ├── index.ts             # Barrel exports
+│   └── ComponentName/
+│       ├── ComponentName.tsx
+│       ├── ComponentName.module.css
+│       └── index.ts
+├── lib/
+│   ├── index.ts             # Barrel exports
+│   └── utilities.ts         # Module-specific utilities
+└── types/
+    ├── index.ts             # Barrel exports
+    └── module.types.ts      # TypeScript interfaces
+```
+
+**Key directories:**
+
+| Directory | Purpose |
+|-----------|---------|
+| `api/` | Functions that call backend endpoints (e.g., `fetchLabel`, `prefetchLabels`) |
+| `components/` | React components specific to this module |
+| `lib/` | Utilities like identity management, SSR helpers, formatters |
+| `types/` | TypeScript interfaces mirroring backend types for frontend use |
+
+### Admin UI Components
+
+Admin dashboard components for `/system/*` pages live in a separate location:
+
+```
+apps/frontend/features/system/components/<ComponentName>/
+├── ComponentName.tsx
+├── ComponentName.module.css
+└── index.ts
+```
+
+This separation exists because admin UI components often span multiple modules (system monitoring dashboards) rather than belonging to a single module.
+
+### Route Pages
+
+Next.js route pages that render module components:
+
+```
+apps/frontend/app/(dashboard)/system/<module-name>/
+└── page.tsx                 # Server or client component rendering module UI
+```
+
+### Example: User Module Frontend Structure
+
+The user module demonstrates the complete pattern (see [system-modules-user.md](./system-modules-user.md)):
+
+```
+apps/frontend/modules/user/
+├── index.ts                 # Barrel exports (all public API)
+├── slice.ts                 # Redux state management
+├── api/
+│   └── client.ts            # fetchUser, linkWallet, etc.
+├── components/
+│   └── UserIdentityProvider.tsx
+├── lib/
+│   ├── identity.ts          # UUID generation, cookie management
+│   └── server.ts            # SSR utilities
+└── types/
+    └── user.types.ts        # IUserData, IWalletLink, etc.
+```
+
+**Admin UI:**
+```
+apps/frontend/features/system/components/UsersMonitor/
+└── UsersMonitor.tsx         # Admin dashboard component
+```
+
+**Route:**
+```
+apps/frontend/app/(dashboard)/system/users/
+└── page.tsx                 # Renders UsersMonitor
+```
+
+### Decision Guide: Where Does Frontend Code Go?
+
+| Code Type | Location | Example |
+|-----------|----------|---------|
+| **Module-specific component** | `modules/<name>/components/` | `AddressLabel` (fetches from `/api/address-labels/`) |
+| **Generic UI primitive** | `components/ui/` | `Button`, `Badge`, `Card` (no API dependencies) |
+| **Module API client** | `modules/<name>/api/` | `fetchLabel()`, `prefetchLabels()` |
+| **Admin dashboard component** | `features/system/components/` | `UsersMonitor`, `AddressLabelsManager` |
+| **Module types** | `modules/<name>/types/` | `ILabelData`, `IAddressLabelProps` |
+| **Route page** | `app/(dashboard)/system/<name>/` | Page rendering admin component |
+
+### Import Pattern
+
+Import from the module root, not internal paths:
+
+```typescript
+// ✅ CORRECT - Import from module root
+import { AddressLabel, prefetchLabels } from '@/modules/address-labels';
+import type { ILabelData } from '@/modules/address-labels';
+
+// ❌ WRONG - Bypass public API
+import { AddressLabel } from '@/modules/address-labels/components/AddressLabel';
+import { fetchLabel } from '@/modules/address-labels/api/client';
+```
+
 ## Pages Module: Reference Implementation
 
 The pages module (`apps/backend/src/modules/pages/`) serves as the canonical example of module architecture patterns. It demonstrates:
@@ -1197,6 +1318,7 @@ Before creating a new module, verify:
 - [ ] Module-specific `README.md` documents architecture and usage
 - [ ] Bootstrap code updated to initialize module in correct sequence
 - [ ] JSDoc comments explain "why" before showing "how"
+- [ ] Frontend code (if any) placed in `apps/frontend/modules/<name>/`, NOT `components/ui/`
 
 ## Further Reading
 
