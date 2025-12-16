@@ -157,7 +157,8 @@ export class AddressLabelService implements IAddressLabelService {
         // length, checksum). Full validation is complex and the system tolerates invalid entries
         // gracefully - labels for non-existent addresses simply never match blockchain data.
         // This also allows flexibility for edge cases like contract addresses or future formats.
-        const doc: Omit<IAddressLabelDocument, '_id'> = {
+        // Build update fields without createdAt (handled separately via $setOnInsert)
+        const updateFields = {
             address: input.address.trim(),
             label: input.label.trim(),
             category: input.category,
@@ -169,14 +170,13 @@ export class AddressLabelService implements IAddressLabelService {
             tronMetadata: input.tronMetadata,
             notes: input.notes?.trim(),
             customMetadata: input.customMetadata,
-            createdAt: now,
             updatedAt: now
         };
 
         const result = await this.collection.findOneAndUpdate(
-            { address: doc.address, source: doc.source },
+            { address: updateFields.address, source: updateFields.source },
             {
-                $set: { ...doc, updatedAt: now },
+                $set: updateFields,
                 $setOnInsert: { createdAt: now }
             },
             { upsert: true, returnDocument: 'after' }
@@ -187,9 +187,9 @@ export class AddressLabelService implements IAddressLabelService {
         }
 
         // Invalidate cache for this address
-        await this.invalidateCache(doc.address);
+        await this.invalidateCache(updateFields.address);
 
-        this.logger.debug({ address: doc.address, source: doc.source }, 'Address label created/updated');
+        this.logger.debug({ address: updateFields.address, source: updateFields.source }, 'Address label created/updated');
 
         return this.toPublicLabel(result);
     }
