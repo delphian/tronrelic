@@ -28,7 +28,7 @@ TronRelic implements a **three-layer design token system** following the archite
 
 ### Layer 1: Foundation Tokens (Primitives)
 
-**File:** `primitives.css`
+**File:** `primitives.scss`
 
 Foundation tokens define primitive design values—the raw materials of the design system. These are context-free, reusable values with no semantic meaning attached.
 
@@ -67,7 +67,7 @@ Referenced by semantic tokens (Layer 2) and occasionally by CSS Modules for one-
 
 ### Layer 2: Semantic Tokens (Alias Tokens)
 
-**File:** `semantic-tokens.css`
+**File:** `semantic-tokens.scss`
 
 Semantic tokens compose foundation tokens into meaningful, context-aware variables. They answer "what is this for?" rather than "what does this look like?"
 
@@ -104,7 +104,7 @@ Provide consistent theming for specific UI components. When you need dark mode, 
 
 ### Layer 3: Utility Classes (Application Layer)
 
-**File:** `globals.css`
+**File:** `globals.scss`
 
 Utility classes apply design tokens to create reusable UI patterns. This is where tokens meet markup—the presentation layer that developers interact with most often.
 
@@ -192,7 +192,7 @@ This naming strategy makes intent clear at a glance and prevents naming collisio
 
 ## Design Token Reference
 
-TronRelic's design tokens are implemented as CSS custom properties (CSS variables) in `globals.css`. All tokens use semantic naming that describes their purpose rather than their appearance.
+TronRelic's design tokens are implemented as CSS custom properties (CSS variables) in `globals.scss`. Breakpoints are defined as SCSS variables in `_breakpoints.scss` for use in media queries. All tokens use semantic naming that describes their purpose rather than their appearance.
 
 [Placeholder: Complete reference of all design tokens from globals.css]
 
@@ -212,16 +212,18 @@ TronRelic's design tokens are implemented as CSS custom properties (CSS variable
 
 TronRelic uses an Asia-optimized breakpoint system designed for the dominant mobile viewport widths in Asian markets, where 360px devices represent 13.73% market share (vs 10.12% globally) due to mid-range Android popularity.
 
-| Token | Value | Target Devices |
+Breakpoints are defined as **SCSS variables** in `_breakpoints.scss` (the single source of truth), not CSS custom properties. This enables their use in media queries, which cannot use CSS variables.
+
+| SCSS Variable | Value | Target Devices |
 |-------|-------|----------------|
-| `--breakpoint-mobile-sm` | 360px | Legacy and very small devices |
-| `--breakpoint-mobile-md` | 480px | Primary mobile target (mid-range Android) |
-| `--breakpoint-mobile-lg` | 768px | Large phones, landscape orientation |
-| `--breakpoint-tablet` | 1024px | Tablets, small laptops |
-| `--breakpoint-desktop` | 1200px | Desktop displays and larger |
+| `$breakpoint-mobile-sm` | 360px | Legacy and very small devices |
+| `$breakpoint-mobile-md` | 480px | Primary mobile target (mid-range Android) |
+| `$breakpoint-mobile-lg` | 768px | Large phones, landscape orientation |
+| `$breakpoint-tablet` | 1024px | Tablets, small laptops |
+| `$breakpoint-desktop` | 1200px | Desktop displays and larger |
 
 **Usage in container queries (preferred):**
-```css
+```scss
 .component {
     container-type: inline-size;
 }
@@ -235,14 +237,18 @@ TronRelic uses an Asia-optimized breakpoint system designed for the dominant mob
 }
 ```
 
-**Usage in viewport media queries (global layout only):**
-```css
-@media (max-width: 767px) {
+**Usage in viewport media queries (global layout or component modules):**
+```scss
+@import '../../../app/breakpoints';  /* Import the breakpoint variables */
+
+@media (max-width: $breakpoint-mobile) {
     /* Mobile layout - use sparingly, prefer container queries */
 }
 ```
 
 **Key design decisions:**
+- SCSS variables enable breakpoints in media queries (CSS variables cannot be used in media queries)
+- Single source of truth in `_breakpoints.scss` ensures consistency
 - Container queries preferred over viewport media queries for component responsiveness
 - Mobile tiers (sm/md/lg) enable granular control for Asian market device diversity
 - 360px baseline captures the dominant mobile viewport in target markets
@@ -360,13 +366,14 @@ When working with TronRelic's design tokens, remember:
 ## Further Reading
 
 **TronRelic documentation:**
-- [ui-component-styling.md](./ui-component-styling.md) - Component styling patterns and CSS Module usage
+- [ui-component-styling.md](./ui-component-styling.md) - Component styling patterns and SCSS Module usage
 - [frontend-architecture.md](./frontend-architecture.md) - Frontend file organization and structure
 
 **TronRelic source files:**
-- [apps/frontend/app/primitives.css](../../apps/frontend/app/primitives.css) - Foundation tokens (primitives)
-- [apps/frontend/app/semantic-tokens.css](../../apps/frontend/app/semantic-tokens.css) - Semantic tokens (aliases)
-- [apps/frontend/app/globals.css](../../apps/frontend/app/globals.css) - Utility classes and global styles
+- [apps/frontend/app/primitives.scss](../../apps/frontend/app/primitives.scss) - Foundation tokens (primitives)
+- [apps/frontend/app/semantic-tokens.scss](../../apps/frontend/app/semantic-tokens.scss) - Semantic tokens (aliases)
+- [apps/frontend/app/globals.scss](../../apps/frontend/app/globals.scss) - Utility classes and global styles
+- [apps/frontend/app/_breakpoints.scss](../../apps/frontend/app/_breakpoints.scss) - SCSS breakpoint variables (single source of truth)
 
 **External resources:**
 - Material Design Tokens: https://m3.material.io/foundations/design-tokens/overview

@@ -27,7 +27,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { MoreHorizontal, X } from 'lucide-react';
 import { useBodyScrollLock } from '../../hooks';
-import styles from './PriorityNav.module.css';
+import styles from './PriorityNav.module.scss';
 
 /**
  * Props for individual menu items.

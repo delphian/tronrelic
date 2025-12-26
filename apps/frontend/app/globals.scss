@@ -2,15 +2,17 @@
  * TronRelic Global Styles
  *
  * This file contains global resets, base element styles, and utility classes.
- * Foundation tokens (primitives) are defined in primitives.css.
- * Semantic tokens (composed meaning) are defined in semantic-tokens.css.
+ * Foundation tokens (primitives) are defined in primitives.scss.
+ * Semantic tokens (composed meaning) are defined in semantic-tokens.scss.
+ * Breakpoints are defined in _breakpoints.scss (single source of truth).
  *
  * See docs/frontend/design-token-layers.md for design token reference.
  * See docs/frontend/ui/ui-component-styling.md for component styling patterns.
  */
 
-@import './primitives.css';
-@import './semantic-tokens.css';
+@import './breakpoints';
+@import './primitives.scss';
+@import './semantic-tokens.scss';
 
 /* Global Resets */
 * {
@@ -39,7 +41,7 @@ a:hover {
 }
 
 main {
-  width: min(var(--breakpoint-desktop), 100%);
+  width: min($breakpoint-desktop, 100%);
   margin: 0 auto;
   padding: var(--spacing-14) var(--spacing-15) var(--spacing-16);
 }
@@ -302,10 +304,8 @@ button:focus-visible {
   transform-origin: left center;
 }
 
-/* Tablet and below (matches --breakpoint-tablet: 1200px)
-   Note: CSS custom properties cannot be used in @media queries,
-   so we use literal values that match the token definitions */
-@media (max-width: 1200px) {
+/* Tablet and below */
+@media (max-width: $breakpoint-desktop) {
   .layout-nav {
     padding: var(--spacing-8) var(--spacing-10);
   }
@@ -320,8 +320,8 @@ button:focus-visible {
   }
 }
 
-/* Mobile and below (matches --breakpoint-mobile-lg: 768px) */
-@media (max-width: 768px) {
+/* Mobile and below */
+@media (max-width: $breakpoint-mobile) {
   .layout-nav {
     flex-direction: column;
     gap: var(--spacing-6);
@@ -401,7 +401,7 @@ button:focus-visible {
  * Or in CSS Module:
  *   .wrapper { container-type: inline-size; }
  */
-@container (max-width: 768px) {
+@container (max-width: $breakpoint-mobile) {
   * {
     --card-padding-lg: var(--spacing-7);  /* 16px instead of 32px */
     --card-padding-md: var(--spacing-6);  /* 13.6px instead of 24px */
@@ -427,7 +427,7 @@ button:focus-visible {
  * existing @media queries at viewport breakpoints. The container query provides
  * more granular control when main's parent container is constrained.
  */
-@container body (max-width: 768px) {
+@container body (max-width: $breakpoint-mobile) {
   main {
     padding: var(--spacing-5) var(--spacing-5) var(--spacing-10);
   }

@@ -2,8 +2,8 @@ import dynamic from 'next/dynamic';
 import { definePlugin } from '@tronrelic/types';
 import { whaleAlertsManifest } from '../manifest';
 import { WhaleAlertsToastHandler } from './WhaleAlertsToastHandler';
-import './styles.css';
-import './system/system-styles.css';
+import './styles.scss';
+import './system/system-styles.scss';
 
 /**
  * Lazily loaded page components.

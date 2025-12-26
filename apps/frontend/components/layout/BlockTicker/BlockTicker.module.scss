@@ -5,6 +5,8 @@
  * Positioned below the navigation bar with minimal vertical space usage.
  */
 
+@import '../../../app/breakpoints';
+
 .ticker {
     background: var(--color-surface);
     border-top: var(--border-width-thin) solid var(--color-border);
@@ -17,7 +19,7 @@
     align-items: center;
     gap: var(--spacing-10);
     padding: var(--spacing-4) var(--container-padding-desktop);
-    width: min(var(--breakpoint-tablet), 100%);
+    width: min($breakpoint-tablet, 100%);
     margin: 0 auto;
     font-size: var(--font-size-sm);
     overflow-x: auto;
@@ -57,13 +59,14 @@
 }
 
 /* Responsive adjustments */
-@media (max-width: 1024px) {
+@media (max-width: $breakpoint-tablet) {
     .container {
         padding: var(--spacing-4) var(--container-padding-tablet);
         gap: var(--spacing-7);
     }
 }
 
+/* Note: 640px is component-specific, not a standard breakpoint */
 @media (max-width: 640px) {
     .container {
         padding: var(--spacing-4) var(--container-padding-mobile);

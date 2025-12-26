@@ -26,7 +26,7 @@ import Link from 'next/link';
 import type { IOrderedTheme } from '../../../app/layout';
 import { MenuNavSSR } from '../MenuNav';
 import { MainHeaderControls } from './MainHeaderControls';
-import styles from './MainHeader.module.css';
+import styles from './MainHeader.module.scss';
 
 /**
  * Props for the MainHeader component.

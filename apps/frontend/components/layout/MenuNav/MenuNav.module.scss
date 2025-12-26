@@ -10,6 +10,8 @@
  * overflow: hidden and min-width: 0 are critical for flex items in grid cells.
  */
 
+@import '../../../app/breakpoints';
+
 .nav {
     display: flex;
     gap: var(--spacing-4);
@@ -170,7 +172,7 @@
  * Note: Uses viewport media query because this element is portaled to document.body
  * and not inside any container context.
  */
-@media (max-width: 768px) {
+@media (max-width: $breakpoint-mobile) {
     .categoryBackdrop {
         background: var(--backdrop-color);
     }

@@ -30,7 +30,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { PriorityNav, useMenuConfig, useBodyScrollLock } from '../../../modules/menu';
 import { ChevronDown, ChevronRight } from 'lucide-react';
-import styles from './MenuNav.module.css';
+import styles from './MenuNav.module.scss';
 
 /**
  * Menu item structure passed from server component.

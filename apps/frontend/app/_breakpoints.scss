@@ -1,0 +1,20 @@
+/**
+ * TronRelic Breakpoint Definitions (Single Source of Truth)
+ *
+ * All breakpoint values are defined here. Import this file wherever
+ * breakpoints are needed in media queries or layout calculations.
+ *
+ * Asia-optimized breakpoints (2025):
+ * - 360px is dominant mobile width in Asia (13.73% market share)
+ * - Mobile tiers target mid-range Android devices common in Asian markets
+ * - Desktop at 1200px aligns with common laptop displays
+ */
+
+$breakpoint-mobile-sm: 360px;   // Legacy/very small devices
+$breakpoint-mobile-md: 480px;   // Primary mobile target
+$breakpoint-mobile-lg: 768px;   // Large phones, landscape
+$breakpoint-tablet: 1024px;     // Tablets
+$breakpoint-desktop: 1200px;    // Desktop and larger
+
+// Convenience alias for common mobile breakpoint
+$breakpoint-mobile: $breakpoint-mobile-lg;
