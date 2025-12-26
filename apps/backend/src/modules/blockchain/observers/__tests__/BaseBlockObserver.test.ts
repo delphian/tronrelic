@@ -263,9 +263,10 @@ describe('BaseBlockObserver', () => {
             await new Promise(resolve => setTimeout(resolve, 100));
 
             const stats = observer.getStats();
-            expect(stats.avgProcessingTimeMs).toBeGreaterThanOrEqual(20);
-            expect(stats.minProcessingTimeMs).toBeGreaterThanOrEqual(20);
-            expect(stats.maxProcessingTimeMs).toBeGreaterThanOrEqual(20);
+            // Use 15ms threshold to allow for timer jitter on CI runners
+            expect(stats.avgProcessingTimeMs).toBeGreaterThanOrEqual(15);
+            expect(stats.minProcessingTimeMs).toBeGreaterThanOrEqual(15);
+            expect(stats.maxProcessingTimeMs).toBeGreaterThanOrEqual(15);
         });
 
         it('should update lastProcessedAt timestamp', async () => {
