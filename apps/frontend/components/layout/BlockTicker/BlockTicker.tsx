@@ -3,7 +3,7 @@
 import { useAppSelector } from '../../../store/hooks';
 import { cn } from '../../../lib/cn';
 import type { BlockSummary } from '../../../features/blockchain/slice';
-import styles from './BlockTicker.module.css';
+import styles from './BlockTicker.module.scss';
 
 /**
  * Props for the BlockTicker component.

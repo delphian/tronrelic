@@ -19,20 +19,20 @@ Following these patterns ensures your work integrates seamlessly with existing i
 
 ## Core UI Principles
 
-### Two-Layer CSS Architecture
+### Two-Layer SCSS Architecture
 
 TronRelic separates styling concerns into two distinct layers to prevent conflicts and duplication:
 
-1. **`globals.css`** - Design tokens (CSS variables), utility classes, base resets, and global animations shared across the entire application
-2. **CSS Modules** - Component-specific styles with scoped class names that prevent naming collisions and make ownership clear
+1. **`globals.scss`** - Design tokens (CSS variables), utility classes, base resets, and global animations shared across the entire application
+2. **SCSS Modules** - Component-specific styles with scoped class names that prevent naming collisions and make ownership clear
 
-Every component should reference design tokens from `globals.css` (like `var(--color-primary)` or `var(--spacing-7)`) and implement component-specific layout in colocated `.module.css` files.
+Every component should reference design tokens from `globals.scss` (like `var(--color-primary)` or `var(--spacing-7)`) and implement component-specific layout in colocated `.module.scss` files.
 
 **Critical rule:** Never hardcode colors, spacing, typography, or other design values. Always use CSS variables to ensure consistency and enable theming.
 
 **See [ui-component-styling.md](./ui/ui-component-styling.md) for complete details on:**
-- What belongs in `globals.css` vs CSS Modules
-- How to create and use CSS Module files with TypeScript-safe naming conventions
+- What belongs in `globals.scss` vs SCSS Modules
+- How to create and use SCSS Module files with TypeScript-safe naming conventions
 - Available utility classes for surfaces, buttons, badges, forms, and layouts
 - Container queries for responsive component behavior
 - Icon usage with `lucide-react`
@@ -47,17 +47,17 @@ TronRelic implements an industry-standard token hierarchy used by Google (Materi
 
 **Layer 1: Foundation Tokens (Primitives)**
 - Raw design values with no semantic meaning (color palette, spacing scale, typography scale)
-- Defined in `primitives.css`
+- Defined in `primitives.scss`
 - Examples: `--color-blue-500`, `--spacing-7`, `--font-size-lg`
 
 **Layer 2: Semantic Tokens (Aliases)**
 - Context-aware variables that compose foundation tokens with purpose
-- Defined in `semantic-tokens.css`
+- Defined in `semantic-tokens.scss`
 - Examples: `--button-bg-primary`, `--card-border-radius`, `--modal-backdrop-blur`
 
 **Layer 3: Utility Classes (Application Layer)**
 - Ready-to-use classes that apply semantic tokens to create reusable UI patterns
-- Defined in `globals.css`
+- Defined in `globals.scss`
 - Examples: `.btn .btn--primary`, `.surface .surface--padding-md`, `.badge .badge--success`
 
 **Why this architecture matters:**
@@ -78,22 +78,24 @@ TronRelic implements an industry-standard token hierarchy used by Google (Materi
 
 ### Creating a New Component with Styling
 
-1. **Create component folder with CSS Module:**
+1. **Create component folder with SCSS Module:**
    ```
    features/my-feature/components/MyComponent/
    ├── MyComponent.tsx
-   ├── MyComponent.module.css
+   ├── MyComponent.module.scss
    └── index.ts
    ```
 
-2. **Import CSS Module in TypeScript:**
+2. **Import SCSS Module in TypeScript:**
    ```typescript
-   import styles from './MyComponent.module.css';
+   import styles from './MyComponent.module.scss';
    ```
 
-3. **Use design tokens in CSS Module:**
-   ```css
-   /* MyComponent.module.css */
+3. **Use design tokens in SCSS Module:**
+   ```scss
+   /* MyComponent.module.scss */
+   @import '../../../app/breakpoints';  /* Import for responsive breakpoints */
+
    .card {
        background: var(--color-surface);
        border: var(--border-width-thin) solid var(--color-border);
@@ -123,7 +125,7 @@ TronRelic implements an industry-standard token hierarchy used by Google (Materi
    }
    ```
 
-### CSS Module Naming Conventions
+### SCSS Module Naming Conventions
 
 **Critical for TypeScript type safety:** Use underscores for multi-word identifiers to enable clean dot notation (`styles.market_card`) instead of bracket notation (`styles['market-card']`).
 
@@ -145,7 +147,7 @@ TronRelic implements an industry-standard token hierarchy used by Google (Materi
 | **Borders** | `--border-width-thin`, `--radius-sm`, `--radius-md`, `--radius-lg` | Border widths and radii |
 | **Shadows** | `--shadow-sm`, `--shadow-md`, `--shadow-lg` | Elevation shadows |
 | **Transitions** | `--transition-base` | Standard timing |
-| **Breakpoints** | `--breakpoint-mobile-sm` (360px), `--breakpoint-mobile-md` (480px), `--breakpoint-mobile-lg` (768px), `--breakpoint-tablet` (1024px), `--breakpoint-desktop` (1200px) | Asia-optimized responsive breakpoints |
+| **Breakpoints** | `$breakpoint-mobile-sm` (360px), `$breakpoint-mobile-md` (480px), `$breakpoint-mobile-lg` (768px), `$breakpoint-tablet` (1024px), `$breakpoint-desktop` (1200px) | Asia-optimized SCSS variables (import `_breakpoints.scss`) |
 
 ### Common Utility Classes
 
@@ -217,13 +219,13 @@ import { ClientTime } from '../../components/ui/ClientTime';
 
 Before committing any UI component or plugin page, verify:
 
-- [ ] Uses CSS variables from `globals.css` (no hardcoded colors, spacing, fonts, or sizes)
+- [ ] Uses CSS variables from `globals.scss` (no hardcoded colors, spacing, fonts, or sizes)
   - [ ] Spacing: `var(--spacing-*)` not `1rem`, `10px`, etc.
   - [ ] Colors: `var(--color-*)` not `#fff`, `rgba(...)`, etc.
   - [ ] Typography: `var(--font-size-*)`, `var(--font-weight-*)` not `1.2rem`, `600`, etc.
   - [ ] Borders: `var(--border-width-*)`, `var(--radius-*)` not `1px`, `16px`, etc.
-- [ ] Component-specific styles are in colocated CSS Module file (`ComponentName.module.css`)
-- [ ] CSS Module uses underscore naming for multi-word identifiers (enables dot notation)
+- [ ] Component-specific styles are in colocated SCSS Module file (`ComponentName.module.scss`)
+- [ ] SCSS Module uses underscore naming for multi-word identifiers (enables dot notation)
 - [ ] Uses container queries for component-level responsiveness (not viewport media queries)
 - [ ] Uses built-in utility classes for common patterns (`.surface`, `.btn`, `.badge`, `.stack`)
 - [ ] Uses `lucide-react` for all icons with design system colors
@@ -250,9 +252,10 @@ Before committing any UI component or plugin page, verify:
 - [documentation.md](../documentation.md) - Documentation standards and writing style
 
 **Source files:**
-- [apps/frontend/app/primitives.css](../../../apps/frontend/app/primitives.css) - Foundation tokens (Layer 1)
-- [apps/frontend/app/semantic-tokens.css](../../../apps/frontend/app/semantic-tokens.css) - Semantic tokens (Layer 2)
-- [apps/frontend/app/globals.css](../../../apps/frontend/app/globals.css) - Utility classes and global styles (Layer 3)
+- [apps/frontend/app/primitives.scss](../../../apps/frontend/app/primitives.scss) - Foundation tokens (Layer 1)
+- [apps/frontend/app/semantic-tokens.scss](../../../apps/frontend/app/semantic-tokens.scss) - Semantic tokens (Layer 2)
+- [apps/frontend/app/globals.scss](../../../apps/frontend/app/globals.scss) - Utility classes and global styles (Layer 3)
+- [apps/frontend/app/_breakpoints.scss](../../../apps/frontend/app/_breakpoints.scss) - SCSS breakpoint variables (single source of truth)
 
 **External resources:**
 - [Lucide React Documentation](https://lucide.dev/guide/packages/lucide-react) - Icon library usage

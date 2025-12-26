@@ -5,7 +5,7 @@
  * These are raw values with no semantic meaning (e.g., --spacing-4, --blue-600).
  * Never reference these directly in components - use semantic tokens instead.
  *
- * Values derived from analyzing existing patterns across globals.css and
+ * Values derived from analyzing existing patterns across globals.scss and
  * component CSS modules to ensure consistency with the current design.
  *
  * See docs/frontend/design-token-layers.md for usage guidelines.
@@ -136,15 +136,9 @@
     --duration-pulse: 2s;        /* Live indicator pulse */
     --duration-slide: 0.25s;     /* Toast slide-in */
 
-    /* Breakpoint Tokens (Asia-optimized, 2025)
-       - 360px is dominant mobile width in Asia (13.73% market share)
-       - Mobile tiers target mid-range Android devices common in Asian markets
-       - Desktop at 1200px aligns with common laptop displays */
-    --breakpoint-mobile-sm: 360px;   /* Legacy/very small devices */
-    --breakpoint-mobile-md: 480px;   /* Primary mobile target */
-    --breakpoint-mobile-lg: 768px;   /* Large phones, landscape */
-    --breakpoint-tablet: 1024px;     /* Tablets */
-    --breakpoint-desktop: 1200px;    /* Desktop and larger */
+    /* Breakpoint Tokens
+       REMOVED: Breakpoints are now defined in _breakpoints.scss (single source of truth).
+       Import @import './breakpoints'; in SCSS files to use $breakpoint-* variables. */
 
     /* Component Size Tokens */
     --button-height-sm: 34px;

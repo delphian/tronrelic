@@ -20,7 +20,7 @@
 import type { IOrderedTheme } from '../../../app/layout';
 import { ThemeToggle } from '../../ThemeToggle';
 import { WalletButton } from '../../../modules/user';
-import styles from './MainHeader.module.css';
+import styles from './MainHeader.module.scss';
 
 /**
  * Props for the MainHeaderControls component.

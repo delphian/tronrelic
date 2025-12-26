@@ -17,13 +17,13 @@ Inconsistent styling creates problems that compound over time:
 
 Following these guidelines eliminates these risks and ensures your interfaces feel like a natural extension of TronRelic.
 
-## CSS Architecture: Two-Layer System
+## SCSS Architecture: Two-Layer System
 
-### ⚠️ CSS Modules Class Name Conventions
+### ⚠️ SCSS Modules Class Name Conventions
 
 **Why This Convention Matters:**
 
-CSS Modules in TypeScript generate typed objects that map class names to scoped identifiers. Using underscores for multi-word identifiers ensures you can access styles using clean dot notation (`styles.market_region`) instead of bracket notation (`styles['market-region']`), which is verbose and loses type safety.
+SCSS Modules in TypeScript generate typed objects that map class names to scoped identifiers. Using underscores for multi-word identifiers ensures you can access styles using clean dot notation (`styles.market_region`) instead of bracket notation (`styles['market-region']`), which is verbose and loses type safety.
 
 **Naming Rules:**
 
@@ -35,8 +35,8 @@ CSS Modules in TypeScript generate typed objects that map class names to scoped 
 
 **Good Examples (Dot Notation):**
 
-```css
-/* MarketTable.module.css */
+```scss
+/* MarketTable.module.scss */
 .market { ... }                          /* Single word */
 .market_region { ... }                   /* Multi-word identifier */
 .table__cell { ... }                     /* BEM element */
@@ -47,7 +47,7 @@ CSS Modules in TypeScript generate typed objects that map class names to scoped 
 
 ```tsx
 // MarketTable.tsx - Clean dot notation with type safety
-import styles from './MarketTable.module.css';
+import styles from './MarketTable.module.scss';
 
 <div className={styles.market}>
     <table className={styles.market_region}>
@@ -90,12 +90,12 @@ import styles from './MarketTable.module.css';
 
 TronRelic separates styling concerns into two distinct layers:
 
-1. **`globals.css` provides the design foundation** - CSS variables (design tokens), utility classes, base resets, and animations that ensure visual consistency across the entire application
-2. **CSS Modules provide component isolation** - Scoped styles that prevent naming collisions, make ownership clear, and enable safe refactoring without breaking unrelated components
+1. **`globals.scss` provides the design foundation** - CSS variables (design tokens), utility classes, base resets, and animations that ensure visual consistency across the entire application
+2. **SCSS Modules provide component isolation** - Scoped styles that prevent naming collisions, make ownership clear, and enable safe refactoring without breaking unrelated components
 
-### What Goes in globals.css
+### What Goes in globals.scss
 
-The `globals.css` file should contain **ONLY** these categories:
+The `globals.scss` file should contain **ONLY** these categories:
 
 1. **CSS Variables (Design Tokens)**
    - Colors: `--color-primary`, `--color-surface`, `--color-border`
@@ -123,11 +123,11 @@ The `globals.css` file should contain **ONLY** these categories:
    - Global layout breakpoints affecting page chrome, navigation, or overall structure
    - Media queries that adjust `.layout-nav`, `main` padding, or other layout shells
 
-**Everything else belongs in component-specific CSS Modules.**
+**Everything else belongs in component-specific SCSS Modules.**
 
-### What Goes in CSS Modules
+### What Goes in SCSS Modules
 
-Component CSS Modules (`.module.css` files) should contain:
+Component SCSS Modules (`.module.scss` files) should contain:
 
 - **Component-specific class names** - Styles that only apply to one component
 - **Component layout** - Grid/flexbox rules specific to the component's internal structure
@@ -135,26 +135,26 @@ Component CSS Modules (`.module.css` files) should contain:
 - **Component container queries** - Responsive behavior based on container width (not viewport)
 - **Component animations** - Transitions or animations used only by this component
 
-## How to Style Components with CSS Modules
+## How to Style Components with SCSS Modules
 
-### Step 1: Create the CSS Module File
+### Step 1: Create the SCSS Module File
 
-Place the CSS Module file next to your component:
+Place the SCSS Module file next to your component:
 
 ```
 components/MarketCard/
 ├── MarketCard.tsx
-└── MarketCard.module.css
+└── MarketCard.module.scss
 ```
 
-**Naming convention:** `ComponentName.module.css`
+**Naming convention:** `ComponentName.module.scss`
 
 ### Step 2: Import the Module
 
 Import the module in your component:
 
 ```typescript
-import styles from './ComponentName.module.css';
+import styles from './ComponentName.module.scss';
 ```
 
 ### Step 3: Apply Scoped Classes
@@ -189,18 +189,21 @@ Mix CSS Module classes with global utility classes when appropriate:
 - Standard layouts (`.stack`, `.grid`)
 - Text styling (`.text-muted`)
 
-**When to use CSS Modules:**
+**When to use SCSS Modules:**
 - Custom layouts specific to your component
 - Component-specific spacing or sizing
 - Unique hover/focus states
 - Container queries for component responsiveness
+- Responsive media queries using SCSS breakpoint variables
 
 ### Step 5: Use CSS Variables for Theming
 
-Always reference design tokens from `semantic-tokens.css` in your CSS Module:
+Always reference design tokens from `semantic-tokens.scss` in your SCSS Module:
 
-```css
-/* MarketCard.module.css */
+```scss
+/* MarketCard.module.scss */
+@import '../../../app/breakpoints';  /* Import for responsive breakpoints */
+
 .card {
     background: var(--color-surface);
     border: var(--border-width-thin) solid var(--color-border);
@@ -214,11 +217,18 @@ Always reference design tokens from `semantic-tokens.css` in your CSS Module:
     font-size: var(--font-size-lg);
     font-weight: var(--font-weight-semibold);
 }
+
+/* Use SCSS breakpoint variables in media queries */
+@media (max-width: $breakpoint-mobile) {
+    .card {
+        padding: var(--spacing-7);
+    }
+}
 ```
 
 **Never hardcode values:**
 
-```css
+```scss
 /* ❌ Bad - hardcoded values break consistency and theming */
 .card {
     background: rgba(12, 18, 34, 0.88);
@@ -253,7 +263,7 @@ Here's a full example showing the recommended patterns:
  * @param props.availability - Availability status
  */
 
-import styles from './MarketCard.module.css';
+import styles from './MarketCard.module.scss';
 
 interface MarketCardProps {
     name: string;
@@ -276,15 +286,17 @@ export function MarketCard({ name, price, availability }: MarketCardProps) {
 }
 ```
 
-**`components/MarketCard/MarketCard.module.css`**
-```css
+**`components/MarketCard/MarketCard.module.scss`**
+```scss
 /**
  * Market Card Styles
  *
  * Responsive card layout using container queries to adapt to available space.
  * Combines global .surface utility with component-specific layout and typography.
- * All values use design tokens from semantic-tokens.css for consistency.
+ * All values use design tokens from semantic-tokens.scss for consistency.
  */
+
+@import '../../../app/breakpoints';  /* Import for responsive breakpoints */
 
 .card {
     container-type: inline-size;
@@ -325,9 +337,10 @@ export function MarketCard({ name, price, availability }: MarketCardProps) {
 ```
 
 **Key points:**
-- `.surface` and `.badge` are utility classes from `globals.css`
-- `.card`, `.header`, `.title`, `.price` are scoped to this component via CSS Modules
+- `.surface` and `.badge` are utility classes from `globals.scss`
+- `.card`, `.header`, `.title`, `.price` are scoped to this component via SCSS Modules
 - **All values use design tokens** - spacing (`--spacing-*`), typography (`--font-size-*`, `--font-weight-*`), colors (`--color-*`)
+- **Breakpoints imported from `_breakpoints.scss`** - enables SCSS variables in media queries
 - Container queries adapt the component to its available space
 - JSDoc comments explain the "why" before showing the "how"
 
@@ -335,7 +348,7 @@ export function MarketCard({ name, price, availability }: MarketCardProps) {
 
 ### Core CSS Variables (Semantic Tokens)
 
-TronRelic uses a **3-layer design token system**. Component styles should reference **semantic tokens** from `semantic-tokens.css`, which compose primitive values from `primitives.css`.
+TronRelic uses a **3-layer design token system**. Component styles should reference **semantic tokens** from `semantic-tokens.scss`, which compose primitive values from `primitives.scss`. Breakpoints are defined as SCSS variables in `_breakpoints.scss` for use in media queries.
 
 **Key semantic tokens for component styling:**
 
@@ -821,13 +834,13 @@ Plugins should reference the same CSS variables as the core application:
 </div>
 ```
 
-### 3. Use CSS Modules for Plugin Styles
+### 3. Use SCSS Modules for Plugin Styles
 
-Create a colocated CSS Module for plugin-specific styles:
+Create a colocated SCSS Module for plugin-specific styles:
 
 ```tsx
-// Good - combines utility classes with CSS Modules
-import styles from './MyPlugin.module.css';
+// Good - combines utility classes with SCSS Modules
+import styles from './MyPlugin.module.scss';
 
 <div className="surface surface--padding-md">
     <div className={styles.pluginGrid}>
@@ -837,8 +850,10 @@ import styles from './MyPlugin.module.css';
 </div>
 ```
 
-**`MyPlugin.module.css`:**
-```css
+**`MyPlugin.module.scss`:**
+```scss
+@import '../../../app/breakpoints';  /* Import for responsive breakpoints */
+
 .pluginGrid {
     display: grid;
     gap: var(--spacing-10);
@@ -1064,9 +1079,10 @@ Before shipping any UI component or plugin page, verify:
   - [ ] Colors: `var(--color-*)` instead of `#fff`, `rgba(...)`, etc.
   - [ ] Typography: `var(--font-size-*)`, `var(--font-weight-*)`, `var(--line-height-*)` instead of `1.2rem`, `600`, `1.5`, etc.
   - [ ] Borders: `var(--border-width-*)`, `var(--radius-*)` instead of `1px`, `16px`, etc.
-- [ ] Component-specific styles are in a colocated CSS Module file (`ComponentName.module.css`)
-- [ ] CSS Module is imported using `import styles from './ComponentName.module.css'`
-- [ ] Uses container queries in CSS Modules for component-level responsiveness
+- [ ] Component-specific styles are in a colocated SCSS Module file (`ComponentName.module.scss`)
+- [ ] SCSS Module is imported using `import styles from './ComponentName.module.scss'`
+- [ ] Breakpoints imported via `@import '../../../app/breakpoints';` when using media queries
+- [ ] Uses container queries in SCSS Modules for component-level responsiveness
 - [ ] Uses built-in utility classes for common patterns (`.surface`, `.btn`, `.badge`, `.stack`, `.grid`)
 - [ ] Uses `lucide-react` for all icons
 - [ ] Provides visual feedback for state changes (loading, error, success)
@@ -1082,7 +1098,8 @@ Before shipping any UI component or plugin page, verify:
 ## Further Reading
 
 - [Frontend Architecture](./frontend-architecture.md) - File organization and folder structure
-- [Design System Colors and Variables](../../apps/frontend/app/globals.css) - Full reference of CSS variables
+- [Design System Colors and Variables](../../apps/frontend/app/globals.scss) - Full reference of CSS variables
+- [SCSS Breakpoints](../../apps/frontend/app/_breakpoints.scss) - Single source of truth for breakpoint SCSS variables
 - [Lucide React Documentation](https://lucide.dev/guide/packages/lucide-react)
 - [Icon Browser](https://lucide.dev/icons) - Browse all available icons
 - [CSS Container Queries (MDN)](https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_Container_Queries)

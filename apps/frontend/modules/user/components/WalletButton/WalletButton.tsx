@@ -21,7 +21,7 @@ import { AlertCircle, Loader2, ShieldCheck } from 'lucide-react';
 import { Button } from '../../../../components/ui/Button';
 import { useToast } from '../../../../components/ui/ToastProvider';
 import { useWallet } from '../../hooks/useWallet';
-import styles from './WalletButton.module.css';
+import styles from './WalletButton.module.scss';
 
 /**
  * Truncates a wallet address to show first 6 and last 4 characters.

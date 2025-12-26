@@ -6,6 +6,8 @@
  * Uses container queries for responsive behavior - responds to parent container.
  */
 
+@import '../../../../app/breakpoints';
+
 /**
  * Connect Wallet Button - Premium Design
  *
@@ -120,8 +122,8 @@
     /* Visible by default */
 }
 
-/* Mobile (≤768px): Hide login text, show icon only */
-@media (max-width: 768px) {
+/* Mobile: Hide login text, show icon only */
+@media (max-width: $breakpoint-mobile) {
     .login_text {
         display: none;
     }

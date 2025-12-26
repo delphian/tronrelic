@@ -4,7 +4,7 @@ import { cookies } from 'next/headers';
 import { getServerConfig, type RuntimeConfig } from '../lib/serverConfig';
 import { getServerSideApiUrl } from '../lib/api-url';
 import { buildMetadata, SITE_NAME } from '../lib/seo';
-import './globals.css';
+import './globals.scss';
 import { Providers, type SSRUserData } from './providers';
 import { MainHeader } from '../components/layout/MainHeader';
 import { BlockTicker } from '../components/layout/BlockTicker';

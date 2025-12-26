@@ -5,6 +5,8 @@
  * logo, and utility controls (theme toggle, wallet connection).
  */
 
+@import '../../../app/breakpoints';
+
 .header {
     width: 100%;
 }
@@ -13,7 +15,7 @@
     display: flex;
     align-items: center;
     padding: var(--spacing-14) var(--spacing-15) 0;
-    width: min(var(--breakpoint-desktop), 100%);
+    width: min($breakpoint-desktop, 100%);
     margin: 0 auto;
     gap: var(--spacing-6);
 }
@@ -45,15 +47,15 @@
  * Ensures header alignment with main content at all screen sizes.
  */
 
-/* Tablet and below (≤1200px) */
-@media (max-width: 1200px) {
+/* Tablet and below */
+@media (max-width: $breakpoint-desktop) {
     .container {
         padding: var(--spacing-12) var(--spacing-10) 0;
     }
 }
 
-/* Mobile and below (≤768px) */
-@media (max-width: 768px) {
+/* Mobile and below */
+@media (max-width: $breakpoint-mobile) {
     .container {
         padding: var(--spacing-10) var(--spacing-9) 0;
     }

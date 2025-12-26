@@ -5,6 +5,8 @@
  * Uses BEM naming convention with .whale-admin-* prefix to prevent conflicts.
  */
 
+@import '../../../../../../apps/frontend/app/breakpoints';
+
 /* Admin page layout */
 .whale-admin-grid {
     display: grid;
@@ -128,7 +130,7 @@
 }
 
 /* Responsive adjustments */
-@media (max-width: 768px) {
+@media (max-width: $breakpoint-mobile) {
     .whale-threshold-examples__list {
         grid-template-columns: repeat(2, 1fr);
     }

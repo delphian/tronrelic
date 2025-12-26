@@ -6,6 +6,8 @@
  * to the "More" dropdown.
  */
 
+@import '../../../../app/breakpoints';
+
 /**
  * Root container.
  *
@@ -191,7 +193,7 @@
  * that slides up from the bottom. This is the standard mobile UX pattern
  * used by iOS/Android native apps for overflow menus.
  */
-@media (max-width: 768px) {
+@media (max-width: $breakpoint-mobile) {
     .dropdown {
         /* Position at bottom of viewport */
         top: auto !important;
@@ -237,7 +239,7 @@
     display: none;
 }
 
-@media (max-width: 768px) {
+@media (max-width: $breakpoint-mobile) {
     .drag_handle {
         display: block;
         position: absolute;
