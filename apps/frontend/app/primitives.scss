@@ -138,7 +138,7 @@
 
     /* Breakpoint Tokens
        REMOVED: Breakpoints are now defined in _breakpoints.scss (single source of truth).
-       Import @import './breakpoints'; in SCSS files to use $breakpoint-* variables. */
+       Import @use './breakpoints' as *; in SCSS files to use $breakpoint-* variables. */
 
     /* Component Size Tokens */
     --button-height-sm: 34px;

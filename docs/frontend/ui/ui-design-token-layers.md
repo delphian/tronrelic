@@ -224,22 +224,24 @@ Breakpoints are defined as **SCSS variables** in `_breakpoints.scss` (the single
 
 **Usage in container queries (preferred):**
 ```scss
+@use '../../../app/breakpoints' as *;
+
 .component {
     container-type: inline-size;
 }
 
-@container (max-width: 480px) {
-    .component { /* Mobile-md and below */ }
+@container (max-width: #{$breakpoint-mobile-md}) {
+    .component { /* Mobile-md (480px) and below */ }
 }
 
-@container (min-width: 768px) {
-    .component { /* Mobile-lg and above */ }
+@container (min-width: #{$breakpoint-mobile}) {
+    .component { /* Mobile-lg (768px) and above */ }
 }
 ```
 
 **Usage in viewport media queries (global layout or component modules):**
 ```scss
-@import '../../../app/breakpoints';  /* Import the breakpoint variables */
+@use '../../../app/breakpoints' as *;
 
 @media (max-width: $breakpoint-mobile) {
     /* Mobile layout - use sparingly, prefer container queries */

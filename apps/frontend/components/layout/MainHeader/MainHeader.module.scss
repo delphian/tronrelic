@@ -5,7 +5,7 @@
  * logo, and utility controls (theme toggle, wallet connection).
  */
 
-@import '../../../app/breakpoints';
+@use '../../../app/breakpoints' as *;
 
 .header {
     width: 100%;

@@ -118,14 +118,16 @@ Every component should reference design tokens from `globals.css` (like `var(--c
 
 Always use container queries for component responsiveness:
 
-```css
-/* MyComponent.module.css */
+```scss
+/* MyComponent.module.scss */
+@use '../../../app/breakpoints' as *;
+
 .container {
     container-type: inline-size;
     container-name: my-component;
 }
 
-@container my-component (min-width: 480px) {
+@container my-component (min-width: #{$breakpoint-mobile-md}) {
     .grid {
         grid-template-columns: repeat(2, 1fr);
     }

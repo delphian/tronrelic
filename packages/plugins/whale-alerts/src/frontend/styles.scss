@@ -8,7 +8,7 @@
  * - CSS modules or BEM naming ensures namespace isolation
  */
 
-@import '../../../../../apps/frontend/app/breakpoints';
+@use '../../../../../apps/frontend/app/breakpoints' as *;
 
 /* Whale Dashboard Layout */
 .whale-dashboard {

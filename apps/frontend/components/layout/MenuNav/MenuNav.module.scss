@@ -10,7 +10,7 @@
  * overflow: hidden and min-width: 0 are critical for flex items in grid cells.
  */
 
-@import '../../../app/breakpoints';
+@use '../../../app/breakpoints' as *;
 
 .nav {
     display: flex;

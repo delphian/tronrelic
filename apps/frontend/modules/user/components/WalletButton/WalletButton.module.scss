@@ -6,7 +6,7 @@
  * Uses container queries for responsive behavior - responds to parent container.
  */
 
-@import '../../../../app/breakpoints';
+@use '../../../../app/breakpoints' as *;
 
 /**
  * Connect Wallet Button - Premium Design

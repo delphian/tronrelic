@@ -202,7 +202,7 @@ Always reference design tokens from `semantic-tokens.scss` in your SCSS Module:
 
 ```scss
 /* MarketCard.module.scss */
-@import '../../../app/breakpoints';  /* Import for responsive breakpoints */
+@use '../../../app/breakpoints' as *;
 
 .card {
     background: var(--color-surface);
@@ -296,7 +296,7 @@ export function MarketCard({ name, price, availability }: MarketCardProps) {
  * All values use design tokens from semantic-tokens.scss for consistency.
  */
 
-@import '../../../app/breakpoints';  /* Import for responsive breakpoints */
+@use '../../../app/breakpoints' as *;
 
 .card {
     container-type: inline-size;
@@ -496,6 +496,14 @@ TronRelic uses a **3-layer design token system**. Component styles should refere
 
 **Rule: Always use CSS container queries for component-level responsiveness. Reserve viewport media queries exclusively for global layout changes.**
 
+**⚠️ SCSS Variable Gotcha:** Container queries require interpolation `#{$variable}` while media queries don't. Without interpolation, the rule compiles but the condition is silently dropped ([Sass #3471](https://github.com/sass/sass/issues/3471)):
+
+```scss
+/* ✅ Works */ @container my-card (max-width: #{$breakpoint-mobile}) { ... }
+/* ❌ Fails */ @container my-card (max-width: $breakpoint-mobile) { ... }
+/* ✅ Works */ @media (max-width: $breakpoint-mobile) { ... }
+```
+
 ### Why Container Queries?
 
 Container queries solve a critical problem: **components must adapt to their available space, not the viewport size.**
@@ -521,9 +529,11 @@ Container queries fix this by letting each component define its own responsive b
 
 2. **Scope responsive rules with `@container` instead of `@media`:**
 
-```css
+```scss
+@use '../../../app/breakpoints' as *;
+
 /* Adapts when the container is narrow, regardless of viewport */
-@container analytics-card (min-width: 480px) {
+@container analytics-card (min-width: #{$breakpoint-mobile-md}) {
     .analytics-card__grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
@@ -569,8 +579,10 @@ export function TransactionCard({ transaction }: { transaction: ITransaction }) 
 }
 ```
 
-```css
-/* TransactionCard.css */
+```scss
+/* TransactionCard.module.scss */
+@use '../../../app/breakpoints' as *;
+
 .transaction-card {
     container-type: inline-size;
     container-name: transaction-card;
@@ -583,7 +595,7 @@ export function TransactionCard({ transaction }: { transaction: ITransaction }) 
 }
 
 /* When container is 480px+ wide, show 2 columns */
-@container transaction-card (min-width: 480px) {
+@container transaction-card (min-width: #{$breakpoint-mobile-md}) {
     .transaction-card__grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
@@ -852,7 +864,7 @@ import styles from './MyPlugin.module.scss';
 
 **`MyPlugin.module.scss`:**
 ```scss
-@import '../../../app/breakpoints';  /* Import for responsive breakpoints */
+@use '../../../app/breakpoints' as *;
 
 .pluginGrid {
     display: grid;
@@ -1081,7 +1093,7 @@ Before shipping any UI component or plugin page, verify:
   - [ ] Borders: `var(--border-width-*)`, `var(--radius-*)` instead of `1px`, `16px`, etc.
 - [ ] Component-specific styles are in a colocated SCSS Module file (`ComponentName.module.scss`)
 - [ ] SCSS Module is imported using `import styles from './ComponentName.module.scss'`
-- [ ] Breakpoints imported via `@import '../../../app/breakpoints';` when using media queries
+- [ ] Breakpoints imported via `@use '../../../app/breakpoints' as *;` when using media queries
 - [ ] Uses container queries in SCSS Modules for component-level responsiveness
 - [ ] Uses built-in utility classes for common patterns (`.surface`, `.btn`, `.badge`, `.stack`, `.grid`)
 - [ ] Uses `lucide-react` for all icons

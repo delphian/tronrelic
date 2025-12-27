@@ -6,7 +6,7 @@
  * to the "More" dropdown.
  */
 
-@import '../../../../app/breakpoints';
+@use '../../../../app/breakpoints' as *;
 
 /**
  * Root container.

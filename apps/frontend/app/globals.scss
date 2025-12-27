@@ -10,9 +10,9 @@
  * See docs/frontend/ui/ui-component-styling.md for component styling patterns.
  */
 
-@import './breakpoints';
-@import './primitives';
-@import './semantic-tokens';
+@use './breakpoints' as *;
+@use './primitives' as *;
+@use './semantic-tokens' as *;
 
 /* Global Resets */
 * {

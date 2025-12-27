@@ -94,7 +94,7 @@ TronRelic implements an industry-standard token hierarchy used by Google (Materi
 3. **Use design tokens in SCSS Module:**
    ```scss
    /* MyComponent.module.scss */
-   @import '../../../app/breakpoints';  /* Import for responsive breakpoints */
+   @use '../../../app/breakpoints' as *;
 
    .card {
        background: var(--color-surface);
@@ -114,13 +114,15 @@ TronRelic implements an industry-standard token hierarchy used by Google (Materi
    ```
 
 5. **Use container queries for responsiveness:**
-   ```css
+   ```scss
+   @use '../../../app/breakpoints' as *;
+
    .card {
        container-type: inline-size;
        container-name: my-card;
    }
 
-   @container my-card (min-width: 480px) {
+   @container my-card (min-width: #{$breakpoint-mobile-md}) {
        .grid { grid-template-columns: repeat(2, 1fr); }
    }
    ```
@@ -179,14 +181,16 @@ import { Info, TrendingUp, AlertCircle } from 'lucide-react';
 
 **Critical rule:** Always use container queries for component-level responsiveness. Reserve viewport media queries exclusively for global layout changes in `app/layout.tsx`.
 
-```css
+```scss
+@use '../../../app/breakpoints' as *;
+
 /* Component adapts to its container width, not viewport */
 .analytics_card {
     container-type: inline-size;
     container-name: analytics-card;
 }
 
-@container analytics-card (min-width: 480px) {
+@container analytics-card (min-width: #{$breakpoint-mobile-md}) {
     .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 ```

@@ -61,6 +61,9 @@ function resolveInternalApiOrigin() {
 /** @type {import('next').NextConfig} */
 const nextConfig = {
     output: 'standalone',
+    sassOptions: {
+        includePaths: [join(__dirname, 'app')],
+    },
     compiler: {
         removeConsole: process.env.NODE_ENV === 'production'
             ? { exclude: ['error', 'warn'] }
@@ -87,6 +90,56 @@ const nextConfig = {
                 ignored: ['**/node_modules', '**/.git'],
             };
         }
+
+        // Extend Next.js SCSS module rules to include plugin directories.
+        //
+        // transpilePackages handles JS/TS transpilation for plugins, but SCSS files
+        // go through a separate webpack pipeline (css-loader + sass-loader) that has
+        // its own include patterns scoped to the app directory. Without this fix,
+        // plugin .scss files bypass sass-loader entirely and are served as raw text.
+        //
+        // This finds existing SCSS module rules and:
+        // 1. Extends their include pattern to cover packages/plugins/
+        // 2. Adds apps/frontend/app/ to sass includePaths for @import resolution
+        config.module.rules.forEach(rule => {
+            if (rule.oneOf) {
+                rule.oneOf.forEach(oneOfRule => {
+                    // Find rules that handle .module.scss files
+                    const isScssModuleRule = oneOfRule.test instanceof RegExp &&
+                        oneOfRule.test.test('example.module.scss');
+                    if (isScssModuleRule) {
+                        const originalInclude = oneOfRule.include;
+                        oneOfRule.include = (resourcePath) => {
+                            // Include plugin SCSS files
+                            if (resourcePath.includes('/packages/plugins/')) {
+                                return true;
+                            }
+                            // Preserve original behavior for app SCSS files
+                            if (typeof originalInclude === 'function') {
+                                return originalInclude(resourcePath);
+                            }
+                            if (originalInclude instanceof RegExp) {
+                                return originalInclude.test(resourcePath);
+                            }
+                            return true;
+                        };
+
+                        if (oneOfRule.use && Array.isArray(oneOfRule.use)) {
+                            oneOfRule.use.forEach(loader => {
+                                if (loader.loader && loader.loader.includes('sass-loader')) {
+                                    loader.options = loader.options || {};
+                                    loader.options.sassOptions = loader.options.sassOptions || {};
+                                    loader.options.sassOptions.includePaths = [
+                                        ...(loader.options.sassOptions.includePaths || []),
+                                        join(__dirname, 'app')
+                                    ];
+                                }
+                            });
+                        }
+                    }
+                });
+            }
+        });
 
         return config;
     },

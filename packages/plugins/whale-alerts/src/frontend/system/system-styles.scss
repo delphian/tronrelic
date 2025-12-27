@@ -5,7 +5,7 @@
  * Uses BEM naming convention with .whale-admin-* prefix to prevent conflicts.
  */
 
-@import '../../../../../../apps/frontend/app/breakpoints';
+@use '../../../../../../apps/frontend/app/breakpoints' as *;
 
 /* Admin page layout */
 .whale-admin-grid {

@@ -5,7 +5,7 @@
  * Positioned below the navigation bar with minimal vertical space usage.
  */
 
-@import '../../../app/breakpoints';
+@use '../../../app/breakpoints' as *;
 
 .ticker {
     background: var(--color-surface);

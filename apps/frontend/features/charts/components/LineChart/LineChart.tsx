@@ -166,6 +166,7 @@ export function LineChart({
     const containerRef = useRef<HTMLElement | null>(null);
     const [containerWidth, setContainerWidth] = useState(860);
     const [tooltip, setTooltip] = useState<TooltipState | null>(null);
+    const [hiddenSeries, setHiddenSeries] = useState<Set<string>>(new Set());
 
     /**
      * Observes container width changes and updates chart responsively.
@@ -201,8 +202,25 @@ export function LineChart({
      *
      * Returns null if no data available, triggering empty state display.
      */
+    /**
+     * Toggles visibility of a series by ID.
+     * When toggled off, the series is hidden and Y-axis rescales.
+     */
+    const toggleSeries = (seriesId: string) => {
+        setHiddenSeries(prev => {
+            const next = new Set(prev);
+            if (next.has(seriesId)) {
+                next.delete(seriesId);
+            } else {
+                next.add(seriesId);
+            }
+            return next;
+        });
+    };
+
     const chartData = useMemo(() => {
-        const nonEmptySeries = series.filter(item => item.data.length > 0);
+        // Filter out empty series and hidden series
+        const nonEmptySeries = series.filter(item => item.data.length > 0 && !hiddenSeries.has(item.id));
         if (!nonEmptySeries.length) {
             return null;
         }
@@ -336,7 +354,7 @@ export function LineChart({
             domainPoints,
             zeroLineY
         };
-    }, [series, height, containerWidth, fixedMinDate, fixedMaxDate, fixedYMin, fixedYMax]);
+    }, [series, height, containerWidth, fixedMinDate, fixedMaxDate, fixedYMin, fixedYMax, hiddenSeries]);
 
     if (!chartData) {
         return <div className={cn(styles.chart, className)}>{emptyLabel}</div>;
@@ -561,15 +579,26 @@ export function LineChart({
 
             <figcaption className={styles.legend}>
                 <div className={styles.legend__items}>
-                    {normalizedSeries.map(item => (
-                        <div key={`legend-${item.id}`} className={styles.legend__item}>
-                            <span
-                                className={styles.legend__dot}
-                                style={{ background: item.color }}
-                            />
-                            <span className={styles.legend__label}>{item.label}</span>
-                        </div>
-                    ))}
+                    {series.filter(item => item.data.length > 0).map((item, index) => {
+                        const isHidden = hiddenSeries.has(item.id);
+                        const color = item.color ?? DEFAULT_COLORS[index % DEFAULT_COLORS.length];
+                        return (
+                            <button
+                                key={`legend-${item.id}`}
+                                className={cn(styles.legend__item, isHidden && styles['legend__item--hidden'])}
+                                onClick={() => toggleSeries(item.id)}
+                                type="button"
+                                aria-pressed={!isHidden}
+                                title={isHidden ? `Show ${item.label}` : `Hide ${item.label}`}
+                            >
+                                <span
+                                    className={styles.legend__dot}
+                                    style={{ background: isHidden ? 'transparent' : color, borderColor: color }}
+                                />
+                                <span className={styles.legend__label}>{item.label}</span>
+                            </button>
+                        );
+                    })}
                 </div>
             </figcaption>
         </figure>
