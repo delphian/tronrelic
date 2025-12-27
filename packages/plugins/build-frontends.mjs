@@ -1,4 +1,5 @@
 import * as esbuild from 'esbuild';
+import { sassPlugin } from 'esbuild-sass-plugin';
 import { promises as fs } from 'fs';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
@@ -105,6 +106,8 @@ async function discoverFrontendPlugins() {
  * It resolves once the bundle is written, propagating any build errors for centralized handling.
  */
 async function buildPluginFrontend(plugin) {
+    const frontendAppDir = join(__dirname, '../../apps/frontend/app');
+
     await esbuild.build({
         entryPoints: [plugin.frontendEntryPath],
         bundle: true,
@@ -115,6 +118,12 @@ async function buildPluginFrontend(plugin) {
         jsx: 'automatic',
         external: ['react', 'react-dom', 'react-redux', '@reduxjs/toolkit', '@tronrelic/frontend/*'],
         logLevel: 'info',
+        plugins: [
+            sassPlugin({
+                type: 'css',
+                loadPaths: [frontendAppDir],
+            }),
+        ],
     });
 }
 
