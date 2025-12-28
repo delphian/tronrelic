@@ -264,6 +264,7 @@
 
     /* Page Layout */
     --page-gap: var(--spacing-14);              /* 2.5rem */
+    --page-gap-sm: var(--spacing-7);            /* 1rem - mobile/constrained contexts */
     --page-header-gap: var(--spacing-5);        /* 0.75rem */
 
     /* Input Group */

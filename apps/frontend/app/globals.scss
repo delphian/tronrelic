@@ -51,6 +51,12 @@ main {
   gap: var(--page-gap);
 }
 
+@media (max-width: $breakpoint-mobile-lg) {
+  .page {
+    gap: var(--page-gap-sm);
+  }
+}
+
 .page-header {
   display: flex;
   flex-direction: column;
