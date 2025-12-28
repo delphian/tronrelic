@@ -826,11 +826,50 @@ import { Search, X } from 'lucide-react';
 
 When building plugin UIs, follow these additional rules:
 
-### 1. Always Use Container Queries
+### 1. Use Global `.page` Class for Page Root Elements
+
+Plugin pages MUST use the global `page` class (from `globals.scss`) for their root element to inherit mobile-responsive padding. The module-scoped class adds container queries but never replaces the global class:
+
+```tsx
+// CORRECT - global class for mobile padding, module class for container queries
+import styles from './MyPluginPage.module.scss';
+
+export function MyPluginPage({ context }: { context: IFrontendPluginContext }) {
+    return (
+        <div className={`page ${styles.container}`}>
+            <header className={styles.header}>...</header>
+            <context.ui.Card>...</context.ui.Card>
+        </div>
+    );
+}
+```
+
+```scss
+/* CORRECT - module class named .container, adds container queries */
+.container {
+    container-type: inline-size;
+    container-name: my-plugin-page;
+}
+
+/* WRONG - .page in module shadows global class, breaks mobile responsive */
+.page {
+    padding: var(--spacing-10);  /* Won't get mobile padding reduction */
+    container-type: inline-size;
+}
+```
+
+**Why this matters:** The global `.page` class has mobile-specific rules that remove padding on narrow viewports (`padding: 0 !important` at ≤768px). CSS Modules create scoped class names (e.g., `MyPluginPage_page__abc123`), so a module-scoped `.page` never receives these global mobile rules. Pages that define their own `.page` class maintain fixed padding on mobile, wasting valuable screen space.
+
+**Key rules:**
+- Always include global `page` in className: `className={`page ${styles.container}`}`
+- Never name your module class `.page` — use `.container` instead
+- The global class handles mobile padding; your module class handles container queries
+
+### 2. Always Use Container Queries
 
 Plugins render in various contexts (full pages, cards, modals, slideouts). **Never use viewport media queries** for plugin component styling—always use container queries so your UI adapts to its container.
 
-### 2. Import Design System Variables
+### 3. Import Design System Variables
 
 Plugins should reference the same CSS variables as the core application:
 
@@ -846,7 +885,7 @@ Plugins should reference the same CSS variables as the core application:
 </div>
 ```
 
-### 3. Use SCSS Modules for Plugin Styles
+### 4. Use SCSS Modules for Plugin Styles
 
 Create a colocated SCSS Module for plugin-specific styles:
 
@@ -902,7 +941,7 @@ import styles from './MyPlugin.module.scss';
 </div>
 ```
 
-### 4. Test in Multiple Contexts
+### 5. Test in Multiple Contexts
 
 Verify your plugin UI renders correctly in:
 - Full-page view
@@ -1093,6 +1132,8 @@ Before shipping any UI component or plugin page, verify:
   - [ ] Borders: `var(--border-width-*)`, `var(--radius-*)` instead of `1px`, `16px`, etc.
 - [ ] Component-specific styles are in a colocated SCSS Module file (`ComponentName.module.scss`)
 - [ ] SCSS Module is imported using `import styles from './ComponentName.module.scss'`
+- [ ] **Page root uses global `page` class** (e.g., `className={`page ${styles.container}`}`)
+- [ ] **Module classes named `.container`** (never `.page` which shadows global mobile rules)
 - [ ] Breakpoints imported via `@use '../../../app/breakpoints' as *;` when using media queries
 - [ ] Uses container queries in SCSS Modules for component-level responsiveness
 - [ ] Uses built-in utility classes for common patterns (`.surface`, `.btn`, `.badge`, `.stack`, `.grid`)
