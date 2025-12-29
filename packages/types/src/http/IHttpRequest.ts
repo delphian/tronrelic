@@ -1,3 +1,5 @@
+import type { IUser } from '../user/IUser.js';
+
 /**
  * Framework-agnostic HTTP request interface.
  *
@@ -10,6 +12,31 @@
  * - Backend can swap Express for Fastify, Koa, etc. without plugin changes
  * - Easier testing with mock request objects
  * - Clear contract for what request data is available
+ *
+ * ## User Context
+ *
+ * The `userId` and `user` fields are populated by middleware before requests
+ * reach plugin routes. Plugins can check `req.user` to determine if a user
+ * is authenticated and access their profile data.
+ *
+ * @example
+ * ```typescript
+ * // In a plugin route handler
+ * handler: async (req, res) => {
+ *     if (!req.user) {
+ *         return res.status(401).json({ error: 'Authentication required' });
+ *     }
+ *
+ *     // Check if user has linked wallets (registered)
+ *     const isRegistered = (req.user.wallets?.length ?? 0) > 0;
+ *     if (!isRegistered) {
+ *         return res.status(403).json({ error: 'Wallet verification required' });
+ *     }
+ *
+ *     // Proceed with authenticated, registered user
+ *     const userId = req.userId;
+ * }
+ * ```
  */
 export interface IHttpRequest<
     TParams = Record<string, string>,
@@ -136,4 +163,43 @@ export interface IHttpRequest<
      * ```
      */
     get(name: string): string | undefined;
+
+    /**
+     * User UUID extracted from the `tronrelic_uid` cookie.
+     *
+     * Populated by middleware before requests reach plugin routes. Undefined if
+     * no valid user cookie is present.
+     *
+     * @example
+     * ```typescript
+     * if (!req.userId) {
+     *     return res.status(401).json({ error: 'Authentication required' });
+     * }
+     * ```
+     */
+    userId?: string;
+
+    /**
+     * Resolved user data from userService.
+     *
+     * Populated by middleware after resolving `userId` via userService. Undefined if
+     * no valid user cookie is present or user doesn't exist in database.
+     *
+     * To check if a user is "registered" (has linked wallets):
+     * ```typescript
+     * const isRegistered = (req.user?.wallets?.length ?? 0) > 0;
+     * ```
+     *
+     * @example
+     * ```typescript
+     * if (!req.user) {
+     *     return res.status(401).json({ error: 'Authentication required' });
+     * }
+     *
+     * // Access user data
+     * const wallets = req.user.wallets;
+     * const preferences = req.user.preferences;
+     * ```
+     */
+    user?: IUser;
 }

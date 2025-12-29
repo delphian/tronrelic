@@ -127,6 +127,71 @@ interface IWebSocketClient {
 }
 ```
 
+### 6. User State Hook (`context.useUser`)
+
+Reactive access to the current user's identity and wallet information:
+
+```typescript
+interface IPluginUserState {
+    userId: string | null;           // User's UUID
+    isRegistered: boolean;           // Has at least one verified wallet
+    isLoggedIn: boolean;             // UI feature gate
+    wallets: IPluginWalletLink[];    // All linked wallets (verified and unverified)
+    primaryWallet: string | null;    // Primary wallet address
+    initialized: boolean;            // Whether user state has loaded
+}
+
+interface IPluginWalletLink {
+    address: string;                 // TRON address (base58)
+    verified: boolean;               // Cryptographically verified via signature
+    isPrimary: boolean;              // Is this the primary wallet
+    linkedAt: string;                // ISO timestamp
+    lastUsed: string;                // ISO timestamp
+    label?: string;                  // User-assigned label
+}
+```
+
+**Why `useUser` exists:** Plugins need to gate features based on user registration status without coupling to Redux store internals. The hook provides a stable interface that won't break plugins when the core user module is refactored.
+
+**Wallet states (in order of progression):**
+1. No wallets - `wallets.length === 0`
+2. Claimed but unverified - `wallets.some(w => !w.verified)`
+3. At least one verified - `wallets.some(w => w.verified)` (same as `isRegistered`)
+
+**Example - Feature gating based on registration:**
+
+```typescript
+export function MyPluginPage({ context }: { context: IFrontendPluginContext }) {
+    const { layout, ui, useUser, useModal } = context;
+    const { isRegistered, wallets } = useUser();
+    const modal = useModal();
+
+    const handlePremiumFeature = () => {
+        if (!isRegistered) {
+            modal.open({
+                title: 'Wallet Verification Required',
+                content: <p>Verify your wallet to access this feature.</p>,
+                size: 'sm'
+            });
+            return;
+        }
+        // Proceed with premium feature
+    };
+
+    return (
+        <layout.Page>
+            <layout.PageHeader title="My Plugin" />
+            <ui.Card>
+                <ui.Button onClick={handlePremiumFeature}>
+                    Premium Feature
+                    {!isRegistered && <LockIcon />}
+                </ui.Button>
+            </ui.Card>
+        </layout.Page>
+    );
+}
+```
+
 ## Using the Context in Plugin Pages
 
 Plugin pages receive the context as a prop and destructure what they need:

@@ -1226,7 +1226,8 @@ export class BlockchainService implements IBlockchainService {
         const { rawAmountSun, amountTRX } = this.resolveAmounts(contractType, value);
         const amountUSD = context.priceUSD ? Number((amountTRX * context.priceUSD).toFixed(2)) : undefined;
 
-        const memo = TronGridClient.decodeMemo(transaction.raw_data.data);
+        // Store raw hex memo data - consumers decode on frontend for display
+        const memo = transaction.raw_data.data?.trim() || null;
         const internalTransactions = info?.internal_transactions ?? [];
 
         const energyMetrics = this.buildEnergyMetrics(info);

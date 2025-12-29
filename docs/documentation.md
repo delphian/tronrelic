@@ -4,7 +4,9 @@ This guide keeps TronRelic's documentation consistent, concise, and immediately 
 
 ## Before You Write
 
-Load the project rules first. Read `README.md`, `AGENTS.md`, and any topic-specific references before drafting or updating content. Identify your audience—plugin authors, maintainers, or operators—and tailor language accordingly. Each document should solve a single reader problem; link out instead of duplicating large sections.
+Load the project rules first. Read `README.md`, project instruction files (e.g., `CLAUDE.md`), and any topic-specific references before drafting or updating content. Identify your audience—plugin authors, maintainers, or operators—and tailor language accordingly. Each document should solve a single reader problem; link out instead of duplicating large sections.
+
+Never include sensitive data in documentation: API keys, credentials, database connection strings, or security vulnerability details. Documentation becomes part of AI context and version control history—treat it as publicly visible.
 
 ## Style Priorities
 
@@ -22,7 +24,15 @@ Documentation must be *authoritative* and *prescriptive*.
 
 ## File Size Limits
 
-Keep documentation files under 500 lines. Files exceeding this limit risk being truncated when read by automated tools, defeating the purpose of comprehensive documentation. If a topic requires more than 500 lines, split it into multiple focused documents within a directory structure.
+Documentation serves both humans and AI tools. AI coding assistants inject project instruction files and referenced documentation into their context window—bloated files waste context on irrelevant content, degrading AI performance. Concise documentation improves both human scanability and AI effectiveness.
+
+| Document Type | Limit | Reasoning |
+|---------------|-------|-----------|
+| Project instruction files | < 60 lines | Injected every session; must be universally relevant |
+| Summary docs | < 150 lines | Entry points that link to details |
+| Detail docs | < 300 lines | Focused single-concern documents |
+
+If a topic requires more than 300 lines, split it into multiple focused documents. Summary documents should be lean gateways—provide context and link to details rather than duplicating content.
 
 ## Structure Template
 
@@ -60,7 +70,7 @@ Only include code when it adds clarity. Keep samples minimal and focused. Inline
 
 ## Maintaining Existing Docs
 
-Regularly prune sections that repeat information found elsewhere—link instead. Update quick-reference tables first when behavior changes. When removing content, ensure linked documents still make sense.
+Treat documentation like a prompt—iterate based on what actually improves outcomes, not what seems comprehensive. A common mistake is adding extensive content without testing its effectiveness. Prune sections that repeat information found elsewhere—link instead. Update quick-reference tables first when behavior changes. When removing content, ensure linked documents still make sense.
 
 ## Documentation Organization
 
@@ -75,6 +85,8 @@ Examples of directory-worthy topics include `docs/frontend/` for architecture an
 ### Directory Structure Pattern
 
 Each documentation directory contains a summary document matching the directory name (e.g., `frontend.md`) plus detailed documents prefixed with the directory name (e.g., `frontend-architecture.md`). The summary document serves as the entry point, providing high-level overview and linking to detailed documents with descriptions of what each covers.
+
+This pattern enables **progressive disclosure**: AI tools read the lean summary first, then fetch detail documents only when relevant to the current task. Avoid duplicating content between summary and detail files—summaries describe and link; details explain.
 
 ```
 docs/topic-name/
@@ -97,4 +109,4 @@ When a topic outgrows a single file, create the directory with lowercase hyphena
 
 ## Final Review
 
-Before publishing, verify the document reinforces style priorities, uses consistent terminology, focuses on actionable guidance rather than trivia, follows directory organization patterns if applicable, includes proper cross-references, and stays under 500 lines.
+Before publishing, verify the document reinforces style priorities, uses consistent terminology, focuses on actionable guidance rather than trivia, follows directory organization patterns if applicable, includes proper cross-references, and respects file size limits (60/150/300 lines by document type).

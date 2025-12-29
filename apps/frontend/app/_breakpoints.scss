@@ -15,6 +15,7 @@ $breakpoint-mobile-md: 480px;   // Primary mobile target
 $breakpoint-mobile-lg: 768px;   // Large phones, landscape
 $breakpoint-tablet: 1024px;     // Tablets
 $breakpoint-desktop: 1200px;    // Desktop and larger
+$breakpoint-desktop-xl: 1920px; // Full HD displays
 
 // Convenience alias for common mobile breakpoint
 $breakpoint-mobile: $breakpoint-mobile-lg;

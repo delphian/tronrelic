@@ -25,6 +25,7 @@ import { TronGridClient } from '../modules/blockchain/tron-grid.client.js';
 import { BlockchainService } from '../modules/blockchain/blockchain.service.js';
 import { ClickHouseService } from '../modules/clickhouse/services/clickhouse.service.js';
 import { AddressLabelService } from '../modules/address-labels/services/address-label.service.js';
+import { UserService } from '../modules/user/services/user.service.js';
 import { getRedisClient } from './redis.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -248,6 +249,7 @@ export async function loadPlugins(database: IDatabaseService): Promise<void> {
                 tronGrid: tronGridClient,
                 blockchainService,
                 addressLabelService,
+                userService: UserService.getInstance(),
                 logger: pluginLogger
             };
 

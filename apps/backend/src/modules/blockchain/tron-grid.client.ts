@@ -533,12 +533,21 @@ export class TronGridClient {
         }
     }
 
+    /**
+     * Decode memo from TronGrid raw_data.data field.
+     *
+     * TronGrid returns memo data as a hex-encoded string.
+     * Each pair of hex characters represents one byte of the original UTF-8 memo.
+     *
+     * @param data - Hex-encoded memo string from raw_data.data
+     * @returns Decoded UTF-8 string, or null if empty/invalid
+     */
     static decodeMemo(data?: string): string | null {
         if (!data) {
             return null;
         }
         try {
-            const buffer = Buffer.from(data, 'base64');
+            const buffer = Buffer.from(data, 'hex');
             const memo = buffer.toString('utf8').replace(/\0+$/u, '').trim();
             return memo.length ? memo : null;
         } catch (error) {

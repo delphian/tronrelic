@@ -2,6 +2,104 @@ import type { ComponentType } from 'react';
 import type { Socket } from 'socket.io-client';
 
 /**
+ * Wallet link information exposed to frontend plugins.
+ *
+ * Represents a wallet that has been linked (claimed) to a user account.
+ * Wallets follow a two-step flow: connect (claim) → verify (signature).
+ */
+export interface IPluginWalletLink {
+    /** TRON wallet address (base58 format) */
+    address: string;
+
+    /** Whether wallet ownership has been cryptographically verified via signature */
+    verified: boolean;
+
+    /** Whether this is the user's primary wallet */
+    isPrimary: boolean;
+
+    /** When the wallet was first linked (ISO timestamp) */
+    linkedAt: string;
+
+    /** When the wallet was last used/connected (ISO timestamp) */
+    lastUsed: string;
+
+    /** Optional user-assigned label for the wallet */
+    label?: string;
+}
+
+/**
+ * User state exposed to frontend plugins.
+ *
+ * Provides user identity and wallet information for feature gating
+ * and personalization. Designed as a stable interface that won't break
+ * plugins when core user module internals are refactored.
+ *
+ * Wallet states (in order of progression):
+ * 1. No wallets - `wallets.length === 0`
+ * 2. Claimed but unverified - `wallets.some(w => !w.verified)`
+ * 3. At least one verified - `wallets.some(w => w.verified)`
+ *
+ * @example
+ * ```typescript
+ * const { isRegistered, isLoggedIn, wallets } = context.useUser();
+ *
+ * // Gate feature to verified users only
+ * if (!isRegistered) {
+ *     return <p>Please verify your wallet to access this feature</p>;
+ * }
+ *
+ * // Check if user has any claimed wallets
+ * const hasClaimedWallet = wallets.length > 0;
+ *
+ * // Get only verified wallets
+ * const verifiedWallets = wallets.filter(w => w.verified);
+ * ```
+ */
+export interface IPluginUserState {
+    /**
+     * User's unique identifier (UUID).
+     * Always available after initial hydration.
+     */
+    userId: string | null;
+
+    /**
+     * Whether the user has at least one verified wallet.
+     * Convenience check for `wallets.some(w => w.verified)`.
+     * Use this for feature gating (e.g., "verify wallet to access historical data").
+     */
+    isRegistered: boolean;
+
+    /**
+     * Whether the user is currently logged in (UI feature gate).
+     * This is independent of wallet verification - a user can be logged in
+     * without verified wallets, or have verified wallets but be logged out.
+     */
+    isLoggedIn: boolean;
+
+    /**
+     * All linked wallets (both verified and unverified).
+     * Empty array if user has not linked any wallets.
+     *
+     * To get only verified wallets: `wallets.filter(w => w.verified)`
+     * To check for any claimed wallet: `wallets.length > 0`
+     */
+    wallets: IPluginWalletLink[];
+
+    /**
+     * Primary wallet address if set, null otherwise.
+     * Primary is automatically computed as the most recently used verified wallet,
+     * or most recently used unverified wallet if no verified wallets exist.
+     */
+    primaryWallet: string | null;
+
+    /**
+     * Whether user state has been initialized from backend.
+     * Use this to show loading states before user data is available.
+     */
+    initialized: boolean;
+}
+
+/**
  * UI component library provided to frontend plugins.
  *
  * Contains commonly used UI components that plugins can use without importing
@@ -569,4 +667,25 @@ export interface IFrontendPluginContext {
         close: (id: string) => void;
         closeAll: () => void;
     };
+
+    /**
+     * User state hook for accessing current user identity and wallet information.
+     *
+     * Returns reactive user state that automatically updates when user data changes.
+     * Must be called within a component context (similar to React hooks pattern).
+     *
+     * @example
+     * ```typescript
+     * const { isRegistered, isLoggedIn, wallets } = context.useUser();
+     *
+     * // Gate features to verified users
+     * if (!isRegistered) {
+     *     return <p>Please verify your wallet to access this feature</p>;
+     * }
+     *
+     * // Show different UI based on wallet verification state
+     * const hasUnverifiedWallet = wallets.some(w => !w.verified);
+     * ```
+     */
+    useUser: () => IPluginUserState;
 }
