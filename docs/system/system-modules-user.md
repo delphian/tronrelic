@@ -25,9 +25,65 @@ The user module solves these problems by providing:
 - **Real-time sync** - WebSocket events push user updates to connected clients
 - **Admin dashboard** - View and search users at `/system/users`
 
-## Future Extensibility
+## Plugin Access to User Data
 
-If plugins need access to user data in the future, create `IUserService` interface in `@tronrelic/types` and expose via `IPluginContext`. The internal `IUserDocument` stays in the module, but plugins would use a simplified `IUser` interface without MongoDB-specific fields.
+Plugins have full access to user identity through two mechanisms:
+
+### Request Context (Recommended)
+
+All plugin route handlers receive user context automatically via middleware. The `req.user` and `req.userId` fields are populated before requests reach plugin handlers:
+
+```typescript
+// In plugin route handler
+handler: async (req: IHttpRequest, res: IHttpResponse) => {
+    // Check if user context is present (cookie contained valid UUID)
+    // Note: This is identity, NOT authentication - cookie values are client-controlled
+    if (!req.user) {
+        return res.status(401).json({ error: 'User context required' });
+    }
+
+    // Wallet state checks
+    const hasLinkedWallet = (req.user.wallets?.length ?? 0) > 0;
+    const hasVerifiedWallet = req.user.wallets?.some(w => w.verified) ?? false;
+
+    // For sensitive operations, require cryptographic proof of wallet ownership
+    if (!hasVerifiedWallet) {
+        return res.status(403).json({ error: 'Wallet verification required' });
+    }
+
+    // Access user data directly from request
+    const userId = req.userId;
+    const wallets = req.user.wallets;
+    const preferences = req.user.preferences;
+}
+```
+
+The middleware parses the `tronrelic_uid` cookie and resolves the user via `UserService`. Plugins don't need to parse cookies or call services directly.
+
+**Security note:** The cookie-based user context is identity, not authentication. The `tronrelic_uid` cookie is client-controlled and contains an unverified UUID. For sensitive operations, always check `hasVerifiedWallet` which indicates the user has cryptographically proven wallet ownership via signature.
+
+### IUserService (For Non-Request Context)
+
+For operations outside request handlers (observers, scheduled jobs), plugins can use `IUserService` via `IPluginContext`:
+
+```typescript
+// In plugin init()
+init: async (context: IPluginContext) => {
+    const { userService, logger } = context;
+
+    // Look up user by wallet address
+    const user = await userService.getByWallet('TXyz...');
+    if (user) {
+        logger.info({ userId: user.id }, 'Found user for wallet');
+    }
+}
+```
+
+**Available IUserService methods:**
+- `getById(id: string): Promise<IUser | null>` - Look up user by UUID
+- `getByWallet(address: string): Promise<IUser | null>` - Look up user by wallet address
+
+The `IUser` interface includes `id`, `wallets`, `preferences`, `activity`, and timestamps. The internal `IUserDocument` (with MongoDB-specific fields) stays in the module.
 
 ## Architecture Overview
 

@@ -8,7 +8,9 @@ import type {
     IChartComponents,
     ISystemComponents,
     IApiClient,
-    IWebSocketClient
+    IWebSocketClient,
+    IPluginUserState,
+    IPluginWalletLink
 } from '@tronrelic/types';
 import { Card } from '../components/ui/Card';
 import { Badge } from '../components/ui/Badge';
@@ -22,6 +24,14 @@ import { useModal as useModalHook } from '../components/ui/ModalProvider';
 import { LineChart } from '../features/charts/components/LineChart';
 import { SchedulerMonitor } from '../features/system/components/SchedulerMonitor';
 import { Page, PageHeader, Stack, Grid, Section } from '../components/layout';
+import { useAppSelector } from '../store/hooks';
+import {
+    selectUserId,
+    selectUserData,
+    selectUserInitialized,
+    selectIsLoggedIn,
+    selectPrimaryWallet
+} from '../modules/user/slice';
 import { getSocket } from './socketClient';
 import { config } from './config';
 
@@ -62,7 +72,8 @@ class ApiClient implements IApiClient {
 
         const response = await fetch(url.toString(), {
             method: 'GET',
-            headers
+            headers,
+            credentials: 'include'
         });
 
         if (!response.ok) {
@@ -99,7 +110,8 @@ class ApiClient implements IApiClient {
         const response = await fetch(url.toString(), {
             method: 'POST',
             headers,
-            body: JSON.stringify(body)
+            body: JSON.stringify(body),
+            credentials: 'include'
         });
 
         if (!response.ok) {
@@ -136,7 +148,8 @@ class ApiClient implements IApiClient {
         const response = await fetch(url.toString(), {
             method: 'PUT',
             headers,
-            body: JSON.stringify(body)
+            body: JSON.stringify(body),
+            credentials: 'include'
         });
 
         if (!response.ok) {
@@ -172,7 +185,8 @@ class ApiClient implements IApiClient {
 
         const response = await fetch(url.toString(), {
             method: 'DELETE',
-            headers
+            headers,
+            credentials: 'include'
         });
 
         if (!response.ok) {
@@ -303,6 +317,47 @@ class WebSocketClient implements IWebSocketClient {
 }
 
 /**
+ * Hook providing user state to frontend plugins.
+ *
+ * Wraps Redux selectors to provide a stable interface that won't break
+ * plugins when the internal user module is refactored. Returns reactive
+ * state that automatically updates when user data changes.
+ *
+ * @returns Plugin-safe user state with identity, wallets, and verification status
+ */
+function usePluginUser(): IPluginUserState {
+    const userId = useAppSelector(selectUserId);
+    const userData = useAppSelector(selectUserData);
+    const initialized = useAppSelector(selectUserInitialized);
+    const isLoggedIn = useAppSelector(selectIsLoggedIn);
+    const primaryWallet = useAppSelector(selectPrimaryWallet);
+
+    // Transform wallets to plugin-safe format
+    const wallets: IPluginWalletLink[] = (userData?.wallets ?? []).map(w => ({
+        address: w.address,
+        verified: w.verified,
+        isPrimary: w.isPrimary,
+        linkedAt: w.linkedAt,
+        lastUsed: w.lastUsed,
+        label: w.label
+    }));
+
+    // Wallet state convenience properties
+    const hasLinkedWallet = wallets.length > 0;
+    const hasVerifiedWallet = wallets.some(w => w.verified);
+
+    return {
+        userId,
+        hasLinkedWallet,
+        hasVerifiedWallet,
+        isLoggedIn,
+        wallets,
+        primaryWallet,
+        initialized
+    };
+}
+
+/**
  * React context for frontend plugin dependency injection.
  *
  * Provides a single source of truth for UI components, API client, and WebSocket
@@ -362,7 +417,8 @@ export function FrontendPluginContextProvider({ children }: { children: React.Re
             system,
             api,
             websocket,
-            useModal: useModalHook
+            useModal: useModalHook,
+            useUser: usePluginUser
         };
     }, []);
 
@@ -447,6 +503,7 @@ export function createPluginContext(pluginId: string): IFrontendPluginContext {
         system,
         api,
         websocket,
-        useModal: useModalHook
+        useModal: useModalHook,
+        useUser: usePluginUser
     };
 }

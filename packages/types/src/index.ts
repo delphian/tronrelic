@@ -1,6 +1,6 @@
 export type { Block } from './Block.js';
 export type { IBaseObserver, IBaseBatchObserver, TransactionBatches, IBaseBlockObserver, IBlockData, IBlockchainObserverService, IWebSocketService, IPluginContext, IObserverStats, IPluginWebSocketManager, PluginSubscriptionHandler, PluginUnsubscribeHandler, IPluginWebSocketStats, IAggregatePluginWebSocketStats } from './observer/index.js';
-export type { IPlugin, IPluginManifest, IAdminUIConfig, IPluginDatabase, IApiRouteConfig, HttpMethod, ApiRouteHandler, ApiMiddleware, IMenuItemConfig, IPageConfig, IPluginMetadata, IPluginManagementRequest, IPluginManagementResponse, IPluginInfo, IFrontendPluginContext, IUIComponents, ILayoutComponents, IChartComponents, ISystemComponents, IApiClient, IWebSocketClient } from './plugin/index.js';
+export type { IPlugin, IPluginManifest, IAdminUIConfig, IPluginDatabase, IApiRouteConfig, HttpMethod, ApiRouteHandler, ApiMiddleware, IMenuItemConfig, IPageConfig, IPluginMetadata, IPluginManagementRequest, IPluginManagementResponse, IPluginInfo, IFrontendPluginContext, IUIComponents, ILayoutComponents, IChartComponents, ISystemComponents, IApiClient, IWebSocketClient, IPluginUserState, IPluginWalletLink } from './plugin/index.js';
 export { definePlugin } from './plugin/index.js';
 export type { ITransaction, ITransactionPersistencePayload, ITransactionCategoryFlags } from './transaction/index.js';
 export { ProcessedTransaction } from './transaction/index.js';
@@ -26,7 +26,7 @@ export type { IClickHouseService } from './clickhouse/index.js';
 export type { IPage, IPageFile, IPageSettings, IStorageProvider, IPageService, IMarkdownService, IFrontmatterData, IParsedMarkdown } from './pages/index.js';
 export type { IModule, IModuleMetadata } from './module/index.js';
 export { USER_FILTERS } from './user/index.js';
-export type { UserFilterType } from './user/index.js';
+export type { UserFilterType, IUser, IWalletLink, IUserPreferences, IUserActivity, IUserSession, IPageVisit, DeviceCategory, ScreenSizeCategory, IUserService } from './user/index.js';
 export type { ITronGridService, ITronGridAccountResponse, ITronGridAccountPermission } from './tron-grid/index.js';
 export type { IBlockStats, IBlock, IBlockchainService, ITransactionTimeseriesPoint } from './blockchain/index.js';
 export type { IAddressLabel, IResolvedAddressLabel, AddressCategory, AddressLabelSourceType, ITronAddressMetadata, IAddressLabelService, ICreateAddressLabelInput, IUpdateAddressLabelInput, IAddressLabelFilter, IAddressLabelImportResult, IAddressLabelListResult } from './address-label/index.js';

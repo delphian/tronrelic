@@ -24,6 +24,8 @@ export type {
     IChartComponents,
     ISystemComponents,
     IApiClient,
-    IWebSocketClient
+    IWebSocketClient,
+    IPluginUserState,
+    IPluginWalletLink
 } from './IFrontendPluginContext.js';
 export { definePlugin } from './definePlugin.js';

@@ -2,6 +2,7 @@ import { Router, type Request, type Response, type NextFunction, type RequestHan
 import type { IPlugin, IApiRouteConfig, IHttpRequest, IHttpResponse, IHttpNext, ApiRouteHandler, ApiMiddleware } from '@tronrelic/types';
 import { logger } from '../lib/logger.js';
 import { requireAdmin } from '../api/middleware/admin-auth.js';
+import { userContextMiddleware } from '../api/middleware/user-context.js';
 
 /**
  * Adapt Express Request to framework-agnostic IHttpRequest.
@@ -10,11 +11,18 @@ import { requireAdmin } from '../api/middleware/admin-auth.js';
  * allowing plugins to remain independent of Express-specific types. The adaptation
  * is structural - Express Request already has all the properties we need.
  *
- * @param req - Express Request object
- * @returns IHttpRequest-compatible object
+ * User context (userId and user) is populated by userContextMiddleware before
+ * this function is called, so we pass through those fields as well.
+ *
+ * @param req - Express Request object (with userId/user from middleware)
+ * @returns IHttpRequest-compatible object including user context
  */
 function adaptRequest(req: Request): IHttpRequest {
-    return req as unknown as IHttpRequest;
+    const adapted = req as unknown as IHttpRequest;
+    // Pass through user context populated by middleware
+    adapted.userId = (req as any).userId;
+    adapted.user = (req as any).user;
+    return adapted;
 }
 
 /**
@@ -224,13 +232,16 @@ export class PluginApiService {
         // Build middleware chain - adapt plugin middleware to Express RequestHandlers
         const middlewareChain: RequestHandler[] = middleware.map(adaptMiddleware);
 
+        // User context middleware runs first on all routes to populate req.user/req.userId
+        middlewareChain.unshift(userContextMiddleware);
+
         // Admin routes always require admin auth
         if (isAdmin || requiresAdmin) {
-            middlewareChain.unshift(requireAdmin);
+            middlewareChain.push(requireAdmin);
             logger.debug({ pluginId, path }, 'Admin auth middleware applied to route');
         } else if (requiresAuth) {
             // TODO: Implement authentication middleware
-            // middlewareChain.unshift(authMiddleware);
+            // middlewareChain.push(authMiddleware);
         }
 
         // Adapt plugin handler to Express RequestHandler

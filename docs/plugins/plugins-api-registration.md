@@ -30,6 +30,12 @@ Every route entry uses the `IApiRouteConfig` contract. Focus on these fields:
 
 Remember: `req.params`, `req.query`, `req.body`, and `req.ip` are plain objects; `res.status()`, `res.json()`, `res.send()`, and `res.setHeader()` mirror familiar Express methods but stay framework-agnostic.
 
+**User context is automatically available.** Middleware populates `req.userId` (from the `tronrelic_uid` cookie) and `req.user` (the resolved user record) before your handler runs. For feature gating, check wallet states:
+- `req.user?.wallets?.length > 0` — user has linked a wallet (may be unverified)
+- `req.user?.wallets?.some(w => w.verified)` — user has a verified wallet (recommended for feature gating)
+
+See [User Module](../system/system-modules-user.md#plugin-access-to-user-data) for complete patterns.
+
 ## Minimal Example
 
 ```typescript
@@ -61,8 +67,11 @@ function createSubscriptionHandlers(database: IPluginDatabase) {
     return {
         list: async (req: IHttpRequest, res: IHttpResponse, next: IHttpNext) => {
             try {
-                const userId = req.query.userId as string;
-                const subscriptions = await database.find('subscriptions', { userId });
+                // User context populated by middleware before handler runs
+                if (!req.user) {
+                    return res.status(401).json({ error: 'Authentication required' });
+                }
+                const subscriptions = await database.find('subscriptions', { userId: req.userId });
                 res.json({ subscriptions });
             } catch (error) {
                 next(error);

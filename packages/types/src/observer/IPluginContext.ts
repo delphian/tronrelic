@@ -17,6 +17,7 @@ import type { IWidgetService } from '../widget/IWidgetService.js';
 import type { ITronGridService } from '../tron-grid/ITronGridService.js';
 import type { IBlockchainService } from '../blockchain/IBlockchainService.js';
 import type { IAddressLabelService } from '../address-label/IAddressLabelService.js';
+import type { IUserService } from '../user/IUserService.js';
 import { ISystemLogService } from '../system-log/ISystemLogService.js';
 
 /**
@@ -111,6 +112,9 @@ export interface IPluginContext {
 
     /** Address label service for looking up and contributing blockchain address labels */
     addressLabelService: IAddressLabelService;
+
+    /** User service for accessing user identity and wallet verification status */
+    userService: IUserService;
 
     /** Structured logger scoped to the plugin for consistent telemetry */
     logger: ISystemLogService;

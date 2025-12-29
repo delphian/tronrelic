@@ -249,7 +249,7 @@ Backend plugins are loaded during API bootstrap (`apps/backend/src/index.ts`). T
 3. If the manifest advertises `backend: true`, the loader imports `dist/backend/backend.js` and searches for an exported plugin object (anything with a `manifest` field).
 4. Each discovered plugin is registered in the `plugin_metadata` MongoDB collection with default state: `installed: false`, `enabled: false`. Existing plugins have their title and version updated.
 5. A plugin-scoped database service is created using the plugin's ID for namespace isolation.
-6. A shared `IPluginContext` is assembled with `ObserverRegistry.getInstance()`, `WebSocketService.getInstance()`, the `BaseObserver` class, the scoped database service, and a plugin-scoped child logger.
+6. A shared `IPluginContext` is assembled with `ObserverRegistry.getInstance()`, `WebSocketService.getInstance()`, `UserService.getInstance()`, the `BaseObserver` class, the scoped database service, and a plugin-scoped child logger.
 7. The plugin and its context are registered with `PluginManagerService` for dynamic lifecycle management.
 
 ### Initialization Phase (Installed + Enabled Plugins Only)
@@ -270,6 +270,7 @@ Plugins never reach into `apps/backend/src` directly. Instead they rely on the i
 - `BaseObserver` gives plugins the queueing, back-pressure, and telemetry scaffolding used throughout the blockchain pipeline (injected as a constructor, not imported directly).
 - `database` provides scoped MongoDB access with automatic collection prefixing for data persistence (see [Database Access Architecture](../system/system-database.md#plugins)).
 - `logger` delivers a plugin-scoped child logger so every log line includes plugin metadata without manual bindings (see [system-logging.md](../system/system-logging.md) for logging best practices).
+- `userService` provides user lookup methods (`getById`, `getByWallet`) for contexts where `req.user` isn't available—batch jobs, observers, or WebSocket handlers (see [User Module](../system/system-modules-user.md#plugin-access-to-user-data) for usage patterns).
 
 This contract keeps plugins decoupled from implementation details while still giving them powerful capabilities.
 
