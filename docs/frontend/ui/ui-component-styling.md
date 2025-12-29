@@ -110,10 +110,10 @@ The `globals.scss` file should contain **ONLY** these categories:
    - Link color inheritance
    - Semantic element defaults (`main`, `a`, `body`)
 
-3. **Utility Classes**
-   - Layout primitives: `.stack`, `.grid`, `.page`
-   - Reusable components: `.surface`, `.btn`, `.badge`, `.input`
-   - State modifiers: `.text-muted`, `.surface--elevated`, `.btn--loading`
+3. **Styling Utility Classes**
+   - Visual surfaces: `.surface`, `.surface--elevated`, `.surface--padding-md`
+   - Interactive elements: `.btn`, `.btn--primary`, `.badge`, `.input`
+   - State modifiers: `.text-muted`, `.btn--loading`
 
 4. **Global Animations**
    - Keyframe definitions: `@keyframes rowFlash`, `@keyframes shimmer`
@@ -122,6 +122,8 @@ The `globals.scss` file should contain **ONLY** these categories:
 5. **Viewport-Level Responsive Styles**
    - Global layout breakpoints affecting page chrome, navigation, or overall structure
    - Media queries that adjust `.layout-nav`, `main` padding, or other layout shells
+
+**Layout primitives use React components** (`<Page>`, `<Stack>`, `<Grid>`, etc.) instead of CSS classes.
 
 **Everything else belongs in component-specific SCSS Modules.**
 
@@ -463,34 +465,56 @@ TronRelic uses a **3-layer design token system**. Component styles should refere
 />
 ```
 
-#### Layout Utilities
+#### Layout Components
+
+Layout primitives use React components for TypeScript safety and IDE autocomplete:
 
 ```tsx
-// Vertical stack
-<div className="stack">
+import { Page, PageHeader, Stack, Grid, Section } from '../../../components/layout';
+
+// Page with header
+<Page>
+    <PageHeader title="Dashboard" subtitle="Overview of activity" />
+    <Section>
+        <Card>Content</Card>
+    </Section>
+</Page>
+
+// Vertical stack with gap
+<Stack gap="md">
     <div>Item 1</div>
     <div>Item 2</div>
-</div>
+</Stack>
 
-// Stack with custom gap
-<div className="stack stack--lg">
-    <div>Item 1</div>
-    <div>Item 2</div>
-</div>
+// Horizontal stack
+<Stack direction="horizontal" gap="sm">
+    <Button>Action 1</Button>
+    <Button>Action 2</Button>
+</Stack>
 
-// Grid with auto-fit columns
-<div className="grid grid--responsive">
-    <div>Card 1</div>
-    <div>Card 2</div>
-</div>
+// Responsive grid
+<Grid columns="responsive" gap="md">
+    <Card>Card 1</Card>
+    <Card>Card 2</Card>
+</Grid>
 
 // Fixed columns
-<div className="grid grid--cols-3">
-    <div>Col 1</div>
-    <div>Col 2</div>
-    <div>Col 3</div>
-</div>
+<Grid columns={3} gap="lg">
+    <Card>Col 1</Card>
+    <Card>Col 2</Card>
+    <Card>Col 3</Card>
+</Grid>
 ```
+
+**Layout Component Reference:**
+
+| Component | Props | Purpose |
+|-----------|-------|---------|
+| `<Page>` | - | Page-level grid with responsive gap |
+| `<PageHeader>` | `title`, `subtitle` | Page title section |
+| `<Stack>` | `gap="sm\|md\|lg"`, `direction="vertical\|horizontal"` | Flex container |
+| `<Grid>` | `gap="sm\|md\|lg"`, `columns="2\|3\|responsive"` | Grid layout |
+| `<Section>` | `gap="sm\|md\|lg"` | Content section with spacing |
 
 ## Responsive Design: Container Queries
 
@@ -826,44 +850,54 @@ import { Search, X } from 'lucide-react';
 
 When building plugin UIs, follow these additional rules:
 
-### 1. Use Global `.page` Class for Page Root Elements
+### 1. Use Layout Components for Page Structure
 
-Plugin pages MUST use the global `page` class (from `globals.scss`) for their root element to inherit mobile-responsive padding. The module-scoped class adds container queries but never replaces the global class:
+Plugin pages MUST use the `<Page>` layout component for page structure. This provides mobile-responsive gap behavior and consistent page layout:
 
 ```tsx
-// CORRECT - global class for mobile padding, module class for container queries
+// CORRECT - layout components for page structure
+import { Page, PageHeader, Stack } from '../../../components/layout';
 import styles from './MyPluginPage.module.scss';
 
 export function MyPluginPage({ context }: { context: IFrontendPluginContext }) {
     return (
-        <div className={`page ${styles.container}`}>
-            <header className={styles.header}>...</header>
-            <context.ui.Card>...</context.ui.Card>
-        </div>
+        <Page>
+            <PageHeader title="My Plugin" subtitle="Plugin description" />
+            <context.ui.Card>
+                <Stack gap="md">
+                    <p>Content here</p>
+                </Stack>
+            </context.ui.Card>
+        </Page>
     );
 }
 ```
 
+For plugins that need container queries on the page wrapper, use a module class alongside the Page component:
+
+```tsx
+// With container queries for plugin-specific responsiveness
+<div className={styles.container}>
+    <Page>
+        <PageHeader title="My Plugin" />
+        <context.ui.Card>...</context.ui.Card>
+    </Page>
+</div>
+```
+
 ```scss
-/* CORRECT - module class named .container, adds container queries */
+/* Module class for container queries */
 .container {
     container-type: inline-size;
     container-name: my-plugin-page;
 }
-
-/* WRONG - .page in module shadows global class, breaks mobile responsive */
-.page {
-    padding: var(--spacing-10);  /* Won't get mobile padding reduction */
-    container-type: inline-size;
-}
 ```
 
-**Why this matters:** The global `.page` class has mobile-specific rules that remove padding on narrow viewports (`padding: 0 !important` at ≤768px). CSS Modules create scoped class names (e.g., `MyPluginPage_page__abc123`), so a module-scoped `.page` never receives these global mobile rules. Pages that define their own `.page` class maintain fixed padding on mobile, wasting valuable screen space.
-
 **Key rules:**
-- Always include global `page` in className: `className={`page ${styles.container}`}`
-- Never name your module class `.page` — use `.container` instead
-- The global class handles mobile padding; your module class handles container queries
+- Use `<Page>` component for page-level layout with responsive gap
+- Use `<PageHeader>` for consistent title/subtitle sections
+- Use `<Stack>` and `<Grid>` for internal layout
+- Add module class wrapper only when container queries are needed
 
 ### 2. Always Use Container Queries
 
@@ -890,30 +924,36 @@ Plugins should reference the same CSS variables as the core application:
 Create a colocated SCSS Module for plugin-specific styles:
 
 ```tsx
-// Good - combines utility classes with SCSS Modules
+// Good - layout components with SCSS Modules for custom styling
+import { Page, PageHeader, Stack, Grid } from '../../../components/layout';
 import styles from './MyPlugin.module.scss';
 
-<div className="surface surface--padding-md">
-    <div className={styles.pluginGrid}>
-        <h2>Plugin Title</h2>
-        <p className="text-muted">Description</p>
-    </div>
-</div>
+<Page>
+    <PageHeader title="Plugin Title" subtitle="Description" />
+    <Grid columns="responsive" gap="md">
+        <div className={`surface ${styles.custom_card}`}>
+            <Stack gap="sm">
+                <h3>Card Title</h3>
+                <p className="text-muted">Card content</p>
+            </Stack>
+        </div>
+    </Grid>
+</Page>
 ```
 
 **`MyPlugin.module.scss`:**
 ```scss
 @use '../../../app/breakpoints' as *;
 
-.pluginGrid {
-    display: grid;
-    gap: var(--spacing-10);
+.custom_card {
+    border: var(--border-width-thin) solid var(--color-primary);
     container-type: inline-size;
+    container-name: custom-card;
 }
 
-@container (min-width: 600px) {
-    .pluginGrid {
-        grid-template-columns: repeat(2, 1fr);
+@container custom-card (min-width: #{$breakpoint-mobile-md}) {
+    .custom_card {
+        padding: var(--spacing-12);
     }
 }
 ```
@@ -929,7 +969,7 @@ import styles from './MyPlugin.module.scss';
     <div style={{
         display: 'flex',
         flexDirection: 'column',
-        gap: '1.5rem'                       /* Should be var(--spacing-10) */
+        gap: '1.5rem'                       /* Should use <Stack gap="lg"> */
     }}>
         <h2>Plugin Title</h2>
         <p style={{
@@ -1125,6 +1165,7 @@ The `ClientTime` component renders a placeholder (`—`) during SSR, then shows 
 
 Before shipping any UI component or plugin page, verify:
 
+- [ ] **Uses layout components** for page structure (`Page`, `PageHeader`, `Stack`, `Grid`, `Section`)
 - [ ] **Uses design tokens exclusively** - No hardcoded colors, spacing, font sizes, or weights
   - [ ] Spacing: `var(--spacing-*)` instead of `1rem`, `10px`, etc.
   - [ ] Colors: `var(--color-*)` instead of `#fff`, `rgba(...)`, etc.
@@ -1132,11 +1173,9 @@ Before shipping any UI component or plugin page, verify:
   - [ ] Borders: `var(--border-width-*)`, `var(--radius-*)` instead of `1px`, `16px`, etc.
 - [ ] Component-specific styles are in a colocated SCSS Module file (`ComponentName.module.scss`)
 - [ ] SCSS Module is imported using `import styles from './ComponentName.module.scss'`
-- [ ] **Page root uses global `page` class** (e.g., `className={`page ${styles.container}`}`)
-- [ ] **Module classes named `.container`** (never `.page` which shadows global mobile rules)
-- [ ] Breakpoints imported via `@use '../../../app/breakpoints' as *;` when using media queries
+- [ ] Breakpoints imported via `@use '../../../app/breakpoints' as *;` when using container queries
 - [ ] Uses container queries in SCSS Modules for component-level responsiveness
-- [ ] Uses built-in utility classes for common patterns (`.surface`, `.btn`, `.badge`, `.stack`, `.grid`)
+- [ ] Uses styling utility classes for visual patterns (`.surface`, `.btn`, `.badge`)
 - [ ] Uses `lucide-react` for all icons
 - [ ] Provides visual feedback for state changes (loading, error, success)
 - [ ] Uses semantic HTML (buttons, nav, lists, etc.)

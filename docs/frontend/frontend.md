@@ -81,24 +81,68 @@ TronRelic uses React with Next.js 14 App Router for building interactive UI comp
 
 TronRelic implements a comprehensive UI styling system with two core architectural layers:
 
-1. **`globals.css`** - Design tokens (CSS variables), utility classes, base resets, and global animations
-2. **CSS Modules** - Component-specific styles with scoped class names that prevent naming collisions
+1. **`globals.scss`** - Design tokens (CSS variables), base resets, global animations, and styling utility classes (`.surface`, `.btn`, `.badge`)
+2. **SCSS Modules** - Component-specific styles with scoped class names that prevent naming collisions
 
-The design token system follows an industry-standard three-layer hierarchy (primitives → semantic tokens → utility classes) used by Google Material Design, Adobe Spectrum, and GitHub Primer. This pattern enables consistent theming, predictable cascading updates, and single-source-of-truth maintenance.
+The design token system follows an industry-standard three-layer hierarchy (primitives → semantic tokens → application layer) used by Google Material Design, Adobe Spectrum, and GitHub Primer. This pattern enables consistent theming, predictable cascading updates, and single-source-of-truth maintenance.
 
-Every component should reference design tokens from `globals.css` (like `var(--color-primary)` or `var(--radius-md)`) and implement component-specific layout in colocated `.module.css` files.
+Every component should reference design tokens from `globals.scss` (like `var(--color-primary)` or `var(--radius-md)`) and implement component-specific layout in colocated `.module.scss` files.
 
 **See [ui.md](./ui/ui.md) for complete UI system overview including:**
-- Two-layer CSS architecture (globals.css vs CSS Modules)
-- Three-layer design token hierarchy (primitives, semantic tokens, utility classes)
+- Two-layer SCSS architecture (globals.scss vs SCSS Modules)
+- Three-layer design token hierarchy (primitives, semantic tokens, application layer)
+- Layout components for page structure
 - Container queries for responsive component behavior
 - Icon usage with `lucide-react`
 - SSR hydration patterns for timezone-sensitive data
 - Complete styling checklist and quick reference
 
 **See detailed implementation guides:**
-- [ui-component-styling.md](./ui/ui-component-styling.md) - Comprehensive styling guide with code examples, utility classes, animations, and accessibility patterns
+- [ui-component-styling.md](./ui/ui-component-styling.md) - Comprehensive styling guide with code examples, layout components, animations, and accessibility patterns
 - [ui-design-token-layers.md](./ui/ui-design-token-layers.md) - Industry-standard token hierarchy, complete token reference, and W3C alignment
+
+### Component-First Layout Architecture
+
+TronRelic uses **React components for layout primitives**, following the patterns established by major design systems like Chakra UI, Material UI, and Ant Design. This architectural decision provides TypeScript safety, IDE autocomplete, and encapsulated responsive behavior that utility classes cannot offer.
+
+**Layout Components** (from `components/layout/`):
+
+| Component | Purpose | Key Props |
+|-----------|---------|-----------|
+| `<Page>` | Page-level grid layout with responsive gap | - |
+| `<PageHeader>` | Title + subtitle section | `title`, `subtitle` |
+| `<Stack>` | Vertical/horizontal spacing | `gap`, `direction` |
+| `<Grid>` | Responsive grid layout | `gap`, `columns` |
+| `<Section>` | Content section with spacing | `gap` |
+
+**Why components over utility classes for layout:**
+
+- **Type safety** - `<Stack gap="md">` catches typos at compile time; `.stack--md` fails silently
+- **Encapsulation** - Responsive logic, accessibility attributes, and variants bundled in component
+- **Composition** - Aligns with React's component composition model
+- **Discoverability** - Props autocomplete in IDE; no memorizing class names
+
+```tsx
+import { Page, PageHeader, Stack, Grid } from '../../../components/layout';
+import { Card } from '../../../components/ui/Card';
+
+export default function DashboardPage() {
+    return (
+        <Page>
+            <PageHeader
+                title="Dashboard"
+                subtitle="Monitor your account activity"
+            />
+            <Grid columns="responsive">
+                <Card>...</Card>
+                <Card>...</Card>
+            </Grid>
+        </Page>
+    );
+}
+```
+
+**Styling utility classes** (`.surface`, `.btn`, `.badge`) remain in `globals.scss` for visual styling concerns that work well as composable modifiers. Layout primitives use React components; visual styling uses utility classes.
 
 ## Quick Reference
 
@@ -107,12 +151,38 @@ Every component should reference design tokens from `globals.css` (like `var(--c
 1. Create component folder: `features/my-feature/components/MyComponent/`
 2. Add files:
    - `MyComponent.tsx` (implementation)
-   - `MyComponent.module.css` (styles)
+   - `MyComponent.module.scss` (styles)
    - `index.ts` (barrel export)
-3. Import CSS Module: `import styles from './MyComponent.module.css'`
-4. Use design tokens in CSS: `color: var(--color-primary)`
+3. Import SCSS Module: `import styles from './MyComponent.module.scss'`
+4. Use design tokens in SCSS: `color: var(--color-primary)`
 5. Apply scoped classes: `<div className={styles.container}>`
-6. Mix with utilities when appropriate: `<div className={`surface ${styles.card}`}>`
+6. Use layout components for structure: `<Stack gap="md">...</Stack>`
+7. Mix with styling utilities when appropriate: `<div className={`surface ${styles.card}`}>`
+
+### Layout Components
+
+Use layout components from `components/layout/` for page structure:
+
+```tsx
+import { Page, PageHeader, Stack, Grid, Section } from '../../../components/layout';
+
+<Page>
+    <PageHeader title="Dashboard" subtitle="Overview of activity" />
+    <Section>
+        <Grid columns="responsive">
+            <Card>...</Card>
+        </Grid>
+    </Section>
+</Page>
+```
+
+| Component | Props | Purpose |
+|-----------|-------|---------|
+| `<Page>` | - | Page-level grid with responsive gap |
+| `<PageHeader>` | `title`, `subtitle` | Page title section |
+| `<Stack>` | `gap="sm\|md\|lg"`, `direction="vertical\|horizontal"` | Flex container with gap |
+| `<Grid>` | `gap="sm\|md\|lg"`, `columns="2\|3\|responsive"` | Grid layout |
+| `<Section>` | `gap="sm\|md\|lg"` | Content section with spacing |
 
 ### Container Queries Over Media Queries
 
@@ -136,15 +206,13 @@ Always use container queries for component responsiveness:
 
 Reserve viewport media queries (`@media`) exclusively for global layout changes in `app/layout.tsx`.
 
-### Common Utility Classes
+### Common Styling Utilities
 
 | Pattern | Class | Example |
 |---------|-------|---------|
 | Surface background | `.surface` | `<div className="surface surface--padding-md">` |
 | Primary button | `.btn .btn--primary` | `<button className="btn btn--primary btn--md">` |
 | Status badge | `.badge .badge--success` | `<span className="badge badge--success">` |
-| Vertical stack | `.stack` | `<div className="stack">` |
-| Responsive grid | `.grid .grid--responsive` | `<div className="grid grid--responsive">` |
 
 ### Feature Export Pattern
 
@@ -199,10 +267,11 @@ import { BookmarkPanel } from '../../../features/accounts/components/BookmarkPan
 
 Before committing any UI component or plugin page, verify:
 
-- [ ] Uses CSS variables from `globals.css` (no hardcoded colors or sizes)
-- [ ] Component-specific styles are in colocated CSS Module file
+- [ ] Uses layout components (`Page`, `PageHeader`, `Stack`, `Grid`, `Section`) for page structure
+- [ ] Uses CSS variables from `globals.scss` (no hardcoded colors or sizes)
+- [ ] Component-specific styles are in colocated SCSS Module file
 - [ ] Uses container queries for component-level responsiveness
-- [ ] Uses built-in utility classes for common patterns
+- [ ] Uses styling utility classes for visual patterns (`.surface`, `.btn`, `.badge`)
 - [ ] Uses `lucide-react` for all icons
 - [ ] Provides visual feedback for state changes (loading, error, success)
 - [ ] Uses semantic HTML (buttons, nav, lists, not generic divs)

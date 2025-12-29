@@ -23,23 +23,67 @@ Following these patterns ensures your work integrates seamlessly with existing i
 
 TronRelic separates styling concerns into two distinct layers to prevent conflicts and duplication:
 
-1. **`globals.scss`** - Design tokens (CSS variables), utility classes, base resets, and global animations shared across the entire application
+1. **`globals.scss`** - Design tokens (CSS variables), styling utility classes (`.surface`, `.btn`, `.badge`), base resets, and global animations shared across the entire application
 2. **SCSS Modules** - Component-specific styles with scoped class names that prevent naming collisions and make ownership clear
 
 Every component should reference design tokens from `globals.scss` (like `var(--color-primary)` or `var(--spacing-7)`) and implement component-specific layout in colocated `.module.scss` files.
 
 **Critical rule:** Never hardcode colors, spacing, typography, or other design values. Always use CSS variables to ensure consistency and enable theming.
 
-**See [ui-component-styling.md](./ui/ui-component-styling.md) for complete details on:**
+**See [ui-component-styling.md](./ui-component-styling.md) for complete details on:**
 - What belongs in `globals.scss` vs SCSS Modules
 - How to create and use SCSS Module files with TypeScript-safe naming conventions
-- Available utility classes for surfaces, buttons, badges, forms, and layouts
+- Available styling utility classes for surfaces, buttons, badges, and forms
+- Layout components for page structure
 - Container queries for responsive component behavior
 - Icon usage with `lucide-react`
 - Animation and state feedback patterns
 - Accessibility best practices with semantic HTML and ARIA labels
 - Plugin-specific styling considerations
 - SSR hydration patterns for timezone-sensitive data
+
+### Component-First Layout Architecture
+
+TronRelic uses **React components for layout primitives** instead of CSS utility classes. This follows patterns established by major design systems (Chakra UI, Material UI, Ant Design) and provides TypeScript safety, IDE autocomplete, and encapsulated responsive behavior.
+
+**Layout Components** (from `components/layout/`):
+
+| Component | Purpose | Key Props |
+|-----------|---------|-----------|
+| `<Page>` | Page-level grid layout with responsive gap | - |
+| `<PageHeader>` | Title + subtitle section | `title`, `subtitle` |
+| `<Stack>` | Vertical/horizontal spacing | `gap`, `direction` |
+| `<Grid>` | Responsive grid layout | `gap`, `columns` |
+| `<Section>` | Content section with spacing | `gap` |
+
+**Why components over utility classes for layout:**
+
+- **Type safety** - `<Stack gap="md">` catches typos at compile time; `.stack--md` fails silently
+- **Encapsulation** - Responsive logic and mobile behavior bundled in component
+- **Composition** - Aligns with React's component composition model
+- **Discoverability** - Props autocomplete in IDE; no memorizing class names
+
+```tsx
+import { Page, PageHeader, Stack, Grid } from '../../../components/layout';
+import { Card } from '../../../components/ui/Card';
+
+export default function DashboardPage() {
+    return (
+        <Page>
+            <PageHeader
+                title="Dashboard"
+                subtitle="Monitor your account activity"
+            />
+            <Grid columns="responsive">
+                <Card>Widget 1</Card>
+                <Card>Widget 2</Card>
+            </Grid>
+        </Page>
+    );
+}
+```
+
+**Styling utility classes** (`.surface`, `.btn`, `.badge`) remain for visual styling concerns that work well as composable modifiers. Layout primitives use React components; visual styling uses utility classes.
 
 ### Three-Layer Design Token System
 
@@ -55,10 +99,10 @@ TronRelic implements an industry-standard token hierarchy used by Google (Materi
 - Defined in `semantic-tokens.scss`
 - Examples: `--button-bg-primary`, `--card-border-radius`, `--modal-backdrop-blur`
 
-**Layer 3: Utility Classes (Application Layer)**
-- Ready-to-use classes that apply semantic tokens to create reusable UI patterns
-- Defined in `globals.scss`
-- Examples: `.btn .btn--primary`, `.surface .surface--padding-md`, `.badge .badge--success`
+**Layer 3: Application Layer (Components + Utility Classes)**
+- Layout components for page structure: `<Page>`, `<PageHeader>`, `<Stack>`, `<Grid>`, `<Section>`
+- Styling utility classes for visual patterns: `.btn .btn--primary`, `.surface .surface--padding-md`, `.badge .badge--success`
+- Components defined in `components/layout/`, utility classes defined in `globals.scss`
 
 **Why this architecture matters:**
 - **Single source of truth** - Change button padding once instead of hunting through dozens of files
@@ -76,6 +120,42 @@ TronRelic implements an industry-standard token hierarchy used by Google (Materi
 
 ## Quick Reference
 
+### Creating a New Page
+
+Use layout components for page structure:
+
+```tsx
+import { Page, PageHeader, Stack, Grid, Section } from '../../../components/layout';
+import { Card } from '../../../components/ui/Card';
+
+export default function MyPage() {
+    return (
+        <Page>
+            <PageHeader
+                title="Page Title"
+                subtitle="Brief description of the page"
+            />
+            <Section>
+                <Grid columns="responsive">
+                    <Card>Content 1</Card>
+                    <Card>Content 2</Card>
+                </Grid>
+            </Section>
+        </Page>
+    );
+}
+```
+
+### Layout Component Reference
+
+| Component | Props | Purpose |
+|-----------|-------|---------|
+| `<Page>` | - | Page-level grid with responsive gap |
+| `<PageHeader>` | `title`, `subtitle` | Page title section |
+| `<Stack>` | `gap="sm\|md\|lg"`, `direction="vertical\|horizontal"` | Flex container with gap |
+| `<Grid>` | `gap="sm\|md\|lg"`, `columns="2\|3\|responsive"` | Grid layout |
+| `<Section>` | `gap="sm\|md\|lg"` | Content section with spacing |
+
 ### Creating a New Component with Styling
 
 1. **Create component folder with SCSS Module:**
@@ -86,8 +166,9 @@ TronRelic implements an industry-standard token hierarchy used by Google (Materi
    └── index.ts
    ```
 
-2. **Import SCSS Module in TypeScript:**
+2. **Import SCSS Module and layout components:**
    ```typescript
+   import { Stack } from '../../../components/layout';
    import styles from './MyComponent.module.scss';
    ```
 
@@ -104,13 +185,15 @@ TronRelic implements an industry-standard token hierarchy used by Google (Materi
    }
    ```
 
-4. **Apply scoped classes with utility classes:**
+4. **Combine layout components with styling utilities:**
    ```typescript
-   <div className={`surface ${styles.card}`}>
-       <button className="btn btn--primary btn--md">
-           Submit
-       </button>
-   </div>
+   <Stack gap="md">
+       <div className={`surface ${styles.card}`}>
+           <button className="btn btn--primary btn--md">
+               Submit
+           </button>
+       </div>
+   </Stack>
    ```
 
 5. **Use container queries for responsiveness:**
@@ -123,7 +206,7 @@ TronRelic implements an industry-standard token hierarchy used by Google (Materi
    }
 
    @container my-card (min-width: #{$breakpoint-mobile-md}) {
-       .grid { grid-template-columns: repeat(2, 1fr); }
+       .content { grid-template-columns: repeat(2, 1fr); }
    }
    ```
 
@@ -151,15 +234,15 @@ TronRelic implements an industry-standard token hierarchy used by Google (Materi
 | **Transitions** | `--transition-base` | Standard timing |
 | **Breakpoints** | `$breakpoint-mobile-sm` (360px), `$breakpoint-mobile-md` (480px), `$breakpoint-mobile-lg` (768px), `$breakpoint-tablet` (1024px), `$breakpoint-desktop` (1200px) | Asia-optimized SCSS variables (import `_breakpoints.scss`) |
 
-### Common Utility Classes
+### Common Styling Utilities
 
 | Pattern | Class | Example |
 |---------|-------|---------|
 | Surface background | `.surface` | `<div className="surface surface--padding-md">` |
 | Primary button | `.btn .btn--primary` | `<button className="btn btn--primary btn--md">` |
 | Status badge | `.badge .badge--success` | `<span className="badge badge--success">` |
-| Vertical stack | `.stack` | `<div className="stack">` |
-| Responsive grid | `.grid .grid--responsive` | `<div className="grid grid--responsive">` |
+| Muted text | `.text-muted` | `<p className="text-muted">Secondary text</p>` |
+| Inline link | `.link` | `<a href="..." className="link">Read more</a>` |
 
 ### Icons with Lucide React
 
@@ -223,6 +306,7 @@ import { ClientTime } from '../../components/ui/ClientTime';
 
 Before committing any UI component or plugin page, verify:
 
+- [ ] Uses layout components (`Page`, `PageHeader`, `Stack`, `Grid`, `Section`) for page structure
 - [ ] Uses CSS variables from `globals.scss` (no hardcoded colors, spacing, fonts, or sizes)
   - [ ] Spacing: `var(--spacing-*)` not `1rem`, `10px`, etc.
   - [ ] Colors: `var(--color-*)` not `#fff`, `rgba(...)`, etc.
@@ -231,7 +315,7 @@ Before committing any UI component or plugin page, verify:
 - [ ] Component-specific styles are in colocated SCSS Module file (`ComponentName.module.scss`)
 - [ ] SCSS Module uses underscore naming for multi-word identifiers (enables dot notation)
 - [ ] Uses container queries for component-level responsiveness (not viewport media queries)
-- [ ] Uses built-in utility classes for common patterns (`.surface`, `.btn`, `.badge`, `.stack`)
+- [ ] Uses styling utility classes for visual patterns (`.surface`, `.btn`, `.badge`)
 - [ ] Uses `lucide-react` for all icons with design system colors
 - [ ] Provides visual feedback for state changes (loading, error, success)
 - [ ] Uses semantic HTML (buttons, nav, lists, not generic divs)
