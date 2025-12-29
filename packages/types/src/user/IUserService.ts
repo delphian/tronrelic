@@ -22,28 +22,35 @@ import type { IUser } from './IUser.js';
  * Plugins should not modify user data directly - use plugin-specific
  * storage or coordinate with the user module for updates.
  *
+ * Note: For HTTP route handlers, user context is automatically available
+ * via `req.userId` and `req.user` (populated by middleware). Use IUserService
+ * for non-request contexts like observers or scheduled jobs.
+ *
  * @example
  * ```typescript
- * // In plugin backend init()
+ * // In plugin observer - look up user by wallet address
  * async init(context: IPluginContext) {
- *     const { userService, database, logger } = context;
+ *     const { userService, logger } = context;
  *
- *     // Check if user has linked wallets
- *     context.http.router.get('/my-plugin/data', async (req, res) => {
- *         const userId = parseCookieUserId(req.headers['cookie']);
- *         if (!userId) {
- *             return res.status(401).json({ error: 'Unauthorized' });
+ *     class TransferObserver extends context.BaseObserver {
+ *         protected readonly name = 'TransferObserver';
+ *
+ *         protected async process(transaction: ITransaction): Promise<void> {
+ *             const fromAddress = transaction.payload.from.address;
+ *             const user = await userService.getByWallet(fromAddress);
+ *
+ *             if (user) {
+ *                 const hasVerifiedWallet = user.wallets?.some(w => w.verified);
+ *                 logger.info({ userId: user.id, hasVerifiedWallet },
+ *                     'Transaction from known user');
+ *             }
  *         }
+ *     }
  *
- *         const user = await userService.getById(userId);
- *         const isRegistered = (user?.wallets?.length ?? 0) > 0;
- *
- *         if (!isRegistered) {
- *             return res.status(403).json({ error: 'Wallet required' });
- *         }
- *
- *         // Proceed with registered user
- *     });
+ *     context.observerRegistry.subscribeTransactionType(
+ *         'TransferContract',
+ *         new TransferObserver()
+ *     );
  * }
  * ```
  */

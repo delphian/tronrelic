@@ -30,7 +30,11 @@ Every route entry uses the `IApiRouteConfig` contract. Focus on these fields:
 
 Remember: `req.params`, `req.query`, `req.body`, and `req.ip` are plain objects; `res.status()`, `res.json()`, `res.send()`, and `res.setHeader()` mirror familiar Express methods but stay framework-agnostic.
 
-**User context is automatically available.** Middleware populates `req.userId` (from the `tronrelic_uid` cookie) and `req.user` (the resolved user record) before your handler runs. A "registered user" has at least one linked wallet—check `req.user?.wallets?.length > 0` for feature gating. See [User Module](../system/system-modules-user.md#plugin-access-to-user-data) for complete patterns.
+**User context is automatically available.** Middleware populates `req.userId` (from the `tronrelic_uid` cookie) and `req.user` (the resolved user record) before your handler runs. For feature gating, check wallet states:
+- `req.user?.wallets?.length > 0` — user has linked a wallet (may be unverified)
+- `req.user?.wallets?.some(w => w.verified)` — user has a verified wallet (recommended for feature gating)
+
+See [User Module](../system/system-modules-user.md#plugin-access-to-user-data) for complete patterns.
 
 ## Minimal Example
 

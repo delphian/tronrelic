@@ -21,6 +21,22 @@ import { logger } from '../../lib/logger.js';
  * @param req - Express request object
  * @returns Parsed cookies as key-value pairs
  */
+/**
+ * UUID v4 format regex for validation.
+ * Validates format before trusting client-provided cookie values.
+ */
+const UUID_V4_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+/**
+ * Validate UUID v4 format.
+ *
+ * @param value - String to validate
+ * @returns true if valid UUID v4 format
+ */
+function isValidUuid(value: string): boolean {
+    return UUID_V4_REGEX.test(value);
+}
+
 function parseCookies(req: Request): Record<string, string> {
     // If Express cookie-parser is available, use it
     if (req.cookies && typeof req.cookies === 'object') {
@@ -75,6 +91,12 @@ export const userContextMiddleware: RequestHandler = async (
 
         if (!userId) {
             // No user cookie present - continue without user context
+            return next();
+        }
+
+        // Validate UUID format before trusting client-provided value
+        if (!isValidUuid(userId)) {
+            logger.debug({ userId: userId.substring(0, 20) }, 'Invalid UUID format in cookie');
             return next();
         }
 

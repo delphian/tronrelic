@@ -35,21 +35,23 @@ export interface IPluginWalletLink {
  * plugins when core user module internals are refactored.
  *
  * Wallet states (in order of progression):
- * 1. No wallets - `wallets.length === 0`
- * 2. Claimed but unverified - `wallets.some(w => !w.verified)`
- * 3. At least one verified - `wallets.some(w => w.verified)`
+ * 1. No wallets - `!hasLinkedWallet`
+ * 2. Linked but unverified - `hasLinkedWallet && !hasVerifiedWallet`
+ * 3. At least one verified - `hasVerifiedWallet`
  *
  * @example
  * ```typescript
- * const { isRegistered, isLoggedIn, wallets } = context.useUser();
+ * const { hasLinkedWallet, hasVerifiedWallet, isLoggedIn, wallets } = context.useUser();
  *
  * // Gate feature to verified users only
- * if (!isRegistered) {
+ * if (!hasVerifiedWallet) {
  *     return <p>Please verify your wallet to access this feature</p>;
  * }
  *
- * // Check if user has any claimed wallets
- * const hasClaimedWallet = wallets.length > 0;
+ * // Check if user has started wallet linking process
+ * if (hasLinkedWallet && !hasVerifiedWallet) {
+ *     return <p>Please complete wallet verification</p>;
+ * }
  *
  * // Get only verified wallets
  * const verifiedWallets = wallets.filter(w => w.verified);
@@ -63,11 +65,17 @@ export interface IPluginUserState {
     userId: string | null;
 
     /**
+     * Whether the user has at least one linked wallet (verified or not).
+     * Convenience check for `wallets.length > 0`.
+     */
+    hasLinkedWallet: boolean;
+
+    /**
      * Whether the user has at least one verified wallet.
      * Convenience check for `wallets.some(w => w.verified)`.
      * Use this for feature gating (e.g., "verify wallet to access historical data").
      */
-    isRegistered: boolean;
+    hasVerifiedWallet: boolean;
 
     /**
      * Whether the user is currently logged in (UI feature gate).
@@ -81,7 +89,6 @@ export interface IPluginUserState {
      * Empty array if user has not linked any wallets.
      *
      * To get only verified wallets: `wallets.filter(w => w.verified)`
-     * To check for any claimed wallet: `wallets.length > 0`
      */
     wallets: IPluginWalletLink[];
 

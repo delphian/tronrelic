@@ -342,12 +342,14 @@ function usePluginUser(): IPluginUserState {
         label: w.label
     }));
 
-    // isRegistered = has at least one verified wallet
-    const isRegistered = wallets.some(w => w.verified);
+    // Wallet state convenience properties
+    const hasLinkedWallet = wallets.length > 0;
+    const hasVerifiedWallet = wallets.some(w => w.verified);
 
     return {
         userId,
-        isRegistered,
+        hasLinkedWallet,
+        hasVerifiedWallet,
         isLoggedIn,
         wallets,
         primaryWallet,

@@ -36,14 +36,18 @@ All plugin route handlers receive user context automatically via middleware. The
 ```typescript
 // In plugin route handler
 handler: async (req: IHttpRequest, res: IHttpResponse) => {
-    // Check if user is authenticated
+    // Check if user context is present (cookie contained valid UUID)
+    // Note: This is identity, NOT authentication - cookie values are client-controlled
     if (!req.user) {
-        return res.status(401).json({ error: 'Authentication required' });
+        return res.status(401).json({ error: 'User context required' });
     }
 
-    // Check if user has linked wallets (registered)
-    const isRegistered = (req.user.wallets?.length ?? 0) > 0;
-    if (!isRegistered) {
+    // Wallet state checks
+    const hasLinkedWallet = (req.user.wallets?.length ?? 0) > 0;
+    const hasVerifiedWallet = req.user.wallets?.some(w => w.verified) ?? false;
+
+    // For sensitive operations, require cryptographic proof of wallet ownership
+    if (!hasVerifiedWallet) {
         return res.status(403).json({ error: 'Wallet verification required' });
     }
 
@@ -55,6 +59,8 @@ handler: async (req: IHttpRequest, res: IHttpResponse) => {
 ```
 
 The middleware parses the `tronrelic_uid` cookie and resolves the user via `UserService`. Plugins don't need to parse cookies or call services directly.
+
+**Security note:** The cookie-based user context is identity, not authentication. The `tronrelic_uid` cookie is client-controlled and contains an unverified UUID. For sensitive operations, always check `hasVerifiedWallet` which indicates the user has cryptographically proven wallet ownership via signature.
 
 ### IUserService (For Non-Request Context)
 

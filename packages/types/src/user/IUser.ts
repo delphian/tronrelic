@@ -26,6 +26,8 @@ export interface IWalletLink {
     verified: boolean;
     /** Timestamp of last connection/use */
     lastUsed: Date;
+    /** Optional user-assigned label for the wallet */
+    label?: string;
 }
 
 /**
