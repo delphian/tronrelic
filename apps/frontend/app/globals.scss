@@ -46,34 +46,10 @@ main {
   padding: var(--spacing-14) var(--spacing-15) var(--spacing-16);
 }
 
-.page {
-  display: grid;
-  gap: var(--page-gap);
-}
-
-@media (max-width: $breakpoint-mobile-lg) {
-  .page {
-    gap: var(--page-gap-sm);
-  }
-}
-
-.page-header {
-  display: flex;
-  flex-direction: column;
-  gap: var(--page-header-gap);
-}
-
-.page-title {
-  font-size: clamp(var(--font-size-2xl), 3vw, var(--font-size-3xl));
-  font-weight: var(--font-weight-bold);
-  letter-spacing: var(--letter-spacing-tight);
-}
-
-.page-subtitle {
-  font-size: var(--font-size-md);
-  color: var(--color-text-muted);
-  max-width: var(--max-width-prose);
-}
+/* Layout primitives (.page, .page-header, .stack, .grid) removed - migrated to React components:
+ * - Page, PageHeader, Stack, Grid, Section from components/layout/
+ * See frontend.md for component-first layout architecture documentation.
+ */
 
 /* Card/Surface styles removed - migrated to Card.module.css */
 /* Utility surface modifiers kept for backward compatibility until full migration */
@@ -101,37 +77,6 @@ main {
   display: flex;
   gap: var(--input-group-gap);
   align-items: center;
-}
-
-.stack {
-  display: flex;
-  flex-direction: column;
-  gap: var(--stack-gap-default);
-}
-
-.stack--sm {
-  gap: var(--stack-gap-sm);
-}
-
-.stack--lg {
-  gap: var(--stack-gap-lg);
-}
-
-.grid {
-  display: grid;
-  gap: var(--grid-gap-default);
-}
-
-.grid--cols-2 {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-.grid--cols-3 {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-}
-
-.grid--responsive {
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
 }
 
 .stat-grid {

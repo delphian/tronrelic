@@ -9,6 +9,7 @@
  */
 'use client';
 
+import { Page, PageHeader } from '../../../../components/layout';
 import type { ProfileData } from './index';
 import styles from './Profile.module.css';
 
@@ -31,13 +32,11 @@ interface ProfilePublicViewProps {
  */
 export function ProfilePublicView({ profile }: ProfilePublicViewProps): JSX.Element {
     return (
-        <div className="page">
-            <section className="page-header">
-                <h1 className="page-title">Profile</h1>
-                <p className="page-subtitle">
-                    {profile.address.slice(0, 8)}...{profile.address.slice(-6)}
-                </p>
-            </section>
+        <Page>
+            <PageHeader
+                title="Profile"
+                subtitle={`${profile.address.slice(0, 8)}...${profile.address.slice(-6)}`}
+            />
 
             <div className={styles.container}>
                 <div className={styles.placeholder}>
@@ -62,6 +61,6 @@ export function ProfilePublicView({ profile }: ProfilePublicViewProps): JSX.Elem
                     </p>
                 </div>
             </div>
-        </div>
+        </Page>
     );
 }

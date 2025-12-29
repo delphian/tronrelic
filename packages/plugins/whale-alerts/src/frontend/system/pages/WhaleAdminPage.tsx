@@ -5,6 +5,7 @@ import type { IFrontendPluginContext } from '@tronrelic/types';
 import type { IWhaleAlertsConfig } from '../../../shared/types';
 import { WhaleThresholdSettings } from '../components/WhaleThresholdSettings';
 import { WhaleTelegramSettings } from '../components/WhaleTelegramSettings';
+import styles from './WhaleAdminPage.module.scss';
 
 /**
  * Whale Alerts Admin Page.
@@ -96,46 +97,41 @@ export function WhaleAdminPage({ context }: { context: IFrontendPluginContext })
 
     if (loading) {
         return (
-            <main>
-                <div className="page">
-                    <section className="page-header">
-                        <h1 className="page-title">Whale Alerts Settings</h1>
-                    </section>
-                    <ui.Skeleton height="400px" />
-                </div>
+            <main className={styles.container}>
+                <section className={styles.page_header}>
+                    <h1 className={styles.title}>Whale Alerts Settings</h1>
+                </section>
+                <ui.Skeleton height="400px" />
             </main>
         );
     }
 
     if (!config) {
         return (
-            <main>
-                <div className="page">
-                    <section className="page-header">
-                        <h1 className="page-title">Whale Alerts Settings</h1>
-                    </section>
-                    <ui.Card>
-                        <p>Failed to load configuration. Please try refreshing the page.</p>
-                        {error && (
-                            <p style={{ marginTop: '0.5rem', fontSize: '0.9rem', opacity: 0.9 }}>
-                                Error: {error}
-                            </p>
-                        )}
-                    </ui.Card>
-                </div>
+            <main className={styles.container}>
+                <section className={styles.page_header}>
+                    <h1 className={styles.title}>Whale Alerts Settings</h1>
+                </section>
+                <ui.Card>
+                    <p>Failed to load configuration. Please try refreshing the page.</p>
+                    {error && (
+                        <p style={{ marginTop: '0.5rem', fontSize: '0.9rem', opacity: 0.9 }}>
+                            Error: {error}
+                        </p>
+                    )}
+                </ui.Card>
             </main>
         );
     }
 
     return (
-        <main>
-            <div className="page">
-                <section className="page-header">
-                    <h1 className="page-title">Whale Alerts Settings</h1>
-                    <p className="page-subtitle">
-                        Configure whale detection thresholds and notification preferences
-                    </p>
-                </section>
+        <main className={styles.container}>
+            <section className={styles.page_header}>
+                <h1 className={styles.title}>Whale Alerts Settings</h1>
+                <p className={styles.subtitle}>
+                    Configure whale detection thresholds and notification preferences
+                </p>
+            </section>
 
                 {error && (
                     <ui.Card>
@@ -177,7 +173,7 @@ export function WhaleAdminPage({ context }: { context: IFrontendPluginContext })
                 </div>
 
                 <ui.Card>
-                    <div className="whale-admin-actions">
+                    <div className={styles.actions}>
                         <ui.Button
                             onClick={handleSave}
                             disabled={saving}
@@ -187,7 +183,6 @@ export function WhaleAdminPage({ context }: { context: IFrontendPluginContext })
                         </ui.Button>
                     </div>
                 </ui.Card>
-            </div>
         </main>
     );
 }

@@ -1,0 +1,33 @@
+/**
+ * Stack Layout Component Styles
+ *
+ * Provides flex-based layout with consistent gap spacing.
+ * Supports vertical and horizontal directions with three gap sizes.
+ */
+
+.stack {
+    display: flex;
+}
+
+/* Direction variants */
+.stack_vertical {
+    flex-direction: column;
+}
+
+.stack_horizontal {
+    flex-direction: row;
+    align-items: center;
+}
+
+/* Gap size variants */
+.stack_gap_sm {
+    gap: var(--stack-gap-sm);
+}
+
+.stack_gap_md {
+    gap: var(--stack-gap-default);
+}
+
+.stack_gap_lg {
+    gap: var(--stack-gap-lg);
+}

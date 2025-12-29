@@ -119,6 +119,122 @@ export interface IChartComponents {
 }
 
 /**
+ * Layout component library provided to frontend plugins.
+ *
+ * Contains structural layout components for building consistent page layouts.
+ * These components provide TypeScript safety, IDE autocomplete, and encapsulated
+ * responsive behavior that CSS utility classes cannot offer.
+ */
+export interface ILayoutComponents {
+    /**
+     * Page wrapper component with responsive gap spacing.
+     *
+     * Provides the primary page-level grid layout with design-system consistent gaps.
+     * Responsive behavior reduces gap on mobile viewports.
+     *
+     * @example
+     * ```tsx
+     * <layout.Page>
+     *   <layout.PageHeader title="Dashboard" subtitle="Overview" />
+     *   <ui.Card>Content</ui.Card>
+     * </layout.Page>
+     * ```
+     */
+    Page: ComponentType<{
+        children: React.ReactNode;
+        className?: string;
+    }>;
+
+    /**
+     * Page header component with title and optional subtitle.
+     *
+     * Renders a semantic header section with consistent typography and spacing.
+     * Supports ReactNode for title/subtitle to allow skeleton loading states.
+     *
+     * @example
+     * ```tsx
+     * <layout.PageHeader
+     *   title="Energy Markets"
+     *   subtitle="Compare real-time pricing across platforms"
+     * />
+     * ```
+     */
+    PageHeader: ComponentType<{
+        title: React.ReactNode;
+        subtitle?: React.ReactNode;
+        children?: React.ReactNode;
+        className?: string;
+    }>;
+
+    /**
+     * Stack component for vertical or horizontal spacing between children.
+     *
+     * Provides flexbox-based stacking with configurable gap sizes and direction.
+     * Default direction is vertical (column).
+     *
+     * @example
+     * ```tsx
+     * <layout.Stack gap="md">
+     *   <ui.Card>First</ui.Card>
+     *   <ui.Card>Second</ui.Card>
+     * </layout.Stack>
+     *
+     * <layout.Stack direction="horizontal" gap="sm">
+     *   <ui.Button>Cancel</ui.Button>
+     *   <ui.Button variant="primary">Save</ui.Button>
+     * </layout.Stack>
+     * ```
+     */
+    Stack: ComponentType<{
+        children: React.ReactNode;
+        gap?: 'sm' | 'md' | 'lg';
+        direction?: 'vertical' | 'horizontal';
+        className?: string;
+    }>;
+
+    /**
+     * Grid component for multi-column layouts.
+     *
+     * Provides CSS grid with configurable column counts and gap sizes.
+     * Use columns="responsive" for automatic responsive behavior.
+     *
+     * @example
+     * ```tsx
+     * <layout.Grid columns="responsive" gap="md">
+     *   <ui.Card>Card 1</ui.Card>
+     *   <ui.Card>Card 2</ui.Card>
+     *   <ui.Card>Card 3</ui.Card>
+     * </layout.Grid>
+     * ```
+     */
+    Grid: ComponentType<{
+        children: React.ReactNode;
+        columns?: 2 | 3 | 'responsive';
+        gap?: 'sm' | 'md' | 'lg';
+        className?: string;
+    }>;
+
+    /**
+     * Section component for grouping related content with spacing.
+     *
+     * Provides a semantic section wrapper with consistent gap between children.
+     *
+     * @example
+     * ```tsx
+     * <layout.Section gap="lg">
+     *   <h2>Settings</h2>
+     *   <SettingsForm />
+     * </layout.Section>
+     * ```
+     */
+    Section: ComponentType<{
+        children: React.ReactNode;
+        gap?: 'sm' | 'md' | 'lg';
+        className?: string;
+    }>;
+}
+
+/**
  * System component library provided to frontend plugins.
  *
  * Contains system administration and monitoring components that plugins can use
@@ -410,6 +526,9 @@ export interface IFrontendPluginContext {
 
     /** UI component library (Card, Badge, Skeleton, Button, Input) */
     ui: IUIComponents;
+
+    /** Layout component library (Page, PageHeader, Stack, Grid, Section) */
+    layout: ILayoutComponents;
 
     /** Chart component library (LineChart, etc.) */
     charts: IChartComponents;

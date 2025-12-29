@@ -640,10 +640,11 @@ function SaveButton() {
 
 ### FrontendPluginContextProvider
 
-Dependency injection system for plugins to access core UI components, API client, charts, and WebSocket without cross-workspace imports.
+Dependency injection system for plugins to access layout components, UI primitives, API client, charts, and WebSocket without cross-workspace imports.
 
 **Key features:**
 
+- **Layout components** - Page, PageHeader, Stack, Grid, Section for consistent page structure
 - **UI component access** - Plugins use shared Card, Button, Badge without importing
 - **API client** - Pre-configured axios instance with authentication
 - **Chart components** - Reusable LineChart, BarChart, PieChart
@@ -655,7 +656,7 @@ Dependency injection system for plugins to access core UI components, API client
 import type { IFrontendPluginContext } from '@tronrelic/types';
 
 export function MyPluginPage({ context }: { context: IFrontendPluginContext }) {
-  const { ui, api, charts, websocket } = context;
+  const { ui, layout, api, charts, websocket } = context;
 
   useEffect(() => {
     websocket.subscribe({
@@ -666,12 +667,17 @@ export function MyPluginPage({ context }: { context: IFrontendPluginContext }) {
   }, [websocket]);
 
   return (
-    <ui.Card title="Plugin Dashboard">
-      <charts.LineChart data={...} />
-      <ui.Button onClick={() => api.post('/plugins/my-plugin/action', {})}>
-        Trigger Action
-      </ui.Button>
-    </ui.Card>
+    <layout.Page>
+      <layout.PageHeader title="Plugin Dashboard" />
+      <ui.Card>
+        <layout.Stack gap="md">
+          <charts.LineChart data={...} />
+          <ui.Button onClick={() => api.post('/plugins/my-plugin/action', {})}>
+            Trigger Action
+          </ui.Button>
+        </layout.Stack>
+      </ui.Card>
+    </layout.Page>
   );
 }
 ```

@@ -8,7 +8,7 @@
  * available during server-side rendering. This enables full widget HTML
  * to be rendered on the server for instant display without loading flash.
  */
-import type { ComponentType } from 'react';
+import type { WidgetComponent } from '@tronrelic/types';
 
 import { widgetComponents as whale_alerts_widgets } from '../../../../packages/plugins/whale-alerts/src/frontend/widgets/index';
 
@@ -18,7 +18,7 @@ import { widgetComponents as whale_alerts_widgets } from '../../../../packages/p
  * Maps widget IDs to their React components. Widget IDs must match
  * the IDs used in backend widget registration.
  */
-export const widgetComponentRegistry: Record<string, ComponentType<{ data: unknown }>> = {
+export const widgetComponentRegistry: Record<string, WidgetComponent> = {
     ...whale_alerts_widgets,
 };
 
@@ -28,6 +28,6 @@ export const widgetComponentRegistry: Record<string, ComponentType<{ data: unkno
  * @param widgetId - Widget identifier (e.g., 'whale-alerts:recent')
  * @returns Component if registered, undefined otherwise
  */
-export function getWidgetComponent(widgetId: string): ComponentType<{ data: unknown }> | undefined {
+export function getWidgetComponent(widgetId: string): WidgetComponent | undefined {
     return widgetComponentRegistry[widgetId];
 }

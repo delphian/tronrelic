@@ -855,20 +855,21 @@ When building plugin UIs, follow these additional rules:
 Plugin pages MUST use the `<Page>` layout component for page structure. This provides mobile-responsive gap behavior and consistent page layout:
 
 ```tsx
-// CORRECT - layout components for page structure
-import { Page, PageHeader, Stack } from '../../../components/layout';
+// CORRECT - layout components via context (plugins cannot import from apps/frontend)
 import styles from './MyPluginPage.module.scss';
 
 export function MyPluginPage({ context }: { context: IFrontendPluginContext }) {
+    const { layout, ui } = context;
+
     return (
-        <Page>
-            <PageHeader title="My Plugin" subtitle="Plugin description" />
-            <context.ui.Card>
-                <Stack gap="md">
+        <layout.Page>
+            <layout.PageHeader title="My Plugin" subtitle="Plugin description" />
+            <ui.Card>
+                <layout.Stack gap="md">
                     <p>Content here</p>
-                </Stack>
-            </context.ui.Card>
-        </Page>
+                </layout.Stack>
+            </ui.Card>
+        </layout.Page>
     );
 }
 ```
@@ -878,10 +879,10 @@ For plugins that need container queries on the page wrapper, use a module class 
 ```tsx
 // With container queries for plugin-specific responsiveness
 <div className={styles.container}>
-    <Page>
-        <PageHeader title="My Plugin" />
-        <context.ui.Card>...</context.ui.Card>
-    </Page>
+    <layout.Page>
+        <layout.PageHeader title="My Plugin" />
+        <ui.Card>...</ui.Card>
+    </layout.Page>
 </div>
 ```
 
@@ -894,9 +895,9 @@ For plugins that need container queries on the page wrapper, use a module class 
 ```
 
 **Key rules:**
-- Use `<Page>` component for page-level layout with responsive gap
-- Use `<PageHeader>` for consistent title/subtitle sections
-- Use `<Stack>` and `<Grid>` for internal layout
+- Use `context.layout.Page` for page-level layout with responsive gap
+- Use `context.layout.PageHeader` for consistent title/subtitle sections
+- Use `context.layout.Stack` and `context.layout.Grid` for internal layout
 - Add module class wrapper only when container queries are needed
 
 ### 2. Always Use Container Queries
@@ -924,21 +925,26 @@ Plugins should reference the same CSS variables as the core application:
 Create a colocated SCSS Module for plugin-specific styles:
 
 ```tsx
-// Good - layout components with SCSS Modules for custom styling
-import { Page, PageHeader, Stack, Grid } from '../../../components/layout';
+// Good - layout components via context with SCSS Modules for custom styling
 import styles from './MyPlugin.module.scss';
 
-<Page>
-    <PageHeader title="Plugin Title" subtitle="Description" />
-    <Grid columns="responsive" gap="md">
-        <div className={`surface ${styles.custom_card}`}>
-            <Stack gap="sm">
-                <h3>Card Title</h3>
-                <p className="text-muted">Card content</p>
-            </Stack>
-        </div>
-    </Grid>
-</Page>
+export function MyPluginPage({ context }: { context: IFrontendPluginContext }) {
+    const { layout } = context;
+
+    return (
+        <layout.Page>
+            <layout.PageHeader title="Plugin Title" subtitle="Description" />
+            <layout.Grid columns="responsive" gap="md">
+                <div className={`surface ${styles.custom_card}`}>
+                    <layout.Stack gap="sm">
+                        <h3>Card Title</h3>
+                        <p className="text-muted">Card content</p>
+                    </layout.Stack>
+                </div>
+            </layout.Grid>
+        </layout.Page>
+    );
+}
 ```
 
 **`MyPlugin.module.scss`:**

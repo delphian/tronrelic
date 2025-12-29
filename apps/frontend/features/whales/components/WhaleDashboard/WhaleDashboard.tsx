@@ -10,6 +10,7 @@ import { useEffect, useMemo, useState } from 'react';
 // } from '../../../../lib/api';
 type TimeseriesPoint = { date: string; value: number; max?: number; count?: number };
 type WhaleHighlightRecord = { txId: string; amountTRX: number; timestamp: string; fromAddress: string; toAddress: string; memo?: string };
+import { Stack } from '../../../../components/layout';
 import { LineChart } from '../../../charts/components/LineChart';
 import { Card } from '../../../../components/ui/Card';
 import { Badge } from '../../../../components/ui/Badge';
@@ -162,7 +163,7 @@ export function WhaleDashboard({ initialSeries, initialHighlights }: WhaleDashbo
     return (
         <div className={styles.container}>
             <Card>
-                <div className="stack">
+                <Stack>
                     <header className={styles.header}>
                         <div className={styles.header__info}>
                             <h2 className={styles.header__title}>Whale capital flows</h2>
@@ -228,11 +229,11 @@ export function WhaleDashboard({ initialSeries, initialHighlights }: WhaleDashbo
                     </div>
 
                     {error && <p className={styles.error_message}>{error}</p>}
-                </div>
+                </Stack>
             </Card>
 
             <Card>
-                <div className="stack">
+                <Stack>
                     <header className={styles.highlights_header}>
                         <div>
                             <h3 className={styles.highlights_header__title}>Latest whale transfers</h3>
@@ -261,7 +262,7 @@ export function WhaleDashboard({ initialSeries, initialHighlights }: WhaleDashbo
                             <p className={styles.empty_state}>No whale movements recorded yet.</p>
                         )}
                     </div>
-                </div>
+                </Stack>
             </Card>
         </div>
     );

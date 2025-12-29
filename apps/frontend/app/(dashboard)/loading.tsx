@@ -1,24 +1,25 @@
+import { Page, PageHeader, Stack, Grid } from '../../components/layout';
 import { Skeleton } from '../../components/ui/Skeleton';
 import { Card } from '../../components/ui/Card';
 
 export default function DashboardLoading() {
   return (
-    <div className="page">
-      <section className="page-header">
-        <Skeleton style={{ width: '36%', height: '2.3rem' }} />
-        <Skeleton style={{ width: '52%', height: '1.1rem' }} />
-      </section>
-      <div className="grid grid--responsive">
+    <Page>
+      <PageHeader
+        title={<Skeleton style={{ width: '36%', height: '2.3rem' }} />}
+        subtitle={<Skeleton style={{ width: '52%', height: '1.1rem' }} />}
+      />
+      <Grid columns="responsive">
         {Array.from({ length: 3 }).map((_, index) => (
           <Card key={index}>
-            <div className="stack">
+            <Stack>
               <Skeleton style={{ height: '1.3rem' }} />
               <Skeleton style={{ height: '1rem', width: '80%' }} />
               <Skeleton style={{ height: '8rem' }} />
-            </div>
+            </Stack>
           </Card>
         ))}
-      </div>
-    </div>
+      </Grid>
+    </Page>
   );
 }

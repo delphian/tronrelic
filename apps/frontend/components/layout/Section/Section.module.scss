@@ -1,0 +1,23 @@
+/**
+ * Section Layout Component Styles
+ *
+ * Provides semantic section grouping with consistent gap spacing.
+ * Uses CSS grid for vertical stacking with gap between children.
+ */
+
+.section {
+    display: grid;
+}
+
+/* Gap size variants */
+.section_gap_sm {
+    gap: var(--stack-gap-sm);
+}
+
+.section_gap_md {
+    gap: var(--stack-gap-default);
+}
+
+.section_gap_lg {
+    gap: var(--stack-gap-lg);
+}

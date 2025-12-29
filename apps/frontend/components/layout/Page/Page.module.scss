@@ -1,0 +1,26 @@
+/**
+ * Page Layout Component Styles
+ *
+ * Provides page-level grid layout with responsive gap spacing.
+ * Gap automatically reduces on mobile viewports for better content density.
+ */
+
+@use '../../../app/breakpoints' as *;
+
+.page {
+    display: grid;
+    gap: var(--page-gap);
+}
+
+@media (max-width: $breakpoint-mobile-lg) {
+    .page {
+        gap: var(--page-gap-sm);
+    }
+}
+
+/* Mobile: remove padding to maximize content width */
+@media (max-width: $breakpoint-mobile) {
+    .page {
+        padding: 0 !important;
+    }
+}

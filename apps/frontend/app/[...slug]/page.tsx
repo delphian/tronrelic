@@ -1,5 +1,6 @@
 import { notFound, redirect } from 'next/navigation';
 import type { Metadata } from 'next';
+import { Page } from '../../components/layout';
 import { PluginPageHandler } from '../../components/PluginPageHandler';
 import { getServerSideApiUrlWithPath } from '../../lib/api-url';
 import styles from './page.module.css';
@@ -158,14 +159,14 @@ export default async function UnifiedPage({ params }: { params: Promise<IPagePar
         }
 
         return (
-            <div className="page">
+            <Page>
                 <article>
                     <div
                         className={styles.content}
                         dangerouslySetInnerHTML={{ __html: data.html }}
                     />
                 </article>
-            </div>
+            </Page>
         );
     }
 

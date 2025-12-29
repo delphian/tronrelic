@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useSystemAuth } from '../../../../features/system';
+import { Page } from '../../../../components/layout';
 import { Card } from '../../../../components/ui/Card';
 import styles from './page.module.css';
 import { PagesTab } from './tabs/PagesTab';
@@ -23,11 +24,11 @@ export default function PagesAdminPage() {
 
     if (!token) {
         return (
-            <div className="page">
+            <Page>
                 <Card padding="lg">
                     <p>Authentication required</p>
                 </Card>
-            </div>
+            </Page>
         );
     }
 

@@ -155,4 +155,17 @@
     --max-width-md: 640px;       /* Medium modal */
     --max-width-lg: 820px;       /* Large modal */
     --max-width-xl: 1080px;      /* Extra large modal */
+
+    /* Chart Color Palette (10 distinct, accessible colors for data series) */
+    --chart-color-1: #3b82f6;    /* Blue */
+    --chart-color-2: #22c55e;    /* Green */
+    --chart-color-3: #f59e0b;    /* Amber */
+    --chart-color-4: #ef4444;    /* Red */
+    --chart-color-5: #8b5cf6;    /* Violet */
+    --chart-color-6: #06b6d4;    /* Cyan */
+    --chart-color-7: #ec4899;    /* Pink */
+    --chart-color-8: #f97316;    /* Orange */
+    --chart-color-9: #14b8a6;    /* Teal */
+    --chart-color-10: #6366f1;   /* Indigo */
+    --chart-color-total: #7C9BFF; /* Total/aggregate line */
 }

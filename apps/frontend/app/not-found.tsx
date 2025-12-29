@@ -10,6 +10,7 @@
 
 import Link from 'next/link';
 import type { Metadata } from 'next';
+import { Page } from '../components/layout';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 
@@ -24,7 +25,7 @@ export const metadata: Metadata = {
 
 export default function NotFound() {
   return (
-    <div className="page">
+    <Page>
       <Card elevated padding="lg" style={{ maxWidth: '600px', margin: '4rem auto', textAlign: 'center' }}>
         <h1 style={{ fontSize: '4rem', margin: '0 0 1rem', opacity: 0.3 }}>404</h1>
         <h2 style={{ margin: '0 0 1rem' }}>Page Not Found</h2>
@@ -49,6 +50,6 @@ export default function NotFound() {
           </div>
         </nav>
       </Card>
-    </div>
+    </Page>
   );
 }

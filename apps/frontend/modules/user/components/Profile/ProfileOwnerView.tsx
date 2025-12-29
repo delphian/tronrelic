@@ -12,6 +12,7 @@
 import { useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { LogOut, Loader2 } from 'lucide-react';
+import { Page, PageHeader } from '../../../../components/layout';
 import type { ProfileData } from './index';
 import { useWallet } from '../../hooks/useWallet';
 import { useToast } from '../../../../components/ui/ToastProvider';
@@ -62,30 +63,25 @@ export function ProfileOwnerView({ profile }: ProfileOwnerViewProps): JSX.Elemen
     }, [logout, router, push]);
 
     return (
-        <div className="page">
-            <section className="page-header">
-                <div className={styles.header_row}>
-                    <div>
-                        <h1 className="page-title">My Profile</h1>
-                        <p className="page-subtitle">
-                            {profile.address.slice(0, 8)}...{profile.address.slice(-6)}
-                        </p>
-                    </div>
-                    <button
-                        className={styles.logout_btn}
-                        onClick={handleLogout}
-                        disabled={isLoggingOut}
-                        aria-label="Log out"
-                    >
-                        {isLoggingOut ? (
-                            <Loader2 size={18} className={styles.spinner} />
-                        ) : (
-                            <LogOut size={18} />
-                        )}
-                        <span>Logout</span>
-                    </button>
-                </div>
-            </section>
+        <Page>
+            <PageHeader
+                title="My Profile"
+                subtitle={`${profile.address.slice(0, 8)}...${profile.address.slice(-6)}`}
+            >
+                <button
+                    className={styles.logout_btn}
+                    onClick={handleLogout}
+                    disabled={isLoggingOut}
+                    aria-label="Log out"
+                >
+                    {isLoggingOut ? (
+                        <Loader2 size={18} className={styles.spinner} />
+                    ) : (
+                        <LogOut size={18} />
+                    )}
+                    <span>Logout</span>
+                </button>
+            </PageHeader>
 
             <div className={styles.container}>
                 <div className={styles.placeholder}>
@@ -111,6 +107,6 @@ export function ProfileOwnerView({ profile }: ProfileOwnerViewProps): JSX.Elemen
                     </p>
                 </div>
             </div>
-        </div>
+        </Page>
     );
 }

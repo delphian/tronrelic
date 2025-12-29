@@ -17,7 +17,45 @@ The frontend plugin context solves this by **injecting dependencies** into plugi
 
 Every frontend plugin component and page receives `IFrontendPluginContext` as a prop, containing:
 
-### 1. UI Components (`context.ui`)
+### 1. Layout Components (`context.layout`)
+
+Structural components for page layout that provide consistent spacing, responsive behavior, and semantic page structure:
+
+```typescript
+interface ILayoutComponents {
+    Page: ComponentType<{
+        children: React.ReactNode;
+        className?: string;
+    }>;
+    PageHeader: ComponentType<{
+        title: React.ReactNode;
+        subtitle?: React.ReactNode;
+        children?: React.ReactNode;
+        className?: string;
+    }>;
+    Stack: ComponentType<{
+        children: React.ReactNode;
+        gap?: 'sm' | 'md' | 'lg';
+        direction?: 'vertical' | 'horizontal';
+        className?: string;
+    }>;
+    Grid: ComponentType<{
+        children: React.ReactNode;
+        columns?: 2 | 3 | 'responsive';
+        gap?: 'sm' | 'md' | 'lg';
+        className?: string;
+    }>;
+    Section: ComponentType<{
+        children: React.ReactNode;
+        gap?: 'sm' | 'md' | 'lg';
+        className?: string;
+    }>;
+}
+```
+
+**Why layout components instead of CSS classes:** Layout components provide TypeScript safety, IDE autocomplete, and encapsulated responsive behavior. Using `<layout.Stack gap="md">` catches typos at compile time; CSS class `.stack--md` fails silently. Plugin pages should use these components for all structural layout.
+
+### 2. UI Components (`context.ui`)
 
 Pre-configured UI components ready to use:
 
@@ -46,7 +84,7 @@ interface IUIComponents {
 }
 ```
 
-### 2. Chart Components (`context.charts`)
+### 3. Chart Components (`context.charts`)
 
 Data visualization components:
 
@@ -65,7 +103,7 @@ interface IChartComponents {
 }
 ```
 
-### 3. API Client (`context.api`)
+### 4. API Client (`context.api`)
 
 Pre-configured HTTP client with automatic base URL and error handling:
 
@@ -78,7 +116,7 @@ interface IApiClient {
 }
 ```
 
-### 4. WebSocket Client (`context.websocket`)
+### 5. WebSocket Client (`context.websocket`)
 
 Access to the shared Socket.IO connection:
 
@@ -97,7 +135,7 @@ Plugin pages receive the context as a prop and destructure what they need:
 import type { IFrontendPluginContext } from '@tronrelic/types';
 
 export function MyPluginPage({ context }: { context: IFrontendPluginContext }) {
-    const { ui, charts, api, websocket } = context;
+    const { layout, ui, charts, api, websocket } = context;
     const [data, setData] = useState([]);
 
     useEffect(() => {
@@ -110,16 +148,18 @@ export function MyPluginPage({ context }: { context: IFrontendPluginContext }) {
     }, [api]);
 
     return (
-        <ui.Card>
-            <h2>My Plugin Dashboard</h2>
-            <charts.LineChart
-                series={[{
-                    id: 'my-data',
-                    label: 'Activity',
-                    data: data
-                }]}
-            />
-        </ui.Card>
+        <layout.Page>
+            <layout.PageHeader title="My Plugin Dashboard" />
+            <ui.Card>
+                <charts.LineChart
+                    series={[{
+                        id: 'my-data',
+                        label: 'Activity',
+                        data: data
+                    }]}
+                />
+            </ui.Card>
+        </layout.Page>
     );
 }
 ```
@@ -232,7 +272,7 @@ interface MetricData {
 }
 
 export function AnalyticsPage({ context }: { context: IFrontendPluginContext }) {
-    const { ui, charts, api } = context;
+    const { layout, ui, charts, api } = context;
     const [metrics, setMetrics] = useState<MetricData[]>([]);
     const [loading, setLoading] = useState(true);
 
@@ -255,21 +295,20 @@ export function AnalyticsPage({ context }: { context: IFrontendPluginContext }) 
 
     if (loading) {
         return (
-            <div className="page">
+            <layout.Page>
                 <ui.Skeleton height="400px" />
-            </div>
+            </layout.Page>
         );
     }
 
     return (
-        <main>
-            <div className="page">
-                <section className="page-header">
-                    <h1 className="page-title">Analytics Dashboard</h1>
-                    <ui.Badge tone="success">{metrics.length} data points</ui.Badge>
-                </section>
+        <layout.Page>
+            <layout.PageHeader title="Analytics Dashboard">
+                <ui.Badge tone="success">{metrics.length} data points</ui.Badge>
+            </layout.PageHeader>
 
-                <ui.Card>
+            <ui.Card>
+                <layout.Stack gap="md">
                     <h2>Activity Metrics</h2>
                     <charts.LineChart
                         series={[{
@@ -281,9 +320,9 @@ export function AnalyticsPage({ context }: { context: IFrontendPluginContext }) 
                         yAxisFormatter={(value: number) => value.toLocaleString()}
                         emptyLabel="No activity data available"
                     />
-                </ui.Card>
-            </div>
-        </main>
+                </layout.Stack>
+            </ui.Card>
+        </layout.Page>
     );
 }
 ```
@@ -513,7 +552,7 @@ export function MyPage() {
 **After:**
 ```typescript
 export function MyPage({ context }: { context: IFrontendPluginContext }) {
-    const { ui, charts, api, websocket } = context;
+    const { layout, ui, charts, api, websocket } = context;
     // ...
 }
 ```
@@ -658,6 +697,8 @@ interface MyComponentProps {
 }
 
 export function MyPluginComponent({ initialData, context }: MyComponentProps) {
+    const { layout, ui, websocket } = context;
+
     // Initialize state from SSR data - no loading state needed
     const [data, setData] = useState(initialData);
 
@@ -667,17 +708,22 @@ export function MyPluginComponent({ initialData, context }: MyComponentProps) {
             setData(payload);
         };
 
-        context.websocket.on('update', handleUpdate);
-        return () => context.websocket.off('update', handleUpdate);
-    }, [context.websocket]);
+        websocket.on('update', handleUpdate);
+        return () => websocket.off('update', handleUpdate);
+    }, [websocket]);
 
     // Render immediately - data is already present from SSR
     return (
-        <context.ui.Card>
-            {data.items.map(item => (
-                <p key={item.id}>{item.title}</p>
-            ))}
-        </context.ui.Card>
+        <layout.Page>
+            <layout.PageHeader title="My Plugin" />
+            <ui.Card>
+                <layout.Stack gap="sm">
+                    {data.items.map(item => (
+                        <p key={item.id}>{item.title}</p>
+                    ))}
+                </layout.Stack>
+            </ui.Card>
+        </layout.Page>
     );
 }
 ```
@@ -707,8 +753,9 @@ npm run generate:plugins --workspace apps/frontend
 
 ### ✅ Do:
 
-- **Use context for all frontend dependencies** - UI components, API calls, WebSocket, charts
-- **Destructure what you need** - `const { ui, api } = context` keeps code clean
+- **Use context for all frontend dependencies** - Layout, UI components, API calls, WebSocket, charts
+- **Use layout components for page structure** - `context.layout.Page`, `context.layout.Stack`, `context.layout.Grid`
+- **Destructure what you need** - `const { layout, ui, api } = context` keeps code clean
 - **Define types locally** - Keep plugin self-contained with its own type definitions
 - **Use the API client** - Handles base URLs, headers, and errors automatically
 - **Namespace WebSocket events** - Use plugin-specific event names
@@ -722,6 +769,7 @@ npm run generate:plugins --workspace apps/frontend
 ### ❌ Don't:
 
 - **Import from apps/frontend** - Will cause build errors and tight coupling
+- **Use CSS classes for layout** - Use `context.layout` components instead of `.page`, `.stack`, `.grid` classes
 - **Access frontend internals** - Use only what's provided in the context
 - **Create your own API client** - Use the injected one for consistency
 - **Manage Socket.IO connection** - The app handles connection lifecycle

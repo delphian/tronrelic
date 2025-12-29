@@ -1,0 +1,36 @@
+/**
+ * Whale Alerts Admin Page Styles
+ *
+ * Provides page-level layout for the admin settings page.
+ * Uses design tokens from globals.scss for consistent styling.
+ */
+
+.container {
+    display: grid;
+    gap: var(--page-gap);
+}
+
+.page_header {
+    display: flex;
+    flex-direction: column;
+    gap: var(--page-header-gap);
+}
+
+.title {
+    font-size: clamp(var(--font-size-2xl), 3vw, var(--font-size-3xl));
+    font-weight: var(--font-weight-bold);
+    letter-spacing: var(--letter-spacing-tight);
+    margin: 0;
+}
+
+.subtitle {
+    font-size: var(--font-size-md);
+    color: var(--color-text-muted);
+    max-width: var(--max-width-prose);
+    margin: 0;
+}
+
+.actions {
+    display: flex;
+    gap: var(--spacing-8);
+}
