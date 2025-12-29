@@ -1,5 +1,6 @@
 'use client';
 
+import { Page } from '../../../../components/layout';
 import { ConfigurationPanel, useSystemAuth } from '../../../../features/system';
 import { SystemHealthCards } from './SystemHealthCards';
 
@@ -16,9 +17,9 @@ export default function ConfigurationPage() {
     const { token } = useSystemAuth();
 
     return (
-        <div className="page">
+        <Page>
             <SystemHealthCards token={token} />
             <ConfigurationPanel token={token} />
-        </div>
+        </Page>
     );
 }

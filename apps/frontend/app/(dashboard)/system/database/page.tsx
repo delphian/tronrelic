@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useSystemAuth } from '../../../../features/system';
+import { Page } from '../../../../components/layout';
 import { Card } from '../../../../components/ui/Card';
 import { Button } from '../../../../components/ui/Button';
 import { Badge } from '../../../../components/ui/Badge';
@@ -291,16 +292,16 @@ export default function DatabaseMigrationPage() {
 
     if (loading) {
         return (
-            <div className="page">
+            <Page>
                 <Card>
                     <p>Loading migration data...</p>
                 </Card>
-            </div>
+            </Page>
         );
     }
 
     return (
-        <div className="page">
+        <Page>
             {/* Database Health Cards */}
             <DatabaseHealthCards token={token} />
 
@@ -557,6 +558,6 @@ export default function DatabaseMigrationPage() {
             </Card>
             </>
             )}
-        </div>
+        </Page>
     );
 }

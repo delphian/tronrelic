@@ -1,12 +1,13 @@
 import type { ComponentType } from 'react';
 import type { WidgetData } from './types';
 import { getWidgetComponent } from './widgets.generated';
+import { WidgetWithContext } from './WidgetWithContext';
 
 /**
  * Render a single widget with its registered component or fallback.
  *
  * Looks up the component from the statically-generated widget registry.
- * If a component is registered, renders it with the SSR data.
+ * If a component is registered, renders it with the SSR data and plugin context.
  * In development, shows a debug view for unregistered widgets.
  * In production, unregistered widgets render nothing.
  */
@@ -14,7 +15,13 @@ function WidgetRenderer({ widget }: { widget: WidgetData }) {
     const Component = getWidgetComponent(widget.id);
 
     if (Component) {
-        return <Component data={widget.data} />;
+        return (
+            <WidgetWithContext
+                Component={Component}
+                data={widget.data}
+                pluginId={widget.pluginId}
+            />
+        );
     }
 
     // Development fallback: show debug info for unregistered widgets

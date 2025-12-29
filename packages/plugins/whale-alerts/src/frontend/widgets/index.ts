@@ -8,7 +8,7 @@
  * After hydration, widget components can subscribe to WebSocket for live updates.
  */
 
-import type { ComponentType } from 'react';
+import type { WidgetComponent } from '@tronrelic/types';
 import { RecentWhalesWidget } from './RecentWhalesWidget';
 
 /**
@@ -17,6 +17,6 @@ import { RecentWhalesWidget } from './RecentWhalesWidget';
  * Keys must match the widget IDs used in backend registration.
  * This export is discovered by the build-time generator script.
  */
-export const widgetComponents: Record<string, ComponentType<{ data: unknown }>> = {
+export const widgetComponents: Record<string, WidgetComponent> = {
     'whale-alerts:recent': RecentWhalesWidget
 };

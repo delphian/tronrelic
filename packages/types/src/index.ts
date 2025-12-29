@@ -1,6 +1,6 @@
 export type { Block } from './Block.js';
 export type { IBaseObserver, IBaseBatchObserver, TransactionBatches, IBaseBlockObserver, IBlockData, IBlockchainObserverService, IWebSocketService, IPluginContext, IObserverStats, IPluginWebSocketManager, PluginSubscriptionHandler, PluginUnsubscribeHandler, IPluginWebSocketStats, IAggregatePluginWebSocketStats } from './observer/index.js';
-export type { IPlugin, IPluginManifest, IAdminUIConfig, IPluginDatabase, IApiRouteConfig, HttpMethod, ApiRouteHandler, ApiMiddleware, IMenuItemConfig, IPageConfig, IPluginMetadata, IPluginManagementRequest, IPluginManagementResponse, IPluginInfo, IFrontendPluginContext, IUIComponents, IChartComponents, ISystemComponents, IApiClient, IWebSocketClient } from './plugin/index.js';
+export type { IPlugin, IPluginManifest, IAdminUIConfig, IPluginDatabase, IApiRouteConfig, HttpMethod, ApiRouteHandler, ApiMiddleware, IMenuItemConfig, IPageConfig, IPluginMetadata, IPluginManagementRequest, IPluginManagementResponse, IPluginInfo, IFrontendPluginContext, IUIComponents, ILayoutComponents, IChartComponents, ISystemComponents, IApiClient, IWebSocketClient } from './plugin/index.js';
 export { definePlugin } from './plugin/index.js';
 export type { ITransaction, ITransactionPersistencePayload, ITransactionCategoryFlags } from './transaction/index.js';
 export { ProcessedTransaction } from './transaction/index.js';
@@ -15,7 +15,7 @@ export type { IUsdtParametersFetcher } from './usdt-parameters/IUsdtParametersFe
 export type { ICacheService } from './services/ICacheService.js';
 export type { IMenuNode, IMenuNodeWithChildren, IMenuTree, IMenuValidation, MenuEventType, IMenuEvent, MenuEventSubscriber, IMenuService, IMenuNamespaceConfig } from './menu/index.js';
 export { WIDGET_ZONES } from './widget/index.js';
-export type { IWidgetConfig, WidgetZone, IWidgetData, IWidgetService } from './widget/index.js';
+export type { IWidgetConfig, WidgetZone, IWidgetData, IWidgetService, IWidgetComponentProps, WidgetComponent } from './widget/index.js';
 export type { ISystemConfig, ISystemConfigService } from './system-config/index.js';
 export type { ISystemLogService, ISystemLogQuery, ISystemLogPaginatedResponse, ISaveLogData, LogLevel } from './system-log/index.js';
 export { LOG_LEVELS, shouldLog, type LogLevelName } from './system-log/index.js';

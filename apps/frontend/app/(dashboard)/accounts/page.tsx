@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { Page, PageHeader, Stack } from '../../../components/layout';
 import { Card } from '../../../components/ui/Card';
 import { Input } from '../../../components/ui/Input';
 import { Button } from '../../../components/ui/Button';
@@ -18,13 +19,13 @@ export default function AccountsLandingPage() {
   };
 
   return (
-    <div className="page">
-      <section className="page-header">
-        <h1 className="page-title">Account analytics</h1>
-        <p className="page-subtitle">Inspect TRON addresses for delegation history, memo activity, and performance insights.</p>
-      </section>
+    <Page>
+      <PageHeader
+        title="Account analytics"
+        subtitle="Inspect TRON addresses for delegation history, memo activity, and performance insights."
+      />
       <Card>
-        <div className="stack">
+        <Stack>
           <h2 style={{ margin: 0 }}>Jump to an address</h2>
           <p className="text-subtle" style={{ margin: 0 }}>Paste a TRON base58 wallet to view resource usage and recent transactions.</p>
           <div className="input-group">
@@ -37,8 +38,8 @@ export default function AccountsLandingPage() {
               Analyze
             </Button>
           </div>
-        </div>
+        </Stack>
       </Card>
-    </div>
+    </Page>
   );
 }

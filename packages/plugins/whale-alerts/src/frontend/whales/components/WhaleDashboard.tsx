@@ -79,7 +79,7 @@ export function WhaleDashboard({ initialSeries, initialHighlights, context }: Wh
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    const { ui, charts, api, websocket } = context;
+    const { ui, layout, charts, api, websocket } = context;
 
     useEffect(() => {
         // Refresh highlights once on mount to ensure freshness
@@ -235,7 +235,7 @@ export function WhaleDashboard({ initialSeries, initialHighlights, context }: Wh
     return (
         <div className="whale-dashboard">
             <ui.Card>
-                <div className="stack">
+                <layout.Stack>
                     <header className="whale-dashboard__header">
                         <div className="whale-dashboard__title-group">
                             <h2 className="whale-dashboard__title">Whale capital flows</h2>
@@ -307,7 +307,7 @@ export function WhaleDashboard({ initialSeries, initialHighlights, context }: Wh
                     </div>
 
                     {error && <p className="whale-error">{error}</p>}
-                </div>
+                </layout.Stack>
             </ui.Card>
 
             <ui.Card>

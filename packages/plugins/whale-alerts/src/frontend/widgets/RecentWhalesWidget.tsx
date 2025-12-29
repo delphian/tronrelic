@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import type { IWidgetComponentProps } from '@tronrelic/types';
 
 /**
  * Recent Whale Activity Widget.
@@ -103,10 +104,11 @@ function formatTimeAgo(dateString: string): string {
  * Uses isMounted pattern to prevent hydration mismatches with time-relative formatting.
  * Server renders ISO timestamp, client shows relative time after hydration.
  *
- * @param data - Pre-fetched widget data from SSR
+ * @param props - Widget props with data and context
  */
-export function RecentWhalesWidget({ data }: { data: unknown }) {
+export function RecentWhalesWidget({ data, context }: IWidgetComponentProps) {
     const whaleData = data as RecentWhalesData;
+    const { layout } = context;
     const [isMounted, setIsMounted] = useState(false);
 
     useEffect(() => {
@@ -123,7 +125,7 @@ export function RecentWhalesWidget({ data }: { data: unknown }) {
 
     return (
         <div className="surface">
-            <div className="stack">
+            <layout.Stack>
                 {whaleData.transactions.map((tx) => (
                     <div
                         key={tx.txId}
@@ -151,7 +153,7 @@ export function RecentWhalesWidget({ data }: { data: unknown }) {
                         </div>
                     </div>
                 ))}
-            </div>
+            </layout.Stack>
             <div className="surface--padding-sm border-t border-border">
                 <a
                     href="/whales"

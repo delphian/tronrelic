@@ -40,7 +40,7 @@ interface ISettingsResponse {
  * @param props.context - Plugin context providing API client and UI components
  */
 export function BotSettingsCard({ context, onSettingsSaved }: IBotSettingsCardProps) {
-    const { ui, api } = context;
+    const { ui, layout, api } = context;
 
     // State management
     const [loading, setLoading] = React.useState(true);
@@ -335,7 +335,7 @@ export function BotSettingsCard({ context, onSettingsSaved }: IBotSettingsCardPr
                     </div>
 
                     {/* Generate button and instructions */}
-                    <div className="stack stack--sm">
+                    <layout.Stack gap="sm">
                         <ui.Button
                             onClick={handleGenerateSecret}
                             variant="secondary"
@@ -344,7 +344,7 @@ export function BotSettingsCard({ context, onSettingsSaved }: IBotSettingsCardPr
                         >
                             Generate New Secret
                         </ui.Button>
-                    </div>
+                    </layout.Stack>
 
                     {/* Webhook secret instructions - collapsible section */}
                     {!settings?.webhookSecretConfigured && (

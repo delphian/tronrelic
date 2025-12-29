@@ -4,6 +4,7 @@ import React, { createContext, useContext, useMemo } from 'react';
 import type {
     IFrontendPluginContext,
     IUIComponents,
+    ILayoutComponents,
     IChartComponents,
     ISystemComponents,
     IApiClient,
@@ -20,6 +21,7 @@ import { LazyIconPickerModal as IconPickerModal } from '../components/ui/IconPic
 import { useModal as useModalHook } from '../components/ui/ModalProvider';
 import { LineChart } from '../features/charts/components/LineChart';
 import { SchedulerMonitor } from '../features/system/components/SchedulerMonitor';
+import { Page, PageHeader, Stack, Grid, Section } from '../components/layout';
 import { getSocket } from './socketClient';
 import { config } from './config';
 
@@ -332,6 +334,14 @@ export function FrontendPluginContextProvider({ children }: { children: React.Re
             IconPickerModal
         };
 
+        const layout: ILayoutComponents = {
+            Page,
+            PageHeader,
+            Stack,
+            Grid,
+            Section
+        };
+
         const charts: IChartComponents = {
             LineChart
         };
@@ -347,6 +357,7 @@ export function FrontendPluginContextProvider({ children }: { children: React.Re
         return {
             pluginId: '',
             ui,
+            layout,
             charts,
             system,
             api,
@@ -409,6 +420,14 @@ export function createPluginContext(pluginId: string): IFrontendPluginContext {
         IconPickerModal
     };
 
+    const layout: ILayoutComponents = {
+        Page,
+        PageHeader,
+        Stack,
+        Grid,
+        Section
+    };
+
     const charts: IChartComponents = {
         LineChart
     };
@@ -423,6 +442,7 @@ export function createPluginContext(pluginId: string): IFrontendPluginContext {
     return {
         pluginId,
         ui,
+        layout,
         charts,
         system,
         api,

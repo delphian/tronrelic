@@ -10,13 +10,13 @@ import styles from './PageHeader.module.scss';
  */
 interface PageHeaderProps extends Omit<HTMLAttributes<HTMLElement>, 'title'> {
     /**
-     * Page title text
+     * Page title - can be string or ReactNode (e.g., for skeleton loading states)
      */
-    title: string;
+    title: ReactNode;
     /**
-     * Optional subtitle/description text
+     * Optional subtitle/description - can be string or ReactNode
      */
-    subtitle?: string;
+    subtitle?: ReactNode;
     /**
      * Optional additional content (badges, buttons, etc.)
      */
@@ -48,13 +48,25 @@ interface PageHeaderProps extends Omit<HTMLAttributes<HTMLElement>, 'title'> {
  * @returns A styled section element with page header
  */
 export function PageHeader({ title, subtitle, children, className, ...props }: PageHeaderProps) {
+    // Determine if title is a string (for h1) or ReactNode (for div wrapper like skeletons)
+    const titleElement = typeof title === 'string'
+        ? <h1 className={styles.title}>{title}</h1>
+        : <div className={styles.title}>{title}</div>;
+
+    // Determine if subtitle is a string (for p) or ReactNode (for div wrapper like skeletons)
+    const subtitleElement = subtitle
+        ? typeof subtitle === 'string'
+            ? <p className={styles.subtitle}>{subtitle}</p>
+            : <div className={styles.subtitle}>{subtitle}</div>
+        : null;
+
     return (
         <section className={cn(styles.page_header, className)} {...props}>
             <div className={styles.title_row}>
-                <h1 className={styles.title}>{title}</h1>
+                {titleElement}
                 {children}
             </div>
-            {subtitle && <p className={styles.subtitle}>{subtitle}</p>}
+            {subtitleElement}
         </section>
     );
 }

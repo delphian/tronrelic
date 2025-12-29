@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { BlockStatsServer, CurrentBlock } from '../features/blockchain/components';
+import { Page } from '../components/layout';
 import { buildMetadata } from '../lib/seo';
 import { getServerConfig } from '../lib/serverConfig';
 import { getApiUrl } from '../lib/config';
@@ -87,7 +88,7 @@ export default async function HomePage(): Promise<JSX.Element> {
   } as const;
 
   return (
-    <div className="page">
+    <Page>
       {/*
         LCP Optimization: Two-layer rendering for instant paint
 
@@ -111,6 +112,6 @@ export default async function HomePage(): Promise<JSX.Element> {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(faqSchema) }}
       />
-    </div>
+    </Page>
   );
 }

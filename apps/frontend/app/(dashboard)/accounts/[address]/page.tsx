@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import type { TronTransactionDocument } from '@tronrelic/shared';
+import { Page, PageHeader, Stack, Grid } from '../../../../components/layout';
 import { Card } from '../../../../components/ui/Card';
 import { Badge } from '../../../../components/ui/Badge';
 import { getApiUrl } from '../../../../lib/config';
@@ -96,11 +97,11 @@ export default async function AccountPage({ params }: AccountPageProps): Promise
   const lastActiveText = lastActiveDate ? lastActiveDate.toLocaleString() : 'Unknown';
 
   return (
-    <div className="page">
-      <section className="page-header">
-        <h1 className="page-title">{address}</h1>
-        <p className="page-subtitle">Summary of TRX flows and recent transactions for this wallet.</p>
-      </section>
+    <Page>
+      <PageHeader
+        title={address}
+        subtitle="Summary of TRX flows and recent transactions for this wallet."
+      />
         <Card>
           <header style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap', alignItems: 'baseline' }}>
             <div>
@@ -129,8 +130,8 @@ export default async function AccountPage({ params }: AccountPageProps): Promise
           </div>
         </Card>
 
-        <div className="grid grid--cols-2" style={{ gap: '2rem', marginTop: '2rem' }}>
-          <Card tone="accent" padding="lg" className="stack">
+        <Grid columns={2} gap="lg" style={{ marginTop: '2rem' }}>
+          <Card tone="accent" padding="lg">
             <header style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap', alignItems: 'center' }}>
               <h2 style={{ margin: 0 }}>Flow analytics</h2>
               <Badge tone={netFlowTone}>
@@ -164,9 +165,10 @@ export default async function AccountPage({ params }: AccountPageProps): Promise
             </section>
           </Card>
 
-          <Card padding="lg" className="stack">
+          <Card padding="lg">
+            <Stack>
             <h2 style={{ margin: 0 }}>Last observed activity</h2>
-            <div className="stack stack--sm">
+            <Stack gap="sm">
               <div className="text-subtle" style={{ fontSize: '0.9rem' }}>Recent counterparties</div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
                 {snapshot.recentTransactions.slice(0, 6).map(tx => {
@@ -183,15 +185,16 @@ export default async function AccountPage({ params }: AccountPageProps): Promise
                 })}
                 {!snapshot.recentTransactions.length && <span className="text-subtle">No counterparties recorded.</span>}
               </div>
-            </div>
-            <div className="stack stack--sm">
+            </Stack>
+            <Stack gap="sm">
               <div className="text-subtle" style={{ fontSize: '0.9rem' }}>Activity cadence</div>
               <p className="text-subtle" style={{ margin: 0 }}>
                 {flowAggregates.inboundCount.toLocaleString()} inbound and {flowAggregates.outboundCount.toLocaleString()} outbound transactions captured in the current cache window.
               </p>
-            </div>
+            </Stack>
+            </Stack>
           </Card>
-        </div>
+        </Grid>
 
         <Card style={{ marginTop: '2rem' }}>
           <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
@@ -259,6 +262,6 @@ export default async function AccountPage({ params }: AccountPageProps): Promise
             <p className="text-subtle" style={{ marginTop: '1.5rem' }}>No recent transactions recorded.</p>
           )}
         </Card>
-    </div>
+    </Page>
   );
 }
