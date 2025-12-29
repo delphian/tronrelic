@@ -1,0 +1,48 @@
+/**
+ * Grid Layout Component Styles
+ *
+ * Provides CSS Grid layout with consistent gap spacing.
+ * Supports fixed column counts and responsive auto-fit layouts.
+ * Columns collapse to single column on tablet and below.
+ */
+
+@use '../../../app/breakpoints' as *;
+
+.grid {
+    display: grid;
+}
+
+/* Gap size variants */
+.grid_gap_sm {
+    gap: var(--grid-gap-sm);
+}
+
+.grid_gap_md {
+    gap: var(--grid-gap-default);
+}
+
+.grid_gap_lg {
+    gap: var(--spacing-12);
+}
+
+/* Fixed column variants */
+.grid_cols_2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.grid_cols_3 {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+/* Responsive auto-fit variant */
+.grid_responsive {
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+}
+
+/* Tablet and below: collapse fixed columns to single column */
+@media (max-width: $breakpoint-desktop) {
+    .grid_cols_2,
+    .grid_cols_3 {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}

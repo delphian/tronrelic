@@ -1,0 +1,33 @@
+/**
+ * PageHeader Layout Component Styles
+ *
+ * Provides consistent page header structure with title, subtitle, and
+ * optional children. Uses design tokens for responsive typography.
+ */
+
+.page_header {
+    display: flex;
+    flex-direction: column;
+    gap: var(--page-header-gap);
+}
+
+.title_row {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-6);
+    flex-wrap: wrap;
+}
+
+.title {
+    margin: 0;
+    font-size: clamp(var(--font-size-2xl), 3vw, var(--font-size-3xl));
+    font-weight: var(--font-weight-bold);
+    letter-spacing: var(--letter-spacing-tight);
+}
+
+.subtitle {
+    margin: 0;
+    font-size: var(--font-size-md);
+    color: var(--color-text-muted);
+    max-width: var(--max-width-prose);
+}
