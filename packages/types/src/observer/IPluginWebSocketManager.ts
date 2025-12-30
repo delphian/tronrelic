@@ -69,9 +69,11 @@ export interface IPluginWebSocketManager {
      * Register an unsubscribe handler for this plugin.
      *
      * Called when clients unsubscribe from a room in this plugin. The handler receives the
-     * room name (without plugin prefix) and optional payload. The handler cleans up
-     * plugin-specific state. The client is automatically removed from the room after the
-     * handler completes. Only one handler can be registered per plugin; subsequent calls
+     * room name (without plugin prefix) and optional payload. The client is automatically
+     * removed from the room BEFORE the handler runs (matching the subscribe pattern where
+     * clients are joined before the handler). This ensures rapid subscribe/unsubscribe/subscribe
+     * sequences result in correct final room membership. The handler then cleans up
+     * plugin-specific state. Only one handler can be registered per plugin; subsequent calls
      * override the previous handler. Errors are logged but do not prevent unsubscription
      * from completing.
      *
@@ -79,6 +81,7 @@ export interface IPluginWebSocketManager {
      * @example
      * websocket.onUnsubscribe(async (socket, roomName, payload) => {
      *     // roomName = 'whale-alerts', 'high-value', etc.
+     *     // Socket has already left the room at this point
      *     // Clean up socket data
      *     delete socket.data.filters;
      * });
