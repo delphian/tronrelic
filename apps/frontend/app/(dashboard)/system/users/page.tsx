@@ -1,13 +1,13 @@
 'use client';
 
-import { UsersMonitor, useSystemAuth } from '../../../../features/system';
+import { useSystemAuth } from '../../../../features/system';
+import { UsersMonitor } from '../../../../modules/user';
 
 /**
  * System users management page.
  *
+ * Thin wrapper that delegates to UsersMonitor from the user module.
  * Displays user identities with their linked wallets, preferences, and activity.
- * Provides search functionality by UUID or wallet address. Shows statistics
- * including total users, active users, and wallet linking metrics.
  * Requires admin authentication.
  */
 export default function SystemUsersPage() {

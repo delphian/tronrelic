@@ -10,14 +10,28 @@ The TronRelic frontend follows a **feature-based architecture** that mirrors the
 
 ```
 apps/frontend/
-├── app/                          # Next.js App Router (routes, pages, layouts)
+├── app/                          # Next.js App Router (thin route wrappers)
 │   ├── (dashboard)/             # Dashboard route group
-│   ├── (marketing)/             # Marketing route group
+│   │   ├── system/users/        # Admin page → imports from modules/user
+│   │   └── ...                  # Other admin pages
+│   ├── u/[address]/             # Profile route → imports from modules/user
 │   ├── layout.tsx               # Root layout
 │   ├── page.tsx                 # Home page
 │   └── providers.tsx            # Redux & other providers
 │
-├── features/                     # Feature modules (NEW!)
+├── modules/                      # Domain modules (cross-cutting, app-wide)
+│   └── user/                    # User identity domain
+│       ├── components/          # All user-related components
+│       │   ├── admin/           # Admin components (UsersMonitor)
+│       │   ├── Profile/         # Profile page components
+│       │   └── WalletButton/    # Reusable wallet button
+│       ├── hooks/               # useWallet, useSessionTracking
+│       ├── api/                 # API client functions
+│       ├── lib/                 # Identity utilities, SSR helpers
+│       ├── slice.ts             # Redux slice
+│       └── index.ts             # Public exports
+│
+├── features/                     # Feature modules (page-specific)
 │   ├── accounts/
 │   │   ├── components/          # Account-specific components
 │   │   ├── hooks/               # Account-specific hooks
@@ -27,7 +41,7 @@ apps/frontend/
 │   ├── blockchain/
 │   ├── transactions/
 │   ├── whales/
-│   ├── system/
+│   ├── system/                  # System admin (contexts, shared components)
 │   ├── charts/
 │   ├── realtime/
 │   └── ui-state/
@@ -40,9 +54,100 @@ apps/frontend/
 │
 ├── lib/                         # Utilities and configurations
 ├── store/                       # Redux store setup
-├── hooks/                       # Global hooks (deprecated - move to features)
-└── styles/                      # Global styles
+└── hooks/                       # Global hooks (deprecated - move to modules/features)
 ```
+
+## Modules vs Features
+
+The frontend uses two organizational patterns for domain code. Understanding when to use each prevents structural inconsistency.
+
+### When to Use `modules/`
+
+Use `modules/` for **cross-cutting domain infrastructure** that:
+
+- Wraps the entire application (providers, identity)
+- Is used across multiple unrelated routes
+- Contains both app-wide and page-specific components for the same domain
+- Manages shared state that multiple features depend on
+
+**Example:** The `user` module contains identity infrastructure (UserIdentityProvider wraps the app), reusable components (WalletButton used in header), page components (Profile, UsersMonitor), and shared state (Redux slice for user data).
+
+### When to Use `features/`
+
+Use `features/` for **page-specific feature code** that:
+
+- Serves a specific route or set of related routes
+- Doesn't wrap the application
+- Contains components only used within that feature
+- Has minimal cross-feature dependencies
+
+**Example:** The `system` feature contains admin monitoring components (BlockchainMonitor, SchedulerMonitor) and the SystemAuthContext—all specific to `/system/*` admin routes.
+
+### Decision Matrix
+
+| Criteria | Use `modules/` | Use `features/` |
+|----------|---------------|-----------------|
+| Wraps entire app | Yes | No |
+| Used across unrelated routes | Yes | No |
+| Single domain, multiple concerns (admin + public) | Yes | No |
+| Page-specific components only | No | Yes |
+| Provides contexts for limited routes | No | Yes |
+
+## Thin Route Wrappers
+
+Routes in `app/` should be minimal importers, not implementation containers. The actual components live in `modules/` or `features/`.
+
+### Why Thin Wrappers
+
+- **Domain cohesion** - All user-related code lives in `modules/user/`, not scattered across route directories
+- **Easy discovery** - Find all user components in one place, regardless of which route uses them
+- **Cleaner routes** - `app/` directory is purely about URL structure, not implementation
+- **Simpler refactoring** - Move routes without moving component logic
+
+### Correct Pattern
+
+```typescript
+// app/(dashboard)/system/users/page.tsx - THIN WRAPPER
+'use client';
+
+import { useSystemAuth } from '../../../../features/system';
+import { UsersMonitor } from '../../../../modules/user';
+
+export default function SystemUsersPage() {
+    const { token } = useSystemAuth();
+    return <UsersMonitor token={token} />;
+}
+```
+
+```typescript
+// app/u/[address]/page.tsx - THIN WRAPPER
+import { ProfilePage } from '../../../modules/user/components/Profile/ProfilePage';
+
+export default async function Page({ params }) {
+    const { address } = await params;
+    return <ProfilePage address={address} />;
+}
+```
+
+### Incorrect Pattern
+
+```typescript
+// app/(dashboard)/system/users/page.tsx - TOO MUCH IMPLEMENTATION
+'use client';
+
+import { useState, useEffect } from 'react';
+// ... 500 lines of component code that should be in modules/user/
+```
+
+### When Colocation in `app/` Is Acceptable
+
+Use `_components/` folders in `app/` routes only for:
+
+- Truly route-specific UI that doesn't belong to any domain
+- Layout variations specific to a route group
+- One-off components with no reuse potential
+
+For domain code (user, accounts, transactions), always use `modules/` or `features/`.
 
 ## Feature Module Pattern
 

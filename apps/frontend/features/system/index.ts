@@ -16,7 +16,6 @@ export { SchedulerMonitor } from './components/SchedulerMonitor';
 export { SystemAuthGate } from './components/SystemNav/SystemAuthGate';
 export { SystemOverview } from './components/SystemOverview';
 export { SystemLogsMonitor } from './components/SystemLogsMonitor/SystemLogsMonitor';
-export { UsersMonitor } from './components/UsersMonitor/UsersMonitor';
 
 // Contexts
 export { SystemAuthProvider, useSystemAuth } from './contexts/SystemAuthContext';

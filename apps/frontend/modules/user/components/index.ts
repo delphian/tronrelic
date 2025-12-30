@@ -10,3 +10,6 @@ export type { UserIdentityProviderProps } from './UserIdentityProvider';
 export { WalletButton } from './WalletButton';
 export { ProfileOwnerView, ProfilePublicView } from './Profile';
 export type { ProfileData } from './Profile';
+
+// Admin components
+export { UsersMonitor } from './admin';
