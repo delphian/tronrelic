@@ -251,13 +251,13 @@ Always reference design tokens from `semantic-tokens.scss` in your SCSS Module. 
 ```scss
 /* ❌ WRONG - redefines what tokens mean across breakpoints */
 .card {
-    --card-padding: var(--spacing-10);  /* Local variable starts at 40px */
+    --card-padding: var(--spacing-10);  /* Local variable starts at 24px */
     padding: var(--card-padding);
 }
 
 @media (max-width: $breakpoint-mobile) {
     .card {
-        --card-padding: var(--spacing-7);  /* Redefines to mean 28px */
+        --card-padding: var(--spacing-7);  /* Redefines to mean 16px */
     }
 }
 
@@ -269,7 +269,7 @@ Always reference design tokens from `semantic-tokens.scss` in your SCSS Module. 
 }
 ```
 
-**Why immutability matters:** When `--spacing-10` always means `2.5rem`, developers can trust the name. Components that need smaller padding select `--spacing-7` explicitly, making responsive behavior visible in component code instead of hidden in token redefinitions.
+**Why immutability matters:** When `--spacing-10` always means `1.5rem`, developers can trust the name. Components that need smaller padding select `--spacing-7` explicitly, making responsive behavior visible in component code instead of hidden in token redefinitions.
 
 ## Complete Example
 
@@ -585,7 +585,7 @@ Container queries fix this by letting each component define its own responsive b
 
 /* CORRECT - select appropriate tokens at each breakpoint */
 .analytics-card {
-    padding: var(--spacing-10);  /* Default: 2.5rem */
+    padding: var(--spacing-10);  /* Default: 1.5rem (24px) */
 }
 
 /* Adapts when the container is narrow, regardless of viewport */
@@ -648,7 +648,7 @@ export function TransactionCard({ transaction }: { transaction: ITransaction }) 
 .transaction-card {
     container-type: inline-size;
     container-name: transaction-card;
-    padding: var(--spacing-7);  /* Default: 1.75rem */
+    padding: var(--spacing-7);  /* Default: 1rem (16px) */
 }
 
 .transaction-card__grid {

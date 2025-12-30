@@ -331,18 +331,3 @@ button:focus-visible {
   }
 }
 
-/*
- * Global Main Tag Padding Reduction for Mobile Containers
- *
- * Reduces main tag padding when the body container width is constrained.
- * Uses --main-padding-xs for tightest spacing when container is mobile-sized.
- *
- * The body element has container-type: inline-size (defined above), which enables this
- * container query. Works in conjunction with @media queries but responds to container
- * width rather than viewport width.
- */
-@container body (max-width: $breakpoint-mobile) {
-  main {
-    padding: var(--main-padding-xs);
-  }
-}

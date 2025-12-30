@@ -214,7 +214,7 @@ Components use media queries or container queries to switch which token they ref
 
 @media (max-width: $breakpoint-mobile-lg) {
     .card--padding-md {
-        padding: var(--card-padding-sm);  /* 0.75rem (12px) - select smaller token */
+        padding: var(--card-padding-sm);  /* 1rem (16px) - select smaller token */
     }
 }
 

@@ -65,10 +65,7 @@
 
 /* Small Mobile Padding Reduction */
 @media (max-width: $breakpoint-mobile-sm) {
-    .card--padding-sm {
-        padding: var(--card-padding-xs);
-    }
-
+    .card--padding-sm,
     .card--padding-md {
         padding: var(--card-padding-xs);
     }
