@@ -79,6 +79,11 @@ TronRelic uses React with Next.js 14 App Router for building interactive UI comp
 
 ### UI Styling System
 
+  1. Primitives (primitives.scss) — Raw values: --spacing-7: 1rem, --color-primary: #4b8cff
+  2. Semantics (semantic-tokens.scss) — Named purpose, composed of primitives: --card-padding-md: var(--spacing-10)
+  3. Components (.module.scss) — Select which semantic token to use based on context (breakpoints, state)
+  4. Globals (globals.scss) — Utility classes for styling patterns that aren't tied to a specific component (.surface, .btn, .badge)
+
 TronRelic implements a comprehensive UI styling system with two core architectural layers:
 
 1. **`globals.scss`** - Design tokens (CSS variables), base resets, global animations, and styling utility classes (`.surface`, `.btn`, `.badge`)

@@ -1,5 +1,5 @@
 /**
- * Card Component CSS Module
+ * Card Component SCSS Module
  *
  * Scoped styles for the Card wrapper component that provides surface elevation
  * and visual hierarchy throughout the application.
@@ -9,6 +9,8 @@
  * watermark system (::after pseudo-element) is sized and positioned to stay within
  * card bounds without requiring overflow clipping.
  */
+
+@use '../../../app/breakpoints' as *;
 
 .card {
     background: var(--card-background);
@@ -48,6 +50,29 @@
 
 .card--padding-lg {
     padding: var(--card-padding-lg);
+}
+
+/* Mobile Padding Reduction */
+@media (max-width: $breakpoint-mobile-lg) {
+    .card--padding-md {
+        padding: var(--card-padding-sm);
+    }
+
+    .card--padding-lg {
+        padding: var(--card-padding-md);
+    }
+}
+
+/* Small Mobile Padding Reduction */
+@media (max-width: $breakpoint-mobile-sm) {
+    .card--padding-sm,
+    .card--padding-md {
+        padding: var(--card-padding-xs);
+    }
+
+    .card--padding-lg {
+        padding: var(--card-padding-sm);
+    }
 }
 
 /* ============================================================================

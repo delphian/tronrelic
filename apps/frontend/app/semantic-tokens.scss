@@ -119,7 +119,8 @@
     --card-shadow-elevated: var(--shadow-lg);
 
     /* Card - Padding Variants */
-    --card-padding-sm: var(--spacing-7) var(--spacing-9);  /* 1rem 1.25rem */
+    --card-padding-xs: var(--spacing-4);                   /* 0.5rem */
+    --card-padding-sm: var(--spacing-7);                   /* 1rem */
     --card-padding-md: var(--spacing-10);                  /* 1.5rem */
     --card-padding-lg: var(--spacing-12);                  /* 2rem */
 
@@ -254,18 +255,25 @@
      * ======================================================================== */
 
     /* Stack Layout */
-    --stack-gap-default: var(--spacing-7);      /* 1rem */
+    --stack-gap-md: var(--spacing-7);           /* 1rem */
     --stack-gap-sm: var(--spacing-4);           /* 0.5rem */
     --stack-gap-lg: var(--spacing-10);          /* 1.5rem */
 
     /* Grid Layout */
-    --grid-gap-default: var(--spacing-10);      /* 1.5rem */
-    --grid-gap-sm: var(--spacing-9);            /* 1.25rem - stat-grid */
+    --grid-gap-sm: var(--spacing-5);            /* 0.75rem */
+    --grid-gap-md: var(--spacing-10);           /* 1.5rem */
+    --grid-gap-lg: var(--spacing-12);           /* 2rem */
 
     /* Page Layout */
     --page-gap: var(--spacing-14);              /* 2.5rem */
     --page-gap-sm: var(--spacing-7);            /* 1rem - mobile/constrained contexts */
     --page-header-gap: var(--spacing-5);        /* 0.75rem */
+
+    /* Main Content Area Padding (top / sides / bottom) */
+    --main-padding-lg: var(--spacing-14) var(--spacing-15) var(--spacing-16);   /* desktop */
+    --main-padding-md: var(--spacing-12) var(--spacing-10) var(--spacing-15);   /* tablet */
+    --main-padding-sm: var(--spacing-10) var(--spacing-9) var(--spacing-14);    /* mobile */
+    --main-padding-xs: var(--spacing-4) var(--spacing-4) var(--spacing-7);      /* mobile-sm */
 
     /* Input Group */
     --input-group-gap: var(--spacing-5);        /* 0.75rem */
