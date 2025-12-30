@@ -83,7 +83,7 @@ Register cleanup logic when clients unsubscribe:
 ```typescript
 context.websocket.onUnsubscribe(async (socket, roomName, payload) => {
     // roomName comes from client (e.g., 'large-transfer')
-    // Client is auto-left from room after this handler completes
+    // Client is auto-left from room before this handler runs
 
     // Clean up socket-specific data
     delete socket.data.filters;
@@ -94,7 +94,7 @@ context.websocket.onUnsubscribe(async (socket, roomName, payload) => {
 
 **Key points:**
 - Handler receives socket, room name (without prefix), and optional payload
-- **Client is auto-left** from the room after handler completes
+- **Client is auto-left** from the room before handler runs
 - Errors are logged but don't prevent unsubscription from completing
 - Cleanup is best-effort - clients disconnect without always sending unsubscribe events
 
@@ -387,7 +387,7 @@ context.websocket.onSubscribe(async (socket, roomName, payload) => {
 
 // New: Plugin owns unsubscribe logic
 context.websocket.onUnsubscribe(async (socket, roomName, payload) => {
-    // Client is auto-left from room after this handler completes
+    // Client is auto-left from room before this handler runs
     context.logger.debug({ socketId: socket.id, roomName }, 'Client unsubscribed');
 });
 

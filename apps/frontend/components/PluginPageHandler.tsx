@@ -41,10 +41,11 @@ export function PluginPageHandler({ slug }: { slug: string }) {
         checkForPlugin();
     }, [slug]);
 
-    // Create plugin-specific context with automatic event namespacing
+    // Create plugin-specific context only when pluginId is available
+    // Avoids creating throwaway empty-pluginId contexts during polling
     const context = useMemo(() => {
         if (!pageConfig?.pluginId) {
-            return createPluginContext('');
+            return null;
         }
         return createPluginContext(pageConfig.pluginId);
     }, [pageConfig?.pluginId]);
@@ -62,7 +63,7 @@ export function PluginPageHandler({ slug }: { slug: string }) {
         );
     }
 
-    if (!pageConfig) {
+    if (!pageConfig || !context) {
         return (
             <div className="flex items-center justify-center min-h-screen">
                 <div className="text-center">

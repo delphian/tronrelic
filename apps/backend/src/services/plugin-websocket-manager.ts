@@ -246,8 +246,10 @@ export class PluginWebSocketManager implements IPluginWebSocketManager {
      * Handle unsubscribe request for this plugin.
      *
      * Internal method called by WebSocketService when a client unsubscribes from a room in this plugin.
-     * Automatically removes the socket from the prefixed room after invoking the registered unsubscribe
-     * handler. Logs errors without failing. This method is not part of the public plugin API.
+     * Automatically removes the socket from the prefixed room BEFORE invoking the registered unsubscribe
+     * handler. This mirrors handleSubscription's join-first pattern, ensuring that rapid
+     * subscribe/unsubscribe/subscribe sequences result in the correct final room membership state.
+     * Logs errors without failing. This method is not part of the public plugin API.
      *
      * @param socket - The Socket.IO socket instance requesting unsubscription
      * @param roomName - The plugin-local room name (without prefix)
@@ -256,27 +258,25 @@ export class PluginWebSocketManager implements IPluginWebSocketManager {
      * @internal
      */
     public async handleUnsubscribe(socket: Socket, roomName: string, payload?: any): Promise<void> {
+        // Leave the room FIRST (synchronously) to match handleSubscription's join-first pattern.
+        // This ensures room operations happen in event arrival order even when handlers are async.
+        const fullRoomName = this.getFullRoomName(roomName);
+        socket.leave(fullRoomName);
+        this.logger.debug(
+            { pluginId: this.pluginId, socketId: socket.id, roomName, fullRoomName },
+            'Socket auto-left plugin room'
+        );
+
         if (!this.unsubscribeHandler) {
             this.logger.debug(
                 { pluginId: this.pluginId, socketId: socket.id, roomName },
                 'Unsubscribe received but no handler registered'
             );
-            // Still leave the room even if no handler
-            const fullRoomName = this.getFullRoomName(roomName);
-            socket.leave(fullRoomName);
             return;
         }
 
         try {
             await this.unsubscribeHandler(socket, roomName, payload);
-
-            // Automatically leave the room after handler completes
-            const fullRoomName = this.getFullRoomName(roomName);
-            socket.leave(fullRoomName);
-            this.logger.debug(
-                { pluginId: this.pluginId, socketId: socket.id, roomName, fullRoomName },
-                'Socket auto-left plugin room'
-            );
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : 'Unknown unsubscribe error';
             this.logger.error(
