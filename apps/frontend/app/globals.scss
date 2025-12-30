@@ -67,6 +67,42 @@ main {
   animation: rowFlash 2.4s ease-out;
 }
 
+/**
+ * Live indicator utility
+ *
+ * Applies green styling with pulsing glow animation for "live" status indicators.
+ * Use on buttons, badges, or any element indicating real-time/live state.
+ *
+ * @example
+ * <button className="live-indicator">
+ *   <Radio size={16} />
+ *   Live
+ * </button>
+ */
+@keyframes live-pulse {
+  0%, 100% {
+    filter: drop-shadow(0 0 2px var(--color-success-alpha-45));
+  }
+  50% {
+    filter: drop-shadow(0 0 6px var(--color-success)) drop-shadow(0 0 10px var(--color-success-alpha-45));
+  }
+}
+
+.live-indicator {
+  color: var(--color-success-text);
+  background: var(--color-success-alpha-18);
+  border-color: var(--color-success-alpha-45);
+
+  svg {
+    animation: live-pulse 2s ease-in-out infinite;
+  }
+
+  &:hover {
+    background: var(--color-success-alpha-18);
+    color: var(--color-success-text);
+  }
+}
+
 /* Button styles removed - migrated to Button.module.css */
 
 /* Badge styles removed - migrated to Badge.module.css */
