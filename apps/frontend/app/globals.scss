@@ -43,7 +43,7 @@ a:hover {
 main {
   width: min($breakpoint-desktop, 100%);
   margin: 0 auto;
-  padding: var(--spacing-14) var(--spacing-15) var(--spacing-16);
+  padding: var(--main-padding-lg);
 }
 
 /* Layout primitives (.page, .page-header, .stack, .grid) removed - migrated to React components:
@@ -262,7 +262,7 @@ button:focus-visible {
   }
 
   main {
-    padding: var(--spacing-12) var(--spacing-10) var(--spacing-15);
+    padding: var(--main-padding-md);
   }
 
   .grid--cols-2,
@@ -284,7 +284,7 @@ button:focus-visible {
   }
 
   main {
-    padding: var(--spacing-10) var(--spacing-9) var(--spacing-14);
+    padding: var(--main-padding-sm);
   }
 
   /*
@@ -324,62 +324,25 @@ button:focus-visible {
   }
 }
 
-/*
- * Global Card Padding Reduction for Mobile Containers
- *
- * Reduces card padding when the card's container width is below 768px.
- * This applies to ALL cards throughout the application that are wrapped
- * in a container with container-type: inline-size.
- *
- * The Card component uses CSS variables for padding (--card-padding-lg, --card-padding-md, --card-padding-sm).
- * By overriding these variables in an unnamed container query, all cards nested within
- * any container automatically get reduced padding on mobile without needing component-specific overrides.
- *
- * Normal large padding: 32px (--spacing-12) → 16px (--spacing-7)
- * Normal medium padding: 24px (--spacing-10) → 13.6px (--spacing-6)
- *
- * How it works:
- * 1. Any component wraps its Card in a div with container-type: inline-size
- * 2. When that container is < 768px, this rule applies automatically
- * 3. The Card component reads the overridden CSS variables
- * 4. No component-specific CSS or classes needed
- *
- * Example usage in a component:
- *   <div style={{ containerType: 'inline-size' }}>
- *     <Card padding="lg">Content</Card>
- *   </div>
- *
- * Or in CSS Module:
- *   .wrapper { container-type: inline-size; }
- */
-@container (max-width: $breakpoint-mobile) {
-  * {
-    --card-padding-lg: var(--spacing-7);  /* 16px instead of 32px */
-    --card-padding-md: var(--spacing-6);  /* 13.6px instead of 24px */
+/* Small mobile (360px and below) */
+@media (max-width: $breakpoint-mobile-sm) {
+  main {
+    padding: var(--main-padding-xs);
   }
 }
 
 /*
  * Global Main Tag Padding Reduction for Mobile Containers
  *
- * Reduces main tag padding to 50% when the body container width is below 768px (mobile breakpoint).
- * This is a site-wide design system change that applies to all pages.
+ * Reduces main tag padding when the body container width is constrained.
+ * Uses --main-padding-xs for tightest spacing when container is mobile-sized.
  *
  * The body element has container-type: inline-size (defined above), which enables this
- * container query to work. When the viewport/container width drops below 768px,
- * the main tag's padding is reduced to approximately 50% of the tablet values.
- *
- * Padding reduction (tablet → mobile container query):
- * - Top:    var(--spacing-12) 32px → var(--spacing-5) 12px (~38%, closest to 50%)
- * - Sides:  var(--spacing-10) 24px → var(--spacing-5) 12px (50%)
- * - Bottom: var(--spacing-15) 48px → var(--spacing-10) 24px (50%)
- *
- * Note: This container query works in conjunction with (but is independent from) the
- * existing @media queries at viewport breakpoints. The container query provides
- * more granular control when main's parent container is constrained.
+ * container query. Works in conjunction with @media queries but responds to container
+ * width rather than viewport width.
  */
 @container body (max-width: $breakpoint-mobile) {
   main {
-    padding: var(--spacing-5) var(--spacing-5) var(--spacing-10);
+    padding: var(--main-padding-xs);
   }
 }

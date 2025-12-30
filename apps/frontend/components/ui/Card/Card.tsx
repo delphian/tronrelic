@@ -1,6 +1,6 @@
 import type { HTMLAttributes } from 'react';
 import { cn } from '../../../lib/cn';
-import styles from './Card.module.css';
+import styles from './Card.module.scss';
 
 /**
  * CardProps interface defines the properties available for the Card component.

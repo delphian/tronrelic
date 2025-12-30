@@ -4,7 +4,7 @@ import styles from './Stack.module.scss';
 
 /**
  * Gap size options for Stack component.
- * Maps to semantic tokens: --stack-gap-sm, --stack-gap-default, --stack-gap-lg
+ * Maps to semantic tokens: --stack-gap-sm, --stack-gap-md, --stack-gap-lg
  */
 type GapSize = 'sm' | 'md' | 'lg';
 

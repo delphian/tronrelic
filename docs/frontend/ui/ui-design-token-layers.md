@@ -190,6 +190,62 @@ TronRelic follows semantic naming patterns used across industry design systems:
 
 This naming strategy makes intent clear at a glance and prevents naming collisions between layers.
 
+### Token Immutability Principle
+
+**Design tokens are immutable**—their values never change based on breakpoint or context. Components select different tokens at different breakpoints instead of redefining what tokens mean.
+
+This principle keeps token names honest and prevents semantic drift where `--card-padding-md` stops meaning "medium" and starts meaning "whatever size we need at this viewport."
+
+**Why this matters:**
+
+When tokens redefine themselves across breakpoints, naming becomes meaningless. If `--card-padding-md` equals `1.5rem` on desktop but `0.75rem` on mobile, "medium" no longer describes the value—it describes nothing. This semantic drift makes debugging impossible and forces developers to check token definitions at every breakpoint.
+
+Immutable tokens maintain semantic integrity. When `--card-padding-md` always means `1.5rem`, developers can trust the name. Components that need smaller padding on mobile select `--card-padding-sm` explicitly, making responsive behavior visible in the component code instead of hidden in token definitions.
+
+**How components select tokens:**
+
+Components use media queries or container queries to switch which token they reference, not to redefine tokens:
+
+```scss
+/* CORRECT - component selects appropriate token at each breakpoint */
+.card--padding-md {
+    padding: var(--card-padding-md);  /* 1.5rem (24px) */
+}
+
+@media (max-width: $breakpoint-mobile-lg) {
+    .card--padding-md {
+        padding: var(--card-padding-sm);  /* 0.75rem (12px) - select smaller token */
+    }
+}
+
+@media (max-width: $breakpoint-mobile-sm) {
+    .card--padding-md {
+        padding: var(--card-padding-xs);  /* 0.5rem (8px) - select even smaller token */
+    }
+}
+```
+
+**Anti-pattern (NEVER do this):**
+
+```scss
+/* WRONG - redefines what "md" means across breakpoints */
+:root {
+    --card-padding-md: 1.5rem;  /* "Medium" means 24px */
+}
+
+@media (max-width: $breakpoint-mobile-lg) {
+    :root {
+        --card-padding-md: 0.75rem;  /* Now "medium" means 12px? */
+    }
+}
+
+/* Result: --card-padding-md is meaningless, debugging is impossible */
+```
+
+**Reference implementation:**
+
+See `/apps/frontend/components/ui/Card/Card.module.scss` (lines 43-79) for how the Card component implements this pattern with a cascade across three breakpoints. The component explicitly selects `--card-padding-sm`, `--card-padding-xs`, and other tokens at different breakpoints—tokens themselves never change.
+
 ## Design Token Reference
 
 TronRelic's design tokens are implemented as CSS custom properties (CSS variables) in `globals.scss`. Breakpoints are defined as SCSS variables in `_breakpoints.scss` for use in media queries. All tokens use semantic naming that describes their purpose rather than their appearance.

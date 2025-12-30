@@ -200,7 +200,7 @@ Mix CSS Module classes with global utility classes when appropriate:
 
 ### Step 5: Use CSS Variables for Theming
 
-Always reference design tokens from `semantic-tokens.scss` in your SCSS Module:
+Always reference design tokens from `semantic-tokens.scss` in your SCSS Module. Design tokens are immutable—their values never change. Components select different tokens at different breakpoints instead of redefining what tokens mean.
 
 ```scss
 /* MarketCard.module.scss */
@@ -220,10 +220,10 @@ Always reference design tokens from `semantic-tokens.scss` in your SCSS Module:
     font-weight: var(--font-weight-semibold);
 }
 
-/* Use SCSS breakpoint variables in media queries */
+/* CORRECT - component selects different token at smaller breakpoint */
 @media (max-width: $breakpoint-mobile) {
     .card {
-        padding: var(--spacing-7);
+        padding: var(--spacing-7);  /* Select smaller token, don't redefine --spacing-10 */
     }
 }
 ```
@@ -245,6 +245,31 @@ Always reference design tokens from `semantic-tokens.scss` in your SCSS Module:
     font-weight: 600;   /* Should be var(--font-weight-semibold) */
 }
 ```
+
+**Never redefine tokens in components:**
+
+```scss
+/* ❌ WRONG - redefines what tokens mean across breakpoints */
+.card {
+    --card-padding: var(--spacing-10);  /* Local variable starts at 40px */
+    padding: var(--card-padding);
+}
+
+@media (max-width: $breakpoint-mobile) {
+    .card {
+        --card-padding: var(--spacing-7);  /* Redefines to mean 28px */
+    }
+}
+
+/* ❌ EVEN WORSE - redefines global tokens */
+@media (max-width: $breakpoint-mobile) {
+    :root {
+        --spacing-10: 1.75rem;  /* Changes global token - breaks everything */
+    }
+}
+```
+
+**Why immutability matters:** When `--spacing-10` always means `2.5rem`, developers can trust the name. Components that need smaller padding select `--spacing-7` explicitly, making responsive behavior visible in component code instead of hidden in token redefinitions.
 
 ## Complete Example
 
@@ -520,6 +545,8 @@ import { Page, PageHeader, Stack, Grid, Section } from '../../../components/layo
 
 **Rule: Always use CSS container queries for component-level responsiveness. Reserve viewport media queries exclusively for global layout changes.**
 
+Both container queries and media queries must follow the **token immutability principle**: select different tokens at different breakpoints instead of redefining what tokens mean.
+
 **⚠️ SCSS Variable Gotcha:** Container queries require interpolation `#{$variable}` while media queries don't. Without interpolation, the rule compiles but the condition is silently dropped ([Sass #3471](https://github.com/sass/sass/issues/3471)):
 
 ```scss
@@ -556,16 +583,27 @@ Container queries fix this by letting each component define its own responsive b
 ```scss
 @use '../../../app/breakpoints' as *;
 
+/* CORRECT - select appropriate tokens at each breakpoint */
+.analytics-card {
+    padding: var(--spacing-10);  /* Default: 2.5rem */
+}
+
 /* Adapts when the container is narrow, regardless of viewport */
 @container analytics-card (min-width: #{$breakpoint-mobile-md}) {
     .analytics-card__grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: var(--spacing-7);  /* Select smaller gap token */
     }
 }
 
 @container analytics-card (min-width: 720px) {
     .analytics-card__grid {
         grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: var(--spacing-10);  /* Select larger gap token */
+    }
+
+    .analytics-card {
+        padding: var(--spacing-12);  /* Select larger padding token */
     }
 }
 ```
@@ -610,25 +648,32 @@ export function TransactionCard({ transaction }: { transaction: ITransaction }) 
 .transaction-card {
     container-type: inline-size;
     container-name: transaction-card;
+    padding: var(--spacing-7);  /* Default: 1.75rem */
 }
 
 .transaction-card__grid {
     display: grid;
     grid-template-columns: 1fr; /* Single column by default */
-    gap: var(--spacing-7);
+    gap: var(--spacing-4);  /* Smallest gap for mobile */
 }
 
 /* When container is 480px+ wide, show 2 columns */
 @container transaction-card (min-width: #{$breakpoint-mobile-md}) {
     .transaction-card__grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: var(--spacing-7);  /* Select larger gap token */
     }
 }
 
 /* When container is 720px+ wide, show 3 columns */
 @container transaction-card (min-width: 720px) {
+    .transaction-card {
+        padding: var(--spacing-10);  /* Select larger padding token */
+    }
+
     .transaction-card__grid {
         grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: var(--spacing-10);  /* Select even larger gap token */
     }
 }
 ```

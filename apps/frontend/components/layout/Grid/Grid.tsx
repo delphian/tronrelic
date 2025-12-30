@@ -4,7 +4,7 @@ import styles from './Grid.module.scss';
 
 /**
  * Gap size options for Grid component.
- * Maps to semantic tokens: --grid-gap-sm, --grid-gap-default
+ * Maps to semantic tokens: --grid-gap-sm, --grid-gap-md, --grid-gap-lg
  */
 type GapSize = 'sm' | 'md' | 'lg';
 
