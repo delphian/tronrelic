@@ -81,9 +81,11 @@ main {
  */
 @keyframes live-pulse {
   0%, 100% {
+    opacity: 1;
     filter: drop-shadow(0 0 2px var(--color-success-alpha-45));
   }
   50% {
+    opacity: 0.5;
     filter: drop-shadow(0 0 6px var(--color-success)) drop-shadow(0 0 10px var(--color-success-alpha-45));
   }
 }
