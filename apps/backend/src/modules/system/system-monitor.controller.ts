@@ -4,7 +4,6 @@ import type { IDatabaseService } from '@tronrelic/types';
 import { LOG_LEVELS, type LogLevelName } from '@tronrelic/types';
 import { SystemMonitorService } from './system-monitor.service.js';
 import { BlockchainService } from '../blockchain/blockchain.service.js';
-import { getScheduler } from '../../jobs/index.js';
 import { BlockchainObserverService } from '../../services/blockchain-observer/index.js';
 import { SystemConfigService } from '../../services/system-config/index.js';
 
@@ -37,59 +36,6 @@ export class SystemMonitorController {
       console.error('Manual blockchain sync failed:', err);
     });
     res.json({ success: true, message: 'Blockchain sync triggered' });
-  };
-
-  getSchedulerStatus = async (_req: Request, res: Response) => {
-    const jobs = await this.service.getSchedulerStatus();
-    res.json({ success: true, jobs });
-  };
-
-  getSchedulerHealth = async (_req: Request, res: Response) => {
-    const health = await this.service.getSchedulerHealth();
-    res.json({ success: true, health });
-  };
-
-  updateSchedulerJob = async (req: Request, res: Response) => {
-    try {
-      const { jobName } = req.params;
-      const { schedule, enabled } = req.body;
-
-      const scheduler = getScheduler();
-      if (!scheduler) {
-        return res.status(503).json({
-          success: false,
-          error: 'Scheduler is not enabled or not initialized'
-        });
-      }
-
-      if (schedule !== undefined && typeof schedule !== 'string') {
-        return res.status(400).json({
-          success: false,
-          error: 'Schedule must be a valid cron expression string'
-        });
-      }
-
-      if (enabled !== undefined && typeof enabled !== 'boolean') {
-        return res.status(400).json({
-          success: false,
-          error: 'Enabled must be a boolean'
-        });
-      }
-
-      await scheduler.updateJobConfig(jobName, { schedule, enabled });
-
-      res.json({
-        success: true,
-        message: `Scheduler job ${jobName} updated successfully`,
-        job: scheduler.getJobConfig(jobName)
-      });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unknown error';
-      res.status(400).json({
-        success: false,
-        error: message
-      });
-    }
   };
 
   getDatabaseStatus = async (_req: Request, res: Response) => {

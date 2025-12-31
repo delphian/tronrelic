@@ -1,6 +1,7 @@
 'use client';
 
-import { SchedulerMonitor, useSystemAuth } from '../../../../features/system';
+import { useSystemAuth } from '../../../../features/system';
+import { SchedulerMonitor } from '../../../../modules/scheduler';
 
 /**
  * Scheduler monitoring page.

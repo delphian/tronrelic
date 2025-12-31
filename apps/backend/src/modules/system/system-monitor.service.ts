@@ -5,17 +5,14 @@ import mongoose from 'mongoose';
 import { SyncStateModel, type SyncStateFields } from '../../database/models/sync-state-model.js';
 import { BlockModel, type BlockFields, type BlockDoc } from '../../database/models/block-model.js';
 import { TransactionModel, type TransactionDoc } from '../../database/models/transaction-model.js';
-import { SchedulerExecutionModel, type ISchedulerExecutionFields, type SchedulerExecutionDoc } from '../../database/models/scheduler-execution-model.js';
 import { TronGridClient } from '../blockchain/tron-grid.client.js';
 import { logger } from '../../lib/logger.js';
 import { env } from '../../config/env.js';
-import { getScheduler } from '../../jobs/index.js';
 import { blockchainConfig } from '../../config/blockchain.js';
 
 const SYNC_STATE_COLLECTION = 'sync_states';
 const BLOCKS_COLLECTION = 'blocks';
 const TRANSACTIONS_COLLECTION = 'transactions';
-const SCHEDULER_EXECUTIONS_COLLECTION = 'scheduler_executions';
 interface TimeoutResult<T> {
   timedOut: boolean;
   value?: T;
@@ -119,23 +116,9 @@ interface BlockProcessingSnapshot {
   netCatchUpRate: number | null;
 }
 
-export interface SchedulerJobStatus {
-  name: string;
-  schedule: string;
-  enabled: boolean;
-  lastRun: string | null;
-  nextRun: string | null;
-  status: 'running' | 'success' | 'failed' | 'never_run';
-  duration: number | null;
-  error: string | null;
-}
-
 export interface SchedulerHealth {
   enabled: boolean;
   uptime: number | null;
-  totalJobsExecuted: number;
-  successRate: number;
-  overdueJobs: string[];
 }
 
 export interface DatabaseStatus {
@@ -201,7 +184,6 @@ export class SystemMonitorService {
     this.database.registerModel(SYNC_STATE_COLLECTION, SyncStateModel);
     this.database.registerModel(BLOCKS_COLLECTION, BlockModel);
     this.database.registerModel(TRANSACTIONS_COLLECTION, TransactionModel);
-    this.database.registerModel(SCHEDULER_EXECUTIONS_COLLECTION, SchedulerExecutionModel);
   }
 
   /**
@@ -217,10 +199,6 @@ export class SystemMonitorService {
 
   private getTransactionModel() {
     return this.database.getModel<TransactionDoc>(TRANSACTIONS_COLLECTION);
-  }
-
-  private getSchedulerExecutionModel() {
-    return this.database.getModel<SchedulerExecutionDoc>(SCHEDULER_EXECUTIONS_COLLECTION);
   }
 
   private async computeBlockProcessingSnapshot(state: SyncStateFields | null): Promise<BlockProcessingSnapshot> {
@@ -518,55 +496,10 @@ export class SystemMonitorService {
     };
   }
 
-  async getSchedulerStatus(): Promise<SchedulerJobStatus[]> {
-    const scheduler = getScheduler();
-    if (!scheduler) {
-      return [];
-    }
-
-    const jobConfigs = scheduler.getAllJobConfigs();
-    const jobs: SchedulerJobStatus[] = [];
-
-    for (const config of jobConfigs) {
-      // Get the most recent execution for this job
-      const lastExecution = await this.getSchedulerExecutionModel().findOne({ jobName: config.name })
-        .sort({ startedAt: -1 })
-        .lean() as ISchedulerExecutionFields | null;
-
-      let status: 'running' | 'success' | 'failed' | 'never_run' = 'never_run';
-      let lastRun: string | null = null;
-      let duration: number | null = null;
-      let error: string | null = null;
-
-      if (lastExecution) {
-        status = lastExecution.status;
-        lastRun = safeToISOString(lastExecution.startedAt);
-        duration = lastExecution.duration ? lastExecution.duration / 1000 : null; // Convert ms to seconds
-        error = lastExecution.error;
-      }
-
-      jobs.push({
-        name: config.name,
-        schedule: config.schedule,
-        enabled: config.enabled,
-        lastRun,
-        nextRun: null, // node-cron doesn't provide next run time easily
-        status: config.enabled ? status : 'never_run',
-        duration,
-        error
-      });
-    }
-
-    return jobs;
-  }
-
   async getSchedulerHealth(): Promise<SchedulerHealth> {
     return {
       enabled: env.ENABLE_SCHEDULER,
-      uptime: process.uptime(),
-      totalJobsExecuted: 0, // Would need tracking
-      successRate: 100,
-      overdueJobs: []
+      uptime: process.uptime()
     };
   }
 

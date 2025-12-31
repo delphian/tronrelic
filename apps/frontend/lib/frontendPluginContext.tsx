@@ -22,7 +22,7 @@ import { Tooltip } from '../components/ui/Tooltip';
 import { LazyIconPickerModal as IconPickerModal } from '../components/ui/IconPickerModal';
 import { useModal as useModalHook } from '../components/ui/ModalProvider';
 import { LineChart } from '../features/charts/components/LineChart';
-import { SchedulerMonitor } from '../features/system/components/SchedulerMonitor';
+import { SchedulerMonitor } from '../modules/scheduler';
 import { Page, PageHeader, Stack, Grid, Section } from '../components/layout';
 import { useAppSelector } from '../store/hooks';
 import {

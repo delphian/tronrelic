@@ -1,23 +1,30 @@
+/**
+ * @fileoverview Scheduler service for cron job management with MongoDB persistence.
+ *
+ * Provides centralized scheduling with dynamic reconfiguration, execution tracking,
+ * and overlap protection. Implements singleton pattern for consistent job management
+ * across the application.
+ *
+ * @module modules/scheduler/services/scheduler.service
+ */
+
 import cron, { ScheduledTask } from 'node-cron';
 import type { IDatabaseService } from '@tronrelic/types';
-import { logger } from '../lib/logger.js';
-import { SchedulerConfigModel, type SchedulerConfigDoc } from '../database/models/scheduler-config-model.js';
-import { SchedulerExecutionModel, type SchedulerExecutionDoc } from '../database/models/scheduler-execution-model.js';
+import { logger } from '../../../lib/logger.js';
+import { SchedulerConfigModel, type SchedulerConfigDoc } from '../database/scheduler-config.model.js';
+import { SchedulerExecutionModel, type SchedulerExecutionDoc } from '../database/scheduler-execution.model.js';
 
 export type CronJobHandler = () => Promise<void> | void;
 
 /**
- * RegisteredJob
- *
  * Internal representation of a scheduled job with its handler and active cron task.
  *
- * **Fields:**
- * - `name` - Unique job identifier (e.g., "markets:refresh")
- * - `defaultSchedule` - Default cron expression from code registration
- * - `currentSchedule` - Active cron expression (may differ from default if admin changed it)
- * - `enabled` - Whether job is currently active (can be toggled via admin API)
- * - `handler` - Async function to execute on schedule
- * - `task` - Active node-cron ScheduledTask (undefined if job is disabled)
+ * @property name - Unique job identifier (e.g., "markets:refresh")
+ * @property defaultSchedule - Default cron expression from code registration
+ * @property currentSchedule - Active cron expression (may differ if admin changed it)
+ * @property enabled - Whether job is currently active
+ * @property handler - Async function to execute on schedule
+ * @property task - Active node-cron ScheduledTask (undefined if disabled)
  */
 interface RegisteredJob {
     name: string;
@@ -29,40 +36,28 @@ interface RegisteredJob {
 }
 
 /**
- * SchedulerService
- *
  * Centralized cron scheduler with dynamic reconfiguration support.
+ *
  * Jobs can be registered during application startup, then runtime configuration
  * (schedule interval, enabled/disabled state) is loaded from MongoDB and can be
  * updated via admin API without backend restart.
  *
- * **Key Features:**
- * - Dynamic rescheduling without restart (reschedule method)
- * - Enable/disable jobs at runtime (updateJobConfig method)
- * - Execution tracking in MongoDB for observability
- * - Automatic config persistence on first registration
- * - Overlap protection prevents concurrent executions of the same job
- *
- * **Usage Flow:**
- * 1. Code registers jobs with default schedules
- * 2. On start(), service loads config from MongoDB (or creates defaults)
- * 3. Admin can update config via API to change schedule or enable/disable
- * 4. Config changes trigger immediate reschedule without restart
+ * Uses singleton pattern to ensure consistent job management across the application.
+ * Call setDependencies() before getInstance() during module initialization.
  *
  * @example
- * // Note: {S} represents / in cron expressions below
- * const scheduler = new SchedulerService();
- * scheduler.register('markets:refresh', '*{S}10 * * * *', async () => {
- *   await marketService.refreshMarkets();
- * });
+ * // In SchedulerModule.init()
+ * SchedulerService.setDependencies(database);
+ *
+ * // In SchedulerModule.run()
+ * const scheduler = SchedulerService.getInstance();
+ * scheduler.register('my-job', '0 * * * *', async () => { ... });
  * await scheduler.start();
- * // Later, via admin API:
- * await scheduler.updateJobConfig('markets:refresh', {
- *   schedule: '*{S}5 * * * *',
- *   enabled: true
- * });
  */
 export class SchedulerService {
+    private static instance: SchedulerService | null = null;
+    private static database: IDatabaseService | null = null;
+
     private readonly jobs = new Map<string, RegisteredJob>();
     private readonly runningJobs = new Set<string>();
     private started = false;
@@ -70,29 +65,67 @@ export class SchedulerService {
     private readonly EXECUTION_COLLECTION = 'scheduler_executions';
 
     /**
-     * Create a new scheduler service.
+     * Inject dependencies before creating the singleton instance.
+     *
+     * Must be called once during module initialization before any getInstance() calls.
      *
      * @param database - Database service for MongoDB operations
      */
-    constructor(private readonly database: IDatabaseService) {
-        // Register Mongoose models for schema validation
+    public static setDependencies(database: IDatabaseService): void {
+        SchedulerService.database = database;
+    }
+
+    /**
+     * Get the singleton scheduler instance.
+     *
+     * @returns The scheduler service instance
+     * @throws Error if setDependencies() was not called first
+     */
+    public static getInstance(): SchedulerService {
+        if (!SchedulerService.instance) {
+            if (!SchedulerService.database) {
+                throw new Error('SchedulerService.setDependencies() must be called before getInstance()');
+            }
+            SchedulerService.instance = new SchedulerService(SchedulerService.database);
+        }
+        return SchedulerService.instance;
+    }
+
+    /**
+     * Reset the singleton instance.
+     *
+     * Used for testing to ensure clean state between test runs.
+     */
+    public static resetInstance(): void {
+        if (SchedulerService.instance) {
+            SchedulerService.instance.stop();
+        }
+        SchedulerService.instance = null;
+        SchedulerService.database = null;
+    }
+
+    /**
+     * Create a new scheduler service.
+     *
+     * Private constructor - use getInstance() instead.
+     *
+     * @param database - Database service for MongoDB operations
+     */
+    private constructor(private readonly database: IDatabaseService) {
         this.database.registerModel(this.CONFIG_COLLECTION, SchedulerConfigModel);
         this.database.registerModel(this.EXECUTION_COLLECTION, SchedulerExecutionModel);
     }
 
     /**
-     * Registers a new scheduled job with default configuration.
+     * Register a new scheduled job with default configuration.
      *
-     * If the scheduler has already started (via start()), the job will be
-     * automatically scheduled immediately. Otherwise, it will be scheduled
-     * when start() is called.
-     *
-     * This allows plugins to register jobs after the main scheduler has started.
+     * If the scheduler has already started, the job will be scheduled immediately.
+     * Otherwise, it will be scheduled when start() is called.
      *
      * @param name - Unique job identifier (e.g., "markets:refresh")
-     * @param defaultSchedule - Default cron expression. Note: use slash instead of {S} (e.g., "STAR/10 * * * *" where STAR = asterisk)
+     * @param defaultSchedule - Default cron expression (e.g., "0 0 * * *" for daily)
      * @param handler - Async function to execute on schedule
-     * @throws If job name is already registered
+     * @throws Error if job name is already registered
      */
     register(name: string, defaultSchedule: string, handler: CronJobHandler): void {
         if (this.jobs.has(name)) {
@@ -107,24 +140,62 @@ export class SchedulerService {
             task: undefined
         });
 
-        // If scheduler already started (e.g., plugin loaded after initialization),
-        // schedule this job immediately
         if (this.started) {
             void this.scheduleJobFromDatabase(name);
         }
     }
 
     /**
-     * Starts all registered jobs by loading configuration from MongoDB
-     * and scheduling enabled jobs.
+     * Disable a scheduled job without removing it.
+     *
+     * Sets enabled=false and stops the cron task. Job can be re-enabled via
+     * admin UI or by calling updateJobConfig with enabled=true.
+     *
+     * @param name - Job identifier to disable
+     * @throws Error if job name is not registered
+     */
+    async disable(name: string): Promise<void> {
+        await this.updateJobConfig(name, { enabled: false });
+    }
+
+    /**
+     * Completely unregister a job from memory and optionally MongoDB.
+     *
+     * Use this during plugin uninstall lifecycle hook to clean up registered jobs.
+     * The job will be stopped immediately and removed from the scheduler.
+     *
+     * @param name - Job identifier to unregister
+     * @param deleteFromDatabase - If true, also delete the MongoDB config record
+     * @throws Error if job name is not registered
+     */
+    async unregister(name: string, deleteFromDatabase: boolean = false): Promise<void> {
+        const job = this.jobs.get(name);
+        if (!job) {
+            throw new Error(`Job ${name} not registered`);
+        }
+
+        if (job.task) {
+            job.task.stop();
+        }
+
+        this.jobs.delete(name);
+
+        if (deleteFromDatabase) {
+            const configModel = this.database.getModel<SchedulerConfigDoc>(this.CONFIG_COLLECTION);
+            await configModel.deleteOne({ jobName: name });
+        }
+
+        logger.info({ jobName: name, deletedFromDb: deleteFromDatabase }, 'Job unregistered from scheduler');
+    }
+
+    /**
+     * Start all registered jobs by loading configuration from MongoDB.
      *
      * For each registered job:
      * 1. Check if configuration exists in MongoDB
      * 2. If not, create default config with defaultSchedule and enabled=true
      * 3. If config exists, use stored schedule and enabled state
      * 4. Schedule enabled jobs with node-cron
-     *
-     * This method must be called after all jobs are registered via register().
      */
     async start(): Promise<void> {
         for (const [name] of this.jobs.entries()) {
@@ -134,13 +205,9 @@ export class SchedulerService {
     }
 
     /**
-     * Loads configuration for a single job from MongoDB and schedules it if enabled.
-     *
-     * This method is called both during start() for bulk initialization and
-     * from register() when plugins register jobs after the scheduler has started.
+     * Load configuration for a single job from MongoDB and schedule if enabled.
      *
      * @param name - Job name to schedule
-     * @private
      */
     private async scheduleJobFromDatabase(name: string): Promise<void> {
         const job = this.jobs.get(name);
@@ -149,12 +216,10 @@ export class SchedulerService {
             return;
         }
 
-        // Load or create config from MongoDB
         const configModel = this.database.getModel<SchedulerConfigDoc>(this.CONFIG_COLLECTION);
         let config = await configModel.findOne({ jobName: name });
 
         if (!config) {
-            // First time seeing this job - create default config
             config = await configModel.create({
                 jobName: name,
                 enabled: true,
@@ -167,7 +232,6 @@ export class SchedulerService {
             );
         }
 
-        // Update job with config from database
         job.currentSchedule = config.schedule;
         job.enabled = config.enabled;
 
@@ -183,21 +247,14 @@ export class SchedulerService {
     }
 
     /**
-     * Schedules a single job with node-cron.
+     * Schedule a single job with node-cron.
      *
-     * Wraps the handler with execution tracking and overlap protection:
-     * - Skips execution if previous run is still in progress (prevents cascading failures)
-     * - Creates execution record with status "running"
-     * - Executes handler
-     * - Updates record with success/failure status and duration
-     * - Removes job from running set in finally block (even on failure)
+     * Wraps the handler with execution tracking and overlap protection.
      *
-     * @param {RegisteredJob} job - Job to schedule
-     * @private
+     * @param job - Job to schedule
      */
     private scheduleJob(job: RegisteredJob): void {
         const task = cron.schedule(job.currentSchedule, async () => {
-            // Overlap protection: skip if job is already running
             if (this.runningJobs.has(job.name)) {
                 logger.warn(
                     { jobName: job.name },
@@ -268,34 +325,13 @@ export class SchedulerService {
     }
 
     /**
-     * Updates job configuration and dynamically reschedules without restart.
+     * Update job configuration and dynamically reschedule without restart.
      *
-     * Allows admin to change schedule interval or enable/disable jobs at runtime.
      * Changes are persisted to MongoDB and take effect immediately.
      *
-     * **Behavior:**
-     * - If schedule changes: stops old cron task, starts new one with updated interval
-     * - If enabled changes: starts or stops cron task accordingly
-     * - If job is disabled and schedule changes: updates config but doesn't start task
-     *
-     * @param {string} jobName - Job identifier to update
-     * @param {Object} updates - Configuration changes
-     * @param {string} [updates.schedule] - New cron expression
-     * @param {boolean} [updates.enabled] - New enabled state
-     * @param {string} [updates.updatedBy] - Admin identifier making the change
-     * @throws {Error} If job name is not registered
-     *
-     * @example
-     * // Note: {S} represents / in cron expressions below
-     * // Change market refresh interval from 10 to 5 minutes
-     * await scheduler.updateJobConfig('markets:refresh', {
-     *   schedule: '*{S}5 * * * *',
-     *   enabled: true
-     * });
-     * // Disable blockchain sync temporarily
-     * await scheduler.updateJobConfig('blockchain:sync', {
-     *   enabled: false
-     * });
+     * @param jobName - Job identifier to update
+     * @param updates - Configuration changes
+     * @throws Error if job name is not registered
      */
     async updateJobConfig(
         jobName: string,
@@ -306,7 +342,6 @@ export class SchedulerService {
             throw new Error(`Job ${jobName} not registered`);
         }
 
-        // Update MongoDB config
         const updateDoc: Record<string, unknown> = { updatedAt: new Date() };
         if (updates.schedule !== undefined) {
             updateDoc.schedule = updates.schedule;
@@ -321,11 +356,9 @@ export class SchedulerService {
         const configModel = this.database.getModel<SchedulerConfigDoc>(this.CONFIG_COLLECTION);
         await configModel.updateOne({ jobName }, updateDoc, { upsert: true });
 
-        // Determine if we need to reschedule
         const scheduleChanged = updates.schedule !== undefined && updates.schedule !== job.currentSchedule;
         const enabledChanged = updates.enabled !== undefined && updates.enabled !== job.enabled;
 
-        // Update in-memory job state
         if (updates.schedule !== undefined) {
             job.currentSchedule = updates.schedule;
         }
@@ -333,16 +366,13 @@ export class SchedulerService {
             job.enabled = updates.enabled;
         }
 
-        // Apply changes to running task
         if (scheduleChanged || enabledChanged) {
-            // Stop existing task if any
             if (job.task) {
                 job.task.stop();
                 job.task = undefined;
                 logger.info({ jobName }, 'Stopped existing scheduler task');
             }
 
-            // Start new task if enabled
             if (job.enabled) {
                 this.scheduleJob(job);
                 if (enabledChanged) {
@@ -364,12 +394,10 @@ export class SchedulerService {
     }
 
     /**
-     * Returns current configuration for a specific job.
+     * Get configuration for a specific job.
      *
-     * Useful for admin UI to display current settings before editing.
-     *
-     * @param {string} jobName - Job identifier
-     * @returns {Object|null} Job config or null if not found
+     * @param jobName - Job identifier
+     * @returns Job config or null if not found
      */
     getJobConfig(jobName: string): {
         name: string;
@@ -390,11 +418,9 @@ export class SchedulerService {
     }
 
     /**
-     * Returns configuration for all registered jobs.
+     * Get configuration for all registered jobs.
      *
-     * Used by SystemMonitorService to display current scheduler state in admin UI.
-     *
-     * @returns {Array} Array of job configurations
+     * @returns Array of job configurations
      */
     getAllJobConfigs(): Array<{
         name: string;
@@ -411,9 +437,9 @@ export class SchedulerService {
     }
 
     /**
-     * Stops all running cron tasks.
+     * Stop all running cron tasks.
      *
-     * Called during graceful shutdown to ensure jobs don't execute mid-restart.
+     * Called during graceful shutdown.
      */
     stop(): void {
         this.jobs.forEach(job => {
