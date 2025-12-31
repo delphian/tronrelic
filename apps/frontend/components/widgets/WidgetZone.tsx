@@ -4,6 +4,18 @@ import { getWidgetComponent } from './widgets.generated';
 import { WidgetWithContext } from './WidgetWithContext';
 
 /**
+ * Props for WidgetRenderer component.
+ */
+interface WidgetRendererProps {
+    /** Widget data including SSR-fetched content */
+    widget: WidgetData;
+    /** Current URL path where the widget is rendering */
+    route: string;
+    /** Route parameters extracted from the URL path */
+    params: Record<string, string>;
+}
+
+/**
  * Render a single widget with its registered component or fallback.
  *
  * Looks up the component from the statically-generated widget registry.
@@ -11,7 +23,7 @@ import { WidgetWithContext } from './WidgetWithContext';
  * In development, shows a debug view for unregistered widgets.
  * In production, unregistered widgets render nothing.
  */
-function WidgetRenderer({ widget }: { widget: WidgetData }) {
+function WidgetRenderer({ widget, route, params }: WidgetRendererProps) {
     const Component = getWidgetComponent(widget.id);
 
     if (Component) {
@@ -20,6 +32,8 @@ function WidgetRenderer({ widget }: { widget: WidgetData }) {
                 Component={Component}
                 data={widget.data}
                 pluginId={widget.pluginId}
+                route={route}
+                params={params}
             />
         );
     }
@@ -63,21 +77,27 @@ function WidgetRenderer({ widget }: { widget: WidgetData }) {
  *
  * @param name - Zone identifier (e.g., 'main-after', 'sidebar-top')
  * @param widgets - Array of widget data from SSR fetch
+ * @param route - Current URL path for context-aware widgets
+ * @param params - Route parameters extracted from the URL path
  *
  * @example
  * ```tsx
  * // In layout.tsx (Server Component)
- * const widgets = await fetchWidgetsForRoute(pathname);
+ * const widgets = await fetchWidgetsForRoute(pathname, params);
  *
- * <WidgetZone name="main-after" widgets={widgets} />
+ * <WidgetZone name="main-after" widgets={widgets} route={pathname} params={params} />
  * ```
  */
 export function WidgetZone({
     name,
-    widgets
+    widgets,
+    route,
+    params
 }: {
     name: string;
     widgets: WidgetData[];
+    route: string;
+    params: Record<string, string>;
 }) {
     // Filter widgets for this zone and sort by order
     const zoneWidgets = widgets
@@ -101,7 +121,7 @@ export function WidgetZone({
                     {widget.title && (
                         <h2 className="text-xl font-semibold mb-4">{widget.title}</h2>
                     )}
-                    <WidgetRenderer widget={widget} />
+                    <WidgetRenderer widget={widget} route={route} params={params} />
                 </div>
             ))}
         </div>

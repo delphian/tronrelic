@@ -792,7 +792,7 @@ This separation exists because admin UI components often span multiple modules (
 Next.js route pages that render module components:
 
 ```
-apps/frontend/app/(dashboard)/system/<module-name>/
+apps/frontend/app/(core)/system/<module-name>/
 └── page.tsx                 # Server or client component rendering module UI
 ```
 
@@ -823,7 +823,7 @@ apps/frontend/features/system/components/UsersMonitor/
 
 **Route:**
 ```
-apps/frontend/app/(dashboard)/system/users/
+apps/frontend/app/(core)/system/users/
 └── page.tsx                 # Renders UsersMonitor
 ```
 
@@ -836,7 +836,7 @@ apps/frontend/app/(dashboard)/system/users/
 | **Module API client** | `modules/<name>/api/` | `fetchLabel()`, `prefetchLabels()` |
 | **Admin dashboard component** | `features/system/components/` | `UsersMonitor`, `AddressLabelsManager` |
 | **Module types** | `modules/<name>/types/` | `ILabelData`, `IAddressLabelProps` |
-| **Route page** | `app/(dashboard)/system/<name>/` | Page rendering admin component |
+| **Route page** | `app/(core)/system/<name>/` | Page rendering admin component |
 
 ### Import Pattern
 

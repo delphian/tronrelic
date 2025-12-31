@@ -4,8 +4,9 @@ import type { IFrontendPluginContext } from '../plugin/IFrontendPluginContext.js
 /**
  * Props interface for widget components.
  *
- * Widget components receive SSR-fetched data and the frontend plugin context
- * for accessing UI components, layout primitives, and other shared infrastructure.
+ * Widget components receive SSR-fetched data, route context, and the frontend
+ * plugin context for accessing UI components, layout primitives, and other
+ * shared infrastructure.
  *
  * This interface enables dependency injection for widgets, following the same
  * pattern as plugin pages. Widgets can use `context.layout.Stack` or `context.ui.Card`
@@ -13,9 +14,12 @@ import type { IFrontendPluginContext } from '../plugin/IFrontendPluginContext.js
  *
  * @example
  * ```typescript
- * export function MyWidget({ data, context }: IWidgetComponentProps) {
+ * export function MyWidget({ data, context, route, params }: IWidgetComponentProps) {
  *     const { layout, ui } = context;
  *     const widgetData = data as MyWidgetData;
+ *
+ *     // Access route params for context-aware rendering
+ *     const address = params.address;
  *
  *     return (
  *         <ui.Card>
@@ -49,6 +53,22 @@ export interface IWidgetComponentProps {
      * - `context.websocket` - WebSocket client for real-time updates
      */
     context: IFrontendPluginContext;
+
+    /**
+     * Current URL path where the widget is rendering.
+     *
+     * Enables widgets to adjust rendering based on the current page.
+     * For example, '/u/TXyz123...' on a profile page.
+     */
+    route: string;
+
+    /**
+     * Route parameters extracted from the URL path.
+     *
+     * For dynamic routes like `/u/[address]`, this would contain
+     * `{ address: 'TXyz123...' }`. Empty object for static routes.
+     */
+    params: Record<string, string>;
 }
 
 /**

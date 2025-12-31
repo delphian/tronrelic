@@ -25,7 +25,7 @@ import { useState, type ReactNode } from 'react';
 import { useSystemAuth } from '../../contexts/SystemAuthContext';
 import { Button } from '../../../../components/ui/Button';
 import { Input } from '../../../../components/ui/Input';
-import styles from '../../../../app/(dashboard)/system/layout.module.css';
+import styles from '../../../../app/(core)/system/layout.module.css';
 
 /**
  * Login form component for system authentication.

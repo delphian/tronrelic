@@ -11,29 +11,53 @@ import { getServerSideApiUrl } from '../../lib/api-url';
  * Uses internal Docker URL (SITE_BACKEND) for container-to-container communication
  * during SSR. The external apiUrl doesn't resolve from inside containers.
  *
- * @param route - URL path to fetch widgets for (e.g., '/', '/dashboard')
+ * @param route - URL path to fetch widgets for (e.g., '/', '/u/TXyz...')
+ * @param params - Optional route parameters (e.g., { address: 'TXyz...' })
  * @returns Array of widget data with pre-fetched content
  *
  * @example
  * ```tsx
  * // In layout.tsx or page.tsx
- * export default async function DashboardLayout({ children }) {
+ * export default async function CoreLayout({ children }) {
  *     const widgets = await fetchWidgetsForRoute('/');
  *
  *     return (
  *         <div>
- *             <WidgetZone name="main-before" widgets={widgets} />
+ *             <WidgetZone name="main-before" widgets={widgets} route="/" params={{}} />
  *             {children}
- *             <WidgetZone name="main-after" widgets={widgets} />
+ *             <WidgetZone name="main-after" widgets={widgets} route="/" params={{}} />
+ *         </div>
+ *     );
+ * }
+ *
+ * // For dynamic routes with params
+ * export default async function ProfileLayout({ params }) {
+ *     const { address } = params;
+ *     const route = `/u/${address}`;
+ *     const routeParams = { address };
+ *     const widgets = await fetchWidgetsForRoute(route, routeParams);
+ *
+ *     return (
+ *         <div>
+ *             <WidgetZone name="main-before" widgets={widgets} route={route} params={routeParams} />
+ *             {children}
  *         </div>
  *     );
  * }
  * ```
  */
-export async function fetchWidgetsForRoute(route: string): Promise<WidgetData[]> {
+export async function fetchWidgetsForRoute(
+    route: string,
+    params: Record<string, string> = {}
+): Promise<WidgetData[]> {
     try {
         const backendUrl = getServerSideApiUrl();
-        const url = `${backendUrl}/api/widgets?route=${encodeURIComponent(route)}`;
+        let url = `${backendUrl}/api/widgets?route=${encodeURIComponent(route)}`;
+
+        // Add params if provided
+        if (Object.keys(params).length > 0) {
+            url += `&params=${encodeURIComponent(JSON.stringify(params))}`;
+        }
 
         const response = await fetch(url, {
             // Disable Next.js caching - widgets can have dynamic data

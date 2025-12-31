@@ -13,7 +13,7 @@ The TronRelic frontend follows a **module-based architecture** that mirrors the 
 ```
 apps/frontend/
 ├── app/                          # Next.js App Router (thin route wrappers)
-│   ├── (dashboard)/             # Dashboard route group
+│   ├── (core)/             # Dashboard route group
 │   │   ├── system/users/        # Admin page → imports from modules/user
 │   │   └── ...                  # Other admin pages
 │   ├── u/[address]/             # Profile route → imports from modules/user
@@ -112,7 +112,7 @@ Routes in `app/` should be minimal importers, not implementation containers. The
 ### Correct Pattern
 
 ```typescript
-// app/(dashboard)/system/users/page.tsx - THIN WRAPPER
+// app/(core)/system/users/page.tsx - THIN WRAPPER
 'use client';
 
 import { useSystemAuth } from '../../../../features/system';
@@ -137,7 +137,7 @@ export default async function Page({ params }) {
 ### Incorrect Pattern
 
 ```typescript
-// app/(dashboard)/system/users/page.tsx - TOO MUCH IMPLEMENTATION
+// app/(core)/system/users/page.tsx - TOO MUCH IMPLEMENTATION
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -747,7 +747,7 @@ export async function getMarkets(limit?: number) {
 **Server-side data fetching in Next.js pages:**
 
 ```typescript
-// app/(dashboard)/markets/page.tsx
+// app/(core)/markets/page.tsx
 import { getApiUrl } from '@/lib/config';
 
 export default async function MarketsPage() {

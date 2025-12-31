@@ -6,7 +6,14 @@ import type {
 } from '@tronrelic/types';
 
 /** Valid widget zone names for validation. */
-const VALID_ZONES = new Set(['main-before', 'main-after', 'sidebar-top', 'sidebar-bottom']);
+const VALID_ZONES = new Set([
+    'main-before',
+    'main-after',
+    'plugin-content:before',
+    'plugin-content:after',
+    'sidebar-top',
+    'sidebar-bottom'
+]);
 
 /**
  * Singleton service managing plugin widget registration and SSR data fetching.
@@ -167,10 +174,14 @@ export class WidgetService implements IWidgetService {
      * Widgets with failing fetchData() functions are excluded from results
      * (errors are logged but not thrown).
      *
-     * @param route - URL path to match against widget routes (e.g., '/', '/dashboard')
+     * @param route - URL path to match against widget routes (e.g., '/', '/u/TXyz...')
+     * @param params - Route parameters extracted from the URL (e.g., { address: 'TXyz...' })
      * @returns Promise resolving to array of widget data with pre-fetched content
      */
-    public async fetchWidgetsForRoute(route: string): Promise<IWidgetData[]> {
+    public async fetchWidgetsForRoute(
+        route: string,
+        params: Record<string, string> = {}
+    ): Promise<IWidgetData[]> {
         // Filter widgets by route
         const matchingWidgets = Array.from(this.widgets.values()).filter(widget => {
             // Empty routes array means show on all routes
@@ -187,6 +198,7 @@ export class WidgetService implements IWidgetService {
 
         this.logger.debug('Fetching widget data for route', {
             route,
+            params,
             widgetCount: matchingWidgets.length
         });
 
@@ -201,7 +213,7 @@ export class WidgetService implements IWidgetService {
                     timerId = setTimeout(() => reject(new Error('Widget fetch timeout')), TIMEOUT_MS);
                 });
                 const rawData = await Promise.race([
-                    widget.fetchData(),
+                    widget.fetchData(route, params),
                     timeoutPromise
                 ]);
                 clearTimeout(timerId);

@@ -142,7 +142,7 @@ features/system/components/UsersMonitor/
 
 **Route page (`apps/frontend/app/`):**
 ```
-app/(dashboard)/system/users/
+app/(core)/system/users/
 └── page.tsx                 # Next.js route rendering UsersMonitor
 ```
 

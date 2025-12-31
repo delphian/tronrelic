@@ -1,4 +1,4 @@
-import { PluginPageHandler } from '../../../../../components/PluginPageHandler';
+import { PluginPageWithZones } from '../../../../../components/PluginPageWithZones';
 
 /**
  * Dynamic route params for plugin admin pages.
@@ -20,7 +20,7 @@ interface IPageParams {
  * route, plugin admin pages would be handled by the root catch-all route at
  * `[...slug]/page.tsx`, which doesn't include the system layout.
  *
- * This route inherits the system layout from `app/(dashboard)/system/layout.tsx`,
+ * This route inherits the system layout from `app/(core)/system/layout.tsx`,
  * which provides:
  * - SystemAuthProvider - Authentication state management
  * - SystemAuthGate - Login form and access control
@@ -29,8 +29,9 @@ interface IPageParams {
  * Architecture:
  * 1. User navigates to /system/plugins/telegram-bot/settings
  * 2. Next.js matches this catch-all route (within system layout)
- * 3. PluginPageHandler checks plugin registry for matching page
- * 4. Plugin component renders with system navigation visible
+ * 3. PluginPageWithZones fetches widgets and wraps with widget zones
+ * 4. PluginPageHandler checks plugin registry for matching page
+ * 5. Plugin component renders with system navigation and widget zones visible
  *
  * @param params - Next.js route params containing slug array
  * @returns Plugin page component wrapped in system layout
@@ -40,5 +41,5 @@ export default async function PluginAdminPage({ params }: { params: Promise<IPag
     const { slug } = await params;
     const fullSlug = '/system/plugins/' + slug.join('/');
 
-    return <PluginPageHandler slug={fullSlug} />;
+    return <PluginPageWithZones slug={fullSlug} />;
 }
