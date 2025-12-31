@@ -3,6 +3,11 @@
 import { useEffect, useState } from 'react';
 import { Info } from 'lucide-react';
 import { config as runtimeConfig } from '../../../../lib/config';
+import { Section, Grid, Stack } from '../../../../components/layout';
+import { Card } from '../../../../components/ui/Card';
+import { Badge } from '../../../../components/ui/Badge';
+import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../components/ui/Table';
+import { ClientTime } from '../../../../components/ui/ClientTime';
 import styles from './BlockchainMonitor.module.css';
 
 interface BlockchainError {
@@ -212,25 +217,35 @@ export function BlockchainMonitor({ token }: Props) {
     }, [token]);
 
     /**
-     * Returns the appropriate CSS class variant for lag metric card based on severity.
+     * Returns the appropriate Badge tone for lag metric based on severity.
      *
-     * Maps lag values to color-coded variants for visual feedback:
-     * - < liveChainThrottleBlocks: Green (healthy, within acceptable lag)
-     * - ≥ liveChainThrottleBlocks but < 100: Yellow (warning, falling behind but manageable)
-     * - ≥ 100 blocks: Red (danger, significant backlog)
-     *
-     * The liveChainThrottleBlocks threshold (default 20) represents the point where
-     * the system considers itself "caught up" and applies intelligent throttling to
-     * match TRON's 3-second block intervals.
+     * Maps lag values to color-coded tones for visual feedback:
+     * - < liveChainThrottleBlocks: success (healthy, within acceptable lag)
+     * - ≥ liveChainThrottleBlocks but < 100: warning (falling behind but manageable)
+     * - ≥ 100 blocks: danger (significant backlog)
      *
      * @param {number} lag - Number of blocks behind network
      * @param {number} throttleThreshold - Live chain throttle blocks from backend config
-     * @returns {string} CSS Module class name for lag severity variant
+     * @returns {'success' | 'warning' | 'danger'} Badge tone for lag severity
      */
-    const getLagClass = (lag: number, throttleThreshold: number): string => {
-        if (lag < throttleThreshold) return styles['metric_card--healthy'];
-        if (lag < 100) return styles['metric_card--warning'];
-        return styles['metric_card--danger'];
+    const getLagTone = (lag: number, throttleThreshold: number): 'success' | 'warning' | 'danger' => {
+        if (lag < throttleThreshold) return 'success';
+        if (lag < 100) return 'warning';
+        return 'danger';
+    };
+
+    /**
+     * Formats time duration for display in a human-readable format.
+     *
+     * @param {number} seconds - Duration in seconds
+     * @returns {string} Formatted time string
+     */
+    const formatDuration = (seconds: number): string => {
+        const minutes = seconds / 60;
+        const hours = minutes / 60;
+        if (minutes > 300) return `${hours.toFixed(1)} hr`;
+        if (seconds > 300) return `${minutes.toFixed(1)} min`;
+        return `${seconds.toFixed(1)}s`;
     };
 
     /**
@@ -276,32 +291,6 @@ export function BlockchainMonitor({ token }: Props) {
         return null;
     };
 
-    /**
-     * Determines the health status CSS class for an observer based on performance metrics.
-     *
-     * Evaluates multiple metrics (processing time, queue depth, error rate) to determine
-     * if the observer is healthy, warning, or in danger state.
-     *
-     * @param {ObserverStats} observer - Observer statistics
-     * @returns {string} CSS Module class name for health status
-     */
-    const getObserverHealthClass = (observer: ObserverStats): string => {
-        // Check processing time
-        if (observer.avgProcessingTimeMs > 500) return styles['observer-row--danger'];
-        if (observer.avgProcessingTimeMs > 100) return styles['observer-row--warning'];
-
-        // Check queue depth
-        if (observer.queueDepth > 100) return styles['observer-row--danger'];
-        if (observer.queueDepth > 10) return styles['observer-row--warning'];
-
-        // Check error rate (as percentage)
-        const errorRatePercent = observer.errorRate * 100;
-        if (errorRatePercent > 5) return styles['observer-row--danger'];
-        if (errorRatePercent > 1) return styles['observer-row--warning'];
-
-        return styles['observer-row--healthy'];
-    };
-
     if (loading) {
         return <div className={styles.loading}>Loading blockchain monitoring data...</div>;
     }
@@ -309,341 +298,279 @@ export function BlockchainMonitor({ token }: Props) {
     return (
         <div className={styles.container}>
             {/* Blockchain Sync Status */}
-            <section className={styles.section}>
-                <header className={styles.section__header}>
-                    <h2 className={styles.section__title}>Blockchain Sync Status</h2>
-                    <button
-                        onClick={triggerSync}
-                        disabled={syncing || schedulerEnabled}
-                        className={styles.button}
-                        title={schedulerEnabled ? 'Scheduler is running automatically every minute' : 'Manually trigger blockchain sync'}
-                    >
-                        {syncing ? 'Triggering...' : 'Trigger Sync Now'}
-                    </button>
-                </header>
-
-                {status && status.lastError && (
-                    <div className={styles.error_alert}>
-                        <div className={styles.error_alert__title}>⚠ Blockchain Sync Error</div>
-                        <div className={styles.error_alert__message}>
-                            {formatErrorMessage(status.lastError)}
-                        </div>
-                        {(() => {
-                            const errorTime = getErrorTimestamp(status);
-                            return errorTime ? (
-                                <div className={styles.error_alert__timestamp}>
-                                    Last occurred: {errorTime}
-                                </div>
-                            ) : null;
-                        })()}
+            <Section>
+                <Stack gap="md">
+                    <div className={styles.section__header}>
+                        <h2 className={styles.section__title}>Blockchain Sync Status</h2>
+                        <button
+                            onClick={triggerSync}
+                            disabled={syncing || schedulerEnabled}
+                            className={styles.button}
+                            title={schedulerEnabled ? 'Scheduler is running automatically every minute' : 'Manually trigger blockchain sync'}
+                        >
+                            {syncing ? 'Triggering...' : 'Trigger Sync Now'}
+                        </button>
                     </div>
-                )}
 
-                {status && (
-                    <div className={styles.metrics_grid}>
-                        <div className={styles.metric_card}>
-                            <div className={styles.metric_card__label}>
-                                Network Height
-                                <span className={styles.info_icon} title="The latest block number available on the TRON blockchain network">
-                                    <Info size={14} />
-                                </span>
-                            </div>
-                            <div className={styles.metric_card__value}>{status.networkBlock.toLocaleString()}</div>
-                        </div>
+                    {status && status.lastError && (
+                        <Card tone="accent" padding="md" className={styles.error_card}>
+                            <Stack gap="sm">
+                                <strong className={styles.error_title}>⚠ Blockchain Sync Error</strong>
+                                <code className={styles.error_message}>
+                                    {formatErrorMessage(status.lastError)}
+                                </code>
+                                {(() => {
+                                    const errorTime = getErrorTimestamp(status);
+                                    return errorTime ? (
+                                        <span className={styles.timestamp}>Last occurred: {errorTime}</span>
+                                    ) : null;
+                                })()}
+                            </Stack>
+                        </Card>
+                    )}
 
-                        <div className={styles.metric_card}>
-                            <div className={styles.metric_card__label}>
-                                Current Block
-                                <span className={styles.info_icon} title="The last block number successfully processed and stored in the database">
-                                    <Info size={14} />
-                                </span>
-                            </div>
-                            <div className={styles.metric_card__value}>{status.currentBlock.toLocaleString()}</div>
-                        </div>
-
-                        <div className={`${styles.metric_card} ${getLagClass(status.lag, status.liveChainThrottleBlocks)}`}>
-                            <div className={styles.metric_card__label}>
-                                Lag (Blocks Behind)
-                                <span className={styles.info_icon} title={`How many blocks behind the network we are. Green: <${status.liveChainThrottleBlocks}, Yellow: <100, Red: ≥100. Time behind shows average delay between block creation and processing.`}>
-                                    <Info size={14} />
-                                </span>
-                            </div>
-                            <div className={styles.metric_card__value}>
-                                {status.lag.toLocaleString()}
-                                {status.averageProcessingDelaySeconds !== null && (
-                                    <span style={{ fontSize: '0.7em', opacity: 0.8, marginLeft: '0.5em' }}>
-                                        ({(() => {
-                                            const seconds = status.averageProcessingDelaySeconds;
-                                            const minutes = seconds / 60;
-                                            const hours = minutes / 60;
-
-                                            if (minutes > 300) {
-                                                return `${hours.toFixed(1)} hr`;
-                                            } else if (seconds > 300) {
-                                                return `${minutes.toFixed(1)} min`;
-                                            } else {
-                                                return `${seconds.toFixed(2)}s`;
-                                            }
-                                        })()})
-                                    </span>
-                                )}
-                            </div>
-                        </div>
-
-                        {status.processingBlocksPerMinute !== null && (
-                            <div className={styles.metric_card}>
-                                <div className={styles.metric_card__label}>
-                                    Processing Rate
-                                    <span className={styles.info_icon} title="How many blocks per minute we're processing from the queue. The TRON network emits new blocks at ~20 blocks per minute (3-second interval)">
+                    {status && (
+                        <Grid columns="responsive" gap="sm">
+                            <Card padding="sm" tone="muted">
+                                <div className={styles.metric_label}>
+                                    Network Height
+                                    <span className={styles.info_icon} title="The latest block number available on the TRON blockchain network">
                                         <Info size={14} />
                                     </span>
                                 </div>
-                                <div className={styles.metric_card__value}>
-                                    {status.processingBlocksPerMinute.toFixed(1)} b/m
-                                </div>
-                            </div>
-                        )}
+                                <div className={styles.metric_value}>{status.networkBlock.toLocaleString()}</div>
+                            </Card>
 
-                        {status.netCatchUpRate !== null && (
-                            <div className={styles.metric_card}>
-                                <div className={styles.metric_card__label}>
-                                    Net Catch-up Rate
-                                    <span className={styles.info_icon} title="Processing rate minus network rate. Positive means catching up, negative means falling behind. Est. catch-up time shows how long until all backlog blocks are processed.">
+                            <Card padding="sm" tone="muted">
+                                <div className={styles.metric_label}>
+                                    Current Block
+                                    <span className={styles.info_icon} title="The last block number successfully processed and stored in the database">
                                         <Info size={14} />
                                     </span>
                                 </div>
-                                <div className={styles.metric_card__value} style={{ whiteSpace: 'nowrap' }}>
-                                    {(status.netCatchUpRate >= 0 ? '+' : '-') + Math.abs(status.netCatchUpRate).toFixed(1)} b/m
-                                    {status.estimatedCatchUpTime !== null && status.estimatedCatchUpTime > 0 && (
-                                        <span style={{ fontSize: '0.7em', opacity: 0.8, marginLeft: '0.5em' }}>
-                                            ({status.estimatedCatchUpTime > 300
-                                                ? `${(status.estimatedCatchUpTime / 60).toFixed(1)} hr`
-                                                : `${status.estimatedCatchUpTime} min`
-                                            })
+                                <div className={styles.metric_value}>{status.currentBlock.toLocaleString()}</div>
+                            </Card>
+
+                            <Card padding="sm" tone="muted">
+                                <div className={styles.metric_label}>
+                                    Lag (Blocks Behind)
+                                    <span className={styles.info_icon} title={`How many blocks behind the network we are. Green: <${status.liveChainThrottleBlocks}, Yellow: <100, Red: ≥100.`}>
+                                        <Info size={14} />
+                                    </span>
+                                </div>
+                                <div className={styles.metric_value}>
+                                    <Badge tone={getLagTone(status.lag, status.liveChainThrottleBlocks)}>
+                                        {status.lag.toLocaleString()}
+                                    </Badge>
+                                    {status.averageProcessingDelaySeconds !== null && (
+                                        <span className={styles.metric_subtext}>
+                                            ({formatDuration(status.averageProcessingDelaySeconds)} behind)
                                         </span>
                                     )}
                                 </div>
-                            </div>
-                        )}
+                            </Card>
 
-                        {metrics && (
-                            <div className={styles.metric_card}>
-                                <div className={styles.metric_card__label}>
-                                    Success Rate
-                                    <span className={styles.info_icon} title="Percentage of blocks processed successfully without errors in the last 180 blocks">
-                                        <Info size={14} />
-                                    </span>
-                                </div>
-                                <div className={styles.metric_card__value}>
-                                    {metrics.successRate.toFixed(1)}%
-                                </div>
-                            </div>
-                        )}
-                    </div>
-                )}
-
-                {netCatchUpRate !== null && netCatchUpRate <= 0 && !status?.lastTimings?.throttle && (
-                    <div className={styles.warning_alert}>
-                        Processing throughput is slower than the network ({netCatchUpRate.toFixed(1)} b/m).
-                        Lag may continue to grow until throughput improves.
-                    </div>
-                )}
-            </section>
-
-            {/* Block Processing Pipeline Metrics */}
-            <section className={styles.section}>
-                <h2 className={styles.section__title}>Block Processing Pipeline Metrics</h2>
-                {status?.lastTimings ? (
-                    <>
-                        <p className={styles.section__note}>
-                            Timing metrics from block {(status.lastProcessedBlockNumber ?? status.currentBlock).toLocaleString()} ({status.lastTransactionCount ?? 0} transactions)
-                        </p>
-
-                        <div className={styles.metrics_grid}>
-                            <div className={styles.metric_card}>
-                                <div className={styles.metric_card__label}>
-                                    Fetch Block (TronGrid)
-                                    <span className={styles.info_icon} title="API call to TronGrid to retrieve the complete block data including all transactions, timestamps, and witness information">
-                                        <Info size={14} />
-                                    </span>
-                                </div>
-                                <div className={styles.metric_card__value}>{(status.lastTimings.fetchBlock ?? 0).toFixed(0)} ms</div>
-                            </div>
-
-                            <div className={styles.metric_card}>
-                                <div className={styles.metric_card__label}>
-                                    Get TRX Price
-                                    <span className={styles.info_icon} title="Fetches the current TRX/USD exchange rate to calculate transaction values in dollars for display and analytics">
-                                        <Info size={14} />
-                                    </span>
-                                </div>
-                                <div className={styles.metric_card__value}>{(status.lastTimings.getTrxPrice ?? 0).toFixed(0)} ms</div>
-                            </div>
-
-                            <div className={styles.metric_card}>
-                                <div className={styles.metric_card__label}>
-                                    Process Transactions
-                                    <span className={styles.info_icon} title="Parses all transactions in the block, extracts addresses and amounts, enriches with USD values, and builds relationship graphs between transactions">
-                                        <Info size={14} />
-                                    </span>
-                                </div>
-                                <div className={styles.metric_card__value}>{(status.lastTimings.processTransactions ?? 0).toFixed(0)} ms</div>
-                            </div>
-
-                            <div className={styles.metric_card}>
-                                <div className={styles.metric_card__label}>
-                                    └─ Observer Notifications
-                                    <span className={styles.info_icon} title="Notifies plugin observers of each transaction so they can react to specific patterns like whale transfers or delegation events">
-                                        <Info size={14} />
-                                    </span>
-                                </div>
-                                <div className={styles.metric_card__value}>{(status.lastTimings.observerNotifications ?? 0).toFixed(0)} ms</div>
-                            </div>
-
-                            <div className={styles.metric_card}>
-                                <div className={styles.metric_card__label}>
-                                    Bulk Write (MongoDB)
-                                    <span className={styles.info_icon} title="Writes all processed transactions to the database in a single batch operation to minimize database round trips">
-                                        <Info size={14} />
-                                    </span>
-                                </div>
-                                <div className={styles.metric_card__value}>{(status.lastTimings.bulkWriteTransactions ?? 0).toFixed(0)} ms</div>
-                            </div>
-
-                            <div className={styles.metric_card}>
-                                <div className={styles.metric_card__label}>
-                                    Calculate Stats
-                                    <span className={styles.info_icon} title="Aggregates block-level statistics like total transfers, contract calls, delegations, energy usage, and bandwidth consumption">
-                                        <Info size={14} />
-                                    </span>
-                                </div>
-                                <div className={styles.metric_card__value}>{(status.lastTimings.calculateStats ?? 0).toFixed(0)} ms</div>
-                            </div>
-
-                            <div className={styles.metric_card}>
-                                <div className={styles.metric_card__label}>
-                                    Update BlockModel
-                                    <span className={styles.info_icon} title="Writes block metadata to the database including block ID, witness address, transaction count, and aggregated statistics">
-                                        <Info size={14} />
-                                    </span>
-                                </div>
-                                <div className={styles.metric_card__value}>{(status.lastTimings.updateBlockModel ?? 0).toFixed(0)} ms</div>
-                            </div>
-
-                            <div className={styles.metric_card}>
-                                <div className={styles.metric_card__label}>
-                                    Update SyncState
-                                    <span className={styles.info_icon} title="Updates the sync cursor to mark this block as processed and removes it from the backfill queue if it was being retried">
-                                        <Info size={14} />
-                                    </span>
-                                </div>
-                                <div className={styles.metric_card__value}>{(status.lastTimings.updateSyncState ?? 0).toFixed(0)} ms</div>
-                            </div>
-
-                            <div className={styles.metric_card}>
-                                <div className={styles.metric_card__label}>
-                                    Socket Events
-                                    <span className={styles.info_icon} title="Broadcasts real-time WebSocket events to connected frontend clients notifying them of the new block and its statistics">
-                                        <Info size={14} />
-                                    </span>
-                                </div>
-                                <div className={styles.metric_card__value}>{(status.lastTimings.socketEvents ?? 0).toFixed(0)} ms</div>
-                            </div>
-
-                            <div className={styles.metric_card}>
-                                <div className={styles.metric_card__label}>
-                                    Alert Ingestion
-                                    <span className={styles.info_icon} title="Processes transactions through the alert system to trigger notifications for whale transfers, interesting memos, and other notable events">
-                                        <Info size={14} />
-                                    </span>
-                                </div>
-                                <div className={styles.metric_card__value}>{(status.lastTimings.alertIngestion ?? 0).toFixed(0)} ms</div>
-                            </div>
-
-                            {status.lastTimings.throttle !== undefined && (
-                                <div className={`${styles.metric_card} ${styles['metric_card--throttle']}`}>
-                                    <div className={styles.metric_card__label}>
-                                        Throttle Delay
-                                        <span className={styles.info_icon} title="Intelligent delay calculated to maintain consistent 3-second block intervals when caught up. Only adds remaining time needed after all processing completes, ensuring blocks emit at predictable intervals without unnecessary slowdown.">
+                            {status.processingBlocksPerMinute !== null && (
+                                <Card padding="sm" tone="muted">
+                                    <div className={styles.metric_label}>
+                                        Processing Rate
+                                        <span className={styles.info_icon} title="How many blocks per minute we're processing. TRON network emits ~20 blocks/min.">
                                             <Info size={14} />
                                         </span>
                                     </div>
-                                    <div className={styles.metric_card__value}>{status.lastTimings.throttle.toFixed(0)} ms</div>
-                                </div>
+                                    <div className={styles.metric_value}>
+                                        {status.processingBlocksPerMinute.toFixed(1)} b/m
+                                    </div>
+                                </Card>
                             )}
 
-                            <div className={`${styles.metric_card} ${(status.lastTimings.total ?? 0) > 3000 ? styles['metric_card--danger'] : ''}`}>
-                                <div className={styles.metric_card__label}>
-                                    Total Time
-                                    <span className={styles.info_icon} title="Total elapsed time from the moment block processing started to when all pipeline stages completed">
+                            {status.netCatchUpRate !== null && (
+                                <Card padding="sm" tone={status.netCatchUpRate >= 0 ? 'muted' : 'accent'}>
+                                    <div className={styles.metric_label}>
+                                        Net Catch-up Rate
+                                        <span className={styles.info_icon} title="Processing rate minus network rate. Positive = catching up, negative = falling behind.">
+                                            <Info size={14} />
+                                        </span>
+                                    </div>
+                                    <div className={styles.metric_value}>
+                                        <Badge tone={status.netCatchUpRate >= 0 ? 'success' : 'danger'}>
+                                            {(status.netCatchUpRate >= 0 ? '+' : '') + status.netCatchUpRate.toFixed(1)} b/m
+                                        </Badge>
+                                        {status.estimatedCatchUpTime !== null && status.estimatedCatchUpTime > 0 && (
+                                            <span className={styles.metric_subtext}>
+                                                (ETA: {status.estimatedCatchUpTime > 300
+                                                    ? `${(status.estimatedCatchUpTime / 60).toFixed(1)} hr`
+                                                    : `${status.estimatedCatchUpTime} min`
+                                                })
+                                            </span>
+                                        )}
+                                    </div>
+                                </Card>
+                            )}
+
+                            {metrics && (
+                                <Card padding="sm" tone="muted">
+                                    <div className={styles.metric_label}>
+                                        Success Rate
+                                        <span className={styles.info_icon} title="Percentage of blocks processed successfully in the last 180 blocks">
+                                            <Info size={14} />
+                                        </span>
+                                    </div>
+                                    <div className={styles.metric_value}>
+                                        <Badge tone={metrics.successRate >= 99 ? 'success' : metrics.successRate >= 95 ? 'warning' : 'danger'}>
+                                            {metrics.successRate.toFixed(1)}%
+                                        </Badge>
+                                    </div>
+                                </Card>
+                            )}
+                        </Grid>
+                    )}
+
+                    {netCatchUpRate !== null && netCatchUpRate <= 0 && !status?.lastTimings?.throttle && (
+                        <Card tone="accent" padding="sm">
+                            <span className={styles.warning_text}>
+                                Processing throughput is slower than the network ({netCatchUpRate.toFixed(1)} b/m).
+                                Lag may continue to grow until throughput improves.
+                            </span>
+                        </Card>
+                    )}
+                </Stack>
+            </Section>
+
+            {/* Block Processing Pipeline Metrics */}
+            <Section>
+                <h2 className={styles.section__title}>Block Processing Pipeline Metrics</h2>
+                {status?.lastTimings ? (
+                    <Stack gap="sm">
+                        <p className={styles.section__note}>
+                            Block {(status.lastProcessedBlockNumber ?? status.currentBlock).toLocaleString()} ({status.lastTransactionCount ?? 0} transactions)
+                        </p>
+
+                        <Grid columns="responsive" gap="sm">
+                            <Card padding="sm" tone="muted">
+                                <div className={styles.metric_label}>
+                                    Fetch Block
+                                    <span className={styles.info_icon} title="API call to TronGrid to retrieve block data">
                                         <Info size={14} />
                                     </span>
                                 </div>
-                                <div className={styles.metric_card__value}>{(status.lastTimings.total ?? 0).toFixed(0)} ms</div>
-                            </div>
-                        </div>
-                    </>
+                                <div className={styles.metric_value}>{(status.lastTimings.fetchBlock ?? 0).toFixed(0)} ms</div>
+                            </Card>
+
+                            <Card padding="sm" tone="muted">
+                                <div className={styles.metric_label}>
+                                    Process Transactions
+                                    <span className={styles.info_icon} title="Parse, enrich, and notify observers">
+                                        <Info size={14} />
+                                    </span>
+                                </div>
+                                <div className={styles.metric_value}>{(status.lastTimings.processTransactions ?? 0).toFixed(0)} ms</div>
+                            </Card>
+
+                            <Card padding="sm" tone="muted">
+                                <div className={styles.metric_label}>
+                                    Bulk Write
+                                    <span className={styles.info_icon} title="Write transactions to MongoDB">
+                                        <Info size={14} />
+                                    </span>
+                                </div>
+                                <div className={styles.metric_value}>{(status.lastTimings.bulkWriteTransactions ?? 0).toFixed(0)} ms</div>
+                            </Card>
+
+                            {status.lastTimings.throttle !== undefined && (
+                                <Card padding="sm" tone="accent">
+                                    <div className={styles.metric_label}>
+                                        Throttle
+                                        <span className={styles.info_icon} title="Delay to maintain 3-second block intervals">
+                                            <Info size={14} />
+                                        </span>
+                                    </div>
+                                    <div className={styles.metric_value}>{status.lastTimings.throttle.toFixed(0)} ms</div>
+                                </Card>
+                            )}
+
+                            <Card padding="sm" tone={(status.lastTimings.total ?? 0) > 3000 ? 'accent' : 'muted'}>
+                                <div className={styles.metric_label}>
+                                    Total Time
+                                    <span className={styles.info_icon} title="Complete pipeline elapsed time">
+                                        <Info size={14} />
+                                    </span>
+                                </div>
+                                <div className={styles.metric_value}>{(status.lastTimings.total ?? 0).toFixed(0)} ms</div>
+                            </Card>
+                        </Grid>
+                    </Stack>
                 ) : (
                     <p className={styles.section__note}>
-                        No timing data available yet. Timing metrics will appear after the next block is processed.
+                        No timing data available yet.
                     </p>
                 )}
-            </section>
+            </Section>
 
             {/* Observer Performance */}
-            <section className={styles.section}>
+            <Section>
                 <h2 className={styles.section__title}>Observer Performance</h2>
                 {observers.length === 0 ? (
                     <p className={styles.section__note}>No observers registered</p>
                 ) : (
-                    <div className={styles.observer_table}>
-                        <div className={styles.observer_table__header}>
-                            <div className={styles.observer_table__cell}>Observer</div>
-                            <div className={styles.observer_table__cell}>Avg Time</div>
-                            <div className={styles.observer_table__cell}>Queue</div>
-                            <div className={styles.observer_table__cell}>Processed</div>
-                            <div className={styles.observer_table__cell}>Errors</div>
-                            <div className={styles.observer_table__cell}>Error Rate</div>
-                        </div>
-                        {observers.map((observer) => (
-                            <div
-                                key={observer.name}
-                                className={`${styles.observer_table__row} ${getObserverHealthClass(observer)}`}
-                            >
-                                <div className={styles.observer_table__cell}>
-                                    <strong>{observer.name}</strong>
-                                </div>
-                                <div className={styles.observer_table__cell}>
-                                    {observer.avgProcessingTimeMs.toFixed(1)}ms
-                                    <span className={styles.observer_table__range}>
-                                        ({observer.minProcessingTimeMs}-{observer.maxProcessingTimeMs}ms)
-                                    </span>
-                                </div>
-                                <div className={styles.observer_table__cell}>
-                                    {observer.queueDepth}
-                                </div>
-                                <div className={styles.observer_table__cell}>
-                                    {observer.totalProcessed.toLocaleString()}
-                                </div>
-                                <div className={styles.observer_table__cell}>
-                                    {observer.totalErrors}
-                                    {observer.totalDropped > 0 && (
-                                        <span className={styles.observer_table__dropped}>
-                                            ({observer.totalDropped} dropped)
+                    <Table>
+                        <Thead>
+                            <Tr>
+                                <Th>Observer</Th>
+                                <Th>Avg Time</Th>
+                                <Th>Queue</Th>
+                                <Th>Processed</Th>
+                                <Th>Errors</Th>
+                                <Th>Error Rate</Th>
+                            </Tr>
+                        </Thead>
+                        <Tbody>
+                            {observers.map((observer) => (
+                                <Tr key={observer.name} hasError={observer.errorRate > 0.05}>
+                                    <Td>
+                                        <strong>{observer.name}</strong>
+                                        {observer.lastProcessedAt && (
+                                            <span className={styles.last_processed}>
+                                                Last: <ClientTime date={observer.lastProcessedAt} format="relative" />
+                                            </span>
+                                        )}
+                                    </Td>
+                                    <Td>
+                                        <Badge tone={observer.avgProcessingTimeMs > 100 ? 'warning' : 'neutral'}>
+                                            {observer.avgProcessingTimeMs.toFixed(1)}ms
+                                        </Badge>
+                                        <span className={styles.time_range}>
+                                            ({observer.minProcessingTimeMs}-{observer.maxProcessingTimeMs}ms)
                                         </span>
-                                    )}
-                                </div>
-                                <div className={styles.observer_table__cell}>
-                                    {(observer.errorRate * 100).toFixed(2)}%
-                                </div>
-                            </div>
-                        ))}
-                    </div>
+                                    </Td>
+                                    <Td>
+                                        <Badge tone={observer.queueDepth > 10 ? 'warning' : 'neutral'}>
+                                            {observer.queueDepth}
+                                        </Badge>
+                                    </Td>
+                                    <Td>{observer.totalProcessed.toLocaleString()}</Td>
+                                    <Td>
+                                        {observer.totalErrors}
+                                        {observer.totalDropped > 0 && (
+                                            <Badge tone="danger" className={styles.dropped_badge}>
+                                                {observer.totalDropped} dropped
+                                            </Badge>
+                                        )}
+                                    </Td>
+                                    <Td>
+                                        <Badge tone={observer.errorRate > 0.01 ? 'danger' : observer.errorRate > 0 ? 'warning' : 'success'}>
+                                            {(observer.errorRate * 100).toFixed(2)}%
+                                        </Badge>
+                                    </Td>
+                                </Tr>
+                            ))}
+                        </Tbody>
+                    </Table>
                 )}
                 <p className={styles.section__note}>
-                    Observers process blockchain transactions asynchronously. High processing times or queue depths may indicate bottlenecks.
+                    Observers process transactions asynchronously. High processing times or queue depths may indicate bottlenecks.
                 </p>
-            </section>
+            </Section>
         </div>
     );
 }
