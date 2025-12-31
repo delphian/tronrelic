@@ -9,6 +9,7 @@
 
 import { Router } from 'express';
 import type { SchedulerController } from './scheduler.controller.js';
+import { requireAdmin } from '../../../api/middleware/admin-auth.js';
 
 /**
  * Create the scheduler admin router.
@@ -18,6 +19,9 @@ import type { SchedulerController } from './scheduler.controller.js';
  */
 export function createSchedulerRouter(controller: SchedulerController): Router {
     const router = Router();
+
+    // All scheduler admin routes require authentication
+    router.use(requireAdmin);
 
     // GET /status - Get status of all scheduled jobs
     router.get('/status', controller.getStatus);

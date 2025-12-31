@@ -145,15 +145,30 @@ export class SchedulerController {
      * Returns overall scheduler health including uptime and success rate.
      */
     getHealth = async (_req: Request, res: Response): Promise<void> => {
-        const health: SchedulerHealth = {
-            enabled: env.ENABLE_SCHEDULER,
-            uptime: process.uptime(),
-            totalJobsExecuted: 0,
-            successRate: 100,
-            overdueJobs: []
-        };
+        try {
+            const executionModel = this.getExecutionModel();
+            const totalJobsExecuted = await executionModel.countDocuments();
+            const successfulJobs = await executionModel.countDocuments({ status: 'success' });
+            const successRate = totalJobsExecuted > 0
+                ? Math.round((successfulJobs / totalJobsExecuted) * 100)
+                : 100;
 
-        res.json({ success: true, health });
+            const health: SchedulerHealth = {
+                enabled: env.ENABLE_SCHEDULER,
+                uptime: process.uptime(),
+                totalJobsExecuted,
+                successRate,
+                overdueJobs: []
+            };
+
+            res.json({ success: true, health });
+        } catch (error) {
+            this.logger.error({ error }, 'Failed to get scheduler health');
+            res.status(500).json({
+                success: false,
+                error: 'Failed to get scheduler health'
+            });
+        }
     };
 
     /**
