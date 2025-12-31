@@ -11,7 +11,7 @@ Frontend developers joining the TronRelic project who need to quickly understand
 TronRelic's frontend follows strict architectural patterns that solve specific problems:
 
 - **SSR + Live Updates eliminates loading flash** - Components render fully on the server with real data, then hydrate for interactivity and WebSocket updates. Users see content immediately, not loading spinners.
-- **Feature-based organization prevents code sprawl** - Without clear boundaries, component files scatter across generic directories, making features hard to locate and maintain
+- **Module-based organization prevents code sprawl** - Without clear boundaries, component files scatter across generic directories, making domains hard to locate and maintain
 - **UI styling system enables consistency** - The three-layer design token system and CSS Modules prevent visual fragmentation and naming collisions across components
 - **Container queries enable plugin flexibility** - Viewport media queries fail when components render in sidebars, modals, or plugin contexts with constrained widths
 - **Design system consistency prevents visual fragmentation** - Ad-hoc color values and spacing create disjointed interfaces that feel unprofessional
@@ -36,24 +36,28 @@ Following these patterns ensures your work integrates seamlessly and remains mai
 - When loading states ARE appropriate
 - SSR + Live Updates checklist
 
-### Feature-Based Organization
+### Module-Based Organization
 
-TronRelic organizes frontend code by feature, not by file type. Each feature module contains all related components, state management, hooks, and API calls in a single directory:
+TronRelic organizes frontend code by domain module, not by file type. Each module contains all related components, state management, hooks, and API calls in a single directory:
 
 ```
-features/accounts/
-├── components/          # React components for this feature
-├── hooks/              # Feature-specific hooks
+modules/user/
+├── components/          # React components for this module
+├── hooks/              # Module-specific hooks
 ├── api/                # API client functions
+├── lib/                # Utilities and helpers
+├── types/              # TypeScript types
 ├── slice.ts            # Redux state slice
 └── index.ts            # Public API exports
 ```
 
 This structure mirrors the backend's modular architecture and keeps related code colocated for easier discovery and maintenance.
 
+**Modules vs Features:** The `modules/` directory is the primary location for new frontend code. Use `modules/` for cross-cutting domain infrastructure used across multiple routes (user identity, menu system, address labels). The legacy `features/` directory contains page-specific code that serves limited routes and can be used for very small features that don't warrant a full module.
+
 **See [frontend-architecture.md](./frontend-architecture.md) for complete details on:**
 - Full directory structure and organization
-- Feature module patterns and conventions
+- Modules vs features decision matrix
 - Import patterns and best practices
 - Component folder organization (folder-based vs flat)
 - Migration guidance from old structures
@@ -153,7 +157,7 @@ export default function DashboardPage() {
 
 ### Creating a New Component
 
-1. Create component folder: `features/my-feature/components/MyComponent/`
+1. Create component folder: `modules/my-module/components/MyComponent/`
 2. Add files:
    - `MyComponent.tsx` (implementation)
    - `MyComponent.module.scss` (styles)
@@ -219,52 +223,61 @@ Reserve viewport media queries (`@media`) exclusively for global layout changes 
 | Primary button | `.btn .btn--primary` | `<button className="btn btn--primary btn--md">` |
 | Status badge | `.badge .badge--success` | `<span className="badge badge--success">` |
 
-### Feature Export Pattern
+### Module Export Pattern
 
-Every feature exports its public API through `index.ts`:
+Every module exports its public API through `index.ts`:
 
 ```typescript
-// features/accounts/index.ts
+// modules/user/index.ts
 
 // Components
-export { AccountSummary } from './components/AccountSummary';
-export { BookmarkPanel } from './components/BookmarkPanel';
+export { UserIdentityProvider } from './components/UserIdentityProvider';
+export { WalletButton } from './components/WalletButton';
+export { ProfilePage } from './components/Profile';
 
 // Redux slice
-export { default as walletReducer } from './slice';
+export { default as userReducer } from './slice';
 export * from './slice';
 
 // Hooks
 export { useWallet } from './hooks/useWallet';
 ```
 
-Import from the feature root, not individual files:
+Import from the module root, not individual files:
 
 ```typescript
 // Good
-import { AccountSummary, BookmarkPanel } from '../../../features/accounts';
+import { WalletButton, useWallet } from '../../../modules/user';
 
 // Bad - bypasses public API
-import { BookmarkPanel } from '../../../features/accounts/components/BookmarkPanel';
+import { WalletButton } from '../../../modules/user/components/WalletButton/WalletButton';
 ```
 
-## Available Features
+## Available Modules and Features
 
-### Core Features
+### Modules (Primary Pattern)
+
+Use `modules/` for cross-cutting domain infrastructure:
+
+| Module | Purpose | Key Components |
+|--------|---------|----------------|
+| **user** | User identity, wallet management, profiles | UserIdentityProvider, WalletButton, ProfilePage, useWallet |
+| **menu** | Navigation menu system | PriorityNav, useMenuConfig |
+| **address-labels** | Address labeling and display | AddressLabel |
+| **scheduler** | Scheduler monitoring UI | SchedulerMonitor |
+
+### Features (Legacy/Small Features)
+
+Use `features/` for page-specific code or small features that don't warrant a full module:
 
 | Feature | Purpose | Key Components |
 |---------|---------|----------------|
-| **accounts** | Account management, wallet tracking, bookmarks | AccountSummary, BookmarkPanel, useWallet |
-| **transactions** | Transaction feed, details, filtering | TransactionFeed, TransactionDetails, TransactionFilter |
-| **whales** | Whale transaction tracking and analytics | WhaleDashboard |
-| **blockchain** | Blockchain sync status and network metrics | (state only) |
-
-### Supporting Features
-
-| Feature | Purpose | Key Components |
-|---------|---------|----------------|
-| **charts** | Reusable chart components | LineChart, EnergyPriceChart, NetworkMetricsChart |
-| **system** | System monitoring and administration | SystemOverview, BlockchainMonitor, MarketMonitor |
+| **accounts** | Account management, bookmarks | AccountSummary, BookmarkPanel |
+| **transactions** | Transaction feed, details, filtering | TransactionFeed, TransactionDetails |
+| **whales** | Whale transaction tracking | WhaleDashboard |
+| **blockchain** | Blockchain sync status | (state only) |
+| **charts** | Reusable chart components | LineChart, EnergyPriceChart |
+| **system** | System monitoring and administration | SystemOverview, BlockchainMonitor |
 | **realtime** | WebSocket connection and live data sync | useRealtimeStatus, useSocketSubscription |
 | **ui-state** | Global UI state (modals, toasts, loading) | (state only) |
 
@@ -288,7 +301,7 @@ Before committing any UI component or plugin page, verify:
 ## Further Reading
 
 **Detailed documentation:**
-- [frontend-architecture.md](./frontend-architecture.md) - Complete file organization and feature module patterns
+- [frontend-architecture.md](./frontend-architecture.md) - Complete file organization, modules vs features decision matrix, and import patterns
 - [react.md](./react/react.md) - React component architecture with context providers, hooks, and server/client component patterns
 - [ui.md](./ui/ui.md) - UI system overview with design tokens, CSS Modules, and styling standards
 - [ui-component-styling.md](./ui/ui-component-styling.md) - Comprehensive styling guide with code examples, utility classes, and accessibility patterns
