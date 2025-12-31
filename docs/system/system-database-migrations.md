@@ -279,7 +279,7 @@ const removed = await tracker.removeOrphanedPending(discovered);
 The system provides a web-based admin interface at `/system/database` and REST API endpoints for migration management.
 
 **Admin UI location:**
-`apps/frontend/app/(dashboard)/system/database/page.tsx`
+`apps/frontend/app/(core)/system/database/page.tsx`
 
 **REST API controller:**
 `apps/backend/src/modules/migrations/migrations.controller.ts`

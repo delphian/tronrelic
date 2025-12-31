@@ -127,4 +127,4 @@ fetch(`${apiUrl}/admin/pages`, { ... })
 **Related files:**
 - `apps/frontend/lib/api-url.ts` - Helper function definitions
 - `apps/frontend/next.config.mjs` - Next.js rewrite rules
-- `apps/frontend/app/(dashboard)/system/pages/**/*.tsx` - Example hardcoded usage
+- `apps/frontend/app/(core)/system/pages/**/*.tsx` - Example hardcoded usage

@@ -539,7 +539,7 @@ Plugins often need secure settings screens without touching core admin code. Giv
 - `apps/backend/src/api/routes/plugins.routes.ts` – HTTP endpoint that surfaces active plugin manifests to the frontend.
 
 ### Frontend infrastructure
-- `apps/frontend/app/(dashboard)/system/plugins/page.tsx` – admin UI for plugin management.
+- `apps/frontend/app/(core)/system/plugins/page.tsx` – admin UI for plugin management.
 - `apps/frontend/scripts/generate-frontend-plugin-registry.mjs` – generator that keeps the lazy import map in sync with the filesystem.
 - `apps/frontend/components/plugins/PluginLoader.tsx` – React component that fetches manifests and mounts frontend plugins.
 

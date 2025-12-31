@@ -516,7 +516,7 @@ context.websocket.onSubscribe(async (socket, payload) => {
 - `apps/backend/src/loaders/plugins.ts` - Manager injection during plugin load
 
 **Frontend:**
-- `apps/frontend/app/(dashboard)/system/websockets/page.tsx` - Admin monitoring UI
+- `apps/frontend/app/(core)/system/websockets/page.tsx` - Admin monitoring UI
 - `packages/plugins/whale-alerts/src/frontend/WhaleAlertsToastHandler.tsx` - Example client implementation showing direct Socket.IO event handling with toast notifications
 
 **Example plugin:**

@@ -1,7 +1,7 @@
 import { notFound, redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 import { Page } from '../../components/layout';
-import { PluginPageHandler } from '../../components/PluginPageHandler';
+import { PluginPageWithZones } from '../../components/PluginPageWithZones';
 import { getServerSideApiUrlWithPath } from '../../lib/api-url';
 import styles from './page.module.css';
 
@@ -171,5 +171,6 @@ export default async function UnifiedPage({ params }: { params: Promise<IPagePar
     }
 
     // Not a custom page, let plugin handler check the registry
-    return <PluginPageHandler slug={slug} />;
+    // PluginPageWithZones wraps with widget zones for cross-plugin content injection
+    return <PluginPageWithZones slug={slug} />;
 }

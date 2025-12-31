@@ -83,7 +83,7 @@ Two systems consume the registry:
 - Renders clickable navigation links
 - Respects adminOnly and other access controls
 
-**Dynamic Route Handler** (`apps/frontend/app/(dashboard)/[...plugin]/page.tsx`):
+**Dynamic Route Handler** (`apps/frontend/app/(core)/[...plugin]/page.tsx`):
 - Catches all plugin page requests via Next.js catch-all route
 - Looks up page configuration by URL path
 - Renders the associated React component
@@ -614,7 +614,7 @@ await context.menuService.create({
 1. Confirm page `path` in frontend matches menu item `url` in backend
 2. Check `pages` array includes the route
 3. Verify plugin registered successfully (check React DevTools)
-4. Ensure dynamic route exists at `app/(dashboard)/[...plugin]/page.tsx`
+4. Ensure dynamic route exists at `app/(core)/[...plugin]/page.tsx`
 5. Look for path lookup errors in console
 6. Verify frontend plugin has `manifest.frontend === true`
 
@@ -753,7 +753,7 @@ Core implementation files:
 
 - **UI integration**:
   - `apps/frontend/components/layout/NavBar.tsx` - Navigation with WebSocket menu updates
-  - `apps/frontend/app/(dashboard)/[...plugin]/page.tsx` - Dynamic route handler
+  - `apps/frontend/app/(core)/[...plugin]/page.tsx` - Dynamic route handler
 
 - **Example plugins**:
   - `packages/plugins/resource-tracking/` - Uses IMenuService with hierarchical menus
@@ -882,7 +882,7 @@ For developers working on the plugin system itself, here are the key files:
 - `apps/frontend/lib/pluginRegistry.ts` - Plugin page registry singleton
 - `apps/frontend/components/plugins/PluginLoader.tsx` - Plugin loader with registry integration
 - `apps/frontend/components/layout/NavBar.tsx` - Navigation with WebSocket menu updates
-- `apps/frontend/app/(dashboard)/[...plugin]/page.tsx` - Dynamic route handler
+- `apps/frontend/app/(core)/[...plugin]/page.tsx` - Dynamic route handler
 - `apps/frontend/components/plugins/plugins.generated.ts` - Auto-generated plugin loaders
 
 ### Example Plugins

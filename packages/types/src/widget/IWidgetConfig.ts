@@ -7,6 +7,8 @@
 export const WIDGET_ZONES = {
     MAIN_BEFORE: 'main-before',
     MAIN_AFTER: 'main-after',
+    PLUGIN_CONTENT_BEFORE: 'plugin-content:before',
+    PLUGIN_CONTENT_AFTER: 'plugin-content:after',
     SIDEBAR_TOP: 'sidebar-top',
     SIDEBAR_BOTTOM: 'sidebar-bottom'
 } as const;
@@ -54,8 +56,10 @@ export interface IWidgetConfig {
      * Target zone where the widget should render.
      *
      * Standard zones:
-     * - 'main-before' - Above page content
-     * - 'main-after' - Below page content
+     * - 'main-before' - Above core page content (dashboard layout)
+     * - 'main-after' - Below core page content (dashboard layout)
+     * - 'plugin-content:before' - Above plugin page content (cross-plugin injection)
+     * - 'plugin-content:after' - Below plugin page content (cross-plugin injection)
      * - 'sidebar-top' - Top of sidebar (if present)
      * - 'sidebar-bottom' - Bottom of sidebar
      *
@@ -103,6 +107,10 @@ export interface IWidgetConfig {
      * Called during server-side rendering to provide initial widget data.
      * The returned data is serialized and passed to the frontend component.
      *
+     * Receives route context to enable widgets to fetch data based on the
+     * current page. For example, a widget on `/u/[address]` can access
+     * the address parameter to fetch profile-specific data.
+     *
      * This function should:
      * - Return cached or precomputed data (avoid heavy computation)
      * - Handle errors gracefully (return empty data rather than throwing)
@@ -110,22 +118,29 @@ export interface IWidgetConfig {
      *
      * The data can be any JSON-serializable structure.
      *
+     * @param route - Current URL path (e.g., '/u/TXyz123...')
+     * @param params - Route parameters extracted from the path (e.g., { address: 'TXyz123...' })
      * @returns Promise resolving to widget data (JSON-serializable)
      *
      * @example
      * ```typescript
-     * fetchData: async () => {
-     *     try {
-     *         const posts = await database.findOne('reddit_cache', {});
-     *         return { posts: posts?.items || [] };
-     *     } catch (error) {
-     *         logger.error('Widget data fetch failed:', error);
-     *         return { posts: [] };
+     * // Context-aware widget that uses route params
+     * fetchData: async (route, params) => {
+     *     const address = params.address;
+     *     if (address) {
+     *         return await getProfileData(address);
      *     }
+     *     return { items: [] };
+     * }
+     *
+     * // Simple widget that ignores context
+     * fetchData: async () => {
+     *     const posts = await database.findOne('reddit_cache', {});
+     *     return { posts: posts?.items || [] };
      * }
      * ```
      */
-    fetchData: () => Promise<unknown>;
+    fetchData: (route: string, params: Record<string, string>) => Promise<unknown>;
 
     /**
      * Plugin ID (set automatically by widget service).

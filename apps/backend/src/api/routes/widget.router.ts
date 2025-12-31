@@ -19,12 +19,13 @@ export function widgetRouter(): Router {
     const widgetService = WidgetService.getInstance(logger);
 
     /**
-     * GET /api/widgets?route=<path>
+     * GET /api/widgets?route=<path>&params=<json>
      *
      * Fetch widgets for a specific route with pre-fetched data.
      *
      * Query params:
-     * - route: URL path to match against widget routes (e.g., '/', '/dashboard')
+     * - route: URL path to match against widget routes (e.g., '/', '/u/TXyz...')
+     * - params: Optional JSON-encoded route parameters (e.g., '{"address":"TXyz..."}')
      *
      * Returns:
      * {
@@ -43,10 +44,14 @@ export function widgetRouter(): Router {
      * @example
      * GET /api/widgets?route=/
      * Returns widgets registered for the homepage
+     *
+     * @example
+     * GET /api/widgets?route=/u/TXyz123&params={"address":"TXyz123"}
+     * Returns widgets for profile page with address context
      */
     router.get('/', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
         try {
-            const { route } = req.query;
+            const { route, params: paramsJson } = req.query;
 
             if (typeof route !== 'string' || !route) {
                 res.status(400).json({
@@ -55,7 +60,20 @@ export function widgetRouter(): Router {
                 return;
             }
 
-            const widgets = await widgetService.fetchWidgetsForRoute(route);
+            // Parse optional params from JSON
+            let params: Record<string, string> = {};
+            if (typeof paramsJson === 'string' && paramsJson) {
+                try {
+                    params = JSON.parse(paramsJson);
+                } catch {
+                    res.status(400).json({
+                        error: 'Invalid JSON in `params` query parameter.'
+                    });
+                    return;
+                }
+            }
+
+            const widgets = await widgetService.fetchWidgetsForRoute(route, params);
 
             res.json({ widgets });
         } catch (error) {

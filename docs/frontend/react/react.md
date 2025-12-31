@@ -52,7 +52,7 @@ User visits page → See content immediately → WebSocket connects → Live upd
 **Step 1: Server component fetches data**
 
 ```typescript
-// app/(dashboard)/markets/page.tsx (Server Component - no 'use client')
+// app/(core)/markets/page.tsx (Server Component - no 'use client')
 import { getApiUrl } from '@/lib/config';
 import { MarketDashboard } from '../../../features/markets';
 
@@ -340,7 +340,7 @@ Next.js 14 App Router supports two component types with different capabilities a
 **Server component example:**
 
 ```typescript
-// app/(dashboard)/markets/page.tsx (no 'use client' directive)
+// app/(core)/markets/page.tsx (no 'use client' directive)
 import { getApiUrl } from '@/lib/config';
 import { MarketDashboard } from '../../../features/markets';
 

@@ -47,7 +47,7 @@ function createWidget(overrides: Partial<IWidgetConfig> = {}): IWidgetConfig {
         id: 'test-widget',
         zone: 'main-after',
         routes: ['/'],
-        fetchData: async () => ({ test: true }),
+        fetchData: async (_route: string, _params: Record<string, string>) => ({ test: true }),
         ...overrides
     };
 }
@@ -135,7 +135,15 @@ describe('WidgetService', () => {
         });
 
         it('should not warn on valid zones', async () => {
-            for (const zone of ['main-before', 'main-after', 'sidebar-top', 'sidebar-bottom']) {
+            const validZones = [
+                'main-before',
+                'main-after',
+                'plugin-content:before',
+                'plugin-content:after',
+                'sidebar-top',
+                'sidebar-bottom'
+            ];
+            for (const zone of validZones) {
                 await service.register(
                     createWidget({ id: `widget-${zone}`, zone: zone as any }),
                     'plugin'
@@ -198,11 +206,11 @@ describe('WidgetService', () => {
                 'plugin'
             );
 
-            const homeWidgets = await service.fetchWidgetsForRoute('/');
+            const homeWidgets = await service.fetchWidgetsForRoute('/', {});
             expect(homeWidgets).toHaveLength(1);
             expect(homeWidgets[0].id).toBe('home');
 
-            const marketWidgets = await service.fetchWidgetsForRoute('/markets');
+            const marketWidgets = await service.fetchWidgetsForRoute('/markets', {});
             expect(marketWidgets).toHaveLength(1);
             expect(marketWidgets[0].id).toBe('markets');
         });
@@ -213,9 +221,9 @@ describe('WidgetService', () => {
                 'plugin'
             );
 
-            const homeWidgets = await service.fetchWidgetsForRoute('/');
-            const marketWidgets = await service.fetchWidgetsForRoute('/markets');
-            const randomWidgets = await service.fetchWidgetsForRoute('/random/page');
+            const homeWidgets = await service.fetchWidgetsForRoute('/', {});
+            const marketWidgets = await service.fetchWidgetsForRoute('/markets', {});
+            const randomWidgets = await service.fetchWidgetsForRoute('/random/page', {});
 
             expect(homeWidgets).toHaveLength(1);
             expect(marketWidgets).toHaveLength(1);
@@ -232,7 +240,7 @@ describe('WidgetService', () => {
                 'plugin'
             );
 
-            const widgets = await service.fetchWidgetsForRoute('/');
+            const widgets = await service.fetchWidgetsForRoute('/', {});
 
             expect(widgets).toHaveLength(1);
             expect(widgets[0].id).toBe('good');
@@ -255,7 +263,7 @@ describe('WidgetService', () => {
             );
 
             const start = Date.now();
-            const widgets = await service.fetchWidgetsForRoute('/');
+            const widgets = await service.fetchWidgetsForRoute('/', {});
             const elapsed = Date.now() - start;
 
             expect(widgets).toHaveLength(0);
@@ -283,7 +291,7 @@ describe('WidgetService', () => {
                 'plugin'
             );
 
-            const widgets = await service.fetchWidgetsForRoute('/');
+            const widgets = await service.fetchWidgetsForRoute('/', {});
 
             // main-after comes before main-before alphabetically ('a' < 'b')
             // Within main-after: order 10 (a) comes before order 20 (b)
@@ -296,7 +304,7 @@ describe('WidgetService', () => {
                 'plugin'
             );
 
-            const widgets = await service.fetchWidgetsForRoute('/other');
+            const widgets = await service.fetchWidgetsForRoute('/other', {});
             expect(widgets).toEqual([]);
         });
 
@@ -312,7 +320,7 @@ describe('WidgetService', () => {
                 'plugin'
             );
 
-            const widgets = await service.fetchWidgetsForRoute('/');
+            const widgets = await service.fetchWidgetsForRoute('/', {});
 
             expect(widgets).toHaveLength(0);
             expect(mockLogger.error).toHaveBeenCalledWith(
@@ -332,7 +340,7 @@ describe('WidgetService', () => {
                 'test-plugin'
             );
 
-            const widgets = await service.fetchWidgetsForRoute('/');
+            const widgets = await service.fetchWidgetsForRoute('/', {});
 
             expect(widgets[0]).toEqual({
                 id: 'data-widget',
@@ -342,6 +350,23 @@ describe('WidgetService', () => {
                 title: 'Test Widget',
                 data: testData
             });
+        });
+
+        it('should pass route and params to fetchData', async () => {
+            const fetchDataSpy = vi.fn().mockResolvedValue({ received: true });
+            await service.register(
+                createWidget({
+                    id: 'context-widget',
+                    routes: ['/u/TXyz123'],
+                    fetchData: fetchDataSpy
+                }),
+                'plugin'
+            );
+
+            const params = { address: 'TXyz123' };
+            await service.fetchWidgetsForRoute('/u/TXyz123', params);
+
+            expect(fetchDataSpy).toHaveBeenCalledWith('/u/TXyz123', params);
         });
     });
 

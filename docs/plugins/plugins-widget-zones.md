@@ -32,14 +32,20 @@ Benefits of SSR-based approach:
 
 ## Zone Naming Convention
 
-Standard zones available in dashboard layout:
+Standard zones available in layouts:
 
 | Zone | Position | Description |
 |------|----------|-------------|
-| `main-before` | Above page content | Widgets that provide context before the main content |
-| `main-after` | Below page content | Widgets that complement or extend the main content |
+| `main-before` | Above page content | Widgets on core pages (dashboard layout) |
+| `main-after` | Below page content | Widgets on core pages (dashboard layout) |
+| `plugin-content:before` | Above plugin page | Widgets on plugin pages (cross-plugin injection) |
+| `plugin-content:after` | Below plugin page | Widgets on plugin pages (cross-plugin injection) |
 | `sidebar-top` | Top of sidebar | High-priority sidebar widgets (future) |
 | `sidebar-bottom` | Bottom of sidebar | Secondary sidebar widgets (future) |
+
+**Core pages vs plugin pages:**
+- Core pages (`/`, `/markets`, `/system/*`) use `main-before` and `main-after` zones from the `(core)` layout
+- Plugin pages (`/whales`, `/tron-memo-tracker`, etc.) use `plugin-content:before` and `plugin-content:after` zones from the `PluginPageWithZones` wrapper
 
 **Zone validation:** The widget service validates zone names during registration. Unknown zones trigger a warning log but don't prevent registration, allowing future zone additions without breaking existing plugins.
 
@@ -84,9 +90,11 @@ interface IWidgetConfig {
     order?: number;              // Sort order (default: 100)
     title?: string;              // Optional heading
     description?: string;        // Admin UI description
-    fetchData: () => Promise<unknown>;  // SSR data fetcher
+    fetchData: (route: string, params: Record<string, string>) => Promise<unknown>;
 }
 ```
+
+The `fetchData` function receives the current route and extracted parameters, enabling context-aware widgets. For example, a widget on `/u/[address]` receives `{ address: 'TXyz...' }` in params.
 
 ### Route Matching
 
@@ -103,14 +111,16 @@ routes: []
 
 ### Data Fetching Best Practices
 
-The `fetchData()` function should:
+The `fetchData(route, params)` function should:
 - Return cached or precomputed data (avoid heavy computation)
 - Handle errors gracefully (return empty data rather than throwing)
 - Complete quickly (< 100ms recommended, 5s timeout enforced)
 - Return JSON-serializable data
+- Use route/params for context-aware data fetching
 
 ```typescript
-fetchData: async () => {
+// Simple widget that ignores context
+fetchData: async (route, params) => {
     try {
         const posts = await database.findOne('reddit_cache', {});
         return { posts: posts?.items || [] };
@@ -119,6 +129,16 @@ fetchData: async () => {
         return { posts: [] };  // Return empty data on error
     }
 }
+
+// Context-aware widget that uses route params
+fetchData: async (route, params) => {
+    const address = params.address;
+    if (address) {
+        // Fetch data specific to this profile
+        return await getProfileRelatedData(address);
+    }
+    return { items: [] };
+}
 ```
 
 ## Frontend: Automatic Widget Rendering
@@ -126,25 +146,29 @@ fetchData: async () => {
 Widget zones are integrated into layouts and automatically render registered widgets for the current route:
 
 ```tsx
-// In apps/frontend/app/(dashboard)/layout.tsx
+// In apps/frontend/app/(core)/layout.tsx
 import { headers } from 'next/headers';
 
-export default async function DashboardLayout({ children }) {
+export default async function CoreLayout({ children }) {
     const headersList = await headers();
     const pathname = headersList.get('x-pathname') || '/';
-    const widgets = await fetchWidgetsForRoute(pathname);
+    const params: Record<string, string> = {};  // Core pages use empty params
+
+    const widgets = await fetchWidgetsForRoute(pathname, params);
 
     return (
-        <div className="dashboard-layout">
-            <WidgetZone name="main-before" widgets={widgets} />
+        <div className="core-layout">
+            <WidgetZone name="main-before" widgets={widgets} route={pathname} params={params} />
             {children}
-            <WidgetZone name="main-after" widgets={widgets} />
+            <WidgetZone name="main-after" widgets={widgets} route={pathname} params={params} />
         </div>
     );
 }
 ```
 
 **Per-route support:** Next.js middleware sets an `x-pathname` header on every request, allowing layouts to fetch widgets for the actual page route—not just the layout's base path. This means widgets with `routes: ['/system/users']` appear only on that specific page.
+
+**Route parameters:** The `params` object contains extracted route parameters (e.g., `{ address: 'TXyz...' }` for `/u/[address]`). Core pages pass empty params; dynamic routes like profile pages extract and pass their specific parameters.
 
 The `WidgetZone` component:
 1. Filters widgets by zone name
@@ -180,7 +204,7 @@ export const redditBackendPlugin = definePlugin({
             order: 10,
             title: 'Community Buzz',
             description: 'Latest Reddit discussions about TRON',
-            fetchData: async () => {
+            fetchData: async (route, params) => {
                 const cache = await context.database.findOne('feed_cache', {});
                 return {
                     posts: cache?.posts || [],
@@ -220,6 +244,60 @@ export const redditManifest: IPluginManifest = {
 };
 ```
 
+## Cross-Plugin Widget Injection
+
+Plugins can inject widgets into other plugin pages using the `plugin-content:before` and `plugin-content:after` zones. This enables plugin collaboration without code dependencies.
+
+### Example: Memo Tracker Widget on Whale Alerts Page
+
+The memo-tracker plugin can display relevant memos on the whale-alerts page:
+
+```typescript
+// In memo-tracker plugin backend init()
+await context.widgetService.register({
+    id: 'memo-tracker:whale-context',
+    zone: 'plugin-content:after',
+    routes: ['/whales'],  // Target the whale-alerts plugin page
+    order: 10,
+    title: 'Related Memos',
+    description: 'Transaction memos from recent whale activity',
+    fetchData: async (route, params) => {
+        // Fetch memos related to whale transactions
+        const memos = await memoService.getRecentWhaleRelated(5);
+        return { memos, count: memos.length };
+    }
+}, memoTrackerManifest.id);
+```
+
+The widget appears below the whale-alerts page content without any changes to the whale-alerts plugin code.
+
+### How It Works
+
+The `PluginPageWithZones` server component wraps all plugin pages:
+
+```tsx
+// apps/frontend/components/PluginPageWithZones.tsx
+export async function PluginPageWithZones({ slug }: { slug: string }) {
+    const route = slug;
+    const params: Record<string, string> = {};  // Plugin-internal param parsing is handled by the plugin
+
+    const widgets = await fetchWidgetsForRoute(route, params);
+
+    return (
+        <>
+            <WidgetZone name="plugin-content:before" widgets={widgets} route={route} params={params} />
+            <PluginPageHandler slug={slug} />
+            <WidgetZone name="plugin-content:after" widgets={widgets} route={route} params={params} />
+        </>
+    );
+}
+```
+
+This architecture means:
+- **Zero plugin code required** — Widgets appear automatically based on route matching
+- **Full SSR support** — Widget data fetched server-side, no loading flash
+- **Plugin isolation preserved** — Target plugin doesn't know about injecting plugins
+
 ## Declarative Widget Registration (Alternative)
 
 Widgets can also be registered declaratively in the plugin definition:
@@ -235,7 +313,7 @@ export const myBackendPlugin = definePlugin({
             routes: ['/'],
             order: 10,
             title: 'My Feed',
-            fetchData: async () => ({ items: [] })
+            fetchData: async (route, params) => ({ items: [] })
         }
     ],
 
@@ -302,7 +380,7 @@ export const myBackendPlugin = definePlugin({
             zone: 'main-after',
             routes: ['/'],
             order: 10,
-            fetchData: async () => ({ data: 'hello' })
+            fetchData: async (route, params) => ({ data: 'hello' })
         }, myManifest.id);
     },
 
@@ -448,7 +526,16 @@ export const widgetComponents: Record<string, ComponentType<{ data: unknown }>> 
 
 ### Creating Widget Components
 
-Widget components receive SSR-fetched data as the `data` prop. They render immediately (data is already present from SSR) and can optionally subscribe to WebSocket for live updates.
+Widget components receive SSR-fetched data as the `data` prop, plus `context`, `route`, and `params` for context-aware rendering. They render immediately (data is already present from SSR) and can optionally subscribe to WebSocket for live updates.
+
+```typescript
+interface IWidgetComponentProps {
+    data: unknown;                      // SSR-fetched data from fetchData()
+    context: IFrontendPluginContext;    // UI components, API client, WebSocket
+    route: string;                      // Current URL path (e.g., '/u/TXyz...')
+    params: Record<string, string>;     // Route parameters (e.g., { address: 'TXyz...' })
+}
+```
 
 #### Basic Widget (SSR only)
 
@@ -456,11 +543,13 @@ Widget components receive SSR-fetched data as the `data` prop. They render immed
 // packages/plugins/my-plugin/src/frontend/widgets/MyFeedWidget.tsx
 'use client';
 
+import type { IWidgetComponentProps } from '@tronrelic/types';
+
 interface FeedData {
     posts: Array<{ id: string; title: string; timestamp: string }>;
 }
 
-export function MyFeedWidget({ data }: { data: unknown }) {
+export function MyFeedWidget({ data, context, route, params }: IWidgetComponentProps) {
     const feedData = data as FeedData;
 
     if (!feedData?.posts?.length) {
@@ -703,13 +792,16 @@ Planned improvements to the widget system:
 - Backend widget service with in-memory registry
 - SSR data fetching with timeout protection (5s limit via Promise.race)
 - Route-based widget filtering
-- Zone-based rendering in dashboard layout
+- Zone-based rendering in dashboard layout (`main-before`, `main-after`)
+- Plugin page zones via `PluginPageWithZones` wrapper (`plugin-content:before`, `plugin-content:after`)
+- Cross-plugin widget injection without target plugin code changes
 - Declarative and imperative widget registration
 - Per-route widget support via middleware (x-pathname header)
 - Custom widget components via `registerWidgetComponent()`
 - Zone validation with warning logging for unknown zones
 - JSON serialization validation for widget data
 - Admin authentication for introspection endpoints (`/api/widgets/all`, `/api/widgets/zones/:zone`)
+- Context-aware widgets via `fetchData(route, params)` and `IWidgetComponentProps.route/params`
 
 ### 🚧 Planned
 
@@ -725,4 +817,6 @@ widgets: [{
 
 **User Customization** - Allow users to hide/reorder widgets via UI
 
-**More Zones** - Expand to header, footer, and page-specific zones
+**Sidebar Zones** - Enable `sidebar-top` and `sidebar-bottom` zones when sidebar component is added
+
+**Profile Page Zones** - Add widget zones to `/u/[address]` user profile pages
