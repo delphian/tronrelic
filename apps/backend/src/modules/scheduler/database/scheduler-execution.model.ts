@@ -1,42 +1,23 @@
+/**
+ * @fileoverview MongoDB model for scheduler job execution history.
+ *
+ * Provides observability into job timing, success/failure status, and error details.
+ * Records are automatically deleted after 30 days via TTL index.
+ *
+ * @module modules/scheduler/database/scheduler-execution.model
+ */
+
 import mongoose, { Schema, Document } from 'mongoose';
 
 /**
- * SchedulerExecutionDoc
+ * Scheduler job execution record interface.
  *
- * MongoDB document for tracking scheduler job execution history.
- * Provides observability into job timing, success/failure status, and error details.
- *
- * **Schema Fields:**
- * - `jobName` - Job identifier matching SchedulerConfigModel
- * - `startedAt` - When job execution began
- * - `completedAt` - When job finished (null if still running)
- * - `duration` - Execution time in milliseconds (null if still running)
- * - `status` - Execution outcome: "running" | "success" | "failed"
- * - `error` - Error message if status is "failed"
- *
- * **Usage:**
- * The SchedulerService creates an execution record when a job starts,
- * then updates it with completion status. SystemMonitorService queries
- * this collection to show real execution history instead of hardcoded stubs.
- *
- * **Retention:**
- * Consider adding a TTL index to automatically expire old execution records
- * after 30 days to prevent unbounded collection growth.
- *
- * @example
- * ```typescript
- * const execution = await SchedulerExecutionModel.create({
- *   jobName: 'markets:refresh',
- *   startedAt: new Date(),
- *   status: 'running'
- * });
- * // ... job executes ...
- * await execution.updateOne({
- *   completedAt: new Date(),
- *   duration: Date.now() - execution.startedAt.getTime(),
- *   status: 'success'
- * });
- * ```
+ * @property jobName - Job identifier matching SchedulerConfigModel
+ * @property startedAt - When job execution began
+ * @property completedAt - When job finished (null if still running)
+ * @property duration - Execution time in milliseconds (null if still running)
+ * @property status - Execution outcome: "running" | "success" | "failed"
+ * @property error - Error message if status is "failed"
  */
 export interface ISchedulerExecution {
     jobName: string;
@@ -49,7 +30,7 @@ export interface ISchedulerExecution {
 
 /**
  * Plain field interface for SchedulerExecution documents.
- * Use this when working with `.lean()` queries to avoid type mismatches with Mongoose Document types.
+ * Use this when working with `.lean()` queries to avoid type mismatches.
  */
 export type ISchedulerExecutionFields = ISchedulerExecution;
 

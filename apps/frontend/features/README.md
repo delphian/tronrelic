@@ -1,6 +1,20 @@
-# Frontend Feature Modules
+# Frontend Features (Legacy Directory)
+
+> **Note:** This is the legacy location for frontend domain code. New code should be placed in `modules/` instead. The `features/` directory remains for page-specific code and very small features that don't warrant a full module. See [frontend-architecture.md](../../../docs/frontend/frontend-architecture.md) for the modules vs features decision matrix.
 
 This directory contains feature-based modules following a consistent structure that mirrors the backend's modular architecture.
+
+## When to Use Features vs Modules
+
+**Use `modules/` (primary pattern) when:**
+- Code is used across multiple unrelated routes
+- Code wraps the entire application (providers, identity)
+- Code manages shared state that multiple features depend on
+
+**Use `features/` (this directory) when:**
+- Code serves a specific route or set of related routes
+- Components are only used within that feature
+- The feature is too small to warrant a full module
 
 ## Why Feature-Based Structure?
 
@@ -88,6 +102,8 @@ import { blockchainReducer } from '../features/blockchain';
 ```
 
 ## Creating a New Feature
+
+> **Consider using `modules/` instead.** Before creating a new feature here, evaluate if it should be a module. If the code will be used across multiple routes or manages shared state, create it in `modules/` instead.
 
 1. **Create the feature directory**:
    ```bash

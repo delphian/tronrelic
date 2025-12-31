@@ -23,10 +23,7 @@ export function systemRouter(database: IDatabaseService) {
   router.get('/blockchain/observers', controller.getObserverStats);
   router.post('/blockchain/sync', controller.triggerBlockchainSync);
 
-  // Scheduler endpoints
-  router.get('/scheduler/status', controller.getSchedulerStatus);
-  router.get('/scheduler/health', controller.getSchedulerHealth);
-  router.patch('/scheduler/job/:jobName', controller.updateSchedulerJob);
+  // Scheduler endpoints moved to SchedulerModule (/api/admin/system/scheduler/*)
 
   // System health endpoints
   router.get('/health/database', controller.getDatabaseStatus);

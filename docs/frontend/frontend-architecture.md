@@ -2,7 +2,9 @@
 
 ## Overview
 
-The TronRelic frontend follows a **feature-based architecture** that mirrors the backend's modular structure. This approach improves maintainability, scalability, and developer experience by colocating all related code for each feature.
+The TronRelic frontend follows a **module-based architecture** that mirrors the backend's modular structure. This approach improves maintainability, scalability, and developer experience by colocating all related code for each domain.
+
+**Primary pattern:** New frontend code belongs in `modules/` for cross-cutting domain infrastructure. The legacy `features/` directory contains page-specific code and very small features that don't warrant a full module.
 
 **This document focuses on file organization and folder structure.** For styling guidance (CSS Modules, design system, component patterns), see the [Frontend Component Guide](./ui/ui-component-styling.md).
 
@@ -10,14 +12,28 @@ The TronRelic frontend follows a **feature-based architecture** that mirrors the
 
 ```
 apps/frontend/
-├── app/                          # Next.js App Router (routes, pages, layouts)
+├── app/                          # Next.js App Router (thin route wrappers)
 │   ├── (dashboard)/             # Dashboard route group
-│   ├── (marketing)/             # Marketing route group
+│   │   ├── system/users/        # Admin page → imports from modules/user
+│   │   └── ...                  # Other admin pages
+│   ├── u/[address]/             # Profile route → imports from modules/user
 │   ├── layout.tsx               # Root layout
 │   ├── page.tsx                 # Home page
 │   └── providers.tsx            # Redux & other providers
 │
-├── features/                     # Feature modules (NEW!)
+├── modules/                      # Domain modules (cross-cutting, app-wide)
+│   └── user/                    # User identity domain
+│       ├── components/          # All user-related components
+│       │   ├── admin/           # Admin components (UsersMonitor)
+│       │   ├── Profile/         # Profile page components
+│       │   └── WalletButton/    # Reusable wallet button
+│       ├── hooks/               # useWallet, useSessionTracking
+│       ├── api/                 # API client functions
+│       ├── lib/                 # Identity utilities, SSR helpers
+│       ├── slice.ts             # Redux slice
+│       └── index.ts             # Public exports
+│
+├── features/                     # Feature modules (page-specific)
 │   ├── accounts/
 │   │   ├── components/          # Account-specific components
 │   │   ├── hooks/               # Account-specific hooks
@@ -27,7 +43,7 @@ apps/frontend/
 │   ├── blockchain/
 │   ├── transactions/
 │   ├── whales/
-│   ├── system/
+│   ├── system/                  # System admin (contexts, shared components)
 │   ├── charts/
 │   ├── realtime/
 │   └── ui-state/
@@ -40,37 +56,134 @@ apps/frontend/
 │
 ├── lib/                         # Utilities and configurations
 ├── store/                       # Redux store setup
-├── hooks/                       # Global hooks (deprecated - move to features)
-└── styles/                      # Global styles
+└── hooks/                       # Global hooks (deprecated - move to modules/features)
 ```
 
-## Feature Module Pattern
+## Modules vs Features
 
-Each feature follows a consistent structure:
+The frontend uses two organizational patterns for domain code. Understanding when to use each prevents structural inconsistency.
+
+### When to Use `modules/`
+
+Use `modules/` for **cross-cutting domain infrastructure** that:
+
+- Wraps the entire application (providers, identity)
+- Is used across multiple unrelated routes
+- Contains both app-wide and page-specific components for the same domain
+- Manages shared state that multiple features depend on
+
+**Example:** The `user` module contains identity infrastructure (UserIdentityProvider wraps the app), reusable components (WalletButton used in header), page components (Profile, UsersMonitor), and shared state (Redux slice for user data).
+
+### When to Use `features/` (Legacy/Small Features)
+
+Use `features/` for **page-specific code** or **very small features** that:
+
+- Serves a specific route or set of related routes
+- Doesn't wrap the application
+- Contains components only used within that feature
+- Has minimal cross-feature dependencies
+- Is too small to warrant a full module
+
+**Example:** The `system` feature contains admin monitoring components (BlockchainMonitor) and the SystemAuthContext—all specific to `/system/*` admin routes. Small utilities like `ui-state` that only manage Redux state without components are also appropriate for `features/`.
+
+**Note:** This is the legacy pattern. When adding significant new functionality, prefer creating a module in `modules/` instead.
+
+### Decision Matrix
+
+| Criteria | Use `modules/` | Use `features/` |
+|----------|---------------|-----------------|
+| Wraps entire app | Yes | No |
+| Used across unrelated routes | Yes | No |
+| Single domain, multiple concerns (admin + public) | Yes | No |
+| Page-specific components only | No | Yes |
+| Provides contexts for limited routes | No | Yes |
+
+## Thin Route Wrappers
+
+Routes in `app/` should be minimal importers, not implementation containers. The actual components live in `modules/` or `features/`.
+
+### Why Thin Wrappers
+
+- **Domain cohesion** - All user-related code lives in `modules/user/`, not scattered across route directories
+- **Easy discovery** - Find all user components in one place, regardless of which route uses them
+- **Cleaner routes** - `app/` directory is purely about URL structure, not implementation
+- **Simpler refactoring** - Move routes without moving component logic
+
+### Correct Pattern
+
+```typescript
+// app/(dashboard)/system/users/page.tsx - THIN WRAPPER
+'use client';
+
+import { useSystemAuth } from '../../../../features/system';
+import { UsersMonitor } from '../../../../modules/user';
+
+export default function SystemUsersPage() {
+    const { token } = useSystemAuth();
+    return <UsersMonitor token={token} />;
+}
+```
+
+```typescript
+// app/u/[address]/page.tsx - THIN WRAPPER
+import { ProfilePage } from '../../../modules/user/components/Profile/ProfilePage';
+
+export default async function Page({ params }) {
+    const { address } = await params;
+    return <ProfilePage address={address} />;
+}
+```
+
+### Incorrect Pattern
+
+```typescript
+// app/(dashboard)/system/users/page.tsx - TOO MUCH IMPLEMENTATION
+'use client';
+
+import { useState, useEffect } from 'react';
+// ... 500 lines of component code that should be in modules/user/
+```
+
+### When Colocation in `app/` Is Acceptable
+
+Use `_components/` folders in `app/` routes only for:
+
+- Truly route-specific UI that doesn't belong to any domain
+- Layout variations specific to a route group
+- One-off components with no reuse potential
+
+For domain code (user, accounts, transactions), always use `modules/` or `features/`.
+
+## Module Pattern
+
+Each module follows a consistent structure:
 
 ### File Organization
 
 ```
-features/accounts/
+modules/user/
 ├── components/                      # React components
-│   ├── AccountSummary/
-│   │   ├── AccountSummary.tsx
-│   │   ├── AccountSummary.module.css  # Component-specific styles
-│   │   └── index.ts                    # Barrel export
-│   ├── BookmarkPanel/
-│   │   ├── BookmarkPanel.tsx
-│   │   ├── BookmarkPanel.module.css
+│   ├── Profile/
+│   │   ├── ProfilePage.tsx
+│   │   ├── Profile.module.css       # Component-specific styles
+│   │   └── index.ts                 # Barrel export
+│   ├── WalletButton/
+│   │   ├── WalletButton.tsx
+│   │   ├── WalletButton.module.scss
 │   │   └── index.ts
-│   └── WalletCard/
-│       ├── WalletCard.tsx
-│       ├── WalletCard.module.css
-│       └── index.ts
-├── hooks/                           # Feature-specific hooks
-│   └── useWallet.ts
+│   └── admin/                       # Admin-specific components
+│       └── UsersMonitor/
+├── hooks/                           # Module-specific hooks
+│   ├── useWallet.ts
+│   └── useSessionTracking.ts
 ├── api/                             # API client functions
-│   └── accountApi.ts
+│   └── client.ts
+├── lib/                             # Utilities and helpers
+│   ├── identity.ts
+│   └── server.ts
+├── types/                           # TypeScript types
+│   └── user.types.ts
 ├── slice.ts                         # Redux state slice
-├── types.ts                         # TypeScript types (optional)
 └── index.ts                         # Public API exports
 ```
 
@@ -78,26 +191,31 @@ features/accounts/
 
 ### index.ts Pattern
 
-Every feature exports its public API through `index.ts`:
+Every module exports its public API through `index.ts`:
 
 ```typescript
 /**
- * Accounts Feature Module
+ * User Module
  *
- * Handles account management, wallet tracking, and bookmarks
+ * Handles user identity, wallet management, profiles, and session tracking
  */
 
 // Components
-export { AccountSummary } from './components/AccountSummary';
-export { BookmarkPanel } from './components/BookmarkPanel';
-export { WalletCard } from './components/WalletCard';
+export { UserIdentityProvider } from './components/UserIdentityProvider';
+export { WalletButton } from './components/WalletButton';
+export { ProfilePage } from './components/Profile';
+export { UsersMonitor } from './components/admin';
 
 // Redux slice
-export { default as walletReducer } from './slice';
+export { default as userReducer } from './slice';
 export * from './slice';
 
 // Hooks
 export { useWallet } from './hooks/useWallet';
+export { useSessionTracking } from './hooks/useSessionTracking';
+
+// Types
+export type { User, UserPreferences } from './types';
 ```
 
 ## Import Patterns
@@ -105,23 +223,24 @@ export { useWallet } from './hooks/useWallet';
 ### From App Pages
 
 ```typescript
-// Recommended: Import from feature index
-import { AccountSummary, BookmarkPanel } from '../../../features/accounts';
-import { TransactionFeed } from '../../../features/transactions';
+// Recommended: Import from module index
+import { WalletButton, useWallet } from '../../../modules/user';
+import { AddressLabel } from '../../../modules/address-labels';
 
-// Alternative: Import specific component
-import { LineChart } from '../../../features/charts/components/LineChart';
+// For legacy features: Import from feature index
+import { AccountSummary } from '../../../features/accounts';
+import { TransactionFeed } from '../../../features/transactions';
 ```
 
-### Within Features
+### Within Modules
 
 ```typescript
 // Import from shared UI components
 import { Card } from '../../../components/ui/Card';
 import { Badge } from '../../../components/ui/Badge';
 
-// Import from other features
-import { LineChart } from '../../charts/components/LineChart';
+// Import from other modules
+import { AddressLabel } from '../../address-labels';
 
 // Import from lib/store
 import { useAppSelector } from '../../../store/hooks';
@@ -132,12 +251,14 @@ import { api } from '../../../lib/api';
 
 ```typescript
 import { configureStore } from '@reduxjs/toolkit';
+import { userReducer } from '../modules/user';
 import { walletReducer, bookmarkReducer } from '../features/accounts';
 import { transactionReducer } from '../features/transactions';
 import { blockchainReducer } from '../features/blockchain';
 
 export const store = configureStore({
     reducer: {
+        user: userReducer,
         wallet: walletReducer,
         bookmarks: bookmarkReducer,
         transactions: transactionReducer,
@@ -147,25 +268,31 @@ export const store = configureStore({
 });
 ```
 
-## Available Features
+## Available Modules and Features
 
-### Core Features
+### Modules (Primary Pattern)
+
+Use `modules/` for cross-cutting domain infrastructure:
+
+| Module | Purpose | Key Components |
+|--------|---------|----------------|
+| **user** | User identity, wallet management, profiles | UserIdentityProvider, WalletButton, ProfilePage, useWallet |
+| **menu** | Navigation menu system | PriorityNav, useMenuConfig |
+| **address-labels** | Address labeling and display | AddressLabel |
+| **scheduler** | Scheduler monitoring UI | SchedulerMonitor |
+
+### Features (Legacy/Small Features)
+
+Use `features/` for page-specific code or small features:
 
 | Feature | Purpose | Key Components |
 |---------|---------|----------------|
-| **accounts** | Account management, wallet tracking, bookmarks | AccountSummary, BookmarkPanel, useWallet |
-| **transactions** | Transaction feed, details, filtering | TransactionFeed, TransactionDetails, TransactionFilter |
-| **whales** | Whale transaction tracking and analytics | WhaleDashboard |
-| **blockchain** | Blockchain sync status and network metrics | (state only) |
-
-### Supporting Features
-
-| Feature | Purpose | Key Components |
-|---------|---------|----------------|
-| **charts** | Reusable chart components | LineChart, EnergyPriceChart, NetworkMetricsChart |
-| **system** | System monitoring and administration | SystemOverview, BlockchainMonitor, MarketMonitor |
-| **comments** | User comments and discussions | CommentStream |
-| **chat** | Real-time chat functionality | (state only) |
+| **accounts** | Account management, bookmarks | AccountSummary, BookmarkPanel |
+| **transactions** | Transaction feed, details, filtering | TransactionFeed, TransactionDetails |
+| **whales** | Whale transaction tracking | WhaleDashboard |
+| **blockchain** | Blockchain sync status | (state only) |
+| **charts** | Reusable chart components | LineChart, EnergyPriceChart |
+| **system** | System monitoring and administration | SystemOverview, BlockchainMonitor |
 | **realtime** | WebSocket connection and live data sync | useRealtimeStatus, useSocketSubscription |
 | **ui-state** | Global UI state (modals, toasts, loading) | (state only) |
 
@@ -173,34 +300,34 @@ export const store = configureStore({
 
 ### Colocation
 
-All code related to a feature lives together:
-- Components in `features/accounts/components/`
-- State management in `features/accounts/slice.ts`
-- Hooks in `features/accounts/hooks/`
-- API calls in `features/accounts/api/`
+All code related to a domain lives together:
+- Components in `modules/user/components/`
+- State management in `modules/user/slice.ts`
+- Hooks in `modules/user/hooks/`
+- API calls in `modules/user/api/`
 
 ### Consistency
 
-The feature structure mirrors the backend's modular architecture:
-- Backend: `apps/backend/src/modules/blockchain/`
-- Frontend: `apps/frontend/features/blockchain/`
+The module structure mirrors the backend's modular architecture:
+- Backend: `apps/backend/src/modules/user/`
+- Frontend: `apps/frontend/modules/user/`
 
 Both follow the same mental model.
 
 ### Scalability
 
-Adding a new feature is straightforward:
-1. Create `features/my-feature/` directory
+Adding a new module is straightforward:
+1. Create `modules/my-module/` directory
 2. Add components, slice, hooks
 3. Export through `index.ts`
 4. Import in pages/store
 
 ### Maintainability
 
-- Easy to find feature-specific code
-- Clear boundaries between features
-- Minimal coupling between features
-- Self-contained features can be removed cleanly
+- Easy to find module-specific code
+- Clear boundaries between modules
+- Minimal coupling between modules
+- Self-contained modules can be removed cleanly
 
 ## Migration from Old Structure
 
@@ -255,9 +382,9 @@ All imports have been updated throughout the codebase.
 
 ## Best Practices
 
-### 1. Keep Features Self-Contained
+### 1. Keep Modules Self-Contained
 
-Minimize dependencies between features. If feature A needs feature B's data, consider:
+Minimize dependencies between modules. If module A needs module B's data, consider:
 - Using Redux selectors to access B's state
 - Exposing a clean API through B's `index.ts`
 - Evaluating if the code should move to a shared utility
@@ -292,14 +419,14 @@ Each Redux slice should manage a single concern:
 
 ### 6. Share Through Exports
 
-Don't import directly from other features' internals:
+Don't import directly from other modules' internals:
 
 ```typescript
 // ❌ Bad
-import { AccountSummary } from '../../accounts/components/AccountSummary';
+import { WalletButton } from '../../user/components/WalletButton/WalletButton';
 
 // ✅ Good
-import { AccountSummary } from '../../accounts';
+import { WalletButton } from '../../user';
 ```
 
 ### 7. Use Component Folders for Organization
@@ -778,6 +905,6 @@ See [config.ts](../../apps/frontend/lib/config.ts) for the complete implementati
 ## Related Documentation
 
 - [Frontend Component Guide](./ui/ui-component-styling.md) - How to style components (CSS Modules, design system, patterns)
-- [Feature Modules README](../../apps/frontend/features/README.md) - Detailed feature documentation
-- [Plugin System](../plugins/plugins.md) - Plugin architecture (separate from features)
+- [Legacy Features README](../../apps/frontend/features/README.md) - Documentation for legacy features directory
+- [Plugin System](../plugins/plugins.md) - Plugin architecture (separate from modules)
 - [Backend Modules](../system/system-modules.md) - Backend modular structure and lifecycle patterns

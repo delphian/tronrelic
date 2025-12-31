@@ -116,4 +116,55 @@ export interface ISchedulerService {
      * ```
      */
     register(name: string, defaultSchedule: string, handler: CronJobHandler): void;
+
+    /**
+     * Disable a scheduled job without removing it.
+     *
+     * Sets enabled=false and stops the cron task. The job configuration is
+     * preserved in MongoDB and can be re-enabled via the admin UI or by
+     * calling updateJobConfig with enabled=true.
+     *
+     * **When to use:**
+     * - In plugin `disable()` lifecycle hook to pause jobs without losing config
+     * - When temporarily suspending a job that may be re-enabled later
+     *
+     * @param name - Job identifier to disable
+     * @throws {Error} If job name is not registered
+     *
+     * @example
+     * ```typescript
+     * // In plugin disable() lifecycle hook
+     * disable: async (context: IPluginContext) => {
+     *     await context.scheduler.disable('my-plugin:refresh-markets');
+     *     context.logger.info('Market refresh job disabled');
+     * }
+     * ```
+     */
+    disable(name: string): Promise<void>;
+
+    /**
+     * Completely unregister a job from the scheduler.
+     *
+     * Stops the cron task, removes the job from memory, and optionally deletes
+     * the MongoDB configuration record. Use this during plugin uninstall to
+     * fully clean up scheduler state.
+     *
+     * **When to use:**
+     * - In plugin `uninstall()` lifecycle hook to remove jobs permanently
+     * - When a job should never run again for this plugin instance
+     *
+     * @param name - Job identifier to unregister
+     * @param deleteFromDatabase - If true, also delete the MongoDB config record (default: false)
+     * @throws {Error} If job name is not registered
+     *
+     * @example
+     * ```typescript
+     * // In plugin uninstall() lifecycle hook
+     * uninstall: async (context: IPluginContext) => {
+     *     await context.scheduler.unregister('my-plugin:refresh-markets', true);
+     *     context.logger.info('Market refresh job unregistered and config deleted');
+     * }
+     * ```
+     */
+    unregister(name: string, deleteFromDatabase?: boolean): Promise<void>;
 }

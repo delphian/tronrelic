@@ -19,8 +19,8 @@ import { connectDatabase } from './loaders/database.js';
 import { createRedisClient, disconnectRedis, getRedisClient } from './loaders/redis.js';
 import { logger, createLogger } from './lib/logger.js';
 import { WebSocketService } from './services/websocket.service.js';
-import { initializeJobs, stopJobs } from './jobs/index.js';
 import { loadPlugins } from './loaders/plugins.js';
+import { SchedulerModule } from './modules/scheduler/index.js';
 import { MenuModule } from './modules/menu/index.js';
 import { LogsModule } from './modules/logs/index.js';
 import { DatabaseModule } from './modules/database/index.js';
@@ -58,11 +58,13 @@ async function bootstrap(): Promise<void> {
         const ctx = await bootstrapInit();
         await bootstrapRun(ctx);
 
-        await initializeJobs(ctx.coreDatabase);
+        // Scheduler is now started by SchedulerModule.run() in bootstrapRun()
 
         try {
             await logger.waitUntilInitialized();
-            await loadPlugins(ctx.coreDatabase);
+            // Pass scheduler to plugins for context.scheduler injection
+            const scheduler = ctx.modules.scheduler.getSchedulerService();
+            await loadPlugins(ctx.coreDatabase, scheduler);
         } catch (pluginError) {
             logger.error({ pluginError, stack: pluginError instanceof Error ? pluginError.stack : undefined }, 'Plugin initialization failed');
         }
@@ -73,7 +75,7 @@ async function bootstrap(): Promise<void> {
 
         process.on('SIGINT', async () => {
             logger.info('Received SIGINT, shutting down');
-            stopJobs();
+            ctx.modules.scheduler.stop();
             await disconnectRedis();
             process.exit(0);
         });
@@ -110,6 +112,7 @@ interface BootstrapContext {
         theme: ThemeModule;
         user: UserModule;
         addressLabels: AddressLabelsModule;
+        scheduler: SchedulerModule;
     };
 }
 
@@ -176,12 +179,14 @@ async function bootstrapInit(): Promise<BootstrapContext> {
     const themeModule = new ThemeModule();
     const userModule = new UserModule();
     const addressLabelsModule = new AddressLabelsModule();
+    const schedulerModule = new SchedulerModule();
 
     await logsModule.init({ pinoLogger, database: coreDatabase, app });
     await pagesModule.init(sharedDeps);
     await themeModule.init(sharedDeps);
     await userModule.init(sharedDeps);
     await addressLabelsModule.init(sharedDeps);
+    await schedulerModule.init({ database: coreDatabase, menuService, app });
 
     return {
         app,
@@ -198,6 +203,7 @@ async function bootstrapInit(): Promise<BootstrapContext> {
             theme: themeModule,
             user: userModule,
             addressLabels: addressLabelsModule,
+            scheduler: schedulerModule,
         },
     };
 }
@@ -227,6 +233,7 @@ async function bootstrapRun(ctx: BootstrapContext): Promise<void> {
     await modules.theme.run();
     await modules.user.run();
     await modules.addressLabels.run();
+    await modules.scheduler.run();
 
     await registerTemporaryMenuItems(menuService);
     logger.info({}, 'All modules initialized');
@@ -282,8 +289,7 @@ async function registerTemporaryMenuItems(menuService: IMenuService): Promise<vo
     const items = [
         { label: 'Overview', url: '/system/overview', icon: 'LayoutDashboard', order: 10 },
         { label: 'Config', url: '/system/config', icon: 'Settings', order: 15 },
-        // Database (20), Logs (30) registered by their modules
-        { label: 'Scheduler', url: '/system/scheduler', icon: 'Clock', order: 35 },
+        // Database (20), Logs (30), Scheduler (35) registered by their modules
         // Pages (40) registered by PagesModule
         { label: 'Blockchain', url: '/system/blockchain', icon: 'Blocks', order: 45 },
         // Markets (50) registered by resource-markets plugin

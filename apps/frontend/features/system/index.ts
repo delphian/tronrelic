@@ -12,11 +12,10 @@
 export { BlockchainMonitor } from './components/BlockchainMonitor';
 export { ConfigurationPanel } from './components/ConfigurationPanel';
 export { MarketMonitor } from './components/MarketMonitor';
-export { SchedulerMonitor } from './components/SchedulerMonitor';
+// SchedulerMonitor moved to modules/scheduler
 export { SystemAuthGate } from './components/SystemNav/SystemAuthGate';
 export { SystemOverview } from './components/SystemOverview';
 export { SystemLogsMonitor } from './components/SystemLogsMonitor/SystemLogsMonitor';
-export { UsersMonitor } from './components/UsersMonitor/UsersMonitor';
 
 // Contexts
 export { SystemAuthProvider, useSystemAuth } from './contexts/SystemAuthContext';

@@ -1,152 +1,123 @@
 # TronRelic
 
-Open-source platform for TRON on-chain research and analytics. Monitor blockchain activity, track whale movements, compare energy markets, and explore the chain with extensible plugins.
+Open-source TRON blockchain analytics platform with real-time monitoring, whale tracking, and extensible plugins.
 
 ## Quick Start
 
-Start all services with one command:
-
 ```bash
+cp .env.example .env
+openssl rand -hex 32  # Add to ADMIN_API_TOKEN in .env
+# Add TronGrid API keys to .env (get free keys at https://www.trongrid.io/)
+
 ./scripts/start.sh
 ```
 
-**Access the application:**
-- Frontend: http://localhost:3000
-- Backend API: http://localhost:4000
-- Admin dashboard: http://localhost:3000/system
+**URLs:** Frontend http://localhost:3000 | API http://localhost:4000 | Admin http://localhost:3000/system
 
-**Stop services:**
-```bash
-./scripts/stop.sh
-```
-
-**Alternative options:**
-- `./scripts/start.sh --docker` - Run all services in Docker containers
-- `./scripts/start.sh --force-build` - Clean rebuild from scratch
-
-## Prerequisites
-
-- Node.js 20+
-- Docker (for MongoDB and Redis)
-- TronGrid API keys (get 3 free keys from https://www.trongrid.io/)
-
-## Configuration
-
-**Step 1:** Copy environment template
-```bash
-cp .env.example .env
-```
-
-**Step 2:** Generate admin token
-```bash
-openssl rand -hex 32  # Paste into ADMIN_API_TOKEN in .env
-```
-
-**Step 3:** Add your TronGrid API keys to `.env`
-
-**Complete configuration reference:** [docs/environment.md](docs/environment.md)
-
-**Note:** Never commit `.env` files.
-
-## Architecture
-
-```
-tronrelic/
-├── apps/
-│   ├── backend/              # Express API + Socket.IO + BullMQ workers
-│   │   ├── src/
-│   │   │   ├── api/          # HTTP routes, middleware, plugin API mount points
-│   │   │   ├── modules/      # Domain services (blockchain, markets, etc.)
-│   │   │   ├── database/     # Mongoose models and repositories
-│   │   │   └── services/     # Shared infrastructure (cache, queues, adapters)
-│   │   └── dist/             # Compiled output
-│   │
-│   └── frontend/             # Next.js 14 (App Router)
-│       ├── app/              # Pages, layouts, and plugin catch-all routes
-│       ├── components/       # React components and plugin loader
-│       ├── lib/              # Client utilities, registries, and Socket.IO bridge
-│       └── .next/            # Build cache (ignored in source control)
-│
-├── packages/
-│   ├── plugins/              # Individual plugin workspaces (backend + frontend code)
-│   ├── shared/               # Runtime shared utilities consumed by backend
-│   └── types/                # Framework-independent core interfaces and models
-│
-└── scripts/
-    ├── start.sh              # Start all services with incremental builds
-    └── stop.sh               # Stop all services and clean up containers
-```
-
-## Key Features
-
-- **Plugin system** - Self-contained features with backend + frontend code ([docs/plugins/plugins.md](docs/plugins/plugins.md))
-- **Observer pattern** - Blockchain transaction processing without blocking sync
-- **Real-time updates** - Socket.IO pushes whale transactions and market data to clients
-- **Rate limit protection** - Serial API requests with 200ms throttling across rotating keys
-- **Efficient sync** - One API call per block using embedded transaction data (eliminates 1,800x overhead)
-
-## Common Commands
-
-```bash
-# Development
-npm run dev --workspace apps/backend          # Backend only
-npm run dev --workspace apps/frontend         # Frontend only
-npm run build:parallel                        # Build all workspaces
-
-# Testing
-npm test                                      # Unit tests (vitest)
-npm run test:integration                      # Integration tests (Playwright)
-npm test -- --watch                          # Watch mode
-
-# Database access
-docker exec -it tronrelic-mongo mongosh tronrelic
-docker exec -it tronrelic-redis redis-cli
-
-# Logs
-tail -f .run/backend.log
-tail -f .run/frontend.log
-```
-
-**Admin dashboard:** http://localhost:3000/system (requires ADMIN_API_TOKEN)
-
-## Documentation
-
-- [@environment.md](docs/environment.md) - Environment variable reference
-- [@tron.md](docs/tron/tron.md) - TRON blockchain concepts overview
-- [@frontend.md](docs/frontend/frontend.md) - Frontend system overview
-- [@plugins.md](docs/plugins/plugins.md) - Plugin system overview
-- [@system.md](docs/system/system.md) - System architecture overview
-- [@documentation.md](docs/documentation.md) - Documentation standards and 
-
-## Tech Stack
-
-**Backend:**
-- Node.js + TypeScript
-- Express + Socket.IO
-- MongoDB (Mongoose)
-- Redis + BullMQ
-- Pino (logging)
-
-**Frontend:**
-- Next.js 14 (App Router)
-- React + TypeScript
-- Redux Toolkit
-- Socket.IO client
-- TailwindCSS
-
-**Infrastructure:**
-- Docker (MongoDB, Redis)
-- TronGrid API (blockchain data)
-- BullMQ (job queue)
+**Requirements:** Node.js 20+, Docker, TronGrid API keys
 
 ## License
 
-This project is licensed under the **GNU Affero General Public License v3.0 or later (AGPL-3.0-or-later)** with a plugin exception.
+AGPL-3.0-or-later with plugin exception. Third-party plugins may use any license. See [LICENSE](LICENSE) for details.
 
-- **TronRelic core:** AGPL-3.0 (you must share modifications if running as a network service)
-- **Third-party plugins:** Your choice (plugin exception allows proprietary plugins)
-- **Contributors:** Must sign CLA (see [CONTRIBUTING.md](CONTRIBUTING.md))
+## Documentation
 
-The CLA's relicensing clause lets the maintainers dual-license or offer commercial terms without renegotiating with every past contributor, keeping hosted and self-managed editions aligned.
+### Core Documentation
 
-See [LICENSE](LICENSE) for full details and plugin exception terms.
+**[Documentation Standards](docs/documentation.md)** — TronRelic enforces a "why → how → example" documentation rhythm where every document identifies its target audience, explains the problem being solved, and provides focused code samples. Documents must state "Who This Document Is For" explicitly and use semantic tokens from `@tronrelic/types` for consistent terminology. The three-section structure prevents jumping straight to implementation and ensures maintainers understand context before code. Directory organization follows a summary-plus-detail pattern where each subdirectory contains a gateway document linking to specialized guides. Cross-references use relative paths with context descriptions, never bare links. Code samples must be minimal, syntactically correct, and explain intent rather than restating the obvious. This standard applies to all markdown files in the repository including plugin documentation. Navigate to this document before writing or reviewing any TronRelic documentation.
+
+**[Environment Variables](docs/environment.md)** — This reference covers all environment variables required by the backend and frontend applications, including TronGrid API keys, MongoDB connection strings, Redis configuration, and admin authentication tokens. Variables are organized by category: core application settings, blockchain API configuration, database connections, caching layer, and feature flags. The `ENABLE_SCHEDULER` flag controls all background jobs including blockchain sync and market refresh. Multiple TronGrid API keys can be configured with automatic rotation to avoid rate limiting. Frontend runtime configuration uses `SITE_URL` to enable universal Docker images that work on any domain without rebuilding. Security-sensitive variables like `ADMIN_API_TOKEN` and `SESSION_SECRET` require cryptographically random values generated via `openssl rand -hex 32`. Each variable includes its default value, required status, and impact when misconfigured. Consult this document when deploying to new environments or troubleshooting configuration issues.
+
+### System Architecture
+
+**[System Overview](docs/system/system.md)** — The system layer manages blockchain synchronization, scheduler operations, observer notifications, and real-time metrics that power all TronRelic features. Core components include the blockchain sync service (fetches thousands of TRON transactions per minute), the scheduler (coordinates six built-in jobs), and the observer notification system (broadcasts enriched transactions to plugins). When the system layer fails, whale alerts go silent, market prices become stale, and plugin observers stop receiving events. The runtime configuration system enables universal Docker images by fetching settings from the backend API and injecting them into HTML during SSR. Backend modules follow a two-phase lifecycle (`init()` then `run()`) with dependency injection through typed interfaces. The `/system` monitoring dashboard provides real-time visibility into blockchain lag, job status, and API queue depth. Database access requires the mandatory `IDatabaseService` abstraction—direct Mongoose imports are prohibited. This document is your starting point for understanding how data flows from the TRON network through TronRelic to the frontend.
+
+**[Backend Modules](docs/system/system-modules.md)** — Backend modules implement the `IModule<TDependencies>` interface with explicit `init()` and `run()` phases that ensure proper dependency resolution during application bootstrap. The `init()` phase prepares resources (stores dependencies, creates services) without activating, while `run()` mounts Express routes and registers menu items after all modules initialize. Dependencies are injected through typed interfaces like `IDatabaseService` and `ICacheService`, never imported directly as concrete classes. Modules attach themselves to the application via Inversion of Control—they receive the Express app and mount their own routes under their namespace. Services implementing `IXxxService` interfaces must use the singleton pattern with `setDependencies()` and `getInstance()` methods. Module initialization errors cause application shutdown; errors must never be swallowed. The directory structure colocates all module code (`api/`, `database/`, `services/`, `__tests__/`) under `modules/<name>/`. Reference this document when creating new core infrastructure components or debugging module initialization failures.
+
+**[Database Access](docs/system/system-database.md)** — All database operations must go through `IDatabaseService`—direct imports of Mongoose models or raw MongoDB collections are prohibited throughout the codebase. The three-tier access pattern provides raw collections for flexibility, Mongoose models for schema validation, and convenience methods (`get()`, `set()`, `del()`) for common CRUD operations. Plugins receive `IPluginDatabaseService` which automatically prefixes all collection names (e.g., `plugin_whale-alerts_subscriptions`) to ensure namespace isolation. The key-value storage API enables simple configuration storage without defining custom schemas. Index creation uses `createIndex()` on raw collections with proper error handling for duplicate key scenarios. Consumers receive the database service via dependency injection during module or plugin initialization. This abstraction enables complete test isolation through mock implementations without touching MongoDB. Study this document before writing any code that persists or queries data.
+
+**[System API Reference](docs/system/system-api.md)** — The system monitoring API provides programmatic access to operational metrics, job control, and infrastructure health through 16+ authenticated endpoints. All endpoints require the `X-Admin-Token` header matching the `ADMIN_API_TOKEN` environment variable. Endpoint categories include system overview (consolidated snapshot), blockchain monitoring (sync status, manual trigger), scheduler operations (job control, health checks), market monitoring (refresh trigger), and WebSocket diagnostics. The `/api/admin/system/overview` endpoint returns a comprehensive snapshot including blockchain lag, job statuses, database health, and active WebSocket connections in a single request. Job configuration endpoints support PATCH operations to enable/disable jobs and modify cron schedules at runtime without backend restarts. Response structures include field-by-field documentation with practical curl and JavaScript examples. Use these endpoints to build custom monitoring scripts, integrate with external alerting systems, or automate operational tasks. This reference is essential for operations engineers building automation around TronRelic infrastructure.
+
+**[Blockchain Sync Architecture](docs/system/system-blockchain-sync-architecture.md)** — The blockchain sync service retrieves blocks from TronGrid, enriches transactions with market data and energy costs, then notifies subscribed observers asynchronously without blocking the sync pipeline. Serial API requests with 200ms throttling prevent burst rate limiting while achieving sustainable ~5 requests/second throughput. Rotating TronGrid API keys distribute load across multiple accounts to avoid hitting individual rate limits. The transaction enrichment pipeline parses contract types (`TransferContract`, `TriggerSmartContract`), calculates USD values, and attaches energy cost breakdowns before passing to observers. Queue overflow protection caps pending blocks to prevent memory leaks during sync catch-up scenarios. Observer notification uses async processing so slow plugins don't delay block indexing. Blockchain service lifecycle includes startup validation, sync loop management, and graceful shutdown with queue draining. Consult this document when debugging sync stalls, optimizing throughput, or understanding how transaction data reaches plugin observers.
+
+**[System Dashboard](docs/system/system-dashboard.md)** — The web-based dashboard at `/system` provides real-time visibility into all system operations through a tabbed interface requiring admin token authentication. The Overview tab displays at-a-glance health indicators including blockchain sync status, active jobs, market data freshness, and system resource usage. Individual tabs for Blockchain, Scheduler, Markets, Health, and Config provide detailed metrics with live auto-refresh and manual refresh controls. Job enable/disable toggles allow runtime control without backend restarts, and schedule modification inputs accept cron expressions. Manual sync and refresh trigger buttons enable on-demand operations for testing or recovery scenarios. Visual status indicators use color coding (green/yellow/red) to highlight healthy, warning, and error states. The Config tab displays current environment settings and feature flags for deployment verification. Reference this document to understand the monitoring capabilities available through the administrative interface.
+
+**[Database Migrations](docs/system/system-database-migrations.md)** — The migration system enables safe, repeatable schema evolution with automatic discovery from system, module, and plugin directories without manual registration. Migrations execute serially with MongoDB transaction support (requires replica set) providing atomic execution with automatic rollback on failure. Dependency resolution uses topological sorting to ensure migrations run in correct order when one migration depends on another. State tracking persists complete execution history including timestamps, duration, and error details to the `_migrations` collection. The admin UI at `/system/database` displays pending migrations, execution history, and provides a trigger button for manual execution. REST API endpoints support listing pending migrations (`GET /migrations`), viewing history (`GET /migrations/history`), and triggering execution (`POST /migrations/execute`). Migration files follow the naming pattern `NNN_description.ts` and export a class implementing `IMigration` with `up()` and optional `down()` methods. Use this document when implementing schema changes or troubleshooting failed migration execution.
+
+**[Logging System](docs/system/system-logging.md)** — TronRelic uses structured JSON logging via Pino with automatic MongoDB persistence enabling historical log queries through the admin API. Log levels follow standard severity (trace, debug, info, warn, error, fatal) with environment-based defaults and runtime adjustment capability. Child loggers inherit parent context while adding module-specific fields like `{ module: 'blockchain-sync' }` for filtering. MongoDB log collection uses capped storage with automatic rotation to prevent unbounded growth. The admin API exposes log query endpoints supporting level filtering, time ranges, text search, and pagination. Frontend components can access logs through the system dashboard or programmatically via the REST API. Sensitive data (API keys, tokens, passwords) must never be logged—use placeholder patterns like `{ token: '[REDACTED]' }`. Navigate to this document for log configuration, query patterns, and best practices for adding logging to new code.
+
+**[Menu Module](docs/system/system-modules-menu.md)** — The navigation menu system manages application-wide navigation through a centralized `MenuService` singleton that coordinates menu items from core features and plugins. Each menu node represents a navigation link with properties including label, icon, URL path, sort order, access control, and optional parent for hierarchical nesting. Plugins register menu items through lifecycle hooks (`onRegister`) without modifying core code, using `PluginContext.menuService.addNode()`. Real-time WebSocket events (`menu:updated`) notify connected clients when the menu structure changes, enabling dynamic navigation updates. Dual persistence modes support database-backed entries (survive restarts) and memory-only runtime entries (ephemeral plugin registrations). Multiple namespaces (`main`, `admin`, `footer`) provide independent navigation contexts for different UI areas. REST API endpoints support CRUD operations and reordering with automatic sort value recalculation. This document covers menu architecture, API reference, and plugin integration patterns for navigation management.
+
+**[Pages Module](docs/system/system-modules-pages.md)** — The pages module provides content management for user-facing pages with markdown authoring, file uploads, and dynamic URL routing based on configurable slugs. Architecture separates `PageService` (business logic, singleton) from `IStorageProvider` (infrastructure abstraction) enabling pluggable storage backends like `LocalStorageProvider` or `S3StorageProvider`. The markdown rendering pipeline extracts frontmatter metadata, converts to HTML, and caches rendered output in Redis for 24 hours with automatic invalidation on updates. File upload validation enforces two layers: Express middleware limits request size, and the service validates individual file sizes with configurable maximums. Route conflict prevention uses blacklist patterns to prevent pages from overriding core routes like `/system` or `/api`. Database schema spans three collections: `pages` (content), `page_files` (upload metadata), and `page_settings` (module configuration). Admin API endpoints at `/api/admin/pages` support full CRUD while public endpoints serve rendered content. Reference this document for content management architecture and storage provider implementation patterns.
+
+**[User Module](docs/system/system-modules-user.md)** — The user module provides visitor identity management using client-generated UUIDs stored in cookies and localStorage, with optional upgrade to verified TRON wallet addresses via TronLink signature verification. Anonymous-first identity means users start with a UUID on first visit—no registration required—and can link multiple wallets with one designated as primary. Cookie-based validation ensures API endpoints verify the cookie matches the `:id` parameter, preventing unauthorized access to user data. `UserService` singleton implements Redis caching with tag-based invalidation for efficient user lookups across the application. The database schema in the `users` collection stores wallets array, preferences object, and activity timestamps. Real-time WebSocket events push user updates to connected clients for immediate UI synchronization. The admin dashboard at `/system/users` provides user management including search, wallet verification status, and activity inspection. Consult this document for identity architecture, wallet linking flow, and frontend integration patterns.
+
+**[Runtime Configuration](docs/system/system-runtime-config.md)** — Runtime configuration solves Next.js build-time environment variable inlining that would otherwise require rebuilding Docker images for each deployment domain. The backend `SystemConfigService` stores `siteUrl` in MongoDB (editable via admin UI) and exposes it through `/api/config` alongside TRON chain parameters. Frontend fetches configuration once at container startup, caches in memory, and injects as `window.__RUNTIME_CONFIG__` during SSR for instant client access. Chain parameters (energy costs, network limits) are bundled with URL config enabling frontend components to perform energy/TRX conversions without additional API calls. The pattern eliminates `NEXT_PUBLIC_*` variables in production—frontend code reads from runtime config, not build-time values. WebSocket connections use the runtime `siteUrl` to construct proper connection URLs in any deployment environment. Fresh installations require setting `SITE_URL` in `.env` before first startup. This document explains the architectural decision, implementation details, and troubleshooting for domain-related issues.
+
+**[Scheduler Operations](docs/system/system-scheduler-operations.md)** — The scheduler manages six built-in jobs (`blockchain:sync`, `markets:refresh`, `chain-parameters:fetch`, `usdt-parameters:fetch`, `cache:cleanup`, `alerts:dispatch`) that keep TronRelic healthy and current. Global enable/disable via the `ENABLE_SCHEDULER` environment variable controls all jobs for development or maintenance scenarios. Per-job configuration supports enabling/disabling individual jobs and modifying cron schedules at runtime through the admin API or dashboard UI. Configuration persists to MongoDB ensuring job states survive application restarts. The system monitor dashboard provides visual job control with toggle switches and schedule modification inputs. Cron expressions follow standard syntax (`*/5 * * * *` for every 5 minutes) with common modifications documented. Comprehensive troubleshooting runbooks cover scenarios including stale blockchain data, outdated market prices, and jobs running too frequently. Reference this document for operational control of background processing and diagnosing scheduler-related issues.
+
+**[Testing Framework](docs/system/system-testing.md)** — TronRelic uses Vitest for unit testing with comprehensive mocking utilities for Mongoose and filesystem operations enabling full service testing without external dependencies. The shared Mongoose mock at `apps/backend/src/tests/vitest/mocks/mongoose.ts` provides complete MongoDB collection implementations including CRUD operations, chainable query builders, and error injection. Filesystem mocks at `tests/vitest/mocks/fs.ts` implement the full `fs/promises` API with in-memory storage for isolated, fast test execution. Test isolation requires calling `clearMockCollections()` or `clearMockFilesystem()` in `beforeEach()` to reset state between tests. Error injection via `injectCollectionError()` enables testing failure paths by forcing specific operations to throw. Operation spying with `spyOnCollectionOperation()` verifies service behavior without modifying mock data. The `vi.mock()` call must appear before importing services to ensure dependency injection works correctly. Follow this document's patterns when writing new tests or debugging test failures in database-dependent code.
+
+### Plugin Development
+
+**[Plugin System Overview](docs/plugins/plugins.md)** — The plugin system enables extending TronRelic with blockchain observers, frontend pages, API routes, menu items, and WebSocket subscriptions while maintaining isolation from core code. Plugin structure separates `backend/` (observers, API routes) from `frontend/` (React components, pages) with shared types and a manifest file defining metadata. The lifecycle progresses through phases: `onRegister` (runs once at startup for menu items, routes), `onEnable` (activates features), and `onDisable` (cleanup). Backend observers extend `BaseObserver` and subscribe to transaction types like `TransferContract` or `TriggerSmartContract` to process blockchain events. Plugin database access uses `IPluginDatabaseService` with automatic collection prefixing ensuring namespace isolation. Frontend pages register via the manifest's `pages` array with route patterns and optional admin-only flags. WebSocket subscriptions enable real-time updates from backend observers to connected frontend clients. This overview document links to specialized guides for each plugin capability—start here before implementing any plugin feature.
+
+**[API Registration](docs/plugins/plugins-api-registration.md)** — Plugins register HTTP API routes through `PluginContext.registerRoutes()` during the `onRegister` lifecycle phase, receiving an Express router scoped to `/api/plugins/<plugin-id>`. Route handlers access plugin services through the context including `database` (namespaced storage), `logger` (child logger with plugin context), and `cacheService` (shared Redis cache). Admin-protected routes use the `requireAdminAuth` middleware exported from core to validate the `X-Admin-Token` header. Request validation should use Zod schemas for type-safe parsing with proper error responses on validation failure. Response format conventions include consistent success/error structures with appropriate HTTP status codes. Error handling middleware catches exceptions and returns structured error responses without leaking internal details. Routes must be idempotent where possible and follow REST conventions for resource operations. Reference this document for route registration patterns, authentication middleware usage, and API design best practices.
+
+**[Blockchain Observers](docs/plugins/plugins-blockchain-observers.md)** — Blockchain observers enable plugins to react to specific TRON transaction types by extending `BaseObserver` and subscribing to contract types like `TransferContract`, `TriggerSmartContract`, or `DelegateResourceContract`. The `process()` method receives enriched transactions containing parsed contract data, USD values, and energy costs—ready for business logic without additional API calls. Subscription happens in the constructor via `this.subscribe(ContractType.TransferContract)` with support for multiple contract types in a single observer. Observers run asynchronously after block processing completes, ensuring slow plugin logic doesn't block blockchain synchronization. Access to plugin database, logger, and cache service comes through the `ObserverContext` passed to the constructor. The `shouldProcess()` pattern enables filtering transactions before full processing (e.g., checking transfer amounts exceed thresholds). Error handling must be robust since observer exceptions are logged but don't stop other observers or sync. This document covers observer architecture, transaction filtering patterns, and integration with WebSocket for real-time frontend updates.
+
+**[Frontend Context](docs/plugins/plugins-frontend-context.md)** — Plugins access frontend services through `FrontendPluginContext` providing API client configuration, WebSocket subscriptions, toast notifications, and modal management. The context is obtained via `useFrontendPluginContext()` hook within plugin React components, automatically scoping API calls to `/api/plugins/<plugin-id>`. WebSocket subscriptions use `context.subscribe(event, handler)` returning an unsubscribe function for cleanup in `useEffect`. Toast notifications (`context.toast.success()`, `context.toast.error()`) provide user feedback without managing notification state. Modal management through `context.modal.open()` and `context.modal.close()` integrates with the core modal provider. API requests use the pre-configured client with proper base URL and authentication headers included. The context is unavailable during SSR—use conditional checks or ensure client-only rendering for context-dependent code. Navigate to this document for frontend service integration patterns and context API reference.
+
+**[Page Registration](docs/plugins/plugins-page-registration.md)** — Plugin pages register in the manifest's `pages` array with `route` (URL pattern), `component` (React component path), and optional `adminOnly` flag for access control. Routes support dynamic segments using Next.js conventions (`/plugin/[id]`) with params available via `useParams()` hook. Page components render within the application shell inheriting navigation, authentication state, and theme settings. SSR works for plugin pages—use server components for data fetching and client components for interactivity following the SSR + Live Updates pattern. The build system automatically discovers and bundles plugin pages from the manifest during compilation. Page metadata (title, description) can be set using Next.js `metadata` export or `generateMetadata()` for dynamic values. Admin-only pages automatically redirect unauthenticated users to the login flow. Reference this document for page routing patterns, dynamic routes, and metadata configuration.
+
+**[Plugin Architecture](docs/plugins/plugins-system-architecture.md)** — This document details the internal architecture of the plugin system including the plugin loader, manifest parsing, lifecycle orchestration, and dependency injection patterns. The plugin loader scans `packages/plugins/*/` directories, validates manifests against the schema, and instantiates plugin classes with injected context. Lifecycle orchestration ensures `onRegister` completes for all plugins before `onEnable` begins, preventing dependency race conditions. Backend and frontend plugins have separate loading paths—backend loads at Express startup, frontend at Next.js build time. The plugin context factory creates isolated contexts with scoped database access, namespaced logging, and route prefixing. Hot reloading in development watches plugin directories and triggers rebuild on changes. Error isolation ensures one plugin's failure doesn't crash others—exceptions are logged and the plugin marked as failed. Study this document for deep understanding of plugin internals, debugging loader issues, or extending the plugin system itself.
+
+**[WebSocket Subscriptions](docs/plugins/plugins-websocket-subscriptions.md)** — Plugins publish real-time events to connected clients using `PluginContext.websocket.emit(event, data)` which automatically namespaces events as `plugin:<plugin-id>:<event>`. Frontend components subscribe via `context.subscribe('eventName', handler)` from `FrontendPluginContext`, receiving the unsubscribe function for cleanup. Event payloads should be JSON-serializable objects with consistent structure across emissions. The WebSocket service manages room-based subscriptions enabling targeted broadcasts to specific clients or broadcast to all. Connection lifecycle handles reconnection automatically with exponential backoff and event replay for missed messages during disconnection. Server-side emission patterns include emitting from observers after processing transactions or from API routes after state changes. Rate limiting prevents event flooding with configurable thresholds per event type. This document covers emission patterns, subscription management, and best practices for real-time plugin features.
+
+**[Widget Zones](docs/plugins/plugins-widget-zones.md)** — Widget zones enable plugins to inject UI components into predefined areas of core pages without modifying core code, following the SSR + Live Updates pattern for immediate rendering. Zones are defined in core pages using `<WidgetZone id="page-name:location" />` components that render all registered widgets for that zone. Plugin widgets register in the manifest's `widgets` array specifying `zone` (target location), `component` (React component path), and `priority` (sort order). Widget components receive zone-specific props and must handle SSR correctly—initialize state from props, not empty arrays. Multiple plugins can register widgets for the same zone with priority determining render order. The widget registry resolves components at build time and passes them to zone renderers. Widgets should be self-contained with minimal dependencies on parent page context. Reference this document for widget registration patterns, zone discovery, and SSR-compliant widget implementation.
+
+### Frontend Development
+
+**[Frontend Overview](docs/frontend/frontend.md)** — TronRelic's frontend uses Next.js 14 App Router with React, following module-based organization where each module contains components, hooks, API clients, and Redux slices in a single directory. The SSR + Live Updates pattern is mandatory for public-facing components: server components fetch data, pass to client components as props, which initialize state from props (not empty arrays) then subscribe to WebSockets for live updates. Layout components (`Page`, `PageHeader`, `Stack`, `Grid`, `Section`) from `components/layout/` provide TypeScript-safe page structure with responsive behavior encapsulated. The three-layer design token system (primitives → semantic tokens → application) enables consistent theming through CSS variables. Container queries handle component-level responsiveness while viewport media queries are reserved exclusively for global layout in `app/layout.tsx`. SCSS Modules provide scoped component styles that consume design tokens via `var(--token-name)`. This overview links to specialized frontend guides—start here for architectural context before diving into implementation details.
+
+**[Frontend Architecture](docs/frontend/frontend-architecture.md)** — Module-based organization structures code by domain concern: `modules/user/` contains all user-related components, hooks, API calls, and Redux slice in one directory. The module pattern requires public API exports through `index.ts` enabling clean imports (`import { WalletButton } from '../../../modules/user'`) rather than deep file paths. Redux Toolkit slices live alongside their module with actions, selectors, and async thunks colocated. Component folder organization uses either folder-based (`Component/Component.tsx`, `Component.module.scss`, `index.ts`) or flat structure depending on component complexity. The `components/` directory at app root contains shared UI components used across multiple modules while module-specific components stay within their module. The legacy `features/` directory contains page-specific code for small features that don't warrant a full module. Study this document for the modules vs features decision matrix, directory structure, and import patterns.
+
+**[React Component Architecture](docs/frontend/react/react.md)** — React components follow a strict SSR + Live Updates pattern: server components fetch data during SSR, client components receive data as props and initialize state from those props for immediate rendering without loading flash. Context providers (`ModalProvider`, `ToastProvider`, `FrontendPluginContextProvider`) wrap the application in a specific composition order defined in the root layout. Custom hooks encapsulate WebSocket subscriptions, API calls, and complex state logic with proper cleanup in `useEffect` return functions. Server components (no `'use client'` directive) run only on the server and can use async/await directly for data fetching. Client components handle interactivity, state, and browser APIs—they cannot be async but receive SSR data as props. Hydration errors from timezone-sensitive content are prevented using `ClientTime` component or `isMounted` guards. Component composition favors props and children over higher-order components for logic reuse. This document covers patterns, anti-patterns, and decision matrices for component architecture choices.
+
+**[IconPickerModal Component](docs/frontend/react/component-icon-picker-modal.md)** — The `IconPickerModal` component provides a searchable grid of Lucide icons for user selection, integrating with `ModalProvider` for controlled open/close state. Usage requires wrapping in `ModalProvider` context and using `useModal()` hook to control visibility via `openModal('icon-picker')` and `closeModal()`. The `onSelect` callback receives the selected icon name as a string for storage in forms or database records. Search functionality filters icons by name with debounced input to prevent excessive re-renders during typing. Grid layout adapts to modal width using CSS Grid with responsive column counts. Icon preview shows the currently hovered icon at larger size with its name for confirmation before selection. The component handles keyboard navigation (arrow keys, enter to select, escape to close) for accessibility. Reference this document for IconPickerModal integration patterns and customization options.
+
+**[SchedulerMonitor Component](docs/frontend/react/component-scheduler-monitor.md)** — The `SchedulerMonitor` component displays real-time scheduler job status with enable/disable controls and live WebSocket updates following SSR + Live Updates pattern. Server component fetches initial job data, passes to client component which initializes state from props then subscribes to `scheduler:status` WebSocket events. Job cards show name, status (enabled/disabled), last run time, next scheduled run, and duration with color-coded health indicators. Toggle switches call the admin API to enable/disable jobs with optimistic UI updates reverted on failure. Schedule modification inputs accept cron expressions with validation and preview of next execution times. Manual trigger buttons force immediate job execution for testing or recovery scenarios. The component handles loading and error states for API calls with appropriate user feedback. Study this document for patterns applicable to other admin monitoring components.
+
+**[UI System Overview](docs/frontend/ui/ui.md)** — The UI system implements a two-layer SCSS architecture: `globals.scss` defines design tokens and utility classes (`.surface`, `.btn`, `.badge`) while SCSS Modules provide component-scoped styles. Design tokens follow a three-layer hierarchy: primitives (`--spacing-10: 2.5rem`), semantic tokens (`--color-primary: var(--color-blue-500)`), and application layer (components referencing semantic tokens). Layout components (`Page`, `PageHeader`, `Stack`, `Grid`, `Section`) provide TypeScript-safe structure with props for gap and direction—prefer these over CSS utility classes for layout. Container queries (`@container`) enable component-level responsiveness based on available space rather than viewport width—essential for plugins rendering in constrained contexts. Icons use `lucide-react` exclusively with standard sizes (14px inline, 16px headings, 18px buttons, 24px hero) and token-based colors. The `ClientTime` component prevents SSR hydration errors for timezone-sensitive timestamps. This overview links to detailed styling guides—start here for UI architecture context.
+
+**[Component Styling Guide](docs/frontend/ui/ui-component-styling.md)** — Components consume design tokens through CSS variables (`var(--color-surface)`, `var(--spacing-10)`, `var(--radius-md)`)—hardcoding colors or sizes is prohibited. SCSS Modules use underscore naming for multi-word classes (`.market_card` not `.market-card`) enabling clean JavaScript access (`styles.market_card` not `styles['market-card']`). Container queries require declaring `container-type: inline-size` on the container element and importing breakpoints via `@use '../../../app/breakpoints' as *`. Styling utility classes (`.surface`, `.btn .btn--primary`, `.badge .badge--success`) handle common patterns while SCSS Modules add component-specific layout. Animation utilities (`.animate_fade_in`, `.animate_slide_up`) provide consistent motion with reduced-motion media query support. SSR hydration safety requires `ClientTime` for dates and `isMounted` guards for browser-only values like `window.innerWidth`. Accessibility patterns include semantic HTML, ARIA labels for icon buttons, and visible focus states. This comprehensive guide covers all styling patterns with code examples and a pre-ship checklist.
+
+**[Design Token Layers](docs/frontend/ui/ui-design-token-layers.md)** — The three-layer token hierarchy follows industry standards (Material Design, Adobe Spectrum): primitives define raw values, semantic tokens assign contextual meaning, and components select which semantic token applies. Primitive tokens in `primitives.scss` include colors (`--color-blue-500`), spacing (`--spacing-1` through `--spacing-20`), radii (`--radius-sm` through `--radius-full`), and typography (`--font-size-sm`, `--font-weight-bold`). Semantic tokens in `semantic-tokens.scss` map primitives to purposes (`--color-primary`, `--color-surface`, `--color-text-muted`) enabling theme changes by remapping at the semantic layer. Components never reference primitives directly—they use semantic tokens which cascade updates automatically. The W3C Design Token specification alignment ensures compatibility with token management tools. Responsive tokens adapt values based on container or viewport size for fluid typography and spacing. This document provides complete token reference tables and theming system architecture.
+
+### TRON Blockchain
+
+**[TRON Overview](docs/tron/tron.md)** — This document introduces TRON blockchain concepts essential for TronRelic development including the energy system, transaction structure, network parameters, and TRX/SUN denominations. TRON transactions consume energy (not TRX fees) which can be obtained by staking TRX or renting from markets—rented energy regenerates every 24 hours making multi-day rentals dramatically more cost-effective. Transaction structure embeds full contract data in blocks enabling TronRelic to fetch one block and parse all transactions without per-transaction API calls. Network parameters (`totalEnergyLimit`, `energyPerTrx`, `energyFee`) change based on network-wide staking activity and must be fetched dynamically—never hardcode these values. Common contract types include `TransferContract` (native TRX), `TriggerSmartContract` (USDT and smart contracts), `FreezeBalanceV2Contract` (energy staking), and `DelegateResourceContract` (energy rentals). The Chain Parameters Service polls these values every 10 minutes and provides conversion methods (`getEnergyFromTRX`, `getTRXFromEnergy`). Understanding these fundamentals prevents orders-of-magnitude pricing errors. Reference this document before implementing any TRON-related feature.
+
+**[Chain Parameters Service](docs/tron/tron-chain-parameters.md)** — The Chain Parameters Service fetches TRON network parameters from TronGrid every 10 minutes, caches them in MongoDB, and provides conversion methods for energy/TRX calculations used throughout the application. Key parameters include `totalEnergyLimit` (~180 billion), `totalFrozenForEnergy` (total staked TRX), `energyFee` (burn cost in SUN), and the derived `energyPerTrx` ratio (~5,625 energy per TRX). Conversion methods (`getEnergyFromTRX(trx)`, `getTRXFromEnergy(energy)`, `getAPY(energyAmount, trxCost, durationDays)`) provide accurate calculations based on current network state. Market fetchers and pricing calculators inject this service to normalize costs across different energy amounts and rental durations. Fallback behavior returns sensible defaults when database is empty (cold start scenario) with warnings logged. The scheduled fetch job runs via the scheduler system with error handling and retry logic. Integration patterns show how to inject the service and use conversion methods in observers, API routes, and frontend components. Study this document before implementing energy cost calculations or market data processing.
+
+---
+
+## MANDATORY: Read Documentation Before Implementation
+
+**DO NOT write code, create components, implement features, or modify existing functionality without first loading and reviewing the relevant documentation listed above.** This is not optional guidance, it is a hard requirement.
+
+Each document above contains architectural decisions, required patterns, and constraints that MUST be followed. Ignoring this documentation leads to:
+
+- Code that violates established patterns and must be rewritten
+- Security vulnerabilities from bypassing required abstractions
+- Broken functionality from ignoring lifecycle requirements
+- Wasted effort implementing solutions that already exist
+
+**Before starting any task:**
+
+1. Identify which documentation sections apply to your work
+2. Load and read those documents completely
+3. Follow the patterns, interfaces, and constraints they specify
+4. When in doubt, read more documentation—never guess
+
+The documentation exists because these patterns were learned through experience. Respect that investment by reading before writing.

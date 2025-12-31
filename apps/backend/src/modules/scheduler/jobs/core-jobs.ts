@@ -1,56 +1,51 @@
+/**
+ * @fileoverview Core scheduler job registrations.
+ *
+ * Registers the built-in scheduler jobs for blockchain sync, parameter updates,
+ * and cleanup tasks. Called during SchedulerModule.run() after the scheduler
+ * service is initialized.
+ *
+ * @module modules/scheduler/jobs/core-jobs
+ */
+
 import type { IDatabaseService } from '@tronrelic/types';
-import { env } from '../config/env.js';
-import { SchedulerService } from '../services/scheduler.service.js';
-import { BlockchainService } from '../modules/blockchain/blockchain.service.js';
-import { logger } from '../lib/logger.js';
-import { CacheModel, type CacheDoc } from '../database/models/cache-model.js';
-import { ChainParametersFetcher } from '../modules/chain-parameters/chain-parameters-fetcher.js';
-import { UsdtParametersFetcher } from '../modules/usdt-parameters/usdt-parameters-fetcher.js';
-import { SystemLogService } from '../modules/logs/index.js';
-import { SystemConfigService } from '../services/system-config/index.js';
 import axios from 'axios';
-
-let scheduler: SchedulerService | null = null;
-
-/**
- * Returns the initialized scheduler instance.
- *
- * Used by admin API to update scheduler configuration at runtime.
- * Returns null if scheduler is disabled or not yet initialized.
- *
- * @returns {SchedulerService | null} Scheduler instance or null
- */
-export function getScheduler(): SchedulerService | null {
-    return scheduler;
-}
+import { logger } from '../../../lib/logger.js';
+import { BlockchainService } from '../../blockchain/blockchain.service.js';
+import { ChainParametersFetcher } from '../../chain-parameters/chain-parameters-fetcher.js';
+import { UsdtParametersFetcher } from '../../usdt-parameters/usdt-parameters-fetcher.js';
+import { SystemLogService } from '../../logs/index.js';
+import { SystemConfigService } from '../../../services/system-config/index.js';
+import { CacheModel, type CacheDoc } from '../../../database/models/cache-model.js';
+import { SchedulerService } from '../services/scheduler.service.js';
 
 /**
- * Initializes and starts all scheduled jobs.
+ * Register all core scheduler jobs.
  *
- * Registers all cron jobs (markets, blockchain, alerts, etc.) and starts
- * the scheduler. The scheduler loads configuration from MongoDB and schedules
- * enabled jobs according to their configured intervals.
+ * This function registers the 6 built-in jobs:
+ * - chain-parameters:fetch - Fetch TRON chain parameters every 10 minutes
+ * - usdt-parameters:fetch - Fetch USDT transfer energy cost every 10 minutes
+ * - blockchain:sync - Sync latest blocks every minute
+ * - blockchain:prune - Remove old transactions every hour
+ * - cache:cleanup - Clean expired cache entries every hour
+ * - system-logs:cleanup - Clean old system logs every hour
  *
- * @param database - Shared database service instance from bootstrap
- * @returns {Promise<SchedulerService | null>} Scheduler instance or null if disabled
+ * @param scheduler - The scheduler service instance
+ * @param database - Database service for job operations
  */
-export async function initializeJobs(database: IDatabaseService): Promise<SchedulerService | null> {
-    if (!env.ENABLE_SCHEDULER) {
-        logger.warn('Scheduler disabled by configuration');
-        return null;
-    }
-
+export async function registerCoreJobs(
+    scheduler: SchedulerService,
+    database: IDatabaseService
+): Promise<void> {
     // Register CacheModel for cache cleanup job
     database.registerModel('caches', CacheModel);
 
-    // Inject database into BlockchainService BEFORE first getInstance() call
+    // Inject database into BlockchainService before first getInstance() call
     BlockchainService.setDependencies(database);
 
     const blockchainService = BlockchainService.getInstance();
     const chainParametersFetcher = new ChainParametersFetcher(axios, logger, database);
     const usdtParametersFetcher = new UsdtParametersFetcher(axios, logger, database);
-
-    scheduler = new SchedulerService(database);
 
     // Chain parameters: every 10 minutes
     scheduler.register('chain-parameters:fetch', '*/10 * * * *', async () => {
@@ -62,7 +57,7 @@ export async function initializeJobs(database: IDatabaseService): Promise<Schedu
         await usdtParametersFetcher.fetch();
     });
 
-    // Blockchain: every minute
+    // Blockchain sync: every minute
     scheduler.register('blockchain:sync', '*/1 * * * *', async () => {
         await blockchainService.syncLatestBlocks();
     });
@@ -72,8 +67,9 @@ export async function initializeJobs(database: IDatabaseService): Promise<Schedu
         await blockchainService.pruneOldTransactions(24 * 7, 2);
     });
 
+    // Cache cleanup: every hour
     scheduler.register('cache:cleanup', '0 * * * *', async () => {
-        await database.deleteMany('caches', { expiresAt: { $lte: new Date() } });
+        await database.deleteMany<CacheDoc>('caches', { expiresAt: { $lte: new Date() } });
     });
 
     // System logs cleanup: every hour
@@ -98,15 +94,9 @@ export async function initializeJobs(database: IDatabaseService): Promise<Schedu
                 totalDeleted,
                 retentionDays: config.systemLogsRetentionDays,
                 maxCount: config.systemLogsMaxCount
-            }, `System logs cleanup completed`);
+            }, 'System logs cleanup completed');
         }
     });
 
-  await scheduler.start();
-  logger.info('Scheduler started with configuration from MongoDB');
-  return scheduler;
-}
-
-export function stopJobs() {
-  scheduler?.stop();
+    logger.info('Core scheduler jobs registered');
 }

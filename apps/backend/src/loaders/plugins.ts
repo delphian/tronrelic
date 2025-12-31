@@ -3,7 +3,7 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import axios from 'axios';
 import mongoose from 'mongoose';
-import type { IPluginContext, IPlugin, IDatabaseService } from '@tronrelic/types';
+import type { IPluginContext, IPlugin, IDatabaseService, ISchedulerService } from '@tronrelic/types';
 import { logger } from '../lib/logger.js';
 import { BlockchainObserverService } from '../services/blockchain-observer/index.js';
 import { BaseObserver, BaseBatchObserver, BaseBlockObserver } from '../modules/blockchain/observers/index.js';
@@ -17,7 +17,6 @@ import { PluginWebSocketRegistry } from '../services/plugin-websocket-registry.j
 import { CacheService } from '../services/cache.service.js';
 import { SystemConfigService } from '../services/system-config/index.js';
 import { MenuService } from '../modules/menu/services/menu.service.js';
-import { getScheduler } from '../jobs/index.js';
 import { ChainParametersService } from '../modules/chain-parameters/chain-parameters.service.js';
 import { UsdtParametersService } from '../modules/usdt-parameters/usdt-parameters.service.js';
 import { WidgetService } from '../services/widget/widget.service.js';
@@ -154,8 +153,9 @@ async function loadAllPlugins(): Promise<IPlugin[]> {
  * Load and initialize all discovered plugins.
  *
  * @param database - Shared database service instance from bootstrap
+ * @param scheduler - Scheduler service instance for plugin cron job registration (null if disabled)
  */
-export async function loadPlugins(database: IDatabaseService): Promise<void> {
+export async function loadPlugins(database: IDatabaseService, scheduler: ISchedulerService | null): Promise<void> {
     await logger.waitUntilInitialized();
 
     const pluginList = await loadAllPlugins();
@@ -177,7 +177,6 @@ export async function loadPlugins(database: IDatabaseService): Promise<void> {
     const cacheService = new CacheService(redis, database);
     const systemConfigService = SystemConfigService.getInstance();
     const menuService = MenuService.getInstance();
-    const schedulerService = getScheduler();
     // Services already initialized with two-phase pattern in bootstrap (index.ts)
     // Caches are guaranteed warm at this point
     const chainParametersService = ChainParametersService.getInstance();
@@ -242,7 +241,7 @@ export async function loadPlugins(database: IDatabaseService): Promise<void> {
                 cache: cacheService,
                 systemConfig: systemConfigService,
                 menuService,
-                scheduler: schedulerService as any, // May be null if scheduler disabled
+                scheduler: scheduler as any, // May be null if scheduler disabled
                 chainParameters: chainParametersService,
                 usdtParameters: usdtParametersService,
                 widgetService,

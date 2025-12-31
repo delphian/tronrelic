@@ -162,3 +162,4 @@ export { useWallet, useSessionTracking } from './hooks';
 export { UserIdentityProvider } from './components';
 export type { UserIdentityProviderProps } from './components';
 export { WalletButton } from './components';
+export { UsersMonitor } from './components';

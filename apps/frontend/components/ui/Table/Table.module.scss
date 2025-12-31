@@ -1,0 +1,104 @@
+/**
+ * Table Component Styles
+ *
+ * Provides consistent table styling with container query-based responsive
+ * behavior, hover states, and variant options.
+ * Uses semantic tokens from semantic-tokens.scss for consistency.
+ */
+
+@use '../../../app/breakpoints' as *;
+
+/* Table Wrapper - enables horizontal scroll and container queries */
+.table_wrapper {
+    background: var(--card-background);
+    border-radius: var(--radius-md);
+    border: var(--card-border);
+    overflow: hidden;
+    container-type: inline-size;
+    container-name: table;
+}
+
+/* Base Table */
+.table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.table_compact .th,
+.table_compact .td {
+    padding: var(--spacing-3) var(--spacing-4);
+}
+
+/* Table Header */
+.thead {
+    background: var(--table-header-background);
+}
+
+.th {
+    padding: var(--spacing-4) var(--spacing-5);
+    text-align: left;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
+    color: var(--color-text-muted);
+    text-transform: uppercase;
+    letter-spacing: var(--letter-spacing-wide);
+    border-bottom: var(--border-width-thin) solid var(--color-border);
+}
+
+.th_shrink {
+    width: 1%;
+    white-space: nowrap;
+}
+
+.th_expand {
+    width: 100%;
+}
+
+/* Table Body */
+.tbody {
+    background: var(--card-background);
+}
+
+/* Table Row */
+.tr {
+    transition: background-color var(--transition-fast);
+}
+
+.tr:hover {
+    background: var(--table-row-background-hover);
+}
+
+.tr_error {
+    background: var(--alert-danger-background);
+}
+
+.tr_error:hover {
+    background: var(--color-danger-alpha-18);
+}
+
+.tr_expanded {
+    background: var(--color-surface-muted);
+}
+
+.tr_expanded:hover {
+    background: var(--color-surface-muted);
+}
+
+/* Table Cell */
+.td {
+    padding: var(--spacing-4) var(--spacing-5);
+    border-bottom: var(--border-width-thin) solid var(--color-border-subtle);
+    vertical-align: middle;
+}
+
+.td_muted {
+    color: var(--color-text-muted);
+}
+
+/* Responsive: Hide columns on smaller containers */
+@container table (max-width: #{$breakpoint-mobile-lg}) {
+    .th,
+    .td {
+        padding: var(--spacing-3) var(--spacing-4);
+    }
+}

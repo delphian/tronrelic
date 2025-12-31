@@ -2,9 +2,9 @@
 
 import React, { useEffect, useState, useCallback } from 'react';
 import type { UserFilterType } from '@tronrelic/types';
-import { config as runtimeConfig } from '../../../../lib/config';
-import { Button } from '../../../../components/ui/Button';
-import { ClientTime } from '../../../../components/ui/ClientTime';
+import { config as runtimeConfig } from '../../../../../lib/config';
+import { Button } from '../../../../../components/ui/Button';
+import { ClientTime } from '../../../../../components/ui/ClientTime';
 import styles from './UsersMonitor.module.css';
 
 /**
