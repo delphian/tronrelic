@@ -100,3 +100,24 @@ AGPL-3.0-or-later with plugin exception. Third-party plugins may use any license
 
 **[Chain Parameters Service](docs/tron/tron-chain-parameters.md)** — The Chain Parameters Service fetches TRON network parameters from TronGrid every 10 minutes, caches them in MongoDB, and provides conversion methods for energy/TRX calculations used throughout the application. Key parameters include `totalEnergyLimit` (~180 billion), `totalFrozenForEnergy` (total staked TRX), `energyFee` (burn cost in SUN), and the derived `energyPerTrx` ratio (~5,625 energy per TRX). Conversion methods (`getEnergyFromTRX(trx)`, `getTRXFromEnergy(energy)`, `getAPY(energyAmount, trxCost, durationDays)`) provide accurate calculations based on current network state. Market fetchers and pricing calculators inject this service to normalize costs across different energy amounts and rental durations. Fallback behavior returns sensible defaults when database is empty (cold start scenario) with warnings logged. The scheduled fetch job runs via the scheduler system with error handling and retry logic. Integration patterns show how to inject the service and use conversion methods in observers, API routes, and frontend components. Study this document before implementing energy cost calculations or market data processing.
 
+---
+
+## MANDATORY: Read Documentation Before Implementation
+
+**DO NOT write code, create components, implement features, or modify existing functionality without first loading and reviewing the relevant documentation listed above.** This is not optional guidance, it is a hard requirement.
+
+Each document above contains architectural decisions, required patterns, and constraints that MUST be followed. Ignoring this documentation leads to:
+
+- Code that violates established patterns and must be rewritten
+- Security vulnerabilities from bypassing required abstractions
+- Broken functionality from ignoring lifecycle requirements
+- Wasted effort implementing solutions that already exist
+
+**Before starting any task:**
+
+1. Identify which documentation sections apply to your work
+2. Load and read those documents completely
+3. Follow the patterns, interfaces, and constraints they specify
+4. When in doubt, read more documentation—never guess
+
+The documentation exists because these patterns were learned through experience. Respect that investment by reading before writing.
