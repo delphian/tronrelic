@@ -64,7 +64,14 @@ export function widgetRouter(): Router {
             let params: Record<string, string> = {};
             if (typeof paramsJson === 'string' && paramsJson) {
                 try {
-                    params = JSON.parse(paramsJson);
+                    const parsedParams = JSON.parse(paramsJson);
+                    if (typeof parsedParams !== 'object' || parsedParams === null || Array.isArray(parsedParams)) {
+                        res.status(400).json({
+                            error: '`params` query parameter must be a JSON object.'
+                        });
+                        return;
+                    }
+                    params = parsedParams;
                 } catch {
                     res.status(400).json({
                         error: 'Invalid JSON in `params` query parameter.'
