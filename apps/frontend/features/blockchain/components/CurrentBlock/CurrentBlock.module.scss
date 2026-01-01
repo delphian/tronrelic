@@ -144,14 +144,15 @@
     transform: rotate(180deg);
 }
 
-/* ============================================
-   TIMESTAMP (shown below header on mobile)
-   ============================================ */
+.graph_toggle_button {
+    width: auto;
+    padding: 0.25rem 0.5rem;
+    gap: var(--spacing-2);
+    display: inline-flex;
+}
 
-.timestamp {
+.graph_toggle_text {
     font-size: var(--font-size-xs);
-    opacity: var(--opacity-60);
-    margin-top: var(--spacing-2);
 }
 
 /* ============================================
@@ -327,7 +328,7 @@
     }
 
     .metric_label {
-        font-size: 0.65rem;
+        font-size: var(--font-size-xs);
     }
 
     .metric_value {
@@ -344,7 +345,7 @@
     }
 
     .mini_stat_label {
-        font-size: 0.6rem;
+        font-size: var(--font-size-xs);
     }
 
     .mini_stat_value {
@@ -357,7 +358,7 @@
 
     .period_button {
         padding: 0.2rem 0.4rem;
-        font-size: 0.65rem;
+        font-size: var(--font-size-xs);
     }
 }
 

@@ -52,7 +52,7 @@ export function BlockStatsServer({ blockNumber, transactionCount }: BlockStatsSe
                         <div className={styles.header_left}>
                             {/* Title + Block Number (always same row) */}
                             <div className={styles.title_row}>
-                                <span className={styles.title}>Current Block</span>
+                                <h2 className={styles.title}>Current Block</h2>
                                 <span className={`${styles.block_number} ${styles.metric_value_accent}`}>
                                     {blockNumber.toLocaleString()}
                                 </span>

@@ -132,7 +132,7 @@ export function CurrentBlock({ initialBlock }: CurrentBlockProps) {
                 <Card elevated>
                     <div className={styles.container}>
                         <div className={styles.loading_state}>
-                            <span className={styles.title}>Current Block</span>
+                            <h2 className={styles.title}>Current Block</h2>
                             <span className={styles.loading_message}>Waiting for blockchain data...</span>
                         </div>
                     </div>
@@ -150,7 +150,7 @@ export function CurrentBlock({ initialBlock }: CurrentBlockProps) {
                 <Card elevated tone="muted">
                     <div className={styles.container}>
                         <div className={styles.error_state}>
-                            <span className={styles.title}>Current Block</span>
+                            <h2 className={styles.title}>Current Block</h2>
                             <span className={styles.error_message}>No block data available</span>
                         </div>
                     </div>
@@ -171,7 +171,7 @@ export function CurrentBlock({ initialBlock }: CurrentBlockProps) {
                         <div className={styles.header_left}>
                             {/* Title + Block Number (always same row) */}
                             <div className={styles.title_row}>
-                                <span className={styles.title}>Current Block</span>
+                                <h2 className={styles.title}>Current Block</h2>
                                 <span className={cn(styles.block_number, styles.metric_value_accent)}>
                                     {latestBlock.blockNumber.toLocaleString()}
                                 </span>
@@ -265,12 +265,14 @@ export function CurrentBlock({ initialBlock }: CurrentBlockProps) {
                                 <button
                                     className={cn(
                                         styles.expand_toggle,
+                                        styles.graph_toggle_button,
                                         showGraph && styles.expand_toggle_expanded
                                     )}
                                     onClick={() => setShowGraph(!showGraph)}
-                                    style={{ width: 'auto', padding: '0.25rem 0.5rem', gap: '0.25rem', display: 'inline-flex' }}
+                                    aria-label={showGraph ? 'Hide transaction chart' : 'Show transaction chart'}
+                                    aria-expanded={showGraph}
                                 >
-                                    <span style={{ fontSize: 'var(--font-size-xs)' }}>
+                                    <span className={styles.graph_toggle_text}>
                                         {showGraph ? 'Hide' : 'Show'} Transaction Chart
                                     </span>
                                     <ChevronDown
@@ -367,7 +369,14 @@ function MiniStatCard({ label, value }: MiniStatCardProps) {
 }
 
 /**
- * Formats large numbers with abbreviated suffixes (K, M, B).
+ * Formats large numbers with abbreviated suffixes for compact display.
+ *
+ * Converts large numeric values into human-readable abbreviated formats
+ * (K for thousands, M for millions, B for billions) to fit in constrained
+ * UI spaces like stat cards and chart axes.
+ *
+ * @param num - The number to format
+ * @returns Formatted string with abbreviated suffix (e.g., "1.5M", "42K")
  */
 function formatLargeNumber(num: number): string {
     if (num >= 1_000_000_000) {
@@ -383,7 +392,14 @@ function formatLargeNumber(num: number): string {
 }
 
 /**
- * Formats block timestamp into human-readable time.
+ * Formats block timestamp into human-readable local time.
+ *
+ * Converts ISO timestamp strings from block data into localized time
+ * representations for display in the UI. Falls back to the raw timestamp
+ * string if parsing fails.
+ *
+ * @param timestamp - ISO timestamp string from block data
+ * @returns Localized time string (e.g., "2:34:56 PM")
  */
 function formatBlockTime(timestamp: string): string {
     try {
@@ -395,7 +411,14 @@ function formatBlockTime(timestamp: string): string {
 }
 
 /**
- * Formats timestamp as relative time (e.g., "2s ago", "5m ago").
+ * Formats timestamp as human-readable relative time.
+ *
+ * Calculates the time difference between the given timestamp and now,
+ * returning a compact relative time string for showing update freshness.
+ * Handles seconds, minutes, and hours with appropriate abbreviations.
+ *
+ * @param timestamp - ISO timestamp string to format
+ * @returns Relative time string (e.g., "just now", "42s ago", "5m ago", "2h ago")
  */
 function formatRelativeTime(timestamp: string): string {
     try {
@@ -418,7 +441,16 @@ function formatRelativeTime(timestamp: string): string {
 }
 
 /**
- * Formats chart date based on selected period and live data state.
+ * Formats chart x-axis date labels based on selected time period.
+ *
+ * Adapts date formatting to the context: live mode shows relative times
+ * initially then switches to clock times after receiving live data,
+ * daily view shows times, and weekly/monthly views show dates.
+ *
+ * @param date - The date to format for the chart axis
+ * @param selectedPeriod - The currently selected time period ('live', 1, 7, or 30 days)
+ * @param hasReceivedLiveData - Whether live WebSocket data has been received
+ * @returns Formatted date string appropriate for the chart context
  */
 function formatChartDate(
     date: Date,
