@@ -10,6 +10,7 @@
 
 .grid {
     display: grid;
+    position: relative;
 }
 
 /* Gap size variants */
@@ -45,4 +46,30 @@
     .grid_cols_3 {
         grid-template-columns: minmax(0, 1fr);
     }
+}
+
+/* ============================================================================
+ * BACKGROUND IMAGE SYSTEM
+ * ========================================================================== */
+
+.grid::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image: var(--grid-bg-image);
+    background-size: var(--grid-bg-size);
+    background-repeat: no-repeat;
+    background-position: var(--grid-bg-position);
+    opacity: var(--grid-bg-opacity);
+    pointer-events: none;
+    z-index: 0;
+}
+
+.grid > * {
+    position: relative;
+    z-index: 1;
+}
+
+.grid_no_bg_image::after {
+    display: none;
 }

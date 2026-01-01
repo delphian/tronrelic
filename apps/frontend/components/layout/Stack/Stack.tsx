@@ -35,6 +35,10 @@ interface StackProps extends HTMLAttributes<HTMLDivElement> {
      * Stack content
      */
     children: ReactNode;
+    /**
+     * Disables the background image watermark for this stack.
+     */
+    noBackgroundImage?: boolean;
 }
 
 /**
@@ -89,6 +93,7 @@ export function Stack({
     direction = 'vertical',
     className,
     children,
+    noBackgroundImage,
     ...props
 }: StackProps) {
     return (
@@ -97,6 +102,7 @@ export function Stack({
                 styles.stack,
                 gapClass[gap],
                 directionClass[direction],
+                noBackgroundImage && styles.stack_no_bg_image,
                 className
             )}
             {...props}

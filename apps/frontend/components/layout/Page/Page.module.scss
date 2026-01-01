@@ -10,6 +10,7 @@
 .page {
     display: grid;
     gap: var(--page-gap);
+    position: relative;
 }
 
 @media (max-width: $breakpoint-mobile-lg) {
@@ -23,4 +24,51 @@
     .page {
         padding: 0 !important;
     }
+}
+
+/* ============================================================================
+ * BACKGROUND IMAGE SYSTEM
+ * ========================================================================== */
+
+/**
+ * Page Background Image System
+ *
+ * Applies themeable background watermarks using CSS custom properties defined
+ * in semantic-tokens.scss. Themes can override --page-bg-image to display logos,
+ * icons, or decorative elements at any position within pages.
+ *
+ * Usage in themes:
+ *   [data-theme="custom"] {
+ *     --page-bg-image: url('/images/logo-watermark.svg');
+ *     --page-bg-opacity: 0.12;
+ *     --page-bg-size: 160px;
+ *     --page-bg-position: bottom right;
+ *   }
+ *
+ * To disable for specific pages:
+ *   <Page noBackgroundImage>
+ */
+
+.page::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image: var(--page-bg-image);
+    background-size: var(--page-bg-size);
+    background-repeat: no-repeat;
+    background-position: var(--page-bg-position);
+    opacity: var(--page-bg-opacity);
+    pointer-events: none;
+    z-index: 0;
+}
+
+/* Ensure page content stays above the background image */
+.page > * {
+    position: relative;
+    z-index: 1;
+}
+
+/* Modifier to disable background image for specific pages */
+.page_no_bg_image::after {
+    display: none;
 }

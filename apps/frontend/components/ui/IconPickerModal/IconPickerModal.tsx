@@ -20,11 +20,20 @@ type LucideIconComponent = ComponentType<{ size?: number; 'aria-hidden'?: boolea
  * @returns True when the export is a usable icon component
  */
 const isRenderableLucideExport = (name: string, candidate: unknown): candidate is LucideIconComponent => {
+    // Must start with uppercase
     if (!/^[A-Z]/.test(name)) {
         return false;
     }
 
+    // Exclude utility exports
     if (name === 'createLucideIcon' || name === 'icons' || name === 'Icon') {
+        return false;
+    }
+
+    // Exclude alias patterns to prevent duplicates:
+    // - LucideSnowflake → duplicate of Snowflake
+    // - SnowflakeIcon → duplicate of Snowflake
+    if (name.startsWith('Lucide') || name.endsWith('Icon')) {
         return false;
     }
 

@@ -7,6 +7,7 @@
 
 .section {
     display: grid;
+    position: relative;
 }
 
 /* Gap size variants */
@@ -20,4 +21,30 @@
 
 .section_gap_lg {
     gap: var(--stack-gap-lg);
+}
+
+/* ============================================================================
+ * BACKGROUND IMAGE SYSTEM
+ * ========================================================================== */
+
+.section::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image: var(--section-bg-image);
+    background-size: var(--section-bg-size);
+    background-repeat: no-repeat;
+    background-position: var(--section-bg-position);
+    opacity: var(--section-bg-opacity);
+    pointer-events: none;
+    z-index: 0;
+}
+
+.section > * {
+    position: relative;
+    z-index: 1;
+}
+
+.section_no_bg_image::after {
+    display: none;
 }

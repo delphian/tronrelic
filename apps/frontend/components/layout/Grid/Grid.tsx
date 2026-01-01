@@ -36,6 +36,10 @@ interface GridProps extends HTMLAttributes<HTMLDivElement> {
      * Grid content
      */
     children: ReactNode;
+    /**
+     * Disables the background image watermark for this grid.
+     */
+    noBackgroundImage?: boolean;
 }
 
 /**
@@ -91,6 +95,7 @@ export function Grid({
     columns = 'responsive',
     className,
     children,
+    noBackgroundImage,
     ...props
 }: GridProps) {
     return (
@@ -99,6 +104,7 @@ export function Grid({
                 styles.grid,
                 gapClass[gap],
                 columnsClass[columns],
+                noBackgroundImage && styles.grid_no_bg_image,
                 className
             )}
             {...props}

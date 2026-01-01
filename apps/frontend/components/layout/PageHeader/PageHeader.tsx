@@ -21,6 +21,10 @@ interface PageHeaderProps extends Omit<HTMLAttributes<HTMLElement>, 'title'> {
      * Optional additional content (badges, buttons, etc.)
      */
     children?: ReactNode;
+    /**
+     * Disables the background image watermark for this header.
+     */
+    noBackgroundImage?: boolean;
 }
 
 /**
@@ -47,7 +51,7 @@ interface PageHeaderProps extends Omit<HTMLAttributes<HTMLElement>, 'title'> {
  * @param props - PageHeader component properties
  * @returns A styled section element with page header
  */
-export function PageHeader({ title, subtitle, children, className, ...props }: PageHeaderProps) {
+export function PageHeader({ title, subtitle, children, className, noBackgroundImage, ...props }: PageHeaderProps) {
     // Determine if title is a string (for h1) or ReactNode (for div wrapper like skeletons)
     const titleElement = typeof title === 'string'
         ? <h1 className={styles.title}>{title}</h1>
@@ -61,7 +65,14 @@ export function PageHeader({ title, subtitle, children, className, ...props }: P
         : null;
 
     return (
-        <section className={cn(styles.page_header, className)} {...props}>
+        <section
+            className={cn(
+                styles.page_header,
+                noBackgroundImage && styles.page_header_no_bg_image,
+                className
+            )}
+            {...props}
+        >
             <div className={styles.title_row}>
                 {titleElement}
                 {children}

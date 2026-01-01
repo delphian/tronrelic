@@ -7,6 +7,7 @@
 
 .stack {
     display: flex;
+    position: relative;
 }
 
 /* Direction variants */
@@ -30,4 +31,30 @@
 
 .stack_gap_lg {
     gap: var(--stack-gap-lg);
+}
+
+/* ============================================================================
+ * BACKGROUND IMAGE SYSTEM
+ * ========================================================================== */
+
+.stack::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image: var(--stack-bg-image);
+    background-size: var(--stack-bg-size);
+    background-repeat: no-repeat;
+    background-position: var(--stack-bg-position);
+    opacity: var(--stack-bg-opacity);
+    pointer-events: none;
+    z-index: 0;
+}
+
+.stack > * {
+    position: relative;
+    z-index: 1;
+}
+
+.stack_no_bg_image::after {
+    display: none;
 }

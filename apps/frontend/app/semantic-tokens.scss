@@ -258,22 +258,54 @@
     --stack-gap-md: var(--spacing-7);           /* 1rem */
     --stack-gap-sm: var(--spacing-4);           /* 0.5rem */
     --stack-gap-lg: var(--spacing-10);          /* 1.5rem */
+    --stack-bg-image: none;
+    --stack-bg-opacity: 0.08;
+    --stack-bg-size: 140px;
+    --stack-bg-position: bottom right;
 
     /* Grid Layout */
     --grid-gap-sm: var(--spacing-5);            /* 0.75rem */
     --grid-gap-md: var(--spacing-10);           /* 1.5rem */
     --grid-gap-lg: var(--spacing-12);           /* 2rem */
+    --grid-bg-image: none;
+    --grid-bg-opacity: 0.08;
+    --grid-bg-size: 140px;
+    --grid-bg-position: bottom right;
+
+    /* Section Layout */
+    --section-bg-image: none;
+    --section-bg-opacity: 0.08;
+    --section-bg-size: 140px;
+    --section-bg-position: bottom right;
 
     /* Page Layout */
     --page-gap: var(--spacing-14);              /* 2.5rem */
     --page-gap-sm: var(--spacing-7);            /* 1rem - mobile/constrained contexts */
+    --page-bg-image: none;
+    --page-bg-opacity: 0.08;
+    --page-bg-size: 140px;
+    --page-bg-position: bottom right;
+
+    /* PageHeader Layout */
     --page-header-gap: var(--spacing-5);        /* 0.75rem */
+    --page-header-bg-image: none;
+    --page-header-bg-opacity: 0.08;
+    --page-header-bg-size: 140px;
+    --page-header-bg-position: bottom right;
 
     /* Main Content Area Padding (top / sides / bottom) */
     --main-padding-lg: var(--spacing-14) var(--spacing-15) var(--spacing-16);   /* desktop */
     --main-padding-md: var(--spacing-12) var(--spacing-10) var(--spacing-15);   /* tablet */
     --main-padding-sm: var(--spacing-10) var(--spacing-9) var(--spacing-14);    /* mobile */
     --main-padding-xs: var(--spacing-4) var(--spacing-4) var(--spacing-7);      /* mobile-sm */
+
+    /* Site-wide Body Background Image */
+    --body-bg-image: none;
+    --body-bg-opacity: 0.08;
+    --body-bg-size: cover;
+    --body-bg-position: center center;
+    --body-bg-repeat: no-repeat;
+    --body-bg-attachment: fixed;
 
     /* Input Group */
     --input-group-gap: var(--spacing-5);        /* 0.75rem */

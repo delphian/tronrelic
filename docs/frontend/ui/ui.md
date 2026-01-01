@@ -329,8 +329,9 @@ Before committing any UI component or plugin page, verify:
 ## Further Reading
 
 **Detailed documentation:**
-- [ui-component-styling.md](./ui/ui-component-styling.md) - Complete styling guide with CSS Modules, utility classes, container queries, icons, animations, accessibility, and SSR patterns
-- [ui-design-token-layers.md](./ui/ui-design-token-layers.md) - Industry-standard token hierarchy, complete token reference, W3C alignment, and tooling options
+- [ui-component-styling.md](./ui-component-styling.md) - Complete styling guide with CSS Modules, utility classes, container queries, icons, animations, accessibility, and SSR patterns
+- [ui-design-token-layers.md](./ui-design-token-layers.md) - Industry-standard token hierarchy, complete token reference, W3C alignment, and tooling options
+- [ui-theme.md](./ui-theme.md) - Theme system for custom CSS overrides, admin interface, SSR injection, and dependency resolution
 
 **Related topics:**
 - [frontend-architecture.md](./frontend-architecture.md) - Feature-based organization, file structure, and import patterns

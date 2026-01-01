@@ -43,6 +43,12 @@ export function getIconNode(iconName: string): IconNode | null {
     // Try exact name first (e.g., "Sun", "Moon")
     let icon = iconsRecord[iconName];
 
+    // If not found, strip "Lucide" prefix (lucide-react exports "LucideSun", lucide uses "Sun")
+    if (!icon && iconName.startsWith('Lucide')) {
+        const baseName = iconName.slice(6);
+        icon = iconsRecord[baseName];
+    }
+
     // If not found, strip "Icon" suffix (lucide-react uses "SunIcon", lucide uses "Sun")
     if (!icon && iconName.endsWith('Icon')) {
         const baseName = iconName.slice(0, -4);

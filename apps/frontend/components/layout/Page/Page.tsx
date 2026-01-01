@@ -14,6 +14,11 @@ interface PageProps extends HTMLAttributes<HTMLDivElement> {
      * Page content
      */
     children: ReactNode;
+    /**
+     * Disables the background image watermark for this page.
+     * Use when the background image conflicts with page content.
+     */
+    noBackgroundImage?: boolean;
 }
 
 /**
@@ -34,12 +39,27 @@ interface PageProps extends HTMLAttributes<HTMLDivElement> {
  * </Page>
  * ```
  *
+ * @example
+ * ```tsx
+ * // Disable background image for specific pages
+ * <Page noBackgroundImage>
+ *   <PageHeader title="Settings" />
+ * </Page>
+ * ```
+ *
  * @param props - Page component properties
  * @returns A styled div element with page layout
  */
-export function Page({ className, children, ...props }: PageProps) {
+export function Page({ className, children, noBackgroundImage, ...props }: PageProps) {
     return (
-        <div className={cn(styles.page, className)} {...props}>
+        <div
+            className={cn(
+                styles.page,
+                noBackgroundImage && styles.page_no_bg_image,
+                className
+            )}
+            {...props}
+        >
             {children}
         </div>
     );

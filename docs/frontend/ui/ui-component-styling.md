@@ -17,6 +17,63 @@ Inconsistent styling creates problems that compound over time:
 
 Following these guidelines eliminates these risks and ensures your interfaces feel like a natural extension of TronRelic.
 
+## Component-First Architecture
+
+**TronRelic is React component-first.** Before reaching for CSS classes or styled divs, use the design system's React components. Styling comes second—it customizes components, not replaces them.
+
+### The Component Hierarchy
+
+When building UI, follow this decision order:
+
+1. **Layout components for structure** — `<Page>`, `<PageHeader>`, `<Stack>`, `<Grid>`, `<Section>` handle page layout with built-in responsive behavior
+2. **UI components for semantic elements** — `<Card>`, `<Button>`, `<Badge>`, `<Modal>` provide consistent interactive patterns
+3. **Design tokens for customization** — CSS variables (`var(--color-primary)`, `var(--spacing-10)`) adjust appearance within components
+4. **SCSS Modules for component-specific styling** — Custom layout, states, and container queries for your new components
+5. **Raw `<div>` only for truly custom structures** — When no existing component fits and you're building something new
+
+### When to Create New Components vs Use Existing Ones
+
+**Use existing components when:**
+- You need a card-like container → use `<Card>`, not `<div className="surface">`
+- You need vertical/horizontal spacing → use `<Stack>`, not `<div style={{display: 'flex'}}>`
+- You need a grid layout → use `<Grid>`, not `<div className={styles.grid}>`
+- You need a button → use `<Button>`, not `<div onClick={...}>`
+
+**Create a new component when:**
+- You're building a domain-specific widget (MarketCard, TransactionRow, WhaleDashboard)
+- You need to compose multiple existing components into a reusable pattern
+- The existing components don't fit your semantic purpose
+
+**Your new component should internally use existing components:**
+
+```tsx
+// Good - new component composes existing components
+export function MarketCard({ market }: Props) {
+    return (
+        <Card>
+            <Stack gap="sm">
+                <h3>{market.name}</h3>
+                <Badge variant="success">{market.status}</Badge>
+            </Stack>
+        </Card>
+    );
+}
+
+// Bad - reinventing components with raw divs
+export function MarketCard({ market }: Props) {
+    return (
+        <div className="surface surface--padding-md">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                <h3>{market.name}</h3>
+                <span className="badge badge--success">{market.status}</span>
+            </div>
+        </div>
+    );
+}
+```
+
+This document focuses on **styling your new components**—the SCSS Modules, design tokens, and responsive patterns you use when building domain-specific UI. The components you create should compose existing layout and UI components internally.
+
 ## SCSS Architecture: Two-Layer System
 
 ### ⚠️ SCSS Modules Class Name Conventions
@@ -171,32 +228,38 @@ Use the imported `styles` object to apply scoped class names:
 </div>
 ```
 
-### Step 4: Combine with Utility Classes
+### Step 4: Combine Components with Module Classes
 
-Mix CSS Module classes with global utility classes when appropriate:
+Add your SCSS Module classes to design system components for customization:
 
 ```typescript
-<div className={`surface surface--padding-md ${styles.card}`}>
-    <span className="badge badge--success">{status}</span>
-    <div className={styles.customLayout}>
-        <p className="text-muted">{description}</p>
-    </div>
-</div>
+import { Card } from '../../../components/ui/Card';
+import { Badge } from '../../../components/ui/Badge';
+import { Stack } from '../../../components/layout';
+
+// Add module class to component for custom styling
+<Card className={styles.card}>
+    <Stack gap="sm">
+        <Badge variant="success">{status}</Badge>
+        <div className={styles.customLayout}>
+            <p className="text-muted">{description}</p>
+        </div>
+    </Stack>
+</Card>
 ```
 
-**When to use utilities:**
-- Surface backgrounds and borders (`.surface`)
-- Button variants (`.btn`, `.btn--primary`)
-- Badge states (`.badge`, `.badge--success`)
-- Standard layouts (`.stack`, `.grid`)
-- Text styling (`.text-muted`)
+**Use React components for:**
+- Card containers (`<Card>`)
+- Layout structure (`<Stack>`, `<Grid>`)
+- Buttons (`<Button>`)
+- Badges (`<Badge>`)
 
-**When to use SCSS Modules:**
-- Custom layouts specific to your component
-- Component-specific spacing or sizing
+**Use SCSS Modules for:**
+- Custom internal layouts specific to your component
+- Component-specific typography or spacing adjustments
 - Unique hover/focus states
 - Container queries for component responsiveness
-- Responsive media queries using SCSS breakpoint variables
+- Domain-specific visual treatments
 
 ### Step 5: Use CSS Variables for Theming
 
@@ -206,12 +269,11 @@ Always reference design tokens from `semantic-tokens.scss` in your SCSS Module. 
 /* MarketCard.module.scss */
 @use '../../../app/breakpoints' as *;
 
+/* The Card component provides surface styling (background, border, radius).
+   Your module adds domain-specific customization. */
 .card {
-    background: var(--color-surface);
-    border: var(--border-width-thin) solid var(--color-border);
-    border-radius: var(--radius-md);
-    padding: var(--spacing-10);
-    transition: all var(--transition-base);
+    container-type: inline-size;
+    container-name: market-card;
 }
 
 .title {
@@ -220,10 +282,15 @@ Always reference design tokens from `semantic-tokens.scss` in your SCSS Module. 
     font-weight: var(--font-weight-semibold);
 }
 
-/* CORRECT - component selects different token at smaller breakpoint */
-@media (max-width: $breakpoint-mobile) {
-    .card {
-        padding: var(--spacing-7);  /* Select smaller token, don't redefine --spacing-10 */
+.price {
+    font-size: var(--font-size-2xl);
+    font-weight: var(--font-weight-bold);
+}
+
+/* CORRECT - select different tokens at smaller container widths */
+@container market-card (max-width: 300px) {
+    .price {
+        font-size: var(--font-size-xl);  /* Select smaller token */
     }
 }
 ```
@@ -273,16 +340,16 @@ Always reference design tokens from `semantic-tokens.scss` in your SCSS Module. 
 
 ## Complete Example
 
-Here's a full example showing the recommended patterns:
+Here's a full example showing the recommended patterns—a new domain component that composes existing UI components and adds custom styling via SCSS Modules:
 
-**`components/MarketCard/MarketCard.tsx`**
+**`features/markets/components/MarketCard/MarketCard.tsx`**
 ```typescript
 /**
  * Market Card Component
  *
  * Displays energy market provider information with pricing, availability,
- * and reliability metrics. Adapts layout based on container width using
- * container queries.
+ * and reliability metrics. Composes Card, Stack, and Badge components
+ * from the design system, adding domain-specific styling via SCSS Module.
  *
  * @param props - Component props
  * @param props.name - Provider name
@@ -290,6 +357,9 @@ Here's a full example showing the recommended patterns:
  * @param props.availability - Availability status
  */
 
+import { Card } from '../../../../components/ui/Card';
+import { Stack } from '../../../../components/layout';
+import { Badge } from '../../../../components/ui/Badge';
 import styles from './MarketCard.module.scss';
 
 interface MarketCardProps {
@@ -300,30 +370,32 @@ interface MarketCardProps {
 
 export function MarketCard({ name, price, availability }: MarketCardProps) {
     return (
-        <div className={`surface surface--padding-md ${styles.card}`}>
-            <div className={styles.header}>
-                <h3 className={styles.title}>{name}</h3>
-                <span className="badge badge--success">{availability}</span>
-            </div>
-            <div className={styles.price}>
-                {price.toLocaleString()} TRX
-            </div>
-        </div>
+        <Card className={styles.card}>
+            <Stack gap="sm">
+                <div className={styles.header}>
+                    <h3 className={styles.title}>{name}</h3>
+                    <Badge variant="success">{availability}</Badge>
+                </div>
+                <div className={styles.price}>
+                    {price.toLocaleString()} TRX
+                </div>
+            </Stack>
+        </Card>
     );
 }
 ```
 
-**`components/MarketCard/MarketCard.module.scss`**
+**`features/markets/components/MarketCard/MarketCard.module.scss`**
 ```scss
 /**
  * Market Card Styles
  *
- * Responsive card layout using container queries to adapt to available space.
- * Combines global .surface utility with component-specific layout and typography.
- * All values use design tokens from semantic-tokens.scss for consistency.
+ * Domain-specific styling for the MarketCard component. The Card component
+ * provides surface styling; this module adds container queries for responsive
+ * layout and custom typography for the price display.
  */
 
-@use '../../../app/breakpoints' as *;
+@use '../../../../app/breakpoints' as *;
 
 .card {
     container-type: inline-size;
@@ -334,7 +406,6 @@ export function MarketCard({ name, price, availability }: MarketCardProps) {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin-bottom: var(--spacing-7);
 }
 
 .title {
@@ -364,12 +435,12 @@ export function MarketCard({ name, price, availability }: MarketCardProps) {
 ```
 
 **Key points:**
-- `.surface` and `.badge` are utility classes from `globals.scss`
-- `.card`, `.header`, `.title`, `.price` are scoped to this component via SCSS Modules
-- **All values use design tokens** - spacing (`--spacing-*`), typography (`--font-size-*`, `--font-weight-*`), colors (`--color-*`)
-- **Breakpoints imported from `_breakpoints.scss`** - enables SCSS variables in media queries
-- Container queries adapt the component to its available space
-- JSDoc comments explain the "why" before showing the "how"
+- **Components first** — Uses `<Card>`, `<Stack>`, and `<Badge>` from the design system
+- **SCSS Module for customization** — Adds container queries and domain-specific typography
+- **All values use design tokens** — spacing (`--spacing-*`), typography (`--font-size-*`, `--font-weight-*`), colors (`--color-*`)
+- **Breakpoints imported from `_breakpoints.scss`** — enables SCSS variables in container queries
+- **Container queries adapt to available space** — works in any context (full page, sidebar, modal)
+- **JSDoc comments explain the "why"** — describes purpose, not just structure
 
 ## Design System Reference
 
@@ -407,25 +478,31 @@ TronRelic uses a **3-layer design token system**. Component styles should refere
 
 ### Available Utility Classes
 
+Utility classes exist in `globals.scss` for use by the design system's React components and for rare cases where a component doesn't fit. **Prefer React components over direct utility class usage.**
+
 #### Surfaces and Cards
 
+**Use the `<Card>` component** for card-like containers:
+
 ```tsx
-// Basic surface
+import { Card } from '../../../components/ui/Card';
+
+// Standard card - use the component
+<Card>Content here</Card>
+<Card padding="lg">Larger padding</Card>
+<Card variant="muted">Nested content</Card>
+```
+
+The `.surface` utility classes power the Card component internally. Direct usage is rare—only for custom containers where Card semantics don't apply:
+
+```tsx
+// Rare - custom container that isn't semantically a "card"
 <div className="surface surface--padding-md">
-    Content here
-</div>
-
-// With variants
-<div className="surface surface--muted surface--padding-lg">
-    Muted background surface
-</div>
-
-<div className="surface surface--accent surface--elevated">
-    Accent surface with extra elevation
+    Custom toolbar or control group
 </div>
 ```
 
-**Available surface modifiers:**
+**Available surface modifiers (for reference):**
 - `.surface--muted` - Darker background for nested content
 - `.surface--accent` - Gradient accent background
 - `.surface--elevated` - Larger shadow for prominence
@@ -433,44 +510,39 @@ TronRelic uses a **3-layer design token system**. Component styles should refere
 
 #### Buttons
 
+**Use the `<Button>` component** for interactive buttons:
+
 ```tsx
-// Primary action button
-<button className="btn btn--primary btn--md">
-    Submit
-</button>
+import { Button } from '../../../components/ui/Button';
 
-// Secondary action
-<button className="btn btn--secondary btn--md">
-    Cancel
-</button>
-
-// Ghost button for subtle actions
-<button className="btn btn--ghost btn--sm">
-    Learn More
-</button>
-
-// Danger button for destructive actions
-<button className="btn btn--danger btn--md">
-    Delete
-</button>
+<Button variant="primary">Submit</Button>
+<Button variant="secondary">Cancel</Button>
+<Button variant="ghost" size="sm">Learn More</Button>
+<Button variant="danger">Delete</Button>
 ```
 
-**Button sizes:**
-- `.btn--sm` - Compact buttons (34px height)
-- `.btn--md` - Standard buttons (42px height)
-- `.btn--lg` - Large buttons (50px height)
+The `.btn` utility classes power the Button component internally:
 
-**Button states:**
-- `.btn--loading` - Indicates processing (adds opacity and cursor)
-- `:disabled` - Native disabled state (automatically styled)
+```tsx
+// For reference - prefer <Button> component
+<button className="btn btn--primary btn--md">Submit</button>
+```
+
+**Button sizes:** `sm` (34px), `md` (42px), `lg` (50px)
+
+**Button states:** `loading`, `disabled`
 
 #### Badges
 
+**Use the `<Badge>` component** for status indicators:
+
 ```tsx
-<span className="badge badge--neutral">Active</span>
-<span className="badge badge--success">Completed</span>
-<span className="badge badge--warning">Pending</span>
-<span className="badge badge--danger">Failed</span>
+import { Badge } from '../../../components/ui/Badge';
+
+<Badge variant="neutral">Active</Badge>
+<Badge variant="success">Completed</Badge>
+<Badge variant="warning">Pending</Badge>
+<Badge variant="danger">Failed</Badge>
 ```
 
 #### Forms
@@ -616,27 +688,28 @@ Container queries fix this by letting each component define its own responsive b
 
 ```tsx
 // Component: TransactionCard
-import './TransactionCard.css';
+import { Card } from '../../../components/ui/Card';
+import styles from './TransactionCard.module.scss';
 
 /**
  * Transaction Card Component
  *
  * Displays transaction details in a responsive grid layout that adapts
- * based on container width, not viewport size. Ensures consistent layout
- * whether rendered full-width, in slideouts, or within plugin contexts.
+ * based on container width, not viewport size. Uses Card component for
+ * surface styling; SCSS Module adds container queries for responsive grid.
  *
  * @param props - Component props
  * @param props.transaction - Transaction data to display
  */
 export function TransactionCard({ transaction }: { transaction: ITransaction }) {
     return (
-        <div className="transaction-card">
-            <div className="transaction-card__grid">
-                <div className="transaction-card__stat">Hash: {transaction.hash}</div>
-                <div className="transaction-card__stat">Amount: {transaction.amount}</div>
-                <div className="transaction-card__stat">Status: {transaction.status}</div>
+        <Card className={styles.card}>
+            <div className={styles.grid}>
+                <div className={styles.stat}>Hash: {transaction.hash}</div>
+                <div className={styles.stat}>Amount: {transaction.amount}</div>
+                <div className={styles.stat}>Status: {transaction.status}</div>
             </div>
-        </div>
+        </Card>
     );
 }
 ```
@@ -645,40 +718,41 @@ export function TransactionCard({ transaction }: { transaction: ITransaction }) 
 /* TransactionCard.module.scss */
 @use '../../../app/breakpoints' as *;
 
-.transaction-card {
+/* Card component provides surface styling; we add container queries */
+.card {
     container-type: inline-size;
     container-name: transaction-card;
-    padding: var(--spacing-7);  /* Default: 1rem (16px) */
 }
 
-.transaction-card__grid {
+.grid {
     display: grid;
-    grid-template-columns: 1fr; /* Single column by default */
-    gap: var(--spacing-4);  /* Smallest gap for mobile */
+    grid-template-columns: 1fr;
+    gap: var(--spacing-4);
+}
+
+.stat {
+    font-size: var(--font-size-sm);
+    color: var(--color-text-muted);
 }
 
 /* When container is 480px+ wide, show 2 columns */
 @container transaction-card (min-width: #{$breakpoint-mobile-md}) {
-    .transaction-card__grid {
+    .grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: var(--spacing-7);  /* Select larger gap token */
+        gap: var(--spacing-7);
     }
 }
 
 /* When container is 720px+ wide, show 3 columns */
 @container transaction-card (min-width: 720px) {
-    .transaction-card {
-        padding: var(--spacing-10);  /* Select larger padding token */
-    }
-
-    .transaction-card__grid {
+    .grid {
         grid-template-columns: repeat(3, minmax(0, 1fr));
-        gap: var(--spacing-10);  /* Select even larger gap token */
+        gap: var(--spacing-10);
     }
 }
 ```
 
-This component adapts correctly whether it's rendered full-width on a page, inside a 45%-width slideout, or within a plugin card.
+This component adapts correctly whether it's rendered full-width on a page, inside a 45%-width slideout, or within a plugin card. The `<Card>` component provides consistent surface styling while the SCSS Module handles responsive grid behavior.
 
 ## Icons: Use Lucide React
 
@@ -949,43 +1023,44 @@ For plugins that need container queries on the page wrapper, use a module class 
 
 Plugins render in various contexts (full pages, cards, modals, slideouts). **Never use viewport media queries** for plugin component styling—always use container queries so your UI adapts to its container.
 
-### 3. Import Design System Variables
+### 3. Use Context Components
 
-Plugins should reference the same CSS variables as the core application:
+Plugins access design system components through `context.ui` and `context.layout`:
 
 ```tsx
-// In plugin component - inline styles (prefer CSS Modules when possible)
-<div style={{
-    background: 'var(--color-surface)',
-    border: 'var(--border-width-thin) solid var(--color-border)',
-    borderRadius: 'var(--radius-md)',
-    padding: 'var(--spacing-10)'
-}}>
-    Plugin content
-</div>
+export function MyPluginPage({ context }: { context: IFrontendPluginContext }) {
+    const { layout, ui } = context;
+
+    // Use components from context - never raw divs with surface classes
+    return (
+        <layout.Page>
+            <ui.Card>Plugin content</ui.Card>
+        </layout.Page>
+    );
+}
 ```
 
 ### 4. Use SCSS Modules for Plugin Styles
 
-Create a colocated SCSS Module for plugin-specific styles:
+Add custom styling via SCSS Modules on top of context components:
 
 ```tsx
-// Good - layout components via context with SCSS Modules for custom styling
+// Good - context components with SCSS Modules for custom styling
 import styles from './MyPlugin.module.scss';
 
 export function MyPluginPage({ context }: { context: IFrontendPluginContext }) {
-    const { layout } = context;
+    const { layout, ui } = context;
 
     return (
         <layout.Page>
             <layout.PageHeader title="Plugin Title" subtitle="Description" />
             <layout.Grid columns="responsive" gap="md">
-                <div className={`surface ${styles.custom_card}`}>
+                <ui.Card className={styles.custom_card}>
                     <layout.Stack gap="sm">
                         <h3>Card Title</h3>
                         <p className="text-muted">Card content</p>
                     </layout.Stack>
-                </div>
+                </ui.Card>
             </layout.Grid>
         </layout.Page>
     );
@@ -996,6 +1071,7 @@ export function MyPluginPage({ context }: { context: IFrontendPluginContext }) {
 ```scss
 @use '../../../app/breakpoints' as *;
 
+/* Card component provides surface styling; module adds custom border and container queries */
 .custom_card {
     border: var(--border-width-thin) solid var(--color-primary);
     container-type: inline-size;
@@ -1009,22 +1085,22 @@ export function MyPluginPage({ context }: { context: IFrontendPluginContext }) {
 }
 ```
 
-**Avoid - inline styles with hardcoded values:**
+**Avoid - raw divs instead of components:**
 ```tsx
-// ❌ Bad - hardcoded values instead of design tokens
+// ❌ Bad - raw divs with inline styles instead of components
 <div style={{
-    background: 'rgba(12, 18, 34, 0.88)',  /* Should be var(--color-surface) */
-    padding: '1.5rem',                      /* Should be var(--spacing-10) */
-    borderRadius: '16px'                    /* Should be var(--radius-lg) */
+    background: 'rgba(12, 18, 34, 0.88)',  /* Should use <ui.Card> */
+    padding: '1.5rem',
+    borderRadius: '16px'
 }}>
     <div style={{
         display: 'flex',
         flexDirection: 'column',
-        gap: '1.5rem'                       /* Should use <Stack gap="lg"> */
+        gap: '1.5rem'                       /* Should use <layout.Stack gap="lg"> */
     }}>
         <h2>Plugin Title</h2>
         <p style={{
-            color: 'rgba(226, 234, 255, 0.64)' /* Should be var(--color-text-muted) */
+            color: 'rgba(226, 234, 255, 0.64)'
         }}>
             Description
         </p>

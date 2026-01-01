@@ -24,6 +24,10 @@ interface SectionProps extends HTMLAttributes<HTMLElement> {
      * Section content
      */
     children: ReactNode;
+    /**
+     * Disables the background image watermark for this section.
+     */
+    noBackgroundImage?: boolean;
 }
 
 /**
@@ -69,11 +73,17 @@ export function Section({
     gap = 'md',
     className,
     children,
+    noBackgroundImage,
     ...props
 }: SectionProps) {
     return (
         <section
-            className={cn(styles.section, gapClass[gap], className)}
+            className={cn(
+                styles.section,
+                gapClass[gap],
+                noBackgroundImage && styles.section_no_bg_image,
+                className
+            )}
             {...props}
         >
             {children}

@@ -29,6 +29,33 @@ body {
   /* Enable container queries for main tag responsive padding */
   container-type: inline-size;
   container-name: body;
+  position: relative;
+}
+
+/* Site-wide Background Image System
+ * Applies themeable background images using CSS custom properties.
+ * Override --body-bg-image in themes for branded backgrounds.
+ *
+ * Usage in themes:
+ *   [data-theme="custom"] {
+ *     --body-bg-image: url('/images/site-background.svg');
+ *     --body-bg-opacity: 0.12;
+ *     --body-bg-size: cover;
+ *     --body-bg-position: center center;
+ *   }
+ */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image: var(--body-bg-image);
+  background-size: var(--body-bg-size);
+  background-repeat: var(--body-bg-repeat);
+  background-position: var(--body-bg-position);
+  background-attachment: var(--body-bg-attachment);
+  opacity: var(--body-bg-opacity);
+  pointer-events: none;
+  z-index: -1;
 }
 
 a {

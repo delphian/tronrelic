@@ -345,7 +345,7 @@ Breakpoints are defined as **SCSS variables** in `_breakpoints.scss` (the single
 
 ### Theme Customization
 
-[Placeholder: How to extend or modify the theme]
+**Read [ui-theme.md](./ui-theme.md) before creating or modifying themes.** The theme system enables custom CSS that overrides design tokens without modifying source files. Themes persist in MongoDB, apply via SSR injection, and use the `[data-theme="UUID"]` selector pattern to achieve higher CSS specificity than `:root` defaults. The admin interface at `/system/theme` provides CRUD operations, CSS validation, dependency management, and auto-generated templates containing all available tokens.
 
 ## Migration Guide
 
