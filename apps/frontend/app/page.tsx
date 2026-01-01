@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { BlockStatsServer, CurrentBlock } from '../features/blockchain/components';
 import { Page } from '../components/layout';
+import { WidgetZone, fetchWidgetsForRoute } from '../components/widgets';
 import { buildMetadata } from '../lib/seo';
 import { getServerConfig } from '../lib/serverConfig';
 import { getApiUrl } from '../lib/config';
@@ -39,6 +40,9 @@ export default async function HomePage(): Promise<JSX.Element> {
     console.error('Failed to fetch initial block for SSR:', error);
     // SSR fetch failed - component will show loading state until WebSocket connects
   }
+
+  // Fetch widgets for homepage - enables plugin widgets to render on the homepage
+  const widgets = await fetchWidgetsForRoute('/', {});
 
   const faqSchema = {
     '@context': 'https://schema.org',
@@ -112,6 +116,8 @@ export default async function HomePage(): Promise<JSX.Element> {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(faqSchema) }}
       />
+      {/* Widget zone for plugin-injected content below main homepage content */}
+      <WidgetZone name="main-after" widgets={widgets} route="/" params={{}} />
     </Page>
   );
 }

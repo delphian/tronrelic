@@ -1,0 +1,370 @@
+/**
+ * CurrentBlock Component Styles - Compact Redesign
+ *
+ * A compact, information-dense display of current blockchain block data.
+ * Uses container queries for responsive behavior on mobile devices.
+ *
+ * Layout modes:
+ * - Normal: Inline header with block number, transaction count, and status
+ * - Expanded: Shows detailed statistics and optional graph
+ * - Mobile: Ultra-compact single-row layout
+ */
+@use '../../../../app/breakpoints' as *;
+
+/* Container query container */
+.container {
+    container-type: inline-size;
+    container-name: current-block;
+}
+
+/* Wrapper for hydration transition - positions above BlockStatsServer */
+.wrapper {
+    position: relative;
+    z-index: 1;
+    opacity: 0;
+    transition: opacity 0.15s ease-out;
+}
+
+.wrapper_hydrated {
+    opacity: 1;
+}
+
+/* ============================================
+   COMPACT HEADER LAYOUT
+   ============================================ */
+
+.header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--spacing-5);
+}
+
+.header_left {
+    display: flex;
+    align-items: center;
+    column-gap: var(--spacing-7);
+    row-gap: var(--spacing-2);
+    flex: 1 1 0;
+    flex-wrap: wrap;
+    min-width: 0;
+}
+
+/* ============================================
+   TITLE ROW (Title + Block Number - never wraps)
+   ============================================ */
+
+.title_row {
+    display: flex;
+    align-items: baseline;
+    gap: var(--spacing-5);
+    white-space: nowrap;
+}
+
+.title {
+    margin: 0;
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-semibold);
+}
+
+.block_number {
+    font-size: var(--font-size-lg);
+    font-weight: var(--font-weight-bold);
+    font-variant-numeric: tabular-nums;
+}
+
+/* ============================================
+   TRANSACTION METRIC (wraps to next row on mobile)
+   ============================================ */
+
+.tx_metric {
+    display: flex;
+    align-items: baseline;
+    gap: var(--spacing-3);
+}
+
+.metric_label {
+    font-size: var(--font-size-xs);
+    opacity: var(--opacity-60);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.metric_value {
+    font-size: var(--font-size-lg);
+    font-weight: var(--font-weight-bold);
+    font-variant-numeric: tabular-nums;
+}
+
+.metric_value_accent {
+    color: var(--color-primary);
+}
+
+/* ============================================
+   HEADER RIGHT (Status + Expand Toggle - never wraps)
+   ============================================ */
+
+.header_right {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-5);
+    flex-shrink: 0;
+}
+
+.expand_toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border: none;
+    border-radius: var(--radius-sm);
+    background: rgba(255, 255, 255, 0.05);
+    color: rgba(255, 255, 255, 0.6);
+    cursor: pointer;
+    transition: all var(--transition-base);
+}
+
+.expand_toggle:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.9);
+}
+
+.expand_toggle_expanded {
+    background: var(--color-primary-alpha-15);
+    color: var(--color-primary);
+}
+
+.expand_icon {
+    font-size: 0.7rem;
+    transition: transform 0.2s ease;
+}
+
+.expand_icon_rotated {
+    transform: rotate(180deg);
+}
+
+.graph_toggle_button {
+    width: auto;
+    padding: 0.25rem 0.5rem;
+    gap: var(--spacing-2);
+    display: inline-flex;
+}
+
+.graph_toggle_text {
+    font-size: var(--font-size-xs);
+}
+
+/* ============================================
+   EXPANDABLE CONTENT AREA
+   ============================================ */
+
+.expanded_content {
+    display: grid;
+    gap: var(--spacing-7);
+    margin-top: var(--spacing-7);
+    padding-top: var(--spacing-7);
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    animation: slideDown 0.2s ease-out;
+}
+
+@keyframes slideDown {
+    from {
+        opacity: 0;
+        transform: translateY(-8px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* ============================================
+   SECTION STYLES (Block Stats, Resources)
+   ============================================ */
+
+.section {
+    display: grid;
+    gap: var(--spacing-4);
+}
+
+.section_title {
+    margin: 0;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+    opacity: var(--opacity-80);
+}
+
+/* ============================================
+   MINI STATS GRID (Compact stat cards)
+   ============================================ */
+
+.mini_stats_grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+    gap: var(--spacing-4);
+}
+
+.mini_stat_card {
+    padding: var(--spacing-4);
+    background: rgba(255, 255, 255, 0.02);
+    border: var(--border-width-thin) solid rgba(255, 255, 255, 0.05);
+    border-radius: var(--radius-sm);
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-1);
+}
+
+.mini_stat_label {
+    font-size: var(--font-size-xs);
+    opacity: var(--opacity-60);
+}
+
+.mini_stat_value {
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-semibold);
+    font-variant-numeric: tabular-nums;
+}
+
+/* ============================================
+   GRAPH SECTION
+   ============================================ */
+
+.graph_section {
+    margin-top: var(--spacing-4);
+}
+
+.graph_header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: var(--spacing-5);
+}
+
+.period_selector {
+    display: flex;
+    gap: var(--spacing-2);
+    background: rgba(255, 255, 255, 0.03);
+    padding: 0.2rem;
+    border-radius: var(--radius-sm);
+    border: var(--border-width-thin) solid rgba(255, 255, 255, 0.08);
+}
+
+.period_button {
+    padding: 0.25rem 0.5rem;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
+    background: transparent;
+    color: rgba(255, 255, 255, 0.5);
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: all var(--transition-base);
+}
+
+.period_button:hover {
+    background: rgba(255, 255, 255, 0.05);
+    color: rgba(255, 255, 255, 0.7);
+}
+
+.period_button_active {
+    background: var(--color-primary-alpha-15);
+    color: var(--color-primary);
+}
+
+.graph_content {
+    position: relative;
+    min-height: 200px;
+}
+
+.graph_loading,
+.graph_error {
+    padding: var(--spacing-10);
+    text-align: center;
+    font-size: var(--font-size-sm);
+    opacity: var(--opacity-70);
+}
+
+.graph_error {
+    color: var(--color-error);
+}
+
+/* ============================================
+   LOADING AND ERROR STATES
+   ============================================ */
+
+.loading_state,
+.error_state {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-4);
+}
+
+.loading_message,
+.error_message {
+    opacity: var(--opacity-70);
+    font-size: var(--font-size-sm);
+}
+
+/* ============================================
+   CONTAINER QUERIES - MOBILE RESPONSIVENESS
+   ============================================ */
+
+/* Tablet/small desktop: TXs wraps below title row */
+@container current-block (max-width: #{$breakpoint-mobile-lg}) {
+    .mini_stats_grid {
+        grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
+    }
+}
+
+/* Mobile: Ultra-compact mode */
+@container current-block (max-width: #{$breakpoint-mobile-md}) {
+    .title {
+        font-size: var(--font-size-sm);
+    }
+
+    .block_number {
+        font-size: var(--font-size-md);
+    }
+
+    .metric_label {
+        font-size: var(--font-size-xs);
+    }
+
+    .metric_value {
+        font-size: var(--font-size-md);
+    }
+
+    .mini_stats_grid {
+        grid-template-columns: repeat(3, 1fr);
+        gap: var(--spacing-2);
+    }
+
+    .mini_stat_card {
+        padding: var(--spacing-2);
+    }
+
+    .mini_stat_label {
+        font-size: var(--font-size-xs);
+    }
+
+    .mini_stat_value {
+        font-size: var(--font-size-xs);
+    }
+
+    .graph_content {
+        min-height: 160px;
+    }
+
+    .period_button {
+        padding: 0.2rem 0.4rem;
+        font-size: var(--font-size-xs);
+    }
+}
+
+/* Very small mobile */
+@container current-block (max-width: #{$breakpoint-mobile-sm}) {
+    .mini_stats_grid {
+        gap: var(--spacing-3);
+    }
+}
