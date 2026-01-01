@@ -16,7 +16,7 @@
  */
 
 import { Card } from '../../../../components/ui/Card';
-import styles from './BlockStatsServer.module.css';
+import styles from './BlockStatsServer.module.scss';
 
 /**
  * Props for the BlockStatsServer component.
@@ -31,8 +31,8 @@ interface BlockStatsServerProps {
 /**
  * Server-rendered block statistics for instant LCP paint.
  *
- * Renders the block number and transaction count in the same visual structure
- * as CurrentBlock, but as a pure server component that paints immediately.
+ * Renders the block number and transaction count in the same compact visual
+ * structure as CurrentBlock, but as a pure server component that paints immediately.
  *
  * @param props - Block data from SSR fetch
  * @returns Static block stats that paint without JavaScript
@@ -47,23 +47,23 @@ export function BlockStatsServer({ blockNumber, transactionCount }: BlockStatsSe
         <div className={styles.container} aria-hidden="true">
             <Card elevated>
                 <div className={styles.content}>
-                    {/* Header */}
+                    {/* Compact Header Row - matches CurrentBlock exactly */}
                     <div className={styles.header}>
-                        <h2 className={styles.title}>Current Block</h2>
-                    </div>
-
-                    {/* Stats Grid - matches CurrentBlock layout exactly */}
-                    <div className={styles.stats_grid}>
-                        <div className={styles.stat_card}>
-                            <div className={styles.label}>Block Number</div>
-                            <div className={styles.value}>
-                                {blockNumber.toLocaleString()}
+                        <div className={styles.header_left}>
+                            {/* Title + Block Number (always same row) */}
+                            <div className={styles.title_row}>
+                                <span className={styles.title}>Current Block</span>
+                                <span className={`${styles.block_number} ${styles.metric_value_accent}`}>
+                                    {blockNumber.toLocaleString()}
+                                </span>
                             </div>
-                        </div>
-                        <div className={styles.stat_card}>
-                            <div className={styles.label}>Transactions</div>
-                            <div className={styles.value}>
-                                {transactionCount?.toLocaleString() ?? '0'}
+
+                            {/* Transaction count (wraps on mobile) */}
+                            <div className={styles.tx_metric}>
+                                <span className={styles.metric_label}>TXs</span>
+                                <span className={styles.metric_value}>
+                                    {transactionCount?.toLocaleString() ?? '0'}
+                                </span>
                             </div>
                         </div>
                     </div>

@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import dynamic from 'next/dynamic';
+import { ChevronDown } from 'lucide-react';
 import { useAppDispatch, useAppSelector } from '../../../../store/hooks';
 import { setInitialBlock } from '../../slice';
 import { Card } from '../../../../components/ui/Card';
@@ -10,7 +11,7 @@ import { cn } from '../../../../lib/cn';
 import { useRealtimeStatus } from '../../../realtime/hooks/useRealtimeStatus';
 import { useTransactionTimeseries } from '../../hooks/useTransactionTimeseries';
 import type { BlockSummary } from '../../slice';
-import styles from './CurrentBlock.module.css';
+import styles from './CurrentBlock.module.scss';
 
 /**
  * Dynamically import LineChart to reduce initial bundle size.
@@ -35,36 +36,22 @@ interface CurrentBlockProps {
 }
 
 /**
- * CurrentBlock - Displays the currently processed blockchain block with detailed statistics
+ * CurrentBlock - Compact display of the currently processed blockchain block
  *
  * Follows the SSR + Live Updates pattern: renders fully on the server with real data
  * (no loading flash), then hydrates for WebSocket-driven live updates.
  *
- * **SSR Flow:**
- * 1. Server component fetches initial block from `/api/blockchain/latest`
- * 2. Passes initialBlock prop to this client component
- * 3. Component renders with data immediately (no "Loading..." state)
- * 4. After hydration, syncs to Redux and subscribes to WebSocket updates
+ * **Compact Design:**
+ * The component displays essential information (block number, transaction count,
+ * live status) in a single compact row. Detailed statistics and graph are hidden
+ * by default and revealed by clicking the expand toggle.
  *
- * **Display Features:**
- * - Block number and transaction count (highlighted metrics, with expandable graph)
- * - Detailed statistics (transfers, contract calls, delegations, stakes, etc.)
- * - Resource usage (energy and bandwidth consumption)
- * - Block timestamp and update freshness indicator
- * - Expandable transaction timeseries chart (Live/1d/7d/30d views)
- *
- * The block data is received via Socket.IO events (block:new) and stored in Redux
- * by the SocketBridge component, which ensures real-time updates as blocks are
- * processed by the backend blockchain service.
- *
- * When the user clicks the "Transactions" stat card, an interactive timeseries chart
- * expands below showing transaction volume over time with period selection:
- * - **Live** - Real-time data from Redux block history (last ~120 blocks), auto-updates
- * - **1d/7d/30d** - Historical aggregated data fetched from backend API
- * Clicking the stat card again collapses the chart for a clean, compact view.
+ * **Mobile Responsiveness:**
+ * Uses container queries to adapt layout for mobile devices, progressively
+ * condensing the display at smaller widths while maintaining readability.
  *
  * @param props - Component properties including optional SSR initial block data
- * @returns A card displaying current block information or appropriate loading/error state
+ * @returns A compact card displaying current block information
  */
 export function CurrentBlock({ initialBlock }: CurrentBlockProps) {
     const dispatch = useAppDispatch();
@@ -74,6 +61,7 @@ export function CurrentBlock({ initialBlock }: CurrentBlockProps) {
     const blockHistory = useAppSelector(state => state.blockchain.history);
     const realtime = useRealtimeStatus();
     const [isMounted, setIsMounted] = useState(false);
+    const [isExpanded, setIsExpanded] = useState(false);
     const [showGraph, setShowGraph] = useState(false);
     const [selectedPeriod, setSelectedPeriod] = useState<'live' | 1 | 7 | 30>('live');
     const [hasReceivedLiveData, setHasReceivedLiveData] = useState(false);
@@ -113,7 +101,6 @@ export function CurrentBlock({ initialBlock }: CurrentBlockProps) {
 
     useEffect(() => {
         setIsMounted(true);
-        // Read primary color from CSS variables
         if (typeof window !== 'undefined') {
             const color = getComputedStyle(document.documentElement).getPropertyValue('--color-primary').trim();
             if (color) {
@@ -131,24 +118,22 @@ export function CurrentBlock({ initialBlock }: CurrentBlockProps) {
 
     /**
      * Wrapper class for hydration transition.
-     * Only applies opacity transition when SSR data exists (BlockStatsServer is rendering).
-     * When no SSR data, content is visible immediately without transition.
      */
     const wrapperClass = initialBlock
-        ? cn(styles.wrapper, isMounted && styles['wrapper--hydrated'])
+        ? cn(styles.wrapper, isMounted && styles.wrapper_hydrated)
         : undefined;
 
     /**
-     * Loading state - only shown when no SSR data was provided and WebSocket hasn't connected yet.
+     * Loading state - only shown when no SSR data was provided.
      */
     if (effectiveStatus === 'idle' || effectiveStatus === 'loading') {
         return (
             <div className={wrapperClass} data-hydrated={isMounted ? 'true' : undefined}>
                 <Card elevated>
-                    <div className={styles['loading-state']}>
-                        <h2 className={styles.header__title}>Current Block</h2>
-                        <div className={styles['loading-state__message']}>
-                            Waiting for blockchain data...
+                    <div className={styles.container}>
+                        <div className={styles.loading_state}>
+                            <span className={styles.title}>Current Block</span>
+                            <span className={styles.loading_message}>Waiting for blockchain data...</span>
                         </div>
                     </div>
                 </Card>
@@ -163,10 +148,10 @@ export function CurrentBlock({ initialBlock }: CurrentBlockProps) {
         return (
             <div className={wrapperClass} data-hydrated={isMounted ? 'true' : undefined}>
                 <Card elevated tone="muted">
-                    <div className={styles['error-state']}>
-                        <h2 className={styles.header__title}>Current Block</h2>
-                        <div className={styles['error-state__message']}>
-                            No block data available
+                    <div className={styles.container}>
+                        <div className={styles.error_state}>
+                            <span className={styles.title}>Current Block</span>
+                            <span className={styles.error_message}>No block data available</span>
                         </div>
                     </div>
                 </Card>
@@ -175,276 +160,181 @@ export function CurrentBlock({ initialBlock }: CurrentBlockProps) {
     }
 
     /**
-     * Success state - display full block information.
+     * Success state - compact block display with expandable details.
      */
     return (
         <div className={wrapperClass} data-hydrated={isMounted ? 'true' : undefined}>
             <Card elevated>
-            <div className={styles.container}>
-                {/* Header */}
-                <div className={styles.header}>
-                    <div className={styles['header-left']}>
-                        <h2 className={styles.header__title}>
-                            Current Block
-                            {isMounted && (
-                                <span className={styles['header-blocktime']}>
-                                    {formatBlockTime(latestBlock.timestamp)}
+                <div className={styles.container}>
+                    {/* Compact Header Row */}
+                    <div className={styles.header}>
+                        <div className={styles.header_left}>
+                            {/* Title + Block Number (always same row) */}
+                            <div className={styles.title_row}>
+                                <span className={styles.title}>Current Block</span>
+                                <span className={cn(styles.block_number, styles.metric_value_accent)}>
+                                    {latestBlock.blockNumber.toLocaleString()}
                                 </span>
-                            )}
-                        </h2>
-                        {isMounted && lastUpdated && (
-                            <div className={styles.header__timestamp}>
-                                Updated {formatRelativeTime(lastUpdated)}
                             </div>
-                        )}
-                    </div>
-                    {isMounted && (
-                        <Badge
-                            tone={realtime.tone}
-                            showLiveIndicator={realtime.label === 'Live'}
-                            aria-live="polite"
-                            suppressHydrationWarning
-                        >
-                            <span suppressHydrationWarning>{realtime.label}</span>
-                            {realtime.latencyMs !== null && (
-                                <span suppressHydrationWarning>
-                                    {' '}{Math.round(realtime.latencyMs)} ms
+
+                            {/* Transaction count (wraps on mobile) */}
+                            <div className={styles.tx_metric}>
+                                <span className={styles.metric_label}>TXs</span>
+                                <span className={styles.metric_value}>
+                                    {latestBlock.transactionCount.toLocaleString()}
                                 </span>
+                            </div>
+                        </div>
+
+                        <div className={styles.header_right}>
+                            {isMounted && (
+                                <Badge
+                                    tone={realtime.tone}
+                                    showLiveIndicator={realtime.label === 'Live'}
+                                    aria-live="polite"
+                                    suppressHydrationWarning
+                                >
+                                    <span suppressHydrationWarning>{realtime.label}</span>
+                                    {realtime.latencyMs !== null && (
+                                        <span suppressHydrationWarning>
+                                            {' '}{Math.round(realtime.latencyMs)}ms
+                                        </span>
+                                    )}
+                                </Badge>
                             )}
-                        </Badge>
+
+                            <button
+                                className={cn(
+                                    styles.expand_toggle,
+                                    isExpanded && styles.expand_toggle_expanded
+                                )}
+                                onClick={() => setIsExpanded(!isExpanded)}
+                                aria-label={isExpanded ? 'Collapse details' : 'Expand details'}
+                                aria-expanded={isExpanded}
+                            >
+                                <ChevronDown
+                                    size={14}
+                                    className={cn(
+                                        styles.expand_icon,
+                                        isExpanded && styles.expand_icon_rotated
+                                    )}
+                                />
+                            </button>
+                        </div>
+                    </div>
+
+
+                    {/* Expandable Details */}
+                    {isExpanded && (
+                        <div className={styles.expanded_content}>
+                            {/* Block Statistics */}
+                            <div className={styles.section}>
+                                <h3 className={styles.section_title}>Block Statistics</h3>
+                                <div className={styles.mini_stats_grid}>
+                                    <MiniStatCard label="Transfers" value={latestBlock.stats.transfers} />
+                                    <MiniStatCard label="Contracts" value={latestBlock.stats.contractCalls} />
+                                    <MiniStatCard label="Delegations" value={latestBlock.stats.delegations} />
+                                    <MiniStatCard label="Stakes" value={latestBlock.stats.stakes} />
+                                    <MiniStatCard label="Tokens" value={latestBlock.stats.tokenCreations} />
+                                </div>
+                            </div>
+
+                            {/* Resource Usage */}
+                            {(latestBlock.stats.totalEnergyUsed > 0 || latestBlock.stats.totalBandwidthUsed > 0) && (
+                                <div className={styles.section}>
+                                    <h3 className={styles.section_title}>Resources</h3>
+                                    <div className={styles.mini_stats_grid}>
+                                        <MiniStatCard
+                                            label="Energy"
+                                            value={formatLargeNumber(latestBlock.stats.totalEnergyUsed)}
+                                        />
+                                        <MiniStatCard
+                                            label="Cost"
+                                            value={`${latestBlock.stats.totalEnergyCost.toFixed(2)} TRX`}
+                                        />
+                                        <MiniStatCard
+                                            label="Bandwidth"
+                                            value={formatLargeNumber(latestBlock.stats.totalBandwidthUsed)}
+                                        />
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Transaction Graph Toggle */}
+                            <div className={styles.section}>
+                                <button
+                                    className={cn(
+                                        styles.expand_toggle,
+                                        showGraph && styles.expand_toggle_expanded
+                                    )}
+                                    onClick={() => setShowGraph(!showGraph)}
+                                    style={{ width: 'auto', padding: '0.25rem 0.5rem', gap: '0.25rem', display: 'inline-flex' }}
+                                >
+                                    <span style={{ fontSize: 'var(--font-size-xs)' }}>
+                                        {showGraph ? 'Hide' : 'Show'} Transaction Chart
+                                    </span>
+                                    <ChevronDown
+                                        size={12}
+                                        className={cn(
+                                            styles.expand_icon,
+                                            showGraph && styles.expand_icon_rotated
+                                        )}
+                                    />
+                                </button>
+                            </div>
+
+                            {/* Transaction Graph */}
+                            {showGraph && (
+                                <div className={styles.graph_section}>
+                                    <div className={styles.graph_header}>
+                                        <h3 className={styles.section_title}>Transaction Volume</h3>
+                                        <div className={styles.period_selector}>
+                                            {(['live', 1, 7, 30] as const).map(period => (
+                                                <button
+                                                    key={period}
+                                                    className={cn(
+                                                        styles.period_button,
+                                                        selectedPeriod === period && styles.period_button_active
+                                                    )}
+                                                    onClick={() => setSelectedPeriod(period)}
+                                                >
+                                                    {period === 'live' ? 'Live' : `${period}d`}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    <div className={styles.graph_content}>
+                                        {chartLoading && (
+                                            <div className={styles.graph_loading}>Loading...</div>
+                                        )}
+                                        {chartError && !chartLoading && (
+                                            <div className={styles.graph_error}>Failed to load data</div>
+                                        )}
+                                        {!chartError && chartData && chartData.length > 0 && (
+                                            <LineChart
+                                                key={selectedPeriod}
+                                                height={200}
+                                                series={[{
+                                                    id: 'transactions',
+                                                    label: 'Transactions',
+                                                    data: chartData.map(point => ({
+                                                        date: point.date,
+                                                        value: point.transactions
+                                                    })),
+                                                    color: primaryColor
+                                                }]}
+                                                yAxisFormatter={formatLargeNumber}
+                                                xAxisFormatter={(date) => formatChartDate(date, selectedPeriod, hasReceivedLiveData)}
+                                            />
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
                     )}
                 </div>
-
-                {/* Block Number and Transaction Count */}
-                <div className={styles['stats-grid']}>
-                    <StatCard
-                        label="Block Number"
-                        value={latestBlock.blockNumber.toLocaleString()}
-                        tone="accent"
-                    />
-                    <StatCard
-                        label="Transactions"
-                        value={latestBlock.transactionCount.toLocaleString()}
-                        clickable
-                        expanded={showGraph}
-                        onClick={() => setShowGraph(!showGraph)}
-                    />
-                </div>
-
-                {/* Transaction Timeseries Graph (Expandable) */}
-                {showGraph && (
-                    <div className={styles.section} key="graph-section">
-                        <div className={styles['graph-header']}>
-                            <h3 className={styles.section__title}>Transaction Volume</h3>
-                            <div className={styles['period-selector']}>
-                                <button
-                                    className={cn(
-                                        styles['period-button'],
-                                        selectedPeriod === 'live' && styles['period-button--active']
-                                    )}
-                                    onClick={() => setSelectedPeriod('live')}
-                                >
-                                    Live
-                                </button>
-                                <button
-                                    className={cn(
-                                        styles['period-button'],
-                                        selectedPeriod === 1 && styles['period-button--active']
-                                    )}
-                                    onClick={() => setSelectedPeriod(1)}
-                                >
-                                    1d
-                                </button>
-                                <button
-                                    className={cn(
-                                        styles['period-button'],
-                                        selectedPeriod === 7 && styles['period-button--active']
-                                    )}
-                                    onClick={() => setSelectedPeriod(7)}
-                                >
-                                    7d
-                                </button>
-                                <button
-                                    className={cn(
-                                        styles['period-button'],
-                                        selectedPeriod === 30 && styles['period-button--active']
-                                    )}
-                                    onClick={() => setSelectedPeriod(30)}
-                                >
-                                    30d
-                                </button>
-                            </div>
-                        </div>
-
-                        <div className={styles['graph-content']}>
-                            {chartLoading && (
-                                <div className={styles['graph-loading']}>
-                                    Loading transaction data...
-                                </div>
-                            )}
-
-                            {chartError && !chartLoading && (
-                                <div className={styles['graph-error']}>
-                                    Failed to load transaction data: {chartError}
-                                </div>
-                            )}
-
-                            {!chartError && chartData && chartData.length > 0 && (
-                                <LineChart
-                                    key={selectedPeriod}
-                                    height={280}
-                                    series={[
-                                        {
-                                            id: 'transactions',
-                                            label: 'Transactions',
-                                            data: chartData.map(point => ({
-                                                date: point.date,
-                                                value: point.transactions
-                                            })),
-                                            color: primaryColor
-                                        }
-                                    ]}
-                                    yAxisFormatter={(value) => formatLargeNumber(value)}
-                                    xAxisFormatter={(date) => {
-                                        if (selectedPeriod === 'live') {
-                                            // Initial render: Use relative time to avoid SSR/client hydration mismatch
-                                            // After live data flows: Switch to actual times for precision
-                                            if (!hasReceivedLiveData) {
-                                                const now = Date.now();
-                                                const diffMs = now - date.getTime();
-                                                const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-                                                const diffMinutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
-
-                                                if (diffHours === 0 && diffMinutes < 30) {
-                                                    return 'Now';
-                                                }
-                                                if (diffHours === 0) {
-                                                    return `${diffMinutes}m ago`;
-                                                }
-                                                if (diffHours < 24) {
-                                                    return `${diffHours}h ago`;
-                                                }
-                                                return `${Math.floor(diffHours / 24)}d ago`;
-                                            }
-                                            // Live data is flowing - show actual times
-                                            return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                                        }
-                                        // For historical data (1d, 7d, 30d), show actual times/dates
-                                        if (selectedPeriod === 1) {
-                                            return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                                        }
-                                        return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
-                                    }}
-                                />
-                            )}
-                        </div>
-                    </div>
-                )}
-
-                {/* Detailed Statistics */}
-                <div className={styles.section}>
-                    <h3 className={styles.section__title}>Block Statistics</h3>
-                    <div className={styles['mini-stats-grid']}>
-                        <MiniStatCard label="Transfers" value={latestBlock.stats.transfers} />
-                        <MiniStatCard label="Contract Calls" value={latestBlock.stats.contractCalls} />
-                        <MiniStatCard label="Delegations" value={latestBlock.stats.delegations} />
-                        <MiniStatCard label="Stakes" value={latestBlock.stats.stakes} />
-                        <MiniStatCard label="Token Creations" value={latestBlock.stats.tokenCreations} />
-                    </div>
-                </div>
-
-                {/* Resource Usage */}
-                {(latestBlock.stats.totalEnergyUsed > 0 || latestBlock.stats.totalBandwidthUsed > 0) && (
-                    <div className={styles.section}>
-                        <h3 className={styles.section__title}>Resource Usage</h3>
-                        <div className={styles['mini-stats-grid']}>
-                            <MiniStatCard
-                                label="Energy Used"
-                                value={formatLargeNumber(latestBlock.stats.totalEnergyUsed)}
-                            />
-                            <MiniStatCard
-                                label="Energy Cost"
-                                value={`${latestBlock.stats.totalEnergyCost.toFixed(2)} TRX`}
-                            />
-                            <MiniStatCard
-                                label="Bandwidth"
-                                value={formatLargeNumber(latestBlock.stats.totalBandwidthUsed)}
-                            />
-                        </div>
-                    </div>
-                )}
-            </div>
             </Card>
-        </div>
-    );
-}
-
-/**
- * Properties for the StatCard component.
- */
-interface StatCardProps {
-    /** The descriptive label for the statistic */
-    label: string;
-    /** The statistic value to display */
-    value: string;
-    /** Visual emphasis level (default or accent) */
-    tone?: 'default' | 'accent';
-    /** Whether the card is clickable (shows pointer cursor and hover effect) */
-    clickable?: boolean;
-    /** Whether the associated content is expanded (shows expand/collapse icon) */
-    expanded?: boolean;
-    /** Click handler for expandable cards */
-    onClick?: () => void;
-}
-
-/**
- * StatCard - Display a statistics card with label and value
- *
- * Renders a bordered card containing a label and formatted value, with optional
- * accent styling to highlight important metrics like block numbers. When clickable
- * is true, the card becomes interactive with hover effects and an expand/collapse
- * icon, typically used to toggle associated content like timeseries graphs.
- *
- * @param props - Statistic label, value, visual tone, and interaction handlers
- * @returns A formatted statistics card element
- */
-function StatCard({ label, value, tone = 'default', clickable = false, expanded = false, onClick }: StatCardProps) {
-    const cardContent = (
-        <>
-            <div className={styles['stat-card__label']}>
-                {label}
-                {clickable && (
-                    <span className={styles['stat-card__icon']}>
-                        {expanded ? '▼' : '▶'}
-                    </span>
-                )}
-            </div>
-            <div className={styles['stat-card__value']}>{value}</div>
-        </>
-    );
-
-    if (clickable && onClick) {
-        return (
-            <button
-                className={cn(
-                    styles['stat-card'],
-                    styles['stat-card--clickable'],
-                    tone === 'accent' && styles['stat-card--accent'],
-                    expanded && styles['stat-card--expanded']
-                )}
-                onClick={onClick}
-            >
-                {cardContent}
-            </button>
-        );
-    }
-
-    return (
-        <div className={cn(
-            styles['stat-card'],
-            tone === 'accent' && styles['stat-card--accent']
-        )}>
-            {cardContent}
         </div>
     );
 }
@@ -460,10 +350,7 @@ interface MiniStatCardProps {
 }
 
 /**
- * MiniStatCard - Display a compact statistics card with label and numeric value
- *
- * Renders a smaller card optimized for displaying multiple related metrics in a
- * grid layout. Automatically formats numbers with locale-aware separators.
+ * MiniStatCard - Compact statistics card for detailed metrics.
  *
  * @param props - Statistic label and value
  * @returns A compact statistics card element
@@ -472,64 +359,43 @@ function MiniStatCard({ label, value }: MiniStatCardProps) {
     const formattedValue = typeof value === 'number' ? value.toLocaleString() : value;
 
     return (
-        <div className={styles['mini-stat-card']}>
-            <div className={styles['mini-stat-card__label']}>{label}</div>
-            <div className={styles['mini-stat-card__value']}>{formattedValue}</div>
+        <div className={styles.mini_stat_card}>
+            <div className={styles.mini_stat_label}>{label}</div>
+            <div className={styles.mini_stat_value}>{formattedValue}</div>
         </div>
     );
 }
 
 /**
  * Formats large numbers with abbreviated suffixes (K, M, B).
- *
- * Converts large numeric values into human-readable abbreviated formats for
- * compact display in UI components. Numbers under 1000 are displayed as-is
- * with locale formatting.
- *
- * @param num - The number to format
- * @returns Formatted string with abbreviated suffix
  */
 function formatLargeNumber(num: number): string {
     if (num >= 1_000_000_000) {
-        return (num / 1_000_000_000).toFixed(2) + 'B';
+        return (num / 1_000_000_000).toFixed(1) + 'B';
     }
     if (num >= 1_000_000) {
-        return (num / 1_000_000).toFixed(2) + 'M';
+        return (num / 1_000_000).toFixed(1) + 'M';
     }
     if (num >= 1_000) {
-        return (num / 1_000).toFixed(2) + 'K';
+        return (num / 1_000).toFixed(1) + 'K';
     }
     return num.toLocaleString();
 }
 
 /**
- * Formats block timestamp into human-readable date and time.
- *
- * Converts ISO timestamp strings into localized date and time representations
- * for display in the block summary UI. Falls back to raw timestamp string
- * if parsing fails.
- *
- * @param timestamp - ISO timestamp string from block data
- * @returns Formatted date and time string
+ * Formats block timestamp into human-readable time.
  */
 function formatBlockTime(timestamp: string): string {
     try {
         const date = new Date(timestamp);
-        return date.toLocaleString();
+        return date.toLocaleTimeString();
     } catch {
         return timestamp;
     }
 }
 
 /**
- * Formats timestamp as relative time (e.g., "2 seconds ago", "5 minutes ago").
- *
- * Calculates the time difference between the given timestamp and now, returning
- * a human-readable relative time string for showing update freshness. Handles
- * seconds, minutes, and hours with proper singular/plural forms.
- *
- * @param timestamp - ISO timestamp string to format
- * @returns Relative time string
+ * Formats timestamp as relative time (e.g., "2s ago", "5m ago").
  */
 function formatRelativeTime(timestamp: string): string {
     try {
@@ -538,21 +404,39 @@ function formatRelativeTime(timestamp: string): string {
         const diffMs = now.getTime() - date.getTime();
         const diffSeconds = Math.floor(diffMs / 1000);
 
-        if (diffSeconds < 10) {
-            return 'just now';
-        }
-        if (diffSeconds < 60) {
-            return `${diffSeconds} seconds ago`;
-        }
+        if (diffSeconds < 10) return 'just now';
+        if (diffSeconds < 60) return `${diffSeconds}s ago`;
 
         const diffMinutes = Math.floor(diffSeconds / 60);
-        if (diffMinutes < 60) {
-            return `${diffMinutes} ${diffMinutes === 1 ? 'minute' : 'minutes'} ago`;
-        }
+        if (diffMinutes < 60) return `${diffMinutes}m ago`;
 
         const diffHours = Math.floor(diffMinutes / 60);
-        return `${diffHours} ${diffHours === 1 ? 'hour' : 'hours'} ago`;
+        return `${diffHours}h ago`;
     } catch {
         return 'recently';
     }
+}
+
+/**
+ * Formats chart date based on selected period and live data state.
+ */
+function formatChartDate(
+    date: Date,
+    selectedPeriod: 'live' | 1 | 7 | 30,
+    hasReceivedLiveData: boolean
+): string {
+    if (selectedPeriod === 'live') {
+        if (!hasReceivedLiveData) {
+            const now = Date.now();
+            const diffMs = now - date.getTime();
+            const diffMinutes = Math.floor(diffMs / (1000 * 60));
+            if (diffMinutes < 30) return 'Now';
+            return `${diffMinutes}m`;
+        }
+        return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }
+    if (selectedPeriod === 1) {
+        return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }
+    return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
 }

@@ -1,0 +1,126 @@
+/**
+ * BlockStatsServer Component Styles - Compact Design
+ *
+ * Server-rendered block statistics for instant LCP paint. Styles match
+ * CurrentBlock exactly to ensure seamless visual transition when the
+ * client component hydrates and takes over.
+ *
+ * The container uses absolute positioning so it paints in the same location
+ * as CurrentBlock. After hydration, CurrentBlock overlays this component.
+ */
+@use '../../../../app/breakpoints' as *;
+
+/* Container query container */
+.container {
+    /* Positioned to match CurrentBlock's location exactly */
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 0;
+    /* Prevent interaction since this is just for visual paint */
+    pointer-events: none;
+    /* Container query support */
+    container-type: inline-size;
+    container-name: block-stats-server;
+}
+
+.content {
+    display: flex;
+    flex-direction: column;
+}
+
+/* ============================================
+   COMPACT HEADER LAYOUT (matches CurrentBlock)
+   ============================================ */
+
+.header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--spacing-5);
+}
+
+.header_left {
+    display: flex;
+    align-items: center;
+    column-gap: var(--spacing-7);
+    row-gap: var(--spacing-2);
+    flex: 1 1 0;
+    flex-wrap: wrap;
+    min-width: 0;
+}
+
+/* ============================================
+   TITLE ROW (Title + Block Number - never wraps)
+   ============================================ */
+
+.title_row {
+    display: flex;
+    align-items: baseline;
+    gap: var(--spacing-5);
+    white-space: nowrap;
+}
+
+.title {
+    margin: 0;
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-semibold);
+}
+
+.block_number {
+    font-size: var(--font-size-lg);
+    font-weight: var(--font-weight-bold);
+    font-variant-numeric: tabular-nums;
+}
+
+/* ============================================
+   TRANSACTION METRIC (wraps to next row on mobile)
+   ============================================ */
+
+.tx_metric {
+    display: flex;
+    align-items: baseline;
+    gap: var(--spacing-3);
+}
+
+.metric_label {
+    font-size: var(--font-size-xs);
+    opacity: var(--opacity-60);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.metric_value {
+    font-size: var(--font-size-lg);
+    font-weight: var(--font-weight-bold);
+    font-variant-numeric: tabular-nums;
+}
+
+.metric_value_accent {
+    color: var(--color-primary);
+}
+
+/* ============================================
+   CONTAINER QUERIES - MOBILE RESPONSIVENESS
+   ============================================ */
+
+
+/* Mobile: Ultra-compact mode */
+@container block-stats-server (max-width: #{$breakpoint-mobile-md}) {
+    .title {
+        font-size: var(--font-size-sm);
+    }
+
+    .block_number {
+        font-size: var(--font-size-md);
+    }
+
+    .metric_label {
+        font-size: 0.65rem;
+    }
+
+    .metric_value {
+        font-size: var(--font-size-md);
+    }
+}
