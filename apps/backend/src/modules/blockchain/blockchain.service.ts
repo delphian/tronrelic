@@ -535,8 +535,22 @@ export class BlockchainService implements IBlockchainService {
      * @param start - Start of time range (inclusive)
      * @param end - End of time range (exclusive)
      * @returns Count of matching transactions
+     * @throws Error if contractType is empty or dates are invalid
      */
     async countTransactionsByType(contractType: string, start: Date, end: Date): Promise<number> {
+        if (typeof contractType !== 'string' || contractType.trim().length === 0) {
+            throw new Error('countTransactionsByType: contractType must be a non-empty string');
+        }
+        if (!(start instanceof Date) || isNaN(start.getTime())) {
+            throw new Error('countTransactionsByType: start must be a valid Date');
+        }
+        if (!(end instanceof Date) || isNaN(end.getTime())) {
+            throw new Error('countTransactionsByType: end must be a valid Date');
+        }
+        if (start.getTime() >= end.getTime()) {
+            throw new Error('countTransactionsByType: start must be before end');
+        }
+
         const txModel = BlockchainService.getDatabase().getModel<TransactionDoc>(
             BlockchainService.TRANSACTIONS_COLLECTION
         );
