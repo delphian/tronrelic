@@ -525,6 +525,29 @@ export class BlockchainService implements IBlockchainService {
     }
 
     /**
+     * Count transactions by contract type within a time range.
+     *
+     * Queries the transactions collection for count matching the specified
+     * contract type and timestamp range. Uses the indexed type field for
+     * efficient counting.
+     *
+     * @param contractType - Transaction type (e.g., 'TransferContract', 'TriggerSmartContract')
+     * @param start - Start of time range (inclusive)
+     * @param end - End of time range (exclusive)
+     * @returns Count of matching transactions
+     */
+    async countTransactionsByType(contractType: string, start: Date, end: Date): Promise<number> {
+        const txModel = BlockchainService.getDatabase().getModel<TransactionDoc>(
+            BlockchainService.TRANSACTIONS_COLLECTION
+        );
+
+        return txModel.countDocuments({
+            type: contractType,
+            timestamp: { $gte: start, $lt: end }
+        });
+    }
+
+    /**
      * Load the current blockchain sync cursor from MongoDB.
      * Returns the last successfully processed block number and backfill queue, or null if this is a fresh install.
      */
