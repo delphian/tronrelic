@@ -43,4 +43,18 @@ export interface IBlockchainService {
      * @returns Array of timeseries points sorted chronologically
      */
     getTransactionTimeseries(days: number): Promise<ITransactionTimeseriesPoint[]>;
+
+    /**
+     * Count transactions by contract type within a time range.
+     *
+     * Queries the core transactions collection for total count matching
+     * the specified contract type and timestamp range. Used by plugins
+     * for calculating percentages against total network activity.
+     *
+     * @param contractType - Transaction type (e.g., 'TransferContract', 'TriggerSmartContract')
+     * @param start - Start of time range (inclusive)
+     * @param end - End of time range (exclusive)
+     * @returns Count of matching transactions
+     */
+    countTransactionsByType(contractType: string, start: Date, end: Date): Promise<number>;
 }

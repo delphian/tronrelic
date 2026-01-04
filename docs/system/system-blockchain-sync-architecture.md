@@ -37,7 +37,7 @@ The blockchain sync system consists of three main components:
                      ▼
 ┌──────────────────────────────────────────────────────┐
 │ 4. Persistence & Events                              │
-│    Write to MongoDB, emit WebSocket events           │
+│    Write ALL transactions to MongoDB, emit events    │
 └──────────────────────────────────────────────────────┘
 ```
 
@@ -253,12 +253,14 @@ while (true) {
     2. For each transaction in block:
         a. Parse and enrich
         b. Notify subscribed observers (async)
-    3. Save block to MongoDB
+    3. Save block and ALL transactions to MongoDB
     4. Update sync state (cursor = blockNumber)
     5. Emit WebSocket events (if enabled)
     6. Wait 200ms before next block
 }
 ```
+
+**Important:** Every transaction from every block is persisted to the `transactions` collection unconditionally. Observer subscriptions filter which transactions plugins *receive notifications* for, but do not affect what gets stored. No transactions are filtered by type, amount, or other criteria.
 
 ### Monitoring
 
