@@ -146,7 +146,7 @@ fetchData: async (route, params) => {
 Widget zones are integrated into layouts and automatically render registered widgets for the current route:
 
 ```tsx
-// In apps/frontend/app/(core)/layout.tsx
+// In src/frontend/app/(core)/layout.tsx
 import { headers } from 'next/headers';
 
 export default async function CoreLayout({ children }) {
@@ -183,7 +183,7 @@ Here's a complete example of a plugin that displays a feed widget on the homepag
 ### Backend: Widget Registration
 
 ```typescript
-// packages/plugins/reddit-sentiment/src/backend/backend.ts
+// src/plugins/reddit-sentiment/src/backend/backend.ts
 import { definePlugin, type IPluginContext } from '@tronrelic/types';
 import { redditManifest } from '../manifest';
 
@@ -232,7 +232,7 @@ export const redditBackendPlugin = definePlugin({
 ### Manifest
 
 ```typescript
-// packages/plugins/reddit-sentiment/src/manifest.ts
+// src/plugins/reddit-sentiment/src/manifest.ts
 import type { IPluginManifest } from '@tronrelic/types';
 
 export const redditManifest: IPluginManifest = {
@@ -276,7 +276,7 @@ The widget appears below the whale-alerts page content without any changes to th
 The `PluginPageWithZones` server component wraps all plugin pages:
 
 ```tsx
-// apps/frontend/components/PluginPageWithZones.tsx
+// src/frontend/components/PluginPageWithZones.tsx
 export async function PluginPageWithZones({ slug }: { slug: string }) {
     const route = slug;
     const params: Record<string, string> = {};  // Plugin-internal param parsing is handled by the plugin
@@ -509,7 +509,7 @@ Widget components follow TronRelic's foundational SSR + Live Updates pattern: re
 Plugins export widget components from a standard location. The build-time generator discovers these exports and creates static imports for SSR.
 
 ```typescript
-// packages/plugins/my-plugin/src/frontend/widgets/index.ts
+// src/plugins/my-plugin/src/frontend/widgets/index.ts
 import type { ComponentType } from 'react';
 import { MyFeedWidget } from './MyFeedWidget';
 
@@ -540,7 +540,7 @@ interface IWidgetComponentProps {
 #### Basic Widget (SSR only)
 
 ```tsx
-// packages/plugins/my-plugin/src/frontend/widgets/MyFeedWidget.tsx
+// src/plugins/my-plugin/src/frontend/widgets/MyFeedWidget.tsx
 'use client';
 
 import type { IWidgetComponentProps } from '@tronrelic/types';
@@ -576,7 +576,7 @@ export function MyFeedWidget({ data, context, route, params }: IWidgetComponentP
 #### Widget with Live Updates (SSR + WebSocket)
 
 ```tsx
-// packages/plugins/whale-alerts/src/frontend/widgets/RecentWhalesWidget.tsx
+// src/plugins/whale-alerts/src/frontend/widgets/RecentWhalesWidget.tsx
 'use client';
 
 import { useState, useEffect } from 'react';

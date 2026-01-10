@@ -69,7 +69,7 @@ The Chain Parameters Service follows a scheduled fetch → store → serve patte
 The scheduler registers a cron job that triggers the fetcher:
 
 ```typescript
-// apps/backend/src/jobs/index.ts
+// src/backend/src/jobs/index.ts
 scheduler.register('chain-parameters:fetch', '*/10 * * * *', async () => {
     await chainParametersFetcher.fetch();
 });
@@ -223,7 +223,7 @@ console.log(energyFee);
 Market fetchers receive the Chain Parameters Service via `MarketFetcherContext`:
 
 ```typescript
-// apps/backend/src/modules/markets/fetchers/types.ts
+// src/backend/src/modules/markets/fetchers/types.ts
 export interface MarketFetcherContext {
     http: AxiosInstance;
     logger: Logger;
@@ -278,7 +278,7 @@ async pull(context: MarketFetcherContext): Promise<MarketSnapshot | null> {
 The `chainParameters` collection stores parameter snapshots over time:
 
 ```typescript
-// apps/backend/src/database/models/chain-parameters-model.ts
+// src/backend/src/database/models/chain-parameters-model.ts
 {
     network: 'mainnet' | 'testnet',  // Indexed for filtering
     parameters: {
@@ -385,7 +385,7 @@ WARN: No chain parameters found in database, using fallback
 Chain parameters fetching is registered in the main scheduler:
 
 ```typescript
-// apps/backend/src/jobs/index.ts
+// src/backend/src/jobs/index.ts
 scheduler.register('chain-parameters:fetch', '*/10 * * * *', async () => {
     await chainParametersFetcher.fetch();
 });
@@ -458,21 +458,21 @@ All interfaces live in `@tronrelic/types` because they are framework-independent
 
 ### Backend Implementation Files
 
-- **Service**: `/apps/backend/src/modules/chain-parameters/chain-parameters.service.ts`
+- **Service**: `/src/backend/src/modules/chain-parameters/chain-parameters.service.ts`
   - Provides cached access to parameters
   - Implements conversion methods
   - Handles fallback logic
 
-- **Fetcher**: `/apps/backend/src/modules/chain-parameters/chain-parameters-fetcher.ts`
+- **Fetcher**: `/src/backend/src/modules/chain-parameters/chain-parameters-fetcher.ts`
   - Polls TronGrid API
   - Calculates derived ratios
   - Saves to MongoDB
 
-- **Database Model**: `/apps/backend/src/database/models/chain-parameters-model.ts`
+- **Database Model**: `/src/backend/src/database/models/chain-parameters-model.ts`
   - Mongoose schema and indexes
   - MongoDB collection structure
 
-- **Scheduler Registration**: `/apps/backend/src/jobs/index.ts`
+- **Scheduler Registration**: `/src/backend/src/jobs/index.ts`
   - Cron job configuration
   - Fetcher instantiation
 
@@ -488,11 +488,11 @@ All interfaces live in `@tronrelic/types` because they are framework-independent
 
 ### Integration Points
 
-- **Market Fetcher Context**: `/apps/backend/src/modules/markets/fetchers/types.ts`
+- **Market Fetcher Context**: `/src/backend/src/modules/markets/fetchers/types.ts`
   - Provides `trEnergy: IChainParametersService` to all market fetchers
   - Legacy alias `TrEnergyAdapter` for backward compatibility
 
-- **Market Aggregator**: `/apps/backend/src/modules/markets/market-aggregator.ts`
+- **Market Aggregator**: `/src/backend/src/modules/markets/market-aggregator.ts`
   - Instantiates `ChainParametersService`
   - Passes to fetcher context during market refresh cycles
 
@@ -606,7 +606,7 @@ class TrEnergyAdapter {
 The new system maintains backward compatibility via type aliasing:
 
 ```typescript
-// apps/backend/src/modules/markets/fetchers/types.ts
+// src/backend/src/modules/markets/fetchers/types.ts
 export type TrEnergyAdapter = IChainParametersService;
 
 export interface MarketFetcherContext {

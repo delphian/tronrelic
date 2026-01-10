@@ -63,7 +63,7 @@ Section 4 of the CLA lets the maintainers dual-license or negotiate commercial d
 
 5. **Start development environment:**
    ```bash
-   ./scripts/start.sh
+   npm run dev
    ```
 
 See [README.md](README.md) for complete setup instructions.

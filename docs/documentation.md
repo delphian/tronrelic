@@ -74,13 +74,13 @@ Treat documentation like a prompt—iterate based on what actually improves outc
 
 ## Documentation Organization
 
-TronRelic organizes documentation using a directory-based pattern that groups related topics under dedicated subdirectories. This pattern emerged from the `docs/frontend/` and `docs/markets/` reorganizations and applies to all future documentation.
+TronRelic organizes documentation using a directory-based pattern that groups related topics under dedicated subdirectories. This pattern emerged from the `docs/frontend/` reorganization and applies to all future documentation.
 
 ### When to Create a New Directory
 
 Create a subdirectory under `docs/` when a topic requires multiple related documents, represents a distinct domain or subsystem, will accumulate additional documentation over time, and has clear boundaries that don't overlap with existing directories.
 
-Examples of directory-worthy topics include `docs/frontend/` for architecture and styling, `docs/markets/` for fetcher implementation and operations, and `docs/plugins/` for observer patterns and WebSocket subscriptions. Do not create directories for single-file topics, content that fits existing directories, or temporary migration guides.
+Examples of directory-worthy topics include `docs/frontend/` for architecture and styling, `docs/plugins/` for observer patterns and WebSocket subscriptions, and `docs/system/` for backend infrastructure. Do not create directories for single-file topics, content that fits existing directories, or temporary migration guides.
 
 ### Directory Structure Pattern
 

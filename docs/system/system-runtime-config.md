@@ -31,13 +31,13 @@ Backend Database → /api/config/public → SSR Cache → HTML Injection → Cli
 
 ### Backend (Single Source of Truth)
 
-**SystemConfigService** (`apps/backend/src/services/system-config/system-config.service.ts`):
+**SystemConfigService** (`src/backend/src/services/system-config/system-config.service.ts`):
 - Stores `siteUrl` in MongoDB `system_config` collection
 - Derives `apiUrl` and `socketUrl` from `siteUrl` deterministically
 - Exposes via public `/api/config/public` endpoint (no auth required)
 - Caches in memory (1 minute TTL)
 
-**ChainParametersService** (`apps/backend/src/modules/chain-parameters/chain-parameters.service.ts`):
+**ChainParametersService** (`src/backend/src/modules/chain-parameters/chain-parameters.service.ts`):
 - Fetches TRON network parameters from blockchain every 10 minutes (via scheduled job)
 - Stores in MongoDB `chain_parameters` collection
 - Provides energy/TRX conversion ratios (`energyPerTrx`, `energyFee`)
@@ -53,7 +53,7 @@ Backend Database → /api/config/public → SSR Cache → HTML Injection → Cli
 
 ### Frontend SSR (Server-Side)
 
-**getServerConfig()** (`apps/frontend/lib/serverConfig.ts`):
+**getServerConfig()** (`src/frontend/lib/serverConfig.ts`):
 - Fetches from backend `/api/config/public` on first SSR request
 - Caches in memory for container lifetime (zero overhead after first fetch)
 - Falls back to environment variables if backend unavailable
@@ -63,7 +63,7 @@ Backend Database → /api/config/public → SSR Cache → HTML Injection → Cli
 
 ### Frontend Client (Browser)
 
-**getRuntimeConfig()** (`apps/frontend/lib/runtimeConfig.ts`):
+**getRuntimeConfig()** (`src/frontend/lib/runtimeConfig.ts`):
 - Reads from `window.__RUNTIME_CONFIG__` (injected by SSR)
 - Synchronous - no async fetch needed, config already in DOM
 - Falls back to environment variables if injection failed (shouldn't happen)
@@ -173,16 +173,16 @@ export function WhaleSettings() {
 ## Files Reference
 
 **Backend:**
-- `apps/backend/src/api/routes/config.router.ts` - Public config endpoint
-- `apps/backend/src/services/system-config/system-config.service.ts` - Config storage and retrieval
-- `apps/backend/src/modules/chain-parameters/chain-parameters.service.ts` - TRON network parameters (singleton)
-- `apps/backend/src/modules/chain-parameters/chain-parameters-fetcher.ts` - Scheduled fetch from TRON network
+- `src/backend/src/api/routes/config.router.ts` - Public config endpoint
+- `src/backend/src/services/system-config/system-config.service.ts` - Config storage and retrieval
+- `src/backend/src/modules/chain-parameters/chain-parameters.service.ts` - TRON network parameters (singleton)
+- `src/backend/src/modules/chain-parameters/chain-parameters-fetcher.ts` - Scheduled fetch from TRON network
 
 **Frontend:**
-- `apps/frontend/lib/serverConfig.ts` - SSR single source of truth (use in server components)
-- `apps/frontend/lib/runtimeConfig.ts` - Client single source of truth (use in client components)
-- `apps/frontend/app/layout.tsx` - Injects `window.__RUNTIME_CONFIG__` into HTML
-- `apps/frontend/lib/socketClient.ts` - WebSocket uses runtime config
+- `src/frontend/lib/serverConfig.ts` - SSR single source of truth (use in server components)
+- `src/frontend/lib/runtimeConfig.ts` - Client single source of truth (use in client components)
+- `src/frontend/app/layout.tsx` - Injects `window.__RUNTIME_CONFIG__` into HTML
+- `src/frontend/lib/socketClient.ts` - WebSocket uses runtime config
 
 **Docker:**
 - `docker-compose.prod.yml` - Production environment (SITE_URL from .env)
@@ -190,7 +190,7 @@ export function WhaleSettings() {
 - `docker-compose.yml` - Local development (NEXT_PUBLIC_SITE_URL from .env)
 
 **Deprecated:**
-- `apps/frontend/lib/config.ts` - Old static config (do not use in new code)
+- `src/frontend/lib/config.ts` - Old static config (do not use in new code)
 
 ## Troubleshooting
 

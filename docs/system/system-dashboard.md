@@ -24,14 +24,14 @@ The dashboard surfaces these issues immediately and provides point-and-click con
    openssl rand -hex 32
    ```
 
-2. **Configure the backend** with your token in `apps/backend/.env`:
+2. **Configure the backend** with your token in `src/backend/.env`:
    ```bash
    ADMIN_API_TOKEN=your-secure-token-here
    ```
 
-3. **Restart the backend** if already running:
+3. **Restart the backend** if already running (Ctrl+C then):
    ```bash
-   ./scripts/stop.sh && ./scripts/start.sh
+   npm run dev
    ```
 
 4. **Navigate to the dashboard** at `http://localhost:3000/system` (or your production domain)
@@ -256,7 +256,7 @@ System configuration display:
 
 **Solution:**
 1. Set `ENABLE_SCHEDULER=true` in backend `.env`
-2. Restart backend: `./scripts/stop.sh && ./scripts/start.sh`
+2. Restart backend (Ctrl+C then `npm run dev`)
 3. Return to dashboard and toggle jobs
 
 ### Blockchain Lag Not Decreasing

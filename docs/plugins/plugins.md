@@ -21,7 +21,7 @@ TronRelic's blockchain pipeline ingests thousands of TRON transactions per secon
 
 Plugins can be dynamically installed, enabled, disabled, and uninstalled through the `/system/plugins` admin interface without application restarts. Each plugin progresses through these states:
 
-1. **Discovered** - Found in `packages/plugins/` and registered in database (default: uninstalled, disabled)
+1. **Discovered** - Found in `src/plugins/` and registered in database (default: uninstalled, disabled)
 2. **Installed** - `install()` hook runs, creates indexes, seeds defaults
 3. **Enabled** - `enable()` and `init()` hooks run, registers observers and routes
 4. **Disabled** - `disable()` hook runs, stops background tasks, keeps data intact
@@ -130,19 +130,19 @@ Plugins manage custom real-time subscriptions through a namespaced WebSocket man
 
 ### Creating a New Plugin
 
-1. **Scaffold** - Copy `packages/plugins/example-alerts` to `packages/plugins/<new-id>`
+1. **Scaffold** - Copy `src/plugins/example-dashboard` to `src/plugins/<new-id>`
 2. **Update manifest** - Set `id`, `title`, `version`, `backend`/`frontend` flags in `src/manifest.ts`
-3. **Install workspace** - Run `npm install` from repo root to link the new package
+3. **Install dependencies** - Run `npm install` from repo root
 4. **Implement backend** - Create observers, API routes, database setup in `src/backend/`
 5. **Implement frontend** - Create pages, components, WebSocket handlers in `src/frontend/`
-6. **Build plugin** - Run `npm run build --workspace packages/plugins/<new-id>`
-7. **Generate registry** - Run `npm run generate:plugins --workspace apps/frontend`
+6. **Build plugin** - Run `cd src/plugins/<new-id> && npm run build`
+7. **Generate registry** - Run `npm run generate:plugins`
 8. **Install and enable** - Use `/system/plugins` admin interface to activate the plugin
 
 ### Plugin Package Structure
 
 ```
-packages/plugins/{plugin-id}/
+src/plugins/{plugin-id}/
 ├── src/
 │   ├── manifest.ts              # Shared metadata (backend + frontend)
 │   ├── backend/
@@ -230,6 +230,5 @@ context.websocket.onSubscribe(async (socket, roomName, payload) => {
 
 **Related topics:**
 - [Frontend Architecture](../frontend/frontend.md) - Frontend system overview and patterns
-- [Market System](../markets/markets.md) - Market fetcher plugin examples
 - [Chain Parameters](../tron/tron-chain-parameters.md) - Blockchain data enrichment used by observers
 - [Menu Module](../system/system-modules-menu.md) - Backend menu service that manages plugin navigation items

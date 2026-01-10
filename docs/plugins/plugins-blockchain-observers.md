@@ -159,7 +159,7 @@ Plugin observers use a factory function pattern with dependency injection. This 
 
 ### Step 1: Create Observer File
 
-Create a new file in your plugin's backend directory (e.g., `packages/plugins/my-plugin/src/backend/delegation-tracker.observer.ts`).
+Create a new file in your plugin's backend directory (e.g., `src/plugins/my-plugin/src/backend/delegation-tracker.observer.ts`).
 
 ### Step 2: Implement the Observer Factory
 
@@ -494,4 +494,4 @@ protected async process(transaction: ITransaction): Promise<void> {
 - **New:** Emits to namespaced rooms via `context.websocket` instead of global broadcast
 - **New:** Supports multiple subscription thresholds through room-based routing
 
-See **[Plugin WebSocket Subscriptions](./plugins-websocket-subscriptions.md)** for complete subscription management patterns and `packages/plugins/whale-alerts/src/backend/whale-detection.observer.ts` for the updated implementation.
+See **[Plugin WebSocket Subscriptions](./plugins-websocket-subscriptions.md)** for complete subscription management patterns and `src/plugins/whale-alerts/src/backend/whale-detection.observer.ts` for the updated implementation.

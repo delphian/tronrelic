@@ -52,7 +52,7 @@ The shared Mongoose mocking utilities provide complete mock implementations of:
 - **Query builders** - Full support for `find().sort().skip().limit()` chains
 - **Error injection** - Simulate database failures for testing error paths
 
-**Location:** `apps/backend/src/tests/vitest/mocks/mongoose.ts`
+**Location:** `src/backend/src/tests/vitest/mocks/mongoose.ts`
 
 ## Filesystem Mocking System
 
@@ -63,7 +63,7 @@ The shared filesystem mocking utilities provide complete mock implementations of
 - **Automatic directory creation** - Parent directories created automatically when setting files
 - **ENOENT error simulation** - Proper error codes for missing files/directories
 
-**Location:** `apps/backend/src/tests/vitest/mocks/fs.ts`
+**Location:** `src/backend/src/tests/vitest/mocks/fs.ts`
 
 ## Quick Start Examples
 
@@ -150,7 +150,7 @@ it('should calculate checksums', () => {
 **Spying:**
 - `spyOnCollectionOperation(collection, operation)` - Verify operation calls
 
-**[Complete API →](../../apps/backend/src/tests/vitest/mocks/mongoose.ts)**
+**[Complete API →](../../src/backend/src/tests/vitest/mocks/mongoose.ts)**
 
 ### Filesystem Helpers
 
@@ -162,7 +162,7 @@ it('should calculate checksums', () => {
 - `getMockPaths()` - List all paths (for debugging)
 - `mockPathExists(path)` - Check if path exists
 
-**[Complete API →](../../apps/backend/src/tests/vitest/mocks/fs.ts)**
+**[Complete API →](../../src/backend/src/tests/vitest/mocks/fs.ts)**
 
 ## Supported MongoDB Operations
 
@@ -231,8 +231,8 @@ it('should find admin users', async () => {
 ## Real-World Usage
 
 **Complete test files using the mock system:**
-- [database.service.test.ts](../../apps/backend/src/services/database/__tests__/database.service.test.ts) - 37 tests covering all IDatabaseService operations
-- [plugin-database.service.test.ts](../../apps/backend/src/services/database/__tests__/plugin-database.service.test.ts) - 25 tests validating plugin storage isolation
+- [database.service.test.ts](../../src/backend/src/services/database/__tests__/database.service.test.ts) - 37 tests covering all IDatabaseService operations
+- [plugin-database.service.test.ts](../../src/backend/src/services/database/__tests__/plugin-database.service.test.ts) - 25 tests validating plugin storage isolation
 
 These files demonstrate:
 - Proper mock setup and teardown
@@ -256,7 +256,7 @@ Before writing new database service tests:
 ## Further Reading
 
 **Mock implementation:**
-- [mongoose.ts](../../apps/backend/src/tests/vitest/mocks/mongoose.ts) - Complete API reference and implementation details
+- [mongoose.ts](../../src/backend/src/tests/vitest/mocks/mongoose.ts) - Complete API reference and implementation details
 
 **Related topics:**
 - [system-database.md](./system-database.md) - Database access architecture and IDatabaseService usage

@@ -44,7 +44,7 @@ Only plugins that are both **installed AND enabled** will have their backend and
 
 ### Plugin Package Layout
 
-We organize every plugin under `packages/plugins/<plugin-id>` so backend and frontend code live together. This colocation matters because a feature almost always spans both runtimes, and splitting the files would make updates brittle.
+We organize every plugin under `src/plugins/<plugin-id>` so backend and frontend code live together. This colocation matters because a feature almost always spans both runtimes, and splitting the files would make updates brittle.
 
 #### Directory Essentials
 
@@ -67,7 +67,7 @@ Why shared code matters: Plugins often define data models, configuration interfa
 **Structure:**
 
 ```
-packages/plugins/{plugin-id}/
+src/plugins/{plugin-id}/
 ├── src/
 │   ├── backend/          # Server-side implementation
 │   ├── frontend/         # Client-side implementation
@@ -116,17 +116,17 @@ import type { IWhaleTransaction, IWhaleConfig } from '../shared/types';
 
 #### Scaffold Templates
 
-Cutting a new plugin should feel mechanical. Copy these baseline files, replace `example-alerts` with your plugin id, and adjust metadata so the loaders can reason about the new package without guesswork.
+Cutting a new plugin should feel mechanical. Copy these baseline files, replace `example-dashboard` with your plugin id, and adjust metadata so the loaders can reason about the new package without guesswork.
 
 Reference the living templates instead of copying long snippets into this guide:
 
-- `packages/plugins/example-alerts/package.json` – Workspace metadata, exports, and build scripts that every plugin needs.
-- `packages/plugins/example-alerts/tsconfig.json` – Backend-focused TypeScript configuration that omits React files.
-- `packages/plugins/example-alerts/src/manifest.ts` – Canonical manifest establishing id, version, and surface flags.
-- `packages/plugins/example-alerts/src/backend/backend.ts` – Minimal backend entry showing lifecycle hooks and dependency injection.
-- `packages/plugins/example-alerts/src/frontend/` – Frontend bootstrap (`frontend.ts`), scoped CSS, and example page/components.
+- `src/plugins/example-dashboard/package.json` – Workspace metadata, exports, and build scripts that every plugin needs.
+- `src/plugins/example-dashboard/tsconfig.json` – Backend-focused TypeScript configuration that omits React files.
+- `src/plugins/example-dashboard/src/manifest.ts` – Canonical manifest establishing id, version, and surface flags.
+- `src/plugins/example-dashboard/src/backend/backend.ts` – Minimal backend entry showing lifecycle hooks and dependency injection.
+- `src/plugins/example-dashboard/src/frontend/` – Frontend bootstrap (`frontend.ts`), scoped CSS, and example page/components.
 
-Copy the directory with `cp -R packages/plugins/example-alerts packages/plugins/<new-id>` and update the manifest fields, workspace name, and any scaffolded components before implementing feature-specific logic. Each file is documented inline so new authors can see the “why” next to the code they are editing.
+Copy the directory with `cp -R src/plugins/example-dashboard src/plugins/<new-id>` and update the manifest fields, workspace name, and any scaffolded components before implementing feature-specific logic. Each file is documented inline so new authors can see the “why” next to the code they are editing.
 
 **Important**: Frontend plugin components and pages receive `IFrontendPluginContext` as a prop. This provides access to:
 - `context.ui` - UI components (Card, Badge, Skeleton, Button, Input)
@@ -148,7 +148,7 @@ Keep plugin styling local and scoped using CSS Modules:
 
 **Example structure:**
 ```
-packages/plugins/my-plugin/
+src/plugins/my-plugin/
 └── src/
     └── frontend/
         ├── frontend.ts
@@ -194,7 +194,7 @@ export function MyPluginPage({ context }: { context: IFrontendPluginContext }) {
 ```
 
 **Key principles:**
-- Always reference CSS variables from `apps/frontend/app/globals.css` (e.g., `var(--color-primary)`, `var(--radius-md)`)
+- Always reference CSS variables from `src/frontend/app/globals.css` (e.g., `var(--color-primary)`, `var(--radius-md)`)
 - Combine CSS Modules with utility classes (`.surface`, `.btn`, `.badge`) for consistency
 - Use container queries instead of viewport media queries for plugin responsiveness
 
@@ -202,14 +202,16 @@ For complete CSS architecture guidance, see [Frontend Component Guide](../fronte
 
 ### Build outputs
 
-Running `npm run build` inside a plugin executes `tsc -p tsconfig.json`, producing the backend bundle plus a compiled manifest. The shared `packages/plugins/build-frontends.mjs` script runs from the monorepo root and emits `dist/frontend.bundle.js` for every plugin whose manifest sets `frontend: true`. Both artifacts must exist before the backend loader will initialize the plugin in production builds.
+**Development mode**: No manual plugin build required. When you run `npm run dev`, the startup script generates plugin registries that import directly from TypeScript source files. tsx and Next.js compile plugins on-the-fly alongside the rest of the application.
+
+**Production builds**: Running `npm run build` compiles plugins to `dist/`. The `tsc -p tsconfig.json` command produces the backend bundle plus a compiled manifest. The shared `src/plugins/build-frontends.mjs` script emits `dist/frontend.bundle.js` for every plugin whose manifest sets `frontend: true`. Docker images use these pre-compiled artifacts.
 
 ## Quick Checklist / Reference
 
-- Copy `packages/plugins/example-alerts` to `packages/plugins/<new-id>` so backend and frontend scaffolding stay aligned.
+- Copy `src/plugins/example-dashboard` to `src/plugins/<new-id>` so backend and frontend scaffolding stay aligned.
 - Update the manifest id, title, version, and the workspace name in `package.json` before wiring feature code.
-- Run `npm install` at the repo root to link the new workspace, then `npm run build --workspace packages/plugins/<new-id>` to emit `dist/`.
-- Regenerate the frontend registry with `npm run generate:plugins --workspace apps/frontend` and rebuild plugin bundles via `npm run build:plugin-frontends`.
+- Run `npm install` at the repo root to link the new workspace.
+- Restart `npm run dev` — the startup script regenerates plugin registries automatically.
 - Verify `/api/plugins/manifests` lists the plugin, then install and enable it through `/system/plugins` to execute lifecycle hooks.
 
 See [Adding or updating a plugin](#adding-or-updating-a-plugin) for the full walkthrough with context and troubleshooting tips.
@@ -241,16 +243,18 @@ How we use it:
 
 ## Backend runtime flow
 
-Backend plugins are loaded during API bootstrap (`apps/backend/src/index.ts`). The flow has two phases:
+Backend plugins are loaded during API bootstrap (`src/backend/src/index.ts`). The flow has two phases:
 
 ### Discovery Phase
-1. `loadPlugins` (in `apps/backend/src/loaders/plugins.ts`) walks `packages/plugins`, skipping hidden folders, `dist`, and anything without build artifacts.
-2. For each candidate it imports `dist/manifest.js` and validates the shape. Missing manifests are logged and skipped.
-3. If the manifest advertises `backend: true`, the loader imports `dist/backend/backend.js` and searches for an exported plugin object (anything with a `manifest` field).
-4. Each discovered plugin is registered in the `plugin_metadata` MongoDB collection with default state: `installed: false`, `enabled: false`. Existing plugins have their title and version updated.
-5. A plugin-scoped database service is created using the plugin's ID for namespace isolation.
-6. A shared `IPluginContext` is assembled with `ObserverRegistry.getInstance()`, `WebSocketService.getInstance()`, `UserService.getInstance()`, the `BaseObserver` class, the scoped database service, and a plugin-scoped child logger.
-7. The plugin and its context are registered with `PluginManagerService` for dynamic lifecycle management.
+
+Plugin discovery uses a generated registry (`src/backend/loaders/plugins.generated.ts`) that contains static imports for all plugins. This registry is generated at dev startup by `scripts/generate-backend-plugin-registry.mjs`, which scans `src/plugins/` for directories with `src/backend/backend.ts` or `src/manifest.ts`.
+
+1. `loadPlugins` (in `src/backend/src/loaders/plugins.ts`) imports the pre-generated registry containing all discovered plugins.
+2. Each plugin in the registry has already been resolved via static imports — tsx compiles TypeScript source on-the-fly during development.
+3. Each discovered plugin is registered in the `plugin_metadata` MongoDB collection with default state: `installed: false`, `enabled: false`. Existing plugins have their title and version updated.
+4. A plugin-scoped database service is created using the plugin's ID for namespace isolation.
+5. A shared `IPluginContext` is assembled with `ObserverRegistry.getInstance()`, `WebSocketService.getInstance()`, `UserService.getInstance()`, the `BaseObserver` class, the scoped database service, and a plugin-scoped child logger.
+6. The plugin and its context are registered with `PluginManagerService` for dynamic lifecycle management.
 
 ### Initialization Phase (Installed + Enabled Plugins Only)
 1. The loader queries the database for plugins where `installed: true AND enabled: true`.
@@ -263,7 +267,7 @@ Backend plugins are loaded during API bootstrap (`apps/backend/src/index.ts`). T
 
 ### Dependency injection context
 
-Plugins never reach into `apps/backend/src` directly. Instead they rely on the injected context:
+Plugins never reach into `src/backend/src` directly. Instead they rely on the injected context:
 
 - `observerRegistry` lets a plugin subscribe to TRON transaction types and receive enriched transactions (typed as `ITransaction` from `@tronrelic/types`).
 - `websocketService` exposes `emit` and `emitToWallet` so plugins can broadcast real-time events.
@@ -287,7 +291,7 @@ Every backend plugin should follow the same structural playbook:
 
 The simplest useful backend plugin wires one observer into the transaction stream. This example pairs the blockchain observer pattern with the plugin context so you can see the entire flow end-to-end.
 
-`packages/plugins/example-alerts/src/backend/hello-world.observer.ts`
+`src/plugins/example-dashboard/src/backend/hello-world.observer.ts`
 
 ```typescript
 import type {
@@ -353,7 +357,7 @@ export function createHelloWorldObserver(
 
 Replace the placeholder `init` from the scaffolded backend entry with logic that instantiates the observer factory:
 
-`packages/plugins/example-alerts/src/backend/backend.ts`
+`src/plugins/example-dashboard/src/backend/backend.ts`
 
 ```typescript
 import { definePlugin, type IPluginContext } from "@tronrelic/types";
@@ -364,7 +368,7 @@ import { createHelloWorldObserver } from "./hello-world.observer";
 export const exampleAlertsBackendPlugin = definePlugin({
     manifest: exampleAlertsManifest,
     init: async ({ BaseObserver, observerRegistry, websocketService, logger }: IPluginContext) => {
-        const observerLogger = logger.child({ feature: "example-alerts" });
+        const observerLogger = logger.child({ feature: "example-dashboard" });
         createHelloWorldObserver(BaseObserver, observerRegistry, websocketService, observerLogger);
     }
 });
@@ -387,7 +391,7 @@ Frontend plugins follow TronRelic's foundational SSR + Live Updates pattern: com
 
 ### Build-time Discovery
 
-1. `apps/frontend/scripts/generate-frontend-plugin-registry.mjs` runs before `next dev` or `next build`. It scans `packages/plugins/**/src/frontend/` directories for plugin components.
+1. `src/frontend/scripts/generate-frontend-plugin-registry.mjs` runs before `next dev` or `next build`. It scans `src/plugins/**/src/frontend/` directories for plugin components.
 2. The generator creates registry files with static imports, enabling components to be available during server-side rendering.
 3. Static imports (not lazy/dynamic) are required for SSR—lazy-loaded components aren't available when the server renders HTML.
 
@@ -402,7 +406,7 @@ Frontend plugins follow TronRelic's foundational SSR + Live Updates pattern: com
 
 Some plugin components exist purely for side effects (WebSocket listeners, toast handlers) rather than visible UI:
 
-1. `PluginLoader` (rendered from `apps/frontend/app/providers.tsx`) mounts on every page.
+1. `PluginLoader` (rendered from `src/frontend/app/providers.tsx`) mounts on every page.
 2. On mount it fetches `/api/plugins/manifests`, filters for `manifest.frontend === true`, then resolves each plugin.
 3. Each frontend plugin export is expected to include the same manifest plus a React `component`. The loader renders those components invisibly so they can perform side effects such as listening to WebSockets or registering toasts.
 
@@ -419,27 +423,36 @@ Frontend plugins should mirror the same discipline:
 
 ## Build and release flow
 
-Keeping plugin builds deterministic is essential because the backend trusts artifacts from `dist/` while the frontend imports source files.
+### Development
 
-1. `scripts/start.sh` orchestrates incremental builds. When it detects changes under a plugin workspace (for example `packages/plugins/whale-alerts`), it runs `npm run build` inside that directory before launching the backend.
-2. The backend build (`npm run build --workspace apps/backend`) depends on the plugin having populated `dist/backend`. If the folder is missing, the loader will log a warning and skip initialization.
-3. Root-level `npm run build` runs `npm run build:plugin-frontends`, which calls `packages/plugins/build-frontends.mjs`. That script bundles each plugin's frontend entry into `dist/frontend.bundle.js` using esbuild so we have a portable artifact for CDNs or documentation demos.
-4. The frontend build triggers `npm run prebuild --workspace apps/frontend`, regenerating the plugin registry to pick up any new plugin ids before Next compiles the app.
-5. During production deployments we rely on these generated files (`dist/**`, `plugins.generated.ts`) already existing so both runtimes agree on which plugins shipped.
+`npm run dev` handles everything automatically:
+
+1. The startup script runs `scripts/generate-backend-plugin-registry.mjs` to create static imports for all backend plugins.
+2. The startup script runs `src/frontend/scripts/generate-frontend-plugin-registry.mjs` for frontend plugins.
+3. tsx and Next.js compile plugin TypeScript on-the-fly alongside the rest of the application.
+4. No separate plugin build step is required — just restart `npm run dev` after adding new plugins.
+
+### Production
+
+Root-level `npm run build` compiles everything for Docker images:
+
+1. Plugin registries are regenerated to ensure all plugins are included.
+2. Each plugin's `tsc -p tsconfig.json` compiles backend code to `dist/`.
+3. `src/plugins/build-frontends.mjs` bundles frontend entries into `dist/frontend.bundle.js`.
+4. Docker images use pre-compiled artifacts for faster startup.
 
 ## Adding or updating a plugin
 
 Follow this flow to keep new plugins consistent with the existing implementation:
 
-1. Scaffold `packages/plugins/<new-id>/` by copying the templates above. Update the workspace name to `@tronrelic/plugin-<new-id>` so npm workspaces and importers resolve it automatically.
-2. Run `npm install` from the repo root so the new workspace is linked and type-checking tools can find it. If the frontend or backend should consume the plugin directly, add the workspace dependency in their respective `package.json` files.
+1. Scaffold `src/plugins/<new-id>/` by copying the templates above. Update the workspace name to `@tronrelic/plugin-<new-id>` so npm workspaces and importers resolve it automatically.
+2. Run `npm install` from the repo root so the new workspace is linked and type-checking tools can find it.
 3. Define the manifest in `src/manifest.ts` with accurate `backend`/`frontend` booleans, semantic version, and clear description so `/api/plugins/manifests` stays truthful.
 4. Implement `src/backend/backend.ts` so it exports `definePlugin({ manifest, init })` and instantiates observers or services using only the injected `IPluginContext`.
 5. Build supporting backend modules under `src/backend/**`, extending `BaseObserver` for anything that reacts to blockchain transactions to stay compatible with the observer registry.
 6. If the plugin has UI, create `src/frontend/frontend.ts` with `definePlugin({ manifest, component })`. Keep the component focused on side-effects and colocate any shared UI under `src/frontend/`.
-7. Run `npm run build --workspace packages/plugins/<new-id>` to emit `dist/` and confirm both `dist/manifest.js` and `dist/backend/backend.js` exist. Missing artifacts cause the backend loader to skip the plugin.
-8. Execute `npm run generate:plugins --workspace apps/frontend` so the lazy loader discovers the new frontend entry, then run `npm run build:plugin-frontends` (or `./scripts/start.sh --force-build`) to produce `dist/frontend.bundle.js` for production builds.
-9. Verify the plugin appears in `/api/plugins/manifests`, check the backend logs for initialization success, and load the frontend to confirm the component mounts without console warnings.
+7. Restart `npm run dev` — the startup script regenerates plugin registries and compiles everything on-the-fly.
+8. Verify the plugin appears in `/api/plugins/manifests`, check the backend logs for initialization success, and load the frontend to confirm the component mounts without console warnings.
 
 ## Managing plugins via admin interface
 
@@ -509,39 +522,40 @@ Plugins often need secure settings screens without touching core admin code. Giv
 
 - **Step-by-step UI wiring:** See [Plugin Menu and Page System → Plugin Admin Pages](./plugins-page-registration.md#plugin-admin-pages) for the full walkthrough that covers navigation registration, page components, and styling conventions.
 - **Route contracts:** Review [Plugin API Registration](./plugins-api-registration.md) for details on `adminRoutes`, middleware, and HTTP handler structure.
-- **Working example:** The whale-alerts plugin (`packages/plugins/whale-alerts/`) shows the manifest, backend admin routes, and frontend admin pages working together.
+- **Working example:** The whale-alerts plugin (`src/plugins/whale-alerts/`) shows the manifest, backend admin routes, and frontend admin pages working together.
 
 ## Operational guardrails
 
 - Always keep the manifest booleans honest. A missing `frontend: true` means the UI will never load the plugin, even if the component exists.
 - Do not import backend singletons directly from a plugin; rely on the injected `IPluginContext` to avoid circular dependencies.
-- Treat the `dist/` folder as an artifact. Delete it only through scripted clean builds so the backend never boots with stale or missing plugins.
-- When adjusting socket events, confirm `apps/backend/src/services/websocket.service.ts` knows how to route the new event type before emitting it.
-- Run `npm run generate:plugins --workspace apps/frontend` after adding or renaming frontend entry files so the registry stays in sync.
-- **New plugins start disabled by default**. After building a new plugin, use the admin interface to install and enable it.
+- When adjusting socket events, confirm `src/backend/src/services/websocket.service.ts` knows how to route the new event type before emitting it.
+- Restart `npm run dev` after adding new plugins — the startup script regenerates plugin registries automatically.
+- **New plugins start disabled by default**. After adding a new plugin, use the admin interface to install and enable it.
 
 ## Reference modules
 
 ### Plugin examples
-- `packages/plugins/whale-alerts/src/manifest.ts` – canonical manifest example.
-- `packages/plugins/whale-alerts/src/backend/backend.ts` – backend entry with enable/disable lifecycle hooks.
-- `packages/plugins/whale-alerts/src/backend/whale-detection.observer.ts` – observer implementation using the injected context.
-- `packages/plugins/whale-alerts/src/frontend/frontend.ts` – frontend entry exporting the plugin definition.
-- `packages/plugins/whale-alerts/src/frontend/WhaleAlertsToastHandler.tsx` – example frontend side-effects component that manages socket listeners and displays toast notifications.
+- `src/plugins/whale-alerts/src/manifest.ts` – canonical manifest example.
+- `src/plugins/whale-alerts/src/backend/backend.ts` – backend entry with enable/disable lifecycle hooks.
+- `src/plugins/whale-alerts/src/backend/whale-detection.observer.ts` – observer implementation using the injected context.
+- `src/plugins/whale-alerts/src/frontend/frontend.ts` – frontend entry exporting the plugin definition.
+- `src/plugins/whale-alerts/src/frontend/WhaleAlertsToastHandler.tsx` – example frontend side-effects component that manages socket listeners and displays toast notifications.
 
 ### Core infrastructure
-- `apps/backend/src/loaders/plugins.ts` – runtime discovery and initialization for backend plugins with database state management.
-- `apps/backend/src/services/plugin-metadata.service.ts` – service for managing plugin metadata in MongoDB.
-- `apps/backend/src/services/plugin-manager.service.ts` – service for hot reload and dynamic lifecycle management.
-- `apps/backend/src/services/plugin-api.service.ts` – service for registering and unregistering plugin API routes.
-- `apps/backend/src/database/models/PluginMetadata.ts` – MongoDB model for plugin state persistence.
-- `apps/backend/src/api/routes/plugin-management.routes.ts` – REST endpoints for plugin management operations.
-- `apps/backend/src/api/routes/plugins.routes.ts` – HTTP endpoint that surfaces active plugin manifests to the frontend.
+- `scripts/generate-backend-plugin-registry.mjs` – generates static imports for all backend plugins at dev startup.
+- `src/backend/loaders/plugins.generated.ts` – auto-generated registry consumed by the plugin loader.
+- `src/backend/src/loaders/plugins.ts` – runtime initialization for backend plugins with database state management.
+- `src/backend/src/services/plugin-metadata.service.ts` – service for managing plugin metadata in MongoDB.
+- `src/backend/src/services/plugin-manager.service.ts` – service for hot reload and dynamic lifecycle management.
+- `src/backend/src/services/plugin-api.service.ts` – service for registering and unregistering plugin API routes.
+- `src/backend/src/database/models/PluginMetadata.ts` – MongoDB model for plugin state persistence.
+- `src/backend/src/api/routes/plugin-management.routes.ts` – REST endpoints for plugin management operations.
+- `src/backend/src/api/routes/plugins.routes.ts` – HTTP endpoint that surfaces active plugin manifests to the frontend.
 
 ### Frontend infrastructure
-- `apps/frontend/app/(core)/system/plugins/page.tsx` – admin UI for plugin management.
-- `apps/frontend/scripts/generate-frontend-plugin-registry.mjs` – generator that keeps the lazy import map in sync with the filesystem.
-- `apps/frontend/components/plugins/PluginLoader.tsx` – React component that fetches manifests and mounts frontend plugins.
+- `src/frontend/app/(core)/system/plugins/page.tsx` – admin UI for plugin management.
+- `src/frontend/scripts/generate-frontend-plugin-registry.mjs` – generator that keeps the lazy import map in sync with the filesystem.
+- `src/frontend/components/plugins/PluginLoader.tsx` – React component that fetches manifests and mounts frontend plugins.
 
 ### Type definitions
 - `packages/types/src/plugin/IPlugin.ts` – plugin interface with lifecycle hooks.
@@ -550,4 +564,4 @@ Plugins often need secure settings screens without touching core admin code. Giv
 - `packages/types/src/plugin/definePlugin.ts` – helper for defining plugins.
 
 ### Build tools
-- `packages/plugins/build-frontends.mjs` – esbuild task that emits `dist/frontend.bundle.js` for every frontend-enabled plugin.
+- `src/plugins/build-frontends.mjs` – esbuild task that emits `dist/frontend.bundle.js` for every frontend-enabled plugin.

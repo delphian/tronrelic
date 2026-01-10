@@ -101,7 +101,7 @@ Edit a test file to intentionally fail:
 
 ```bash
 # Break a backend test
-echo "test('failing test', () => { expect(true).toBe(false); });" >> apps/backend/src/modules/menu/__tests__/menu.service.test.ts
+echo "test('failing test', () => { expect(true).toBe(false); });" >> src/backend/src/modules/menu/__tests__/menu.service.test.ts
 ```
 
 ### 3. Commit and push
@@ -124,7 +124,7 @@ Go to GitHub and create a PR targeting `main`. You should see:
 Revert the breaking change:
 
 ```bash
-git checkout apps/backend/src/modules/menu/__tests__/menu.service.test.ts
+git checkout src/backend/src/modules/menu/__tests__/menu.service.test.ts
 git commit -m "Fix: revert broken test"
 git push
 ```
@@ -229,7 +229,7 @@ jobs:
         with:
           node-version: '20'
       - run: npm ci
-      - run: npm run test --workspace apps/frontend
+      - run: npm run test --workspace src/frontend
 ```
 
 Then add `test / frontend-tests` to the required status checks in branch protection settings.

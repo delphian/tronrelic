@@ -8,7 +8,12 @@ End-to-end tests for TronRelic using Playwright.
 
 Make sure services are running:
 ```bash
-./scripts/start.sh --force-build
+npm run dev
+```
+
+For a clean rebuild first:
+```bash
+npm run clean && npm run dev
 ```
 
 ### Run all tests

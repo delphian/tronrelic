@@ -62,26 +62,35 @@
 
 ## Build and Deployment
 
+### Development Workflow
+
+Start the development environment with a single command:
+
+```bash
+npm run dev
+```
+
+This starts database containers (MongoDB, Redis, ClickHouse), waits for them to be healthy, then runs backend and frontend in the foreground. Press Ctrl+C to stop.
+
+**Available npm scripts:**
+- `npm run dev` - Start everything (databases + dev servers)
+- `npm run stop` - Stop database containers
+- `npm run clean` - Remove build artifacts (dist/, .next/, .tsbuildinfo)
+- `npm run reset` - Stop containers AND delete data volumes
+
 ### Clean Rebuild Process
-When performing a clean rebuild of the entire project, always use the project scripts to ensure proper build order and dependency handling:
 
-1. **Stop all running services first:**
-   ```bash
-   ./scripts/stop.sh
-   ```
+When you need a fresh start:
 
-2. **Start with clean rebuild flag:**
-   ```bash
-   ./scripts/start.sh --force-build
-   ```
+```bash
+npm run stop      # Stop database containers
+npm run clean     # Remove build artifacts
+npm run dev       # Start fresh
+```
 
-**Available start.sh options:**
-- `--force-build` - Removes all build artifacts (dist/, .next/, .tsbuildinfo) and rebuilds everything from scratch
-- `--force-docker` - Recreates MongoDB/Redis containers and volumes (use when database state is corrupted)
-- `--force` - Full reset: combines --force-build and --force-docker
-- `--prod` - Runs frontend in production mode instead of development
+To also reset database data:
 
-**Why this matters:**
-The build system has dependencies between packages (types → plugins → backend/frontend). The start.sh script handles the correct build order automatically. Manual `npm run build` commands may compile packages in the wrong order, causing TypeScript resolution errors.
-
-**Never manually build individual packages** unless you understand the dependency graph. Always use `./scripts/start.sh --force-build` for clean rebuilds.
+```bash
+npm run reset     # Stop containers and delete volumes
+npm run dev       # Start with empty databases
+```

@@ -371,7 +371,7 @@ class PagesModule implements IModule {
 
 **Integration in backend bootstrap:**
 ```typescript
-// apps/backend/src/index.ts
+// src/backend/src/index.ts
 import { PagesModule } from './modules/pages/index.js';
 
 // Instantiate module

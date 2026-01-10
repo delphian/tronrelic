@@ -159,7 +159,7 @@ export function PluginSchedulerControl({ context }: { context: IFrontendPluginCo
             setAdminToken(token);
 
             const { SchedulerMonitor: Monitor } = await import(
-                '../../../../../apps/frontend/features/system'
+                '../../../../../src/frontend/features/system'
             );
             setSchedulerMonitor(() => Monitor);
         }
@@ -365,7 +365,7 @@ Component uses local React state (not Redux):
 
 The component uses CSS Modules for scoped styling:
 
-- File: [SchedulerMonitor.module.css](../../../apps/frontend/features/system/components/SchedulerMonitor/SchedulerMonitor.module.css)
+- File: [SchedulerMonitor.module.css](../../../src/frontend/features/system/components/SchedulerMonitor/SchedulerMonitor.module.css)
 - Design tokens: All colors, spacing, and sizes use CSS variables from `globals.css`
 - Responsive: Grid layout adapts to container width
 
@@ -395,7 +395,7 @@ The component uses CSS Modules for scoped styling:
 const [Monitor, setMonitor] = useState<React.ComponentType<any> | null>(null);
 
 useEffect(() => {
-    import('../../../../../apps/frontend/features/system')
+    import('../../../../../src/frontend/features/system')
         .then(({ SchedulerMonitor }) => setMonitor(() => SchedulerMonitor))
         .catch(err => console.error('Failed to load SchedulerMonitor:', err));
 }, []);
@@ -507,7 +507,7 @@ Before integrating SchedulerMonitor, verify:
 
 **Related components:**
 - [useSystemAuth](../features/system/contexts/SystemAuthContext.tsx) - Hook for retrieving admin token with validation
-- [SchedulerService](../../../apps/backend/src/services/scheduler.service.ts) - Backend scheduler implementation with BullMQ
+- [SchedulerService](../../../src/backend/src/services/scheduler.service.ts) - Backend scheduler implementation with BullMQ
 
 **Related topics:**
 - [plugins.md](../../plugins/plugins.md) - Plugin system overview (why plugins need isolated job control)

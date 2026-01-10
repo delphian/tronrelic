@@ -341,10 +341,10 @@ Before committing any UI component or plugin page, verify:
 - [documentation.md](../documentation.md) - Documentation standards and writing style
 
 **Source files:**
-- [apps/frontend/app/primitives.scss](../../../apps/frontend/app/primitives.scss) - Foundation tokens (Layer 1)
-- [apps/frontend/app/semantic-tokens.scss](../../../apps/frontend/app/semantic-tokens.scss) - Semantic tokens (Layer 2)
-- [apps/frontend/app/globals.scss](../../../apps/frontend/app/globals.scss) - Utility classes and global styles (Layer 3)
-- [apps/frontend/app/_breakpoints.scss](../../../apps/frontend/app/_breakpoints.scss) - SCSS breakpoint variables (single source of truth)
+- [src/frontend/app/primitives.scss](../../../src/frontend/app/primitives.scss) - Foundation tokens (Layer 1)
+- [src/frontend/app/semantic-tokens.scss](../../../src/frontend/app/semantic-tokens.scss) - Semantic tokens (Layer 2)
+- [src/frontend/app/globals.scss](../../../src/frontend/app/globals.scss) - Utility classes and global styles (Layer 3)
+- [src/frontend/app/_breakpoints.scss](../../../src/frontend/app/_breakpoints.scss) - SCSS breakpoint variables (single source of truth)
 
 **External resources:**
 - [Lucide React Documentation](https://lucide.dev/guide/packages/lucide-react) - Icon library usage

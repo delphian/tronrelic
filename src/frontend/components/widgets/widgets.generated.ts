@@ -10,6 +10,8 @@
  */
 import type { WidgetComponent } from '@/types';
 
+import { widgetComponents as dust_tracker_widgets } from '../../../plugins/trp-dust-tracker/src/frontend/widgets/index';
+import { widgetComponents as memo_tracker_widgets } from '../../../plugins/trp-memo-tracker/src/frontend/widgets/index';
 import { widgetComponents as whale_alerts_widgets } from '../../../plugins/whale-alerts/src/frontend/widgets/index';
 
 /**
@@ -19,6 +21,8 @@ import { widgetComponents as whale_alerts_widgets } from '../../../plugins/whale
  * the IDs used in backend widget registration.
  */
 export const widgetComponentRegistry: Record<string, WidgetComponent> = {
+    ...dust_tracker_widgets,
+    ...memo_tracker_widgets,
     ...whale_alerts_widgets,
 };
 

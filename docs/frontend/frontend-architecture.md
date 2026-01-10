@@ -11,7 +11,7 @@ The TronRelic frontend follows a **module-based architecture** that mirrors the 
 ## Directory Structure
 
 ```
-apps/frontend/
+src/frontend/
 ├── app/                          # Next.js App Router (thin route wrappers)
 │   ├── (core)/             # Dashboard route group
 │   │   ├── system/users/        # Admin page → imports from modules/user
@@ -309,8 +309,8 @@ All code related to a domain lives together:
 ### Consistency
 
 The module structure mirrors the backend's modular architecture:
-- Backend: `apps/backend/src/modules/user/`
-- Frontend: `apps/frontend/modules/user/`
+- Backend: `src/backend/src/modules/user/`
+- Frontend: `src/frontend/modules/user/`
 
 Both follow the same mental model.
 
@@ -677,7 +677,7 @@ TronRelic uses different environment variables depending on where code executes:
 
 ### Centralized Configuration Pattern
 
-All backend URL logic lives in `/apps/frontend/lib/config.ts`. Never access environment variables directly in feature code.
+All backend URL logic lives in `/src/frontend/lib/config.ts`. Never access environment variables directly in feature code.
 
 **The configuration module provides:**
 
@@ -725,7 +725,7 @@ function getBackendBaseUrl(): string {
 **Feature API calls (use axios client):**
 
 ```typescript
-// apps/frontend/lib/api.ts
+// src/frontend/lib/api.ts
 import axios from 'axios';
 import { config } from './config';
 
@@ -870,7 +870,7 @@ Code never changes—only the environment variable values differ.
 **Always use centralized config:**
 
 ```typescript
-// apps/frontend/lib/config.ts
+// src/frontend/lib/config.ts
 import { config, getApiUrl } from '@/lib/config';
 
 config.apiBaseUrl;              // For axios baseURL
@@ -890,7 +890,7 @@ process.env.SITE_WS;
 
 **For new API routes:**
 
-1. Add function to `/apps/frontend/lib/api.ts`
+1. Add function to `/src/frontend/lib/api.ts`
 2. Use pre-configured `apiClient` instance
 3. Export typed functions for features to import
 
@@ -900,11 +900,11 @@ process.env.SITE_WS;
 2. Use `getApiUrl('/your-endpoint')` with `fetch()`
 3. Never hardcode URLs
 
-See [config.ts](../../apps/frontend/lib/config.ts) for the complete implementation.
+See [config.ts](../../src/frontend/lib/config.ts) for the complete implementation.
 
 ## Related Documentation
 
 - [Frontend Component Guide](./ui/ui-component-styling.md) - How to style components (CSS Modules, design system, patterns)
-- [Legacy Features README](../../apps/frontend/features/README.md) - Documentation for legacy features directory
+- [Legacy Features README](../../src/frontend/features/README.md) - Documentation for legacy features directory
 - [Plugin System](../plugins/plugins.md) - Plugin architecture (separate from modules)
 - [Backend Modules](../system/system-modules.md) - Backend modular structure and lifecycle patterns

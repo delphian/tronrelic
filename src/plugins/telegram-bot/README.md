@@ -32,7 +32,7 @@ Complete Telegram bot integration for TronRelic. Handles webhook callbacks, comm
 
 ```bash
 # From repository root
-npm run build --workspace packages/plugins/telegram-bot
+npm run build --workspace src/plugins/telegram-bot
 ```
 
 ### 2. Configure Environment Variables
@@ -343,14 +343,14 @@ if (telegramService) {
 ### Building
 
 ```bash
-npm run build --workspace packages/plugins/telegram-bot
+npm run build --workspace src/plugins/telegram-bot
 ```
 
 ### Watching for Changes
 
 ```bash
 # Backend (TypeScript compilation)
-npm run build --workspace packages/plugins/telegram-bot -- --watch
+npm run build --workspace src/plugins/telegram-bot -- --watch
 
 # Frontend (handled by Next.js)
 npm run dev --workspace apps/frontend

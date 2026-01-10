@@ -682,7 +682,7 @@ Container queries fix this by letting each component define its own responsive b
 
 3. **Use semantic container names:** Choose descriptive names that match your component's purpose (`market-card`, `transaction-panel`, etc.). Reuse shared names from the design system when appropriate.
 
-4. **Reserve viewport media queries for global chrome only:** Use `@media` exclusively for layout shells (navigation, page structure) defined in `/apps/frontend/app/layout.tsx`.
+4. **Reserve viewport media queries for global chrome only:** Use `@media` exclusively for layout shells (navigation, page structure) defined in `/src/frontend/app/layout.tsx`.
 
 ### Container Query Example
 
@@ -1262,7 +1262,7 @@ xAxisFormatter={(date) => {
 
 **Example: CurrentBlock Component**
 
-The `CurrentBlock` component (located at `/apps/frontend/features/blockchain/components/CurrentBlock/CurrentBlock.tsx`) demonstrates this pattern:
+The `CurrentBlock` component (located at `/src/frontend/features/blockchain/components/CurrentBlock/CurrentBlock.tsx`) demonstrates this pattern:
 
 - Lines 53, 77-81: State tracking for `hasReceivedLiveData` and live data detection
 - Lines 243-272: Two-phase rendering in chart axis formatter
@@ -1317,8 +1317,8 @@ Before shipping any UI component or plugin page, verify:
 ## Further Reading
 
 - [Frontend Architecture](./frontend-architecture.md) - File organization and folder structure
-- [Design System Colors and Variables](../../apps/frontend/app/globals.scss) - Full reference of CSS variables
-- [SCSS Breakpoints](../../apps/frontend/app/_breakpoints.scss) - Single source of truth for breakpoint SCSS variables
+- [Design System Colors and Variables](../../src/frontend/app/globals.scss) - Full reference of CSS variables
+- [SCSS Breakpoints](../../src/frontend/app/_breakpoints.scss) - Single source of truth for breakpoint SCSS variables
 - [Lucide React Documentation](https://lucide.dev/guide/packages/lucide-react)
 - [Icon Browser](https://lucide.dev/icons) - Browse all available icons
 - [CSS Container Queries (MDN)](https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_Container_Queries)

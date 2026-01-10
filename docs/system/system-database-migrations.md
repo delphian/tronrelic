@@ -1,6 +1,6 @@
 # Database Migration System
 
-This document provides complete technical documentation for TronRelic's database migration system. For practical guidance on writing migrations, see the [Migration Authoring Guide](../../apps/backend/src/services/database/migrations/README.md).
+This document provides complete technical documentation for TronRelic's database migration system. For practical guidance on writing migrations, see the [Migration Authoring Guide](../../src/backend/src/services/database/migrations/README.md).
 
 ## Who This Document Is For
 
@@ -55,23 +55,23 @@ Understanding the migration system helps you safely evolve database schemas, tro
 - ✅ **Migration needed**: Production has `transactions` collection. Need to add compound index for performance. Create migration.
 - ❌ **Migration NOT needed**: New plugin with new collection. Schema definitions handle all initial setup.
 
-For complete guidance on writing migrations with code examples, see [Migration Authoring Guide](../../apps/backend/src/services/database/migrations/README.md).
+For complete guidance on writing migrations with code examples, see [Migration Authoring Guide](../../src/backend/src/services/database/migrations/README.md).
 
 ## Core System Components
 
-**For practical guidance on writing migrations (naming conventions, dependencies, best practices, common patterns), see [Migration Authoring Guide](../../apps/backend/src/services/database/migrations/README.md).**
+**For practical guidance on writing migrations (naming conventions, dependencies, best practices, common patterns), see [Migration Authoring Guide](../../src/backend/src/services/database/migrations/README.md).**
 
 ### Migration Discovery and Scanning
 
 The migration system discovers migration files automatically at application startup from three predefined locations:
 
 **Discovery locations:**
-- **System migrations**: `apps/backend/src/services/database/migrations/` - Core infrastructure changes
-- **Module migrations**: `apps/backend/src/modules/*/migrations/` - Feature-specific changes
-- **Plugin migrations**: `packages/plugins/*/src/backend/migrations/` - Plugin-scoped changes
+- **System migrations**: `src/backend/src/services/database/migrations/` - Core infrastructure changes
+- **Module migrations**: `src/backend/src/modules/*/migrations/` - Feature-specific changes
+- **Plugin migrations**: `src/plugins/*/src/backend/migrations/` - Plugin-scoped changes
 
 **See MigrationScanner implementation:**
-`apps/backend/src/services/database/migration/MigrationScanner.ts`
+`src/backend/src/services/database/migration/MigrationScanner.ts`
 
 **Scanning workflow:**
 
@@ -126,7 +126,7 @@ const discovered = await scanner.scan();
 The executor runs migrations serially with MongoDB transaction wrapping for atomicity and rollback safety.
 
 **See MigrationExecutor implementation:**
-`apps/backend/src/services/database/migration/MigrationExecutor.ts`
+`src/backend/src/services/database/migration/MigrationExecutor.ts`
 
 **Execution workflow:**
 
@@ -199,7 +199,7 @@ await executor.executeMigrations([migration1, migration2, migration3]);
 The tracker maintains persistent state in MongoDB's `migrations` collection, recording all execution attempts with success/failure status.
 
 **See MigrationTracker implementation:**
-`apps/backend/src/services/database/migration/MigrationTracker.ts`
+`src/backend/src/services/database/migration/MigrationTracker.ts`
 
 **Collection schema:**
 
@@ -279,10 +279,10 @@ const removed = await tracker.removeOrphanedPending(discovered);
 The system provides a web-based admin interface at `/system/database` and REST API endpoints for migration management.
 
 **Admin UI location:**
-`apps/frontend/app/(core)/system/database/page.tsx`
+`src/frontend/app/(core)/system/database/page.tsx`
 
 **REST API controller:**
-`apps/backend/src/modules/migrations/migrations.controller.ts`
+`src/backend/src/modules/migrations/migrations.controller.ts`
 
 **UI features:**
 
@@ -315,7 +315,7 @@ This section walks through the complete lifecycle of a database migration from f
 Developer creates migration file in appropriate location:
 
 ```typescript
-// File: apps/backend/src/services/database/migrations/001_create_users.ts
+// File: src/backend/src/services/database/migrations/001_create_users.ts
 
 import type { IMigration, IDatabaseService } from '@tronrelic/types';
 
@@ -498,7 +498,7 @@ x-admin-token: your-admin-token-here
             "id": "003_assign_roles",
             "description": "Assign default roles to existing users",
             "source": "system",
-            "filePath": "/apps/backend/src/services/database/migrations/003_assign_roles.ts",
+            "filePath": "/src/backend/src/services/database/migrations/003_assign_roles.ts",
             "timestamp": "2025-10-26T10:00:00.000Z",
             "dependencies": ["001_create_users", "002_create_roles"],
             "checksum": "abc123..."
@@ -700,7 +700,7 @@ x-admin-token: your-admin-token-here
         "id": "003_assign_roles",
         "description": "Assign default roles to existing users",
         "source": "system",
-        "filePath": "/apps/backend/src/services/database/migrations/003_assign_roles.ts",
+        "filePath": "/src/backend/src/services/database/migrations/003_assign_roles.ts",
         "timestamp": "2025-10-26T10:00:00.000Z",
         "dependencies": ["001_create_users", "002_create_roles"],
         "checksum": "abc123..."
@@ -745,7 +745,7 @@ curl -H "x-admin-token: $ADMIN_API_TOKEN" \
   http://localhost:4000/api/admin/migrations/003_assign_roles
 ```
 
-**For practical examples of using the database service API (createIndex, insertOne, updateMany, key-value storage), see [Migration Authoring Guide - Using the Database Service](../../apps/backend/src/services/database/migrations/README.md#using-the-database-service).**
+**For practical examples of using the database service API (createIndex, insertOne, updateMany, key-value storage), see [Migration Authoring Guide - Using the Database Service](../../src/backend/src/services/database/migrations/README.md#using-the-database-service).**
 
 ## Admin UI Guide
 
@@ -872,7 +872,7 @@ export const migration = {
 
 1. Fix filename to match pattern
 2. Ensure `export const migration: IMigration = { ... }`
-3. Rebuild backend: `./scripts/start.sh --force-build`
+3. Rebuild backend: `npm run clean && npm run dev`
 4. Check `/system/database` for migration in pending list
 
 ### Migration Fails During Execution
@@ -938,7 +938,7 @@ await database.set('config', { threshold: 1000000 }); // Scoped to plugin
 
 1. Review error message and stack trace
 2. Fix migration code to address specific error
-3. Rebuild backend: `./scripts/start.sh --force-build`
+3. Rebuild backend: `npm run clean && npm run dev`
 4. Retry execution via admin UI (failed migrations remain pending)
 
 ### Migration Running Forever
@@ -974,13 +974,13 @@ await database.set('config', { threshold: 1000000 }); // Scoped to plugin
 2. Consider optimizing migration for better performance
 
 **If backend crashed:**
-1. Restart backend: `./scripts/stop.sh && ./scripts/start.sh`
+1. Restart backend (Ctrl+C then `npm run dev`)
 2. Check migration status in admin UI
 3. If migration marked as failed, review error and retry
 4. If migration marked as completed, verify database state
 
 **If migration genuinely stuck:**
-1. Restart backend: `./scripts/stop.sh && ./scripts/start.sh`
+1. Restart backend (Ctrl+C then `npm run dev`)
 2. Review migration code for infinite loops or blocking operations
 3. Fix code and rebuild
 4. Retry execution
@@ -1160,7 +1160,7 @@ process.exit(1)
 ## Further Reading
 
 **Migration authoring:**
-- [Migration Authoring Guide](../../apps/backend/src/services/database/migrations/README.md) - Complete developer guide for writing migrations (naming conventions, dependencies, idempotency, common patterns, database API usage)
+- [Migration Authoring Guide](../../src/backend/src/services/database/migrations/README.md) - Complete developer guide for writing migrations (naming conventions, dependencies, idempotency, common patterns, database API usage)
 - [Migration Examples](./migration-examples/) - System, module, and plugin migration examples with detailed comments
 
 **Interface contracts:**

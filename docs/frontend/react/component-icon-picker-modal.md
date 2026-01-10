@@ -331,9 +331,9 @@ IconPickerModal supports selecting a single icon only. If you need multi-select 
 
 ## Related Components
 
-- **ModalProvider** - Required modal context provider (see `apps/frontend/components/ui/ModalProvider`)
-- **Button** - Used for modal triggers and Cancel action (see `apps/frontend/components/ui/Button`)
-- **Input** - Search input field (see `apps/frontend/components/ui/Input`)
+- **ModalProvider** - Required modal context provider (see `src/frontend/components/ui/ModalProvider`)
+- **Button** - Used for modal triggers and Cancel action (see `src/frontend/components/ui/Button`)
+- **Input** - Search input field (see `src/frontend/components/ui/Input`)
 
 ## Related Documentation
 

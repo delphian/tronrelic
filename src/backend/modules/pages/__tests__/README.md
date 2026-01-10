@@ -215,13 +215,13 @@ Tests the module initialization and dependency injection.
 
 ```bash
 # Run all pages module tests
-npm test -- apps/backend/src/modules/pages/__tests__/
+npm test -- src/backend/src/modules/pages/__tests__/
 
 # Run specific test file
-npm test -- apps/backend/src/modules/pages/__tests__/page.service.test.ts
+npm test -- src/backend/src/modules/pages/__tests__/page.service.test.ts
 
 # Run tests in watch mode
-npm test -- apps/backend/src/modules/pages/__tests__/ --watch
+npm test -- src/backend/src/modules/pages/__tests__/ --watch
 ```
 
 ## Mock Implementations

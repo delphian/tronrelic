@@ -4,10 +4,10 @@ This document explains how frontend plugins access UI components, API clients, c
 
 ## Why Frontend Context Exists
 
-Frontend plugins located in `packages/plugins/` cannot import directly from `apps/frontend/` because:
+Frontend plugins located in `src/plugins/` cannot import directly from `src/frontend/` because:
 
 - **Cross-workspace imports fail** - Next.js module resolution doesn't support relative paths across workspace boundaries
-- **Build errors occur** - Paths like `../../../../../../apps/frontend/lib/api` break in Turbopack
+- **Build errors occur** - Paths like `../../../../../../src/frontend/lib/api` break in Turbopack
 - **Tight coupling emerges** - Direct imports make plugins dependent on frontend app internals
 - **Framework independence is lost** - Plugins should depend on interfaces, not implementations
 
@@ -295,7 +295,7 @@ This structure is resilient to the strict-mode double-mount behaviour we observe
 Here's a complete plugin demonstrating all context features:
 
 ```typescript
-// packages/plugins/example-analytics/src/frontend/frontend.ts
+// src/plugins/example-analytics/src/frontend/frontend.ts
 import { definePlugin } from '@tronrelic/types';
 import { exampleAnalyticsManifest } from '../manifest';
 import { AnalyticsPage } from './AnalyticsPage';
@@ -325,7 +325,7 @@ export const exampleAnalyticsFrontendPlugin = definePlugin({
 ```
 
 ```typescript
-// packages/plugins/example-analytics/src/frontend/AnalyticsPage.tsx
+// src/plugins/example-analytics/src/frontend/AnalyticsPage.tsx
 'use client';
 
 import { useEffect, useState } from 'react';
@@ -393,7 +393,7 @@ export function AnalyticsPage({ context }: { context: IFrontendPluginContext }) 
 ```
 
 ```typescript
-// packages/plugins/example-analytics/src/frontend/AnalyticsEventHandler.tsx
+// src/plugins/example-analytics/src/frontend/AnalyticsEventHandler.tsx
 'use client';
 
 import { useEffect } from 'react';
@@ -626,9 +626,9 @@ export function MyPage({ context }: { context: IFrontendPluginContext }) {
 
 **Before:**
 ```typescript
-import { Card } from '../../../apps/frontend/components/ui/Card';
-import { LineChart } from '../../../apps/frontend/features/charts/components/LineChart';
-import { getMyData } from '../../../apps/frontend/lib/api';
+import { Card } from '../../../src/frontend/components/ui/Card';
+import { LineChart } from '../../../src/frontend/features/charts/components/LineChart';
+import { getMyData } from '../../../src/frontend/lib/api';
 
 // In component:
 const data = await getMyData();
@@ -722,7 +722,7 @@ Move any type definitions from frontend to plugin or use inline types:
 
 **Before:**
 ```typescript
-import type { TimeseriesPoint } from '../../../apps/frontend/lib/api';
+import type { TimeseriesPoint } from '../../../src/frontend/lib/api';
 ```
 
 **After:**
@@ -845,13 +845,13 @@ npm run generate:plugins --workspace apps/frontend
 
 ## Troubleshooting
 
-### "Module not found: Can't resolve '../../apps/frontend/...'"
+### "Module not found: Can't resolve '../../src/frontend/...'"
 
 You're importing from the frontend app directly. Replace with context injection:
 
 ```typescript
 // ❌ Wrong
-import { Card } from '../../apps/frontend/components/ui/Card';
+import { Card } from '../../src/frontend/components/ui/Card';
 
 // ✅ Correct
 export function MyComponent({ context }: { context: IFrontendPluginContext }) {
@@ -883,7 +883,7 @@ export const myFrontendPlugin = definePlugin({
 
 ### API calls fail with CORS errors
 
-The API client uses the base URL from `NEXT_PUBLIC_API_URL`. Verify it's set in `apps/frontend/.env.local`:
+The API client uses the base URL from `NEXT_PUBLIC_API_URL`. Verify it's set in `src/frontend/.env.local`:
 
 ```bash
 NEXT_PUBLIC_API_URL=http://localhost:4000/api

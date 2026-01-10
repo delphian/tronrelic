@@ -93,7 +93,7 @@ The module follows TronRelic's layered architecture with cookie-based authentica
 
 The user module spans both backend and frontend with parallel directory structures:
 
-**Backend (`apps/backend/src/modules/user/`):**
+**Backend (`src/backend/src/modules/user/`):**
 ```
 modules/user/
 ├── index.ts                 # Public API exports
@@ -112,7 +112,7 @@ modules/user/
     └── user.service.test.ts # Unit tests with mocks
 ```
 
-**Frontend (`apps/frontend/modules/user/`):**
+**Frontend (`src/frontend/modules/user/`):**
 ```
 modules/user/
 ├── index.ts                 # Barrel exports (all public API)
@@ -132,7 +132,7 @@ modules/user/
     └── user.types.ts        # TypeScript interfaces (IUserData, IWalletLink, etc.)
 ```
 
-**Admin UI (`apps/frontend/features/system/`):**
+**Admin UI (`src/frontend/features/system/`):**
 ```
 features/system/components/UsersMonitor/
 ├── UsersMonitor.tsx         # Admin dashboard component
@@ -140,7 +140,7 @@ features/system/components/UsersMonitor/
 └── index.ts                 # Barrel export
 ```
 
-**Route page (`apps/frontend/app/`):**
+**Route page (`src/frontend/app/`):**
 ```
 app/(core)/system/users/
 └── page.tsx                 # Next.js route rendering UsersMonitor
@@ -474,7 +474,7 @@ The user module implements the `IModule` interface with two-phase initialization
 
 **Integration in backend bootstrap:**
 ```typescript
-// apps/backend/src/index.ts
+// src/backend/src/index.ts
 import { UserModule } from './modules/user/index.js';
 
 const userModule = new UserModule();

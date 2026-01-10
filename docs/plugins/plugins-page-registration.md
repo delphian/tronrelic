@@ -64,7 +64,7 @@ interface IPageConfig {
 
 ### 3. Plugin Loader Integration
 
-The `PluginLoader` component (in `apps/frontend/components/plugins/PluginLoader.tsx`) automatically registers plugins with the menu/page system:
+The `PluginLoader` component (in `src/frontend/components/plugins/PluginLoader.tsx`) automatically registers plugins with the menu/page system:
 
 1. Fetches plugin manifests from backend
 2. Lazy loads frontend plugin modules
@@ -77,13 +77,13 @@ This ensures all plugin UI surfaces are discovered before the app renders naviga
 
 Two systems consume the registry:
 
-**NavBar** (`apps/frontend/components/layout/NavBar.tsx`):
+**NavBar** (`src/frontend/components/layout/NavBar.tsx`):
 - Merges core navigation links with plugin menu items
 - Sorts combined items by order property
 - Renders clickable navigation links
 - Respects adminOnly and other access controls
 
-**Dynamic Route Handler** (`apps/frontend/app/(core)/[...plugin]/page.tsx`):
+**Dynamic Route Handler** (`src/frontend/app/(core)/[...plugin]/page.tsx`):
 - Catches all plugin page requests via Next.js catch-all route
 - Looks up page configuration by URL path
 - Renders the associated React component
@@ -300,9 +300,9 @@ export const myManifest: IPluginManifest = {
 
 ### Step 5: Build and Enable Plugin
 
-1. Build your plugin: `npm run build --workspace packages/plugins/my-plugin`
+1. Build your plugin: `npm run build --workspace src/plugins/my-plugin`
 2. Generate frontend registry: `npm run generate:plugins --workspace apps/frontend`
-3. Restart the app: `./scripts/start.sh`
+3. Restart the app (Ctrl+C then `npm run dev`)
 4. Navigate to `/system/plugins` admin UI
 5. Install and enable your plugin
 
@@ -510,7 +510,7 @@ Common icons: `LayoutDashboard`, `BarChart3`, `Settings`, `Bell`, `Activity`, `T
 
 ## Example: Full Plugin
 
-See `packages/plugins/example-dashboard` for a complete working example that demonstrates:
+See `src/plugins/example-dashboard` for a complete working example that demonstrates:
 
 - Menu item registration
 - Page routing
@@ -737,8 +737,8 @@ await context.menuService.create({
 Core implementation files:
 
 - **Backend menu service**:
-  - `apps/backend/src/modules/menu/menu.service.ts` - MenuService implementation
-  - `apps/backend/src/modules/menu/menu.routes.ts` - REST API endpoints
+  - `src/backend/src/modules/menu/menu.service.ts` - MenuService implementation
+  - `src/backend/src/modules/menu/menu.routes.ts` - REST API endpoints
   - `packages/types/src/menu/IMenuService.ts` - Menu service interface
   - **See [system-modules-menu.md](../system/system-modules-menu.md) for complete documentation**
 
@@ -748,16 +748,16 @@ Core implementation files:
   - `packages/types/src/observer/IPluginContext.ts` - Backend context with menuService
 
 - **Page registry system**:
-  - `apps/frontend/lib/pluginRegistry.ts` - Plugin page registry
-  - `apps/frontend/components/plugins/PluginLoader.tsx` - Plugin loader with registry integration
+  - `src/frontend/lib/pluginRegistry.ts` - Plugin page registry
+  - `src/frontend/components/plugins/PluginLoader.tsx` - Plugin loader with registry integration
 
 - **UI integration**:
-  - `apps/frontend/components/layout/NavBar.tsx` - Navigation with WebSocket menu updates
-  - `apps/frontend/app/(core)/[...plugin]/page.tsx` - Dynamic route handler
+  - `src/frontend/components/layout/NavBar.tsx` - Navigation with WebSocket menu updates
+  - `src/frontend/app/(core)/[...plugin]/page.tsx` - Dynamic route handler
 
 - **Example plugins**:
-  - `packages/plugins/resource-tracking/` - Uses IMenuService with hierarchical menus
-  - `packages/plugins/example-dashboard/` - Basic example
+  - `src/plugins/resource-tracking/` - Uses IMenuService with hierarchical menus
+  - `src/plugins/example-dashboard/` - Basic example
 
 ## Best Practices
 
@@ -782,13 +782,13 @@ After implementing a plugin with menu items and pages, verify it works correctly
 
 ```bash
 # Build plugin
-npm run build --workspace packages/plugins/my-plugin
+npm run build --workspace src/plugins/my-plugin
 
 # Generate frontend registry
 npm run generate:plugins --workspace apps/frontend
 
-# Restart application
-./scripts/start.sh
+# Restart application (Ctrl+C first if running, then:)
+npm run dev
 ```
 
 ### 2. Enable Plugin
@@ -866,9 +866,9 @@ This keeps the codebase modular, enables rapid feature development, and ensures 
 For developers working on the plugin system itself, here are the key files:
 
 ### Backend Menu Service
-- `apps/backend/src/modules/menu/menu.service.ts` - MenuService singleton implementation
-- `apps/backend/src/modules/menu/menu.routes.ts` - REST API endpoints
-- `apps/backend/src/modules/menu/menu.model.ts` - MongoDB schema
+- `src/backend/src/modules/menu/menu.service.ts` - MenuService singleton implementation
+- `src/backend/src/modules/menu/menu.routes.ts` - REST API endpoints
+- `src/backend/src/modules/menu/menu.model.ts` - MongoDB schema
 - `packages/types/src/menu/IMenuService.ts` - Service interface
 - `packages/types/src/menu/IMenuNode.ts` - Menu node data structure
 
@@ -879,18 +879,18 @@ For developers working on the plugin system itself, here are the key files:
 - `packages/types/src/plugin/index.ts` - Type exports
 
 ### Frontend Infrastructure
-- `apps/frontend/lib/pluginRegistry.ts` - Plugin page registry singleton
-- `apps/frontend/components/plugins/PluginLoader.tsx` - Plugin loader with registry integration
-- `apps/frontend/components/layout/NavBar.tsx` - Navigation with WebSocket menu updates
-- `apps/frontend/app/(core)/[...plugin]/page.tsx` - Dynamic route handler
-- `apps/frontend/components/plugins/plugins.generated.ts` - Auto-generated plugin loaders
+- `src/frontend/lib/pluginRegistry.ts` - Plugin page registry singleton
+- `src/frontend/components/plugins/PluginLoader.tsx` - Plugin loader with registry integration
+- `src/frontend/components/layout/NavBar.tsx` - Navigation with WebSocket menu updates
+- `src/frontend/app/(core)/[...plugin]/page.tsx` - Dynamic route handler
+- `src/frontend/components/plugins/plugins.generated.ts` - Auto-generated plugin loaders
 
 ### Example Plugins
-- `packages/plugins/resource-tracking/` - Complete example with IMenuService
+- `src/plugins/resource-tracking/` - Complete example with IMenuService
   - `src/backend/backend.ts` - Menu registration in init() hook
   - `src/frontend/frontend.ts` - Page registration
   - Demonstrates hierarchical menus with container nodes
-- `packages/plugins/example-dashboard/` - Basic example
+- `src/plugins/example-dashboard/` - Basic example
 
 ## Related Documentation
 

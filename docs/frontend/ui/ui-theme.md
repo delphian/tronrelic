@@ -71,7 +71,7 @@ Override only tokens you need—defaults apply automatically. Use CSS validation
 | Layout | `--body-bg-image`, `--page-bg-image`, `--grid-bg-image` | Background images |
 | Typography | `--font-size-*`, `--font-weight-*` | Text sizing |
 
-See [primitives.scss](../../../apps/frontend/app/primitives.scss) and [semantic-tokens.scss](../../../apps/frontend/app/semantic-tokens.scss) for complete token references.
+See [primitives.scss](../../../src/frontend/app/primitives.scss) and [semantic-tokens.scss](../../../src/frontend/app/semantic-tokens.scss) for complete token references.
 
 ## Theme Toggle Component
 
@@ -260,10 +260,10 @@ Before creating a theme, gather:
 - [ui-component-styling.md](./ui-component-styling.md) - Component styling patterns using design tokens
 
 **Source files to explore:**
-- [primitives.scss](../../../apps/frontend/app/primitives.scss) - All foundation tokens (colors, spacing, typography)
-- [semantic-tokens.scss](../../../apps/frontend/app/semantic-tokens.scss) - Component-level tokens with context
-- [components/ui/](../../../apps/frontend/components/ui/) - UI component implementations
-- [components/layout/](../../../apps/frontend/components/layout/) - Layout component implementations
+- [primitives.scss](../../../src/frontend/app/primitives.scss) - All foundation tokens (colors, spacing, typography)
+- [semantic-tokens.scss](../../../src/frontend/app/semantic-tokens.scss) - Component-level tokens with context
+- [components/ui/](../../../src/frontend/components/ui/) - UI component implementations
+- [components/layout/](../../../src/frontend/components/layout/) - Layout component implementations
 
 **Related topics:**
 - [react.md](../react/react.md) - SSR + Live Updates pattern used by ThemeToggle

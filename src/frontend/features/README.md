@@ -107,12 +107,12 @@ import { blockchainReducer } from '../features/blockchain';
 
 1. **Create the feature directory**:
    ```bash
-   mkdir -p apps/frontend/features/my-feature/{components,hooks,api}
+   mkdir -p src/frontend/features/my-feature/{components,hooks,api}
    ```
 
 2. **Create the Redux slice** (if needed):
    ```typescript
-   // apps/frontend/features/my-feature/slice.ts
+   // src/frontend/features/my-feature/slice.ts
    import { createSlice } from '@reduxjs/toolkit';
 
    export interface MyFeatureState {
@@ -137,7 +137,7 @@ import { blockchainReducer } from '../features/blockchain';
 
 3. **Create components**:
    ```typescript
-   // apps/frontend/features/my-feature/components/MyComponent.tsx
+   // src/frontend/features/my-feature/components/MyComponent.tsx
    'use client';
 
    export function MyComponent() {
@@ -147,7 +147,7 @@ import { blockchainReducer } from '../features/blockchain';
 
 4. **Create the index file**:
    ```typescript
-   // apps/frontend/features/my-feature/index.ts
+   // src/frontend/features/my-feature/index.ts
    /**
     * My Feature Module
     *
@@ -167,7 +167,7 @@ import { blockchainReducer } from '../features/blockchain';
 
 5. **Register in Redux store** (if applicable):
    ```typescript
-   // apps/frontend/store/index.ts
+   // src/frontend/store/index.ts
    import { myFeatureReducer } from '../features/my-feature';
 
    export const store = configureStore({

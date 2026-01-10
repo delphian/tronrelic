@@ -236,7 +236,7 @@ Before shipping any public-facing component:
 TronRelic uses React Context for dependency injection and cross-cutting concerns. All providers are composed in a single `Providers` wrapper that establishes the application's runtime environment:
 
 ```typescript
-// apps/frontend/app/providers.tsx
+// src/frontend/app/providers.tsx
 export function Providers({ children }: { children: ReactNode }) {
   return (
     <Provider store={store}>           {/* Redux state management */}
@@ -526,7 +526,7 @@ function ThemeForm() {
 
 **See [react/component-icon-picker-modal.md](./react/component-icon-picker-modal.md) for a complete example using ModalProvider.**
 
-**Provider location:** `apps/frontend/components/ui/ModalProvider/ModalProvider.tsx`
+**Provider location:** `src/frontend/components/ui/ModalProvider/ModalProvider.tsx`
 
 ### SchedulerMonitor
 
@@ -594,7 +594,7 @@ function PluginJobControl() {
 
 **See [react/component-scheduler-monitor.md](./react/component-scheduler-monitor.md) for complete integration guide and troubleshooting.**
 
-**Component location:** `apps/frontend/features/system/components/SchedulerMonitor/SchedulerMonitor.tsx`
+**Component location:** `src/frontend/features/system/components/SchedulerMonitor/SchedulerMonitor.tsx`
 
 ### ToastProvider
 
@@ -636,7 +636,7 @@ function SaveButton() {
 }
 ```
 
-**Provider location:** `apps/frontend/components/ui/ToastProvider/ToastProvider.tsx`
+**Provider location:** `src/frontend/components/ui/ToastProvider/ToastProvider.tsx`
 
 ### FrontendPluginContextProvider
 
@@ -682,7 +682,7 @@ export function MyPluginPage({ context }: { context: IFrontendPluginContext }) {
 }
 ```
 
-**Provider location:** `apps/frontend/lib/frontendPluginContext.tsx`
+**Provider location:** `src/frontend/lib/frontendPluginContext.tsx`
 
 **See [plugins-frontend-context.md](../plugins/plugins-frontend-context.md) for complete plugin context documentation.**
 

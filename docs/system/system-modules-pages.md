@@ -512,7 +512,7 @@ The pages module implements the `IModule` interface with two-phase initializatio
 
 **Integration in backend bootstrap:**
 ```typescript
-// apps/backend/src/index.ts
+// src/backend/src/index.ts
 import { PagesModule } from './modules/pages/index.js';
 
 // Instantiate module

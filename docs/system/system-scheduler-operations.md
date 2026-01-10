@@ -55,24 +55,24 @@ Jobs persist their configuration in MongoDB (`scheduler_configs` collection), so
 
 ## Scheduler Jobs
 
-TronRelic includes six built-in scheduler jobs:
+TronRelic includes six built-in scheduler jobs. Plugins can register additional jobs (e.g., `resource-markets:refresh`).
 
 | Job Name | Default Schedule | Purpose | Impact if Down |
 |----------|------------------|---------|-----------------|
-| `markets:refresh` | Every 10 min | Fetch pricing from all 14 energy markets | Market leaderboard shows stale prices |
 | `blockchain:sync` | Every 1 min | Retrieve new TRON blocks and index transactions | Whale alerts, transaction data stale |
-| `cache:cleanup` | Every 60 min | Remove expired cache entries | Memory usage grows unbounded |
-| `alerts:dispatch` | Every 1 min | Send pending alert notifications | Users don't receive alerts |
+| `blockchain:prune` | Every 60 min | Remove old transactions (>7 days) | Database grows unbounded |
 | `chain-parameters:fetch` | Every 10 min | Fetch TRON chain parameters (energy costs) | Energy cost calculations become inaccurate |
 | `usdt-parameters:fetch` | Every 10 min | Fetch USDT transfer energy cost | USDT transfer pricing becomes inaccurate |
+| `cache:cleanup` | Every 60 min | Remove expired cache entries | Memory usage grows unbounded |
+| `system-logs:cleanup` | Every 60 min | Remove old system logs beyond retention | Log storage grows unbounded |
 
 **Critical jobs** (disable only if you understand the consequences):
 - `blockchain:sync` - Core data pipeline
-- `markets:refresh` - User-facing pricing data
+- `chain-parameters:fetch` - Energy pricing calculations
 
 **Safe to disable temporarily:**
 - `cache:cleanup` - Only impacts performance, not functionality
-- `alerts:*` - Only impacts notifications
+- `system-logs:cleanup` - Only impacts log retention
 
 ## Controlling Jobs at Runtime
 
@@ -289,7 +289,7 @@ No restart needed. Job resumes normally.
 
 1. If scheduler disabled globally: Set `ENABLE_SCHEDULER=true`
 2. Check that `ENABLE_SCHEDULER` is set **before** backend starts
-3. Restart backend: `./scripts/stop.sh && ./scripts/start.sh`
+3. Restart backend (Ctrl+C then `npm run dev`)
 4. Wait for jobs to execute on their schedule
 
 ### Job Execution Takes Too Long
@@ -342,4 +342,3 @@ Job state preserved as configured
 
 - [system-blockchain-sync-architecture.md](./system-blockchain-sync-architecture.md) - How the `blockchain:sync` job processes transactions
 - [environment.md](../environment.md) - `ENABLE_SCHEDULER` and `TRONGRID_API_KEY` configuration
-- [markets/market-system-operations.md](../markets/market-system-operations.md) - What the `markets:refresh` job does

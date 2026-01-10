@@ -510,15 +510,15 @@ context.websocket.onSubscribe(async (socket, payload) => {
 - `packages/types/src/observer/IPluginContext.ts` - Updated context with websocket field
 
 **Backend infrastructure:**
-- `apps/backend/src/services/plugin-websocket-manager.ts` - Manager implementation
-- `apps/backend/src/services/plugin-websocket-registry.ts` - Statistics registry
-- `apps/backend/src/services/websocket.service.ts` - Updated routing logic
-- `apps/backend/src/loaders/plugins.ts` - Manager injection during plugin load
+- `src/backend/src/services/plugin-websocket-manager.ts` - Manager implementation
+- `src/backend/src/services/plugin-websocket-registry.ts` - Statistics registry
+- `src/backend/src/services/websocket.service.ts` - Updated routing logic
+- `src/backend/src/loaders/plugins.ts` - Manager injection during plugin load
 
 **Frontend:**
-- `apps/frontend/app/(core)/system/websockets/page.tsx` - Admin monitoring UI
-- `packages/plugins/whale-alerts/src/frontend/WhaleAlertsToastHandler.tsx` - Example client implementation showing direct Socket.IO event handling with toast notifications
+- `src/frontend/app/(core)/system/websockets/page.tsx` - Admin monitoring UI
+- `src/plugins/whale-alerts/src/frontend/WhaleAlertsToastHandler.tsx` - Example client implementation showing direct Socket.IO event handling with toast notifications
 
 **Example plugin:**
-- `packages/plugins/whale-alerts/src/backend/backend.ts` - Subscription handler registration
-- `packages/plugins/whale-alerts/src/backend/whale-detection.observer.ts` - Room-based event emission
+- `src/plugins/whale-alerts/src/backend/backend.ts` - Subscription handler registration
+- `src/plugins/whale-alerts/src/backend/whale-detection.observer.ts` - Room-based event emission

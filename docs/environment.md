@@ -19,7 +19,7 @@ NEXT_PUBLIC_SITE_URL=http://localhost:3000
 **Full Development Configuration:**
 ```bash
 # Copy template and edit
-cp .env.example apps/backend/.env
+cp .env.example src/backend/.env
 
 # Enable all features to see live data processing
 ENABLE_SCHEDULER=true
@@ -548,7 +548,7 @@ For troubleshooting environment configuration problems, see:
 
 ## Validation
 
-The application validates all environment variables at startup using Zod schema (`apps/backend/src/config/env.ts`).
+The application validates all environment variables at startup using Zod schema (`src/backend/src/config/env.ts`).
 
 **If validation fails:**
 - Application will not start
@@ -564,8 +564,8 @@ The application validates all environment variables at startup using Zod schema 
 
 ## References
 
-- **Source Code:** `apps/backend/src/config/env.ts` - Zod validation schema
+- **Source Code:** `src/backend/src/config/env.ts` - Zod validation schema
 - **Template:** `.env.example` - Complete example with all variables
-- **Backend Config:** `apps/backend/.env` - Your actual configuration
-- **Frontend Config:** `apps/frontend/.env.local` - Next.js public variables
+- **Backend Config:** `src/backend/.env` - Your actual configuration
+- **Frontend Config:** `src/frontend/.env.local` - Next.js public variables
 - **System Monitoring:** Access `/system` to view runtime configuration

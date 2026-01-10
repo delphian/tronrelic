@@ -37,8 +37,8 @@ Energy market insights would serve users looking for cost-effective TRON resourc
 - Documentation updates for new workflow
 
 **Related files:**
-- `apps/frontend/app/primitives.css` - Current breakpoint token definitions
-- `apps/frontend/app/globals.css` - Documents CSS variable limitations
+- `src/frontend/app/primitives.css` - Current breakpoint token definitions
+- `src/frontend/app/globals.css` - Documents CSS variable limitations
 - Component CSS Modules using hardcoded breakpoints (e.g., `RecentWhaleDelegations.module.css`)
 
 ## Inject Mongoose into DatabaseService
@@ -80,7 +80,7 @@ export class DatabaseService implements IDatabaseService {
 - **Integration testing** - Can test DatabaseService against real MongoDB in integration tests
 
 **Current workarounds:**
-1. Centralized mongoose mock (`apps/backend/src/tests/vitest/mocks/mongoose.ts`) - For DatabaseService internal tests
+1. Centralized mongoose mock (`src/backend/src/tests/vitest/mocks/mongoose.ts`) - For DatabaseService internal tests
 2. Multiple local IDatabaseService mocks - For consumer tests (PageService, ThemeModule, etc.)
 
 **Migration considerations:**
@@ -91,14 +91,14 @@ export class DatabaseService implements IDatabaseService {
 - Preserve backward compatibility during transition
 
 **Related files:**
-- `apps/backend/src/modules/database/services/database.service.ts` - DatabaseService implementation
-- `apps/backend/src/modules/database/DatabaseModule.ts` - DatabaseService instantiation
-- `apps/backend/src/modules/pages/__tests__/page.service.test.ts` - Example local mock
-- `apps/backend/src/tests/vitest/mocks/mongoose.ts` - Centralized mongoose mock
+- `src/backend/src/modules/database/services/database.service.ts` - DatabaseService implementation
+- `src/backend/src/modules/database/DatabaseModule.ts` - DatabaseService instantiation
+- `src/backend/src/modules/pages/__tests__/page.service.test.ts` - Example local mock
+- `src/backend/src/tests/vitest/mocks/mongoose.ts` - Centralized mongoose mock
 
 ## Review Unused API URL Helper Functions
 
-**Context:** The `getClientSideApiUrlWithPath()` and potentially `getClientSideApiUrl()` helper functions exist in `apps/frontend/lib/api-url.ts` but have zero usage across the entire frontend codebase. All client-side API calls use hardcoded `/api` paths that rely on Next.js rewrites (configured in `next.config.mjs`) to route requests to the backend.
+**Context:** The `getClientSideApiUrlWithPath()` and potentially `getClientSideApiUrl()` helper functions exist in `src/frontend/lib/api-url.ts` but have zero usage across the entire frontend codebase. All client-side API calls use hardcoded `/api` paths that rely on Next.js rewrites (configured in `next.config.mjs`) to route requests to the backend.
 
 **Current pattern (used throughout codebase):**
 ```typescript
@@ -125,6 +125,6 @@ fetch(`${apiUrl}/admin/pages`, { ... })
 - Keep both patterns for flexibility (current state, but inconsistent)
 
 **Related files:**
-- `apps/frontend/lib/api-url.ts` - Helper function definitions
-- `apps/frontend/next.config.mjs` - Next.js rewrite rules
-- `apps/frontend/app/(core)/system/pages/**/*.tsx` - Example hardcoded usage
+- `src/frontend/lib/api-url.ts` - Helper function definitions
+- `src/frontend/next.config.mjs` - Next.js rewrite rules
+- `src/frontend/app/(core)/system/pages/**/*.tsx` - Example hardcoded usage

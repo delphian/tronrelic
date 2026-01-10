@@ -407,4 +407,4 @@ Before writing database access code, verify:
 
 **Interface reference:**
 - `packages/types/src/database/IDatabaseService.ts` - Complete interface documentation with JSDoc
-- `apps/backend/src/modules/database/services/database.service.ts` - Implementation details
+- `src/backend/src/modules/database/services/database.service.ts` - Implementation details

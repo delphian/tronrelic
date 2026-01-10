@@ -244,7 +244,7 @@ Components use media queries or container queries to switch which token they ref
 
 **Reference implementation:**
 
-See `/apps/frontend/components/ui/Card/Card.module.scss` (lines 43-79) for how the Card component implements this pattern with a cascade across three breakpoints. The component explicitly selects `--card-padding-sm`, `--card-padding-xs`, and other tokens at different breakpoints—tokens themselves never change.
+See `/src/frontend/components/ui/Card/Card.module.scss` (lines 43-79) for how the Card component implements this pattern with a cascade across three breakpoints. The component explicitly selects `--card-padding-sm`, `--card-padding-xs`, and other tokens at different breakpoints—tokens themselves never change.
 
 ## Design Token Reference
 
@@ -428,10 +428,10 @@ When working with TronRelic's design tokens, remember:
 - [frontend-architecture.md](./frontend-architecture.md) - Frontend file organization and structure
 
 **TronRelic source files:**
-- [apps/frontend/app/primitives.scss](../../apps/frontend/app/primitives.scss) - Foundation tokens (primitives)
-- [apps/frontend/app/semantic-tokens.scss](../../apps/frontend/app/semantic-tokens.scss) - Semantic tokens (aliases)
-- [apps/frontend/app/globals.scss](../../apps/frontend/app/globals.scss) - Utility classes and global styles
-- [apps/frontend/app/_breakpoints.scss](../../apps/frontend/app/_breakpoints.scss) - SCSS breakpoint variables (single source of truth)
+- [src/frontend/app/primitives.scss](../../src/frontend/app/primitives.scss) - Foundation tokens (primitives)
+- [src/frontend/app/semantic-tokens.scss](../../src/frontend/app/semantic-tokens.scss) - Semantic tokens (aliases)
+- [src/frontend/app/globals.scss](../../src/frontend/app/globals.scss) - Utility classes and global styles
+- [src/frontend/app/_breakpoints.scss](../../src/frontend/app/_breakpoints.scss) - SCSS breakpoint variables (single source of truth)
 
 **External resources:**
 - Material Design Tokens: https://m3.material.io/foundations/design-tokens/overview

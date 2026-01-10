@@ -1,6 +1,3 @@
-import { readdirSync, existsSync } from 'fs';
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
 import axios from 'axios';
 import mongoose from 'mongoose';
 import type { IPluginContext, IPlugin, IDatabaseService, ISchedulerService } from '@/types';
@@ -26,112 +23,19 @@ import { ClickHouseService } from '../modules/clickhouse/services/clickhouse.ser
 import { AddressLabelService } from '../modules/address-labels/services/address-label.service.js';
 import { UserService } from '../modules/user/services/user.service.js';
 import { getRedisClient } from './redis.js';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
+import { discoveredPlugins } from './plugins.generated.js';
 
 /**
- * Auto-discover and load all backend plugins.
+ * Returns all discovered plugins from the generated registry.
  *
- * Scans src/plugins/ for directories containing a dist/ folder with compiled plugins.
- * Each plugin is a self-contained package with its own src/ and dist/ folders.
+ * Plugins are discovered at build time by scripts/generate-backend-plugin-registry.mjs
+ * which scans src/plugins/ and generates static imports. This eliminates runtime
+ * filesystem scanning and enables on-the-fly TypeScript compilation during development.
  *
- * This provides zero-config plugin registration - just create a plugin directory with
- * package.json, build it, and the loader will find it in dist/.
+ * @returns Array of discovered plugins with their manifests and lifecycle hooks
  */
-async function loadAllPlugins(): Promise<IPlugin[]> {
-    const pluginsDir = join(__dirname, '../../../../src/plugins');
-    const entries = readdirSync(pluginsDir, { withFileTypes: true });
-    const plugins: IPlugin[] = [];
-
-    for (const entry of entries) {
-        // Skip files, only process directories
-        if (!entry.isDirectory()) {
-            continue;
-        }
-
-        // Skip non-plugin directories
-        if (entry.name.startsWith('.') || entry.name === 'node_modules' || entry.name === 'dist') {
-            continue;
-        }
-
-        // Check if this directory has a dist folder (compiled plugin)
-        const distPath = join(pluginsDir, entry.name, 'dist');
-        if (!existsSync(distPath)) {
-            logger.warn(`Plugin ${entry.name} has no dist folder - run build first`);
-            continue;
-        }
-
-        try {
-            // Import the manifest from the plugin's dist folder (supporting nested layouts)
-            const manifestPathCandidates = [
-                join(distPath, 'manifest.js'),
-                join(distPath, 'manifest.cjs'),
-                join(distPath, 'manifest.mjs')
-            ];
-
-            const manifestPath = manifestPathCandidates.find(candidate => existsSync(candidate));
-            if (!manifestPath) {
-                logger.warn(`Plugin ${entry.name} has no compiled manifest at dist/manifest.js`);
-                continue;
-            }
-
-            const manifestModule = await import(manifestPath);
-
-            // Find the manifest export
-            const manifestExport = Object.values(manifestModule).find(
-                (exp): boolean =>
-                    typeof exp === 'object' &&
-                    exp !== null &&
-                    'id' in exp &&
-                    'title' in exp &&
-                    'version' in exp
-            );
-
-            if (!manifestExport) {
-                logger.warn(`No manifest found in ${entry.name}/dist`);
-                continue;
-            }
-
-            const manifest = manifestExport as any;
-
-            // If plugin has backend component, load it
-            if (manifest.backend) {
-                // Import the backend plugin file from the conventional dist path
-                const backendPath = join(distPath, 'backend', 'backend.js');
-                if (!existsSync(backendPath)) {
-                    logger.warn(`Backend entry not found for plugin ${entry.name} at ${backendPath}`);
-                    continue;
-                }
-
-                const backendModule = await import(backendPath);
-
-                // Find the exported plugin
-                const pluginExport = Object.values(backendModule).find(
-                    (exp): exp is IPlugin =>
-                        typeof exp === 'object' &&
-                        exp !== null &&
-                        'manifest' in exp &&
-                        typeof (exp as any).manifest === 'object'
-                );
-
-                if (pluginExport) {
-                    plugins.push(pluginExport);
-                } else {
-                    logger.warn(`No valid plugin export found in ${entry.name}/dist/backend`);
-                }
-            } else {
-                // Frontend-only plugin - create a minimal plugin object with just the manifest
-                plugins.push({
-                    manifest
-                });
-            }
-        } catch (error) {
-            logger.error({ error, pluginId: entry.name }, `Failed to load plugin ${entry.name}`);
-        }
-    }
-
-    return plugins;
+function loadAllPlugins(): IPlugin[] {
+    return discoveredPlugins;
 }
 
 /**

@@ -91,10 +91,10 @@ npm run build  # Runs: next build
 ### What Happened
 
 Some `.js` and `.d.ts` files were accidentally committed to the frontend source folders:
-- `apps/frontend/lib/*.js`
-- `apps/frontend/lib/*.d.ts`
-- `apps/frontend/store/**/*.js`
-- `apps/frontend/store/**/*.d.ts`
+- `src/frontend/lib/*.js`
+- `src/frontend/lib/*.d.ts`
+- `src/frontend/store/**/*.js`
+- `src/frontend/store/**/*.d.ts`
 
 ### Why This Was Wrong
 
@@ -110,11 +110,11 @@ Some `.js` and `.d.ts` files were accidentally committed to the frontend source 
 
 ```gitignore
 # Frontend compiled files (Next.js compiles to .next/, not source)
-/apps/frontend/**/*.js
-/apps/frontend/**/*.d.ts
-!/apps/frontend/next.config.js
-!/apps/frontend/next-env.d.ts
-!/apps/frontend/.next/**/*
+/src/frontend/**/*.js
+/src/frontend/**/*.d.ts
+!/src/frontend/next.config.js
+!/src/frontend/next-env.d.ts
+!/src/frontend/.next/**/*
 ```
 
 ## Valid Files in Frontend Source
@@ -160,7 +160,7 @@ npm run start --workspace apps/frontend
 ## Directory Structure
 
 ```
-apps/frontend/
+src/frontend/
 ├── app/              # Next.js routes (source)
 ├── features/         # Feature modules (source)
 ├── components/       # Shared components (source)

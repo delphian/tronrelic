@@ -126,7 +126,7 @@ Metadata should be declared as a `readonly` property set during module construct
 
 ### Module Registration and Initialization Flow
 
-The application bootstrap (`apps/backend/src/index.ts`) follows a strict sequence:
+The application bootstrap (`src/backend/src/index.ts`) follows a strict sequence:
 
 **1. Core infrastructure startup**
 ```typescript
@@ -291,8 +291,8 @@ Follow this step-by-step workflow to create a well-structured module:
 
 Create directory and files:
 ```bash
-mkdir -p apps/backend/src/modules/my-feature/{api,database,services,__tests__}
-touch apps/backend/src/modules/my-feature/{MyFeatureModule.ts,index.ts,README.md}
+mkdir -p src/backend/src/modules/my-feature/{api,database,services,__tests__}
+touch src/backend/src/modules/my-feature/{MyFeatureModule.ts,index.ts,README.md}
 ```
 
 ### Step 2: Define Dependencies Interface
@@ -593,7 +593,7 @@ export const DEFAULT_MY_FEATURE_SETTINGS = {
 
 ### Step 8: Register Module in Bootstrap
 
-In `apps/backend/src/index.ts`, add module initialization:
+In `src/backend/src/index.ts`, add module initialization:
 
 ```typescript
 import { MyFeatureModule } from './modules/my-feature/index.js';
@@ -733,7 +733,7 @@ Create `README.md` in the module directory following the pattern established in 
 
 ## Frontend Module Structure
 
-When a module requires frontend code (components, API clients, types, or utilities), place it in a parallel structure under `apps/frontend/modules/<module-name>/`. Do NOT place module-specific code in `components/ui/` - that directory is reserved for generic UI primitives (Button, Badge, Card) that have no module dependencies.
+When a module requires frontend code (components, API clients, types, or utilities), place it in a parallel structure under `src/frontend/modules/<module-name>/`. Do NOT place module-specific code in `components/ui/` - that directory is reserved for generic UI primitives (Button, Badge, Card) that have no module dependencies.
 
 ### Why Separate Frontend Modules from UI Components
 
@@ -746,7 +746,7 @@ The distinction matters because:
 ### Frontend Module Directory Structure
 
 ```
-apps/frontend/modules/<module-name>/
+src/frontend/modules/<module-name>/
 ├── index.ts                 # Barrel exports (public API)
 ├── api/
 │   ├── index.ts             # Barrel exports
@@ -779,7 +779,7 @@ apps/frontend/modules/<module-name>/
 Admin dashboard components for `/system/*` pages live in a separate location:
 
 ```
-apps/frontend/features/system/components/<ComponentName>/
+src/frontend/features/system/components/<ComponentName>/
 ├── ComponentName.tsx
 ├── ComponentName.module.css
 └── index.ts
@@ -792,7 +792,7 @@ This separation exists because admin UI components often span multiple modules (
 Next.js route pages that render module components:
 
 ```
-apps/frontend/app/(core)/system/<module-name>/
+src/frontend/app/(core)/system/<module-name>/
 └── page.tsx                 # Server or client component rendering module UI
 ```
 
@@ -801,7 +801,7 @@ apps/frontend/app/(core)/system/<module-name>/
 The user module demonstrates the complete pattern (see [system-modules-user.md](./system-modules-user.md)):
 
 ```
-apps/frontend/modules/user/
+src/frontend/modules/user/
 ├── index.ts                 # Barrel exports (all public API)
 ├── slice.ts                 # Redux state management
 ├── api/
@@ -817,13 +817,13 @@ apps/frontend/modules/user/
 
 **Admin UI:**
 ```
-apps/frontend/features/system/components/UsersMonitor/
+src/frontend/features/system/components/UsersMonitor/
 └── UsersMonitor.tsx         # Admin dashboard component
 ```
 
 **Route:**
 ```
-apps/frontend/app/(core)/system/users/
+src/frontend/app/(core)/system/users/
 └── page.tsx                 # Renders UsersMonitor
 ```
 
@@ -854,7 +854,7 @@ import { fetchLabel } from '@/modules/address-labels/api/client';
 
 ## Pages Module: Reference Implementation
 
-The pages module (`apps/backend/src/modules/pages/`) serves as the canonical example of module architecture patterns. It demonstrates:
+The pages module (`src/backend/src/modules/pages/`) serves as the canonical example of module architecture patterns. It demonstrates:
 
 ### Service Composition Pattern
 
@@ -1213,7 +1213,7 @@ export class ValidationHelper {
 
 **Example: MenuService**
 ```typescript
-// Bootstrap (apps/backend/src/index.ts) - Configure ONCE
+// Bootstrap (src/backend/src/index.ts) - Configure ONCE
 MenuService.setDatabase(menuDatabase);
 const menuService = MenuService.getInstance();
 
@@ -1283,7 +1283,7 @@ async init(deps: IMyModuleDependencies): Promise<void> {
 - Dependency injection verification tests
 - Error propagation tests for both phases
 
-**Use the pages module test suite as a template** (`apps/backend/src/modules/pages/__tests__/pages.module.test.ts`).
+**Use the pages module test suite as a template** (`src/backend/src/modules/pages/__tests__/pages.module.test.ts`).
 
 ### Documentation Standards
 
@@ -1318,12 +1318,12 @@ Before creating a new module, verify:
 - [ ] Module-specific `README.md` documents architecture and usage
 - [ ] Bootstrap code updated to initialize module in correct sequence
 - [ ] JSDoc comments explain "why" before showing "how"
-- [ ] Frontend code (if any) placed in `apps/frontend/modules/<name>/`, NOT `components/ui/`
+- [ ] Frontend code (if any) placed in `src/frontend/modules/<name>/`, NOT `components/ui/`
 
 ## Further Reading
 
 **Detailed documentation:**
-- [pages/README.md](../../apps/backend/src/modules/pages/README.md) - Complete pages module architecture and patterns
+- [pages/README.md](../../src/backend/src/modules/pages/README.md) - Complete pages module architecture and patterns
 - [system-database-migrations.md](./system-database-migrations.md) - Migration system for schema evolution
 - [system-modules-menu.md](./system-modules-menu.md) - Menu module for navigation management
 - [system-testing.md](./system-testing.md) - Testing framework with Vitest and Mongoose mocking
