@@ -1,0 +1,42 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "Node",
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "resolveJsonModule": true,
+    "allowSyntheticDefaultImports": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "jsx": "preserve",
+    "incremental": true,
+    "baseUrl": ".",
+    "paths": {
+      "@/types": ["src/types"],
+      "@/types/*": ["src/types/*"],
+      "@/shared": ["src/shared"],
+      "@/shared/*": ["src/shared/*"],
+      "@/backend/*": ["src/backend/*"],
+      "@/frontend/*": ["src/frontend/*"],
+      "@/plugins/*": ["src/plugins/*"]
+    }
+  },
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.tsx"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    ".next",
+    "src/frontend/.next",
+    "src/plugins/resource-markets",
+    "src/plugins/trp-delegation-pools",
+    "src/plugins/trp-memo-tracker",
+    "src/plugins/trp-dust-tracker"
+  ]
+}

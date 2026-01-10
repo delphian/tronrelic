@@ -1,0 +1,17 @@
+import type { Request, Response } from 'express';
+import type { Redis as RedisClient } from 'ioredis';
+import type { IDatabaseService } from '@/types';
+import { LiveService } from './live.service.js';
+
+export class LiveController {
+  private readonly service: LiveService;
+
+  constructor(redis: RedisClient, database: IDatabaseService) {
+    this.service = new LiveService(redis, database);
+  }
+
+  accountSearches = async (_req: Request, res: Response) => {
+    const accounts = await this.service.getAccountSearches();
+    res.json({ success: true, accounts });
+  };
+}

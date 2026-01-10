@@ -1,0 +1,11 @@
+{
+  "$schema": "./plugins.schema.json",
+  "plugins": {
+    "example-plugin": {
+      "repo": "git@github.com:example/trp-example-plugin.git",
+      "ref": "main",
+      "enabled": true,
+      "mode": "consumer"
+    }
+  }
+}

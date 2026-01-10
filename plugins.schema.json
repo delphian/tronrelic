@@ -1,0 +1,37 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "TronRelic Plugin Configuration",
+  "type": "object",
+  "required": ["plugins"],
+  "properties": {
+    "plugins": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["repo"],
+        "properties": {
+          "repo": {
+            "type": "string",
+            "description": "Git repository URL (SSH or HTTPS)"
+          },
+          "ref": {
+            "type": "string",
+            "default": "main",
+            "description": "Git ref (branch, tag, or commit SHA)"
+          },
+          "enabled": {
+            "type": "boolean",
+            "default": true,
+            "description": "Whether to clone this plugin"
+          },
+          "mode": {
+            "type": "string",
+            "enum": ["consumer", "developer"],
+            "default": "consumer",
+            "description": "Clone mode: 'consumer' for shallow read-only clone, 'developer' for full clone with push capability"
+          }
+        }
+      }
+    }
+  }
+}

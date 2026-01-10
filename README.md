@@ -1,5 +1,15 @@
 # TronRelic
 
+> **TODO: External Plugin Typecheck Exclusion**
+>
+> External plugins (resource-markets, trp-delegation-pools, trp-memo-tracker, trp-dust-tracker) are
+> excluded from TypeScript typechecking in `tsconfig.json`. These plugins have type errors that were
+> never caught previously because they existed as separate repositories merged only during CI/CD.
+>
+> **Action required:** Fix type errors in each external plugin, then remove them from the `exclude`
+> array in `tsconfig.json`. Key issues include `IApiClient` missing `patch` method and `Grid`
+> columns prop type mismatches.
+
 Open-source TRON blockchain analytics platform with real-time monitoring, whale tracking, and extensible plugins.
 
 ## Quick Start

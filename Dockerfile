@@ -1,63 +1,32 @@
 # TronRelic Multi-Stage Docker Build
-# Separates backend and frontend into independent images with shared build stage
+# Single-package architecture with backend and frontend images
 
 # ============================================
-# Stage 1: Base Dependencies
+# Stage 1: Install Dependencies and Build
 # ============================================
-FROM node:20-alpine AS base
+FROM node:20-alpine AS builder
 WORKDIR /app
 
 # Install necessary build tools
 RUN apk add --no-cache libc6-compat
 
-# Copy workspace configuration files
-COPY package.json ./
-COPY package-lock.json ./
+# Copy package files
+COPY package.json package-lock.json ./
 
-# Copy all package.json files to establish workspace structure
-COPY packages/types/package.json ./packages/types/
-COPY packages/shared/package.json ./packages/shared/
-COPY packages/plugins/ ./packages/plugins/
-COPY apps/backend/package.json ./apps/backend/
-COPY apps/frontend/package.json ./apps/frontend/
-
-# ============================================
-# Stage 2: Build Shared Packages + Plugins
-# ============================================
-FROM base AS builder-shared
-WORKDIR /app
-
-# Install ALL dependencies (needed for building)
+# Install all dependencies (needed for building)
 RUN npm ci
 
-# Copy base tsconfig (extended by other packages)
-COPY tsconfig.base.json ./
+# Copy all source code
+COPY . .
 
-# Copy tsconfig files for project references
-COPY packages/types/tsconfig.json ./packages/types/
-COPY packages/shared/tsconfig.json ./packages/shared/
-# Plugin tsconfigs already copied with full plugins directory above
+# Build backend
+RUN npm run build:backend
 
-# Copy source code for shared packages and plugins
-COPY packages/types ./packages/types
-COPY packages/shared ./packages/shared
-COPY packages/plugins ./packages/plugins
-
-# Build shared packages in correct dependency order
-# 1. Types (no dependencies)
-RUN npm run build --workspace=@tronrelic/types
-
-# 2. Shared (depends on types)
-RUN npm run build --workspace=@tronrelic/shared
-
-# 3. Plugin backends (depend on types and shared)
-RUN npm run build:plugin-backends
-
-# 4. Plugin frontends (source files, copied as-is for Next.js)
-RUN npm run build:plugin-frontends
+# Build frontend with plugin registry generation
+RUN npm run build:frontend
 
 # ============================================
-# Stage 3: Backend Production Image
+# Stage 2: Backend Production Image
 # ============================================
 # Use Debian-slim instead of Alpine for Playwright browser support
 FROM node:20-slim AS backend
@@ -91,37 +60,21 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy package files
-COPY package.json ./
-COPY package-lock.json ./
-COPY packages/types/package.json ./packages/types/
-COPY packages/shared/package.json ./packages/shared/
-COPY packages/plugins/ ./packages/plugins/
-COPY apps/backend/package.json ./apps/backend/
+COPY --from=builder /app/package*.json ./
 
-# Install ALL dependencies (needed for building)
-RUN npm ci
+# Install production dependencies only
+RUN npm ci --only=production
 
 # Install Playwright browsers (required for market fetchers using Playwright)
 RUN npx playwright install chromium
 
-# Copy built artifacts and source from shared builder stage
-# Note: TypeScript project references with "composite": true need source files
-COPY --from=builder-shared /app/packages/types ./packages/types
-COPY --from=builder-shared /app/packages/shared ./packages/shared
-COPY --from=builder-shared /app/packages/plugins ./packages/plugins
+# Copy built backend from builder
+COPY --from=builder /app/dist/backend ./dist/backend
 
-# Copy base tsconfig (extended by backend)
-COPY tsconfig.base.json ./
-
-# Copy backend source and tsconfig
-COPY apps/backend/tsconfig.json ./apps/backend/
-COPY apps/backend/src ./apps/backend/src
-
-# Build backend application
-RUN npm run build --workspace=apps/backend
-
-# Remove dev dependencies to reduce image size (after build)
-RUN npm prune --omit=dev
+# Copy source files needed at runtime (types, plugins for runtime discovery)
+COPY --from=builder /app/src/types ./src/types
+COPY --from=builder /app/src/shared ./src/shared
+COPY --from=builder /app/src/plugins ./src/plugins
 
 # Expose backend port
 EXPOSE 4000
@@ -134,32 +87,28 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
     CMD node -e "require('http').get('http://localhost:4000/api/health', (r) => { process.exit(r.statusCode === 200 ? 0 : 1); });"
 
 # Start backend server
-CMD ["node", "apps/backend/dist/index.js"]
+CMD ["node", "dist/backend/index.js"]
 
 # ============================================
-# Stage 4: Frontend Development Image
+# Stage 3: Frontend Development Image
 # ============================================
-FROM base AS frontend-dev
+FROM node:20-alpine AS frontend-dev
 WORKDIR /app
 
-# Install ALL dependencies (dev mode needs devDependencies)
+# Install necessary build tools
+RUN apk add --no-cache libc6-compat
+
+# Copy package files
+COPY package.json package-lock.json ./
+
+# Install all dependencies (dev mode needs devDependencies)
 RUN npm ci
 
-# Copy base tsconfig (extended by frontend)
-COPY tsconfig.base.json ./
-
-# Copy built types from shared builder
-COPY --from=builder-shared /app/packages/types/dist ./packages/types/dist
-COPY --from=builder-shared /app/packages/types/package.json ./packages/types/
-
-# Copy plugin source files (Next.js will compile them)
-COPY --from=builder-shared /app/packages/plugins ./packages/plugins
-
-# Copy frontend source
-COPY apps/frontend ./apps/frontend
+# Copy source
+COPY . .
 
 # Generate plugin registry
-RUN npm run generate:plugins --workspace=apps/frontend
+RUN npm run generate:plugins
 
 # Expose frontend dev port
 EXPOSE 3000
@@ -168,41 +117,30 @@ EXPOSE 3000
 ENV NODE_ENV=development
 
 # Start Next.js in dev mode with Turbopack
-CMD ["npm", "run", "dev", "--workspace=apps/frontend"]
+CMD ["npm", "run", "dev:frontend"]
 
 # ============================================
-# Stage 5: Frontend Production Image
+# Stage 4: Frontend Production Image
 # ============================================
-FROM base AS frontend-prod
+FROM node:20-alpine AS frontend-prod
 WORKDIR /app
 
 # Accept SITE_BACKEND as build argument for Next.js rewrites
 ARG SITE_BACKEND=http://backend:4000
 
-# Install ALL dependencies first (needed for build)
-RUN npm ci
+# Install necessary build tools
+RUN apk add --no-cache libc6-compat
 
-# Copy base tsconfig (extended by frontend)
-COPY tsconfig.base.json ./
+# Copy package files
+COPY --from=builder /app/package*.json ./
 
-# Copy built types from shared builder
-COPY --from=builder-shared /app/packages/types/dist ./packages/types/dist
-COPY --from=builder-shared /app/packages/types/package.json ./packages/types/
+# Install production dependencies only
+RUN npm ci --only=production
 
-# Copy plugin source files (Next.js will compile them)
-COPY --from=builder-shared /app/packages/plugins ./packages/plugins
-
-# Copy frontend source
-COPY apps/frontend ./apps/frontend
-
-# Generate plugin registry
-RUN npm run generate:plugins --workspace=apps/frontend
-
-# Build Next.js for production with SITE_BACKEND available
-RUN SITE_BACKEND=$SITE_BACKEND npm run build --workspace=apps/frontend
-
-# Remove dev dependencies to reduce image size
-RUN npm prune --omit=dev
+# Copy built Next.js standalone output from builder
+COPY --from=builder /app/src/frontend/.next/standalone ./
+COPY --from=builder /app/src/frontend/.next/static ./src/frontend/.next/static
+COPY --from=builder /app/src/frontend/public ./src/frontend/public
 
 # Expose frontend port
 EXPOSE 3000
@@ -215,4 +153,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
     CMD node -e "require('http').get('http://localhost:3000/api/health', (r) => { process.exit(r.statusCode === 200 ? 0 : 1); });"
 
 # Start Next.js production server
-CMD ["npm", "run", "start", "--workspace=apps/frontend"]
+CMD ["node", "src/frontend/server.js"]

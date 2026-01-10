@@ -140,10 +140,17 @@ yarn.lock
 
 # Webpack/Build output
 /dist/
-/apps/backend/dist/
-/packages/shared/dist/
-/packages/types/dist/
-/packages/plugins/*/dist/
+
+# Cloned external plugins (setup.sh downloads these)
+src/plugins/*
+!src/plugins/.gitkeep
+!src/plugins/whale-alerts/
+!src/plugins/example-dashboard/
+!src/plugins/resource-tracking/
+!src/plugins/telegram-bot/
+
+# Plugin configuration (user-specific)
+plugins.json
 /build/
 /out/
 /tmp/
@@ -162,16 +169,16 @@ yarn.lock
 *.js.map
 
 # Prevent compiled files in source directories (except intentional type declarations)
-/apps/backend/src/**/*.js
-/apps/backend/src/**/*.d.ts
-!/apps/backend/src/types/**/*.d.ts
+/src/backend/**/*.js
+/src/backend/**/*.d.ts
+!/src/backend/types/**/*.d.ts
 
 # Frontend compiled files (Next.js compiles to .next/, not source)
-/apps/frontend/**/*.js
-/apps/frontend/**/*.d.ts
-!/apps/frontend/next.config.js
-!/apps/frontend/next-env.d.ts
-!/apps/frontend/.next/**/*
+/src/frontend/**/*.js
+/src/frontend/**/*.d.ts
+!/src/frontend/next.config.mjs
+!/src/frontend/next-env.d.ts
+!/src/frontend/.next/**/*
 
 # ============================================
 # Operating System Files
@@ -235,7 +242,7 @@ etl/
 !.run/.gitkeep
 
 # Allow frontend system logs page directory
-!apps/frontend/app/**/logs/
+!src/frontend/app/**/logs/
 
 # ============================================
 # Testing

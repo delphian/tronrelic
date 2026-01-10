@@ -60,12 +60,12 @@ if [[ "$FORCE_BUILD" == "true" ]]; then
 
     # Clean all dist directories
     echo -e "  Removing dist/ directories..."
-    find "${PROJECT_ROOT}/apps" -name "dist" -type d -exec rm -rf {} + 2>/dev/null || true
-    find "${PROJECT_ROOT}/packages" -name "dist" -type d -exec rm -rf {} + 2>/dev/null || true
+    rm -rf "${PROJECT_ROOT}/dist" 2>/dev/null || true
+    find "${PROJECT_ROOT}/src" -name "dist" -type d -exec rm -rf {} + 2>/dev/null || true
 
     # Clean Next.js cache
     echo -e "  Removing Next.js cache..."
-    rm -rf "${PROJECT_ROOT}/apps/frontend/.next" 2>/dev/null || true
+    rm -rf "${PROJECT_ROOT}/src/frontend/.next" 2>/dev/null || true
 
     # Clean node_modules/.cache
     echo -e "  Removing node_modules cache..."
@@ -74,14 +74,14 @@ if [[ "$FORCE_BUILD" == "true" ]]; then
     echo -e "${GREEN}✓ Build artifacts cleaned${NC}"
 
     # Rebuild all workspaces
-    echo -e "\n${GREEN}Rebuilding all workspaces...${NC}"
+    echo -e "\n${GREEN}Rebuilding project...${NC}"
     cd "${PROJECT_ROOT}"
     # Load .env file for build process (required by Next.js config)
     set -a
     source "${PROJECT_ROOT}/.env" 2>/dev/null || true
     set +a
-    npm run build --workspaces --if-present
-    echo -e "${GREEN}✓ All workspaces rebuilt${NC}"
+    npm run build
+    echo -e "${GREEN}✓ Project rebuilt${NC}"
 fi
 
 # Start MongoDB and Redis containers
@@ -150,7 +150,7 @@ done
 echo -e "\n${GREEN}Starting backend via npm...${NC}"
 cd "${PROJECT_ROOT}"
 # Set DOTENV_CONFIG_PATH to load .env from project root
-DOTENV_CONFIG_PATH="${PROJECT_ROOT}/.env" npm run dev --workspace apps/backend > "${RUN_DIR}/backend.log" 2>&1 &
+DOTENV_CONFIG_PATH="${PROJECT_ROOT}/.env" npm run dev:backend > "${RUN_DIR}/backend.log" 2>&1 &
 BACKEND_PID=$!
 echo "$BACKEND_PID" > "${RUN_DIR}/backend.pid"
 echo -e "  Backend PID: $BACKEND_PID (logs: .run/backend.log)"
@@ -161,7 +161,7 @@ echo -e "\n${GREEN}Starting frontend via npm...${NC}"
 set -a
 source "${PROJECT_ROOT}/.env" 2>/dev/null || true
 set +a
-npm run dev --workspace apps/frontend > "${RUN_DIR}/frontend.log" 2>&1 &
+npm run dev:frontend > "${RUN_DIR}/frontend.log" 2>&1 &
 FRONTEND_PID=$!
 echo "$FRONTEND_PID" > "${RUN_DIR}/frontend.pid"
 echo -e "  Frontend PID: $FRONTEND_PID (logs: .run/frontend.log)"
