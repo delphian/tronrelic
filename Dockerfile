@@ -22,6 +22,10 @@ COPY . .
 # Build backend
 RUN npm run build:backend
 
+# Accept SITE_BACKEND as build argument for Next.js rewrites
+ARG SITE_BACKEND=http://backend:4000
+ENV SITE_BACKEND=${SITE_BACKEND}
+
 # Build frontend with plugin registry generation
 RUN npm run build:frontend
 
@@ -125,9 +129,6 @@ CMD ["npm", "run", "dev:frontend"]
 FROM node:20-alpine AS frontend-prod
 WORKDIR /app
 
-# Accept SITE_BACKEND as build argument for Next.js rewrites
-ARG SITE_BACKEND=http://backend:4000
-
 # Install necessary build tools
 RUN apk add --no-cache libc6-compat
 
@@ -141,6 +142,10 @@ RUN npm ci --only=production
 COPY --from=builder /app/src/frontend/.next/standalone ./
 COPY --from=builder /app/src/frontend/.next/static ./src/frontend/.next/static
 COPY --from=builder /app/src/frontend/public ./src/frontend/public
+
+# Remove "type": "module" from package.json for CommonJS standalone server
+# Next.js standalone generates CommonJS; project source remains ESM
+RUN node -e "const fs=require('fs'); const p=JSON.parse(fs.readFileSync('package.json')); delete p.type; fs.writeFileSync('package.json', JSON.stringify(p,null,2));"
 
 # Expose frontend port
 EXPOSE 3000

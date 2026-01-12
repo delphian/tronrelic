@@ -71,8 +71,7 @@ Dockerfile
 docker-compose*.yml
 .dockerignore
 
-# Scripts (not needed in container)
-scripts/
+# Shell scripts (not needed in container)
 **/*.sh
 
 # Test files
