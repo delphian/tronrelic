@@ -307,6 +307,10 @@ export class WebSocketService implements IWebSocketService {
       case 'memo:new':
         this.io.to('memos:all').emit(event.event, event.payload);
         break;
+      case 'menu:update':
+      case 'menu:namespace-config:update':
+        this.io.emit(event.event, event.payload);
+        break;
       default:
         logger.warn({ event }, 'Unknown socket event');
     }

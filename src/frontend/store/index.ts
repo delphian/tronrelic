@@ -7,6 +7,7 @@ import realtimeReducer from '../features/realtime/slice';
 import transactionReducer from '../features/transactions/slice';
 import userReducer, { type UserState } from '../modules/user/slice';
 import themeReducer from '../features/system/themeSlice';
+import menuReducer from '../modules/menu/slice';
 
 declare global {
     interface Window {
@@ -27,7 +28,8 @@ const rootReducer = combineReducers({
     realtime: realtimeReducer,
     transactions: transactionReducer,
     user: userReducer,
-    theme: themeReducer
+    theme: themeReducer,
+    menu: menuReducer
 });
 
 /**

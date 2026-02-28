@@ -24,6 +24,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { PriorityNav, useMenuConfig } from '../../../../modules/menu';
+import { useAppSelector } from '../../../../store/hooks';
 import styles from './SystemNav.module.css';
 
 /**
@@ -95,8 +96,12 @@ export function SystemNavClient({ items }: ISystemNavClientProps) {
     const pathname = usePathname();
     const menuConfig = useMenuConfig('system');
 
+    // Live menu state from WebSocket updates (SSR + Live Updates pattern)
+    const liveMenuState = useAppSelector(state => state.menu.namespaces['system']);
+    const activeItems = liveMenuState ? liveMenuState.roots as unknown as IMenuItem[] : items;
+
     // Sort by order and filter enabled items
-    const visibleItems = items
+    const visibleItems = activeItems
         .filter(item => item.enabled)
         .sort((a, b) => a.order - b.order);
 

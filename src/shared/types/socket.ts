@@ -106,10 +106,35 @@ export interface UserUpdatePayload {
   };
 }
 
+export interface MenuUpdatePayload {
+  event: 'menu:update';
+  payload: {
+    event: string;
+    node: Record<string, unknown>;
+    tree: {
+      roots: Array<Record<string, unknown>>;
+      all: Array<Record<string, unknown>>;
+      generatedAt: string;
+    };
+    timestamp: string;
+  };
+}
+
+export interface MenuNamespaceConfigUpdatePayload {
+  event: 'menu:namespace-config:update';
+  payload: {
+    namespace: string;
+    config: Record<string, unknown>;
+    timestamp: string;
+  };
+}
+
 export type TronRelicSocketEvent =
   | TransactionAlertPayload
   | BlockNotificationPayload
   | CommentsUpdatePayload
   | ChatUpdatePayload
   | MemoUpdatePayload
-  | UserUpdatePayload;
+  | UserUpdatePayload
+  | MenuUpdatePayload
+  | MenuNamespaceConfigUpdatePayload;

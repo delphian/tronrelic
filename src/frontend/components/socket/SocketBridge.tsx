@@ -7,6 +7,7 @@ import { useAppDispatch, useAppSelector } from '../../store/hooks';
 import { prependMemo } from '../../store/slices/memoSlice';
 import { blockReceived } from '../../features/blockchain/slice';
 import { setUserData, selectUserId } from '../../modules/user';
+import { menuTreeUpdated } from '../../modules/menu/slice';
 import {
   connectionDeferred,
   deferredCountdownTick,
@@ -22,6 +23,7 @@ import {
 import type {
   BlockNotificationPayload,
   MemoUpdatePayload,
+  MenuUpdatePayload,
   SocketSubscriptions
 } from '@/shared';
 import type { IUserData } from '../../modules/user';
@@ -201,6 +203,10 @@ export function SocketBridge() {
       dispatch(setUserData(payload));
     };
 
+    const handleMenuUpdate = (payload: MenuUpdatePayload['payload']) => {
+      dispatch(menuTreeUpdated(payload));
+    };
+
     const handleVisibility = () => {
       if (document.visibilityState === 'visible' && !socket.connected && !manualDisconnectRef.current) {
         // If connection was initiated, try to reconnect
@@ -228,6 +234,7 @@ export function SocketBridge() {
     socket.on('memo:new', handleMemoUpdate);
     socket.on('block:new', handleBlockUpdate);
     socket.on('user:update', handleUserUpdate);
+    socket.on('menu:update', handleMenuUpdate);
 
     // Set up browser event handlers
     window.addEventListener('online', handleOnline);
@@ -263,6 +270,7 @@ export function SocketBridge() {
       socket.off('memo:new', handleMemoUpdate);
       socket.off('block:new', handleBlockUpdate);
       socket.off('user:update', handleUserUpdate);
+      socket.off('menu:update', handleMenuUpdate);
       socket.off('connect', handleConnect);
       socket.off('disconnect', handleDisconnect);
       socket.off('connect_error', handleConnectError);
