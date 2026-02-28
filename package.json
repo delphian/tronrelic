@@ -28,7 +28,7 @@
     "test:plugins": "for dir in src/plugins/*/; do (cd \"$dir\" && npm test); done",
     "test:integration": "npx playwright test",
     "lint": "eslint src/",
-    "generate:plugins": "node src/frontend/scripts/generate-frontend-plugin-registry.mjs",
+    "generate:plugins": "node scripts/generate-backend-plugin-registry.mjs && node scripts/generate-frontend-plugin-registry.mjs",
     "docker:build": "docker compose build",
     "docker:build:prod": "ENV=production docker compose build",
     "docker:up": "docker compose up -d",

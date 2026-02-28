@@ -40,7 +40,7 @@ async function generatePluginRegistries() {
         });
 
         // Generate frontend plugin registry
-        execSync('node src/frontend/scripts/generate-frontend-plugin-registry.mjs', {
+        execSync('node scripts/generate-frontend-plugin-registry.mjs', {
             cwd: PROJECT_ROOT,
             stdio: 'inherit',
         });
