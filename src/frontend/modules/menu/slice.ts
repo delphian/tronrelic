@@ -8,29 +8,13 @@
  */
 
 import { createSlice, type PayloadAction } from '@reduxjs/toolkit';
-import type { MenuUpdatePayload } from '@/shared';
-
-/**
- * Serializable menu item matching the IMenuNodeWithChildren shape
- * after JSON serialization over WebSocket.
- */
-export interface MenuItemLive {
-    _id: string;
-    label: string;
-    url?: string;
-    icon?: string;
-    order: number;
-    parent: string | null;
-    enabled: boolean;
-    namespace?: string;
-    children?: MenuItemLive[];
-}
+import type { MenuUpdatePayload, MenuNodeSerialized } from '@/shared';
 
 /**
  * Per-namespace menu tree state.
  */
 interface MenuNamespaceState {
-    roots: MenuItemLive[];
+    roots: MenuNodeSerialized[];
     lastUpdated: string;
 }
 
@@ -59,11 +43,11 @@ const menuSlice = createSlice({
          */
         menuTreeUpdated(state, action: PayloadAction<MenuUpdatePayload['payload']>) {
             const { node, tree, timestamp } = action.payload;
-            const namespace = (node as Record<string, unknown>).namespace as string || 'main';
+            const namespace = node.namespace || 'main';
 
             state.namespaces[namespace] = {
-                roots: tree.roots as unknown as MenuItemLive[],
-                lastUpdated: typeof timestamp === 'string' ? timestamp : new Date(timestamp as unknown as number).toISOString()
+                roots: tree.roots,
+                lastUpdated: timestamp
             };
         }
     }

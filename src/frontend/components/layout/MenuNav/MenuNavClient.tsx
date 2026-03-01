@@ -130,7 +130,7 @@ export function MenuNavClient({ namespace, items, ariaLabel }: IMenuNavClientPro
 
     // Live menu state from WebSocket updates (SSR + Live Updates pattern)
     const liveMenuState = useAppSelector(state => state.menu.namespaces[namespace]);
-    const activeItems = liveMenuState ? liveMenuState.roots as unknown as IMenuItem[] : items;
+    const activeItems = liveMenuState ? liveMenuState.roots as IMenuItem[] : items;
 
     // Sort by order and filter enabled items
     const visibleItems = useMemo(() => activeItems

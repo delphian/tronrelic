@@ -36,7 +36,7 @@ export { useMenuConfig, useBodyScrollLock } from './hooks';
 
 // Redux slice
 export { default as menuReducer, menuTreeUpdated } from './slice';
-export type { MenuState, MenuItemLive } from './slice';
+export type { MenuState } from './slice';
 
 // Types
 export type { IMenuNamespaceConfig, IUseMenuConfigResult } from './types';

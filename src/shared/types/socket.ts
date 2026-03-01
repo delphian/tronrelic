@@ -106,16 +106,38 @@ export interface UserUpdatePayload {
   };
 }
 
+/**
+ * Serialized menu node received over WebSocket.
+ * Mirrors IMenuNodeWithChildren after JSON serialization.
+ */
+export interface MenuNodeSerialized {
+  _id: string;
+  label: string;
+  url?: string;
+  icon?: string;
+  order: number;
+  parent?: string | null;
+  enabled: boolean;
+  namespace?: string;
+  requiredRole?: string;
+  children?: MenuNodeSerialized[];
+}
+
+/**
+ * Serialized menu tree received over WebSocket.
+ */
+export interface MenuTreeSerialized {
+  roots: MenuNodeSerialized[];
+  all: MenuNodeSerialized[];
+  generatedAt: string;
+}
+
 export interface MenuUpdatePayload {
   event: 'menu:update';
   payload: {
     event: string;
-    node: Record<string, unknown>;
-    tree: {
-      roots: Array<Record<string, unknown>>;
-      all: Array<Record<string, unknown>>;
-      generatedAt: string;
-    };
+    node: MenuNodeSerialized;
+    tree: MenuTreeSerialized;
     timestamp: string;
   };
 }
