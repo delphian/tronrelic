@@ -21,9 +21,12 @@
  */
 'use client';
 
+import { useMemo, useCallback } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { PriorityNav, useMenuConfig } from '../../../../modules/menu';
+import { useAppSelector } from '../../../../store/hooks';
+import type { MenuNodeSerialized } from '@/shared';
 import styles from './SystemNav.module.css';
 
 /**
@@ -95,10 +98,27 @@ export function SystemNavClient({ items }: ISystemNavClientProps) {
     const pathname = usePathname();
     const menuConfig = useMenuConfig('system');
 
+    // Live menu state from WebSocket updates (SSR + Live Updates pattern).
+    // SSR provides a flat list via tree.all; live updates provide hierarchical
+    // roots. Flatten roots to match the flat shape SSR consumers expect.
+    const liveMenuState = useAppSelector(state => state.menu.namespaces['system']);
+    const flattenRoots = useCallback((nodes: MenuNodeSerialized[]): IMenuItem[] => {
+        const result: IMenuItem[] = [];
+        const walk = (list: MenuNodeSerialized[]) => {
+            for (const n of list) {
+                result.push({ _id: n._id, label: n.label, url: n.url ?? '', order: n.order, enabled: n.enabled });
+                if (n.children) walk(n.children);
+            }
+        };
+        walk(nodes);
+        return result;
+    }, []);
+    const activeItems = liveMenuState ? flattenRoots(liveMenuState.roots) : items;
+
     // Sort by order and filter enabled items
-    const visibleItems = items
+    const visibleItems = useMemo(() => activeItems
         .filter(item => item.enabled)
-        .sort((a, b) => a.order - b.order);
+        .sort((a, b) => a.order - b.order), [activeItems]);
 
     /**
      * Renders a single navigation tab with active state highlighting.

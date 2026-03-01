@@ -4,7 +4,7 @@ import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-const repoRoot = join(__dirname, '..', '..', '..');
+const repoRoot = join(__dirname, '..');
 const pluginsRoot = join(repoRoot, 'src', 'plugins');
 const outputPath = join(repoRoot, 'src', 'frontend', 'components', 'plugins', 'plugins.generated.ts');
 const widgetsOutputPath = join(repoRoot, 'src', 'frontend', 'components', 'widgets', 'widgets.generated.ts');

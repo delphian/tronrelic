@@ -40,7 +40,7 @@ async function generatePluginRegistries() {
         });
 
         // Generate frontend plugin registry
-        execSync('node src/frontend/scripts/generate-frontend-plugin-registry.mjs', {
+        execSync('node scripts/generate-frontend-plugin-registry.mjs', {
             cwd: PROJECT_ROOT,
             stdio: 'inherit',
         });
@@ -267,13 +267,22 @@ function runDevServers() {
  */
 function killPort(port) {
     try {
-        // Try lsof first (works on most systems)
-        const result = exec(`lsof -ti:${port}`);
+        // Use fuser which reliably finds port owners on Linux/WSL2.
+        // lsof can miss processes in some WSL2 configurations.
+        const result = exec(`fuser ${port}/tcp`);
         if (result) {
-            execSync(`kill -9 ${result}`, { stdio: 'pipe' });
+            const pids = result.trim().split(/\s+/).filter(Boolean);
+            for (const pid of pids) {
+                try {
+                    execSync(`kill -9 ${pid.trim()}`, { stdio: 'pipe' });
+                } catch {
+                    // Process may have already exited
+                }
+            }
+            log('warn', `Killed orphaned process(es) on port ${port}: ${pids.join(', ')}`);
         }
     } catch {
-        // lsof not available or no process on port
+        // fuser not available or no process on port
     }
 }
 
@@ -501,7 +510,16 @@ async function mainDocker() {
     startContainers();
     await waitForHealthy();
 
-    // Generate plugin registries before starting dev servers
+    // Kill any zombie processes from a prior dev run before starting.
+    // On WSL2, SIGTERM from concurrently --kill-others doesn't always
+    // propagate through npm subprocess wrappers, leaving orphaned Next.js
+    // or backend processes holding ports across restarts.
+    killPort(3000);
+    killPort(4000);
+
+    // Generate plugin registries before starting dev servers.
+    // Generated files are excluded from tsx watch via --ignore flags in
+    // the dev:backend script to prevent false-positive restarts.
     await generatePluginRegistries();
 
     console.log('');

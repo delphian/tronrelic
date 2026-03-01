@@ -12,6 +12,8 @@
  * @module index
  */
 
+import { execSync } from 'node:child_process';
+import { writeSync } from 'node:fs';
 import http from 'node:http';
 import { env } from './config/env.js';
 import { createExpressApp } from './loaders/express.js';
@@ -42,6 +44,78 @@ import type { IDatabaseService, IMenuService } from '@/types';
 import axios from 'axios';
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Port Diagnostics
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Identify and log the process holding a port when EADDRINUSE occurs.
+ *
+ * Scans /proc/net/tcp6 (then /proc/net/tcp) for the hex-encoded port to
+ * find the owning inode, then walks /proc/[pid]/fd/ to match that inode
+ * back to a PID. This works without root because /proc entries are readable
+ * by the owning user. Falls back to lsof/fuser if /proc parsing fails.
+ *
+ * @param port - The port number that is already in use
+ */
+function identifyPortHolder(port: number): void {
+    const hexPort = port.toString(16).toUpperCase().padStart(4, '0');
+
+    // Try /proc/net approach first — no elevated privileges needed
+    for (const netFile of ['/proc/net/tcp6', '/proc/net/tcp']) {
+        try {
+            const lines = execSync(`grep ":${hexPort} " ${netFile} 2>/dev/null`, {
+                encoding: 'utf8', timeout: 3000
+            }).trim().split('\n').filter(Boolean);
+
+            for (const line of lines) {
+                const cols = line.trim().split(/\s+/);
+                const state = cols[3];
+                if (state !== '0A') continue; // 0A = LISTEN
+
+                const inode = cols[9];
+                try {
+                    const pid = execSync(
+                        `find /proc/[0-9]*/fd -lname 'socket:\\[${inode}\\]' 2>/dev/null | head -1 | cut -d/ -f3`,
+                        { encoding: 'utf8', timeout: 3000 }
+                    ).trim();
+
+                    if (pid) {
+                        const cmdline = execSync(
+                            `tr '\\0' ' ' < /proc/${pid}/cmdline 2>/dev/null`,
+                            { encoding: 'utf8', timeout: 3000 }
+                        ).trim();
+                        writeSync(2, `[DIAGNOSTIC] Port ${port} held by PID ${pid}: ${cmdline}\n`);
+                        return;
+                    }
+                } catch {
+                    // fd walk failed — continue to fallback commands
+                }
+            }
+        } catch {
+            // /proc/net file unreadable or grep found nothing
+        }
+    }
+
+    // Fallback to common CLI tools
+    for (const cmd of [
+        `lsof -i :${port} -sTCP:LISTEN -P -n 2>/dev/null`,
+        `fuser -v ${port}/tcp 2>&1`,
+    ]) {
+        try {
+            const result = execSync(cmd, { encoding: 'utf8', timeout: 3000 }).trim();
+            if (result) {
+                writeSync(2, `[DIAGNOSTIC] ${cmd}\n${result}\n`);
+                return;
+            }
+        } catch {
+            // Command unavailable or no results
+        }
+    }
+
+    writeSync(2, `[DIAGNOSTIC] Could not identify process on port ${port}\n`);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Entry Point
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -69,16 +143,33 @@ async function bootstrap(): Promise<void> {
             logger.error({ pluginError, stack: pluginError instanceof Error ? pluginError.stack : undefined }, 'Plugin initialization failed');
         }
 
+        ctx.server.on('error', (err: NodeJS.ErrnoException) => {
+            if (err.code === 'EADDRINUSE') {
+                writeSync(2, `[FATAL] Port ${env.PORT} is already in use\n`);
+                identifyPortHolder(env.PORT);
+            } else {
+                writeSync(2, `[FATAL] Server error: ${err.message}\n`);
+            }
+
+            // Delay briefly so concurrently can read from the pipe and display
+            // the message before SIGKILL terminates the entire process group.
+            setTimeout(() => process.kill(0, 'SIGKILL'), 200);
+        });
+
         ctx.server.listen(env.PORT, () => {
             logger.info({ port: env.PORT }, 'Server listening');
         });
 
-        process.on('SIGINT', async () => {
-            logger.info('Received SIGINT, shutting down');
+        const shutdown = async (signal: string) => {
+            logger.info({ signal }, 'Received shutdown signal');
             ctx.modules.scheduler.stop();
+            ctx.server.close();
             await disconnectRedis();
             process.exit(0);
-        });
+        };
+
+        process.on('SIGINT', () => void shutdown('SIGINT'));
+        process.on('SIGTERM', () => void shutdown('SIGTERM'));
     } catch (error) {
         logger.error({ error }, 'Failed to bootstrap application');
         process.exit(1);

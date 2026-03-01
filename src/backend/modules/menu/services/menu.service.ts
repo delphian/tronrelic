@@ -862,10 +862,10 @@ export class MenuService implements IMenuService {
     private async broadcastTreeUpdate(eventType: MenuEventType, node: IMenuNode): Promise<void> {
         try {
             const wsService = WebSocketService.getInstance();
-            const tree = this.getTree();
+            const tree = this.getTree(node.namespace);
 
             wsService.emit({
-                type: 'menu:update',
+                event: 'menu:update',
                 payload: {
                     event: eventType,
                     node,
@@ -995,7 +995,7 @@ export class MenuService implements IMenuService {
             const wsService = WebSocketService.getInstance();
 
             wsService.emit({
-                type: 'menu:namespace-config:update',
+                event: 'menu:namespace-config:update',
                 payload: {
                     namespace: config.namespace,
                     config,

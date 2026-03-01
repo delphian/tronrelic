@@ -29,6 +29,7 @@ import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { PriorityNav, useMenuConfig, useBodyScrollLock } from '../../../modules/menu';
+import { useAppSelector } from '../../../store/hooks';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import styles from './MenuNav.module.scss';
 
@@ -127,10 +128,14 @@ export function MenuNavClient({ namespace, items, ariaLabel }: IMenuNavClientPro
     const categoryButtonRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
     const dropdownRef = useRef<HTMLDivElement>(null);
 
+    // Live menu state from WebSocket updates (SSR + Live Updates pattern)
+    const liveMenuState = useAppSelector(state => state.menu.namespaces[namespace]);
+    const activeItems = liveMenuState ? liveMenuState.roots as IMenuItem[] : items;
+
     // Sort by order and filter enabled items
-    const visibleItems = useMemo(() => items
+    const visibleItems = useMemo(() => activeItems
         .filter(item => item.enabled)
-        .sort((a, b) => a.order - b.order), [items]);
+        .sort((a, b) => a.order - b.order), [activeItems]);
 
     // Whether overflow handling (Priority+ nav) is enabled for this namespace
     const overflowEnabled = menuConfig.overflow?.enabled ?? true;

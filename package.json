@@ -10,7 +10,7 @@
   },
   "scripts": {
     "dev": "node scripts/dev.mjs",
-    "dev:backend": "tsx watch src/backend/index.ts",
+    "dev:backend": "tsx watch --exclude 'src/**/plugins.generated.ts' src/backend/index.ts",
     "dev:frontend": "next dev --port 3000 src/frontend",
     "dev:servers": "concurrently -n backend,frontend -c blue,magenta \"npm run dev:backend\" \"npm run dev:frontend\"",
     "build": "npm run build:backend && npm run build:frontend",
@@ -28,7 +28,7 @@
     "test:plugins": "for dir in src/plugins/*/; do (cd \"$dir\" && npm test); done",
     "test:integration": "npx playwright test",
     "lint": "eslint src/",
-    "generate:plugins": "node src/frontend/scripts/generate-frontend-plugin-registry.mjs",
+    "generate:plugins": "node scripts/generate-backend-plugin-registry.mjs && node scripts/generate-frontend-plugin-registry.mjs",
     "docker:build": "docker compose build",
     "docker:build:prod": "ENV=production docker compose build",
     "docker:up": "docker compose up -d",
