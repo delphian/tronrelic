@@ -1,23 +1,16 @@
 {
-    "extends": "../../../tsconfig.base.json",
+    "extends": "../../../tsconfig.json",
     "compilerOptions": {
         "outDir": "./dist",
         "rootDir": "./src",
-        "composite": true,
+        "declarationDir": "./dist",
         "declaration": true,
         "declarationMap": true,
         "sourceMap": true,
-        "skipLibCheck": true,
-        "esModuleInterop": true,
-        "module": "ESNext",
-        "target": "ES2022",
-        "lib": ["ES2022"],
-        "moduleResolution": "bundler",
-        "resolveJsonModule": true,
         "jsx": "react-jsx"
     },
     "include": ["src/**/*"],
-    "exclude": ["node_modules", "dist", "src/frontend/**/*"],
+    "exclude": ["node_modules", "dist", "src/frontend/**/*", "**/__tests__/**/*", "**/*.test.ts"],
     "references": [
         { "path": "../../types" }
     ]
