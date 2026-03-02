@@ -205,6 +205,44 @@ class ApiClient implements IApiClient {
 
         return response.json();
     }
+
+    async patch<T = any>(path: string, body?: any): Promise<T> {
+        const cleanPath = path.startsWith('/') ? path.slice(1) : path;
+        const url = new URL(cleanPath, this.baseUrl.endsWith('/') ? this.baseUrl : `${this.baseUrl}/`);
+
+        const headers: HeadersInit = {
+            'Content-Type': 'application/json'
+        };
+
+        // Add admin token if available (for admin API routes)
+        const adminToken = typeof window !== 'undefined' ? localStorage.getItem('admin_token') : null;
+        if (adminToken) {
+            headers['Authorization'] = `Bearer ${adminToken}`;
+        }
+
+        const response = await fetch(url.toString(), {
+            method: 'PATCH',
+            headers,
+            body: JSON.stringify(body),
+            credentials: 'include'
+        });
+
+        if (!response.ok) {
+            // Try to extract error message from JSON response body
+            let errorMessage = response.statusText;
+            try {
+                const errorData = await response.json();
+                if (errorData.error) {
+                    errorMessage = errorData.error;
+                }
+            } catch {
+                // If JSON parsing fails, use statusText
+            }
+            throw new Error(`API request failed: ${errorMessage}`);
+        }
+
+        return response.json();
+    }
 }
 
 /**

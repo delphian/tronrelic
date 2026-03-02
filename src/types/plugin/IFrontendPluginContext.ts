@@ -423,6 +423,15 @@ export interface IApiClient {
      * @returns Promise that resolves with the parsed JSON response
      */
     delete<T = any>(path: string): Promise<T>;
+
+    /**
+     * Make a PATCH request to the API.
+     *
+     * @param path - API path
+     * @param body - Request body (will be JSON-stringified)
+     * @returns Promise that resolves with the parsed JSON response
+     */
+    patch<T = any>(path: string, body?: any): Promise<T>;
 }
 
 /**
