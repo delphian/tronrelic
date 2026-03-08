@@ -1,0 +1,88 @@
+/**
+ * Styles for server-rendered SEO content in PluginPageWithZones.
+ *
+ * Uses project design tokens for colors, spacing, and borders.
+ * Max-width constrained for readability, centered within the page layout.
+ */
+
+.seo_section {
+    max-width: 80ch;
+    margin: var(--spacing-14) auto var(--spacing-10);
+    padding: 0 var(--spacing-8);
+    color: var(--color-text-muted);
+    container-type: inline-size;
+    container-name: seo-section;
+}
+
+.seo_heading {
+    color: var(--color-text);
+    font-size: var(--font-size-lg);
+    font-weight: 600;
+    margin-bottom: var(--spacing-6);
+}
+
+.seo_text {
+    line-height: 1.7;
+    margin-bottom: var(--spacing-12);
+}
+
+.faq_heading {
+    color: var(--color-text);
+    font-size: var(--font-size-md);
+    font-weight: 600;
+    margin-bottom: var(--spacing-6);
+}
+
+.faq_list {
+    display: flex;
+    flex-direction: column;
+}
+
+.faq_item {
+    border-bottom: 1px solid var(--color-border);
+    padding: var(--spacing-6) 0;
+}
+
+.faq_item:first-child {
+    border-top: 1px solid var(--color-border);
+}
+
+.faq_summary {
+    font-weight: 600;
+    color: var(--color-text);
+    cursor: pointer;
+    list-style: none;
+    padding: var(--spacing-2) 0;
+}
+
+.faq_summary::-webkit-details-marker {
+    display: none;
+}
+
+.faq_summary::before {
+    content: '+';
+    display: inline-block;
+    width: 1.2em;
+    font-weight: 400;
+    color: var(--color-text-muted);
+}
+
+.faq_item[open] .faq_summary::before {
+    content: '\2212';
+}
+
+.faq_answer {
+    line-height: 1.7;
+    margin-top: var(--spacing-4);
+    padding-left: 1.2em;
+}
+
+@container seo-section (max-width: 480px) {
+    .seo_section {
+        padding: 0 var(--spacing-4);
+    }
+
+    .seo_heading {
+        font-size: var(--font-size-md);
+    }
+}

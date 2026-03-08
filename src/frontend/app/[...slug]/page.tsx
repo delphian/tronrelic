@@ -3,7 +3,35 @@ import type { Metadata } from 'next';
 import { Page } from '../../components/layout';
 import { PluginPageWithZones } from '../../components/PluginPageWithZones';
 import { getServerSideApiUrlWithPath } from '../../lib/api-url';
+import { buildMetadata } from '../../lib/seo';
+import { getServerConfig } from '../../lib/serverConfig';
 import styles from './page.module.css';
+
+/**
+ * Static SEO metadata for known plugin pages.
+ *
+ * Plugin pages are client-rendered and cannot generate their own server-side metadata.
+ * This map provides titles, descriptions, and keywords so crawlers see meaningful
+ * content in the initial HTML response. Follows the same pattern the sitemap uses
+ * to hardcode known plugin slugs.
+ */
+const PLUGIN_SEO_METADATA: Record<string, { title: string; description: string; keywords: string[] }> = {
+    '/resource-markets': {
+        title: 'Compare TRON Energy Rental Prices | Live Market Tracker | TronRelic',
+        description: 'Compare real-time TRON energy rental prices across 20+ platforms. Find the cheapest rates for TRC-20 USDT transfers and save up to 90% on transaction fees. Updated every 10 minutes.',
+        keywords: [
+            'rent TRON energy',
+            'TRON energy rental',
+            'TRC20 transfer fee',
+            'cheapest TRON energy',
+            'TRON energy market',
+            'TronSave',
+            'JustLend',
+            'energy price comparison',
+            'TRX staking'
+        ]
+    }
+};
 
 /**
  * Page metadata response from backend.
@@ -82,7 +110,18 @@ export async function generateMetadata({ params }: { params: Promise<IPageParams
     const isCustom = await isCustomPage(slug);
 
     if (!isCustom) {
-        return {}; // Plugin pages handle their own metadata
+        const pluginSeo = PLUGIN_SEO_METADATA[slug];
+        if (pluginSeo) {
+            const { siteUrl } = await getServerConfig();
+            return buildMetadata({
+                siteUrl,
+                title: pluginSeo.title,
+                description: pluginSeo.description,
+                path: slug,
+                keywords: pluginSeo.keywords
+            });
+        }
+        return {};
     }
 
     const apiUrl = getServerSideApiUrlWithPath();
