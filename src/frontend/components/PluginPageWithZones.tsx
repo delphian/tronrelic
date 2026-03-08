@@ -130,12 +130,12 @@ export async function PluginPageWithZones({ slug }: PluginPageWithZonesProps) {
                 <script
                     suppressHydrationWarning
                     type="application/ld+json"
-                    dangerouslySetInnerHTML={{ __html: JSON.stringify(webAppSchema) }}
+                    dangerouslySetInnerHTML={{ __html: JSON.stringify(webAppSchema).replace(/</g, '\\u003c') }}
                 />
                 <script
                     suppressHydrationWarning
                     type="application/ld+json"
-                    dangerouslySetInnerHTML={{ __html: JSON.stringify(faqSchema) }}
+                    dangerouslySetInnerHTML={{ __html: JSON.stringify(faqSchema).replace(/</g, '\\u003c') }}
                 />
             </>
         );

@@ -55,6 +55,12 @@
     padding: var(--spacing-2) 0;
 }
 
+.faq_summary:focus-visible {
+    outline: 2px solid var(--color-focus);
+    outline-offset: 2px;
+    border-radius: var(--radius-sm);
+}
+
 .faq_summary::-webkit-details-marker {
     display: none;
 }
@@ -78,11 +84,13 @@
 }
 
 @container seo-section (max-width: 480px) {
-    .seo_section {
-        padding: 0 var(--spacing-4);
-    }
-
     .seo_heading {
         font-size: var(--font-size-md);
+    }
+}
+
+@media (max-width: 480px) {
+    .seo_section {
+        padding: 0 var(--spacing-4);
     }
 }
