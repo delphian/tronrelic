@@ -7,4 +7,3 @@
  * real-time updates.
  */
 export {};
-//# sourceMappingURL=index.js.map

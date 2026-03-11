@@ -62,4 +62,3 @@ export class ProcessedTransaction {
             this.payload.type === 'CreateSmartContract');
     }
 }
-//# sourceMappingURL=ProcessedTransaction.js.map

@@ -5,4 +5,3 @@
  * initialize during application bootstrap.
  */
 export {};
-//# sourceMappingURL=index.js.map

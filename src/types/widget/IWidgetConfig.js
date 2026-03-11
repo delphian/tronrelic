@@ -13,4 +13,3 @@ export const WIDGET_ZONES = {
     SIDEBAR_TOP: 'sidebar-top',
     SIDEBAR_BOTTOM: 'sidebar-bottom'
 };
-//# sourceMappingURL=IWidgetConfig.js.map
