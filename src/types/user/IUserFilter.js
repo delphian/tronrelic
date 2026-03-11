@@ -46,3 +46,4 @@ export const USER_FILTERS = [
     'at-risk',
     'conversion-candidates'
 ];
+//# sourceMappingURL=IUserFilter.js.map

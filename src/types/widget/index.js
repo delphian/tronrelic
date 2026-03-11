@@ -6,3 +6,4 @@
  * pages without modifying core page code.
  */
 export { WIDGET_ZONES } from './IWidgetConfig.js';
+//# sourceMappingURL=index.js.map

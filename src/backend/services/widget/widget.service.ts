@@ -7,6 +7,7 @@ import type {
 
 /** Valid widget zone names for validation. */
 const VALID_ZONES = new Set([
+    'ticker-after',
     'main-before',
     'main-after',
     'plugin-content:before',

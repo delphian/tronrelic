@@ -14,3 +14,4 @@
  *   for specialized use cases
  */
 export {};
+//# sourceMappingURL=IAddressLabel.js.map

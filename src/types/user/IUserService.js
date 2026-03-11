@@ -13,3 +13,4 @@
  * @module @tronrelic/types/user
  */
 export {};
+//# sourceMappingURL=IUserService.js.map

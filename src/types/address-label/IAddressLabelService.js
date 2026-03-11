@@ -20,3 +20,4 @@
  * ```
  */
 export {};
+//# sourceMappingURL=IAddressLabelService.js.map

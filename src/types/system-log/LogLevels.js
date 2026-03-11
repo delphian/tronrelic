@@ -58,3 +58,4 @@ export function shouldLog(messageLevel, configuredLevel) {
     const configuredLevelValue = LOG_LEVELS[configuredLevel] ?? LOG_LEVELS.info;
     return messageLevelValue >= configuredLevelValue;
 }
+//# sourceMappingURL=LogLevels.js.map
