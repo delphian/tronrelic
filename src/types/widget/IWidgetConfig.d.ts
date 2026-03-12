@@ -5,6 +5,7 @@
  * are predefined injection points in the application layout.
  */
 export declare const WIDGET_ZONES: {
+    readonly TICKER_AFTER: "ticker-after";
     readonly MAIN_BEFORE: "main-before";
     readonly MAIN_AFTER: "main-after";
     readonly PLUGIN_CONTENT_BEFORE: "plugin-content:before";

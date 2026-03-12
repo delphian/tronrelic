@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
-import { cookies } from 'next/headers';
+import { cookies, headers } from 'next/headers';
 import { getServerConfig, type RuntimeConfig } from '../lib/serverConfig';
 import { getServerSideApiUrl } from '../lib/api-url';
 import { buildMetadata, SITE_NAME } from '../lib/seo';
@@ -8,6 +8,7 @@ import './globals.scss';
 import { Providers, type SSRUserData } from './providers';
 import { MainHeader } from '../components/layout/MainHeader';
 import { BlockTicker } from '../components/layout/BlockTicker';
+import { WidgetZone, fetchWidgetsForRoute } from '../components/widgets';
 import { getServerUserId, getServerUser } from '../modules/user/lib/server';
 import type { BlockSummary } from '../features/blockchain/slice';
 
@@ -224,12 +225,17 @@ async function fetchSSRUserData(): Promise<SSRUserData | null> {
 }
 
 export default async function RootLayout({ children }: { children: ReactNode }) {
+  // Extract pathname from middleware-set header for ticker-after widget zone
+  const headersList = await headers();
+  const pathname = headersList.get('x-pathname') || '/';
+
   // Parallelize SSR fetches to reduce TTFB - these are independent operations
-  const [runtimeConfig, activeThemes, ssrUserData, initialBlock] = await Promise.all([
+  const [runtimeConfig, activeThemes, ssrUserData, initialBlock, tickerWidgets] = await Promise.all([
     getServerConfig(),
     fetchActiveThemes(),
     fetchSSRUserData(),
-    fetchInitialBlock()
+    fetchInitialBlock(),
+    fetchWidgetsForRoute(pathname, {})
   ]);
 
   // Read theme preference from cookie for SSR (prevents flash)
@@ -277,6 +283,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
         <Providers ssrUserData={ssrUserData}>
           <MainHeader initialThemes={activeThemes} initialThemeId={selectedThemeId} />
           <BlockTicker initialBlock={initialBlock} />
+          <WidgetZone name="ticker-after" widgets={tickerWidgets} route={pathname} params={{}} />
           <main>
             {children}
           </main>
