@@ -53,6 +53,7 @@ services:
             - CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1
         volumes:
             - tronrelic-clickhouse-data:/var/lib/clickhouse
+            - ./configs/clickhouse/system-logs-ttl.xml:/etc/clickhouse-server/config.d/system-logs-ttl.xml:ro
         networks:
             - tronrelic-network
         ulimits:

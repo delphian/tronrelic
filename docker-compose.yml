@@ -83,6 +83,7 @@ services:
         volumes:
             - tronrelic-clickhouse-data:/var/lib/clickhouse
             - tronrelic-clickhouse-logs:/var/log/clickhouse-server
+            - ./configs/clickhouse/system-logs-ttl.xml:/etc/clickhouse-server/config.d/system-logs-ttl.xml:ro
         networks:
             - tronrelic-network
         ulimits:

@@ -1,0 +1,67 @@
+<!--
+  ClickHouse System Log Retention Configuration
+
+  Adds TTL (time-to-live) to internal diagnostic tables so they
+  auto-expire old rows instead of growing unbounded.  These tables
+  are ClickHouse's own profiling / query / trace logs and contain
+  no application data.
+
+  Retention periods:
+    query_log               3 days   (query text, timings, errors)
+    trace_log               3 days   (stack-trace sampling)
+    processors_profile_log  3 days   (pipeline-operator profiling)
+    metric_log              3 days   (per-second metric snapshots)
+    asynchronous_metric_log 3 days   (OS-level metric snapshots)
+    part_log                7 days   (merge / mutation events)
+    asynchronous_insert_log 7 days   (async insert results — polled by backend)
+-->
+<clickhouse>
+    <query_log>
+        <database>system</database>
+        <table>query_log</table>
+        <ttl>event_time + INTERVAL 3 DAY</ttl>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+    </query_log>
+
+    <trace_log>
+        <database>system</database>
+        <table>trace_log</table>
+        <ttl>event_time + INTERVAL 3 DAY</ttl>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+    </trace_log>
+
+    <processors_profile_log>
+        <database>system</database>
+        <table>processors_profile_log</table>
+        <ttl>event_time + INTERVAL 3 DAY</ttl>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+    </processors_profile_log>
+
+    <metric_log>
+        <database>system</database>
+        <table>metric_log</table>
+        <ttl>event_time + INTERVAL 3 DAY</ttl>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+    </metric_log>
+
+    <asynchronous_metric_log>
+        <database>system</database>
+        <table>asynchronous_metric_log</table>
+        <ttl>event_time + INTERVAL 3 DAY</ttl>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+    </asynchronous_metric_log>
+
+    <part_log>
+        <database>system</database>
+        <table>part_log</table>
+        <ttl>event_time + INTERVAL 7 DAY</ttl>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+    </part_log>
+
+    <asynchronous_insert_log>
+        <database>system</database>
+        <table>asynchronous_insert_log</table>
+        <ttl>event_time + INTERVAL 7 DAY</ttl>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+    </asynchronous_insert_log>
+</clickhouse>
