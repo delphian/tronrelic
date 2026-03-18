@@ -188,7 +188,7 @@ function checkEnvFile() {
 function startContainers() {
     log('info', 'Starting database containers...');
     try {
-        execSync(`docker-compose -f ${COMPOSE_FILE} up -d`, {
+        execSync(`docker compose -f ${COMPOSE_FILE} up -d`, {
             cwd: PROJECT_ROOT,
             stdio: 'inherit',
         });
