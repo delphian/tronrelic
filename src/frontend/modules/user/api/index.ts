@@ -35,5 +35,6 @@ export type {
     ILinkWalletResult,
     IPublicProfile,
     IDailyVisitorData,
-    IRecentVisitor
+    IRecentVisitor,
+    VisitorPeriod
 } from './client';

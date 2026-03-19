@@ -1739,7 +1739,7 @@ export class UserService {
         since.setHours(0, 0, 0, 0);
 
         const results = await this.collection.aggregate<{ _id: string; count: number }>([
-            { $match: { 'activity.sessions': { $exists: true, $ne: [] } } },
+            { $match: { 'activity.lastSeen': { $gte: since }, 'activity.sessions': { $exists: true, $ne: [] } } },
             { $unwind: '$activity.sessions' },
             { $match: { 'activity.sessions.startedAt': { $gte: since } } },
             {
@@ -1759,7 +1759,7 @@ export class UserService {
             { $sort: { _id: 1 } }
         ]).toArray();
 
-        return results.map(r => ({ date: r._id, count: r.count }));
+        return results.map(r => ({ date: `${r._id}T00:00:00Z`, count: r.count }));
     }
 
     /**
@@ -1824,6 +1824,7 @@ export class UserService {
         await this.collection.createIndex({ 'wallets.address': 1 });
         await this.collection.createIndex({ 'activity.lastSeen': 1 });
         await this.collection.createIndex({ 'activity.sessions.endedAt': 1 });
+        await this.collection.createIndex({ 'activity.sessions.startedAt': 1 });
 
         this.logger.info('User indexes created');
     }

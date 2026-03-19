@@ -404,6 +404,9 @@ export interface IDailyVisitorData {
     count: number;
 }
 
+/** Valid period options for recent visitors queries. */
+export type VisitorPeriod = '24h' | '7d' | '30d' | '90d';
+
 /**
  * Recent visitor summary for admin analytics.
  */
@@ -433,7 +436,7 @@ export async function adminGetDailyVisitors(
         headers: { [adminHeaderKey]: token },
         params: { days }
     });
-    return (response.data as { data: IDailyVisitorData[] }).data;
+    return (response.data as { data: IDailyVisitorData[] }).data ?? [];
 }
 
 /**
@@ -445,7 +448,7 @@ export async function adminGetDailyVisitors(
  */
 export async function adminGetRecentVisitors(
     token: string,
-    options?: { period?: string; limit?: number; skip?: number }
+    options?: { period?: VisitorPeriod; limit?: number; skip?: number }
 ): Promise<{ visitors: IRecentVisitor[]; total: number }> {
     const response = await apiClient.get('/admin/users/analytics/recent-visitors', {
         headers: { [adminHeaderKey]: token },

@@ -18,7 +18,7 @@ import type { ChartSeries } from '../../../../../features/charts/components/Line
 import { ClientTime } from '../../../../../components/ui/ClientTime';
 import { Button } from '../../../../../components/ui/Button';
 import { config as runtimeConfig } from '../../../../../lib/config';
-import type { IDailyVisitorData, IRecentVisitor } from '../../../api';
+import type { IDailyVisitorData, IRecentVisitor, VisitorPeriod } from '../../../api';
 import styles from './VisitorAnalytics.module.scss';
 
 /** Device icon size for inline table display. */
@@ -41,9 +41,6 @@ function getDeviceIcon(device: string): JSX.Element {
 
 /** Available chart range options. */
 type ChartRange = '30d' | '90d';
-
-/** Available period options for recent visitors. */
-type VisitorPeriod = '24h' | '7d' | '30d' | '90d';
 
 /** Period option labels for display. */
 const PERIOD_LABELS: Record<VisitorPeriod, string> = {
@@ -248,8 +245,8 @@ export function VisitorAnalytics({ token }: Props) {
                                         <th>Referrer</th>
                                         <th>Landing Page</th>
                                         <th>Device</th>
-                                        <th>Views</th>
-                                        <th>Sessions</th>
+                                        <th>Total Views</th>
+                                        <th>Total Sessions</th>
                                     </tr>
                                 </thead>
                                 <tbody>

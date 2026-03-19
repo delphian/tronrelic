@@ -118,7 +118,7 @@ export {
     adminGetRecentVisitors
 } from './api';
 
-export type { ISessionData, IDailyVisitorData, IRecentVisitor } from './api';
+export type { ISessionData, IDailyVisitorData, IRecentVisitor, VisitorPeriod } from './api';
 
 // =============================================================================
 // Identity Utilities (Client-side)
