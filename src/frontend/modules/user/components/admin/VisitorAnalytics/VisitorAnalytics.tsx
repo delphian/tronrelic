@@ -1,12 +1,12 @@
 /**
  * VisitorAnalytics Component
  *
- * Admin analytics dashboard displaying daily visitor trends and a recent
- * visitors list with referrer, country, and landing page data for SEO analysis.
+ * Admin analytics dashboard displaying daily visitor trends and a traffic
+ * origins table showing how visitors originally discovered the site.
  *
  * Renders two sections:
  * 1. Daily visitors chart with 30d/90d toggle
- * 2. Recent visitors table with selectable time period (24h, 7d, 30d, 90d)
+ * 2. Traffic origins table showing first-session acquisition data per visitor
  */
 
 'use client';
@@ -18,7 +18,7 @@ import type { ChartSeries } from '../../../../../features/charts/components/Line
 import { ClientTime } from '../../../../../components/ui/ClientTime';
 import { Button } from '../../../../../components/ui/Button';
 import { config as runtimeConfig } from '../../../../../lib/config';
-import type { IDailyVisitorData, IRecentVisitor, VisitorPeriod } from '../../../api';
+import type { IDailyVisitorData, IVisitorOrigin, VisitorPeriod } from '../../../api';
 import styles from './VisitorAnalytics.module.scss';
 
 /** Device icon size for inline table display. */
@@ -37,6 +37,22 @@ function getDeviceIcon(device: string): JSX.Element {
         case 'desktop': return <Monitor size={DEVICE_ICON_SIZE} aria-label="Desktop device" />;
         default: return <HelpCircle size={DEVICE_ICON_SIZE} aria-label="Unknown device" />;
     }
+}
+
+/**
+ * Format UTM parameters into a readable summary string.
+ *
+ * @param utm - UTM parameters object or null
+ * @returns Formatted string like "google / cpc / spring_sale" or null
+ */
+function formatUtm(utm: IVisitorOrigin['utm']): string | null {
+    if (!utm) {
+        return null;
+    }
+
+    const parts = [utm.source, utm.medium, utm.campaign].filter(Boolean);
+
+    return parts.length > 0 ? parts.join(' / ') : null;
 }
 
 /** Available chart range options. */
@@ -60,8 +76,9 @@ interface Props {
 /**
  * VisitorAnalytics displays aggregate visitor analytics for the admin dashboard.
  *
- * Includes a daily visitor trend chart (30d/90d) and a recent visitors table
- * with country, referrer domain, and landing page for SEO analysis.
+ * Includes a daily visitor trend chart (30d/90d) and a traffic origins table
+ * showing first-session acquisition data (original referrer, landing page,
+ * country, device, UTM) for SEO and marketing analysis.
  *
  * @param props - Component props
  * @param props.token - Admin authentication token for API requests
@@ -72,7 +89,7 @@ export function VisitorAnalytics({ token }: Props) {
     const [chartLoading, setChartLoading] = useState(true);
 
     const [visitorPeriod, setVisitorPeriod] = useState<VisitorPeriod>('24h');
-    const [visitors, setVisitors] = useState<IRecentVisitor[]>([]);
+    const [visitors, setVisitors] = useState<IVisitorOrigin[]>([]);
     const [visitorsTotal, setVisitorsTotal] = useState(0);
     const [visitorsLoading, setVisitorsLoading] = useState(true);
     const [visitorsPage, setVisitorsPage] = useState(1);
@@ -105,7 +122,7 @@ export function VisitorAnalytics({ token }: Props) {
     }, [token, chartRange]);
 
     /**
-     * Fetch recent visitors list from the analytics endpoint.
+     * Fetch visitor origins from the analytics endpoint.
      */
     const fetchVisitors = useCallback(async () => {
         setVisitorsLoading(true);
@@ -116,19 +133,19 @@ export function VisitorAnalytics({ token }: Props) {
             params.set('skip', ((visitorsPage - 1) * visitorsLimit).toString());
 
             const response = await fetch(
-                `${runtimeConfig.apiBaseUrl}/admin/users/analytics/recent-visitors?${params.toString()}`,
+                `${runtimeConfig.apiBaseUrl}/admin/users/analytics/visitor-origins?${params.toString()}`,
                 { headers: { [ADMIN_HEADER_KEY]: token } }
             );
 
             if (!response.ok) {
-                throw new Error(`Failed to fetch visitors: ${response.status}`);
+                throw new Error(`Failed to fetch visitor origins: ${response.status}`);
             }
 
             const result = await response.json();
             setVisitors(result.visitors ?? []);
             setVisitorsTotal(result.total ?? 0);
         } catch (error) {
-            console.error('Failed to fetch recent visitors:', error);
+            console.error('Failed to fetch visitor origins:', error);
             setVisitors([]);
             setVisitorsTotal(0);
         } finally {
@@ -212,10 +229,10 @@ export function VisitorAnalytics({ token }: Props) {
                 </div>
             </div>
 
-            {/* Recent Visitors Table */}
+            {/* Traffic Origins Table */}
             <div className={styles.section}>
                 <div className={styles.section_header}>
-                    <h2 className={styles.section_title}>Recent Visitors</h2>
+                    <h2 className={styles.section_title}>Traffic Origins</h2>
                     <div className={styles.toggle_group} role="group" aria-label="Time period">
                         {(Object.keys(PERIOD_LABELS) as VisitorPeriod[]).map(period => (
                             <button
@@ -231,7 +248,7 @@ export function VisitorAnalytics({ token }: Props) {
                 </div>
 
                 {visitorsLoading ? (
-                    <div className={styles.loading}>Loading visitors...</div>
+                    <div className={styles.loading}>Loading visitor origins...</div>
                 ) : visitors.length === 0 ? (
                     <div className={styles.empty}>No visitors found in this period.</div>
                 ) : (
@@ -240,37 +257,45 @@ export function VisitorAnalytics({ token }: Props) {
                             <table className={styles.table}>
                                 <thead>
                                     <tr>
-                                        <th>Last Seen</th>
+                                        <th>First Seen</th>
                                         <th>Country</th>
-                                        <th>Referrer</th>
+                                        <th>Original Referrer</th>
                                         <th>Landing Page</th>
+                                        <th>UTM</th>
                                         <th>Device</th>
                                         <th>Total Views</th>
                                         <th>Total Sessions</th>
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {visitors.map(visitor => (
-                                        <tr key={visitor.userId}>
-                                            <td>
-                                                <ClientTime date={visitor.lastSeen} format="relative" />
-                                            </td>
-                                            <td className={styles.country_cell}>
-                                                {visitor.country || <span className={styles.muted}>—</span>}
-                                            </td>
-                                            <td className={styles.referrer_cell} title={visitor.referrerDomain ?? undefined}>
-                                                {visitor.referrerDomain || <span className={styles.muted}>direct</span>}
-                                            </td>
-                                            <td className={styles.landing_cell} title={visitor.landingPage ?? undefined}>
-                                                {visitor.landingPage || <span className={styles.muted}>—</span>}
-                                            </td>
-                                            <td className={styles.device_cell}>
-                                                {getDeviceIcon(visitor.device)}
-                                            </td>
-                                            <td>{visitor.pageViews.toLocaleString()}</td>
-                                            <td>{visitor.sessionsCount.toLocaleString()}</td>
-                                        </tr>
-                                    ))}
+                                    {visitors.map(visitor => {
+                                        const utmDisplay = formatUtm(visitor.utm);
+
+                                        return (
+                                            <tr key={visitor.userId}>
+                                                <td>
+                                                    <ClientTime date={visitor.firstSeen} format="relative" />
+                                                </td>
+                                                <td className={styles.country_cell}>
+                                                    {visitor.country || <span className={styles.muted}>—</span>}
+                                                </td>
+                                                <td className={styles.referrer_cell} title={visitor.referrerDomain ?? undefined}>
+                                                    {visitor.referrerDomain || <span className={styles.muted}>direct</span>}
+                                                </td>
+                                                <td className={styles.landing_cell} title={visitor.landingPage ?? undefined}>
+                                                    {visitor.landingPage || <span className={styles.muted}>—</span>}
+                                                </td>
+                                                <td className={styles.utm_cell} title={utmDisplay ?? undefined}>
+                                                    {utmDisplay || <span className={styles.muted}>—</span>}
+                                                </td>
+                                                <td className={styles.device_cell}>
+                                                    {getDeviceIcon(visitor.device)}
+                                                </td>
+                                                <td>{visitor.pageViews.toLocaleString()}</td>
+                                                <td>{visitor.sessionsCount.toLocaleString()}</td>
+                                            </tr>
+                                        );
+                                    })}
                                 </tbody>
                             </table>
                         </div>

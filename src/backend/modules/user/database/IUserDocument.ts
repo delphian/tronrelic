@@ -130,6 +130,27 @@ export interface IUserSession {
 }
 
 /**
+ * Traffic origin data captured during a visitor's first-ever session.
+ *
+ * Persisted once at the user level so origin data survives session pruning.
+ * Fields are set during the first call to startSession() and never overwritten.
+ */
+export interface ITrafficOrigin {
+    /** Referrer domain from the first session (e.g., 'twitter.com', null if direct) */
+    referrerDomain: string | null;
+    /** URL path the visitor first landed on (e.g., '/resource-markets') */
+    landingPage: string | null;
+    /** ISO 3166-1 alpha-2 country code at first visit (e.g., 'US', 'JP') */
+    country: string | null;
+    /** Device category during first visit */
+    device: DeviceCategory;
+    /** UTM campaign parameters from the first landing page URL */
+    utm: IUtmParams | null;
+    /** Search keyword from referrer URL at first visit */
+    searchKeyword: string | null;
+}
+
+/**
  * Activity tracking metrics for visitor analytics.
  *
  * Tracks engagement patterns without storing sensitive browsing details.
@@ -153,6 +174,8 @@ export interface IUserActivity {
     pageViewsByPath: Record<string, number>;
     /** Country distribution (lifetime, ISO codes to visit counts) */
     countryCounts: Record<string, number>;
+    /** Traffic origin from the visitor's first-ever session (set once, never overwritten) */
+    origin: ITrafficOrigin | null;
 }
 
 /**

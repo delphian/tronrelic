@@ -209,10 +209,10 @@ export function createAdminUserRouter(controller: UserController): Router {
     router.get('/analytics/daily-visitors', controller.getDailyVisitors.bind(controller));
 
     /**
-     * GET /api/admin/users/analytics/recent-visitors
-     * Get recent visitors with referrer, country, and landing page
+     * GET /api/admin/users/analytics/visitor-origins
+     * Get visitor traffic origins from first-ever sessions
      */
-    router.get('/analytics/recent-visitors', controller.getRecentVisitors.bind(controller));
+    router.get('/analytics/visitor-origins', controller.getVisitorOrigins.bind(controller));
 
     /**
      * GET /api/admin/users/:id
