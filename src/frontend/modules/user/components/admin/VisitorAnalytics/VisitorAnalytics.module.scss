@@ -1,7 +1,7 @@
 /**
  * VisitorAnalytics Styles
  *
- * Admin analytics dashboard showing daily visitor chart and recent visitors table.
+ * Admin analytics dashboard showing daily visitor chart and traffic origins table.
  * Uses container queries for responsive behavior.
  */
 
@@ -78,7 +78,7 @@
     min-height: 320px;
 }
 
-/* Recent visitors table */
+/* Traffic origins table */
 .table_wrapper {
     overflow-x: auto;
 }
@@ -136,6 +136,15 @@
     font-size: var(--font-size-xs);
     color: var(--color-text-muted);
     max-width: 250px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.utm_cell {
+    font-size: var(--font-size-xs);
+    color: var(--color-text-muted);
+    max-width: 200px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;

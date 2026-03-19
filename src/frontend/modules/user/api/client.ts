@@ -423,19 +423,36 @@ export interface IDailyVisitorData {
     count: number;
 }
 
-/** Valid period options for recent visitors queries. */
+/** Valid period options for visitor origin queries. */
 export type VisitorPeriod = '24h' | '7d' | '30d' | '90d';
 
 /**
- * Recent visitor summary for admin analytics.
+ * UTM campaign parameters for traffic origin display.
  */
-export interface IRecentVisitor {
+export interface IUtmParams {
+    source?: string;
+    medium?: string;
+    campaign?: string;
+    term?: string;
+    content?: string;
+}
+
+/**
+ * Visitor origin summary for admin analytics.
+ *
+ * Represents traffic acquisition data from a visitor's first-ever session,
+ * combined with lifetime engagement metrics.
+ */
+export interface IVisitorOrigin {
     userId: string;
+    firstSeen: string;
     lastSeen: string;
     country: string | null;
     referrerDomain: string | null;
     landingPage: string | null;
     device: string;
+    utm: IUtmParams | null;
+    searchKeyword: string | null;
     sessionsCount: number;
     pageViews: number;
 }
@@ -459,21 +476,21 @@ export async function adminGetDailyVisitors(
 }
 
 /**
- * Get recent visitors with referrer, country, and landing page (admin endpoint).
+ * Get visitor traffic origins from first-ever sessions (admin endpoint).
  *
  * @param token - Admin API token
  * @param options - Period, pagination options
- * @returns Paginated list of recent visitors
+ * @returns Paginated list of visitor origins
  */
-export async function adminGetRecentVisitors(
+export async function adminGetVisitorOrigins(
     token: string,
     options?: { period?: VisitorPeriod; limit?: number; skip?: number }
-): Promise<{ visitors: IRecentVisitor[]; total: number }> {
-    const response = await apiClient.get('/admin/users/analytics/recent-visitors', {
+): Promise<{ visitors: IVisitorOrigin[]; total: number }> {
+    const response = await apiClient.get('/admin/users/analytics/visitor-origins', {
         headers: { [adminHeaderKey]: token },
         params: options
     });
-    return response.data as { visitors: IRecentVisitor[]; total: number };
+    return response.data as { visitors: IVisitorOrigin[]; total: number };
 }
 
 /**

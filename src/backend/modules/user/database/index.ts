@@ -8,6 +8,7 @@ export type {
     IUtmParams,
     IUserSession,
     IUserActivity,
+    ITrafficOrigin,
     ICreateUserInput,
     ILinkWalletInput,
     IStartSessionInput,

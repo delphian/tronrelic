@@ -82,15 +82,21 @@ export interface IPublicProfile {
 }
 
 /**
- * Recent visitor summary for admin analytics.
+ * Visitor origin summary for admin analytics.
+ *
+ * Represents traffic acquisition data from a visitor's first-ever session,
+ * combined with lifetime engagement metrics.
  */
-export interface IRecentVisitor {
+export interface IVisitorOrigin {
     userId: string;
+    firstSeen: Date;
     lastSeen: Date;
     country: string | null;
     referrerDomain: string | null;
     landingPage: string | null;
     device: string;
+    utm: IUtmParams | null;
+    searchKeyword: string | null;
     sessionsCount: number;
     pageViews: number;
 }
@@ -237,7 +243,8 @@ export class UserService {
                 totalDurationSeconds: 0,
                 sessions: [],
                 pageViewsByPath: {},
-                countryCounts: {}
+                countryCounts: {},
+                origin: null
             },
             createdAt: now,
             updatedAt: now
@@ -928,6 +935,35 @@ export class UserService {
                 searchKeyword
             };
 
+            // Capture traffic origin on first-ever session (set once, never overwritten).
+            // If the user already has session history but no origin (pre-feature user),
+            // derive origin from the oldest available session instead of the current one.
+            if (!activity.origin) {
+                const oldestExisting = activity.sessions.length > 0
+                    ? activity.sessions[activity.sessions.length - 1]
+                    : null;
+
+                if (oldestExisting) {
+                    activity.origin = {
+                        referrerDomain: oldestExisting.referrerDomain,
+                        landingPage: oldestExisting.landingPage ?? oldestExisting.pages?.[0]?.path ?? null,
+                        country: oldestExisting.country,
+                        device: oldestExisting.device,
+                        utm: oldestExisting.utm,
+                        searchKeyword: oldestExisting.searchKeyword
+                    };
+                } else {
+                    activity.origin = {
+                        referrerDomain,
+                        landingPage: landingPage || null,
+                        country,
+                        device,
+                        utm: newSession.utm,
+                        searchKeyword
+                    };
+                }
+            }
+
             // Add to front of sessions array
             activity.sessions.unshift(newSession);
             activity.sessionsCount++;
@@ -1241,7 +1277,8 @@ export class UserService {
             totalDurationSeconds: activity.totalDurationSeconds || 0,
             sessions: activity.sessions || [],
             pageViewsByPath: activity.pageViewsByPath || {},
-            countryCounts: activity.countryCounts || {}
+            countryCounts: activity.countryCounts || {},
+            origin: activity.origin || null
         };
     }
 
@@ -1777,21 +1814,22 @@ export class UserService {
     }
 
     /**
-     * Get recent visitors with referrer, country, and landing page data.
+     * Get visitor origins with first-session traffic acquisition data.
      *
-     * Finds users who had sessions within the given period, extracts the most
-     * recent session's metadata, and returns one row per visitor.
+     * Returns users active within the given period, with traffic origin data
+     * from their first-ever session. Falls back to oldest available session
+     * for users created before the origin field was introduced.
      *
      * @param periodHours - Lookback period in hours
      * @param limit - Maximum results to return
      * @param skip - Number of results to skip for pagination
-     * @returns Paginated list of recent visitors with total count
+     * @returns Paginated list of visitor origins with total count
      */
-    async getRecentVisitors(
+    async getVisitorOrigins(
         periodHours: number,
         limit: number = 50,
         skip: number = 0
-    ): Promise<{ visitors: IRecentVisitor[]; total: number }> {
+    ): Promise<{ visitors: IVisitorOrigin[]; total: number }> {
         const since = new Date();
         since.setTime(since.getTime() - (periodHours * 60 * 60 * 1000));
 
@@ -1801,23 +1839,27 @@ export class UserService {
             this.collection.countDocuments(query),
             this.collection
                 .find(query)
-                .sort({ 'activity.lastSeen': -1 })
+                .sort({ 'activity.firstSeen': -1 })
                 .skip(skip)
                 .limit(limit)
                 .toArray()
         ]);
 
-        const visitors: IRecentVisitor[] = users.map(user => {
-            const recentSession = user.activity?.sessions?.[0];
-            const landingPage = recentSession?.landingPage ?? recentSession?.pages?.[0]?.path ?? null;
+        const visitors: IVisitorOrigin[] = users.map(user => {
+            const origin = user.activity?.origin;
+            const sessions = user.activity?.sessions ?? [];
+            const oldestSession = sessions.length > 0 ? sessions[sessions.length - 1] : null;
 
             return {
                 userId: user.id,
+                firstSeen: user.activity?.firstSeen ?? user.createdAt,
                 lastSeen: user.activity?.lastSeen ?? user.updatedAt,
-                country: recentSession?.country ?? null,
-                referrerDomain: recentSession?.referrerDomain ?? null,
-                landingPage,
-                device: recentSession?.device ?? 'unknown',
+                country: origin?.country ?? oldestSession?.country ?? null,
+                referrerDomain: origin?.referrerDomain ?? oldestSession?.referrerDomain ?? null,
+                landingPage: origin?.landingPage ?? oldestSession?.landingPage ?? oldestSession?.pages?.[0]?.path ?? null,
+                device: origin?.device ?? oldestSession?.device ?? 'unknown',
+                utm: origin?.utm ?? oldestSession?.utm ?? null,
+                searchKeyword: origin?.searchKeyword ?? oldestSession?.searchKeyword ?? null,
                 sessionsCount: user.activity?.sessionsCount ?? 0,
                 pageViews: user.activity?.pageViews ?? 0
             };
@@ -1837,6 +1879,7 @@ export class UserService {
         await this.collection.createIndex({ id: 1 }, { unique: true });
         await this.collection.createIndex({ 'wallets.address': 1 });
         await this.collection.createIndex({ 'activity.lastSeen': 1 });
+        await this.collection.createIndex({ 'activity.firstSeen': 1 });
         await this.collection.createIndex({ 'activity.sessions.endedAt': 1 });
         await this.collection.createIndex({ 'activity.sessions.startedAt': 1 });
 

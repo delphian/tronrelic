@@ -26,7 +26,7 @@ export {
     adminGetUserStats,
     adminGetUser,
     adminGetDailyVisitors,
-    adminGetRecentVisitors
+    adminGetVisitorOrigins
 } from './client';
 
 export type {
@@ -35,6 +35,7 @@ export type {
     ILinkWalletResult,
     IPublicProfile,
     IDailyVisitorData,
-    IRecentVisitor,
+    IVisitorOrigin,
+    IUtmParams,
     VisitorPeriod
 } from './client';
