@@ -244,7 +244,8 @@ export class UserService {
                 totalDurationSeconds: 0,
                 sessions: [],
                 pageViewsByPath: {},
-                countryCounts: {}
+                countryCounts: {},
+                origin: null
             },
             createdAt: now,
             updatedAt: now
