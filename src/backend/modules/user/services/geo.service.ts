@@ -83,6 +83,61 @@ export function extractReferrerDomain(referrer: string | undefined): string | nu
 }
 
 /**
+ * Search engine hostname patterns mapped to their query parameter names.
+ *
+ * Covers major global and regional search engines. Hostnames are matched
+ * after stripping the 'www.' prefix. Google uses country-code TLDs
+ * (google.co.uk, google.de, etc.) so we match on the 'google.' prefix.
+ */
+const SEARCH_ENGINE_PARAMS: Array<{ match: (host: string) => boolean; param: string[] }> = [
+    { match: (h) => h.startsWith('google.'), param: ['q'] },
+    { match: (h) => h === 'bing.com', param: ['q'] },
+    { match: (h) => h === 'search.yahoo.com' || h === 'yahoo.com', param: ['p'] },
+    { match: (h) => h === 'duckduckgo.com', param: ['q'] },
+    { match: (h) => h === 'baidu.com', param: ['wd', 'word'] },
+    { match: (h) => h.startsWith('yandex.'), param: ['text'] },
+    { match: (h) => h === 'ecosia.org', param: ['q'] },
+    { match: (h) => h === 'sogou.com', param: ['query'] },
+    { match: (h) => h === 'naver.com' || h === 'search.naver.com', param: ['query'] },
+];
+
+/**
+ * Extract search keyword from a referrer URL if it belongs to a known search engine.
+ *
+ * Most organic Google searches encrypt the query ("(not provided)"), so this
+ * primarily captures paid search traffic and non-Google engines.
+ *
+ * @param referrer - Full referrer URL
+ * @returns Search query string or null if not a search engine referral
+ */
+export function extractSearchKeyword(referrer: string | undefined): string | null {
+    if (!referrer) {
+        return null;
+    }
+
+    try {
+        const url = new URL(referrer);
+        const hostname = url.hostname.replace(/^www\./, '');
+
+        for (const engine of SEARCH_ENGINE_PARAMS) {
+            if (engine.match(hostname)) {
+                for (const param of engine.param) {
+                    const value = url.searchParams.get(param);
+                    if (value && value.trim()) {
+                        return value.trim().slice(0, 200);
+                    }
+                }
+                return null;
+            }
+        }
+
+        return null;
+    } catch {
+        return null;
+    }
+}
+
+/**
  * Check if a referrer URL is from the same domain as the site.
  *
  * Used to filter out internal referrers (e.g., when a user navigates

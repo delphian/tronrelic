@@ -5,6 +5,7 @@ export {
     initGeoIP,
     getCountryFromIP,
     extractReferrerDomain,
+    extractSearchKeyword,
     isInternalReferrer,
     getDeviceCategory,
     getClientIP

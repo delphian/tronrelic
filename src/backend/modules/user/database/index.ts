@@ -5,6 +5,7 @@ export type {
     IPageVisit,
     DeviceCategory,
     ScreenSizeCategory,
+    IUtmParams,
     IUserSession,
     IUserActivity,
     ICreateUserInput,

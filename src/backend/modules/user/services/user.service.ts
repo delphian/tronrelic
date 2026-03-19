@@ -10,11 +10,13 @@ import type {
     IUserPreferences,
     IUserSession,
     IPageVisit,
+    IUtmParams,
     DeviceCategory
 } from '../database/index.js';
 import {
     getCountryFromIP,
     extractReferrerDomain,
+    extractSearchKeyword,
     getDeviceCategory,
     getScreenSizeCategory
 } from './geo.service.js';
@@ -862,7 +864,9 @@ export class UserService {
         clientIP?: string,
         userAgent?: string,
         referrer?: string,
-        screenWidth?: number
+        screenWidth?: number,
+        utm?: IUtmParams,
+        landingPage?: string
     ): Promise<IUserSession> {
         try {
             const doc = await this.collection.findOne({ id: userId });
@@ -901,6 +905,7 @@ export class UserService {
             const referrerDomain = extractReferrerDomain(referrer);
             const country = getCountryFromIP(clientIP);
             const screenSize = getScreenSizeCategory(screenWidth);
+            const searchKeyword = extractSearchKeyword(referrer);
 
             // Track country distribution
             if (country) {
@@ -917,7 +922,10 @@ export class UserService {
                 screenWidth: screenWidth ?? null,
                 screenSize,
                 referrerDomain,
-                country
+                country,
+                utm: utm && Object.values(utm).some(v => v) ? utm : null,
+                landingPage: landingPage || null,
+                searchKeyword
             };
 
             // Add to front of sessions array
@@ -942,7 +950,7 @@ export class UserService {
             await this.invalidateUserCache(userId);
 
             this.logger.debug(
-                { userId, device, screenSize, country, referrerDomain },
+                { userId, device, screenSize, country, referrerDomain, utm: newSession.utm, landingPage: newSession.landingPage, searchKeyword },
                 'Session started'
             );
 
@@ -982,7 +990,10 @@ export class UserService {
                     screenWidth: null,
                     screenSize: 'unknown',
                     referrerDomain: null,
-                    country: null
+                    country: null,
+                    utm: null,
+                    landingPage: null,
+                    searchKeyword: null
                 };
                 activity.sessions.unshift(activeSession);
                 activity.sessionsCount++;
@@ -1010,7 +1021,10 @@ export class UserService {
                     screenWidth: null,
                     screenSize: 'unknown',
                     referrerDomain: null,
-                    country: null
+                    country: null,
+                    utm: null,
+                    landingPage: null,
+                    searchKeyword: null
                 };
                 activity.sessions.unshift(activeSession);
                 activity.sessionsCount++;
@@ -1795,7 +1809,7 @@ export class UserService {
 
         const visitors: IRecentVisitor[] = users.map(user => {
             const recentSession = user.activity?.sessions?.[0];
-            const landingPage = recentSession?.pages?.[0]?.path ?? null;
+            const landingPage = recentSession?.landingPage ?? recentSession?.pages?.[0]?.path ?? null;
 
             return {
                 userId: user.id,

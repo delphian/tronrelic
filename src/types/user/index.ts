@@ -7,6 +7,7 @@ export type {
     IUserPreferences,
     IUserActivity,
     IUserSession,
+    IUtmParams,
     IPageVisit,
     DeviceCategory,
     ScreenSizeCategory

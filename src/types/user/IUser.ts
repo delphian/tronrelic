@@ -76,6 +76,25 @@ export type DeviceCategory = 'mobile' | 'tablet' | 'desktop' | 'unknown';
 export type ScreenSizeCategory = 'mobile-sm' | 'mobile-md' | 'mobile-lg' | 'tablet' | 'desktop' | 'desktop-lg' | 'unknown';
 
 /**
+ * UTM campaign tracking parameters captured from the landing page URL.
+ *
+ * All fields are optional because visitors may arrive with any subset
+ * of UTM tags (e.g., only utm_source and utm_medium).
+ */
+export interface IUtmParams {
+    /** Traffic source (e.g., 'twitter', 'google', 'newsletter') */
+    source?: string;
+    /** Marketing medium (e.g., 'cpc', 'email', 'social') */
+    medium?: string;
+    /** Campaign name (e.g., 'spring_sale', 'launch_2026') */
+    campaign?: string;
+    /** Paid search keyword or topic term */
+    term?: string;
+    /** Ad variation or content identifier */
+    content?: string;
+}
+
+/**
  * A user session with engagement metrics.
  */
 export interface IUserSession {
@@ -97,6 +116,12 @@ export interface IUserSession {
     referrerDomain: string | null;
     /** ISO 3166-1 alpha-2 country code (e.g., 'US', 'DE', 'JP') */
     country: string | null;
+    /** UTM campaign parameters from landing page URL (null if none present) */
+    utm: IUtmParams | null;
+    /** URL path the visitor first landed on (e.g., '/resource-markets') */
+    landingPage: string | null;
+    /** Search query extracted from referrer URL for known search engines (null if not search traffic) */
+    searchKeyword: string | null;
 }
 
 /**
