@@ -102,8 +102,9 @@ export function middleware(request: NextRequest) {
         const referer = request.headers.get('referer');
         const host = request.nextUrl.host;
 
-        // Create redirect response
+        // Create redirect response, preserving query string (UTM params, etc.)
         const redirectUrl = new URL(rule.destination, request.url);
+        redirectUrl.search = request.nextUrl.search;
         const response = NextResponse.redirect(redirectUrl, rule.permanent ? 301 : 302);
 
         // Preserve external referrer in cookie

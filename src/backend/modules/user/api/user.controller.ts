@@ -11,6 +11,38 @@ import { SystemConfigService } from '../../../services/system-config/system-conf
  */
 const COOKIE_NAME = 'tronrelic_uid';
 
+/** Maximum length for stored path values. */
+const MAX_PATH_LENGTH = 500;
+
+/**
+ * Sanitize a URL path for storage.
+ *
+ * Ensures the value starts with '/', strips query strings and hash
+ * fragments, and truncates to a safe length.
+ *
+ * @param raw - Raw path string from request body
+ * @returns Sanitized path or undefined if invalid
+ */
+function sanitizePath(raw: unknown): string | undefined {
+    if (typeof raw !== 'string') {
+        return undefined;
+    }
+    let path = raw.trim();
+    if (!path.startsWith('/')) {
+        return undefined;
+    }
+    // Strip query string and hash fragment
+    const qIdx = path.indexOf('?');
+    if (qIdx !== -1) {
+        path = path.slice(0, qIdx);
+    }
+    const hIdx = path.indexOf('#');
+    if (hIdx !== -1) {
+        path = path.slice(0, hIdx);
+    }
+    return path.slice(0, MAX_PATH_LENGTH) || undefined;
+}
+
 /**
  * Controller for user module REST API endpoints.
  *
@@ -353,22 +385,24 @@ export class UserController {
             const userAgent = req.headers['user-agent'];
             const screenWidth = typeof req.body.screenWidth === 'number' ? req.body.screenWidth : undefined;
 
-            // Extract landing page path (truncate to prevent oversized values)
-            const landingPage = typeof req.body.landingPage === 'string'
-                ? req.body.landingPage.slice(0, 500)
-                : undefined;
+            // Extract and sanitize landing page path
+            const landingPage = sanitizePath(req.body.landingPage);
 
-            // Extract and sanitize UTM parameters (truncate each field)
+            // Extract and sanitize UTM parameters (truncate each field, discard if empty)
             const rawUtm = req.body.utm;
-            const utm: IUtmParams | undefined = rawUtm && typeof rawUtm === 'object'
-                ? {
+            let utm: IUtmParams | undefined = undefined;
+            if (rawUtm && typeof rawUtm === 'object') {
+                const extracted: IUtmParams = {
                     source: typeof rawUtm.source === 'string' ? rawUtm.source.slice(0, 200) : undefined,
                     medium: typeof rawUtm.medium === 'string' ? rawUtm.medium.slice(0, 200) : undefined,
                     campaign: typeof rawUtm.campaign === 'string' ? rawUtm.campaign.slice(0, 500) : undefined,
                     term: typeof rawUtm.term === 'string' ? rawUtm.term.slice(0, 200) : undefined,
                     content: typeof rawUtm.content === 'string' ? rawUtm.content.slice(0, 200) : undefined,
+                };
+                if (Object.values(extracted).some(v => v !== undefined)) {
+                    utm = extracted;
                 }
-                : undefined;
+            }
 
             // Determine referrer with priority:
             // 1. Body referrer (explicitly captured by frontend from cookie/document.referrer)
@@ -427,12 +461,12 @@ export class UserController {
     async recordPage(req: Request, res: Response): Promise<void> {
         try {
             const { id } = req.params;
-            const { path } = req.body;
+            const path = sanitizePath(req.body.path);
 
-            if (!path || typeof path !== 'string') {
+            if (!path) {
                 res.status(400).json({
                     error: 'Invalid request',
-                    message: 'Body must include path string'
+                    message: 'Body must include a valid path starting with /'
                 });
                 return;
             }

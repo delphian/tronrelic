@@ -124,7 +124,7 @@ export function extractSearchKeyword(referrer: string | undefined): string | nul
                 for (const param of engine.param) {
                     const value = url.searchParams.get(param);
                     if (value && value.trim()) {
-                        return value.trim();
+                        return value.trim().slice(0, 200);
                     }
                 }
                 return null;
