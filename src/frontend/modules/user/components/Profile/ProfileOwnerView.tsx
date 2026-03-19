@@ -11,12 +11,12 @@
 
 import { useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { LogOut, Loader2 } from 'lucide-react';
+import { LogOut, Loader2, User } from 'lucide-react';
 import { Page, PageHeader } from '../../../../components/layout';
 import type { ProfileData } from './index';
 import { useWallet } from '../../hooks/useWallet';
 import { useToast } from '../../../../components/ui/ToastProvider';
-import styles from './Profile.module.css';
+import styles from './Profile.module.scss';
 
 /**
  * Props for ProfileOwnerView.
@@ -86,19 +86,7 @@ export function ProfileOwnerView({ profile }: ProfileOwnerViewProps): JSX.Elemen
             <div className={styles.container}>
                 <div className={styles.placeholder}>
                     <div className={styles.placeholder_icon}>
-                        <svg
-                            width="48"
-                            height="48"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="1.5"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                        >
-                            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-                            <circle cx="12" cy="7" r="4" />
-                        </svg>
+                        <User size={48} strokeWidth={1.5} />
                     </div>
                     <h2 className={styles.placeholder_title}>Your Control Panel</h2>
                     <p className={styles.placeholder_text}>

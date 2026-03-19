@@ -5,6 +5,8 @@
  * Uses container queries for responsive behavior.
  */
 
+@use '../../../../app/breakpoints' as *;
+
 .container {
     container-type: inline-size;
     container-name: profile;
@@ -29,7 +31,7 @@
     border: var(--border-width-thin) solid var(--color-border);
     border-radius: var(--radius-md);
     cursor: pointer;
-    transition: all 0.15s ease;
+    transition: all var(--transition-fast);
 }
 
 .logout_btn:hover:not(:disabled) {
@@ -38,8 +40,14 @@
     background: var(--color-surface-elevated);
 }
 
+.logout_btn:focus-visible {
+    outline: var(--focus-outline-width) solid var(--color-focus);
+    outline-offset: var(--focus-outline-offset);
+    box-shadow: var(--focus-shadow);
+}
+
 .logout_btn:disabled {
-    opacity: 0.6;
+    opacity: var(--opacity-60);
     cursor: not-allowed;
 }
 
@@ -92,7 +100,7 @@
     line-height: var(--line-height-relaxed);
 }
 
-@container profile (max-width: 480px) {
+@container profile (max-width: #{$breakpoint-mobile-md}) {
     .placeholder {
         padding: var(--spacing-10);
         min-height: 250px;
