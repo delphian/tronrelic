@@ -203,6 +203,18 @@ export function createAdminUserRouter(controller: UserController): Router {
     router.get('/stats', controller.getStats.bind(controller));
 
     /**
+     * GET /api/admin/users/analytics/daily-visitors
+     * Get daily unique visitor counts for charting
+     */
+    router.get('/analytics/daily-visitors', controller.getDailyVisitors.bind(controller));
+
+    /**
+     * GET /api/admin/users/analytics/recent-visitors
+     * Get recent visitors with referrer, country, and landing page
+     */
+    router.get('/analytics/recent-visitors', controller.getRecentVisitors.bind(controller));
+
+    /**
      * GET /api/admin/users/:id
      * Get any user by UUID (admin bypass)
      */

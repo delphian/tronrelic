@@ -666,6 +666,76 @@ export class UserController {
     }
 
     /**
+     * GET /api/admin/users/analytics/daily-visitors
+     *
+     * Get daily unique visitor counts for charting.
+     *
+     * Query parameters:
+     * - days: Number of days to look back (default: 90, max: 365)
+     *
+     * Response: { data: [{ date: string, count: number }] }
+     */
+    async getDailyVisitors(req: Request, res: Response): Promise<void> {
+        try {
+            const { days } = req.query;
+            const parsedDays = days ? parseInt(days as string, 10) : 90;
+            const daysNum = Number.isNaN(parsedDays) ? 90 : Math.min(Math.max(1, parsedDays), 365);
+
+            const data = await this.userService.getDailyVisitorCounts(daysNum);
+
+            res.json({ data });
+        } catch (error) {
+            this.logger.error({ error }, 'Failed to get daily visitor analytics');
+            res.status(500).json({
+                error: 'Failed to get daily visitor analytics',
+                message: error instanceof Error ? error.message : 'Unknown error'
+            });
+        }
+    }
+
+    /**
+     * GET /api/admin/users/analytics/recent-visitors
+     *
+     * Get recent visitors with referrer, country, and landing page data.
+     *
+     * Query parameters:
+     * - period: Lookback period ('24h', '7d', '30d', '90d', default: '24h')
+     * - limit: Maximum results (default: 50, max: 100)
+     * - skip: Pagination offset (default: 0)
+     *
+     * Response: { visitors: IRecentVisitor[], total: number }
+     */
+    async getRecentVisitors(req: Request, res: Response): Promise<void> {
+        try {
+            const { period, limit, skip } = req.query;
+
+            const periodMap: Record<string, number> = {
+                '24h': 24,
+                '7d': 7 * 24,
+                '30d': 30 * 24,
+                '90d': 90 * 24
+            };
+            const periodStr = (period as string) || '24h';
+            const periodHours = periodMap[periodStr] ?? 24;
+
+            const parsedLimit = limit ? parseInt(limit as string, 10) : 50;
+            const parsedSkip = skip ? parseInt(skip as string, 10) : 0;
+            const limitNum = Number.isNaN(parsedLimit) ? 50 : Math.min(Math.max(1, parsedLimit), 100);
+            const skipNum = Number.isNaN(parsedSkip) ? 0 : Math.max(0, parsedSkip);
+
+            const result = await this.userService.getRecentVisitors(periodHours, limitNum, skipNum);
+
+            res.json(result);
+        } catch (error) {
+            this.logger.error({ error }, 'Failed to get recent visitors');
+            res.status(500).json({
+                error: 'Failed to get recent visitors',
+                message: error instanceof Error ? error.message : 'Unknown error'
+            });
+        }
+    }
+
+    /**
      * GET /api/admin/users/:id
      *
      * Get any user by UUID (admin bypass).

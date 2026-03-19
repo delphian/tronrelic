@@ -5,6 +5,8 @@
  * Uses container queries for responsive behavior.
  */
 
+@use '../../../../../app/breakpoints' as *;
+
 .container {
     container-type: inline-size;
     container-name: users-monitor;
@@ -98,8 +100,10 @@
     border-color: var(--color-border-strong);
 }
 
-.filter_select:focus {
-    outline: none;
+.filter_select:focus-visible {
+    outline: var(--focus-outline-width) solid var(--color-focus);
+    outline-offset: var(--focus-outline-offset);
+    box-shadow: var(--focus-shadow);
     border-color: var(--color-primary);
 }
 
@@ -134,8 +138,10 @@
     color: var(--color-text-subtle);
 }
 
-.search_input:focus {
-    outline: none;
+.search_input:focus-visible {
+    outline: var(--focus-outline-width) solid var(--color-focus);
+    outline-offset: var(--focus-outline-offset);
+    box-shadow: var(--focus-shadow);
     border-color: var(--color-primary);
 }
 
@@ -311,7 +317,7 @@
     color: var(--color-text);
     font-size: var(--font-size-xs);
     cursor: pointer;
-    transition: border-color 0.15s ease;
+    transition: border-color var(--transition-fast);
 }
 
 .session_nav_btn:hover:not(:disabled) {
@@ -319,8 +325,14 @@
     background: var(--color-surface-muted);
 }
 
+.session_nav_btn:focus-visible {
+    outline: var(--focus-outline-width) solid var(--color-focus);
+    outline-offset: var(--focus-outline-offset);
+    box-shadow: var(--focus-shadow);
+}
+
 .session_nav_btn:disabled {
-    opacity: 0.4;
+    opacity: var(--button-disabled-opacity);
     cursor: not-allowed;
 }
 
@@ -330,17 +342,6 @@
     color: var(--color-text-muted);
     min-width: 32px;
     text-align: center;
-}
-
-/* Responsive: adjust grid layout on narrow containers */
-@container users-monitor (max-width: 800px) {
-    .user_details {
-        grid-template-columns: repeat(3, 1fr);
-    }
-
-    .detail_section {
-        grid-column: span 3;
-    }
 }
 
 .wallet_list {
@@ -581,13 +582,21 @@
 }
 
 /* Container queries for responsive behavior */
-@container users-monitor (max-width: 900px) {
+@container users-monitor (max-width: #{$breakpoint-tablet}) {
     .stats {
         grid-template-columns: repeat(3, 1fr);
     }
 }
 
-@container users-monitor (max-width: 768px) {
+@container users-monitor (max-width: #{$breakpoint-mobile-lg}) {
+    .user_details {
+        grid-template-columns: repeat(3, 1fr);
+    }
+
+    .detail_section {
+        grid-column: span 3;
+    }
+
     .user_header {
         flex-direction: column;
         align-items: flex-start;
@@ -600,6 +609,7 @@
     }
 }
 
+/* 600px: component-specific threshold between mobile-md and mobile-lg */
 @container users-monitor (max-width: 600px) {
     .filter_row {
         flex-direction: column;
@@ -617,7 +627,7 @@
     }
 }
 
-@container users-monitor (max-width: 480px) {
+@container users-monitor (max-width: #{$breakpoint-mobile-md}) {
     .container {
         padding: var(--spacing-7);
         gap: var(--spacing-7);

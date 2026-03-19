@@ -116,13 +116,14 @@
  * Login Text
  *
  * Hidden on mobile to show icon-only button.
- * Uses media query to match MainHeader responsive behavior.
+ * Uses @media (not container query) because this component is a content-sized
+ * flex item in MainHeader — inline-size containment would break natural sizing.
+ * Matches MainHeader's own @media breakpoints for visual consistency.
  */
 .login_text {
     /* Visible by default */
 }
 
-/* Mobile: Hide login text, show icon only */
 @media (max-width: $breakpoint-mobile) {
     .login_text {
         display: none;

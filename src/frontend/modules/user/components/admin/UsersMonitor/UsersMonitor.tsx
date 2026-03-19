@@ -2,10 +2,12 @@
 
 import React, { useEffect, useState, useCallback } from 'react';
 import type { UserFilterType } from '@/types';
+import { Smartphone, Tablet, Monitor, HelpCircle } from 'lucide-react';
 import { config as runtimeConfig } from '../../../../../lib/config';
 import { Button } from '../../../../../components/ui/Button';
 import { ClientTime } from '../../../../../components/ui/ClientTime';
-import styles from './UsersMonitor.module.css';
+import { VisitorAnalytics } from '../VisitorAnalytics';
+import styles from './UsersMonitor.module.scss';
 
 /**
  * Format seconds into a human-readable duration string.
@@ -23,14 +25,19 @@ function formatDuration(seconds: number): string {
 }
 
 /**
- * Get device emoji for display.
+ * Device icon size for session display (inline text context).
  */
-function getDeviceEmoji(device: DeviceCategory): string {
+const DEVICE_ICON_SIZE = 14;
+
+/**
+ * Get device icon component for display.
+ */
+function getDeviceIcon(device: DeviceCategory): JSX.Element {
     switch (device) {
-        case 'mobile': return '📱';
-        case 'tablet': return '📲';
-        case 'desktop': return '🖥️';
-        default: return '❓';
+        case 'mobile': return <Smartphone size={DEVICE_ICON_SIZE} aria-label="Mobile device" />;
+        case 'tablet': return <Tablet size={DEVICE_ICON_SIZE} aria-label="Tablet device" />;
+        case 'desktop': return <Monitor size={DEVICE_ICON_SIZE} aria-label="Desktop device" />;
+        default: return <HelpCircle size={DEVICE_ICON_SIZE} aria-label="Unknown device" />;
     }
 }
 
@@ -348,6 +355,8 @@ export function UsersMonitor({ token }: Props) {
                 </div>
             )}
 
+            <VisitorAnalytics token={token} />
+
             <div className={styles.controls}>
                 <div className={styles.filter_row}>
                     <select
@@ -605,7 +614,7 @@ export function UsersMonitor({ token }: Props) {
                                                         <div key={session.startedAt} className={styles.session_item}>
                                                             <div className={styles.session_device_col}>
                                                                 <span className={styles.session_device} title={session.device}>
-                                                                    {getDeviceEmoji(session.device)}
+                                                                    {getDeviceIcon(session.device)}
                                                                 </span>
                                                                 <span className={styles.session_screen} title={`Screen: ${session.screenSize || 'unknown'}`}>
                                                                     {getScreenSizeLabel(session.screenSize || 'unknown', session.screenWidth)}
