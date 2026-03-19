@@ -201,6 +201,17 @@ export async function recordActivity(userId: string): Promise<void> {
 export type ScreenSizeCategory = 'mobile-sm' | 'mobile-md' | 'mobile-lg' | 'tablet' | 'desktop' | 'desktop-lg' | 'unknown';
 
 /**
+ * UTM campaign tracking parameters captured from the landing page URL.
+ */
+export interface IUtmParams {
+    source?: string;
+    medium?: string;
+    campaign?: string;
+    term?: string;
+    content?: string;
+}
+
+/**
  * Session data returned from session/start endpoint.
  */
 export interface ISessionData {
@@ -213,26 +224,34 @@ export interface ISessionData {
     screenSize: ScreenSizeCategory;
     referrerDomain: string | null;
     country: string | null;
+    utm: IUtmParams | null;
+    landingPage: string | null;
+    searchKeyword: string | null;
 }
 
 /**
  * Start a new session or return the active session.
  * Device, country, and referrer are derived from request headers server-side.
  * Screen size is derived from the provided screenWidth using design system breakpoints.
+ * Search keywords are extracted server-side from the referrer URL for known search engines.
  *
  * @param userId - User UUID
  * @param referrer - Optional referrer URL (defaults to document.referrer)
  * @param screenWidth - Optional viewport width in pixels
+ * @param utm - Optional UTM campaign parameters from landing page URL
+ * @param landingPage - Optional landing page path
  * @returns Session data
  */
 export async function startSession(
     userId: string,
     referrer?: string,
-    screenWidth?: number
+    screenWidth?: number,
+    utm?: IUtmParams,
+    landingPage?: string
 ): Promise<ISessionData> {
     const response = await apiClient.post(
         `/user/${userId}/session/start`,
-        { referrer, screenWidth },
+        { referrer, screenWidth, utm, landingPage },
         { withCredentials: true }
     );
     return response.data.session as ISessionData;

@@ -2,7 +2,7 @@ import type { Request, Response, NextFunction } from 'express';
 import { USER_FILTERS } from '@/types';
 import type { ISystemLogService, UserFilterType } from '@/types';
 import type { UserService, IUserStats } from '../services/index.js';
-import type { IUser, IUserPreferences } from '../database/index.js';
+import type { IUser, IUserPreferences, IUtmParams } from '../database/index.js';
 import { getClientIP, isInternalReferrer } from '../services/index.js';
 import { SystemConfigService } from '../../../services/system-config/system-config.service.js';
 
@@ -353,6 +353,23 @@ export class UserController {
             const userAgent = req.headers['user-agent'];
             const screenWidth = typeof req.body.screenWidth === 'number' ? req.body.screenWidth : undefined;
 
+            // Extract landing page path (truncate to prevent oversized values)
+            const landingPage = typeof req.body.landingPage === 'string'
+                ? req.body.landingPage.slice(0, 500)
+                : undefined;
+
+            // Extract and sanitize UTM parameters (truncate each field)
+            const rawUtm = req.body.utm;
+            const utm: IUtmParams | undefined = rawUtm && typeof rawUtm === 'object'
+                ? {
+                    source: typeof rawUtm.source === 'string' ? rawUtm.source.slice(0, 200) : undefined,
+                    medium: typeof rawUtm.medium === 'string' ? rawUtm.medium.slice(0, 200) : undefined,
+                    campaign: typeof rawUtm.campaign === 'string' ? rawUtm.campaign.slice(0, 500) : undefined,
+                    term: typeof rawUtm.term === 'string' ? rawUtm.term.slice(0, 200) : undefined,
+                    content: typeof rawUtm.content === 'string' ? rawUtm.content.slice(0, 200) : undefined,
+                }
+                : undefined;
+
             // Determine referrer with priority:
             // 1. Body referrer (explicitly captured by frontend from cookie/document.referrer)
             // 2. Header referer (fallback, but only if external)
@@ -383,7 +400,9 @@ export class UserController {
                 clientIP,
                 userAgent,
                 referrer,
-                screenWidth
+                screenWidth,
+                utm,
+                landingPage
             );
 
             res.json({ session });

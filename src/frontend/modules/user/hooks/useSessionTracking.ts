@@ -83,6 +83,55 @@ function getEffectiveReferrer(): string | undefined {
     return undefined;
 }
 
+/**
+ * UTM parameter keys mapped to their URL query parameter names.
+ */
+const UTM_PARAM_MAP: Record<string, string> = {
+    source: 'utm_source',
+    medium: 'utm_medium',
+    campaign: 'utm_campaign',
+    term: 'utm_term',
+    content: 'utm_content',
+};
+
+/**
+ * Extract UTM campaign parameters from the current page URL.
+ *
+ * Returns undefined when no UTM parameters are present to avoid
+ * sending empty objects to the backend.
+ *
+ * @returns UTM parameters object or undefined if none present
+ */
+function getUtmParams(): Record<string, string> | undefined {
+    if (typeof window === 'undefined') {
+        return undefined;
+    }
+
+    const params = new URLSearchParams(window.location.search);
+    const utm: Record<string, string> = {};
+
+    for (const [key, paramName] of Object.entries(UTM_PARAM_MAP)) {
+        const value = params.get(paramName);
+        if (value) {
+            utm[key] = value;
+        }
+    }
+
+    return Object.keys(utm).length > 0 ? utm : undefined;
+}
+
+/**
+ * Get the current page pathname as the landing page.
+ *
+ * @returns URL path or undefined if not in browser
+ */
+function getLandingPage(): string | undefined {
+    if (typeof window === 'undefined') {
+        return undefined;
+    }
+    return window.location.pathname || undefined;
+}
+
 interface UseSessionTrackingOptions {
     /** User UUID - tracking only runs when this is provided */
     userId: string | null;
@@ -124,7 +173,10 @@ export function useSessionTracking({
             const referrer = getEffectiveReferrer();
             // Pass viewport width for screen size tracking
             const screenWidth = typeof window !== 'undefined' ? window.innerWidth : undefined;
-            await startSession(userId, referrer, screenWidth);
+            // Capture UTM parameters and landing page from current URL
+            const utm = getUtmParams();
+            const landingPage = getLandingPage();
+            await startSession(userId, referrer, screenWidth, utm, landingPage);
             setSessionStarted(true);
             cleanupCalledRef.current = false;
 
