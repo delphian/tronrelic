@@ -11,7 +11,6 @@ import type {
     IUserSession,
     IPageVisit,
     IUtmParams,
-    ITrafficOrigin,
     DeviceCategory
 } from '../database/index.js';
 import {
@@ -936,16 +935,33 @@ export class UserService {
                 searchKeyword
             };
 
-            // Capture traffic origin on first-ever session (set once, never overwritten)
+            // Capture traffic origin on first-ever session (set once, never overwritten).
+            // If the user already has session history but no origin (pre-feature user),
+            // derive origin from the oldest available session instead of the current one.
             if (!activity.origin) {
-                activity.origin = {
-                    referrerDomain,
-                    landingPage: landingPage || null,
-                    country,
-                    device,
-                    utm: newSession.utm,
-                    searchKeyword
-                };
+                const oldestExisting = activity.sessions.length > 0
+                    ? activity.sessions[activity.sessions.length - 1]
+                    : null;
+
+                if (oldestExisting) {
+                    activity.origin = {
+                        referrerDomain: oldestExisting.referrerDomain,
+                        landingPage: oldestExisting.landingPage ?? oldestExisting.pages?.[0]?.path ?? null,
+                        country: oldestExisting.country,
+                        device: oldestExisting.device,
+                        utm: oldestExisting.utm,
+                        searchKeyword: oldestExisting.searchKeyword
+                    };
+                } else {
+                    activity.origin = {
+                        referrerDomain,
+                        landingPage: landingPage || null,
+                        country,
+                        device,
+                        utm: newSession.utm,
+                        searchKeyword
+                    };
+                }
             }
 
             // Add to front of sessions array
@@ -1798,17 +1814,6 @@ export class UserService {
     }
 
     /**
-     * Get recent visitors with referrer, country, and landing page data.
-     *
-     * Finds users who had sessions within the given period, extracts the most
-     * recent session's metadata, and returns one row per visitor.
-     *
-     * @param periodHours - Lookback period in hours
-     * @param limit - Maximum results to return
-     * @param skip - Number of results to skip for pagination
-     * @returns Paginated list of recent visitors with total count
-     */
-    /**
      * Get visitor origins with first-session traffic acquisition data.
      *
      * Returns users active within the given period, with traffic origin data
@@ -1842,7 +1847,8 @@ export class UserService {
 
         const visitors: IVisitorOrigin[] = users.map(user => {
             const origin = user.activity?.origin;
-            const oldestSession = user.activity?.sessions?.[user.activity.sessions.length - 1];
+            const sessions = user.activity?.sessions ?? [];
+            const oldestSession = sessions.length > 0 ? sessions[sessions.length - 1] : null;
 
             return {
                 userId: user.id,
@@ -1873,6 +1879,7 @@ export class UserService {
         await this.collection.createIndex({ id: 1 }, { unique: true });
         await this.collection.createIndex({ 'wallets.address': 1 });
         await this.collection.createIndex({ 'activity.lastSeen': 1 });
+        await this.collection.createIndex({ 'activity.firstSeen': 1 });
         await this.collection.createIndex({ 'activity.sessions.endedAt': 1 });
         await this.collection.createIndex({ 'activity.sessions.startedAt': 1 });
 

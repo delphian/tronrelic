@@ -142,8 +142,8 @@ export interface ITrafficOrigin {
     landingPage: string | null;
     /** ISO 3166-1 alpha-2 country code at first visit (e.g., 'US', 'JP') */
     country: string | null;
-    /** Device category during first visit */
-    device: DeviceCategory;
+    /** Device category during first visit (null when backfilled with no session history) */
+    device: DeviceCategory | null;
     /** UTM campaign parameters from the first landing page URL */
     utm: IUtmParams | null;
     /** Search keyword from referrer URL at first visit */

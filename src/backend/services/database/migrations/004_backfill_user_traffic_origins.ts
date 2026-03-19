@@ -12,7 +12,7 @@ import type { IMigration, IMigrationContext } from '@/types';
  * 1. For each user without `activity.origin`, extracts origin data from the oldest
  *    available session in their `activity.sessions` array
  * 2. Sets the `activity.origin` field with best-effort data from the oldest session
- * 3. Users with no sessions at all get `activity.origin` set to a null-filled object
+ * 3. Users with no sessions at all get `activity.origin` set to all-null defaults
  *
  * **Limitations:**
  * Sessions are capped at 20 and pruned oldest-first, so for long-time users the true
@@ -61,7 +61,7 @@ export const migration: IMigration = {
                 referrerDomain: oldestSession?.referrerDomain ?? null,
                 landingPage: oldestSession?.landingPage ?? oldestSession?.pages?.[0]?.path ?? null,
                 country: oldestSession?.country ?? null,
-                device: oldestSession?.device ?? 'unknown',
+                device: oldestSession?.device ?? null,
                 utm: oldestSession?.utm ?? null,
                 searchKeyword: oldestSession?.searchKeyword ?? null
             };
