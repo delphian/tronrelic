@@ -6,6 +6,7 @@ import { Smartphone, Tablet, Monitor, HelpCircle } from 'lucide-react';
 import { config as runtimeConfig } from '../../../../../lib/config';
 import { Button } from '../../../../../components/ui/Button';
 import { ClientTime } from '../../../../../components/ui/ClientTime';
+import { VisitorAnalytics } from '../VisitorAnalytics';
 import styles from './UsersMonitor.module.scss';
 
 /**
@@ -353,6 +354,8 @@ export function UsersMonitor({ token }: Props) {
                     </div>
                 </div>
             )}
+
+            <VisitorAnalytics token={token} />
 
             <div className={styles.controls}>
                 <div className={styles.filter_row}>

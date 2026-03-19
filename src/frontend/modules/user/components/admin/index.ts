@@ -5,3 +5,4 @@
  */
 
 export { UsersMonitor } from './UsersMonitor';
+export { VisitorAnalytics } from './VisitorAnalytics';

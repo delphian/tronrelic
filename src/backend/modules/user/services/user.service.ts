@@ -80,6 +80,20 @@ export interface IPublicProfile {
 }
 
 /**
+ * Recent visitor summary for admin analytics.
+ */
+export interface IRecentVisitor {
+    userId: string;
+    lastSeen: Date;
+    country: string | null;
+    referrerDomain: string | null;
+    landingPage: string | null;
+    device: string;
+    sessionsCount: number;
+    pageViews: number;
+}
+
+/**
  * Service for managing visitor identity and wallet linking.
  *
  * This singleton service handles user lifecycle including creation, wallet linking,
@@ -1705,6 +1719,97 @@ export class UserService {
      */
     async countUsers(): Promise<number> {
         return this.collection.countDocuments({});
+    }
+
+    // ==================== Analytics ====================
+
+    /**
+     * Get daily unique visitor counts for the specified number of days.
+     *
+     * Uses MongoDB aggregation to unwind sessions and group by date.
+     * Each user only stores the last 20 sessions, so historical counts
+     * for very active users may be slightly undercounted.
+     *
+     * @param days - Number of days to look back (default: 90)
+     * @returns Array of { date, count } objects sorted chronologically
+     */
+    async getDailyVisitorCounts(days: number = 90): Promise<{ date: string; count: number }[]> {
+        const since = new Date();
+        since.setDate(since.getDate() - days);
+        since.setHours(0, 0, 0, 0);
+
+        const results = await this.collection.aggregate<{ _id: string; count: number }>([
+            { $match: { 'activity.sessions': { $exists: true, $ne: [] } } },
+            { $unwind: '$activity.sessions' },
+            { $match: { 'activity.sessions.startedAt': { $gte: since } } },
+            {
+                $group: {
+                    _id: {
+                        date: { $dateToString: { format: '%Y-%m-%d', date: '$activity.sessions.startedAt' } },
+                        userId: '$id'
+                    }
+                }
+            },
+            {
+                $group: {
+                    _id: '$_id.date',
+                    count: { $sum: 1 }
+                }
+            },
+            { $sort: { _id: 1 } }
+        ]).toArray();
+
+        return results.map(r => ({ date: r._id, count: r.count }));
+    }
+
+    /**
+     * Get recent visitors with referrer, country, and landing page data.
+     *
+     * Finds users who had sessions within the given period, extracts the most
+     * recent session's metadata, and returns one row per visitor.
+     *
+     * @param periodHours - Lookback period in hours
+     * @param limit - Maximum results to return
+     * @param skip - Number of results to skip for pagination
+     * @returns Paginated list of recent visitors with total count
+     */
+    async getRecentVisitors(
+        periodHours: number,
+        limit: number = 50,
+        skip: number = 0
+    ): Promise<{ visitors: IRecentVisitor[]; total: number }> {
+        const since = new Date();
+        since.setTime(since.getTime() - (periodHours * 60 * 60 * 1000));
+
+        const query = { 'activity.lastSeen': { $gte: since } };
+
+        const [total, users] = await Promise.all([
+            this.collection.countDocuments(query),
+            this.collection
+                .find(query)
+                .sort({ 'activity.lastSeen': -1 })
+                .skip(skip)
+                .limit(limit)
+                .toArray()
+        ]);
+
+        const visitors: IRecentVisitor[] = users.map(user => {
+            const recentSession = user.activity?.sessions?.[0];
+            const landingPage = recentSession?.pages?.[0]?.path ?? null;
+
+            return {
+                userId: user.id,
+                lastSeen: user.activity?.lastSeen ?? user.updatedAt,
+                country: recentSession?.country ?? null,
+                referrerDomain: recentSession?.referrerDomain ?? null,
+                landingPage,
+                device: recentSession?.device ?? 'unknown',
+                sessionsCount: user.activity?.sessionsCount ?? 0,
+                pageViews: user.activity?.pageViews ?? 0
+            };
+        });
+
+        return { visitors, total };
     }
 
     // ==================== Index Management ====================

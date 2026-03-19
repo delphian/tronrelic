@@ -397,6 +397,64 @@ export async function adminGetUserStats(token: string): Promise<IUserStats> {
 }
 
 /**
+ * Daily visitor count data point.
+ */
+export interface IDailyVisitorData {
+    date: string;
+    count: number;
+}
+
+/**
+ * Recent visitor summary for admin analytics.
+ */
+export interface IRecentVisitor {
+    userId: string;
+    lastSeen: string;
+    country: string | null;
+    referrerDomain: string | null;
+    landingPage: string | null;
+    device: string;
+    sessionsCount: number;
+    pageViews: number;
+}
+
+/**
+ * Get daily unique visitor counts for charting (admin endpoint).
+ *
+ * @param token - Admin API token
+ * @param days - Number of days to look back (default: 90)
+ * @returns Array of daily visitor count data points
+ */
+export async function adminGetDailyVisitors(
+    token: string,
+    days: number = 90
+): Promise<IDailyVisitorData[]> {
+    const response = await apiClient.get('/admin/users/analytics/daily-visitors', {
+        headers: { [adminHeaderKey]: token },
+        params: { days }
+    });
+    return (response.data as { data: IDailyVisitorData[] }).data;
+}
+
+/**
+ * Get recent visitors with referrer, country, and landing page (admin endpoint).
+ *
+ * @param token - Admin API token
+ * @param options - Period, pagination options
+ * @returns Paginated list of recent visitors
+ */
+export async function adminGetRecentVisitors(
+    token: string,
+    options?: { period?: string; limit?: number; skip?: number }
+): Promise<{ visitors: IRecentVisitor[]; total: number }> {
+    const response = await apiClient.get('/admin/users/analytics/recent-visitors', {
+        headers: { [adminHeaderKey]: token },
+        params: options
+    });
+    return response.data as { visitors: IRecentVisitor[]; total: number };
+}
+
+/**
  * Get any user by ID (admin endpoint).
  *
  * @param token - Admin API token

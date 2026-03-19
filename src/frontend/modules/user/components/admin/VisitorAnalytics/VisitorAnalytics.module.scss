@@ -1,0 +1,189 @@
+/**
+ * VisitorAnalytics Styles
+ *
+ * Admin analytics dashboard showing daily visitor chart and recent visitors table.
+ * Uses container queries for responsive behavior.
+ */
+
+@use '../../../../../app/breakpoints' as *;
+
+.container {
+    container-type: inline-size;
+    container-name: visitor-analytics;
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-10);
+}
+
+.section {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-7);
+    background: var(--color-surface-muted);
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-md);
+    padding: var(--spacing-7);
+}
+
+.section_header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: var(--spacing-5);
+    flex-wrap: wrap;
+}
+
+.section_title {
+    font-size: var(--font-size-lg);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text);
+    margin: 0;
+}
+
+.toggle_group {
+    display: flex;
+    gap: 0;
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+}
+
+.toggle_btn {
+    padding: var(--spacing-3) var(--spacing-7);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
+    color: var(--color-text-muted);
+    background: var(--color-surface);
+    border: none;
+    cursor: pointer;
+    transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.toggle_btn:hover:not(.toggle_btn__active) {
+    background: var(--color-surface-muted);
+}
+
+.toggle_btn__active {
+    background: var(--color-primary);
+    color: var(--color-text-on-primary);
+}
+
+.toggle_btn:focus-visible {
+    outline: var(--focus-outline-width) solid var(--color-focus);
+    outline-offset: var(--focus-outline-offset);
+    box-shadow: var(--focus-shadow);
+}
+
+.chart_wrapper {
+    min-height: 320px;
+}
+
+/* Recent visitors table */
+.table_wrapper {
+    overflow-x: auto;
+}
+
+.table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--font-size-sm);
+}
+
+.table th {
+    text-align: left;
+    padding: var(--spacing-3) var(--spacing-5);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    border-bottom: var(--border-width-thin) solid var(--color-border);
+    white-space: nowrap;
+}
+
+.table td {
+    padding: var(--spacing-3) var(--spacing-5);
+    color: var(--color-text);
+    border-bottom: var(--border-width-thin) solid var(--color-border);
+    vertical-align: middle;
+}
+
+.table tr:last-child td {
+    border-bottom: none;
+}
+
+.table tr:hover td {
+    background: var(--color-surface-elevated);
+}
+
+.country_cell {
+    font-family: var(--font-mono);
+    font-weight: var(--font-weight-medium);
+    font-size: var(--font-size-xs);
+}
+
+.referrer_cell {
+    font-size: var(--font-size-xs);
+    color: var(--color-text-muted);
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.landing_cell {
+    font-family: var(--font-mono);
+    font-size: var(--font-size-xs);
+    color: var(--color-text-muted);
+    max-width: 250px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.device_cell {
+    font-size: var(--font-size-xs);
+    color: var(--color-text-subtle);
+}
+
+.muted {
+    color: var(--color-text-subtle);
+}
+
+.pagination {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: var(--spacing-7);
+    padding-top: var(--spacing-5);
+}
+
+.page_info {
+    font-size: var(--font-size-sm);
+    color: var(--color-text-muted);
+}
+
+.loading,
+.empty {
+    padding: var(--spacing-10);
+    text-align: center;
+    color: var(--color-text-muted);
+}
+
+/* Container query responsive overrides */
+@container visitor-analytics (max-width: #{$breakpoint-mobile-lg}) {
+    .section_header {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+}
+
+@container visitor-analytics (max-width: #{$breakpoint-mobile-md}) {
+    .container {
+        gap: var(--spacing-7);
+    }
+
+    .section {
+        padding: var(--spacing-5);
+    }
+}

@@ -24,7 +24,16 @@ export {
     // Admin API functions
     adminListUsers,
     adminGetUserStats,
-    adminGetUser
+    adminGetUser,
+    adminGetDailyVisitors,
+    adminGetRecentVisitors
 } from './client';
 
-export type { ISessionData, IConnectWalletResult, ILinkWalletResult, IPublicProfile } from './client';
+export type {
+    ISessionData,
+    IConnectWalletResult,
+    ILinkWalletResult,
+    IPublicProfile,
+    IDailyVisitorData,
+    IRecentVisitor
+} from './client';

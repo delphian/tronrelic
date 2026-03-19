@@ -113,10 +113,12 @@ export {
     // Admin API functions
     adminListUsers,
     adminGetUserStats,
-    adminGetUser
+    adminGetUser,
+    adminGetDailyVisitors,
+    adminGetRecentVisitors
 } from './api';
 
-export type { ISessionData } from './api';
+export type { ISessionData, IDailyVisitorData, IRecentVisitor } from './api';
 
 // =============================================================================
 // Identity Utilities (Client-side)
@@ -163,3 +165,4 @@ export { UserIdentityProvider } from './components';
 export type { UserIdentityProviderProps } from './components';
 export { WalletButton } from './components';
 export { UsersMonitor } from './components';
+export { VisitorAnalytics } from './components';
