@@ -107,6 +107,11 @@ if (migrationFiles.length > 0) {
         format: 'esm',
         outbase: path.join(projectRoot, 'src'),
         outdir: path.join(projectRoot, 'dist'),
+        // Note: alias requires bundle:true so path aliases (@/types, etc.) are not
+        // resolved here. This is safe because migration @/ imports are type-only
+        // (stripped by esbuild). If a migration ever needs a runtime @/ import, use
+        // an esbuild plugin to rewrite the paths or switch to bundle:true per-file.
+        packages: 'external',
     });
 
     console.log(`Compiled ${migrationFiles.length} migration file(s) to dist/`);
