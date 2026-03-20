@@ -210,7 +210,7 @@ The database migration system enables safe, repeatable schema evolution across d
 - Complete migration lifecycle walkthrough
 - Troubleshooting common failure scenarios
 
-**For practical guidance on writing migrations, see [Migration Authoring Guide](../../src/backend/src/services/database/migrations/README.md).**
+**For practical guidance on writing migrations, see [system-database-migrations.md](./system-database-migrations.md).**
 
 ### Pages Module
 

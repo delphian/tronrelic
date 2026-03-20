@@ -80,6 +80,14 @@ COPY --from=builder /app/src/types ./src/types
 COPY --from=builder /app/src/shared ./src/shared
 COPY --from=builder /app/src/plugins ./src/plugins
 
+# Copy compiled migration .js files to src/ paths for runtime discovery.
+# MigrationScanner uses readdir() + dynamic import() at runtime, so individual
+# files must exist on disk at the paths the scanner expects (src/backend/...).
+# The build script compiles .ts migrations to .js under dist/, and we copy them
+# here to match the scanner's src/backend/ base path.
+COPY --from=builder /app/dist/backend/services/database/migrations ./src/backend/services/database/migrations
+COPY --from=builder /app/dist/backend/modules ./src/backend/modules
+
 # Expose backend port
 EXPOSE 4000
 

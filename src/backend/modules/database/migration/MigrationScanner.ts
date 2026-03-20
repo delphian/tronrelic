@@ -1,7 +1,6 @@
 import { readdir, readFile, stat } from 'fs/promises';
-import { join, dirname, basename } from 'path';
+import { join, basename } from 'path';
 import { createHash } from 'crypto';
-import { fileURLToPath } from 'url';
 import type { IMigration } from '@/types';
 import type { IMigrationMetadata, MigrationSortStrategy } from './types.js';
 import { logger } from '../../../lib/logger.js';
@@ -14,9 +13,9 @@ import { logger } from '../../../lib/logger.js';
  * checksums, and builds a dependency graph for topological sorting.
  *
  * **Discovery locations:**
- * - System: src/backend/src/services/database/migrations/
- * - Modules: src/backend/src/modules/star/migrations/
- * - Plugins: src/plugins/star/src/backend/migrations/
+ * - System: `src/backend/services/database/migrations/`
+ * - Modules: `src/backend/modules/{name}/migrations/`
+ * - Plugins: `src/plugins/{name}/src/backend/migrations/`
  *
  * **Naming convention:**
  * Files must match: /^\d{3}_[a-z0-9_-]+\.(ts|js)$/
@@ -67,16 +66,15 @@ export class MigrationScanner {
     /**
      * Create a new migration scanner.
      *
-     * Automatically determines the backend root directory from the current file location.
-     * This makes the scanner work correctly in both development and production deployments.
+     * Uses `process.cwd()` as the stable project root anchor, which works in both
+     * development (`npm run dev` from project root) and production Docker (`WORKDIR /app`).
+     *
+     * In the esbuild bundle (`dist/backend/index.js`), `import.meta.url` points to the
+     * bundle file, making `__dirname`-based navigation unreliable. `process.cwd()` always
+     * resolves to the project root in both environments.
      */
     constructor() {
-        // Get the directory of this file (__dirname equivalent for ES modules)
-        const __filename = fileURLToPath(import.meta.url);
-        const __dirname = dirname(__filename);
-
-        // Navigate up from services/database/migration/ to apps/backend/src/
-        this.backendRoot = join(__dirname, '..', '..', '..');
+        this.backendRoot = join(process.cwd(), 'src', 'backend');
     }
 
     /**
@@ -313,8 +311,8 @@ export class MigrationScanner {
         const moduleMigrations = await this.scanModules(modulesDir);
         migrations.push(...moduleMigrations);
 
-        // Scan plugin migrations
-        const pluginsDir = join(this.backendRoot, '..', '..', 'plugins');
+        // Scan plugin migrations (src/plugins/ is sibling to src/backend/)
+        const pluginsDir = join(this.backendRoot, '..', 'plugins');
         const pluginMigrations = await this.scanPlugins(pluginsDir);
         migrations.push(...pluginMigrations);
 
@@ -401,7 +399,7 @@ export class MigrationScanner {
     /**
      * Scan all module directories for migrations.
      *
-     * Iterates through `src/backend/src/modules/*` and scans each module's
+     * Iterates through `src/backend/modules/*` and scans each module's
      * `migrations/` subdirectory.
      *
      * @param modulesDir - Path to modules directory
