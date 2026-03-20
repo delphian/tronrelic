@@ -7,7 +7,7 @@
  * @module modules/logs/api/client
  */
 
-import { config as runtimeConfig } from '../../../lib/config';
+import { getRuntimeConfig } from '../../../lib/runtimeConfig';
 import type { LogLevel } from '@/types';
 import type { LogsResponse, LogStats } from '../types';
 
@@ -53,7 +53,7 @@ export async function getSystemLogs(token: string, query: LogsQuery = {}): Promi
     }
 
     const response = await fetch(
-        `${runtimeConfig.apiBaseUrl}/admin/system/logs?${params.toString()}`,
+        `${getRuntimeConfig().apiUrl}/admin/system/logs?${params.toString()}`,
         {
             headers: { 'X-Admin-Token': token }
         }
@@ -78,7 +78,7 @@ export async function getSystemLogs(token: string, query: LogsQuery = {}): Promi
  */
 export async function getLogStats(token: string): Promise<LogStats> {
     const response = await fetch(
-        `${runtimeConfig.apiBaseUrl}/admin/system/logs/stats`,
+        `${getRuntimeConfig().apiUrl}/admin/system/logs/stats`,
         {
             headers: { 'X-Admin-Token': token }
         }
@@ -108,7 +108,7 @@ export async function getLogStats(token: string): Promise<LogStats> {
  */
 export async function deleteAllLogs(token: string): Promise<number> {
     const response = await fetch(
-        `${runtimeConfig.apiBaseUrl}/admin/system/logs`,
+        `${getRuntimeConfig().apiUrl}/admin/system/logs`,
         {
             method: 'DELETE',
             headers: { 'X-Admin-Token': token }

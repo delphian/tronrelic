@@ -151,6 +151,14 @@ export function SystemLogsMonitor({ token }: Props) {
         try {
             const logStats = await getLogStats(token);
             setStats(logStats);
+
+            // Reset service filter if the selected service no longer exists in stats
+            setServiceFilter(prev => {
+                if (prev && logStats.byService && !(prev in logStats.byService)) {
+                    return '';
+                }
+                return prev;
+            });
         } catch (error) {
             console.error('Failed to fetch log stats:', error);
         }
@@ -331,6 +339,8 @@ export function SystemLogsMonitor({ token }: Props) {
                 return styles.level_info;
             case 'debug':
                 return styles.level_debug;
+            case 'fatal':
+                return styles.level_fatal;
             default:
                 return '';
         }
@@ -348,6 +358,10 @@ export function SystemLogsMonitor({ token }: Props) {
                     <div className={styles.stat_card}>
                         <div className={styles.stat_label}>Total Logs</div>
                         <div className={styles.stat_value}>{stats.total.toLocaleString()}</div>
+                    </div>
+                    <div className={styles.stat_card}>
+                        <div className={styles.stat_label}>Fatal</div>
+                        <div className={styles.stat_value}>{stats.byLevel.fatal?.toLocaleString() ?? '0'}</div>
                     </div>
                     <div className={styles.stat_card}>
                         <div className={styles.stat_label}>Errors</div>
@@ -377,7 +391,7 @@ export function SystemLogsMonitor({ token }: Props) {
                 <fieldset className={styles.filter_group}>
                     <legend className={styles.filter_label}>Severity Levels:</legend>
                     <div className={styles.checkbox_group} role="group" aria-label="Filter by severity level">
-                        {(['error', 'warn', 'info', 'debug', 'trace'] as LogLevel[]).map(level => (
+                        {(['fatal', 'error', 'warn', 'info', 'debug', 'trace'] as LogLevel[]).map(level => (
                             <label key={level} className={styles.checkbox_label}>
                                 <input
                                     type="checkbox"

@@ -20,7 +20,7 @@
 /* Statistics */
 .stats {
     display: grid;
-    grid-template-columns: repeat(6, 1fr);
+    grid-template-columns: repeat(7, 1fr);
     gap: var(--spacing-7);
 }
 
@@ -254,6 +254,12 @@ fieldset.filter_group {
     font-weight: var(--font-weight-semibold);
     text-transform: uppercase;
     letter-spacing: var(--badge-letter-spacing);
+}
+
+.level_fatal {
+    background: var(--badge-danger-background);
+    color: var(--badge-danger-color);
+    outline: var(--border-width-medium) solid var(--color-danger);
 }
 
 .level_error {
