@@ -2,39 +2,10 @@
 
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import type { LogLevel } from '@/types';
-import { config as runtimeConfig } from '../../../../lib/config';
 import { Button } from '../../../../components/ui/Button';
+import { getSystemLogs, getLogStats, deleteAllLogs } from '../../api';
+import type { SystemLog, LogStats } from '../../types';
 import styles from './SystemLogsMonitor.module.css';
-
-interface SystemLog {
-    _id: string;
-    timestamp: string;
-    level: LogLevel;
-    message: string;
-    service: string;
-    context: Record<string, any>;
-    resolved: boolean;
-    resolvedAt?: string;
-    resolvedBy?: string;
-}
-
-interface LogsResponse {
-    success: boolean;
-    logs: SystemLog[];
-    total: number;
-    page: number;
-    limit: number;
-    totalPages: number;
-    hasNextPage: boolean;
-    hasPrevPage: boolean;
-}
-
-interface LogStats {
-    total: number;
-    byLevel: Record<LogLevel, number>;
-    byService: Record<string, number>;
-    unresolved: number;
-}
 
 interface Props {
     token: string;
@@ -48,15 +19,15 @@ interface Props {
  *
  * **Key Features:**
  * - Severity level filtering (ERROR, WARN, INFO, DEBUG)
- * - Service/plugin filtering
- * - Configurable live polling (None, 10s, 30s, 60s)
+ * - Service/plugin filtering via dropdown populated from log statistics
+ * - Configurable live polling (None, 1s, 10s, 30s, 60s)
  * - Pagination with configurable page size
  * - Clear all logs functionality
  * - Expandable log details with context
  *
  * **Data Sources:**
  * - `/admin/system/logs` - Paginated logs with filtering
- * - `/admin/system/logs/stats` - Log statistics
+ * - `/admin/system/logs/stats` - Log statistics and service list
  *
  * **Security:**
  * Requires admin token authentication via X-Admin-Token header.
@@ -108,32 +79,17 @@ export function SystemLogsMonitor({ token }: Props) {
     /**
      * Fetches logs from the admin API with current filters and pagination.
      *
-     * Constructs query parameters based on selected filters and page state.
+     * Uses the logs API client to construct and execute the query.
      * Updates component state with fresh data or logs errors on failure.
      */
     const fetchLogs = useCallback(async () => {
         try {
-            const params = new URLSearchParams();
-
-            if (selectedLevels.length > 0) {
-                selectedLevels.forEach(level => params.append('levels', level));
-            }
-
-            if (serviceFilter.trim()) {
-                params.append('service', serviceFilter.trim());
-            }
-
-            params.append('page', page.toString());
-            params.append('limit', limit.toString());
-
-            const response = await fetch(
-                `${runtimeConfig.apiBaseUrl}/admin/system/logs?${params.toString()}`,
-                {
-                    headers: { 'X-Admin-Token': token }
-                }
-            );
-
-            const data: LogsResponse = await response.json();
+            const data = await getSystemLogs(token, {
+                levels: selectedLevels.length > 0 ? selectedLevels : undefined,
+                service: serviceFilter.trim() || undefined,
+                page,
+                limit
+            });
 
             if (data.success) {
                 const currentLogs = logsRef.current;
@@ -181,22 +137,13 @@ export function SystemLogsMonitor({ token }: Props) {
     /**
      * Fetches log statistics from the admin API.
      *
-     * Provides counts by severity level and resolved status for dashboard metrics.
+     * Provides counts by severity level and service for dashboard metrics
+     * and the service filter dropdown.
      */
     const fetchStats = useCallback(async () => {
         try {
-            const response = await fetch(
-                `${runtimeConfig.apiBaseUrl}/admin/system/logs/stats`,
-                {
-                    headers: { 'X-Admin-Token': token }
-                }
-            );
-
-            const data = await response.json();
-
-            if (data.success) {
-                setStats(data.stats);
-            }
+            const logStats = await getLogStats(token);
+            setStats(logStats);
         } catch (error) {
             console.error('Failed to fetch log stats:', error);
         }
@@ -205,7 +152,7 @@ export function SystemLogsMonitor({ token }: Props) {
     /**
      * Clears all logs after user confirmation.
      *
-     * Displays a confirmation dialog and sends DELETE request to admin API.
+     * Displays a confirmation dialog and sends DELETE request via API client.
      * Refreshes logs and stats after successful deletion.
      */
     const handleClearLogs = async () => {
@@ -214,22 +161,11 @@ export function SystemLogsMonitor({ token }: Props) {
         }
 
         try {
-            const response = await fetch(
-                `${runtimeConfig.apiBaseUrl}/admin/system/logs`,
-                {
-                    method: 'DELETE',
-                    headers: { 'X-Admin-Token': token }
-                }
-            );
-
-            const data = await response.json();
-
-            if (data.success) {
-                alert(`Deleted ${data.deletedCount} log entries`);
-                setPage(1);
-                await fetchLogs();
-                await fetchStats();
-            }
+            const deletedCount = await deleteAllLogs(token);
+            alert(`Deleted ${deletedCount} log entries`);
+            setPage(1);
+            await fetchLogs();
+            await fetchStats();
         } catch (error) {
             console.error('Failed to clear logs:', error);
             alert('Failed to clear logs. Please try again.');

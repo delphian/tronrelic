@@ -13,9 +13,9 @@ export { BlockchainMonitor } from './components/BlockchainMonitor';
 export { ConfigurationPanel } from './components/ConfigurationPanel';
 export { MarketMonitor } from './components/MarketMonitor';
 // SchedulerMonitor moved to modules/scheduler
+// SystemLogsMonitor and LogSettings moved to modules/logs
 export { SystemAuthGate } from './components/SystemNav/SystemAuthGate';
 export { SystemOverview } from './components/SystemOverview';
-export { SystemLogsMonitor } from './components/SystemLogsMonitor/SystemLogsMonitor';
 
 // Contexts
 export { SystemAuthProvider, useSystemAuth } from './contexts/SystemAuthContext';

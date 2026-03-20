@@ -1,6 +1,7 @@
 'use client';
 
-import { SystemLogsMonitor, useSystemAuth } from '../../../../features/system';
+import { useSystemAuth } from '../../../../features/system';
+import { SystemLogsMonitor } from '../../../../modules/logs';
 
 /**
  * System logs monitoring page.
