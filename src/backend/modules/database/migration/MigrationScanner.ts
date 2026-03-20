@@ -151,7 +151,8 @@ export class MigrationScanner {
      * ```
      */
     public validateIdMatchesFilename(filePath: string, migration: IMigration): void {
-        const filename = basename(filePath, '.ts');
+        const ext = filePath.endsWith('.js') ? '.js' : '.ts';
+        const filename = basename(filePath, ext);
         if (migration.id !== filename) {
             throw new Error(
                 `ID mismatch: filename is '${filename}' but migration.id is '${migration.id}'. ` +
