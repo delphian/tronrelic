@@ -32,7 +32,7 @@ interface LogsResponse {
 interface LogStats {
     total: number;
     byLevel: Record<LogLevel, number>;
-    resolved: number;
+    byService: Record<string, number>;
     unresolved: number;
 }
 
@@ -416,11 +416,9 @@ export function SystemLogsMonitor({ token }: Props) {
                     <label className={styles.filter_label} htmlFor="service-filter">
                         Service Filter:
                     </label>
-                    <input
+                    <select
                         id="service-filter"
-                        type="text"
                         className={styles.filter_input}
-                        placeholder="Filter by service/plugin name"
                         value={serviceFilter}
                         onChange={e => {
                             setServiceFilter(e.target.value);
@@ -428,7 +426,14 @@ export function SystemLogsMonitor({ token }: Props) {
                             setInitialLoadState(true); // Treat filter changes as initial load
                             flashedLogsRef.current.clear(); // Clear flash history when filter changes
                         }}
-                    />
+                    >
+                        <option value="">All Services</option>
+                        {stats?.byService && Object.keys(stats.byService).sort().map(service => (
+                            <option key={service} value={service}>
+                                {service} ({stats.byService[service].toLocaleString()})
+                            </option>
+                        ))}
+                    </select>
                 </div>
 
                 <div className={styles.filter_group}>

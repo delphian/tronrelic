@@ -99,7 +99,7 @@ export class SystemLogController {
      */
     public getStats = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
         try {
-            const stats = await this.logService.getStats();
+            const stats = await this.logService.getStatistics();
             res.json({ success: true, stats });
         } catch (error) {
             next(error);
