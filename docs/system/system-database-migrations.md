@@ -1,6 +1,6 @@
 # Database Migration System
 
-This document provides complete technical documentation for TronRelic's database migration system. For practical guidance on writing migrations, see the [Migration Authoring Guide](../../src/backend/src/services/database/migrations/README.md).
+This document provides complete technical documentation for TronRelic's database migration system.
 
 ## Who This Document Is For
 
@@ -55,28 +55,26 @@ Understanding the migration system helps you safely evolve database schemas, tro
 - ✅ **Migration needed**: Production has `transactions` collection. Need to add compound index for performance. Create migration.
 - ❌ **Migration NOT needed**: New plugin with new collection. Schema definitions handle all initial setup.
 
-For complete guidance on writing migrations with code examples, see [Migration Authoring Guide](../../src/backend/src/services/database/migrations/README.md).
-
 ## Core System Components
-
-**For practical guidance on writing migrations (naming conventions, dependencies, best practices, common patterns), see [Migration Authoring Guide](../../src/backend/src/services/database/migrations/README.md).**
 
 ### Migration Discovery and Scanning
 
 The migration system discovers migration files automatically at application startup from three predefined locations:
 
 **Discovery locations:**
-- **System migrations**: `src/backend/src/services/database/migrations/` - Core infrastructure changes
-- **Module migrations**: `src/backend/src/modules/*/migrations/` - Feature-specific changes
+- **System migrations**: `src/backend/services/database/migrations/` - Cross-cutting infrastructure changes (e.g., dropping legacy collections that no longer have an owning module)
+- **Module migrations**: `src/backend/modules/*/migrations/` - Module-specific schema changes (e.g., adding fields to the users collection belongs in `modules/user/migrations/`)
 - **Plugin migrations**: `src/plugins/*/src/backend/migrations/` - Plugin-scoped changes
 
+**Placement rule:** Place migrations in the module or plugin that owns the affected collection. Only use system migrations for cross-cutting concerns where no single module owns the change (e.g., cleaning up collections from removed modules).
+
 **See MigrationScanner implementation:**
-`src/backend/src/services/database/migration/MigrationScanner.ts`
+`src/backend/modules/database/migration/MigrationScanner.ts`
 
 **Scanning workflow:**
 
-1. **Filesystem traversal** - Recursively scans all three locations for `.ts` files
-2. **Filename validation** - Rejects files not matching pattern `/^\d{3}_[a-z0-9_-]+\.ts$/`
+1. **Filesystem traversal** - Scans all three locations for `.ts` and `.js` files (`.js` for production Docker where TypeScript is compiled)
+2. **Filename validation** - Rejects files not matching pattern `/^\d{3}_[a-z0-9_-]+\.(ts|js)$/`
 3. **Dynamic import** - Loads migration modules using `import()`
 4. **Structure validation** - Verifies exported `migration` object implements `IMigration` interface
 5. **Checksum calculation** - Computes SHA-256 hash of file contents for change detection
@@ -88,7 +86,8 @@ The migration system discovers migration files automatically at application star
 
 ```typescript
 // Valid filenames (discovered and loaded)
-001_create_users.ts
+001_create_users.ts            // Development (.ts)
+001_create_users.js            // Production Docker (.js compiled from .ts)
 042_add_menu_indexes.ts
 123_migrate_legacy_format.ts
 
@@ -126,7 +125,7 @@ const discovered = await scanner.scan();
 The executor runs migrations serially with MongoDB transaction wrapping for atomicity and rollback safety.
 
 **See MigrationExecutor implementation:**
-`src/backend/src/services/database/migration/MigrationExecutor.ts`
+`src/backend/modules/database/migration/MigrationExecutor.ts`
 
 **Execution workflow:**
 
@@ -199,7 +198,7 @@ await executor.executeMigrations([migration1, migration2, migration3]);
 The tracker maintains persistent state in MongoDB's `migrations` collection, recording all execution attempts with success/failure status.
 
 **See MigrationTracker implementation:**
-`src/backend/src/services/database/migration/MigrationTracker.ts`
+`src/backend/modules/database/migration/MigrationTracker.ts`
 
 **Collection schema:**
 
@@ -282,7 +281,7 @@ The system provides a web-based admin interface at `/system/database` and REST A
 `src/frontend/app/(core)/system/database/page.tsx`
 
 **REST API controller:**
-`src/backend/src/modules/migrations/migrations.controller.ts`
+`src/backend/modules/database/api/migrations.controller.ts`
 
 **UI features:**
 
@@ -315,7 +314,7 @@ This section walks through the complete lifecycle of a database migration from f
 Developer creates migration file in appropriate location:
 
 ```typescript
-// File: src/backend/src/services/database/migrations/001_create_users.ts
+// File: src/backend/modules/user/migrations/001_create_users.ts
 
 import type { IMigration, IDatabaseService } from '@tronrelic/types';
 
@@ -498,7 +497,7 @@ x-admin-token: your-admin-token-here
             "id": "003_assign_roles",
             "description": "Assign default roles to existing users",
             "source": "system",
-            "filePath": "/src/backend/src/services/database/migrations/003_assign_roles.ts",
+            "filePath": "/src/backend/services/database/migrations/003_assign_roles.ts",
             "timestamp": "2025-10-26T10:00:00.000Z",
             "dependencies": ["001_create_users", "002_create_roles"],
             "checksum": "abc123..."
@@ -700,7 +699,7 @@ x-admin-token: your-admin-token-here
         "id": "003_assign_roles",
         "description": "Assign default roles to existing users",
         "source": "system",
-        "filePath": "/src/backend/src/services/database/migrations/003_assign_roles.ts",
+        "filePath": "/src/backend/services/database/migrations/003_assign_roles.ts",
         "timestamp": "2025-10-26T10:00:00.000Z",
         "dependencies": ["001_create_users", "002_create_roles"],
         "checksum": "abc123..."
@@ -745,7 +744,7 @@ curl -H "x-admin-token: $ADMIN_API_TOKEN" \
   http://localhost:4000/api/admin/migrations/003_assign_roles
 ```
 
-**For practical examples of using the database service API (createIndex, insertOne, updateMany, key-value storage), see [Migration Authoring Guide - Using the Database Service](../../src/backend/src/services/database/migrations/README.md#using-the-database-service).**
+**For the database service API (createIndex, insertOne, updateMany, key-value storage), see [system-database.md](./system-database.md).**
 
 ## Admin UI Guide
 
@@ -840,7 +839,7 @@ openssl rand -hex 32
 
 **Diagnosis:**
 
-- [ ] Check filename matches pattern: `\d{3}_[a-z0-9_-]+\.ts`
+- [ ] Check filename matches pattern: `\d{3}_[a-z0-9_-]+\.(ts|js)`
 - [ ] Verify file is in correct location (system/modules/plugins)
 - [ ] Check file exports `migration` object implementing `IMigration`
 - [ ] Review backend logs for scanner warnings:
@@ -1159,13 +1158,10 @@ process.exit(1)
 
 ## Further Reading
 
-**Migration authoring:**
-- [Migration Authoring Guide](../../src/backend/src/services/database/migrations/README.md) - Complete developer guide for writing migrations (naming conventions, dependencies, idempotency, common patterns, database API usage)
-- [Migration Examples](./migration-examples/) - System, module, and plugin migration examples with detailed comments
-
-**Interface contracts:**
-- [IMigration Interface](../../packages/types/src/database/IMigration.ts) - Migration contract with detailed JSDoc
-- [IDatabaseService Interface](../../packages/types/src/database/IDatabaseService.ts) - Database service API reference
+**Implementation:**
+- [MigrationScanner](../../src/backend/modules/database/migration/MigrationScanner.ts) - Discovery, validation, dependency resolution
+- [MigrationExecutor](../../src/backend/modules/database/migration/MigrationExecutor.ts) - Transaction-wrapped execution
+- [MigrationTracker](../../src/backend/modules/database/migration/MigrationTracker.ts) - State persistence and history
 
 **Related topics:**
 - [system-scheduler-operations.md](./system-scheduler-operations.md) - How scheduler jobs work (similar control patterns)
