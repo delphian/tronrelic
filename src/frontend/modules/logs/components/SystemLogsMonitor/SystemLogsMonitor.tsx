@@ -1,11 +1,15 @@
 'use client';
 
 import React, { useEffect, useState, useRef, useCallback } from 'react';
+import { Trash2, ChevronDown, ChevronUp } from 'lucide-react';
 import type { LogLevel } from '@/types';
 import { Button } from '../../../../components/ui/Button';
+import { useToast } from '../../../../components/ui/ToastProvider';
+import { useModal } from '../../../../components/ui/ModalProvider';
+import { Stack } from '../../../../components/layout';
 import { getSystemLogs, getLogStats, deleteAllLogs } from '../../api';
 import type { SystemLog, LogStats } from '../../types';
-import styles from './SystemLogsMonitor.module.css';
+import styles from './SystemLogsMonitor.module.scss';
 
 interface Props {
     token: string;
@@ -61,9 +65,12 @@ export function SystemLogsMonitor({ token }: Props) {
     const [isInitialLoad, setIsInitialLoad] = useState(true);
     const logsRef = useRef<SystemLog[]>([]);
     const isInitialLoadRef = useRef(true);
-    const flashedLogsRef = useRef<Set<string>>(new Set()); // Track logs that have already been flashed
+    const flashedLogsRef = useRef<Set<string>>(new Set());
     const flashTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-    const pendingFlashIdsRef = useRef<Set<string> | null>(null); // IDs waiting to flash on next render
+    const pendingFlashIdsRef = useRef<Set<string> | null>(null);
+
+    const { push } = useToast();
+    const { open, close } = useModal();
 
     /**
      * Synchronises the initial-load flag between state and ref so polling callbacks
@@ -150,28 +157,58 @@ export function SystemLogsMonitor({ token }: Props) {
     }, [token]);
 
     /**
-     * Clears all logs after user confirmation.
+     * Executes the clear-all-logs API call and refreshes state.
      *
-     * Displays a confirmation dialog and sends DELETE request via API client.
-     * Refreshes logs and stats after successful deletion.
+     * Called after the user confirms deletion via the confirmation modal.
+     * Provides toast feedback on success or failure.
      */
-    const handleClearLogs = async () => {
-        if (!confirm('Are you sure you want to delete all logs? This action cannot be undone.')) {
-            return;
-        }
-
+    const executeClearLogs = useCallback(async () => {
         try {
             const deletedCount = await deleteAllLogs(token);
-            alert(`Deleted ${deletedCount} log entries`);
+            push({ tone: 'success', title: `Deleted ${deletedCount.toLocaleString()} log entries` });
             setPage(1);
             await fetchLogs();
             await fetchStats();
-        } catch (error) {
-            console.error('Failed to clear logs:', error);
-            alert('Failed to clear logs. Please try again.');
+        } catch {
+            push({ tone: 'danger', title: 'Failed to clear logs', description: 'Please try again.' });
         }
-    };
+    }, [token, push, fetchLogs, fetchStats]);
 
+    /**
+     * Opens a confirmation modal before clearing all logs.
+     *
+     * Uses the ModalProvider system instead of browser-native confirm() for
+     * consistent UI and accessibility.
+     */
+    const handleClearLogs = useCallback(() => {
+        const modalId = 'confirm-clear-logs';
+        open({
+            id: modalId,
+            title: 'Clear All Logs',
+            content: (
+                <Stack gap="md">
+                    <p>Are you sure you want to delete all logs? This action cannot be undone.</p>
+                    <Stack direction="horizontal" gap="sm">
+                        <Button
+                            variant="danger"
+                            size="sm"
+                            icon={<Trash2 size={14} />}
+                            onClick={() => {
+                                close(modalId);
+                                void executeClearLogs();
+                            }}
+                        >
+                            Delete All
+                        </Button>
+                        <Button variant="secondary" size="sm" onClick={() => close(modalId)}>
+                            Cancel
+                        </Button>
+                    </Stack>
+                </Stack>
+            ),
+            size: 'sm'
+        });
+    }, [open, close, executeClearLogs]);
 
     /**
      * Toggles a severity level in the filter.
@@ -190,8 +227,8 @@ export function SystemLogsMonitor({ token }: Props) {
             }
         });
         setPage(1);
-        setInitialLoadState(true); // Treat filter changes as initial load to prevent flash
-        flashedLogsRef.current.clear(); // Clear flash history when filters change
+        setInitialLoadState(true);
+        flashedLogsRef.current.clear();
     };
 
     useEffect(() => {
@@ -243,7 +280,7 @@ export function SystemLogsMonitor({ token }: Props) {
                 }
             });
         }
-    }, [logs]); // Run whenever logs change
+    }, [logs]);
 
     // Cleanup flash timeout on unmount
     useEffect(() => {
@@ -256,6 +293,11 @@ export function SystemLogsMonitor({ token }: Props) {
 
     /**
      * Formats timestamp to compact military time format.
+     *
+     * Uses manual formatting rather than ClientTime because this is a client-only
+     * component (data fetched after mount, no SSR hydration risk) and the compact
+     * "MM/DD/YY HH:mm:ss" format with seconds precision is essential for log analysis.
+     * ClientTime does not offer a format with seconds.
      *
      * @param timestamp - ISO 8601 timestamp string
      * @returns Formatted date/time string (MM/DD/YY HH:mm:ss)
@@ -332,9 +374,9 @@ export function SystemLogsMonitor({ token }: Props) {
 
             {/* Filters */}
             <div className={styles.filters}>
-                <div className={styles.filter_group}>
-                    <label className={styles.filter_label}>Severity Levels:</label>
-                    <div className={styles.checkbox_group}>
+                <fieldset className={styles.filter_group}>
+                    <legend className={styles.filter_label}>Severity Levels:</legend>
+                    <div className={styles.checkbox_group} role="group" aria-label="Filter by severity level">
                         {(['error', 'warn', 'info', 'debug', 'trace'] as LogLevel[]).map(level => (
                             <label key={level} className={styles.checkbox_label}>
                                 <input
@@ -346,7 +388,7 @@ export function SystemLogsMonitor({ token }: Props) {
                             </label>
                         ))}
                     </div>
-                </div>
+                </fieldset>
 
                 <div className={styles.filter_group}>
                     <label className={styles.filter_label} htmlFor="service-filter">
@@ -359,8 +401,8 @@ export function SystemLogsMonitor({ token }: Props) {
                         onChange={e => {
                             setServiceFilter(e.target.value);
                             setPage(1);
-                            setInitialLoadState(true); // Treat filter changes as initial load
-                            flashedLogsRef.current.clear(); // Clear flash history when filter changes
+                            setInitialLoadState(true);
+                            flashedLogsRef.current.clear();
                         }}
                     >
                         <option value="">All Services</option>
@@ -383,8 +425,8 @@ export function SystemLogsMonitor({ token }: Props) {
                         onChange={e => {
                             setLimit(Number(e.target.value));
                             setPage(1);
-                            setInitialLoadState(true); // Treat limit changes as initial load
-                            flashedLogsRef.current.clear(); // Clear flash history when page size changes
+                            setInitialLoadState(true);
+                            flashedLogsRef.current.clear();
                         }}
                     >
                         <option value="10">10</option>
@@ -413,7 +455,12 @@ export function SystemLogsMonitor({ token }: Props) {
                 </div>
 
                 <div className={styles.filter_group_right}>
-                    <Button variant="secondary" size="sm" onClick={handleClearLogs}>
+                    <Button
+                        variant="secondary"
+                        size="sm"
+                        icon={<Trash2 size={14} />}
+                        onClick={handleClearLogs}
+                    >
                         Clear All Logs
                     </Button>
                 </div>
@@ -454,6 +501,10 @@ export function SystemLogsMonitor({ token }: Props) {
                                             <Button
                                                 variant="ghost"
                                                 size="sm"
+                                                icon={expandedLogId === log._id
+                                                    ? <ChevronUp size={14} />
+                                                    : <ChevronDown size={14} />}
+                                                aria-label={expandedLogId === log._id ? 'Hide log details' : 'Show log details'}
                                                 onClick={() => setExpandedLogId(expandedLogId === log._id ? null : log._id)}
                                             >
                                                 {expandedLogId === log._id ? 'Hide' : 'Details'}
@@ -489,15 +540,15 @@ export function SystemLogsMonitor({ token }: Props) {
 
             {/* Pagination */}
             {totalPages > 1 && (
-                <div className={styles.pagination}>
+                <nav className={styles.pagination} aria-label="Log pagination">
                     <div className={styles.pagination_controls}>
                         <Button
                             variant="secondary"
                             size="sm"
                             onClick={() => {
                                 setPage(1);
-                                setInitialLoadState(true); // Treat page changes as initial load
-                                flashedLogsRef.current.clear(); // Clear flash history when changing pages
+                                setInitialLoadState(true);
+                                flashedLogsRef.current.clear();
                             }}
                             disabled={!hasPrevPage}
                         >
@@ -508,8 +559,8 @@ export function SystemLogsMonitor({ token }: Props) {
                             size="sm"
                             onClick={() => {
                                 setPage(p => p - 1);
-                                setInitialLoadState(true); // Treat page changes as initial load
-                                flashedLogsRef.current.clear(); // Clear flash history when changing pages
+                                setInitialLoadState(true);
+                                flashedLogsRef.current.clear();
                             }}
                             disabled={!hasPrevPage}
                         >
@@ -523,8 +574,8 @@ export function SystemLogsMonitor({ token }: Props) {
                             size="sm"
                             onClick={() => {
                                 setPage(p => p + 1);
-                                setInitialLoadState(true); // Treat page changes as initial load
-                                flashedLogsRef.current.clear(); // Clear flash history when changing pages
+                                setInitialLoadState(true);
+                                flashedLogsRef.current.clear();
                             }}
                             disabled={!hasNextPage}
                         >
@@ -535,15 +586,15 @@ export function SystemLogsMonitor({ token }: Props) {
                             size="sm"
                             onClick={() => {
                                 setPage(totalPages);
-                                setInitialLoadState(true); // Treat page changes as initial load
-                                flashedLogsRef.current.clear(); // Clear flash history when changing pages
+                                setInitialLoadState(true);
+                                flashedLogsRef.current.clear();
                             }}
                             disabled={!hasNextPage}
                         >
                             Last
                         </Button>
                     </div>
-                </div>
+                </nav>
             )}
         </div>
     );

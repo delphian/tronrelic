@@ -4,6 +4,7 @@
  * Provides scoped styling for the system logs monitoring table with filtering,
  * pagination, and real-time updates. Uses design tokens exclusively.
  */
+@use '../../../../app/breakpoints' as *;
 
 .container {
     display: flex;
@@ -55,18 +56,24 @@
     border-radius: var(--radius-md);
 }
 
-/* Apply equal spacing on wide screens when filters fit on one line */
-@media (min-width: 1400px) {
+/* Apply equal spacing on wide containers when filters fit on one line */
+@container system-logs-monitor (min-width: #{$breakpoint-desktop}) {
     .filters {
         justify-content: space-between;
         gap: var(--spacing-4);
     }
 }
 
-.filter_group {
+/* Reset fieldset browser defaults when used as a filter group */
+.filter_group,
+fieldset.filter_group {
     display: flex;
     flex-direction: column;
     gap: var(--spacing-4);
+    border: none;
+    margin: 0;
+    padding: 0;
+    min-inline-size: 0;
 }
 
 .filter_group_right {
@@ -86,7 +93,7 @@
     display: flex;
     align-items: center;
     gap: var(--spacing-7);
-    min-height: 2.5rem;
+    min-height: var(--button-height-md);
 }
 
 .checkbox_label {
@@ -109,7 +116,7 @@
     background: var(--color-background);
     color: var(--color-text);
     font-size: var(--font-size-sm);
-    min-height: 2.5rem;
+    min-height: var(--button-height-md);
     box-sizing: border-box;
 }
 
@@ -224,7 +231,7 @@
 .timestamp {
     white-space: nowrap;
     color: var(--color-text-muted);
-    font-family: 'Courier New', Courier, monospace;
+    font-family: var(--font-mono);
     font-size: var(--font-size-xs);
 }
 
@@ -313,7 +320,7 @@
     border-radius: var(--radius-sm);
     padding: var(--spacing-5);
     overflow-x: auto;
-    font-family: 'Courier New', Courier, monospace;
+    font-family: var(--font-mono);
     font-size: var(--font-size-xs);
     color: var(--color-text-muted);
     max-height: 300px;
@@ -344,14 +351,14 @@
 
 /* Empty State */
 .empty_state {
-    padding: 2.5rem;
+    padding: var(--spacing-14);
     text-align: center;
     color: var(--color-text-muted);
     font-size: var(--font-size-md);
 }
 
 /* Responsive */
-@container system-logs-monitor (max-width: 768px) {
+@container system-logs-monitor (max-width: #{$breakpoint-mobile-lg}) {
     .stats {
         grid-template-columns: repeat(2, 1fr);
     }
