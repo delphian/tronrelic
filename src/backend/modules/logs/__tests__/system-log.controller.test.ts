@@ -13,7 +13,7 @@ import type { Request, Response, NextFunction } from 'express';
  */
 class MockSystemLogService implements Partial<ISystemLogService> {
     getLogs = vi.fn();
-    getStats = vi.fn();
+    getStatistics = vi.fn();
     getLogById = vi.fn();
     markAsResolved = vi.fn();
     markAsUnresolved = vi.fn();
@@ -244,7 +244,7 @@ describe('SystemLogController', () => {
                 unresolved: 25
             };
 
-            mockService.getStats.mockResolvedValue(mockStats);
+            mockService.getStatistics.mockResolvedValue(mockStats);
 
             const req = createMockRequest();
             const res = createMockResponse();
@@ -252,7 +252,7 @@ describe('SystemLogController', () => {
 
             await controller.getStats(req as Request, res as Response, next);
 
-            expect(mockService.getStats).toHaveBeenCalled();
+            expect(mockService.getStatistics).toHaveBeenCalled();
             expect(res.json).toHaveBeenCalledWith({
                 success: true,
                 stats: mockStats
@@ -264,7 +264,7 @@ describe('SystemLogController', () => {
          */
         it('should call next on error', async () => {
             const error = new Error('Stats error');
-            mockService.getStats.mockRejectedValue(error);
+            mockService.getStatistics.mockRejectedValue(error);
 
             const req = createMockRequest();
             const res = createMockResponse();

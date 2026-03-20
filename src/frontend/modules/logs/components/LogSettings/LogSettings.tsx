@@ -4,7 +4,7 @@ import React, { useEffect, useState } from 'react';
 import type { LogLevelName } from '@/types';
 import { getRuntimeConfig } from '../../../../lib/runtimeConfig';
 import { Button } from '../../../../components/ui/Button';
-import styles from './LogSettings.module.css';
+import styles from './LogSettings.module.scss';
 
 /**
  * System configuration interface matching backend ISystemConfig.
