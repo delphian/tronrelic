@@ -26,6 +26,19 @@ import {
 import type { IDailyVisitorData, IVisitorOrigin, VisitorPeriod } from '../../../api';
 import styles from './VisitorAnalytics.module.scss';
 
+/**
+ * Resolve a CSS variable to its computed hex value.
+ *
+ * @param varName - CSS variable name
+ * @param fallback - Hex fallback for SSR
+ * @returns Resolved hex color string
+ */
+function resolveCSSColor(varName: string, fallback: string): string {
+    if (typeof document === 'undefined') return fallback;
+    const value = getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
+    return value || fallback;
+}
+
 /** Device icon size for inline table display. */
 const DEVICE_ICON_SIZE = 14;
 
@@ -180,7 +193,7 @@ export function VisitorAnalytics({ token }: Props) {
                 date: d.date,
                 value: d.count
             })),
-            color: '#7C9BFF',
+            color: resolveCSSColor('--color-primary', '#4b8cff'),
             fill: true
         }]
         : [];

@@ -33,6 +33,17 @@
     margin: 0 0 var(--spacing-5) 0;
 }
 
+.section_title__icon {
+    margin-right: var(--spacing-4);
+    vertical-align: middle;
+}
+
+.section_title__subtitle {
+    font-weight: var(--font-weight-normal);
+    font-size: var(--font-size-sm);
+    margin-left: var(--spacing-4);
+}
+
 /* Engagement summary cards */
 .metrics_grid {
     display: grid;
@@ -89,7 +100,7 @@
     background: var(--color-primary);
     border-radius: var(--radius-sm);
     transition: width 0.6s ease;
-    min-width: 2px;
+    min-width: var(--spacing-1);
     opacity: 0.85;
 }
 
@@ -97,14 +108,14 @@
     font-size: var(--font-size-sm);
     color: var(--color-text);
     white-space: nowrap;
-    min-width: 140px;
+    min-width: var(--spacing-20);
 }
 
 .funnel_stage__stats {
     font-size: var(--font-size-xs);
     color: var(--color-text-muted);
     white-space: nowrap;
-    min-width: 120px;
+    min-width: var(--spacing-18);
     text-align: right;
 }
 
@@ -147,42 +158,42 @@
 }
 
 .table__bar_cell {
-    width: 120px;
+    width: var(--spacing-18);
 }
 
 .table__bar {
-    height: 6px;
+    height: var(--spacing-3);
     background: var(--color-primary);
     border-radius: var(--radius-full);
     opacity: 0.7;
 }
 
-/* Category badges */
+/* Category badges — use semantic color tokens with opacity via color-mix */
 .category_badge {
     display: inline-block;
     font-size: var(--font-size-xs);
-    padding: 1px var(--spacing-4);
+    padding: var(--spacing-1) var(--spacing-4);
     border-radius: var(--radius-full);
     font-weight: var(--font-weight-medium);
 }
 
 .category_badge--direct {
-    background: rgba(120, 130, 153, 0.2);
+    background: color-mix(in srgb, var(--color-text-muted) 20%, transparent);
     color: var(--color-text-muted);
 }
 
 .category_badge--organic {
-    background: rgba(87, 212, 140, 0.15);
+    background: color-mix(in srgb, var(--color-success) 15%, transparent);
     color: var(--color-success);
 }
 
 .category_badge--social {
-    background: rgba(75, 140, 255, 0.15);
+    background: color-mix(in srgb, var(--color-primary) 15%, transparent);
     color: var(--color-primary);
 }
 
 .category_badge--referral {
-    background: rgba(255, 170, 51, 0.15);
+    background: color-mix(in srgb, var(--color-warning) 15%, transparent);
     color: var(--color-warning);
 }
 

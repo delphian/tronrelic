@@ -41,7 +41,7 @@
     padding: var(--spacing-4) var(--spacing-7);
     background: none;
     border: none;
-    border-bottom: 2px solid transparent;
+    border-bottom: var(--border-width-medium) solid transparent;
     cursor: pointer;
     font-size: var(--font-size-md);
     font-weight: var(--font-weight-medium);

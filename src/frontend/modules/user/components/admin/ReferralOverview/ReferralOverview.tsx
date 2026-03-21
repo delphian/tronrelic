@@ -77,8 +77,8 @@ export function ReferralOverview({ token }: Props) {
     return (
         <div className={styles.container}>
             {/* Period selector */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--spacing-5)', flexWrap: 'wrap' }}>
-                <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-muted)' }}>Period:</span>
+            <div className={styles.controls}>
+                <span className={styles.controls__label}>Period:</span>
                 {PERIOD_OPTIONS.map(opt => (
                     <Button
                         key={opt.value}

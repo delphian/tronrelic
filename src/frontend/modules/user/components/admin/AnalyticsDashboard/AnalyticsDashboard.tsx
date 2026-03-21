@@ -49,6 +49,22 @@ import type {
 } from '../../../api';
 import styles from './AnalyticsDashboard.module.scss';
 
+/**
+ * Resolve a CSS variable to its computed hex value.
+ *
+ * Falls back to the provided default if the variable can't be resolved
+ * (e.g., during SSR when document is unavailable).
+ *
+ * @param varName - CSS variable name (e.g., '--color-primary')
+ * @param fallback - Hex fallback value
+ * @returns Resolved hex color string
+ */
+function resolveCSSColor(varName: string, fallback: string): string {
+    if (typeof document === 'undefined') return fallback;
+    const value = getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
+    return value || fallback;
+}
+
 /** Period option labels for display. */
 const PERIOD_OPTIONS: { value: AnalyticsPeriod; label: string }[] = [
     { value: '7d', label: '7 Days' },
@@ -169,13 +185,13 @@ export function AnalyticsDashboard({ token }: Props) {
             id: 'new',
             label: 'New Visitors',
             data: retention.map(r => ({ date: r.date, value: r.newVisitors })),
-            color: '#4b8cff'
+            color: resolveCSSColor('--color-primary', '#4b8cff')
         },
         {
             id: 'returning',
             label: 'Returning Visitors',
             data: retention.map(r => ({ date: r.date, value: r.returningVisitors })),
-            color: '#57d48c'
+            color: resolveCSSColor('--color-success', '#57d48c')
         }
     ];
 
@@ -219,7 +235,7 @@ export function AnalyticsDashboard({ token }: Props) {
                     {engagement && (
                         <section>
                             <h3 className={styles.section_title}>
-                                <TrendingUp size={16} style={{ marginRight: 'var(--spacing-4)', verticalAlign: 'middle' }} />
+                                <TrendingUp size={16} className={styles.section_title__icon} />
                                 Engagement Overview
                             </h3>
                             <div className={styles.metrics_grid}>
@@ -255,7 +271,7 @@ export function AnalyticsDashboard({ token }: Props) {
                     {funnel.length > 0 && (
                         <section>
                             <h3 className={styles.section_title}>
-                                <Target size={16} style={{ marginRight: 'var(--spacing-4)', verticalAlign: 'middle' }} />
+                                <Target size={16} className={styles.section_title__icon} />
                                 Conversion Funnel
                             </h3>
                             <div className="surface surface--padding-md">
@@ -284,10 +300,10 @@ export function AnalyticsDashboard({ token }: Props) {
                         {/* Traffic Sources */}
                         <section>
                             <h3 className={styles.section_title}>
-                                <Globe size={16} style={{ marginRight: 'var(--spacing-4)', verticalAlign: 'middle' }} />
+                                <Globe size={16} className={styles.section_title__icon} />
                                 Traffic Sources
                                 {trafficTotal > 0 && (
-                                    <span className="text-muted" style={{ fontWeight: 'var(--font-weight-normal)', fontSize: 'var(--font-size-sm)', marginLeft: 'var(--spacing-4)' }}>
+                                    <span className={`text-muted ${styles.section_title__subtitle}`}>
                                         ({trafficTotal.toLocaleString()} visitors)
                                     </span>
                                 )}
@@ -336,7 +352,7 @@ export function AnalyticsDashboard({ token }: Props) {
                         {/* Top Landing Pages */}
                         <section>
                             <h3 className={styles.section_title}>
-                                <MousePointerClick size={16} style={{ marginRight: 'var(--spacing-4)', verticalAlign: 'middle' }} />
+                                <MousePointerClick size={16} className={styles.section_title__icon} />
                                 Top Landing Pages
                             </h3>
                             <div className="surface surface--padding-sm">
@@ -382,7 +398,7 @@ export function AnalyticsDashboard({ token }: Props) {
                         {/* Geographic Distribution */}
                         <section>
                             <h3 className={styles.section_title}>
-                                <Globe size={16} style={{ marginRight: 'var(--spacing-4)', verticalAlign: 'middle' }} />
+                                <Globe size={16} className={styles.section_title__icon} />
                                 Geographic Distribution
                             </h3>
                             <div className="surface surface--padding-sm">
@@ -423,7 +439,7 @@ export function AnalyticsDashboard({ token }: Props) {
                         {/* Device Breakdown */}
                         <section>
                             <h3 className={styles.section_title}>
-                                <Smartphone size={16} style={{ marginRight: 'var(--spacing-4)', verticalAlign: 'middle' }} />
+                                <Smartphone size={16} className={styles.section_title__icon} />
                                 Device Breakdown
                             </h3>
                             <div className="surface surface--padding-md">
@@ -455,7 +471,7 @@ export function AnalyticsDashboard({ token }: Props) {
                     {campaigns.length > 0 && (
                         <section>
                             <h3 className={styles.section_title}>
-                                <BarChart3 size={16} style={{ marginRight: 'var(--spacing-4)', verticalAlign: 'middle' }} />
+                                <BarChart3 size={16} className={styles.section_title__icon} />
                                 Campaign Performance (UTM)
                             </h3>
                             <div className="surface surface--padding-sm">
@@ -495,7 +511,7 @@ export function AnalyticsDashboard({ token }: Props) {
                     {retention.length > 0 && (
                         <section>
                             <h3 className={styles.section_title}>
-                                <Users size={16} style={{ marginRight: 'var(--spacing-4)', verticalAlign: 'middle' }} />
+                                <Users size={16} className={styles.section_title__icon} />
                                 New vs Returning Visitors
                             </h3>
                             <div className="surface surface--padding-md">

@@ -13,6 +13,19 @@
     gap: var(--spacing-10);
 }
 
+.controls {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-5);
+    flex-wrap: wrap;
+}
+
+.controls__label {
+    font-size: var(--font-size-sm);
+    color: var(--color-text-muted);
+    font-weight: var(--font-weight-medium);
+}
+
 .metrics_grid {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
