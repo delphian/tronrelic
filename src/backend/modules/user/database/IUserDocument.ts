@@ -234,8 +234,8 @@ export interface IUserDocument {
  * via a referral link (utm_source=referral, utm_content=CODE).
  */
 export interface IReferral {
-    /** Short unique referral code for sharing (e.g., 'a1b2c3d4'). Generated on first wallet verify. */
-    code: string;
+    /** Short unique referral code for sharing (e.g., 'a1b2c3d4'). Null until first wallet verify. */
+    code: string | null;
     /** Referral code of the user who referred this visitor (null if organic). Set once, never overwritten. */
     referredBy: string | null;
     /** Timestamp when referral attribution was recorded (null if not referred). */

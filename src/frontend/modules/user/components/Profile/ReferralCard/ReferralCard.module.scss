@@ -96,3 +96,20 @@
     color: var(--color-text-muted);
     font-size: var(--font-size-sm);
 }
+
+/* Section title with inline icon */
+.card_title {
+    margin: 0;
+    font-size: var(--font-size-lg);
+    font-weight: var(--font-weight-semibold);
+}
+
+.title_icon {
+    margin-right: var(--spacing-4);
+    vertical-align: middle;
+}
+
+.stat_icon {
+    margin-right: 4px;
+    vertical-align: middle;
+}

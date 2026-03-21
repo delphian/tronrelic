@@ -396,23 +396,22 @@ export interface IReferralStats {
  * Get referral code and stats for the authenticated user.
  *
  * Returns null if the user has no referral code yet (no verified wallet).
+ * Throws on auth errors or server failures so the UI can show an
+ * appropriate error state instead of the misleading "verify wallet" message.
  *
  * @param userId - User UUID
- * @returns Referral stats or null
+ * @returns Referral stats or null (no code yet)
+ * @throws Error on auth/network/server failures
  */
 export async function fetchReferralStats(userId: string): Promise<IReferralStats | null> {
-    try {
-        const response = await apiClient.get(`/user/${userId}/referral`, {
-            withCredentials: true
-        });
-        const data = response.data as IReferralStats | { referral: null };
-        if ('referral' in data && data.referral === null) {
-            return null;
-        }
-        return data as IReferralStats;
-    } catch {
+    const response = await apiClient.get(`/user/${userId}/referral`, {
+        withCredentials: true
+    });
+    const data = response.data as IReferralStats | { referral: null };
+    if ('referral' in data && data.referral === null) {
         return null;
     }
+    return data as IReferralStats;
 }
 
 // ============================================================================

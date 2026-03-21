@@ -53,6 +53,7 @@ function buildReferralUrl(siteUrl: string, code: string): string {
 export function ReferralCard({ userId, siteUrl }: ReferralCardProps) {
     const [stats, setStats] = useState<IReferralStats | null>(null);
     const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(false);
     const [copied, setCopied] = useState(false);
     const copyTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -63,8 +64,9 @@ export function ReferralCard({ userId, siteUrl }: ReferralCardProps) {
         try {
             const result = await fetchReferralStats(userId);
             setStats(result);
-        } catch (error) {
-            console.error('Failed to fetch referral stats:', error);
+            setError(false);
+        } catch {
+            setError(true);
         } finally {
             setLoading(false);
         }
@@ -86,24 +88,28 @@ export function ReferralCard({ userId, siteUrl }: ReferralCardProps) {
         if (!stats) return;
         const url = buildReferralUrl(siteUrl, stats.code);
 
+        // Clear any existing timeout before setting a new one
+        if (copyTimeoutRef.current) {
+            clearTimeout(copyTimeoutRef.current);
+        }
+
         try {
             await navigator.clipboard.writeText(url);
-            setCopied(true);
-            if (copyTimeoutRef.current) {
-                clearTimeout(copyTimeoutRef.current);
-            }
-            copyTimeoutRef.current = setTimeout(() => setCopied(false), 2000);
         } catch {
-            // Fallback for older browsers
+            // Fallback for older browsers — position off-screen to avoid layout shift
             const input = document.createElement('input');
+            input.style.position = 'fixed';
+            input.style.top = '-9999px';
+            input.style.left = '-9999px';
             input.value = url;
             document.body.appendChild(input);
             input.select();
             document.execCommand('copy');
             document.body.removeChild(input);
-            setCopied(true);
-            copyTimeoutRef.current = setTimeout(() => setCopied(false), 2000);
         }
+
+        setCopied(true);
+        copyTimeoutRef.current = setTimeout(() => setCopied(false), 2000);
     }, [stats, siteUrl]);
 
     /**
@@ -142,6 +148,16 @@ export function ReferralCard({ userId, siteUrl }: ReferralCardProps) {
         );
     }
 
+    if (error) {
+        return (
+            <div className={`surface surface--padding-md ${styles.card}`}>
+                <div className={styles.empty_state}>
+                    Unable to load referral data. Please try refreshing the page.
+                </div>
+            </div>
+        );
+    }
+
     if (!stats) {
         return (
             <div className={`surface surface--padding-md ${styles.card}`}>
@@ -157,8 +173,8 @@ export function ReferralCard({ userId, siteUrl }: ReferralCardProps) {
     return (
         <div className={`surface surface--padding-md ${styles.card}`}>
             <Stack gap="md">
-                <h3 style={{ margin: 0, fontSize: 'var(--font-size-lg)', fontWeight: 'var(--font-weight-semibold)' }}>
-                    <Share2 size={16} style={{ marginRight: 'var(--spacing-4)', verticalAlign: 'middle' }} />
+                <h3 className={styles.card_title}>
+                    <Share2 size={16} className={styles.title_icon} />
                     Referral Program
                 </h3>
 
@@ -167,14 +183,14 @@ export function ReferralCard({ userId, siteUrl }: ReferralCardProps) {
                     <div className={styles.stat}>
                         <div className={styles.stat__value}>{stats.referredCount}</div>
                         <div className={styles.stat__label}>
-                            <Users size={12} style={{ marginRight: '4px', verticalAlign: 'middle' }} />
+                            <Users size={12} className={styles.stat_icon} />
                             Visitors Referred
                         </div>
                     </div>
                     <div className={styles.stat}>
                         <div className={styles.stat__value}>{stats.convertedCount}</div>
                         <div className={styles.stat__label}>
-                            <UserCheck size={12} style={{ marginRight: '4px', verticalAlign: 'middle' }} />
+                            <UserCheck size={12} className={styles.stat_icon} />
                             Wallets Verified
                         </div>
                     </div>

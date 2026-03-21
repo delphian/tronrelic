@@ -993,16 +993,27 @@ export class UserService {
                 updatedAt: now
             };
             if (!doc.referral?.referredBy && newSession.utm?.source === 'referral' && newSession.utm?.content) {
-                const referralCode = newSession.utm.content;
-                // Verify the referral code belongs to a real user
-                const referrer = await this.collection.findOne({ 'referral.code': referralCode });
-                if (referrer && referrer.id !== userId) {
-                    sessionUpdateFields['referral.referredBy'] = referralCode;
-                    sessionUpdateFields['referral.referredAt'] = now;
-                    this.logger.info(
-                        { userId, referralCode, referrerId: referrer.id },
-                        'Referral attribution recorded'
-                    );
+                const rawCode = typeof newSession.utm.content === 'string' ? newSession.utm.content : '';
+                const referralCode = rawCode.trim().toLowerCase();
+
+                // Validate referral code format: exactly 8 hexadecimal characters
+                if (/^[0-9a-f]{8}$/.test(referralCode)) {
+                    // Verify the referral code belongs to a real user
+                    const referrer = await this.collection.findOne({ 'referral.code': referralCode });
+                    if (referrer && referrer.id !== userId) {
+                        // Set entire referral object to avoid MongoDB $set-on-null error
+                        // when doc.referral is null (default for new users)
+                        const existingReferral = doc.referral ?? { code: null, referredBy: null, referredAt: null };
+                        sessionUpdateFields.referral = {
+                            code: existingReferral.code ?? null,
+                            referredBy: referralCode,
+                            referredAt: now
+                        };
+                        this.logger.info(
+                            { userId, referralCode, referrerId: referrer.id },
+                            'Referral attribution recorded'
+                        );
+                    }
                 }
             }
 
@@ -2589,7 +2600,7 @@ export class UserService {
         await this.collection.createIndex({ 'activity.firstSeen': 1 });
         await this.collection.createIndex({ 'activity.sessions.endedAt': 1 });
         await this.collection.createIndex({ 'activity.sessions.startedAt': 1 });
-        await this.collection.createIndex({ 'referral.code': 1 }, { sparse: true });
+        await this.collection.createIndex({ 'referral.code': 1 }, { unique: true, sparse: true });
 
         this.logger.info('User indexes created');
     }

@@ -12,7 +12,7 @@ import type { IMigration, IMigrationContext } from '@/types';
  *
  * **Changes being made:**
  * 1. Finds all users with at least one verified wallet AND no referral code
- * 2. Generates a unique 8-character hex code for each
+ * 2. Generates a unique 8-character hex code for each (relies on unique DB index)
  * 3. Sets `referral.code` while preserving any existing referredBy/referredAt
  *
  * **Impact:**
@@ -44,51 +44,44 @@ export const migration: IMigration = {
             ]
         });
 
-        // Collect all existing codes to prevent collisions
-        const existingCodes = new Set<string>();
-        const existingCodesCursor = usersCollection.find(
-            { 'referral.code': { $exists: true, $ne: null } },
-            { projection: { 'referral.code': 1 } }
-        );
-        for await (const doc of existingCodesCursor) {
-            const code = (doc as Record<string, any>).referral?.code;
-            if (code) {
-                existingCodes.add(code);
-            }
-        }
-
         let updatedCount = 0;
 
         for await (const user of cursor) {
-            // Generate a unique code
-            let code: string;
+            const existingReferral = user.referral;
             let attempts = 0;
-            do {
-                code = randomBytes(4).toString('hex');
+
+            // Rely on the unique sparse index on referral.code to guarantee uniqueness.
+            // Retry on duplicate key errors instead of preloading all codes into memory.
+            while (true) {
+                const code = randomBytes(4).toString('hex');
                 attempts++;
                 if (attempts > 10) {
-                    throw new Error(`Failed to generate unique referral code after 10 attempts for user ${user.id}`);
+                    throw new Error(`Failed to generate unique referral code after 10 attempts for user ${user._id}`);
                 }
-            } while (existingCodes.has(code));
 
-            existingCodes.add(code);
-
-            // Preserve any existing referredBy/referredAt data
-            const existingReferral = (user as Record<string, any>).referral;
-            await usersCollection.updateOne(
-                { _id: user._id },
-                {
-                    $set: {
-                        referral: {
-                            code,
-                            referredBy: existingReferral?.referredBy ?? null,
-                            referredAt: existingReferral?.referredAt ?? null
+                try {
+                    await usersCollection.updateOne(
+                        { _id: user._id },
+                        {
+                            $set: {
+                                referral: {
+                                    code,
+                                    referredBy: existingReferral?.referredBy ?? null,
+                                    referredAt: existingReferral?.referredAt ?? null
+                                }
+                            }
                         }
+                    );
+                    updatedCount++;
+                    break;
+                } catch (err: unknown) {
+                    // Retry on duplicate key errors (code 11000); rethrow anything else
+                    if (err && typeof err === 'object' && 'code' in err && (err as { code: number }).code === 11000) {
+                        continue;
                     }
+                    throw err;
                 }
-            );
-
-            updatedCount++;
+            }
         }
 
         console.log(`[Migration 005] Backfilled referral codes for ${updatedCount} existing verified users`);
