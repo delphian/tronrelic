@@ -93,6 +93,70 @@ export function buildMetadata(options: BuildMetadataOptions): Metadata {
   };
 }
 
+interface BuildArticleStructuredDataOptions {
+  /** Public site URL from runtime config */
+  siteUrl: string;
+  /** Article title */
+  title: string;
+  /** Article description */
+  description?: string;
+  /** URL path to the article */
+  path: string;
+  /** ISO date string when article was first published */
+  datePublished: string;
+  /** ISO date string when article was last modified */
+  dateModified: string;
+  /** Open Graph image URL */
+  image?: string;
+  /** Keywords/tags for the article */
+  keywords?: string[];
+}
+
+/**
+ * Builds Schema.org Article structured data for a single CMS page.
+ *
+ * Improves search engine understanding of article content, enabling rich
+ * results (article cards, knowledge panels) in search listings. Uses
+ * the organization defined in the site-wide structured data as publisher.
+ *
+ * @param options - Article metadata for structured data generation
+ * @returns JSON-LD object for injection into page head
+ */
+export function buildArticleStructuredData(options: BuildArticleStructuredDataOptions) {
+  const {
+    siteUrl,
+    title,
+    description,
+    path,
+    datePublished,
+    dateModified,
+    image,
+    keywords
+  } = options;
+
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'Article',
+    'headline': title,
+    ...(description ? { description } : {}),
+    'url': absoluteUrl(siteUrl, path),
+    'datePublished': datePublished,
+    'dateModified': dateModified,
+    ...(image ? { image: absoluteUrl(siteUrl, image) } : {}),
+    ...(keywords?.length ? { keywords: keywords.join(', ') } : {}),
+    'publisher': {
+      '@type': 'Organization',
+      '@id': `${siteUrl}/#organization`,
+      'name': 'TronRelic',
+      'url': siteUrl
+    },
+    'mainEntityOfPage': {
+      '@type': 'WebPage',
+      '@id': absoluteUrl(siteUrl, path)
+    }
+  };
+}
+
 export interface ArticleSummary {
   title: string;
   href: string;
