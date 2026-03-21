@@ -2476,7 +2476,11 @@ export class UserService {
     }> {
         const since = new Date();
         since.setTime(since.getTime() - (periodHours * 60 * 60 * 1000));
-        since.setHours(0, 0, 0, 0);
+        // Only floor to midnight for multi-day periods where daily bucketing makes sense.
+        // For short periods (< 48h), use exact hour math so "24 Hours" means exactly that.
+        if (periodHours >= 48) {
+            since.setHours(0, 0, 0, 0);
+        }
 
         const results = await this.collection.aggregate<{
             _id: { date: string; isNew: boolean };
