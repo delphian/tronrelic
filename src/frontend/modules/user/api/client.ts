@@ -777,6 +777,54 @@ export async function adminGetRetention(
     return response.data as { data: IRetentionEntry[] };
 }
 
+// ============================================================================
+// Referral Analytics Types and Functions
+// ============================================================================
+
+/** Top referrer entry in admin referral overview. */
+export interface ITopReferrer {
+    userId: string;
+    code: string;
+    referredCount: number;
+    convertedCount: number;
+}
+
+/** Recent referral entry in admin referral overview. */
+export interface IRecentReferral {
+    userId: string;
+    referredBy: string;
+    referredAt: string;
+    hasVerifiedWallet: boolean;
+}
+
+/** Aggregate referral program overview. */
+export interface IReferralOverview {
+    totalReferrals: number;
+    totalConverted: number;
+    conversionRate: number;
+    usersWithCodes: number;
+    topReferrers: ITopReferrer[];
+    recentReferrals: IRecentReferral[];
+}
+
+/**
+ * Get aggregate referral program overview (admin endpoint).
+ *
+ * @param token - Admin API token
+ * @param options - Period and limit options
+ * @returns Referral overview with top referrers and recent activity
+ */
+export async function adminGetReferralOverview(
+    token: string,
+    options?: { period?: AnalyticsPeriod; limit?: number }
+): Promise<IReferralOverview> {
+    const response = await apiClient.get('/admin/users/analytics/referral-overview', {
+        headers: { [adminHeaderKey]: token },
+        params: options
+    });
+    return response.data as IReferralOverview;
+}
+
 /**
  * Get any user by ID (admin endpoint).
  *

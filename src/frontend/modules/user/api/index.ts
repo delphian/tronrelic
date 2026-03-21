@@ -38,7 +38,9 @@ export {
     adminGetCampaignPerformance,
     adminGetEngagement,
     adminGetConversionFunnel,
-    adminGetRetention
+    adminGetRetention,
+    // Referral analytics functions
+    adminGetReferralOverview
 } from './client';
 
 export type {
@@ -62,5 +64,9 @@ export type {
     ICampaignEntry,
     IEngagementMetrics,
     IFunnelStage,
-    IRetentionEntry
+    IRetentionEntry,
+    // Referral analytics types
+    IReferralOverview,
+    ITopReferrer,
+    IRecentReferral
 } from './client';
