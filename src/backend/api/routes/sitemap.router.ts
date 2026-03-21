@@ -104,7 +104,8 @@ async function fetchPublishedPages(
             slug: p.slug as string,
             updatedAt: (p.updatedAt as Date)?.toISOString() ?? new Date().toISOString()
         }));
-    } catch {
+    } catch (error) {
+        console.error('Failed to fetch sitemap data:', error);
         return [];
     }
 }
@@ -133,19 +134,24 @@ async function fetchPluginPages(
         return plugins
             .map(p => `/${p.id as string}`)
             .filter(path => path.length > 1);
-    } catch {
+    } catch (error) {
+        console.error('Failed to fetch sitemap data:', error);
         return [];
     }
 }
+
+/** Maximum total profile addresses to include in sitemap. */
+const MAX_PROFILE_ADDRESSES = 1000;
 
 /**
  * Fetch verified wallet addresses for user profile pages.
  *
  * Only includes users with at least one cryptographically verified wallet.
- * Limited to 1000 profiles to prevent sitemap bloat.
+ * Capped at 1000 total addresses (not users) to prevent sitemap bloat,
+ * since users can have multiple verified wallets.
  *
  * @param database - Database service
- * @returns Array of wallet address strings
+ * @returns Array of wallet address strings (max 1000)
  */
 async function fetchVerifiedProfiles(
     database: IDatabaseService
@@ -157,21 +163,18 @@ async function fetchVerifiedProfiles(
                 { wallets: { $elemMatch: { verified: true } } },
                 { projection: { wallets: 1 } }
             )
-            .limit(1000)
+            .limit(MAX_PROFILE_ADDRESSES)
             .toArray();
 
-        const addresses: string[] = [];
-        for (const user of users) {
-            const wallets = (user.wallets ?? []) as Array<{ address: string; verified: boolean }>;
-            for (const wallet of wallets) {
-                if (wallet.verified) {
-                    addresses.push(wallet.address);
-                }
-            }
-        }
+        const addresses = users.flatMap(user =>
+            ((user.wallets ?? []) as Array<{ address: string; verified: boolean }>)
+                .filter(w => w.verified)
+                .map(w => w.address)
+        );
 
-        return addresses;
-    } catch {
+        return addresses.slice(0, MAX_PROFILE_ADDRESSES);
+    } catch (error) {
+        console.error('Failed to fetch sitemap data:', error);
         return [];
     }
 }

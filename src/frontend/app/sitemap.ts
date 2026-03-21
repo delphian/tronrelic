@@ -1,6 +1,7 @@
 import type { MetadataRoute } from 'next';
 import { getServerConfig } from '../lib/serverConfig';
 import { getServerSideApiUrlWithPath } from '../lib/api-url';
+import { absoluteUrl } from '../lib/seo';
 
 /** Response shape from GET /api/sitemap-data. */
 interface SitemapData {
@@ -38,7 +39,8 @@ async function fetchDynamicData(): Promise<SitemapData> {
   try {
     const apiUrl = getServerSideApiUrlWithPath();
     const response = await fetch(`${apiUrl}/sitemap-data`, {
-      next: { revalidate: 600 } // Cache for 10 minutes
+      next: { revalidate: 600 }, // Cache for 10 minutes
+      signal: AbortSignal.timeout(5000) // Fall back to static routes if backend stalls
     });
 
     if (!response.ok) {
@@ -74,9 +76,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     fetchDynamicData()
   ]);
 
+  // Track all paths to prevent duplicates across static, CMS, and plugin sources
+  const seenPaths = new Set<string>(staticPathSet);
+
   // Static routes (always present)
   const entries: MetadataRoute.Sitemap = staticRoutes.map(route => ({
-    url: route.path === '/' ? siteUrl : `${siteUrl}${route.path}`,
+    url: absoluteUrl(siteUrl, route.path),
     lastModified: now,
     changeFrequency: route.changeFrequency,
     priority: route.priority
@@ -84,36 +89,42 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
   // CMS pages (published articles, documentation, etc.)
   for (const page of dynamicData.pages) {
-    if (!staticPathSet.has(page.slug)) {
+    if (!seenPaths.has(page.slug)) {
       entries.push({
-        url: `${siteUrl}${page.slug}`,
+        url: absoluteUrl(siteUrl, page.slug),
         lastModified: page.updatedAt,
         changeFrequency: 'weekly',
         priority: 0.7
       });
+      seenPaths.add(page.slug);
     }
   }
 
   // Plugin pages (active frontend plugins)
   for (const path of dynamicData.pluginPages) {
-    if (!staticPathSet.has(path)) {
+    if (!seenPaths.has(path)) {
       entries.push({
-        url: `${siteUrl}${path}`,
+        url: absoluteUrl(siteUrl, path),
         lastModified: now,
         changeFrequency: 'daily',
         priority: 0.7
       });
+      seenPaths.add(path);
     }
   }
 
   // User profile pages (verified wallet addresses)
   for (const address of dynamicData.profiles) {
-    entries.push({
-      url: `${siteUrl}/u/${address}`,
-      lastModified: now,
-      changeFrequency: 'weekly',
-      priority: 0.4
-    });
+    const profilePath = `/u/${address}`;
+    if (!seenPaths.has(profilePath)) {
+      entries.push({
+        url: absoluteUrl(siteUrl, profilePath),
+        lastModified: now,
+        changeFrequency: 'weekly',
+        priority: 0.4
+      });
+      seenPaths.add(profilePath);
+    }
   }
 
   return entries;
