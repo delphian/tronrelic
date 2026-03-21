@@ -215,6 +215,64 @@ export function createAdminUserRouter(controller: UserController): Router {
     router.get('/analytics/visitor-origins', controller.getVisitorOrigins.bind(controller));
 
     /**
+     * GET /api/admin/users/analytics/new-users
+     * Get new users first seen within period, sorted by firstSeen descending
+     */
+    router.get('/analytics/new-users', controller.getNewUsers.bind(controller));
+
+    // ============================================================================
+    // Aggregate Analytics Routes
+    // ============================================================================
+
+    /**
+     * GET /api/admin/users/analytics/traffic-sources
+     * Get aggregate traffic source breakdown
+     */
+    router.get('/analytics/traffic-sources', controller.getTrafficSources.bind(controller));
+
+    /**
+     * GET /api/admin/users/analytics/top-landing-pages
+     * Get top landing pages by visitor count
+     */
+    router.get('/analytics/top-landing-pages', controller.getTopLandingPages.bind(controller));
+
+    /**
+     * GET /api/admin/users/analytics/geo-distribution
+     * Get geographic distribution of visitors
+     */
+    router.get('/analytics/geo-distribution', controller.getGeoDistribution.bind(controller));
+
+    /**
+     * GET /api/admin/users/analytics/device-breakdown
+     * Get device and screen size breakdown
+     */
+    router.get('/analytics/device-breakdown', controller.getDeviceBreakdown.bind(controller));
+
+    /**
+     * GET /api/admin/users/analytics/campaign-performance
+     * Get UTM campaign performance with conversion rates
+     */
+    router.get('/analytics/campaign-performance', controller.getCampaignPerformance.bind(controller));
+
+    /**
+     * GET /api/admin/users/analytics/engagement
+     * Get engagement metrics (avg duration, pages/session, bounce rate)
+     */
+    router.get('/analytics/engagement', controller.getEngagementMetrics.bind(controller));
+
+    /**
+     * GET /api/admin/users/analytics/conversion-funnel
+     * Get conversion funnel (visitors → return → wallet → verified)
+     */
+    router.get('/analytics/conversion-funnel', controller.getConversionFunnel.bind(controller));
+
+    /**
+     * GET /api/admin/users/analytics/retention
+     * Get new vs returning visitor breakdown over time
+     */
+    router.get('/analytics/retention', controller.getRetention.bind(controller));
+
+    /**
      * GET /api/admin/users/:id
      * Get any user by UUID (admin bypass)
      */

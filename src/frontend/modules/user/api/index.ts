@@ -26,7 +26,17 @@ export {
     adminGetUserStats,
     adminGetUser,
     adminGetDailyVisitors,
-    adminGetVisitorOrigins
+    adminGetVisitorOrigins,
+    adminGetNewUsers,
+    // Aggregate analytics functions
+    adminGetTrafficSources,
+    adminGetTopLandingPages,
+    adminGetGeoDistribution,
+    adminGetDeviceBreakdown,
+    adminGetCampaignPerformance,
+    adminGetEngagement,
+    adminGetConversionFunnel,
+    adminGetRetention
 } from './client';
 
 export type {
@@ -37,5 +47,16 @@ export type {
     IDailyVisitorData,
     IVisitorOrigin,
     IUtmParams,
-    VisitorPeriod
+    VisitorPeriod,
+    // Aggregate analytics types
+    AnalyticsPeriod,
+    ITrafficSource,
+    ILandingPage,
+    IGeoEntry,
+    IDeviceEntry,
+    IScreenSizeEntry,
+    ICampaignEntry,
+    IEngagementMetrics,
+    IFunnelStage,
+    IRetentionEntry
 } from './client';

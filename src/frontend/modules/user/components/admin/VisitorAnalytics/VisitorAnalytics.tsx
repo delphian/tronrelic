@@ -1,12 +1,13 @@
 /**
  * VisitorAnalytics Component
  *
- * Admin analytics dashboard displaying daily visitor trends and a traffic
- * origins table showing how visitors originally discovered the site.
+ * Admin analytics dashboard displaying daily visitor trends, a traffic
+ * origins table, and a new users table.
  *
- * Renders two sections:
+ * Renders three sections:
  * 1. Daily visitors chart with 30d/90d toggle
  * 2. Traffic origins table showing first-session acquisition data per visitor
+ * 3. New users table showing recently arrived users sorted by first seen date
  */
 
 'use client';
@@ -17,7 +18,11 @@ import { LineChart } from '../../../../../features/charts/components/LineChart';
 import type { ChartSeries } from '../../../../../features/charts/components/LineChart';
 import { ClientTime } from '../../../../../components/ui/ClientTime';
 import { Button } from '../../../../../components/ui/Button';
-import { config as runtimeConfig } from '../../../../../lib/config';
+import {
+    adminGetDailyVisitors,
+    adminGetVisitorOrigins,
+    adminGetNewUsers
+} from '../../../api';
 import type { IDailyVisitorData, IVisitorOrigin, VisitorPeriod } from '../../../api';
 import styles from './VisitorAnalytics.module.scss';
 
@@ -66,9 +71,6 @@ const PERIOD_LABELS: Record<VisitorPeriod, string> = {
     '90d': '90 Days'
 };
 
-/** Admin API header key. */
-const ADMIN_HEADER_KEY = 'x-admin-token';
-
 interface Props {
     token: string;
 }
@@ -95,24 +97,22 @@ export function VisitorAnalytics({ token }: Props) {
     const [visitorsPage, setVisitorsPage] = useState(1);
     const visitorsLimit = 25;
 
+    const [newUsersPeriod, setNewUsersPeriod] = useState<VisitorPeriod>('24h');
+    const [newUsers, setNewUsers] = useState<IVisitorOrigin[]>([]);
+    const [newUsersTotal, setNewUsersTotal] = useState(0);
+    const [newUsersLoading, setNewUsersLoading] = useState(true);
+    const [newUsersPage, setNewUsersPage] = useState(1);
+    const newUsersLimit = 25;
+
     /**
-     * Fetch daily visitor chart data from the analytics endpoint.
+     * Fetch daily visitor chart data using typed API client.
      */
     const fetchChartData = useCallback(async () => {
         setChartLoading(true);
         try {
             const days = chartRange === '30d' ? 30 : 90;
-            const response = await fetch(
-                `${runtimeConfig.apiBaseUrl}/admin/users/analytics/daily-visitors?days=${days}`,
-                { headers: { [ADMIN_HEADER_KEY]: token } }
-            );
-
-            if (!response.ok) {
-                throw new Error(`Failed to fetch chart data: ${response.status}`);
-            }
-
-            const result = await response.json();
-            setChartData(result.data ?? []);
+            const data = await adminGetDailyVisitors(token, days);
+            setChartData(data);
         } catch (error) {
             console.error('Failed to fetch daily visitors:', error);
             setChartData([]);
@@ -122,26 +122,16 @@ export function VisitorAnalytics({ token }: Props) {
     }, [token, chartRange]);
 
     /**
-     * Fetch visitor origins from the analytics endpoint.
+     * Fetch visitor origins using typed API client.
      */
     const fetchVisitors = useCallback(async () => {
         setVisitorsLoading(true);
         try {
-            const params = new URLSearchParams();
-            params.set('period', visitorPeriod);
-            params.set('limit', visitorsLimit.toString());
-            params.set('skip', ((visitorsPage - 1) * visitorsLimit).toString());
-
-            const response = await fetch(
-                `${runtimeConfig.apiBaseUrl}/admin/users/analytics/visitor-origins?${params.toString()}`,
-                { headers: { [ADMIN_HEADER_KEY]: token } }
-            );
-
-            if (!response.ok) {
-                throw new Error(`Failed to fetch visitor origins: ${response.status}`);
-            }
-
-            const result = await response.json();
+            const result = await adminGetVisitorOrigins(token, {
+                period: visitorPeriod,
+                limit: visitorsLimit,
+                skip: (visitorsPage - 1) * visitorsLimit
+            });
             setVisitors(result.visitors ?? []);
             setVisitorsTotal(result.total ?? 0);
         } catch (error) {
@@ -153,8 +143,31 @@ export function VisitorAnalytics({ token }: Props) {
         }
     }, [token, visitorPeriod, visitorsPage]);
 
+    /**
+     * Fetch new users using typed API client.
+     */
+    const fetchNewUsers = useCallback(async () => {
+        setNewUsersLoading(true);
+        try {
+            const result = await adminGetNewUsers(token, {
+                period: newUsersPeriod,
+                limit: newUsersLimit,
+                skip: (newUsersPage - 1) * newUsersLimit
+            });
+            setNewUsers(result.visitors ?? []);
+            setNewUsersTotal(result.total ?? 0);
+        } catch (error) {
+            console.error('Failed to fetch new users:', error);
+            setNewUsers([]);
+            setNewUsersTotal(0);
+        } finally {
+            setNewUsersLoading(false);
+        }
+    }, [token, newUsersPeriod, newUsersPage]);
+
     useEffect(() => { fetchChartData(); }, [fetchChartData]);
     useEffect(() => { fetchVisitors(); }, [fetchVisitors]);
+    useEffect(() => { fetchNewUsers(); }, [fetchNewUsers]);
 
     /**
      * Build chart series from daily visitor data.
@@ -178,15 +191,26 @@ export function VisitorAnalytics({ token }: Props) {
     minDate.setHours(0, 0, 0, 0);
 
     const totalVisitorPages = visitorsTotal > 0 ? Math.ceil(visitorsTotal / visitorsLimit) : 1;
+    const totalNewUsersPages = newUsersTotal > 0 ? Math.ceil(newUsersTotal / newUsersLimit) : 1;
 
     /**
-     * Handle period change and reset pagination.
+     * Handle period change and reset pagination for traffic origins.
      *
      * @param period - The new visitor period to filter by
      */
     const handlePeriodChange = (period: VisitorPeriod): void => {
         setVisitorPeriod(period);
         setVisitorsPage(1);
+    };
+
+    /**
+     * Handle period change and reset pagination for new users.
+     *
+     * @param period - The new period to filter by
+     */
+    const handleNewUsersPeriodChange = (period: VisitorPeriod): void => {
+        setNewUsersPeriod(period);
+        setNewUsersPage(1);
     };
 
     return (
@@ -315,6 +339,102 @@ export function VisitorAnalytics({ token }: Props) {
                             <Button
                                 onClick={() => setVisitorsPage(visitorsPage + 1)}
                                 disabled={visitorsPage >= totalVisitorPages}
+                                size="sm"
+                                variant="ghost"
+                            >
+                                Next
+                            </Button>
+                        </div>
+                    </>
+                )}
+            </div>
+
+            {/* New Users Table */}
+            <div className={styles.section}>
+                <div className={styles.section_header}>
+                    <h2 className={styles.section_title}>New Users</h2>
+                    <div className={styles.toggle_group} role="group" aria-label="New users time period">
+                        {(Object.keys(PERIOD_LABELS) as VisitorPeriod[]).map(period => (
+                            <button
+                                key={period}
+                                className={`${styles.toggle_btn} ${newUsersPeriod === period ? styles.toggle_btn__active : ''}`}
+                                onClick={() => handleNewUsersPeriodChange(period)}
+                                aria-pressed={newUsersPeriod === period}
+                            >
+                                {PERIOD_LABELS[period]}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+
+                {newUsersLoading ? (
+                    <div className={styles.loading}>Loading new users...</div>
+                ) : newUsers.length === 0 ? (
+                    <div className={styles.empty}>No new users found in this period.</div>
+                ) : (
+                    <>
+                        <div className={styles.table_wrapper}>
+                            <table className={styles.table}>
+                                <thead>
+                                    <tr>
+                                        <th>First Seen</th>
+                                        <th>Country</th>
+                                        <th>Original Referrer</th>
+                                        <th>Landing Page</th>
+                                        <th>UTM</th>
+                                        <th>Device</th>
+                                        <th>Total Views</th>
+                                        <th>Total Sessions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {newUsers.map(user => {
+                                        const utmDisplay = formatUtm(user.utm);
+
+                                        return (
+                                            <tr key={user.userId}>
+                                                <td>
+                                                    <ClientTime date={user.firstSeen} format="relative" />
+                                                </td>
+                                                <td className={styles.country_cell}>
+                                                    {user.country || <span className={styles.muted}>—</span>}
+                                                </td>
+                                                <td className={styles.referrer_cell} title={user.referrerDomain ?? undefined}>
+                                                    {user.referrerDomain || <span className={styles.muted}>direct</span>}
+                                                </td>
+                                                <td className={styles.landing_cell} title={user.landingPage ?? undefined}>
+                                                    {user.landingPage || <span className={styles.muted}>—</span>}
+                                                </td>
+                                                <td className={styles.utm_cell} title={utmDisplay ?? undefined}>
+                                                    {utmDisplay || <span className={styles.muted}>—</span>}
+                                                </td>
+                                                <td className={styles.device_cell}>
+                                                    {getDeviceIcon(user.device)}
+                                                </td>
+                                                <td>{user.pageViews.toLocaleString()}</td>
+                                                <td>{user.sessionsCount.toLocaleString()}</td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <div className={styles.pagination}>
+                            <Button
+                                onClick={() => setNewUsersPage(newUsersPage - 1)}
+                                disabled={newUsersPage <= 1}
+                                size="sm"
+                                variant="ghost"
+                            >
+                                Previous
+                            </Button>
+                            <span className={styles.page_info}>
+                                Page {newUsersPage} of {totalNewUsersPages} ({newUsersTotal.toLocaleString()} new users)
+                            </span>
+                            <Button
+                                onClick={() => setNewUsersPage(newUsersPage + 1)}
+                                disabled={newUsersPage >= totalNewUsersPages}
                                 size="sm"
                                 variant="ghost"
                             >

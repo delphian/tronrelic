@@ -203,10 +203,20 @@ export class UserModule implements IModule<IUserModuleDependencies> {
                 // persist defaults to false (memory-only entry)
             });
 
-            this.logger.info('Users menu item registered in system namespace');
+            await this.menuService.create({
+                namespace: 'system',
+                label: 'Analytics',
+                url: '/system/analytics',
+                icon: 'BarChart3',
+                order: 76,
+                parent: null,
+                enabled: true
+            });
+
+            this.logger.info('Users and Analytics menu items registered in system namespace');
         } catch (error) {
-            this.logger.error({ error }, 'Failed to register users menu item');
-            throw new Error(`Failed to register users menu item: ${error instanceof Error ? error.message : 'Unknown error'}`);
+            this.logger.error({ error }, 'Failed to register user module menu items');
+            throw new Error(`Failed to register user module menu items: ${error instanceof Error ? error.message : 'Unknown error'}`);
         }
 
         // Create and mount public router (IoC - module attaches itself to app)

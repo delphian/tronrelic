@@ -14,3 +14,4 @@ export type { ProfileData } from './Profile';
 // Admin components
 export { UsersMonitor } from './admin';
 export { VisitorAnalytics } from './admin';
+export { AnalyticsDashboard } from './admin';

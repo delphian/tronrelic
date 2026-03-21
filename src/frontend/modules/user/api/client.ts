@@ -494,6 +494,254 @@ export async function adminGetVisitorOrigins(
 }
 
 /**
+ * Get new users first seen within the specified period (admin endpoint).
+ *
+ * Unlike adminGetVisitorOrigins which filters by lastSeen (recent activity),
+ * this filters by firstSeen (new arrivals) and sorts most recent first.
+ *
+ * @param token - Admin API token
+ * @param options - Period, pagination options
+ * @returns Paginated list of new user origins
+ */
+export async function adminGetNewUsers(
+    token: string,
+    options?: { period?: VisitorPeriod; limit?: number; skip?: number }
+): Promise<{ visitors: IVisitorOrigin[]; total: number }> {
+    const response = await apiClient.get('/admin/users/analytics/new-users', {
+        headers: { [adminHeaderKey]: token },
+        params: options
+    });
+    return response.data as { visitors: IVisitorOrigin[]; total: number };
+}
+
+// ============================================================================
+// Aggregate Analytics Types
+// ============================================================================
+
+/** Valid period options for aggregate analytics queries. */
+export type AnalyticsPeriod = '24h' | '7d' | '30d' | '90d';
+
+/** Traffic source entry in aggregate breakdown. */
+export interface ITrafficSource {
+    source: string;
+    category: string;
+    count: number;
+    percentage: number;
+}
+
+/** Landing page entry with engagement metrics. */
+export interface ILandingPage {
+    path: string;
+    visitors: number;
+    avgSessions: number;
+    avgPageViews: number;
+}
+
+/** Country entry in geographic distribution. */
+export interface IGeoEntry {
+    country: string;
+    count: number;
+    percentage: number;
+}
+
+/** Device category entry. */
+export interface IDeviceEntry {
+    device: string;
+    count: number;
+    percentage: number;
+}
+
+/** Screen size category entry. */
+export interface IScreenSizeEntry {
+    screenSize: string;
+    count: number;
+    percentage: number;
+}
+
+/** UTM campaign performance entry. */
+export interface ICampaignEntry {
+    source: string;
+    medium: string;
+    campaign: string;
+    visitors: number;
+    walletsConnected: number;
+    walletsVerified: number;
+    conversionRate: number;
+}
+
+/** Engagement metrics summary. */
+export interface IEngagementMetrics {
+    avgSessionDuration: number;
+    avgPagesPerSession: number;
+    bounceRate: number;
+    avgSessionsPerUser: number;
+    totalUsers: number;
+}
+
+/** Conversion funnel stage. */
+export interface IFunnelStage {
+    stage: string;
+    count: number;
+    percentage: number;
+    dropOff: number;
+}
+
+/** Daily new vs returning visitor entry. */
+export interface IRetentionEntry {
+    date: string;
+    newVisitors: number;
+    returningVisitors: number;
+}
+
+// ============================================================================
+// Aggregate Analytics API Functions
+// ============================================================================
+
+/**
+ * Get aggregate traffic source breakdown (admin endpoint).
+ *
+ * @param token - Admin API token
+ * @param period - Lookback period (default: '30d')
+ * @returns Traffic sources with counts and percentages
+ */
+export async function adminGetTrafficSources(
+    token: string,
+    period: AnalyticsPeriod = '30d'
+): Promise<{ sources: ITrafficSource[]; total: number }> {
+    const response = await apiClient.get('/admin/users/analytics/traffic-sources', {
+        headers: { [adminHeaderKey]: token },
+        params: { period }
+    });
+    return response.data as { sources: ITrafficSource[]; total: number };
+}
+
+/**
+ * Get top landing pages by visitor count (admin endpoint).
+ *
+ * @param token - Admin API token
+ * @param options - Period and limit options
+ * @returns Landing pages with engagement metrics
+ */
+export async function adminGetTopLandingPages(
+    token: string,
+    options?: { period?: AnalyticsPeriod; limit?: number }
+): Promise<{ pages: ILandingPage[]; totalPages: number; totalVisitors: number }> {
+    const response = await apiClient.get('/admin/users/analytics/top-landing-pages', {
+        headers: { [adminHeaderKey]: token },
+        params: options
+    });
+    return response.data as { pages: ILandingPage[]; totalPages: number; totalVisitors: number };
+}
+
+/**
+ * Get geographic distribution of visitors (admin endpoint).
+ *
+ * @param token - Admin API token
+ * @param options - Period and limit options
+ * @returns Country distribution with counts
+ */
+export async function adminGetGeoDistribution(
+    token: string,
+    options?: { period?: AnalyticsPeriod; limit?: number }
+): Promise<{ countries: IGeoEntry[]; total: number }> {
+    const response = await apiClient.get('/admin/users/analytics/geo-distribution', {
+        headers: { [adminHeaderKey]: token },
+        params: options
+    });
+    return response.data as { countries: IGeoEntry[]; total: number };
+}
+
+/**
+ * Get device and screen size breakdown (admin endpoint).
+ *
+ * @param token - Admin API token
+ * @param period - Lookback period (default: '30d')
+ * @returns Device and screen size distributions
+ */
+export async function adminGetDeviceBreakdown(
+    token: string,
+    period: AnalyticsPeriod = '30d'
+): Promise<{ devices: IDeviceEntry[]; screenSizes: IScreenSizeEntry[]; total: number }> {
+    const response = await apiClient.get('/admin/users/analytics/device-breakdown', {
+        headers: { [adminHeaderKey]: token },
+        params: { period }
+    });
+    return response.data as { devices: IDeviceEntry[]; screenSizes: IScreenSizeEntry[]; total: number };
+}
+
+/**
+ * Get UTM campaign performance (admin endpoint).
+ *
+ * @param token - Admin API token
+ * @param options - Period and limit options
+ * @returns Campaign entries with conversion rates
+ */
+export async function adminGetCampaignPerformance(
+    token: string,
+    options?: { period?: AnalyticsPeriod; limit?: number }
+): Promise<{ campaigns: ICampaignEntry[]; total: number }> {
+    const response = await apiClient.get('/admin/users/analytics/campaign-performance', {
+        headers: { [adminHeaderKey]: token },
+        params: options
+    });
+    return response.data as { campaigns: ICampaignEntry[]; total: number };
+}
+
+/**
+ * Get engagement metrics (admin endpoint).
+ *
+ * @param token - Admin API token
+ * @param period - Lookback period (default: '30d')
+ * @returns Engagement summary (avg duration, pages/session, bounce rate)
+ */
+export async function adminGetEngagement(
+    token: string,
+    period: AnalyticsPeriod = '30d'
+): Promise<IEngagementMetrics> {
+    const response = await apiClient.get('/admin/users/analytics/engagement', {
+        headers: { [adminHeaderKey]: token },
+        params: { period }
+    });
+    return response.data as IEngagementMetrics;
+}
+
+/**
+ * Get conversion funnel (admin endpoint).
+ *
+ * @param token - Admin API token
+ * @param period - Lookback period (default: '30d')
+ * @returns Funnel stages with drop-off percentages
+ */
+export async function adminGetConversionFunnel(
+    token: string,
+    period: AnalyticsPeriod = '30d'
+): Promise<{ stages: IFunnelStage[] }> {
+    const response = await apiClient.get('/admin/users/analytics/conversion-funnel', {
+        headers: { [adminHeaderKey]: token },
+        params: { period }
+    });
+    return response.data as { stages: IFunnelStage[] };
+}
+
+/**
+ * Get new vs returning visitor retention data (admin endpoint).
+ *
+ * @param token - Admin API token
+ * @param period - Lookback period (default: '30d')
+ * @returns Daily new vs returning visitor counts
+ */
+export async function adminGetRetention(
+    token: string,
+    period: AnalyticsPeriod = '30d'
+): Promise<{ data: IRetentionEntry[] }> {
+    const response = await apiClient.get('/admin/users/analytics/retention', {
+        headers: { [adminHeaderKey]: token },
+        params: { period }
+    });
+    return response.data as { data: IRetentionEntry[] };
+}
+
+/**
  * Get any user by ID (admin endpoint).
  *
  * @param token - Admin API token
