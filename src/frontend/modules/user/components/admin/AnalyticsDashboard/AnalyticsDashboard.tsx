@@ -67,6 +67,7 @@ function resolveCSSColor(varName: string, fallback: string): string {
 
 /** Period option labels for display. */
 const PERIOD_OPTIONS: { value: AnalyticsPeriod; label: string }[] = [
+    { value: '24h', label: '24 Hours' },
     { value: '7d', label: '7 Days' },
     { value: '30d', label: '30 Days' },
     { value: '90d', label: '90 Days' },
