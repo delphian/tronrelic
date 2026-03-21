@@ -528,6 +528,40 @@ export class UserController {
     }
 
     // ============================================================================
+    // Referral Endpoints (require cookie validation)
+    // ============================================================================
+
+    /**
+     * GET /api/user/:id/referral
+     *
+     * Get referral code and stats for the authenticated user.
+     * Returns null if user has no referral code (no verified wallet yet).
+     *
+     * Requires: Cookie must match :id
+     * Response: { code, referredCount, convertedCount } or { referral: null }
+     */
+    async getReferralStats(req: Request, res: Response): Promise<void> {
+        try {
+            const { id } = req.params;
+
+            const stats = await this.userService.getReferralStats(id);
+
+            if (!stats) {
+                res.json({ referral: null });
+                return;
+            }
+
+            res.json(stats);
+        } catch (error) {
+            this.logger.error({ error, userId: req.params.id }, 'Failed to get referral stats');
+            res.status(500).json({
+                error: 'Failed to get referral stats',
+                message: error instanceof Error ? error.message : 'Unknown error'
+            });
+        }
+    }
+
+    // ============================================================================
     // Login State Endpoints (require cookie validation)
     // ============================================================================
 

@@ -218,10 +218,28 @@ export interface IUserDocument {
     preferences: IUserPreferences;
     /** Activity tracking metrics */
     activity: IUserActivity;
+    /** Referral tracking (null until first wallet verification or referral attribution) */
+    referral: IReferral | null;
     /** Document creation timestamp */
     createdAt: Date;
     /** Document last update timestamp */
     updatedAt: Date;
+}
+
+/**
+ * Referral tracking data for user-driven growth.
+ *
+ * referralCode is generated once when a user first verifies a wallet.
+ * referredBy is set once during the first session if the visitor arrived
+ * via a referral link (utm_source=referral, utm_content=CODE).
+ */
+export interface IReferral {
+    /** Short unique referral code for sharing (e.g., 'a1b2c3d4'). Generated on first wallet verify. */
+    code: string;
+    /** Referral code of the user who referred this visitor (null if organic). Set once, never overwritten. */
+    referredBy: string | null;
+    /** Timestamp when referral attribution was recorded (null if not referred). */
+    referredAt: Date | null;
 }
 
 /**
@@ -302,6 +320,8 @@ export interface IUser {
     preferences: IUserPreferences;
     /** Activity metrics */
     activity: IUserActivity;
+    /** Referral tracking (null until first wallet verification or referral attribution) */
+    referral: IReferral | null;
     /** Document creation timestamp */
     createdAt: Date;
     /** Document last update timestamp */

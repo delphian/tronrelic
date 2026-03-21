@@ -1,4 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
+import { randomBytes } from 'crypto';
 import type { Collection } from 'mongodb';
 import type { IDatabaseService, ICacheService, ISystemLogService, UserFilterType } from '@/types';
 import type {
@@ -11,6 +12,7 @@ import type {
     IUserSession,
     IPageVisit,
     IUtmParams,
+    IReferral,
     DeviceCategory
 } from '../database/index.js';
 import {
@@ -246,6 +248,7 @@ export class UserService {
                 countryCounts: {},
                 origin: null
             },
+            referral: null,
             createdAt: now,
             updatedAt: now
         };
@@ -568,15 +571,25 @@ export class UserService {
         // Recalculate primary wallet
         this.recalculatePrimaryWallet(doc.wallets);
 
+        // Generate referral code on first wallet verification if user doesn't have one
+        const updateFields: Record<string, unknown> = {
+            wallets: doc.wallets,
+            updatedAt: nowDate
+        };
+        if (!doc.referral?.code) {
+            const referralCode = await this.generateUniqueReferralCode();
+            updateFields.referral = {
+                code: referralCode,
+                referredBy: doc.referral?.referredBy ?? null,
+                referredAt: doc.referral?.referredAt ?? null
+            };
+            this.logger.info({ userId, referralCode }, 'Referral code generated on wallet verification');
+        }
+
         // Update database
         await this.collection.updateOne(
             { id: userId },
-            {
-                $set: {
-                    wallets: doc.wallets,
-                    updatedAt: nowDate
-                }
-            }
+            { $set: updateFields }
         );
 
         this.logger.info({ userId, wallet: normalizedAddress, verified: true }, 'Wallet verified and linked to user');
@@ -972,15 +985,31 @@ export class UserService {
             // Prune old sessions (keep last N)
             this.pruneOldSessions(activity);
 
+            // Referral attribution: if this is the user's first session and they arrived
+            // via a referral link (utm_source=referral), record who referred them.
+            // Set once, never overwritten — same pattern as activity.origin.
+            const sessionUpdateFields: Record<string, unknown> = {
+                activity,
+                updatedAt: now
+            };
+            if (!doc.referral?.referredBy && newSession.utm?.source === 'referral' && newSession.utm?.content) {
+                const referralCode = newSession.utm.content;
+                // Verify the referral code belongs to a real user
+                const referrer = await this.collection.findOne({ 'referral.code': referralCode });
+                if (referrer && referrer.id !== userId) {
+                    sessionUpdateFields['referral.referredBy'] = referralCode;
+                    sessionUpdateFields['referral.referredAt'] = now;
+                    this.logger.info(
+                        { userId, referralCode, referrerId: referrer.id },
+                        'Referral attribution recorded'
+                    );
+                }
+            }
+
             // Update database
             await this.collection.updateOne(
                 { id: userId },
-                {
-                    $set: {
-                        activity,
-                        updatedAt: now
-                    }
-                }
+                { $set: sessionUpdateFields }
             );
 
             await this.invalidateUserCache(userId);
@@ -2491,6 +2520,61 @@ export class UserService {
         return { data };
     }
 
+    // ==================== Referral System ====================
+
+    /**
+     * Get referral statistics for a user.
+     *
+     * Counts how many users were referred by this user's code and how many
+     * of those converted to verified wallet holders.
+     *
+     * @param userId - UUID of the referring user
+     * @returns Referral code and stats, or null if user has no referral code
+     */
+    async getReferralStats(userId: string): Promise<{
+        code: string;
+        referredCount: number;
+        convertedCount: number;
+    } | null> {
+        const doc = await this.collection.findOne({ id: userId });
+        if (!doc?.referral?.code) {
+            return null;
+        }
+
+        const referralCode = doc.referral.code;
+
+        const [referredCount, convertedCount] = await Promise.all([
+            this.collection.countDocuments({ 'referral.referredBy': referralCode }),
+            this.collection.countDocuments({
+                'referral.referredBy': referralCode,
+                wallets: { $elemMatch: { verified: true } }
+            })
+        ]);
+
+        return { code: referralCode, referredCount, convertedCount };
+    }
+
+    /**
+     * Generate a unique 8-character referral code.
+     *
+     * Uses cryptographic randomness and checks for collisions in the database.
+     * Retries up to 5 times if a collision occurs (extremely unlikely with
+     * 8 hex characters = 4 billion possible codes).
+     *
+     * @returns Unique referral code string
+     * @throws Error if unable to generate unique code after retries
+     */
+    private async generateUniqueReferralCode(): Promise<string> {
+        for (let attempt = 0; attempt < 5; attempt++) {
+            const code = randomBytes(4).toString('hex');
+            const existing = await this.collection.findOne({ 'referral.code': code });
+            if (!existing) {
+                return code;
+            }
+        }
+        throw new Error('Failed to generate unique referral code after 5 attempts');
+    }
+
     // ==================== Index Management ====================
 
     /**
@@ -2505,6 +2589,7 @@ export class UserService {
         await this.collection.createIndex({ 'activity.firstSeen': 1 });
         await this.collection.createIndex({ 'activity.sessions.endedAt': 1 });
         await this.collection.createIndex({ 'activity.sessions.startedAt': 1 });
+        await this.collection.createIndex({ 'referral.code': 1 }, { sparse: true });
 
         this.logger.info('User indexes created');
     }
@@ -2565,6 +2650,7 @@ export class UserService {
             wallets: doc.wallets,
             preferences: doc.preferences,
             activity: doc.activity,
+            referral: doc.referral ?? null,
             createdAt: doc.createdAt,
             updatedAt: doc.updatedAt
         };

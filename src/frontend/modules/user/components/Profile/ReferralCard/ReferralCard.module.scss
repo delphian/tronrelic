@@ -1,0 +1,98 @@
+/**
+ * ReferralCard Styles
+ *
+ * Styling for the referral link card on the profile owner view.
+ * Uses design tokens and container queries for responsive layout.
+ */
+
+@use '../../../../../app/breakpoints' as *;
+
+.card {
+    container-type: inline-size;
+    container-name: referral-card;
+}
+
+.stats_row {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: var(--spacing-5);
+    margin-bottom: var(--spacing-7);
+}
+
+@container referral-card (min-width: #{$breakpoint-mobile-md}) {
+    .stats_row {
+        grid-template-columns: repeat(3, 1fr);
+    }
+}
+
+.stat {
+    text-align: center;
+    padding: var(--spacing-5);
+    background: var(--color-background);
+    border-radius: var(--radius-md);
+}
+
+.stat__value {
+    font-size: var(--font-size-xl);
+    font-weight: var(--font-weight-bold);
+    color: var(--color-primary);
+    line-height: var(--line-height-tight);
+}
+
+.stat__label {
+    font-size: var(--font-size-xs);
+    color: var(--color-text-muted);
+    margin-top: var(--spacing-3);
+}
+
+.link_row {
+    display: flex;
+    gap: var(--spacing-4);
+    align-items: stretch;
+    margin-bottom: var(--spacing-7);
+}
+
+.link_input {
+    flex: 1;
+    min-width: 0;
+    font-family: monospace;
+    font-size: var(--font-size-sm);
+    color: var(--color-text);
+    background: var(--color-background);
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-md);
+    padding: var(--spacing-4) var(--spacing-5);
+    cursor: text;
+}
+
+.link_input:focus {
+    outline: none;
+    border-color: var(--color-primary);
+}
+
+.copy_btn {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-3);
+    white-space: nowrap;
+}
+
+.share_row {
+    display: flex;
+    gap: var(--spacing-4);
+    flex-wrap: wrap;
+}
+
+.share_btn {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacing-3);
+    font-size: var(--font-size-sm);
+}
+
+.empty_state {
+    text-align: center;
+    padding: var(--spacing-10);
+    color: var(--color-text-muted);
+    font-size: var(--font-size-sm);
+}

@@ -13,5 +13,6 @@ export type {
     ILinkWalletInput,
     IStartSessionInput,
     IRecordPageInput,
-    IUser
+    IUser,
+    IReferral
 } from './IUserDocument.js';

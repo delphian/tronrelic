@@ -21,6 +21,8 @@ export {
     logoutUser,
     // Public profile functions
     fetchProfile,
+    // Referral functions
+    fetchReferralStats,
     // Admin API functions
     adminListUsers,
     adminGetUserStats,
@@ -48,6 +50,8 @@ export type {
     IVisitorOrigin,
     IUtmParams,
     VisitorPeriod,
+    // Referral types
+    IReferralStats,
     // Aggregate analytics types
     AnalyticsPeriod,
     ITrafficSource,

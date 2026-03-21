@@ -129,6 +129,16 @@ export function createUserRouter(controller: UserController): Router {
     router.post('/:id/session/end', activityRateLimiter, controller.endSession.bind(controller));
 
     // ============================================================================
+    // Referral Routes (30 requests/minute)
+    // ============================================================================
+
+    /**
+     * GET /api/user/:id/referral
+     * Get referral code and stats
+     */
+    router.get('/:id/referral', userRateLimiter, controller.getReferralStats.bind(controller));
+
+    // ============================================================================
     // Login State Routes (30 requests/minute)
     // ============================================================================
 

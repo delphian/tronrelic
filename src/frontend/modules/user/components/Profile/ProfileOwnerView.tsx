@@ -11,11 +11,13 @@
 
 import { useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { LogOut, Loader2, User } from 'lucide-react';
-import { Page, PageHeader } from '../../../../components/layout';
+import { LogOut, Loader2 } from 'lucide-react';
+import { Page, PageHeader, Stack } from '../../../../components/layout';
 import type { ProfileData } from './index';
 import { useWallet } from '../../hooks/useWallet';
 import { useToast } from '../../../../components/ui/ToastProvider';
+import { getRuntimeConfig } from '../../../../lib/runtimeConfig';
+import { ReferralCard } from './ReferralCard';
 import styles from './Profile.module.scss';
 
 /**
@@ -83,18 +85,12 @@ export function ProfileOwnerView({ profile }: ProfileOwnerViewProps): JSX.Elemen
                 </button>
             </PageHeader>
 
-            <div className={styles.container}>
-                <div className={styles.placeholder}>
-                    <div className={styles.placeholder_icon}>
-                        <User size={48} strokeWidth={1.5} />
-                    </div>
-                    <h2 className={styles.placeholder_title}>Your Control Panel</h2>
-                    <p className={styles.placeholder_text}>
-                        This is your private profile view. Profile settings and controls
-                        will be available here soon.
-                    </p>
-                </div>
-            </div>
+            <Stack gap="lg">
+                <ReferralCard
+                    userId={profile.userId}
+                    siteUrl={getRuntimeConfig().siteUrl}
+                />
+            </Stack>
         </Page>
     );
 }
