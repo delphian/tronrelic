@@ -1719,7 +1719,7 @@ export class UserService {
                 return {
                     'activity.sessions': {
                         $elemMatch: {
-                            referrerDomain: { $exists: true, $ne: null }
+                            referrerDomain: { $ne: null, $exists: true }
                         }
                     }
                 };
@@ -2597,13 +2597,16 @@ export class UserService {
         const since = new Date();
         since.setTime(since.getTime() - (periodHours * 60 * 60 * 1000));
 
+        // Filter for users with actual referral attribution (not just missing fields)
+        const referredFilter = { 'referral.referredBy': { $ne: null, $exists: true } };
+
         // Aggregate totals in a single pipeline
         const totalsResult = await this.collection.aggregate<{
             _id: null;
             totalReferrals: number;
             totalConverted: number;
         }>([
-            { $match: { 'referral.referredBy': { $ne: null } } },
+            { $match: referredFilter },
             {
                 $group: {
                     _id: null,
@@ -2638,7 +2641,7 @@ export class UserService {
             referredCount: number;
             convertedCount: number;
         }>([
-            { $match: { 'referral.referredBy': { $ne: null } } },
+            { $match: referredFilter },
             {
                 $group: {
                     _id: '$referral.referredBy',
@@ -2664,25 +2667,42 @@ export class UserService {
             { $limit: topLimit }
         ]).toArray();
 
-        // Resolve referral codes to user IDs
-        const topReferrers = [];
-        for (const entry of topReferrersResult) {
-            const referrer = await this.collection.findOne(
-                { 'referral.code': entry._id },
-                { projection: { id: 1 } }
-            );
-            topReferrers.push({
-                userId: referrer?.id ?? 'unknown',
-                code: entry._id,
-                referredCount: entry.referredCount,
-                convertedCount: entry.convertedCount
-            });
+        // Resolve referral codes to user IDs in a single batch query (avoids N+1)
+        const referralCodes = topReferrersResult.map(entry => entry._id);
+        const referrersByCode: Record<string, string> = {};
+
+        if (referralCodes.length > 0) {
+            const referrerDocs = await this.collection
+                .find(
+                    { 'referral.code': { $in: referralCodes } },
+                    { projection: { id: 1, 'referral.code': 1 } }
+                )
+                .toArray();
+
+            for (const doc of referrerDocs) {
+                const code = doc.referral?.code;
+                if (code) {
+                    referrersByCode[code] = doc.id;
+                }
+            }
         }
+
+        const topReferrers: Array<{
+            userId: string;
+            code: string;
+            referredCount: number;
+            convertedCount: number;
+        }> = topReferrersResult.map(entry => ({
+            userId: referrersByCode[entry._id] ?? 'unknown',
+            code: entry._id,
+            referredCount: entry.referredCount,
+            convertedCount: entry.convertedCount
+        }));
 
         // Recent referrals within the period
         const recentResult = await this.collection
             .find(
-                { 'referral.referredBy': { $ne: null }, 'referral.referredAt': { $gte: since } },
+                { 'referral.referredBy': { $ne: null, $exists: true }, 'referral.referredAt': { $gte: since } },
                 { projection: { id: 1, referral: 1, wallets: 1 } }
             )
             .sort({ 'referral.referredAt': -1 })
@@ -2692,8 +2712,8 @@ export class UserService {
         const recentReferrals = recentResult.map(doc => ({
             userId: doc.id,
             referredBy: doc.referral?.referredBy ?? '',
-            referredAt: (doc.referral?.referredAt as Date)?.toISOString() ?? '',
-            hasVerifiedWallet: (doc.wallets ?? []).some((w: any) => w.verified)
+            referredAt: doc.referral?.referredAt ? (doc.referral.referredAt as Date).toISOString() : '',
+            hasVerifiedWallet: (doc.wallets ?? []).some((w: { verified?: boolean }) => !!w.verified)
         }));
 
         return {

@@ -42,6 +42,7 @@ export function ReferralOverview({ token }: Props) {
     const [period, setPeriod] = useState<AnalyticsPeriod>('30d');
     const [data, setData] = useState<IReferralOverview | null>(null);
     const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(false);
 
     /**
      * Fetch referral overview data.
@@ -51,8 +52,11 @@ export function ReferralOverview({ token }: Props) {
         try {
             const result = await adminGetReferralOverview(token, { period });
             setData(result);
-        } catch (error) {
-            console.error('Failed to fetch referral overview:', error);
+            setError(false);
+        } catch (err) {
+            console.error('Failed to fetch referral overview:', err);
+            setData(null);
+            setError(true);
         } finally {
             setLoading(false);
         }
@@ -66,8 +70,8 @@ export function ReferralOverview({ token }: Props) {
         return <div className={styles.loading}>Loading referral data...</div>;
     }
 
-    if (!data) {
-        return <div className={styles.empty_state}>Failed to load referral data.</div>;
+    if (error || !data) {
+        return <div className={styles.empty_state}>Failed to load referral data. Please try again.</div>;
     }
 
     return (

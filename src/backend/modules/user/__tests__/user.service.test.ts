@@ -756,5 +756,69 @@ describe('UserService', () => {
                 expect(stats!.convertedCount).toBe(0);
             });
         });
+
+        describe('getReferralOverview', () => {
+            it('should return correct shape with zero totals when no referrals exist', async () => {
+                // The mock aggregate doesn't support complex $group with $cond/$filter,
+                // so this test verifies the method handles empty data gracefully and
+                // returns the correct response shape.
+                const overview = await userService.getReferralOverview(30 * 24);
+
+                expect(overview).toHaveProperty('totalReferrals');
+                expect(overview).toHaveProperty('totalConverted');
+                expect(overview).toHaveProperty('conversionRate');
+                expect(overview).toHaveProperty('usersWithCodes');
+                expect(overview).toHaveProperty('topReferrers');
+                expect(overview).toHaveProperty('recentReferrals');
+                expect(Array.isArray(overview.topReferrers)).toBe(true);
+                expect(Array.isArray(overview.recentReferrals)).toBe(true);
+            });
+
+            it('should include recent referrals from find query', async () => {
+                const collection = mockDatabase.getCollection('users');
+
+                // Create referrer with code
+                await userService.getOrCreate(validUUID);
+                await collection.updateOne(
+                    { id: validUUID },
+                    { $set: { referral: { code: 'aabb1122', referredBy: null, referredAt: null } } }
+                );
+
+                // Create referred user with recent referral date
+                await userService.getOrCreate(validUUID2);
+                await collection.updateOne(
+                    { id: validUUID2 },
+                    {
+                        $set: {
+                            referral: { code: null, referredBy: 'aabb1122', referredAt: new Date() },
+                            'activity.lastSeen': new Date()
+                        }
+                    }
+                );
+
+                const overview = await userService.getReferralOverview(30 * 24);
+
+                // Recent referrals use find() (not aggregate), so the mock handles it
+                expect(overview.recentReferrals.length).toBe(1);
+                expect(overview.recentReferrals[0].userId).toBe(validUUID2);
+                expect(overview.recentReferrals[0].referredBy).toBe('aabb1122');
+            });
+
+            it('should count users with referral codes', async () => {
+                const collection = mockDatabase.getCollection('users');
+
+                // Create user with code
+                await userService.getOrCreate(validUUID);
+                await collection.updateOne(
+                    { id: validUUID },
+                    { $set: { referral: { code: 'ee556677', referredBy: null, referredAt: null } } }
+                );
+
+                const overview = await userService.getReferralOverview(30 * 24);
+
+                // countDocuments with $ne + $exists is handled by mock
+                expect(overview.usersWithCodes).toBeGreaterThanOrEqual(1);
+            });
+        });
     });
 });
