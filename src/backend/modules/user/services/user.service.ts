@@ -2566,6 +2566,149 @@ export class UserService {
     }
 
     /**
+     * Get aggregate referral program overview for admin dashboard.
+     *
+     * Returns program-wide metrics: total referrals, conversions, top referrers,
+     * and recent referral activity. Provides the data needed to evaluate whether
+     * the referral program is driving growth.
+     *
+     * @param periodHours - Lookback period for "recent" activity
+     * @param topLimit - Max top referrers to return (default: 15)
+     * @returns Aggregate referral metrics
+     */
+    async getReferralOverview(periodHours: number, topLimit: number = 15): Promise<{
+        totalReferrals: number;
+        totalConverted: number;
+        conversionRate: number;
+        usersWithCodes: number;
+        topReferrers: Array<{
+            userId: string;
+            code: string;
+            referredCount: number;
+            convertedCount: number;
+        }>;
+        recentReferrals: Array<{
+            userId: string;
+            referredBy: string;
+            referredAt: string;
+            hasVerifiedWallet: boolean;
+        }>;
+    }> {
+        const since = new Date();
+        since.setTime(since.getTime() - (periodHours * 60 * 60 * 1000));
+
+        // Aggregate totals in a single pipeline
+        const totalsResult = await this.collection.aggregate<{
+            _id: null;
+            totalReferrals: number;
+            totalConverted: number;
+        }>([
+            { $match: { 'referral.referredBy': { $ne: null } } },
+            {
+                $group: {
+                    _id: null,
+                    totalReferrals: { $sum: 1 },
+                    totalConverted: {
+                        $sum: {
+                            $cond: [{
+                                $gt: [{
+                                    $size: {
+                                        $filter: {
+                                            input: { $ifNull: ['$wallets', []] },
+                                            as: 'w',
+                                            cond: { $eq: ['$$w.verified', true] }
+                                        }
+                                    }
+                                }, 0]
+                            }, 1, 0]
+                        }
+                    }
+                }
+            }
+        ]).toArray();
+
+        const totals = totalsResult[0] ?? { totalReferrals: 0, totalConverted: 0 };
+        const usersWithCodes = await this.collection.countDocuments({
+            'referral.code': { $ne: null, $exists: true }
+        });
+
+        // Top referrers: group referred users by referral code, count and rank
+        const topReferrersResult = await this.collection.aggregate<{
+            _id: string;
+            referredCount: number;
+            convertedCount: number;
+        }>([
+            { $match: { 'referral.referredBy': { $ne: null } } },
+            {
+                $group: {
+                    _id: '$referral.referredBy',
+                    referredCount: { $sum: 1 },
+                    convertedCount: {
+                        $sum: {
+                            $cond: [{
+                                $gt: [{
+                                    $size: {
+                                        $filter: {
+                                            input: { $ifNull: ['$wallets', []] },
+                                            as: 'w',
+                                            cond: { $eq: ['$$w.verified', true] }
+                                        }
+                                    }
+                                }, 0]
+                            }, 1, 0]
+                        }
+                    }
+                }
+            },
+            { $sort: { referredCount: -1 } },
+            { $limit: topLimit }
+        ]).toArray();
+
+        // Resolve referral codes to user IDs
+        const topReferrers = [];
+        for (const entry of topReferrersResult) {
+            const referrer = await this.collection.findOne(
+                { 'referral.code': entry._id },
+                { projection: { id: 1 } }
+            );
+            topReferrers.push({
+                userId: referrer?.id ?? 'unknown',
+                code: entry._id,
+                referredCount: entry.referredCount,
+                convertedCount: entry.convertedCount
+            });
+        }
+
+        // Recent referrals within the period
+        const recentResult = await this.collection
+            .find(
+                { 'referral.referredBy': { $ne: null }, 'referral.referredAt': { $gte: since } },
+                { projection: { id: 1, referral: 1, wallets: 1 } }
+            )
+            .sort({ 'referral.referredAt': -1 })
+            .limit(25)
+            .toArray();
+
+        const recentReferrals = recentResult.map(doc => ({
+            userId: doc.id,
+            referredBy: doc.referral?.referredBy ?? '',
+            referredAt: (doc.referral?.referredAt as Date)?.toISOString() ?? '',
+            hasVerifiedWallet: (doc.wallets ?? []).some((w: any) => w.verified)
+        }));
+
+        return {
+            totalReferrals: totals.totalReferrals,
+            totalConverted: totals.totalConverted,
+            conversionRate: totals.totalReferrals > 0
+                ? Math.round((totals.totalConverted / totals.totalReferrals) * 10000) / 100
+                : 0,
+            usersWithCodes,
+            topReferrers,
+            recentReferrals
+        };
+    }
+
+    /**
      * Generate a unique 8-character referral code.
      *
      * Uses cryptographic randomness and checks for collisions in the database.

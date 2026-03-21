@@ -1061,6 +1061,25 @@ export class UserController {
     }
 
     /**
+     * GET /api/admin/users/analytics/referral-overview
+     *
+     * Get aggregate referral program metrics.
+     *
+     * Query parameters:
+     * - period: '24h' | '7d' | '30d' | '90d' (default: '30d')
+     * - limit: max top referrers (default: 15, max: 50)
+     *
+     * Response: { totalReferrals, totalConverted, conversionRate, usersWithCodes, topReferrers, recentReferrals }
+     */
+    async getReferralOverview(req: Request, res: Response): Promise<void> {
+        await this.handleAnalyticsRequest(res, () => {
+            const periodHours = this.parsePeriodHours(req.query.period as string);
+            const limit = this.parseLimit(req.query.limit as string, 15, 50);
+            return this.userService.getReferralOverview(periodHours, limit);
+        }, 'Failed to get referral overview');
+    }
+
+    /**
      * GET /api/admin/users/:id
      *
      * Get any user by UUID (admin bypass).

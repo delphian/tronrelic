@@ -283,6 +283,12 @@ export function createAdminUserRouter(controller: UserController): Router {
     router.get('/analytics/retention', controller.getRetention.bind(controller));
 
     /**
+     * GET /api/admin/users/analytics/referral-overview
+     * Get aggregate referral program metrics
+     */
+    router.get('/analytics/referral-overview', controller.getReferralOverview.bind(controller));
+
+    /**
      * GET /api/admin/users/:id
      * Get any user by UUID (admin bypass)
      */

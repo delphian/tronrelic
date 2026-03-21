@@ -15,3 +15,4 @@ export type { ProfileData } from './Profile';
 export { UsersMonitor } from './admin';
 export { VisitorAnalytics } from './admin';
 export { AnalyticsDashboard } from './admin';
+export { ReferralOverview } from './admin';

@@ -1,0 +1,114 @@
+/**
+ * ReferralOverview Styles
+ *
+ * Admin referral program overview dashboard.
+ * Uses design tokens and container queries.
+ */
+
+@use '../../../../../app/breakpoints' as *;
+
+.container {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-10);
+}
+
+.metrics_grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: var(--spacing-5);
+    container-type: inline-size;
+    container-name: referral-metrics;
+}
+
+@container referral-metrics (min-width: #{$breakpoint-mobile-lg}) {
+    .metrics_grid {
+        grid-template-columns: repeat(4, 1fr);
+    }
+}
+
+.metric_card {
+    text-align: center;
+    padding: var(--spacing-7);
+}
+
+.metric_card__value {
+    font-size: var(--font-size-xl);
+    font-weight: var(--font-weight-bold);
+    color: var(--color-primary);
+    line-height: var(--line-height-tight);
+}
+
+.metric_card__label {
+    font-size: var(--font-size-xs);
+    color: var(--color-text-muted);
+    margin-top: var(--spacing-3);
+}
+
+.section_title {
+    font-size: var(--font-size-lg);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text);
+    margin: 0 0 var(--spacing-5) 0;
+}
+
+.title_icon {
+    margin-right: var(--spacing-4);
+    vertical-align: middle;
+}
+
+.table_wrapper {
+    overflow-x: auto;
+}
+
+.table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--font-size-sm);
+}
+
+.table th {
+    text-align: left;
+    padding: var(--spacing-4) var(--spacing-5);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text-muted);
+    font-size: var(--font-size-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    border-bottom: var(--border-width-thin) solid var(--color-border);
+}
+
+.table td {
+    padding: var(--spacing-4) var(--spacing-5);
+    color: var(--color-text);
+    border-bottom: var(--border-width-thin) solid var(--color-border);
+    vertical-align: middle;
+}
+
+.table tr:last-child td {
+    border-bottom: none;
+}
+
+.table__number {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+.table__mono {
+    font-family: monospace;
+    font-size: var(--font-size-xs);
+}
+
+.empty_state {
+    text-align: center;
+    padding: var(--spacing-12);
+    color: var(--color-text-muted);
+    font-size: var(--font-size-sm);
+}
+
+.loading {
+    text-align: center;
+    padding: var(--spacing-12);
+    color: var(--color-text-muted);
+    font-size: var(--font-size-sm);
+}
