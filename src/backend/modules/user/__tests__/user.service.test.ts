@@ -526,4 +526,235 @@ describe('UserService', () => {
             expect(hasIndexLog).toBe(true);
         });
     });
+
+    describe('Referral System', () => {
+        describe('linkWallet - referral code generation', () => {
+            it('should generate referral code on first wallet verification', async () => {
+                // Create user
+                const user = await userService.getOrCreate(validUUID);
+                expect(user.referral).toBeNull();
+
+                // Link wallet (triggers verification and code generation)
+                // Mock verifyMessage returns 'mocked-address', so message must include it
+                const result = await userService.linkWallet(validUUID, {
+                    address: 'mocked-address',
+                    message: 'Link wallet mocked-address',
+                    signature: 'mock-sig',
+                    timestamp: Date.now()
+                });
+
+                // Verify referral code was generated
+                expect(result.user.referral).not.toBeNull();
+                expect(result.user.referral?.code).toBeTruthy();
+                expect(typeof result.user.referral?.code).toBe('string');
+                expect(result.user.referral?.code?.length).toBe(8);
+            });
+
+            it('should preserve existing referredBy when generating code', async () => {
+                // Create user and manually set referredBy (simulating attribution before verify)
+                await userService.getOrCreate(validUUID);
+                const collection = mockDatabase.getCollection('users');
+                await collection.updateOne(
+                    { id: validUUID },
+                    {
+                        $set: {
+                            referral: {
+                                code: null,
+                                referredBy: 'abc12345',
+                                referredAt: new Date()
+                            }
+                        }
+                    }
+                );
+
+                // Link wallet — should generate code but preserve referredBy
+                const result = await userService.linkWallet(validUUID, {
+                    address: 'mocked-address',
+                    message: 'Link wallet mocked-address',
+                    signature: 'mock-sig',
+                    timestamp: Date.now()
+                });
+
+                expect(result.user.referral?.code).toBeTruthy();
+                expect(result.user.referral?.referredBy).toBe('abc12345');
+            });
+
+            it('should not regenerate code on subsequent wallet verifications', async () => {
+                // Create user with existing referral code
+                await userService.getOrCreate(validUUID);
+                const collection = mockDatabase.getCollection('users');
+                await collection.updateOne(
+                    { id: validUUID },
+                    {
+                        $set: {
+                            referral: {
+                                code: 'existing1',
+                                referredBy: null,
+                                referredAt: null
+                            }
+                        }
+                    }
+                );
+
+                // Link another wallet
+                const result = await userService.linkWallet(validUUID, {
+                    address: 'mocked-address',
+                    message: 'Link wallet mocked-address',
+                    signature: 'mock-sig',
+                    timestamp: Date.now()
+                });
+
+                // Code should remain unchanged
+                expect(result.user.referral?.code).toBe('existing1');
+            });
+        });
+
+        describe('startSession - referral attribution', () => {
+            it('should attribute referral on first session with valid UTM', async () => {
+                // Create referring user with a code
+                await userService.getOrCreate(validUUID);
+                const collection = mockDatabase.getCollection('users');
+                await collection.updateOne(
+                    { id: validUUID },
+                    {
+                        $set: {
+                            referral: { code: 'aef12345', referredBy: null, referredAt: null }
+                        }
+                    }
+                );
+
+                // Create new user arriving via referral link
+                await userService.getOrCreate(validUUID2);
+
+                await userService.startSession(
+                    validUUID2,
+                    '127.0.0.1',
+                    'Mozilla/5.0 Desktop',
+                    undefined,
+                    1200,
+                    { source: 'referral', medium: 'link', content: 'aef12345' },
+                    '/'
+                );
+
+                // Verify attribution was recorded
+                const referred = await collection.findOne({ id: validUUID2 });
+                expect(referred?.referral?.referredBy).toBe('aef12345');
+                expect(referred?.referral?.referredAt).toBeTruthy();
+            });
+
+            it('should not attribute self-referrals', async () => {
+                // Create user with a code
+                await userService.getOrCreate(validUUID);
+                const collection = mockDatabase.getCollection('users');
+                await collection.updateOne(
+                    { id: validUUID },
+                    {
+                        $set: {
+                            referral: { code: 'aabb0011', referredBy: null, referredAt: null }
+                        }
+                    }
+                );
+
+                // Same user arrives with their own referral code
+                await userService.startSession(
+                    validUUID,
+                    '127.0.0.1',
+                    'Mozilla/5.0 Desktop',
+                    undefined,
+                    1200,
+                    { source: 'referral', medium: 'link', content: 'aabb0011' },
+                    '/'
+                );
+
+                // Should NOT record self-referral
+                const user = await collection.findOne({ id: validUUID });
+                expect(user?.referral?.referredBy).toBeNull();
+            });
+
+            it('should not overwrite existing referral attribution', async () => {
+                // Create referred user with existing attribution
+                await userService.getOrCreate(validUUID2);
+                const collection = mockDatabase.getCollection('users');
+                await collection.updateOne(
+                    { id: validUUID2 },
+                    {
+                        $set: {
+                            referral: { code: null, referredBy: 'original', referredAt: new Date('2025-01-01') }
+                        }
+                    }
+                );
+
+                // Create second referrer
+                await userService.getOrCreate(validUUID);
+                await collection.updateOne(
+                    { id: validUUID },
+                    {
+                        $set: {
+                            referral: { code: 'ccdd2233', referredBy: null, referredAt: null }
+                        }
+                    }
+                );
+
+                // Start session with new referral — should be ignored
+                await userService.startSession(
+                    validUUID2,
+                    '127.0.0.1',
+                    'Mozilla/5.0 Desktop',
+                    undefined,
+                    1200,
+                    { source: 'referral', medium: 'link', content: 'ccdd2233' },
+                    '/'
+                );
+
+                const user = await collection.findOne({ id: validUUID2 });
+                expect(user?.referral?.referredBy).toBe('original');
+            });
+
+            it('should reject invalid referral code formats', async () => {
+                await userService.getOrCreate(validUUID2);
+
+                // Start session with invalid code (too short, not hex)
+                await userService.startSession(
+                    validUUID2,
+                    '127.0.0.1',
+                    'Mozilla/5.0 Desktop',
+                    undefined,
+                    1200,
+                    { source: 'referral', medium: 'link', content: 'bad!' },
+                    '/'
+                );
+
+                const collection = mockDatabase.getCollection('users');
+                const user = await collection.findOne({ id: validUUID2 });
+                expect(user?.referral?.referredBy ?? null).toBeNull();
+            });
+        });
+
+        describe('getReferralStats', () => {
+            it('should return null for user without referral code', async () => {
+                await userService.getOrCreate(validUUID);
+                const stats = await userService.getReferralStats(validUUID);
+                expect(stats).toBeNull();
+            });
+
+            it('should return code and zero counts when no referrals', async () => {
+                await userService.getOrCreate(validUUID);
+                const collection = mockDatabase.getCollection('users');
+                await collection.updateOne(
+                    { id: validUUID },
+                    {
+                        $set: {
+                            referral: { code: 'test1234', referredBy: null, referredAt: null }
+                        }
+                    }
+                );
+
+                const stats = await userService.getReferralStats(validUUID);
+                expect(stats).not.toBeNull();
+                expect(stats!.code).toBe('test1234');
+                expect(stats!.referredCount).toBe(0);
+                expect(stats!.convertedCount).toBe(0);
+            });
+        });
+    });
 });

@@ -379,6 +379,42 @@ export async function fetchProfile(address: string): Promise<IPublicProfile | nu
 }
 
 // ============================================================================
+// Referral API Functions
+// ============================================================================
+
+/** Referral statistics response. */
+export interface IReferralStats {
+    /** User's referral code */
+    code: string;
+    /** Number of visitors who arrived via this referral code */
+    referredCount: number;
+    /** Number of referred visitors who verified a wallet */
+    convertedCount: number;
+}
+
+/**
+ * Get referral code and stats for the authenticated user.
+ *
+ * Returns null if the user has no referral code yet (no verified wallet).
+ * Throws on auth errors or server failures so the UI can show an
+ * appropriate error state instead of the misleading "verify wallet" message.
+ *
+ * @param userId - User UUID
+ * @returns Referral stats or null (no code yet)
+ * @throws Error on auth/network/server failures
+ */
+export async function fetchReferralStats(userId: string): Promise<IReferralStats | null> {
+    const response = await apiClient.get(`/user/${userId}/referral`, {
+        withCredentials: true
+    });
+    const data = response.data as IReferralStats | { referral: null };
+    if ('referral' in data && data.referral === null) {
+        return null;
+    }
+    return data as IReferralStats;
+}
+
+// ============================================================================
 // Admin API Functions
 // ============================================================================
 
