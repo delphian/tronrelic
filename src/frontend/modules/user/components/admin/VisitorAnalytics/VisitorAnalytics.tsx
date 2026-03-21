@@ -18,7 +18,11 @@ import { LineChart } from '../../../../../features/charts/components/LineChart';
 import type { ChartSeries } from '../../../../../features/charts/components/LineChart';
 import { ClientTime } from '../../../../../components/ui/ClientTime';
 import { Button } from '../../../../../components/ui/Button';
-import { config as runtimeConfig } from '../../../../../lib/config';
+import {
+    adminGetDailyVisitors,
+    adminGetVisitorOrigins,
+    adminGetNewUsers
+} from '../../../api';
 import type { IDailyVisitorData, IVisitorOrigin, VisitorPeriod } from '../../../api';
 import styles from './VisitorAnalytics.module.scss';
 
@@ -67,9 +71,6 @@ const PERIOD_LABELS: Record<VisitorPeriod, string> = {
     '90d': '90 Days'
 };
 
-/** Admin API header key. */
-const ADMIN_HEADER_KEY = 'x-admin-token';
-
 interface Props {
     token: string;
 }
@@ -104,23 +105,14 @@ export function VisitorAnalytics({ token }: Props) {
     const newUsersLimit = 25;
 
     /**
-     * Fetch daily visitor chart data from the analytics endpoint.
+     * Fetch daily visitor chart data using typed API client.
      */
     const fetchChartData = useCallback(async () => {
         setChartLoading(true);
         try {
             const days = chartRange === '30d' ? 30 : 90;
-            const response = await fetch(
-                `${runtimeConfig.apiBaseUrl}/admin/users/analytics/daily-visitors?days=${days}`,
-                { headers: { [ADMIN_HEADER_KEY]: token } }
-            );
-
-            if (!response.ok) {
-                throw new Error(`Failed to fetch chart data: ${response.status}`);
-            }
-
-            const result = await response.json();
-            setChartData(result.data ?? []);
+            const data = await adminGetDailyVisitors(token, days);
+            setChartData(data);
         } catch (error) {
             console.error('Failed to fetch daily visitors:', error);
             setChartData([]);
@@ -130,26 +122,16 @@ export function VisitorAnalytics({ token }: Props) {
     }, [token, chartRange]);
 
     /**
-     * Fetch visitor origins from the analytics endpoint.
+     * Fetch visitor origins using typed API client.
      */
     const fetchVisitors = useCallback(async () => {
         setVisitorsLoading(true);
         try {
-            const params = new URLSearchParams();
-            params.set('period', visitorPeriod);
-            params.set('limit', visitorsLimit.toString());
-            params.set('skip', ((visitorsPage - 1) * visitorsLimit).toString());
-
-            const response = await fetch(
-                `${runtimeConfig.apiBaseUrl}/admin/users/analytics/visitor-origins?${params.toString()}`,
-                { headers: { [ADMIN_HEADER_KEY]: token } }
-            );
-
-            if (!response.ok) {
-                throw new Error(`Failed to fetch visitor origins: ${response.status}`);
-            }
-
-            const result = await response.json();
+            const result = await adminGetVisitorOrigins(token, {
+                period: visitorPeriod,
+                limit: visitorsLimit,
+                skip: (visitorsPage - 1) * visitorsLimit
+            });
             setVisitors(result.visitors ?? []);
             setVisitorsTotal(result.total ?? 0);
         } catch (error) {
@@ -162,26 +144,16 @@ export function VisitorAnalytics({ token }: Props) {
     }, [token, visitorPeriod, visitorsPage]);
 
     /**
-     * Fetch new users from the analytics endpoint.
+     * Fetch new users using typed API client.
      */
     const fetchNewUsers = useCallback(async () => {
         setNewUsersLoading(true);
         try {
-            const params = new URLSearchParams();
-            params.set('period', newUsersPeriod);
-            params.set('limit', newUsersLimit.toString());
-            params.set('skip', ((newUsersPage - 1) * newUsersLimit).toString());
-
-            const response = await fetch(
-                `${runtimeConfig.apiBaseUrl}/admin/users/analytics/new-users?${params.toString()}`,
-                { headers: { [ADMIN_HEADER_KEY]: token } }
-            );
-
-            if (!response.ok) {
-                throw new Error(`Failed to fetch new users: ${response.status}`);
-            }
-
-            const result = await response.json();
+            const result = await adminGetNewUsers(token, {
+                period: newUsersPeriod,
+                limit: newUsersLimit,
+                skip: (newUsersPage - 1) * newUsersLimit
+            });
             setNewUsers(result.visitors ?? []);
             setNewUsersTotal(result.total ?? 0);
         } catch (error) {

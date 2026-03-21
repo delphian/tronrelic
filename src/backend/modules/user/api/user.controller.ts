@@ -762,14 +762,7 @@ export class UserController {
         try {
             const { period, limit, skip } = req.query;
 
-            const periodMap: Record<string, number> = {
-                '24h': 24,
-                '7d': 7 * 24,
-                '30d': 30 * 24,
-                '90d': 90 * 24
-            };
-            const periodStr = (period as string) || '24h';
-            const periodHours = periodMap[periodStr] ?? 24;
+            const periodHours = this.parsePeriodHours(period as string, '24h');
 
             const parsedLimit = limit ? parseInt(limit as string, 10) : 50;
             const parsedSkip = skip ? parseInt(skip as string, 10) : 0;
@@ -806,14 +799,7 @@ export class UserController {
         try {
             const { period, limit, skip } = req.query;
 
-            const periodMap: Record<string, number> = {
-                '24h': 24,
-                '7d': 7 * 24,
-                '30d': 30 * 24,
-                '90d': 90 * 24
-            };
-            const periodStr = (period as string) || '24h';
-            const periodHours = periodMap[periodStr] ?? 24;
+            const periodHours = this.parsePeriodHours(period as string, '24h');
 
             const parsedLimit = limit ? parseInt(limit as string, 10) : 50;
             const parsedSkip = skip ? parseInt(skip as string, 10) : 0;
@@ -839,17 +825,63 @@ export class UserController {
     /**
      * Parse period query parameter into hours.
      *
-     * @param period - Period string (e.g., '7d', '30d', '90d')
+     * Centralizes period parsing for all analytics endpoints. The default
+     * period varies by endpoint: aggregate dashboards default to '30d',
+     * while per-visitor tables default to '24h' for recency.
+     *
+     * @param period - Period string (e.g., '24h', '7d', '30d', '90d')
+     * @param defaultPeriod - Default period when none provided (default: '30d')
      * @returns Number of hours
      */
-    private parsePeriodHours(period: string | undefined): number {
+    private parsePeriodHours(period: string | undefined, defaultPeriod: string = '30d'): number {
         const map: Record<string, number> = {
             '24h': 24,
             '7d': 7 * 24,
             '30d': 30 * 24,
             '90d': 90 * 24
         };
-        return map[period ?? '30d'] ?? 30 * 24;
+        return map[period ?? defaultPeriod] ?? map[defaultPeriod] ?? 30 * 24;
+    }
+
+    /**
+     * Wrap an analytics request with standard error handling.
+     *
+     * Centralizes try/catch, error logging, and JSON error response
+     * for all aggregate analytics endpoints.
+     *
+     * @param res - Express response
+     * @param logic - Async function that produces the response data
+     * @param errorMessage - Message for logging and error response
+     */
+    private async handleAnalyticsRequest<T>(
+        res: Response,
+        logic: () => Promise<T>,
+        errorMessage: string
+    ): Promise<void> {
+        try {
+            const result = await logic();
+            res.json(result);
+        } catch (error) {
+            this.logger.error({ error }, errorMessage);
+            res.status(500).json({
+                error: errorMessage,
+                message: error instanceof Error ? error.message : 'Unknown error'
+            });
+        }
+    }
+
+    /**
+     * Parse a limit query parameter with bounds clamping.
+     *
+     * @param raw - Raw query string value
+     * @param defaultVal - Default when not provided
+     * @param max - Maximum allowed value
+     * @returns Clamped integer
+     */
+    private parseLimit(raw: string | undefined, defaultVal: number, max: number): number {
+        if (!raw) return defaultVal;
+        const parsed = parseInt(raw, 10);
+        return Number.isNaN(parsed) ? defaultVal : Math.min(Math.max(1, parsed), max);
     }
 
     /**
@@ -863,17 +895,10 @@ export class UserController {
      * Response: { sources: [...], total: number }
      */
     async getTrafficSources(req: Request, res: Response): Promise<void> {
-        try {
+        await this.handleAnalyticsRequest(res, () => {
             const periodHours = this.parsePeriodHours(req.query.period as string);
-            const result = await this.userService.getTrafficSources(periodHours);
-            res.json(result);
-        } catch (error) {
-            this.logger.error({ error }, 'Failed to get traffic sources');
-            res.status(500).json({
-                error: 'Failed to get traffic sources',
-                message: error instanceof Error ? error.message : 'Unknown error'
-            });
-        }
+            return this.userService.getTrafficSources(periodHours);
+        }, 'Failed to get traffic sources');
     }
 
     /**
@@ -888,20 +913,11 @@ export class UserController {
      * Response: { pages: [...], total: number }
      */
     async getTopLandingPages(req: Request, res: Response): Promise<void> {
-        try {
+        await this.handleAnalyticsRequest(res, () => {
             const periodHours = this.parsePeriodHours(req.query.period as string);
-            const parsedLimit = req.query.limit ? parseInt(req.query.limit as string, 10) : 20;
-            const limit = Number.isNaN(parsedLimit) ? 20 : Math.min(Math.max(1, parsedLimit), 50);
-
-            const result = await this.userService.getTopLandingPages(periodHours, limit);
-            res.json(result);
-        } catch (error) {
-            this.logger.error({ error }, 'Failed to get top landing pages');
-            res.status(500).json({
-                error: 'Failed to get top landing pages',
-                message: error instanceof Error ? error.message : 'Unknown error'
-            });
-        }
+            const limit = this.parseLimit(req.query.limit as string, 20, 50);
+            return this.userService.getTopLandingPages(periodHours, limit);
+        }, 'Failed to get top landing pages');
     }
 
     /**
@@ -916,20 +932,11 @@ export class UserController {
      * Response: { countries: [...], total: number }
      */
     async getGeoDistribution(req: Request, res: Response): Promise<void> {
-        try {
+        await this.handleAnalyticsRequest(res, () => {
             const periodHours = this.parsePeriodHours(req.query.period as string);
-            const parsedLimit = req.query.limit ? parseInt(req.query.limit as string, 10) : 30;
-            const limit = Number.isNaN(parsedLimit) ? 30 : Math.min(Math.max(1, parsedLimit), 100);
-
-            const result = await this.userService.getGeoDistribution(periodHours, limit);
-            res.json(result);
-        } catch (error) {
-            this.logger.error({ error }, 'Failed to get geo distribution');
-            res.status(500).json({
-                error: 'Failed to get geo distribution',
-                message: error instanceof Error ? error.message : 'Unknown error'
-            });
-        }
+            const limit = this.parseLimit(req.query.limit as string, 30, 100);
+            return this.userService.getGeoDistribution(periodHours, limit);
+        }, 'Failed to get geo distribution');
     }
 
     /**
@@ -943,17 +950,10 @@ export class UserController {
      * Response: { devices: [...], screenSizes: [...], total: number }
      */
     async getDeviceBreakdown(req: Request, res: Response): Promise<void> {
-        try {
+        await this.handleAnalyticsRequest(res, () => {
             const periodHours = this.parsePeriodHours(req.query.period as string);
-            const result = await this.userService.getDeviceBreakdown(periodHours);
-            res.json(result);
-        } catch (error) {
-            this.logger.error({ error }, 'Failed to get device breakdown');
-            res.status(500).json({
-                error: 'Failed to get device breakdown',
-                message: error instanceof Error ? error.message : 'Unknown error'
-            });
-        }
+            return this.userService.getDeviceBreakdown(periodHours);
+        }, 'Failed to get device breakdown');
     }
 
     /**
@@ -968,20 +968,11 @@ export class UserController {
      * Response: { campaigns: [...], total: number }
      */
     async getCampaignPerformance(req: Request, res: Response): Promise<void> {
-        try {
+        await this.handleAnalyticsRequest(res, () => {
             const periodHours = this.parsePeriodHours(req.query.period as string);
-            const parsedLimit = req.query.limit ? parseInt(req.query.limit as string, 10) : 20;
-            const limit = Number.isNaN(parsedLimit) ? 20 : Math.min(Math.max(1, parsedLimit), 50);
-
-            const result = await this.userService.getCampaignPerformance(periodHours, limit);
-            res.json(result);
-        } catch (error) {
-            this.logger.error({ error }, 'Failed to get campaign performance');
-            res.status(500).json({
-                error: 'Failed to get campaign performance',
-                message: error instanceof Error ? error.message : 'Unknown error'
-            });
-        }
+            const limit = this.parseLimit(req.query.limit as string, 20, 50);
+            return this.userService.getCampaignPerformance(periodHours, limit);
+        }, 'Failed to get campaign performance');
     }
 
     /**
@@ -995,17 +986,10 @@ export class UserController {
      * Response: { avgSessionDuration, avgPagesPerSession, bounceRate, avgSessionsPerUser, totalUsers }
      */
     async getEngagementMetrics(req: Request, res: Response): Promise<void> {
-        try {
+        await this.handleAnalyticsRequest(res, () => {
             const periodHours = this.parsePeriodHours(req.query.period as string);
-            const result = await this.userService.getEngagementMetrics(periodHours);
-            res.json(result);
-        } catch (error) {
-            this.logger.error({ error }, 'Failed to get engagement metrics');
-            res.status(500).json({
-                error: 'Failed to get engagement metrics',
-                message: error instanceof Error ? error.message : 'Unknown error'
-            });
-        }
+            return this.userService.getEngagementMetrics(periodHours);
+        }, 'Failed to get engagement metrics');
     }
 
     /**
@@ -1019,17 +1003,10 @@ export class UserController {
      * Response: { stages: [...] }
      */
     async getConversionFunnel(req: Request, res: Response): Promise<void> {
-        try {
+        await this.handleAnalyticsRequest(res, () => {
             const periodHours = this.parsePeriodHours(req.query.period as string);
-            const result = await this.userService.getConversionFunnel(periodHours);
-            res.json(result);
-        } catch (error) {
-            this.logger.error({ error }, 'Failed to get conversion funnel');
-            res.status(500).json({
-                error: 'Failed to get conversion funnel',
-                message: error instanceof Error ? error.message : 'Unknown error'
-            });
-        }
+            return this.userService.getConversionFunnel(periodHours);
+        }, 'Failed to get conversion funnel');
     }
 
     /**
@@ -1043,17 +1020,10 @@ export class UserController {
      * Response: { data: [{ date, newVisitors, returningVisitors }] }
      */
     async getRetention(req: Request, res: Response): Promise<void> {
-        try {
+        await this.handleAnalyticsRequest(res, () => {
             const periodHours = this.parsePeriodHours(req.query.period as string);
-            const result = await this.userService.getRetention(periodHours);
-            res.json(result);
-        } catch (error) {
-            this.logger.error({ error }, 'Failed to get retention data');
-            res.status(500).json({
-                error: 'Failed to get retention data',
-                message: error instanceof Error ? error.message : 'Unknown error'
-            });
-        }
+            return this.userService.getRetention(periodHours);
+        }, 'Failed to get retention data');
     }
 
     /**

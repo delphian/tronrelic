@@ -1952,14 +1952,20 @@ export class UserService {
     private classifyTrafficSource(domain: string | null): string {
         if (!domain) return 'direct';
 
-        const searchEngines = ['google.', 'bing.com', 'yahoo.com', 'duckduckgo.com', 'baidu.com', 'yandex.', 'ecosia.org', 'sogou.com', 'naver.com'];
-        const socialNetworks = ['twitter.com', 'x.com', 't.co', 'facebook.com', 'reddit.com', 'linkedin.com', 'telegram.org', 't.me', 'discord.com', 'youtube.com'];
-
         const lower = domain.toLowerCase();
-        if (searchEngines.some(se => lower.includes(se))) return 'organic';
+
+        // Search engines: prefix-match for multi-TLD engines, exact/subdomain for others
+        const searchPrefixes = ['google.', 'yandex.'];
+        const searchDomains = ['bing.com', 'yahoo.com', 'duckduckgo.com', 'baidu.com', 'ecosia.org', 'sogou.com', 'naver.com', 'search.naver.com'];
+        if (searchPrefixes.some(p => lower.startsWith(p) || lower.includes('.' + p))) return 'organic';
+        if (searchDomains.some(d => lower === d || lower.endsWith('.' + d))) return 'organic';
+
+        // Social networks: exact domain or subdomain match
+        const socialNetworks = ['twitter.com', 'x.com', 't.co', 'facebook.com', 'reddit.com', 'linkedin.com', 'telegram.org', 't.me', 'discord.com', 'youtube.com'];
         if (socialNetworks.some(sn => lower === sn || lower.endsWith('.' + sn))) return 'social';
 
-        return domain;
+        // Everything else is referral traffic (category stays finite for UI badges)
+        return 'referral';
     }
 
     /**
@@ -1976,37 +1982,39 @@ export class UserService {
         sources: Array<{ source: string; category: string; count: number; percentage: number }>;
         total: number;
     }> {
-        const filter = this.buildPeriodFilter(periodHours);
+        const since = new Date();
+        since.setTime(since.getTime() - (periodHours * 60 * 60 * 1000));
 
-        const users = await this.collection
-            .find(filter, { projection: { 'activity.origin.referrerDomain': 1, 'activity.sessions': { $slice: -1 } } })
-            .toArray();
+        // Group by referrer domain in MongoDB, then classify small result set in JS.
+        // This avoids loading all user documents into memory.
+        const results = await this.collection.aggregate<{ _id: string | null; count: number }>([
+            { $match: { 'activity.lastSeen': { $gte: since } } },
+            {
+                $project: {
+                    domain: {
+                        $ifNull: [
+                            '$activity.origin.referrerDomain',
+                            { $arrayElemAt: ['$activity.sessions.referrerDomain', -1] }
+                        ]
+                    }
+                }
+            },
+            { $group: { _id: '$domain', count: { $sum: 1 } } },
+            { $sort: { count: -1 } }
+        ]).toArray();
 
-        const sourceCounts = new Map<string, { category: string; count: number }>();
-        const total = users.length;
+        const total = results.reduce((sum, r) => sum + r.count, 0);
 
-        for (const user of users) {
-            const domain = user.activity?.origin?.referrerDomain
-                ?? user.activity?.sessions?.[0]?.referrerDomain
-                ?? null;
-            const category = this.classifyTrafficSource(domain);
-            const key = domain || 'direct';
-            const existing = sourceCounts.get(key);
-            if (existing) {
-                existing.count++;
-            } else {
-                sourceCounts.set(key, { category, count: 1 });
-            }
-        }
-
-        const sources = Array.from(sourceCounts.entries())
-            .map(([source, { category, count }]) => ({
+        const sources = results.map(r => {
+            const source = r._id || 'direct';
+            const category = this.classifyTrafficSource(r._id);
+            return {
                 source,
                 category,
-                count,
-                percentage: total > 0 ? Math.round((count / total) * 10000) / 100 : 0
-            }))
-            .sort((a, b) => b.count - a.count);
+                count: r.count,
+                percentage: total > 0 ? Math.round((r.count / total) * 10000) / 100 : 0
+            };
+        });
 
         return { sources, total };
     }
@@ -2023,17 +2031,14 @@ export class UserService {
      */
     async getTopLandingPages(periodHours: number, limit: number = 20): Promise<{
         pages: Array<{ path: string; visitors: number; avgSessions: number; avgPageViews: number }>;
-        total: number;
+        totalPages: number;
+        totalVisitors: number;
     }> {
         const since = new Date();
         since.setTime(since.getTime() - (periodHours * 60 * 60 * 1000));
 
-        const results = await this.collection.aggregate<{
-            _id: string;
-            visitors: number;
-            avgSessions: number;
-            avgPageViews: number;
-        }>([
+        // Common pipeline stages before facet
+        const commonStages = [
             { $match: { 'activity.lastSeen': { $gte: since } } },
             {
                 $project: {
@@ -2052,12 +2057,32 @@ export class UserService {
                     avgSessions: { $avg: '$sessionsCount' },
                     avgPageViews: { $avg: '$pageViews' }
                 }
-            },
-            { $sort: { visitors: -1 } },
-            { $limit: limit }
+            }
+        ];
+
+        // Use $facet to get both limited results and total count in one query
+        const facetResults = await this.collection.aggregate<{
+            results: Array<{ _id: string; visitors: number; avgSessions: number; avgPageViews: number }>;
+            meta: Array<{ totalPages: number; totalVisitors: number }>;
+        }>([
+            ...commonStages,
+            {
+                $facet: {
+                    results: [
+                        { $sort: { visitors: -1 } },
+                        { $limit: limit }
+                    ],
+                    meta: [
+                        { $group: { _id: null, totalPages: { $sum: 1 }, totalVisitors: { $sum: '$visitors' } } }
+                    ]
+                }
+            }
         ]).toArray();
 
-        const total = results.reduce((sum, r) => sum + r.visitors, 0);
+        const data = facetResults[0];
+        const results = data?.results ?? [];
+        const meta = data?.meta?.[0] ?? { totalPages: 0, totalVisitors: 0 };
+
         const pages = results.map(r => ({
             path: r._id,
             visitors: r.visitors,
@@ -2065,7 +2090,7 @@ export class UserService {
             avgPageViews: Math.round(r.avgPageViews * 10) / 10
         }));
 
-        return { pages, total };
+        return { pages, totalPages: meta.totalPages, totalVisitors: meta.totalVisitors };
     }
 
     /**
@@ -2149,15 +2174,6 @@ export class UserService {
             const screenSize = user.activity?.sessions?.[0]?.screenSize ?? 'unknown';
             screenSizeCounts.set(screenSize, (screenSizeCounts.get(screenSize) ?? 0) + 1);
         }
-
-        const toSorted = (map: Map<string, number>) =>
-            Array.from(map.entries())
-                .map(([key, count]) => ({
-                    [key === map.keys().next().value ? 'device' : 'screenSize']: key,
-                    count,
-                    percentage: total > 0 ? Math.round((count / total) * 10000) / 100 : 0
-                }))
-                .sort((a, b) => b.count - a.count);
 
         const devices = Array.from(deviceCounts.entries())
             .map(([device, count]) => ({
@@ -2278,22 +2294,25 @@ export class UserService {
         const since = new Date();
         since.setTime(since.getTime() - (periodHours * 60 * 60 * 1000));
 
+        // Sum totals across all sessions then divide by total session count
+        // to avoid "average of averages" bias (where light users get equal weight
+        // to heavy users). This produces true weighted averages.
         const results = await this.collection.aggregate<{
             _id: null;
             totalUsers: number;
-            avgDuration: number;
-            avgPages: number;
-            avgSessions: number;
-            totalSinglePageSessions: number;
-            totalSessionsChecked: number;
+            totalSessions: number;
+            totalDuration: number;
+            totalPages: number;
+            singlePageSessions: number;
         }>([
             { $match: { 'activity.lastSeen': { $gte: since } } },
             { $unwind: { path: '$activity.sessions', preserveNullAndEmptyArrays: false } },
             { $match: { 'activity.sessions.startedAt': { $gte: since } } },
             {
                 $group: {
-                    _id: '$id',
-                    sessionsCount: { $sum: 1 },
+                    _id: null,
+                    userIds: { $addToSet: '$id' },
+                    totalSessions: { $sum: 1 },
                     totalDuration: { $sum: '$activity.sessions.durationSeconds' },
                     totalPages: { $sum: { $size: { $ifNull: ['$activity.sessions.pages', []] } } },
                     singlePageSessions: {
@@ -2304,30 +2323,28 @@ export class UserService {
                 }
             },
             {
-                $group: {
-                    _id: null,
-                    totalUsers: { $sum: 1 },
-                    avgDuration: { $avg: { $cond: [{ $gt: ['$sessionsCount', 0] }, { $divide: ['$totalDuration', '$sessionsCount'] }, 0] } },
-                    avgPages: { $avg: { $cond: [{ $gt: ['$sessionsCount', 0] }, { $divide: ['$totalPages', '$sessionsCount'] }, 0] } },
-                    avgSessions: { $avg: '$sessionsCount' },
-                    totalSinglePageSessions: { $sum: '$singlePageSessions' },
-                    totalSessionsChecked: { $sum: '$sessionsCount' }
+                $project: {
+                    totalUsers: { $size: '$userIds' },
+                    totalSessions: 1,
+                    totalDuration: 1,
+                    totalPages: 1,
+                    singlePageSessions: 1
                 }
             }
         ]).toArray();
 
         const data = results[0];
-        if (!data) {
+        if (!data || data.totalSessions === 0) {
             return { avgSessionDuration: 0, avgPagesPerSession: 0, bounceRate: 0, avgSessionsPerUser: 0, totalUsers: 0 };
         }
 
         return {
-            avgSessionDuration: Math.round(data.avgDuration),
-            avgPagesPerSession: Math.round(data.avgPages * 10) / 10,
-            bounceRate: data.totalSessionsChecked > 0
-                ? Math.round((data.totalSinglePageSessions / data.totalSessionsChecked) * 10000) / 100
+            avgSessionDuration: Math.round(data.totalDuration / data.totalSessions),
+            avgPagesPerSession: Math.round((data.totalPages / data.totalSessions) * 10) / 10,
+            bounceRate: Math.round((data.singlePageSessions / data.totalSessions) * 10000) / 100,
+            avgSessionsPerUser: data.totalUsers > 0
+                ? Math.round((data.totalSessions / data.totalUsers) * 10) / 10
                 : 0,
-            avgSessionsPerUser: Math.round(data.avgSessions * 10) / 10,
             totalUsers: data.totalUsers
         };
     }
@@ -2347,26 +2364,54 @@ export class UserService {
         const since = new Date();
         since.setTime(since.getTime() - (periodHours * 60 * 60 * 1000));
 
-        const baseFilter = { 'activity.lastSeen': { $gte: since } };
+        // Single aggregation with conditional sums instead of 4 separate queries.
+        const results = await this.collection.aggregate<{
+            _id: null;
+            totalVisitors: number;
+            returnVisitors: number;
+            walletConnected: number;
+            walletVerified: number;
+        }>([
+            { $match: { 'activity.lastSeen': { $gte: since } } },
+            {
+                $group: {
+                    _id: null,
+                    totalVisitors: { $sum: 1 },
+                    returnVisitors: {
+                        $sum: { $cond: [{ $gt: [{ $ifNull: ['$activity.sessionsCount', 0] }, 1] }, 1, 0] }
+                    },
+                    walletConnected: {
+                        $sum: { $cond: [{ $gt: [{ $size: { $ifNull: ['$wallets', []] } }, 0] }, 1, 0] }
+                    },
+                    walletVerified: {
+                        $sum: {
+                            $cond: [{
+                                $gt: [{
+                                    $size: {
+                                        $filter: {
+                                            input: { $ifNull: ['$wallets', []] },
+                                            as: 'w',
+                                            cond: { $eq: ['$$w.verified', true] }
+                                        }
+                                    }
+                                }, 0]
+                            }, 1, 0]
+                        }
+                    }
+                }
+            }
+        ]).toArray();
 
-        const [totalVisitors, returnVisitors, walletConnected, walletVerified] = await Promise.all([
-            this.collection.countDocuments(baseFilter),
-            this.collection.countDocuments({ ...baseFilter, 'activity.sessionsCount': { $gt: 1 } }),
-            this.collection.countDocuments({ ...baseFilter, 'wallets.0': { $exists: true } }),
-            this.collection.countDocuments({
-                ...baseFilter,
-                wallets: { $elemMatch: { verified: true } }
-            })
-        ]);
+        const data = results[0] ?? { totalVisitors: 0, returnVisitors: 0, walletConnected: 0, walletVerified: 0 };
 
         const stages = [
-            { stage: 'Total Visitors', count: totalVisitors },
-            { stage: 'Return Visitors', count: returnVisitors },
-            { stage: 'Wallet Connected', count: walletConnected },
-            { stage: 'Wallet Verified', count: walletVerified }
+            { stage: 'Total Visitors', count: data.totalVisitors },
+            { stage: 'Return Visitors', count: data.returnVisitors },
+            { stage: 'Wallet Connected', count: data.walletConnected },
+            { stage: 'Wallet Verified', count: data.walletVerified }
         ].map((s, i, arr) => ({
             ...s,
-            percentage: totalVisitors > 0 ? Math.round((s.count / totalVisitors) * 10000) / 100 : 0,
+            percentage: data.totalVisitors > 0 ? Math.round((s.count / data.totalVisitors) * 10000) / 100 : 0,
             dropOff: i === 0
                 ? 0
                 : arr[i - 1].count > 0

@@ -625,12 +625,12 @@ export async function adminGetTrafficSources(
 export async function adminGetTopLandingPages(
     token: string,
     options?: { period?: AnalyticsPeriod; limit?: number }
-): Promise<{ pages: ILandingPage[]; total: number }> {
+): Promise<{ pages: ILandingPage[]; totalPages: number; totalVisitors: number }> {
     const response = await apiClient.get('/admin/users/analytics/top-landing-pages', {
         headers: { [adminHeaderKey]: token },
         params: options
     });
-    return response.data as { pages: ILandingPage[]; total: number };
+    return response.data as { pages: ILandingPage[]; totalPages: number; totalVisitors: number };
 }
 
 /**

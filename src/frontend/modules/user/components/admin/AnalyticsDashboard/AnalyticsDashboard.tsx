@@ -20,7 +20,7 @@
 
 import React, { useEffect, useState, useCallback } from 'react';
 import {
-    Users, TrendingUp, Clock, MousePointerClick,
+    Users, TrendingUp, MousePointerClick,
     Globe, Smartphone, BarChart3, Target
 } from 'lucide-react';
 import { LineChart } from '../../../../../features/charts/components/LineChart';
@@ -473,8 +473,8 @@ export function AnalyticsDashboard({ token }: Props) {
                                             </tr>
                                         </thead>
                                         <tbody>
-                                            {campaigns.map((c, i) => (
-                                                <tr key={i}>
+                                            {campaigns.map(c => (
+                                                <tr key={`${c.source}|${c.medium}|${c.campaign}`}>
                                                     <td>{c.source}</td>
                                                     <td>{c.medium}</td>
                                                     <td>{c.campaign}</td>
