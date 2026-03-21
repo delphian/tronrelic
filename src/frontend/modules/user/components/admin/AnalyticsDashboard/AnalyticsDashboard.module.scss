@@ -1,0 +1,216 @@
+/**
+ * AnalyticsDashboard Styles
+ *
+ * Styling for the aggregate analytics dashboard. Uses design tokens
+ * for all values and container queries for responsive layout.
+ */
+
+@use '../../../../../app/breakpoints' as *;
+
+.dashboard {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-10);
+}
+
+.controls {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-5);
+    flex-wrap: wrap;
+}
+
+.controls__label {
+    font-size: var(--font-size-sm);
+    color: var(--color-text-muted);
+    font-weight: var(--font-weight-medium);
+}
+
+.section_title {
+    font-size: var(--font-size-lg);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text);
+    margin: 0 0 var(--spacing-5) 0;
+}
+
+/* Engagement summary cards */
+.metrics_grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: var(--spacing-5);
+    container-type: inline-size;
+    container-name: metrics-grid;
+}
+
+@container metrics-grid (min-width: #{$breakpoint-mobile-lg}) {
+    .metrics_grid {
+        grid-template-columns: repeat(4, 1fr);
+    }
+}
+
+.metric_card {
+    text-align: center;
+    padding: var(--spacing-7);
+}
+
+.metric_card__value {
+    font-size: var(--font-size-xl);
+    font-weight: var(--font-weight-bold);
+    color: var(--color-primary);
+    line-height: var(--line-height-tight);
+}
+
+.metric_card__label {
+    font-size: var(--font-size-xs);
+    color: var(--color-text-muted);
+    margin-top: var(--spacing-3);
+}
+
+/* Funnel visualization */
+.funnel {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-4);
+}
+
+.funnel_stage {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-5);
+}
+
+.funnel_stage__bar_wrapper {
+    flex: 1;
+    min-width: 0;
+}
+
+.funnel_stage__bar {
+    height: var(--spacing-7);
+    background: var(--color-primary);
+    border-radius: var(--radius-sm);
+    transition: width 0.6s ease;
+    min-width: 2px;
+    opacity: 0.85;
+}
+
+.funnel_stage__label {
+    font-size: var(--font-size-sm);
+    color: var(--color-text);
+    white-space: nowrap;
+    min-width: 140px;
+}
+
+.funnel_stage__stats {
+    font-size: var(--font-size-xs);
+    color: var(--color-text-muted);
+    white-space: nowrap;
+    min-width: 120px;
+    text-align: right;
+}
+
+/* Data tables */
+.table_wrapper {
+    overflow-x: auto;
+}
+
+.table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--font-size-sm);
+}
+
+.table th {
+    text-align: left;
+    padding: var(--spacing-4) var(--spacing-5);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text-muted);
+    font-size: var(--font-size-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    border-bottom: var(--border-width-thin) solid var(--color-border);
+}
+
+.table td {
+    padding: var(--spacing-4) var(--spacing-5);
+    color: var(--color-text);
+    border-bottom: var(--border-width-thin) solid var(--color-border);
+    vertical-align: middle;
+}
+
+.table tr:last-child td {
+    border-bottom: none;
+}
+
+.table__number {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+.table__bar_cell {
+    width: 120px;
+}
+
+.table__bar {
+    height: 6px;
+    background: var(--color-primary);
+    border-radius: var(--radius-full);
+    opacity: 0.7;
+}
+
+/* Category badges */
+.category_badge {
+    display: inline-block;
+    font-size: var(--font-size-xs);
+    padding: 1px var(--spacing-4);
+    border-radius: var(--radius-full);
+    font-weight: var(--font-weight-medium);
+}
+
+.category_badge--direct {
+    background: rgba(120, 130, 153, 0.2);
+    color: var(--color-text-muted);
+}
+
+.category_badge--organic {
+    background: rgba(87, 212, 140, 0.15);
+    color: var(--color-success);
+}
+
+.category_badge--social {
+    background: rgba(75, 140, 255, 0.15);
+    color: var(--color-primary);
+}
+
+.category_badge--referral {
+    background: rgba(255, 170, 51, 0.15);
+    color: var(--color-warning);
+}
+
+/* Two-column grid for side-by-side sections */
+.split_grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: var(--spacing-10);
+    container-type: inline-size;
+    container-name: split-grid;
+}
+
+@container split-grid (min-width: #{$breakpoint-mobile-lg}) {
+    .split_grid {
+        grid-template-columns: 1fr 1fr;
+    }
+}
+
+.empty_state {
+    text-align: center;
+    padding: var(--spacing-12);
+    color: var(--color-text-muted);
+    font-size: var(--font-size-sm);
+}
+
+.loading {
+    text-align: center;
+    padding: var(--spacing-12);
+    color: var(--color-text-muted);
+    font-size: var(--font-size-sm);
+}

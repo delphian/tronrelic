@@ -166,3 +166,4 @@ export type { UserIdentityProviderProps } from './components';
 export { WalletButton } from './components';
 export { UsersMonitor } from './components';
 export { VisitorAnalytics } from './components';
+export { AnalyticsDashboard } from './components';

@@ -789,6 +789,274 @@ export class UserController {
     }
 
     /**
+     * GET /api/admin/users/analytics/new-users
+     *
+     * Get users first seen within the specified period, sorted by firstSeen
+     * descending (most recent first). Unlike visitor-origins which filters by
+     * lastSeen (recent activity), this filters by firstSeen (new arrivals).
+     *
+     * Query parameters:
+     * - period: Lookback period ('24h', '7d', '30d', '90d', default: '24h')
+     * - limit: Maximum results (default: 50, max: 100)
+     * - skip: Pagination offset (default: 0)
+     *
+     * Response: { visitors: IVisitorOrigin[], total: number }
+     */
+    async getNewUsers(req: Request, res: Response): Promise<void> {
+        try {
+            const { period, limit, skip } = req.query;
+
+            const periodMap: Record<string, number> = {
+                '24h': 24,
+                '7d': 7 * 24,
+                '30d': 30 * 24,
+                '90d': 90 * 24
+            };
+            const periodStr = (period as string) || '24h';
+            const periodHours = periodMap[periodStr] ?? 24;
+
+            const parsedLimit = limit ? parseInt(limit as string, 10) : 50;
+            const parsedSkip = skip ? parseInt(skip as string, 10) : 0;
+            const limitNum = Number.isNaN(parsedLimit) ? 50 : Math.min(Math.max(1, parsedLimit), 100);
+            const skipNum = Number.isNaN(parsedSkip) ? 0 : Math.max(0, parsedSkip);
+
+            const result = await this.userService.getNewUsers(periodHours, limitNum, skipNum);
+
+            res.json(result);
+        } catch (error) {
+            this.logger.error({ error }, 'Failed to get new users');
+            res.status(500).json({
+                error: 'Failed to get new users',
+                message: error instanceof Error ? error.message : 'Unknown error'
+            });
+        }
+    }
+
+    // ============================================================================
+    // Aggregate Analytics Endpoints (require admin token)
+    // ============================================================================
+
+    /**
+     * Parse period query parameter into hours.
+     *
+     * @param period - Period string (e.g., '7d', '30d', '90d')
+     * @returns Number of hours
+     */
+    private parsePeriodHours(period: string | undefined): number {
+        const map: Record<string, number> = {
+            '24h': 24,
+            '7d': 7 * 24,
+            '30d': 30 * 24,
+            '90d': 90 * 24
+        };
+        return map[period ?? '30d'] ?? 30 * 24;
+    }
+
+    /**
+     * GET /api/admin/users/analytics/traffic-sources
+     *
+     * Get aggregate traffic source breakdown.
+     *
+     * Query parameters:
+     * - period: '24h' | '7d' | '30d' | '90d' (default: '30d')
+     *
+     * Response: { sources: [...], total: number }
+     */
+    async getTrafficSources(req: Request, res: Response): Promise<void> {
+        try {
+            const periodHours = this.parsePeriodHours(req.query.period as string);
+            const result = await this.userService.getTrafficSources(periodHours);
+            res.json(result);
+        } catch (error) {
+            this.logger.error({ error }, 'Failed to get traffic sources');
+            res.status(500).json({
+                error: 'Failed to get traffic sources',
+                message: error instanceof Error ? error.message : 'Unknown error'
+            });
+        }
+    }
+
+    /**
+     * GET /api/admin/users/analytics/top-landing-pages
+     *
+     * Get top landing pages by visitor count.
+     *
+     * Query parameters:
+     * - period: '24h' | '7d' | '30d' | '90d' (default: '30d')
+     * - limit: max results (default: 20, max: 50)
+     *
+     * Response: { pages: [...], total: number }
+     */
+    async getTopLandingPages(req: Request, res: Response): Promise<void> {
+        try {
+            const periodHours = this.parsePeriodHours(req.query.period as string);
+            const parsedLimit = req.query.limit ? parseInt(req.query.limit as string, 10) : 20;
+            const limit = Number.isNaN(parsedLimit) ? 20 : Math.min(Math.max(1, parsedLimit), 50);
+
+            const result = await this.userService.getTopLandingPages(periodHours, limit);
+            res.json(result);
+        } catch (error) {
+            this.logger.error({ error }, 'Failed to get top landing pages');
+            res.status(500).json({
+                error: 'Failed to get top landing pages',
+                message: error instanceof Error ? error.message : 'Unknown error'
+            });
+        }
+    }
+
+    /**
+     * GET /api/admin/users/analytics/geo-distribution
+     *
+     * Get geographic distribution of visitors.
+     *
+     * Query parameters:
+     * - period: '24h' | '7d' | '30d' | '90d' (default: '30d')
+     * - limit: max countries (default: 30, max: 100)
+     *
+     * Response: { countries: [...], total: number }
+     */
+    async getGeoDistribution(req: Request, res: Response): Promise<void> {
+        try {
+            const periodHours = this.parsePeriodHours(req.query.period as string);
+            const parsedLimit = req.query.limit ? parseInt(req.query.limit as string, 10) : 30;
+            const limit = Number.isNaN(parsedLimit) ? 30 : Math.min(Math.max(1, parsedLimit), 100);
+
+            const result = await this.userService.getGeoDistribution(periodHours, limit);
+            res.json(result);
+        } catch (error) {
+            this.logger.error({ error }, 'Failed to get geo distribution');
+            res.status(500).json({
+                error: 'Failed to get geo distribution',
+                message: error instanceof Error ? error.message : 'Unknown error'
+            });
+        }
+    }
+
+    /**
+     * GET /api/admin/users/analytics/device-breakdown
+     *
+     * Get device and screen size breakdown.
+     *
+     * Query parameters:
+     * - period: '24h' | '7d' | '30d' | '90d' (default: '30d')
+     *
+     * Response: { devices: [...], screenSizes: [...], total: number }
+     */
+    async getDeviceBreakdown(req: Request, res: Response): Promise<void> {
+        try {
+            const periodHours = this.parsePeriodHours(req.query.period as string);
+            const result = await this.userService.getDeviceBreakdown(periodHours);
+            res.json(result);
+        } catch (error) {
+            this.logger.error({ error }, 'Failed to get device breakdown');
+            res.status(500).json({
+                error: 'Failed to get device breakdown',
+                message: error instanceof Error ? error.message : 'Unknown error'
+            });
+        }
+    }
+
+    /**
+     * GET /api/admin/users/analytics/campaign-performance
+     *
+     * Get UTM campaign performance with conversion rates.
+     *
+     * Query parameters:
+     * - period: '24h' | '7d' | '30d' | '90d' (default: '30d')
+     * - limit: max campaigns (default: 20, max: 50)
+     *
+     * Response: { campaigns: [...], total: number }
+     */
+    async getCampaignPerformance(req: Request, res: Response): Promise<void> {
+        try {
+            const periodHours = this.parsePeriodHours(req.query.period as string);
+            const parsedLimit = req.query.limit ? parseInt(req.query.limit as string, 10) : 20;
+            const limit = Number.isNaN(parsedLimit) ? 20 : Math.min(Math.max(1, parsedLimit), 50);
+
+            const result = await this.userService.getCampaignPerformance(periodHours, limit);
+            res.json(result);
+        } catch (error) {
+            this.logger.error({ error }, 'Failed to get campaign performance');
+            res.status(500).json({
+                error: 'Failed to get campaign performance',
+                message: error instanceof Error ? error.message : 'Unknown error'
+            });
+        }
+    }
+
+    /**
+     * GET /api/admin/users/analytics/engagement
+     *
+     * Get engagement metrics (avg duration, pages/session, bounce rate).
+     *
+     * Query parameters:
+     * - period: '24h' | '7d' | '30d' | '90d' (default: '30d')
+     *
+     * Response: { avgSessionDuration, avgPagesPerSession, bounceRate, avgSessionsPerUser, totalUsers }
+     */
+    async getEngagementMetrics(req: Request, res: Response): Promise<void> {
+        try {
+            const periodHours = this.parsePeriodHours(req.query.period as string);
+            const result = await this.userService.getEngagementMetrics(periodHours);
+            res.json(result);
+        } catch (error) {
+            this.logger.error({ error }, 'Failed to get engagement metrics');
+            res.status(500).json({
+                error: 'Failed to get engagement metrics',
+                message: error instanceof Error ? error.message : 'Unknown error'
+            });
+        }
+    }
+
+    /**
+     * GET /api/admin/users/analytics/conversion-funnel
+     *
+     * Get conversion funnel (visitors → return → wallet → verified).
+     *
+     * Query parameters:
+     * - period: '24h' | '7d' | '30d' | '90d' (default: '30d')
+     *
+     * Response: { stages: [...] }
+     */
+    async getConversionFunnel(req: Request, res: Response): Promise<void> {
+        try {
+            const periodHours = this.parsePeriodHours(req.query.period as string);
+            const result = await this.userService.getConversionFunnel(periodHours);
+            res.json(result);
+        } catch (error) {
+            this.logger.error({ error }, 'Failed to get conversion funnel');
+            res.status(500).json({
+                error: 'Failed to get conversion funnel',
+                message: error instanceof Error ? error.message : 'Unknown error'
+            });
+        }
+    }
+
+    /**
+     * GET /api/admin/users/analytics/retention
+     *
+     * Get new vs returning visitor breakdown over time.
+     *
+     * Query parameters:
+     * - period: '24h' | '7d' | '30d' | '90d' (default: '30d')
+     *
+     * Response: { data: [{ date, newVisitors, returningVisitors }] }
+     */
+    async getRetention(req: Request, res: Response): Promise<void> {
+        try {
+            const periodHours = this.parsePeriodHours(req.query.period as string);
+            const result = await this.userService.getRetention(periodHours);
+            res.json(result);
+        } catch (error) {
+            this.logger.error({ error }, 'Failed to get retention data');
+            res.status(500).json({
+                error: 'Failed to get retention data',
+                message: error instanceof Error ? error.message : 'Unknown error'
+            });
+        }
+    }
+
+    /**
      * GET /api/admin/users/:id
      *
      * Get any user by UUID (admin bypass).

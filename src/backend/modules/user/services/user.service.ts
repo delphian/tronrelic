@@ -1868,6 +1868,584 @@ export class UserService {
         return { visitors, total };
     }
 
+    /**
+     * Get new users who were first seen within the specified period.
+     *
+     * Filters by activity.firstSeen (when the user first visited) and sorts
+     * by firstSeen descending so the most recent arrivals appear first.
+     * This differs from getVisitorOrigins which filters by lastSeen (recent activity).
+     *
+     * @param periodHours - How far back to look for new users
+     * @param limit - Maximum number of results to return
+     * @param skip - Number of results to skip for pagination
+     * @returns Paginated list of new user origins with total count
+     */
+    async getNewUsers(
+        periodHours: number,
+        limit: number = 50,
+        skip: number = 0
+    ): Promise<{ visitors: IVisitorOrigin[]; total: number }> {
+        const since = new Date();
+        since.setTime(since.getTime() - (periodHours * 60 * 60 * 1000));
+
+        const query = { 'activity.firstSeen': { $gte: since } };
+
+        const [total, users] = await Promise.all([
+            this.collection.countDocuments(query),
+            this.collection
+                .find(query)
+                .sort({ 'activity.firstSeen': -1 })
+                .skip(skip)
+                .limit(limit)
+                .toArray()
+        ]);
+
+        const visitors: IVisitorOrigin[] = users.map(user => {
+            const origin = user.activity?.origin;
+            const sessions = user.activity?.sessions ?? [];
+            const oldestSession = sessions.length > 0 ? sessions[sessions.length - 1] : null;
+
+            return {
+                userId: user.id,
+                firstSeen: user.activity?.firstSeen ?? user.createdAt,
+                lastSeen: user.activity?.lastSeen ?? user.updatedAt,
+                country: origin?.country ?? oldestSession?.country ?? null,
+                referrerDomain: origin?.referrerDomain ?? oldestSession?.referrerDomain ?? null,
+                landingPage: origin?.landingPage ?? oldestSession?.landingPage ?? oldestSession?.pages?.[0]?.path ?? null,
+                device: origin?.device ?? oldestSession?.device ?? 'unknown',
+                utm: origin?.utm ?? oldestSession?.utm ?? null,
+                searchKeyword: origin?.searchKeyword ?? oldestSession?.searchKeyword ?? null,
+                sessionsCount: user.activity?.sessionsCount ?? 0,
+                pageViews: user.activity?.pageViews ?? 0
+            };
+        });
+
+        return { visitors, total };
+    }
+
+    // ==================== Aggregate Analytics ====================
+
+    /**
+     * Build a date filter for analytics queries based on period string.
+     *
+     * Uses activity.lastSeen to identify users active within the period,
+     * which aligns with "who visited during this window" semantics.
+     *
+     * @param periodHours - Lookback period in hours
+     * @returns MongoDB query filter
+     */
+    private buildPeriodFilter(periodHours: number): Record<string, any> {
+        const since = new Date();
+        since.setTime(since.getTime() - (periodHours * 60 * 60 * 1000));
+        return { 'activity.lastSeen': { $gte: since } };
+    }
+
+    /**
+     * Classify a referrer domain into a traffic source category.
+     *
+     * Categories: 'organic' (search engines), 'social' (social media),
+     * 'direct' (no referrer), or the raw domain for everything else.
+     *
+     * @param domain - Referrer domain or null
+     * @returns Source category string
+     */
+    private classifyTrafficSource(domain: string | null): string {
+        if (!domain) return 'direct';
+
+        const searchEngines = ['google.', 'bing.com', 'yahoo.com', 'duckduckgo.com', 'baidu.com', 'yandex.', 'ecosia.org', 'sogou.com', 'naver.com'];
+        const socialNetworks = ['twitter.com', 'x.com', 't.co', 'facebook.com', 'reddit.com', 'linkedin.com', 'telegram.org', 't.me', 'discord.com', 'youtube.com'];
+
+        const lower = domain.toLowerCase();
+        if (searchEngines.some(se => lower.includes(se))) return 'organic';
+        if (socialNetworks.some(sn => lower === sn || lower.endsWith('.' + sn))) return 'social';
+
+        return domain;
+    }
+
+    /**
+     * Get aggregate traffic source breakdown for users active in the given period.
+     *
+     * Groups visitors by their first-session referrer domain, classified into
+     * categories (direct, organic, social, or raw domain). Returns counts and
+     * percentages for each source.
+     *
+     * @param periodHours - Lookback period in hours
+     * @returns Traffic source breakdown with counts and percentages
+     */
+    async getTrafficSources(periodHours: number): Promise<{
+        sources: Array<{ source: string; category: string; count: number; percentage: number }>;
+        total: number;
+    }> {
+        const filter = this.buildPeriodFilter(periodHours);
+
+        const users = await this.collection
+            .find(filter, { projection: { 'activity.origin.referrerDomain': 1, 'activity.sessions': { $slice: -1 } } })
+            .toArray();
+
+        const sourceCounts = new Map<string, { category: string; count: number }>();
+        const total = users.length;
+
+        for (const user of users) {
+            const domain = user.activity?.origin?.referrerDomain
+                ?? user.activity?.sessions?.[0]?.referrerDomain
+                ?? null;
+            const category = this.classifyTrafficSource(domain);
+            const key = domain || 'direct';
+            const existing = sourceCounts.get(key);
+            if (existing) {
+                existing.count++;
+            } else {
+                sourceCounts.set(key, { category, count: 1 });
+            }
+        }
+
+        const sources = Array.from(sourceCounts.entries())
+            .map(([source, { category, count }]) => ({
+                source,
+                category,
+                count,
+                percentage: total > 0 ? Math.round((count / total) * 10000) / 100 : 0
+            }))
+            .sort((a, b) => b.count - a.count);
+
+        return { sources, total };
+    }
+
+    /**
+     * Get top landing pages for users active in the given period.
+     *
+     * Aggregates the first-session landing page across visitors, including
+     * average engagement metrics (sessions count, page views) per landing page.
+     *
+     * @param periodHours - Lookback period in hours
+     * @param limit - Maximum landing pages to return (default: 20)
+     * @returns Landing pages sorted by visitor count descending
+     */
+    async getTopLandingPages(periodHours: number, limit: number = 20): Promise<{
+        pages: Array<{ path: string; visitors: number; avgSessions: number; avgPageViews: number }>;
+        total: number;
+    }> {
+        const since = new Date();
+        since.setTime(since.getTime() - (periodHours * 60 * 60 * 1000));
+
+        const results = await this.collection.aggregate<{
+            _id: string;
+            visitors: number;
+            avgSessions: number;
+            avgPageViews: number;
+        }>([
+            { $match: { 'activity.lastSeen': { $gte: since } } },
+            {
+                $project: {
+                    landingPage: {
+                        $ifNull: ['$activity.origin.landingPage', { $arrayElemAt: ['$activity.sessions.landingPage', -1] }]
+                    },
+                    sessionsCount: { $ifNull: ['$activity.sessionsCount', 0] },
+                    pageViews: { $ifNull: ['$activity.pageViews', 0] }
+                }
+            },
+            { $match: { landingPage: { $ne: null } } },
+            {
+                $group: {
+                    _id: '$landingPage',
+                    visitors: { $sum: 1 },
+                    avgSessions: { $avg: '$sessionsCount' },
+                    avgPageViews: { $avg: '$pageViews' }
+                }
+            },
+            { $sort: { visitors: -1 } },
+            { $limit: limit }
+        ]).toArray();
+
+        const total = results.reduce((sum, r) => sum + r.visitors, 0);
+        const pages = results.map(r => ({
+            path: r._id,
+            visitors: r.visitors,
+            avgSessions: Math.round(r.avgSessions * 10) / 10,
+            avgPageViews: Math.round(r.avgPageViews * 10) / 10
+        }));
+
+        return { pages, total };
+    }
+
+    /**
+     * Get geographic distribution of users active in the given period.
+     *
+     * Uses the first-session origin country for each user, falling back
+     * to the most recent session country when origin data is unavailable.
+     *
+     * @param periodHours - Lookback period in hours
+     * @param limit - Maximum countries to return (default: 30)
+     * @returns Countries sorted by visitor count descending
+     */
+    async getGeoDistribution(periodHours: number, limit: number = 30): Promise<{
+        countries: Array<{ country: string; count: number; percentage: number }>;
+        total: number;
+    }> {
+        const since = new Date();
+        since.setTime(since.getTime() - (periodHours * 60 * 60 * 1000));
+
+        const results = await this.collection.aggregate<{ _id: string | null; count: number }>([
+            { $match: { 'activity.lastSeen': { $gte: since } } },
+            {
+                $project: {
+                    country: {
+                        $ifNull: ['$activity.origin.country', { $arrayElemAt: ['$activity.sessions.country', -1] }]
+                    }
+                }
+            },
+            { $match: { country: { $ne: null } } },
+            { $group: { _id: '$country', count: { $sum: 1 } } },
+            { $sort: { count: -1 } },
+            { $limit: limit }
+        ]).toArray();
+
+        const total = results.reduce((sum, r) => sum + r.count, 0);
+        const countries = results
+            .filter(r => r._id !== null)
+            .map(r => ({
+                country: r._id as string,
+                count: r.count,
+                percentage: total > 0 ? Math.round((r.count / total) * 10000) / 100 : 0
+            }));
+
+        return { countries, total };
+    }
+
+    /**
+     * Get device category breakdown for users active in the given period.
+     *
+     * Returns both device category (mobile/tablet/desktop) and screen size
+     * category distributions from origin data.
+     *
+     * @param periodHours - Lookback period in hours
+     * @returns Device and screen size breakdowns
+     */
+    async getDeviceBreakdown(periodHours: number): Promise<{
+        devices: Array<{ device: string; count: number; percentage: number }>;
+        screenSizes: Array<{ screenSize: string; count: number; percentage: number }>;
+        total: number;
+    }> {
+        const since = new Date();
+        since.setTime(since.getTime() - (periodHours * 60 * 60 * 1000));
+
+        const users = await this.collection
+            .find(
+                { 'activity.lastSeen': { $gte: since } },
+                { projection: { 'activity.origin.device': 1, 'activity.sessions': { $slice: 1 } } }
+            )
+            .toArray();
+
+        const deviceCounts = new Map<string, number>();
+        const screenSizeCounts = new Map<string, number>();
+        const total = users.length;
+
+        for (const user of users) {
+            const device = user.activity?.origin?.device
+                ?? user.activity?.sessions?.[0]?.device
+                ?? 'unknown';
+            deviceCounts.set(device, (deviceCounts.get(device) ?? 0) + 1);
+
+            const screenSize = user.activity?.sessions?.[0]?.screenSize ?? 'unknown';
+            screenSizeCounts.set(screenSize, (screenSizeCounts.get(screenSize) ?? 0) + 1);
+        }
+
+        const toSorted = (map: Map<string, number>) =>
+            Array.from(map.entries())
+                .map(([key, count]) => ({
+                    [key === map.keys().next().value ? 'device' : 'screenSize']: key,
+                    count,
+                    percentage: total > 0 ? Math.round((count / total) * 10000) / 100 : 0
+                }))
+                .sort((a, b) => b.count - a.count);
+
+        const devices = Array.from(deviceCounts.entries())
+            .map(([device, count]) => ({
+                device,
+                count,
+                percentage: total > 0 ? Math.round((count / total) * 10000) / 100 : 0
+            }))
+            .sort((a, b) => b.count - a.count);
+
+        const screenSizes = Array.from(screenSizeCounts.entries())
+            .map(([screenSize, count]) => ({
+                screenSize,
+                count,
+                percentage: total > 0 ? Math.round((count / total) * 10000) / 100 : 0
+            }))
+            .sort((a, b) => b.count - a.count);
+
+        return { devices, screenSizes, total };
+    }
+
+    /**
+     * Get UTM campaign performance for users active in the given period.
+     *
+     * Groups users by their utm_source/medium/campaign combination and
+     * calculates wallet conversion rates per campaign.
+     *
+     * @param periodHours - Lookback period in hours
+     * @param limit - Maximum campaigns to return (default: 20)
+     * @returns Campaign performance sorted by visitor count descending
+     */
+    async getCampaignPerformance(periodHours: number, limit: number = 20): Promise<{
+        campaigns: Array<{
+            source: string;
+            medium: string;
+            campaign: string;
+            visitors: number;
+            walletsConnected: number;
+            walletsVerified: number;
+            conversionRate: number;
+        }>;
+        total: number;
+    }> {
+        const since = new Date();
+        since.setTime(since.getTime() - (periodHours * 60 * 60 * 1000));
+
+        const results = await this.collection.aggregate<{
+            _id: { source: string; medium: string; campaign: string };
+            visitors: number;
+            walletsConnected: number;
+            walletsVerified: number;
+        }>([
+            { $match: { 'activity.lastSeen': { $gte: since }, 'activity.origin.utm': { $ne: null } } },
+            {
+                $project: {
+                    utm: '$activity.origin.utm',
+                    hasWallet: { $gt: [{ $size: { $ifNull: ['$wallets', []] } }, 0] },
+                    hasVerifiedWallet: {
+                        $gt: [{
+                            $size: {
+                                $filter: {
+                                    input: { $ifNull: ['$wallets', []] },
+                                    as: 'w',
+                                    cond: { $eq: ['$$w.verified', true] }
+                                }
+                            }
+                        }, 0]
+                    }
+                }
+            },
+            {
+                $group: {
+                    _id: {
+                        source: { $ifNull: ['$utm.source', '(none)'] },
+                        medium: { $ifNull: ['$utm.medium', '(none)'] },
+                        campaign: { $ifNull: ['$utm.campaign', '(none)'] }
+                    },
+                    visitors: { $sum: 1 },
+                    walletsConnected: { $sum: { $cond: ['$hasWallet', 1, 0] } },
+                    walletsVerified: { $sum: { $cond: ['$hasVerifiedWallet', 1, 0] } }
+                }
+            },
+            { $sort: { visitors: -1 } },
+            { $limit: limit }
+        ]).toArray();
+
+        const total = results.reduce((sum, r) => sum + r.visitors, 0);
+        const campaigns = results.map(r => ({
+            source: r._id.source,
+            medium: r._id.medium,
+            campaign: r._id.campaign,
+            visitors: r.visitors,
+            walletsConnected: r.walletsConnected,
+            walletsVerified: r.walletsVerified,
+            conversionRate: r.visitors > 0
+                ? Math.round((r.walletsVerified / r.visitors) * 10000) / 100
+                : 0
+        }));
+
+        return { campaigns, total };
+    }
+
+    /**
+     * Get engagement metrics for users active in the given period.
+     *
+     * Calculates average session duration, pages per session, bounce rate,
+     * and average sessions per user from lifetime aggregate fields.
+     *
+     * @param periodHours - Lookback period in hours
+     * @returns Engagement summary metrics
+     */
+    async getEngagementMetrics(periodHours: number): Promise<{
+        avgSessionDuration: number;
+        avgPagesPerSession: number;
+        bounceRate: number;
+        avgSessionsPerUser: number;
+        totalUsers: number;
+    }> {
+        const since = new Date();
+        since.setTime(since.getTime() - (periodHours * 60 * 60 * 1000));
+
+        const results = await this.collection.aggregate<{
+            _id: null;
+            totalUsers: number;
+            avgDuration: number;
+            avgPages: number;
+            avgSessions: number;
+            totalSinglePageSessions: number;
+            totalSessionsChecked: number;
+        }>([
+            { $match: { 'activity.lastSeen': { $gte: since } } },
+            { $unwind: { path: '$activity.sessions', preserveNullAndEmptyArrays: false } },
+            { $match: { 'activity.sessions.startedAt': { $gte: since } } },
+            {
+                $group: {
+                    _id: '$id',
+                    sessionsCount: { $sum: 1 },
+                    totalDuration: { $sum: '$activity.sessions.durationSeconds' },
+                    totalPages: { $sum: { $size: { $ifNull: ['$activity.sessions.pages', []] } } },
+                    singlePageSessions: {
+                        $sum: {
+                            $cond: [{ $lte: [{ $size: { $ifNull: ['$activity.sessions.pages', []] } }, 1] }, 1, 0]
+                        }
+                    }
+                }
+            },
+            {
+                $group: {
+                    _id: null,
+                    totalUsers: { $sum: 1 },
+                    avgDuration: { $avg: { $cond: [{ $gt: ['$sessionsCount', 0] }, { $divide: ['$totalDuration', '$sessionsCount'] }, 0] } },
+                    avgPages: { $avg: { $cond: [{ $gt: ['$sessionsCount', 0] }, { $divide: ['$totalPages', '$sessionsCount'] }, 0] } },
+                    avgSessions: { $avg: '$sessionsCount' },
+                    totalSinglePageSessions: { $sum: '$singlePageSessions' },
+                    totalSessionsChecked: { $sum: '$sessionsCount' }
+                }
+            }
+        ]).toArray();
+
+        const data = results[0];
+        if (!data) {
+            return { avgSessionDuration: 0, avgPagesPerSession: 0, bounceRate: 0, avgSessionsPerUser: 0, totalUsers: 0 };
+        }
+
+        return {
+            avgSessionDuration: Math.round(data.avgDuration),
+            avgPagesPerSession: Math.round(data.avgPages * 10) / 10,
+            bounceRate: data.totalSessionsChecked > 0
+                ? Math.round((data.totalSinglePageSessions / data.totalSessionsChecked) * 10000) / 100
+                : 0,
+            avgSessionsPerUser: Math.round(data.avgSessions * 10) / 10,
+            totalUsers: data.totalUsers
+        };
+    }
+
+    /**
+     * Get conversion funnel showing user progression through engagement stages.
+     *
+     * Stages: total visitors → return visitors → wallet connected → wallet verified.
+     * Each stage includes count and drop-off percentage from the previous stage.
+     *
+     * @param periodHours - Lookback period in hours
+     * @returns Funnel stages with counts and percentages
+     */
+    async getConversionFunnel(periodHours: number): Promise<{
+        stages: Array<{ stage: string; count: number; percentage: number; dropOff: number }>;
+    }> {
+        const since = new Date();
+        since.setTime(since.getTime() - (periodHours * 60 * 60 * 1000));
+
+        const baseFilter = { 'activity.lastSeen': { $gte: since } };
+
+        const [totalVisitors, returnVisitors, walletConnected, walletVerified] = await Promise.all([
+            this.collection.countDocuments(baseFilter),
+            this.collection.countDocuments({ ...baseFilter, 'activity.sessionsCount': { $gt: 1 } }),
+            this.collection.countDocuments({ ...baseFilter, 'wallets.0': { $exists: true } }),
+            this.collection.countDocuments({
+                ...baseFilter,
+                wallets: { $elemMatch: { verified: true } }
+            })
+        ]);
+
+        const stages = [
+            { stage: 'Total Visitors', count: totalVisitors },
+            { stage: 'Return Visitors', count: returnVisitors },
+            { stage: 'Wallet Connected', count: walletConnected },
+            { stage: 'Wallet Verified', count: walletVerified }
+        ].map((s, i, arr) => ({
+            ...s,
+            percentage: totalVisitors > 0 ? Math.round((s.count / totalVisitors) * 10000) / 100 : 0,
+            dropOff: i === 0
+                ? 0
+                : arr[i - 1].count > 0
+                    ? Math.round(((arr[i - 1].count - s.count) / arr[i - 1].count) * 10000) / 100
+                    : 0
+        }));
+
+        return { stages };
+    }
+
+    /**
+     * Get retention data showing new vs returning visitors over time.
+     *
+     * For each day in the period, counts users first seen that day (new)
+     * versus users with earlier firstSeen who were active that day (returning).
+     *
+     * @param periodHours - Lookback period in hours
+     * @returns Daily new vs returning visitor counts
+     */
+    async getRetention(periodHours: number): Promise<{
+        data: Array<{ date: string; newVisitors: number; returningVisitors: number }>;
+    }> {
+        const since = new Date();
+        since.setTime(since.getTime() - (periodHours * 60 * 60 * 1000));
+        since.setHours(0, 0, 0, 0);
+
+        const results = await this.collection.aggregate<{
+            _id: { date: string; isNew: boolean };
+            count: number;
+        }>([
+            { $match: { 'activity.lastSeen': { $gte: since }, 'activity.sessions': { $exists: true, $ne: [] } } },
+            { $unwind: '$activity.sessions' },
+            { $match: { 'activity.sessions.startedAt': { $gte: since } } },
+            {
+                $project: {
+                    sessionDate: { $dateToString: { format: '%Y-%m-%d', date: '$activity.sessions.startedAt' } },
+                    firstSeenDate: { $dateToString: { format: '%Y-%m-%d', date: '$activity.firstSeen' } },
+                    userId: '$id'
+                }
+            },
+            {
+                $group: {
+                    _id: { date: '$sessionDate', userId: '$userId', firstSeenDate: '$firstSeenDate' }
+                }
+            },
+            {
+                $project: {
+                    date: '$_id.date',
+                    isNew: { $eq: ['$_id.date', '$_id.firstSeenDate'] }
+                }
+            },
+            {
+                $group: {
+                    _id: { date: '$date', isNew: '$isNew' },
+                    count: { $sum: 1 }
+                }
+            },
+            { $sort: { '_id.date': 1 } }
+        ]).toArray();
+
+        const dateMap = new Map<string, { newVisitors: number; returningVisitors: number }>();
+
+        for (const r of results) {
+            const entry = dateMap.get(r._id.date) ?? { newVisitors: 0, returningVisitors: 0 };
+            if (r._id.isNew) {
+                entry.newVisitors = r.count;
+            } else {
+                entry.returningVisitors = r.count;
+            }
+            dateMap.set(r._id.date, entry);
+        }
+
+        const data = Array.from(dateMap.entries())
+            .map(([date, counts]) => ({ date: `${date}T00:00:00Z`, ...counts }))
+            .sort((a, b) => a.date.localeCompare(b.date));
+
+        return { data };
+    }
+
     // ==================== Index Management ====================
 
     /**
