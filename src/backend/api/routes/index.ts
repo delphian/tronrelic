@@ -16,6 +16,7 @@ import { tokensRouter } from './tokens.router.js';
 import { systemRouter } from './system.router.js';
 import { configRouter } from './config.router.js';
 import { widgetRouter } from './widget.router.js';
+import { sitemapRouter } from './sitemap.router.js';
 import pluginsRouter from './plugins.routes.js';
 import pluginManagementRouter from './plugin-management.routes.js';
 import { PluginApiService } from '../../services/plugin-api.service.js';
@@ -54,6 +55,7 @@ export function createApiRouter(database: IDatabaseService) {
   router.use('/tokens', tokensRouter(database));
   router.use('/admin/system', systemRouter(database));
   router.use('/dashboard', dashboardRouter(database));
+  router.use('/sitemap-data', sitemapRouter(database));
 
   // Note: Menu, Pages, and Database (migrations) routers are mounted directly
   // by their respective modules in bootstrap (apps/backend/src/index.ts) to follow
