@@ -161,8 +161,9 @@ export function AnalyticsDashboard({ token }: Props) {
                 setSourceDetails(prev => ({ ...prev, [source]: details }));
             } catch (error) {
                 console.error('Failed to fetch source details:', error);
+                setExpandedSource(prev => prev === source ? null : prev);
             } finally {
-                setSourceDetailsLoading(null);
+                setSourceDetailsLoading(prev => prev === source ? null : prev);
             }
         }
     }, [expandedSource, sourceDetails, token, period]);

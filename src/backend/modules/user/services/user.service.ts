@@ -2084,24 +2084,10 @@ export class UserService {
         const since = new Date();
         since.setTime(since.getTime() - (periodHours * 60 * 60 * 1000));
 
-        // Match users by source domain: 'direct' maps to null referrer
+        // Project a unified domain field using the same logic as getTrafficSources():
+        // prefer activity.origin.referrerDomain, fall back to oldest session's referrerDomain.
+        // Then match on the projected domain so legacy users without activity.origin are handled correctly.
         const domainMatch = source === 'direct' ? null : source;
-        const matchStage = {
-            'activity.lastSeen': { $gte: since },
-            $or: [
-                { 'activity.origin.referrerDomain': domainMatch },
-                {
-                    'activity.origin': { $exists: false },
-                    ...( domainMatch === null
-                        ? { $or: [
-                            { 'activity.sessions': { $size: 0 } },
-                            { 'activity.sessions.-1.referrerDomain': null }
-                        ] }
-                        : { 'activity.sessions.-1.referrerDomain': domainMatch }
-                    )
-                }
-            ]
-        };
 
         interface ISummaryResult {
             _id: null;
@@ -2122,7 +2108,18 @@ export class UserService {
         }
 
         const results = await this.collection.aggregate<IFacetResult>([
-            { $match: matchStage },
+            { $match: { 'activity.lastSeen': { $gte: since } } },
+            {
+                $addFields: {
+                    _sourceDomain: {
+                        $ifNull: [
+                            '$activity.origin.referrerDomain',
+                            { $arrayElemAt: ['$activity.sessions.referrerDomain', -1] }
+                        ]
+                    }
+                }
+            },
+            { $match: { _sourceDomain: domainMatch } },
             {
                 $facet: {
                     summary: [
