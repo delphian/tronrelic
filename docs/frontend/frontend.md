@@ -2,21 +2,9 @@
 
 This document provides a high-level summary of TronRelic's frontend architecture and styling conventions. For detailed guidance on specific topics, refer to the specialized documentation linked throughout.
 
-## Who This Document Is For
-
-Frontend developers joining the TronRelic project who need to quickly understand the architectural patterns, file organization, and styling standards before diving into implementation work.
-
 ## Why These Patterns Matter
 
-TronRelic's frontend follows strict architectural patterns that solve specific problems:
-
-- **SSR + Live Updates eliminates loading flash** - Components render fully on the server with real data, then hydrate for interactivity and WebSocket updates. Users see content immediately, not loading spinners.
-- **Module-based organization prevents code sprawl** - Without clear boundaries, component files scatter across generic directories, making domains hard to locate and maintain
-- **UI styling system enables consistency** - The three-layer design token system and CSS Modules prevent visual fragmentation and naming collisions across components
-- **Container queries enable plugin flexibility** - Viewport media queries fail when components render in sidebars, modals, or plugin contexts with constrained widths
-- **Design system consistency prevents visual fragmentation** - Ad-hoc color values and spacing create disjointed interfaces that feel unprofessional
-
-Following these patterns ensures your work integrates seamlessly and remains maintainable as the codebase grows.
+SSR-first rendering, module-based organization, scoped SCSS Modules, and container queries exist because their alternatives — client-side loading spinners, scattered component files, global CSS collisions, and viewport media queries in constrained contexts — all caused real production issues. Following these patterns keeps the frontend consistent and maintainable as the codebase grows.
 
 ## Core Architecture Principles
 
@@ -107,8 +95,10 @@ Every component should reference design tokens from `globals.scss` (like `var(--
 - Complete styling checklist and quick reference
 
 **See detailed implementation guides:**
-- [ui-component-styling.md](./ui/ui-component-styling.md) - Comprehensive styling guide with code examples, layout components, animations, and accessibility patterns
-- [ui-design-token-layers.md](./ui/ui-design-token-layers.md) - Industry-standard token hierarchy, complete token reference, and W3C alignment
+- [ui-scss-modules.md](./ui/ui-scss-modules.md) - SCSS architecture, naming conventions, and component styling workflow
+- [ui-responsive-design.md](./ui/ui-responsive-design.md) - Container queries, breakpoints, and responsive patterns
+- [ui-accessibility.md](./ui/ui-accessibility.md) - Semantic HTML, ARIA labels, and plugin styling rules
+- [ui-design-token-layers.md](./ui/ui-design-token-layers.md) - Token hierarchy, complete reference, and W3C alignment
 
 ### Component-First Layout Architecture
 
@@ -304,7 +294,11 @@ Before committing any UI component or plugin page, verify:
 - [frontend-architecture.md](./frontend-architecture.md) - Complete file organization, modules vs features decision matrix, and import patterns
 - [react.md](./react/react.md) - React component architecture with context providers, hooks, and server/client component patterns
 - [ui.md](./ui/ui.md) - UI system overview with design tokens, CSS Modules, and styling standards
-- [ui-component-styling.md](./ui/ui-component-styling.md) - Comprehensive styling guide with code examples, utility classes, and accessibility patterns
+- [ui-scss-modules.md](./ui/ui-scss-modules.md) - SCSS architecture, naming conventions, and component styling workflow
+- [ui-responsive-design.md](./ui/ui-responsive-design.md) - Container queries and breakpoints
+- [ui-icons-and-feedback.md](./ui/ui-icons-and-feedback.md) - Lucide icons, animations, and state feedback
+- [ui-accessibility.md](./ui/ui-accessibility.md) - Semantic HTML, ARIA labels, and plugin styling
+- [ui-ssr-hydration.md](./ui/ui-ssr-hydration.md) - Hydration error prevention and ClientTime
 - [ui-design-token-layers.md](./ui/ui-design-token-layers.md) - Industry-standard token hierarchy, complete token reference, and theming system
 - [documentation.md](../documentation.md) - Documentation standards and writing style
 

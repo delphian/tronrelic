@@ -21,13 +21,14 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import {
     Users, TrendingUp, MousePointerClick,
-    Globe, Smartphone, BarChart3, Target
+    Globe, Smartphone, BarChart3, Target, ChevronDown, ChevronRight
 } from 'lucide-react';
 import { LineChart } from '../../../../../features/charts/components/LineChart';
 import type { ChartSeries } from '../../../../../features/charts/components/LineChart';
 import { Button } from '../../../../../components/ui/Button';
 import {
     adminGetTrafficSources,
+    adminGetTrafficSourceDetails,
     adminGetTopLandingPages,
     adminGetGeoDistribution,
     adminGetDeviceBreakdown,
@@ -39,6 +40,7 @@ import {
 import type {
     AnalyticsPeriod,
     ITrafficSource,
+    ITrafficSourceDetails,
     ILandingPage,
     IGeoEntry,
     IDeviceEntry,
@@ -133,12 +135,47 @@ export function AnalyticsDashboard({ token }: Props) {
     const [campaigns, setCampaigns] = useState<ICampaignEntry[]>([]);
     const [retention, setRetention] = useState<IRetentionEntry[]>([]);
 
+    // Traffic source drill-down state
+    const [expandedSource, setExpandedSource] = useState<string | null>(null);
+    const [sourceDetails, setSourceDetails] = useState<Record<string, ITrafficSourceDetails>>({});
+    const [sourceDetailsLoading, setSourceDetailsLoading] = useState<string | null>(null);
+
+    /**
+     * Toggle drill-down for a traffic source row.
+     *
+     * Fetches details on first expand, then caches for subsequent toggles.
+     * Collapses if the same source is clicked again.
+     *
+     * @param source - Referrer domain or 'direct'
+     */
+    const toggleSourceDetails = useCallback(async (source: string) => {
+        if (expandedSource === source) {
+            setExpandedSource(null);
+            return;
+        }
+        setExpandedSource(source);
+        if (!sourceDetails[source]) {
+            setSourceDetailsLoading(source);
+            try {
+                const details = await adminGetTrafficSourceDetails(token, source, period);
+                setSourceDetails(prev => ({ ...prev, [source]: details }));
+            } catch (error) {
+                console.error('Failed to fetch source details:', error);
+                setExpandedSource(prev => prev === source ? null : prev);
+            } finally {
+                setSourceDetailsLoading(prev => prev === source ? null : prev);
+            }
+        }
+    }, [expandedSource, sourceDetails, token, period]);
+
     /**
      * Fetch all analytics data for the selected period.
      * Runs all requests in parallel for performance.
      */
     const fetchAll = useCallback(async () => {
         setLoading(true);
+        setExpandedSource(null);
+        setSourceDetails({});
         try {
             const [
                 engagementRes,
@@ -317,6 +354,7 @@ export function AnalyticsDashboard({ token }: Props) {
                                         <table className={styles.table}>
                                             <thead>
                                                 <tr>
+                                                    <th className={styles.table__expand_cell}></th>
                                                     <th>Source</th>
                                                     <th>Category</th>
                                                     <th className={styles.table__number}>Visitors</th>
@@ -325,24 +363,174 @@ export function AnalyticsDashboard({ token }: Props) {
                                                 </tr>
                                             </thead>
                                             <tbody>
-                                                {trafficSources.map(s => (
-                                                    <tr key={s.source}>
-                                                        <td>{s.source}</td>
-                                                        <td>
-                                                            <span className={`${styles.category_badge} ${getCategoryClass(s.category)}`}>
-                                                                {s.category}
-                                                            </span>
-                                                        </td>
-                                                        <td className={styles.table__number}>{s.count.toLocaleString()}</td>
-                                                        <td className={styles.table__bar_cell}>
-                                                            <div
-                                                                className={styles.table__bar}
-                                                                style={{ width: `${(s.count / maxSourceCount) * 100}%` }}
-                                                            />
-                                                        </td>
-                                                        <td className={styles.table__number}>{s.percentage}%</td>
-                                                    </tr>
-                                                ))}
+                                                {trafficSources.map(s => {
+                                                    const isExpanded = expandedSource === s.source;
+                                                    const details = sourceDetails[s.source];
+                                                    const isLoading = sourceDetailsLoading === s.source;
+                                                    return (
+                                                        <React.Fragment key={s.source}>
+                                                            <tr
+                                                                className={styles.table__row_clickable}
+                                                                onClick={() => toggleSourceDetails(s.source)}
+                                                                role="button"
+                                                                tabIndex={0}
+                                                                onKeyDown={(e) => {
+                                                                    if (e.key === 'Enter' || e.key === ' ') {
+                                                                        e.preventDefault();
+                                                                        toggleSourceDetails(s.source);
+                                                                    }
+                                                                }}
+                                                                aria-expanded={isExpanded}
+                                                            >
+                                                                <td className={styles.table__expand_cell}>
+                                                                    {isExpanded
+                                                                        ? <ChevronDown size={14} />
+                                                                        : <ChevronRight size={14} />
+                                                                    }
+                                                                </td>
+                                                                <td>{s.source}</td>
+                                                                <td>
+                                                                    <span className={`${styles.category_badge} ${getCategoryClass(s.category)}`}>
+                                                                        {s.category}
+                                                                    </span>
+                                                                </td>
+                                                                <td className={styles.table__number}>{s.count.toLocaleString()}</td>
+                                                                <td className={styles.table__bar_cell}>
+                                                                    <div
+                                                                        className={styles.table__bar}
+                                                                        style={{ width: `${(s.count / maxSourceCount) * 100}%` }}
+                                                                    />
+                                                                </td>
+                                                                <td className={styles.table__number}>{s.percentage}%</td>
+                                                            </tr>
+                                                            {isExpanded && (
+                                                                <tr className={styles.detail_row}>
+                                                                    <td colSpan={6} className={styles.detail_row__cell}>
+                                                                        {isLoading ? (
+                                                                            <div className={styles.detail_loading}>Loading details...</div>
+                                                                        ) : details ? (
+                                                                            <div className={styles.detail_grid}>
+                                                                                {/* Engagement + Conversion cards */}
+                                                                                <div className={styles.detail_cards}>
+                                                                                    <div className={styles.detail_card}>
+                                                                                        <span className={styles.detail_card__value}>
+                                                                                            {details.engagement.avgSessions}
+                                                                                        </span>
+                                                                                        <span className={styles.detail_card__label}>Avg Sessions</span>
+                                                                                    </div>
+                                                                                    <div className={styles.detail_card}>
+                                                                                        <span className={styles.detail_card__value}>
+                                                                                            {details.engagement.avgPageViews}
+                                                                                        </span>
+                                                                                        <span className={styles.detail_card__label}>Avg Pages</span>
+                                                                                    </div>
+                                                                                    <div className={styles.detail_card}>
+                                                                                        <span className={styles.detail_card__value}>
+                                                                                            {formatDuration(details.engagement.avgDuration)}
+                                                                                        </span>
+                                                                                        <span className={styles.detail_card__label}>Avg Duration</span>
+                                                                                    </div>
+                                                                                    <div className={styles.detail_card}>
+                                                                                        <span className={styles.detail_card__value}>
+                                                                                            {details.conversion.conversionRate}%
+                                                                                        </span>
+                                                                                        <span className={styles.detail_card__label}>Wallet Conversion</span>
+                                                                                    </div>
+                                                                                </div>
+
+                                                                                {/* Landing Pages */}
+                                                                                {details.landingPages.length > 0 && (
+                                                                                    <div className={styles.detail_section}>
+                                                                                        <h4 className={styles.detail_section__title}>Landing Pages</h4>
+                                                                                        <ul className={styles.detail_list}>
+                                                                                            {details.landingPages.map(lp => (
+                                                                                                <li key={lp.path} className={styles.detail_list__item}>
+                                                                                                    <span className={styles.detail_list__label}>{lp.path}</span>
+                                                                                                    <span className={styles.detail_list__value}>
+                                                                                                        {lp.count} ({lp.percentage}%)
+                                                                                                    </span>
+                                                                                                </li>
+                                                                                            ))}
+                                                                                        </ul>
+                                                                                    </div>
+                                                                                )}
+
+                                                                                {/* Countries + Devices side by side */}
+                                                                                <div className={styles.detail_columns}>
+                                                                                    {details.countries.length > 0 && (
+                                                                                        <div className={styles.detail_section}>
+                                                                                            <h4 className={styles.detail_section__title}>Countries</h4>
+                                                                                            <ul className={styles.detail_list}>
+                                                                                                {details.countries.map(c => (
+                                                                                                    <li key={c.country} className={styles.detail_list__item}>
+                                                                                                        <span className={styles.detail_list__label}>{c.country}</span>
+                                                                                                        <span className={styles.detail_list__value}>
+                                                                                                            {c.count} ({c.percentage}%)
+                                                                                                        </span>
+                                                                                                    </li>
+                                                                                                ))}
+                                                                                            </ul>
+                                                                                        </div>
+                                                                                    )}
+                                                                                    {details.devices.length > 0 && (
+                                                                                        <div className={styles.detail_section}>
+                                                                                            <h4 className={styles.detail_section__title}>Devices</h4>
+                                                                                            <ul className={styles.detail_list}>
+                                                                                                {details.devices.map(d => (
+                                                                                                    <li key={d.device} className={styles.detail_list__item}>
+                                                                                                        <span className={styles.detail_list__label}>{d.device}</span>
+                                                                                                        <span className={styles.detail_list__value}>
+                                                                                                            {d.count} ({d.percentage}%)
+                                                                                                        </span>
+                                                                                                    </li>
+                                                                                                ))}
+                                                                                            </ul>
+                                                                                        </div>
+                                                                                    )}
+                                                                                </div>
+
+                                                                                {/* Search Keywords (if any) */}
+                                                                                {details.searchKeywords.length > 0 && (
+                                                                                    <div className={styles.detail_section}>
+                                                                                        <h4 className={styles.detail_section__title}>Search Keywords</h4>
+                                                                                        <ul className={styles.detail_list}>
+                                                                                            {details.searchKeywords.map(kw => (
+                                                                                                <li key={kw.keyword} className={styles.detail_list__item}>
+                                                                                                    <span className={styles.detail_list__label}>{kw.keyword}</span>
+                                                                                                    <span className={styles.detail_list__value}>{kw.count}</span>
+                                                                                                </li>
+                                                                                            ))}
+                                                                                        </ul>
+                                                                                    </div>
+                                                                                )}
+
+                                                                                {/* UTM Campaigns (if any) */}
+                                                                                {details.utmCampaigns.length > 0 && (
+                                                                                    <div className={styles.detail_section}>
+                                                                                        <h4 className={styles.detail_section__title}>UTM Campaigns</h4>
+                                                                                        <ul className={styles.detail_list}>
+                                                                                            {details.utmCampaigns.map(utm => (
+                                                                                                <li
+                                                                                                    key={`${utm.source}|${utm.medium}|${utm.campaign}`}
+                                                                                                    className={styles.detail_list__item}
+                                                                                                >
+                                                                                                    <span className={styles.detail_list__label}>
+                                                                                                        {utm.source} / {utm.medium} / {utm.campaign}
+                                                                                                    </span>
+                                                                                                    <span className={styles.detail_list__value}>{utm.count}</span>
+                                                                                                </li>
+                                                                                            ))}
+                                                                                        </ul>
+                                                                                    </div>
+                                                                                )}
+                                                                            </div>
+                                                                        ) : null}
+                                                                    </td>
+                                                                </tr>
+                                                            )}
+                                                        </React.Fragment>
+                                                    );
+                                                })}
                                             </tbody>
                                         </table>
                                     </div>

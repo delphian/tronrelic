@@ -936,6 +936,29 @@ export class UserController {
     }
 
     /**
+     * GET /api/admin/users/analytics/traffic-source-details
+     *
+     * Get detailed breakdown for a specific traffic source.
+     *
+     * Query parameters:
+     * - source: referrer domain (e.g. 'duckduckgo.com', 'direct') (required)
+     * - period: '24h' | '7d' | '30d' | '90d' (default: '30d')
+     *
+     * Response: { source, visitors, landingPages, countries, devices, utmCampaigns, searchKeywords, engagement, conversion }
+     */
+    async getTrafficSourceDetails(req: Request, res: Response): Promise<void> {
+        const source = req.query.source as string;
+        if (!source) {
+            res.status(400).json({ error: 'Missing required query parameter: source' });
+            return;
+        }
+        await this.handleAnalyticsRequest(res, () => {
+            const periodHours = this.parsePeriodHours(req.query.period as string);
+            return this.userService.getTrafficSourceDetails(source, periodHours);
+        }, 'Failed to get traffic source details');
+    }
+
+    /**
      * GET /api/admin/users/analytics/top-landing-pages
      *
      * Get top landing pages by visitor count.

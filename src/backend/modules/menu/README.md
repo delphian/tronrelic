@@ -257,9 +257,3 @@ console.log('Orphaned nodes:', orphans);
 - Subscribe to `before:delete` to cascade delete children
 - Run migration script to fix orphaned nodes (set parent to null)
 
-## Related Documentation
-
-- [plugins/plugins.md](../plugins/plugins.md) - Plugin system architecture and integration patterns
-- [plugins/plugins-page-registration.md](../plugins/plugins-page-registration.md) - How plugins register frontend pages
-- [system-api.md](./system-api.md) - WebSocket event patterns and admin authentication
-- [documentation.md](../documentation.md) - Documentation standards and writing style

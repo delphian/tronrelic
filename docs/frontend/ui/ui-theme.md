@@ -2,10 +2,6 @@
 
 TronRelic's theme system enables administrators to create, manage, and apply custom CSS themes that override the application's design tokens. Themes persist in MongoDB, cache in Redis, and apply via SSR injection with client-side switching.
 
-## Who This Document Is For
-
-Frontend developers creating custom themes, administrators managing themes through the admin interface, and plugin authors ensuring their components respond correctly to theme changes.
-
 ## Why This Matters
 
 The design token system (see [ui-design-token-layers.md](./ui-design-token-layers.md)) establishes TronRelic's visual foundation through CSS custom properties. Without a theme system, customizing the application's appearance would require modifying source files—breaking on every update and fragmenting the codebase.
@@ -257,7 +253,7 @@ Before creating a theme, gather:
 
 **Detailed documentation:**
 - [ui-design-token-layers.md](./ui-design-token-layers.md) - Complete token hierarchy and naming conventions
-- [ui-component-styling.md](./ui-component-styling.md) - Component styling patterns using design tokens
+- [ui-scss-modules.md](./ui-scss-modules.md) - SCSS Module architecture and component styling workflow
 
 **Source files to explore:**
 - [primitives.scss](../../../src/frontend/app/primitives.scss) - All foundation tokens (colors, spacing, typography)
@@ -267,4 +263,4 @@ Before creating a theme, gather:
 
 **Related topics:**
 - [react.md](../react/react.md) - SSR + Live Updates pattern used by ThemeToggle
-- [system-modules.md](../../system/system-modules.md) - Backend module architecture (ThemeModule follows this pattern)
+- [modules.md](../../system/modules/modules.md) - Backend module architecture (ThemeModule follows this pattern)

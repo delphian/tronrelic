@@ -225,3 +225,132 @@
     color: var(--color-text-muted);
     font-size: var(--font-size-sm);
 }
+
+/* Expand toggle cell */
+.table__expand_cell {
+    width: var(--spacing-8);
+    padding-right: 0;
+    color: var(--color-text-muted);
+}
+
+/* Clickable table rows for traffic source drill-down */
+.table__row_clickable {
+    cursor: pointer;
+    transition: background-color 0.15s ease;
+}
+
+.table__row_clickable:hover {
+    background: color-mix(in srgb, var(--color-primary) 5%, transparent);
+}
+
+.table__row_clickable:focus-visible {
+    outline: var(--border-width-medium) solid var(--color-primary);
+    outline-offset: calc(-1 * var(--border-width-medium));
+}
+
+/* Detail row expanded below a traffic source */
+.detail_row {
+    background: color-mix(in srgb, var(--color-surface-raised) 50%, transparent);
+}
+
+.detail_row__cell {
+    padding: var(--spacing-7) var(--spacing-7) var(--spacing-7) var(--spacing-10);
+    border-bottom: var(--border-width-thin) solid var(--color-border);
+}
+
+.detail_loading {
+    text-align: center;
+    padding: var(--spacing-7);
+    color: var(--color-text-muted);
+    font-size: var(--font-size-sm);
+}
+
+.detail_grid {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-7);
+}
+
+/* Summary metric cards inside detail panel */
+.detail_cards {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--spacing-5);
+}
+
+.detail_card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-width: var(--spacing-18);
+    padding: var(--spacing-4) var(--spacing-6);
+    background: color-mix(in srgb, var(--color-surface-raised) 80%, transparent);
+    border-radius: var(--radius-md);
+}
+
+.detail_card__value {
+    font-size: var(--font-size-base);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-primary);
+    line-height: var(--line-height-tight);
+}
+
+.detail_card__label {
+    font-size: var(--font-size-xs);
+    color: var(--color-text-muted);
+    margin-top: var(--spacing-1);
+}
+
+/* Subsections within detail panel */
+.detail_section {
+    min-width: 0;
+}
+
+.detail_section__title {
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin: 0 0 var(--spacing-3) 0;
+}
+
+/* Two-column layout for countries + devices inside detail panel */
+.detail_columns {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--spacing-7);
+}
+
+/* Key-value list for detail items */
+.detail_list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-2);
+}
+
+.detail_list__item {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    font-size: var(--font-size-sm);
+    gap: var(--spacing-4);
+}
+
+.detail_list__label {
+    color: var(--color-text);
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.detail_list__value {
+    color: var(--color-text-muted);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    flex-shrink: 0;
+}

@@ -2,25 +2,9 @@
 
 This document provides comprehensive guidance on TronRelic's design token system and standardized theming approach. Design tokens are named design decisions (colors, spacing, typography) implemented as CSS variables that ensure visual consistency across all components, features, and plugins.
 
-## Who This Document Is For
-
-Frontend developers implementing new components, plugin authors creating custom UI, and designers maintaining visual consistency across the TronRelic interface.
-
 ## Why This Matters
 
-**Risk of inconsistent theming:**
-- Hardcoded color values create visual fragmentation across features
-- Ad-hoc spacing decisions make interfaces feel disjointed
-- Duplicated style definitions bloat CSS and complicate maintenance
-- Refactoring themes becomes impossible when values are scattered
-
-**Benefits of centralized design tokens:**
-- Single source of truth for all design decisions
-- Theme changes propagate automatically across entire application
-- Predictable visual hierarchy with standardized sizing scales
-- Easy theme switching (light/dark mode, accessibility variants)
-- Reduced CSS bundle size through shared utility classes
-- Semantic naming makes intent clear (--color-primary vs #4b8cff)
+Hardcoded color and spacing values scattered across components make theming impossible and palette updates a multi-file chore. The three-layer token hierarchy establishes a single source of truth at each level — primitives define raw values, semantic tokens assign purpose, and components select tokens based on context — so a single change cascades correctly everywhere.
 
 ## The Token Hierarchy (Industry Standard)
 
@@ -424,7 +408,7 @@ When working with TronRelic's design tokens, remember:
 ## Further Reading
 
 **TronRelic documentation:**
-- [ui-component-styling.md](./ui-component-styling.md) - Component styling patterns and SCSS Module usage
+- [ui-scss-modules.md](./ui-scss-modules.md) - SCSS Module architecture, naming conventions, and component styling workflow
 - [frontend-architecture.md](./frontend-architecture.md) - Frontend file organization and structure
 
 **TronRelic source files:**

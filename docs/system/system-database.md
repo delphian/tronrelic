@@ -2,25 +2,9 @@
 
 All database operations in TronRelic must go through `IDatabaseService`. This unified abstraction layer provides testability, consistent patterns, and automatic namespace isolation. Direct imports of Mongoose models or raw MongoDB collections are prohibited.
 
-## Who This Document Is For
-
-Backend developers implementing modules, services, or plugins that require database access. Operations engineers debugging database issues. Contributors reviewing code for architectural compliance.
-
 ## Why This Matters
 
-Without a unified database abstraction:
-
-- **Testing becomes impossible** - Services that import Mongoose directly cannot be mocked, forcing integration tests for every unit test
-- **Plugin isolation breaks** - Plugins accessing raw collections can overwrite each other's data or core system data
-- **Patterns drift** - Each developer invents their own query patterns, creating inconsistent error handling and logging
-- **Refactoring becomes dangerous** - Changing database drivers or connection logic requires touching every file that imports Mongoose
-
-The `IDatabaseService` interface solves these problems by:
-
-- **Enabling mock implementations** - Unit tests inject mock databases without touching MongoDB
-- **Enforcing namespace isolation** - Plugins automatically get prefixed collections (`plugin_whale-alerts_subscriptions`)
-- **Standardizing patterns** - All consumers use the same CRUD methods with consistent error handling
-- **Centralizing connection logic** - One place to manage connections, retries, and driver configuration
+All database access flows through `IDatabaseService` to enforce testability, plugin namespace isolation, and consistent query patterns. Direct Mongoose imports bypass these guarantees — making services untestable, exposing plugins to cross-collection conflicts, and scattering connection logic across the codebase.
 
 ## Mandatory Requirement
 
@@ -172,7 +156,7 @@ export class MyModule implements IModule<IMyModuleDependencies> {
 }
 ```
 
-**See [system-modules.md](./system-modules.md) for complete module architecture.**
+**See [modules.md](./modules/modules.md) for complete module architecture.**
 
 ### Services
 
@@ -213,7 +197,7 @@ export class PageService implements IPageService {
 }
 ```
 
-**See [system-modules.md#service-types-and-singleton-usage](./system-modules.md#service-types-and-singleton-usage) for singleton patterns.**
+**See [modules.md#service-types-and-singleton-usage](./modules/modules.md#service-types-and-singleton-usage) for singleton patterns.**
 
 ### Plugins
 
@@ -397,7 +381,7 @@ Before writing database access code, verify:
 ## Further Reading
 
 **Detailed documentation:**
-- [system-modules.md](./system-modules.md) - Module architecture and dependency injection patterns
+- [modules.md](./modules/modules.md) - Module architecture and dependency injection patterns
 - [system-database-migrations.md](./system-database-migrations.md) - Database migration system for schema evolution
 - [system-testing.md](./system-testing.md) - Testing with mock database implementations
 

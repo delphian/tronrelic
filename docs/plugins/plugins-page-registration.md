@@ -4,16 +4,7 @@ TronRelic's plugin menu and page system enables plugins to extend the applicatio
 
 ## Why This System Exists
 
-Before this system, adding new pages required manually editing:
-- Navigation components to add menu items
-- Route configuration files to map URLs to components
-- Multiple core files scattered across the codebase
-
-The menu/page system solves this by:
-- **Centralizing discovery** - Plugins register menu items via backend service and declare pages in frontend manifests
-- **Eliminating core changes** - New features require zero modifications to navigation or routing
-- **Enabling modularity** - Features can be enabled/disabled by simply installing/removing plugins
-- **Supporting dynamic loading** - Pages and menus are discovered at runtime
+Adding new pages previously required editing navigation components, route configuration files, and multiple core files. The menu/page system centralizes this so plugins register their own menu items via `IMenuService` and declare routable pages in their frontend manifest — no core code changes required.
 
 ## Menu Registration: IMenuService vs Declarative
 
@@ -46,7 +37,7 @@ await context.menuService.create({
 });
 ```
 
-**See [system-modules-menu.md](../system/system-modules-menu.md) for complete IMenuService documentation.**
+**See [Menu Module README](../../src/backend/modules/menu/README.md) for complete IMenuService documentation.**
 
 ### 2. Page Registration (IPageConfig)
 
@@ -677,7 +668,7 @@ export function MyCustomMenu() {
 }
 ```
 
-**See [system-modules-menu.md](../system/system-modules-menu.md) for complete WebSocket event documentation.**
+**See [Menu Module README](../../src/backend/modules/menu/README.md) for complete WebSocket event documentation.**
 
 ## Future Enhancements
 
@@ -740,7 +731,7 @@ Core implementation files:
   - `src/backend/src/modules/menu/menu.service.ts` - MenuService implementation
   - `src/backend/src/modules/menu/menu.routes.ts` - REST API endpoints
   - `packages/types/src/menu/IMenuService.ts` - Menu service interface
-  - **See [system-modules-menu.md](../system/system-modules-menu.md) for complete documentation**
+  - **See [Menu Module README](../../src/backend/modules/menu/README.md) for complete documentation**
 
 - **Type definitions**:
   - `packages/types/src/plugin/IPageConfig.ts` - Page config interface
@@ -895,7 +886,7 @@ For developers working on the plugin system itself, here are the key files:
 ## Related Documentation
 
 **System documentation:**
-- [system-modules-menu.md](../system/system-modules-menu.md) - Menu module architecture, REST API endpoints, and WebSocket events
+- [Menu Module README](../../src/backend/modules/menu/README.md) - Menu module architecture, REST API endpoints, and WebSocket events
 
 **Plugin documentation:**
 - [plugins.md](./plugins.md) - Plugin system overview
@@ -904,4 +895,4 @@ For developers working on the plugin system itself, here are the key files:
 
 **Frontend documentation:**
 - [frontend.md](../frontend/frontend.md) - Frontend architecture overview
-- [ui-component-styling.md](../frontend/ui/ui-component-styling.md) - Component styling and design system
+- [ui-scss-modules.md](../frontend/ui/ui-scss-modules.md) - SCSS Modules, naming conventions, and component styling workflow

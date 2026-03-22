@@ -4,20 +4,7 @@ This document explains how TronRelic's scheduler works, how to control individua
 
 ## Why This Matters
 
-The scheduler is responsible for:
-
-- **Fetching market pricing data** - Every 10 minutes, all 14 energy rental markets are queried
-- **Syncing the blockchain** - Every minute, new TRON blocks are retrieved and transactions are processed
-- **Maintaining system health** - Periodic cleanup jobs, alert dispatch, and chain parameter updates
-
-When scheduling goes wrong:
-
-- ❌ Market data becomes stale (users see outdated prices)
-- ❌ Blockchain falls behind (new transactions aren't indexed)
-- ❌ Alerts don't send (users miss notifications)
-- ❌ System monitoring shows no data
-
-Understanding scheduler control helps you diagnose and resolve these issues without restarting the backend.
+The scheduler drives market refreshes, blockchain sync, cache cleanup, and alert dispatch. When jobs fail or fall behind, data goes stale silently. This document explains how to control individual jobs at runtime and troubleshoot scheduling issues without restarting the backend.
 
 ## Scheduler Architecture
 

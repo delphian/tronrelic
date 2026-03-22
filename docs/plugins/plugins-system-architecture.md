@@ -6,14 +6,6 @@ TronRelic's plugin system keeps high-impact blockchain features self-contained s
 
 This guide speaks directly to plugin authors and maintainers who ship blockchain features on TronRelic. Internalising these guardrails keeps experiments from spilling into core services, prevents UI drift, and protects production data when teams toggle features on and off.
 
-Our blockchain pipeline ingests thousands of TRON transactions per second. We need a way to experiment with features like whale alerts without destabilizing core services. The plugin system delivers that by:
-
-- Letting us ship or retire entire features by touching one directory.
-- Protecting the blockchain service from feature-specific logic via dependency injection.
-- Allowing the frontend to discover optional UI at runtime instead of hard-coding imports.
-- Enabling plugins to register navigation menu items and routable pages without modifying core infrastructure.
-- Keeping tests, docs, and build tooling scoped to the feature team that owns the plugin.
-
 ## How It Works
 
 1. Auto-discovery registers plugin manifests so the platform understands available features before any runtime hooks execute.
@@ -198,7 +190,7 @@ export function MyPluginPage({ context }: { context: IFrontendPluginContext }) {
 - Combine CSS Modules with utility classes (`.surface`, `.btn`, `.badge`) for consistency
 - Use container queries instead of viewport media queries for plugin responsiveness
 
-For complete CSS architecture guidance, see [Frontend Component Guide](../frontend/ui/ui-component-styling.md) and [Plugin Frontend Context](./plugins-frontend-context.md).
+For complete CSS architecture guidance, see [SCSS Modules and Component Styling](../frontend/ui/ui-scss-modules.md) and [Plugin Frontend Context](./plugins-frontend-context.md).
 
 ### Build outputs
 
@@ -274,7 +266,7 @@ Plugins never reach into `src/backend/src` directly. Instead they rely on the in
 - `BaseObserver` gives plugins the queueing, back-pressure, and telemetry scaffolding used throughout the blockchain pipeline (injected as a constructor, not imported directly).
 - `database` provides scoped MongoDB access with automatic collection prefixing for data persistence (see [Database Access Architecture](../system/system-database.md#plugins)).
 - `logger` delivers a plugin-scoped child logger so every log line includes plugin metadata without manual bindings (see [system-logging.md](../system/system-logging.md) for logging best practices).
-- `userService` provides user lookup methods (`getById`, `getByWallet`) for contexts where `req.user` isn't available—batch jobs, observers, or WebSocket handlers (see [User Module](../system/system-modules-user.md#plugin-access-to-user-data) for usage patterns).
+- `userService` provides user lookup methods (`getById`, `getByWallet`) for contexts where `req.user` isn't available—batch jobs, observers, or WebSocket handlers (see [User Module README](../../src/backend/modules/user/README.md#plugin-access-to-user-data) for usage patterns).
 
 This contract keeps plugins decoupled from implementation details while still giving them powerful capabilities.
 

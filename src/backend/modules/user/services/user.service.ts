@@ -2060,6 +2060,233 @@ export class UserService {
     }
 
     /**
+     * Get detailed breakdown for a specific traffic source.
+     *
+     * Aggregates landing pages, countries, devices, UTM parameters,
+     * and engagement/conversion metrics for all users whose first-session
+     * referrer matches the given source domain.
+     *
+     * @param source - Referrer domain to drill into (use 'direct' for null referrer)
+     * @param periodHours - Lookback period in hours
+     * @returns Breakdown of landing pages, countries, devices, UTM, engagement, and conversions
+     */
+    async getTrafficSourceDetails(source: string, periodHours: number): Promise<{
+        source: string;
+        visitors: number;
+        landingPages: Array<{ path: string; count: number; percentage: number }>;
+        countries: Array<{ country: string; count: number; percentage: number }>;
+        devices: Array<{ device: string; count: number; percentage: number }>;
+        utmCampaigns: Array<{ source: string; medium: string; campaign: string; count: number }>;
+        searchKeywords: Array<{ keyword: string; count: number }>;
+        engagement: { avgSessions: number; avgPageViews: number; avgDuration: number };
+        conversion: { walletsConnected: number; walletsVerified: number; conversionRate: number };
+    }> {
+        const since = new Date();
+        since.setTime(since.getTime() - (periodHours * 60 * 60 * 1000));
+
+        // Project a unified domain field using the same logic as getTrafficSources():
+        // prefer activity.origin.referrerDomain, fall back to oldest session's referrerDomain.
+        // Then match on the projected domain so legacy users without activity.origin are handled correctly.
+        const domainMatch = source === 'direct' ? null : source;
+
+        interface ISummaryResult {
+            _id: null;
+            visitors: number;
+            avgSessions: number;
+            avgPageViews: number;
+            avgDuration: number;
+            walletsConnected: number;
+            walletsVerified: number;
+        }
+        interface IFacetResult {
+            summary: ISummaryResult[];
+            landingPages: Array<{ _id: string | null; count: number }>;
+            countries: Array<{ _id: string | null; count: number }>;
+            devices: Array<{ _id: string | null; count: number }>;
+            utmCampaigns: Array<{ _id: { source: string; medium: string; campaign: string }; count: number }>;
+            searchKeywords: Array<{ _id: string; count: number }>;
+        }
+
+        const results = await this.collection.aggregate<IFacetResult>([
+            { $match: { 'activity.lastSeen': { $gte: since } } },
+            {
+                $addFields: {
+                    _sourceDomain: {
+                        $ifNull: [
+                            '$activity.origin.referrerDomain',
+                            { $arrayElemAt: ['$activity.sessions.referrerDomain', -1] }
+                        ]
+                    }
+                }
+            },
+            { $match: { _sourceDomain: domainMatch } },
+            {
+                $facet: {
+                    summary: [
+                        {
+                            $group: {
+                                _id: null,
+                                visitors: { $sum: 1 },
+                                avgSessions: { $avg: { $ifNull: ['$activity.sessionsCount', 0] } },
+                                avgPageViews: { $avg: { $ifNull: ['$activity.pageViews', 0] } },
+                                avgDuration: { $avg: { $ifNull: ['$activity.totalDurationSeconds', 0] } },
+                                walletsConnected: {
+                                    $sum: {
+                                        $cond: [
+                                            { $gt: [{ $size: { $ifNull: ['$wallets', []] } }, 0] },
+                                            1, 0
+                                        ]
+                                    }
+                                },
+                                walletsVerified: {
+                                    $sum: {
+                                        $cond: [
+                                            {
+                                                $gt: [{
+                                                    $size: {
+                                                        $filter: {
+                                                            input: { $ifNull: ['$wallets', []] },
+                                                            as: 'w',
+                                                            cond: { $eq: ['$$w.verified', true] }
+                                                        }
+                                                    }
+                                                }, 0]
+                                            },
+                                            1, 0
+                                        ]
+                                    }
+                                }
+                            }
+                        }
+                    ],
+                    landingPages: [
+                        {
+                            $group: {
+                                _id: {
+                                    $ifNull: [
+                                        '$activity.origin.landingPage',
+                                        { $arrayElemAt: ['$activity.sessions.landingPage', -1] }
+                                    ]
+                                },
+                                count: { $sum: 1 }
+                            }
+                        },
+                        { $match: { _id: { $ne: null } } },
+                        { $sort: { count: -1 } },
+                        { $limit: 10 }
+                    ],
+                    countries: [
+                        {
+                            $group: {
+                                _id: {
+                                    $ifNull: [
+                                        '$activity.origin.country',
+                                        { $arrayElemAt: ['$activity.sessions.country', -1] }
+                                    ]
+                                },
+                                count: { $sum: 1 }
+                            }
+                        },
+                        { $match: { _id: { $ne: null } } },
+                        { $sort: { count: -1 } },
+                        { $limit: 10 }
+                    ],
+                    devices: [
+                        {
+                            $group: {
+                                _id: {
+                                    $ifNull: [
+                                        '$activity.origin.device',
+                                        { $arrayElemAt: ['$activity.sessions.device', -1] }
+                                    ]
+                                },
+                                count: { $sum: 1 }
+                            }
+                        },
+                        { $match: { _id: { $ne: null } } },
+                        { $sort: { count: -1 } }
+                    ],
+                    utmCampaigns: [
+                        { $match: { 'activity.origin.utm': { $ne: null } } },
+                        {
+                            $group: {
+                                _id: {
+                                    source: { $ifNull: ['$activity.origin.utm.source', '(none)'] },
+                                    medium: { $ifNull: ['$activity.origin.utm.medium', '(none)'] },
+                                    campaign: { $ifNull: ['$activity.origin.utm.campaign', '(none)'] }
+                                },
+                                count: { $sum: 1 }
+                            }
+                        },
+                        { $sort: { count: -1 } },
+                        { $limit: 10 }
+                    ],
+                    searchKeywords: [
+                        { $match: { 'activity.origin.searchKeyword': { $ne: null } } },
+                        {
+                            $group: {
+                                _id: '$activity.origin.searchKeyword',
+                                count: { $sum: 1 }
+                            }
+                        },
+                        { $sort: { count: -1 } },
+                        { $limit: 10 }
+                    ]
+                }
+            }
+        ]).toArray();
+
+        const data = results[0];
+        const summary = data?.summary?.[0];
+        const visitors = summary?.visitors ?? 0;
+
+        const toPercentage = (count: number): number =>
+            visitors > 0 ? Math.round((count / visitors) * 10000) / 100 : 0;
+
+        return {
+            source,
+            visitors,
+            landingPages: (data?.landingPages ?? []).map(r => ({
+                path: r._id ?? '(unknown)',
+                count: r.count,
+                percentage: toPercentage(r.count)
+            })),
+            countries: (data?.countries ?? []).map(r => ({
+                country: r._id ?? '(unknown)',
+                count: r.count,
+                percentage: toPercentage(r.count)
+            })),
+            devices: (data?.devices ?? []).map(r => ({
+                device: r._id ?? '(unknown)',
+                count: r.count,
+                percentage: toPercentage(r.count)
+            })),
+            utmCampaigns: (data?.utmCampaigns ?? []).map(r => ({
+                source: r._id.source,
+                medium: r._id.medium,
+                campaign: r._id.campaign,
+                count: r.count
+            })),
+            searchKeywords: (data?.searchKeywords ?? []).map(r => ({
+                keyword: r._id,
+                count: r.count
+            })),
+            engagement: {
+                avgSessions: Math.round((summary?.avgSessions ?? 0) * 10) / 10,
+                avgPageViews: Math.round((summary?.avgPageViews ?? 0) * 10) / 10,
+                avgDuration: Math.round(summary?.avgDuration ?? 0)
+            },
+            conversion: {
+                walletsConnected: summary?.walletsConnected ?? 0,
+                walletsVerified: summary?.walletsVerified ?? 0,
+                conversionRate: visitors > 0
+                    ? Math.round(((summary?.walletsVerified ?? 0) / visitors) * 10000) / 100
+                    : 0
+            }
+        };
+    }
+
+    /**
      * Get top landing pages for users active in the given period.
      *
      * Aggregates the first-session landing page across visitors, including

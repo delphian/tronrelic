@@ -39,16 +39,16 @@ AGPL-3.0-or-later with plugin exception. Third-party plugins may use any license
 | Document | Purpose |
 |----------|---------|
 | [System Overview](docs/system/system.md) | Blockchain sync, scheduler, observers, metrics |
-| [Backend Modules](docs/system/system-modules.md) | IModule interface, init/run lifecycle, DI |
+| [Backend Modules](docs/system/modules/modules.md) | IModule interface, init/run lifecycle, DI |
 | [Database Access](docs/system/system-database.md) | IDatabaseService abstraction, three-tier access |
 | [System API Reference](docs/system/system-api.md) | 16+ admin endpoints, authentication |
 | [Blockchain Sync](docs/system/system-blockchain-sync-architecture.md) | Block retrieval, enrichment, observer notification |
 | [System Dashboard](docs/system/system-dashboard.md) | /system UI, job control, monitoring |
 | [Database Migrations](docs/system/system-database-migrations.md) | Schema evolution, transaction support |
 | [Logging System](docs/system/system-logging.md) | Pino, MongoDB persistence, log queries |
-| [Menu Module](docs/system/system-modules-menu.md) | Navigation management, plugin integration |
-| [Pages Module](docs/system/system-modules-pages.md) | CMS, markdown, file uploads |
-| [User Module](docs/system/system-modules-user.md) | Identity, wallet linking, preferences |
+| [Menu Module](src/backend/modules/menu/README.md) | Navigation management, plugin integration |
+| [Pages Module](src/backend/modules/pages/README.md) | CMS, markdown, file uploads |
+| [User Module](src/backend/modules/user/README.md) | Identity, wallet linking, preferences |
 | [Runtime Configuration](docs/system/system-runtime-config.md) | Universal Docker images, SITE_URL |
 | [Scheduler Operations](docs/system/system-scheduler-operations.md) | Job management, cron, troubleshooting |
 | [Testing Framework](docs/system/system-testing.md) | Vitest, Mongoose mocks, test isolation |

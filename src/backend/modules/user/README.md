@@ -928,17 +928,3 @@ dispatch(initializeUser(id)).then((result) => {
 });
 ```
 
-## Further Reading
-
-**TronRelic module patterns:**
-- [system-modules.md](./system-modules.md) - Backend module system architecture and lifecycle patterns
-- [system-modules-menu.md](./system-modules-menu.md) - Menu module for navigation management
-- [system-modules-pages.md](./system-modules-pages.md) - Pages module as reference implementation
-
-**Related frontend patterns:**
-- [frontend.md](../frontend/frontend.md) - Frontend architecture overview
-- [react.md](../frontend/react/react.md) - React component and context patterns
-
-**Related backend patterns:**
-- [plugins/plugins.md](../plugins/plugins.md) - Plugin system architecture (comparison to modules)
-- [environment.md](../environment.md) - Environment variable configuration reference

@@ -2,25 +2,9 @@
 
 TronRelic uses Vitest for unit testing with comprehensive mocking utilities for database (Mongoose) and filesystem (fs/promises) operations, enabling full service testing without requiring external dependencies.
 
-## Who This Document Is For
-
-Backend developers writing unit tests for database services, filesystem operations, migration scanners, plugin authors testing storage implementations, and maintainers ensuring test coverage.
-
 ## Why This Matters
 
-Testing with proper mocks provides:
-
-- **Faster test execution** - No network overhead, database startup, or filesystem I/O
-- **Isolated test environments** - Each test runs with clean state, no cross-test interference
-- **Error injection capabilities** - Simulate database and filesystem failures to validate error handling
-- **CI/CD compatibility** - No external dependencies required for automated testing
-
-Without proper mocking infrastructure:
-
-- Tests require MongoDB containers and filesystem access (slow, resource-intensive)
-- Test isolation is difficult (shared state causes flaky tests)
-- Error scenarios are hard to reproduce (failures are non-deterministic)
-- CI/CD pipelines need additional infrastructure complexity
+The shared mocking utilities let every service test run in isolation — no MongoDB, no filesystem, no network. Without them, tests become slow, flaky, and impossible to run in CI without spinning up infrastructure containers.
 
 ## Vitest Test Runner
 

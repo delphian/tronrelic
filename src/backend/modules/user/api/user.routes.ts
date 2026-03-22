@@ -241,6 +241,12 @@ export function createAdminUserRouter(controller: UserController): Router {
     router.get('/analytics/traffic-sources', controller.getTrafficSources.bind(controller));
 
     /**
+     * GET /api/admin/users/analytics/traffic-source-details
+     * Get detailed breakdown for a specific traffic source
+     */
+    router.get('/analytics/traffic-source-details', controller.getTrafficSourceDetails.bind(controller));
+
+    /**
      * GET /api/admin/users/analytics/top-landing-pages
      * Get top landing pages by visitor count
      */

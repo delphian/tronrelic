@@ -4,12 +4,7 @@ This document explains how TronRelic retrieves blocks from the TRON network, pro
 
 ## Why This Matters
 
-Understanding the blockchain sync pipeline is critical for:
-
-- **Diagnosing stale data issues** - Knowing the rate limiting strategy helps troubleshoot why transactions appear delayed
-- **Adding new transaction analysis features** - The observer pattern lets you react to transactions without modifying core sync logic
-- **Tuning performance** - Understanding the retrieval strategy helps optimize for throughput vs. API rate limits
-- **Monitoring system health** - The sync status dashboard (`/system`) provides real-time visibility into processing lag
+The sync pipeline controls how blocks reach the database and how observers receive transactions. Misunderstanding the rate-limiting strategy, enrichment sequence, or observer notification flow leads to misdiagnosed stalls, redundant API calls, or broken feature additions.
 
 ## Architecture Overview
 

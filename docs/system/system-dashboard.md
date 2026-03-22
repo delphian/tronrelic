@@ -4,16 +4,7 @@ The System Dashboard provides real-time visibility into all TronRelic operations
 
 ## Why This Matters
 
-Without operational visibility, you cannot:
-
-- **Diagnose sync failures** - Blockchain lag means whale alerts stop appearing, but you won't know why
-- **Detect stale pricing** - Users see outdated energy prices on the leaderboard without warning
-- **Troubleshoot scheduler issues** - Jobs fail silently and critical tasks like market refresh don't run
-- **Monitor resource usage** - Memory leaks or database connection failures go unnoticed until the system crashes
-- **Control system behavior** - No way to pause jobs, trigger manual refreshes, or adjust thresholds without code deployments
-- **Verify integrations** - TronGrid API keys, Telegram bots, or database connections may be misconfigured
-
-The dashboard surfaces these issues immediately and provides point-and-click controls to resolve them without backend restarts.
+Scheduler jobs fail silently, blockchain sync stalls without warning, and market data goes stale — all invisible without a monitoring surface. The dashboard provides real-time visibility into every system component and point-and-click controls to resolve issues without backend restarts.
 
 ## Accessing the Dashboard
 

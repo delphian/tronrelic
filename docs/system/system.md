@@ -2,27 +2,9 @@
 
 TronRelic's system layer manages the core data pipelines, scheduling, and blockchain synchronization that power all features. Understanding these components is essential for debugging production issues, optimizing performance, and implementing new features that depend on real-time data.
 
-## Who This Document Is For
-
-Backend developers implementing blockchain-aware features, operations engineers troubleshooting production issues, and plugin authors understanding how transaction data flows from the TRON network through TronRelic to observers and the frontend.
-
 ## Why This Matters
 
-The system layer handles:
-
-- **Blockchain synchronization** - Fetching thousands of TRON transactions per minute from the network
-- **Scheduler management** - Coordinating market data refreshes, chain parameter updates, and alert dispatch
-- **Observer notification** - Broadcasting enriched transactions to all subscribed plugins without blocking the sync pipeline
-- **Real-time metrics** - Exposing lag, throughput, and error tracking to the `/system` monitoring dashboard
-
-When the system layer fails:
-
-- ❌ New transactions don't get indexed (whale alerts are silent)
-- ❌ Market prices become stale (leaderboard shows outdated data)
-- ❌ Plugin observers stop receiving events (custom analytics fail)
-- ❌ Admin cannot see system health or control jobs
-
-Understanding these components helps you diagnose sync stalls, optimize performance, and confidently deploy changes.
+The system layer orchestrates blockchain synchronization, job scheduling, observer notification, and real-time metrics — the data pipelines that every feature depends on. When these components stall, transactions stop indexing, market prices go stale, and plugin observers receive nothing. Understanding the system layer is essential for diagnosing production issues and deploying changes safely.
 
 ## Core System Components
 
@@ -58,15 +40,10 @@ The backend module system provides a structured pattern for permanent, core back
 - **Colocated organization** - All module code lives in a single `modules/<name>/` directory
 - **Fail-fast error handling** - Module initialization failures cause application shutdown (no degraded mode)
 
-**See [system-modules.md](./system-modules.md) for complete details on:**
-- Module system architecture and `IModule` interface contract
-- Two-phase lifecycle (init/run) and dependency injection patterns
-- Creating new modules with step-by-step guide
-- Pages module as reference implementation
-- Service composition and storage provider abstraction
-- Testing strategies and mock patterns
-- Module vs plugin decision matrix
-- Best practices and pre-implementation checklist
+**See [modules.md](./modules/modules.md) for:**
+- Module system overview, module vs plugin decision matrix, and service type rules
+- [modules-architecture.md](./modules/modules-architecture.md) for IModule interface, bootstrap sequence, and dependency injection patterns
+- [modules-creating.md](./modules/modules-creating.md) for step-by-step module creation guide and best practices
 
 ### Database Access Architecture
 
@@ -179,7 +156,7 @@ The navigation menu system manages application-wide navigation through a central
 - **Dual persistence modes** - Database-backed entries and memory-only runtime entries
 - **Multiple namespaces** - Independent navigation contexts for different UI areas
 
-**See [system-modules-menu.md](./system-modules-menu.md) for complete details on:**
+**See [Menu Module README](../../src/backend/modules/menu/README.md) for complete details on:**
 - Menu service architecture and singleton pattern
 - Menu node lifecycle (create, update, delete, reorder)
 - REST API endpoints for menu management
@@ -224,7 +201,7 @@ The pages module provides custom content management capabilities, allowing admin
 - **Redis caching** - Rendered HTML cached for 24 hours with automatic invalidation on updates
 - **Route conflict prevention** - Blacklist patterns prevent pages from overriding core routes
 
-**See [system-modules-pages.md](./system-modules-pages.md) for complete details on:**
+**See [Pages Module README](../../src/backend/modules/pages/README.md) for complete details on:**
 - Pages module architecture and Provider vs Service distinction
 - PageService singleton pattern and dependency injection
 - IStorageProvider interface and adding new storage backends
@@ -246,7 +223,7 @@ The user module provides visitor identity management, enabling anonymous trackin
 - **Cookie-based validation** - API endpoints validate cookie matches :id parameter for security
 - **Real-time sync** - WebSocket events push user updates to connected clients
 
-**See [system-modules-user.md](./system-modules-user.md) for complete details on:**
+**See [User Module README](../../src/backend/modules/user/README.md) for complete details on:**
 - User module architecture and cookie-based authentication pattern
 - UserService singleton with Redis caching and tag invalidation
 - Database schema (users collection with wallets, preferences, activity)
@@ -327,16 +304,18 @@ curl -X PATCH \
 
 **Detailed documentation:**
 - [system-database.md](./system-database.md) - Database access architecture, mandatory IDatabaseService abstraction, three-tier access patterns, and namespace isolation
-- [system-modules.md](./system-modules.md) - Backend module system architecture, lifecycle patterns, dependency injection, and creating new modules
+- [modules.md](./modules/modules.md) - Backend module system overview, decision matrix, and service type rules
+- [modules-architecture.md](./modules/modules-architecture.md) - IModule interface, bootstrap sequence, dependency injection, and migration guidance
+- [modules-creating.md](./modules/modules-creating.md) - Step-by-step module creation guide with best practices
 - [system-blockchain-sync-architecture.md](./system-blockchain-sync-architecture.md) - Complete technical overview of block retrieval, transaction enrichment, observer notification, and performance characteristics
 - [system-scheduler-operations.md](./system-scheduler-operations.md) - Scheduler control, job management, troubleshooting, and configuration persistence
 - [system-api.md](./system-api.md) - Complete API reference with all endpoints, authentication, request/response formats, and usage examples
 - [system-dashboard.md](./system-dashboard.md) - Web dashboard UI guide with tab-by-tab feature documentation
 - [system-database-migrations.md](./system-database-migrations.md) - Database migration system architecture, REST API, admin UI, lifecycle documentation, and troubleshooting
 - [system-logging.md](./system-logging.md) - Logging system architecture, log levels, MongoDB persistence, and accessing historical logs
-- [system-modules-menu.md](./system-modules-menu.md) - Menu module architecture, API reference, plugin integration, and event-driven updates
-- [system-modules-pages.md](./system-modules-pages.md) - Pages module for custom content management with markdown authoring, file uploads, and storage provider abstraction
-- [system-modules-user.md](./system-modules-user.md) - User module for visitor identity management with anonymous UUID tracking, wallet linking, and admin dashboard
+- [Menu Module README](../../src/backend/modules/menu/README.md) - Menu module architecture, API reference, plugin integration, and event-driven updates
+- [Pages Module README](../../src/backend/modules/pages/README.md) - Pages module for custom content management with markdown authoring, file uploads, and storage provider abstraction
+- [User Module README](../../src/backend/modules/user/README.md) - User module for visitor identity management with anonymous UUID tracking, wallet linking, and admin dashboard
 - [system-testing.md](./system-testing.md) - Testing framework guide with Vitest setup, Mongoose mocking utilities, and testing patterns
 
 **Related topics:**
