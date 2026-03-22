@@ -2,18 +2,9 @@
 
 TronRelic's plugin system enables self-contained blockchain features that own everything they need—from transaction observers to frontend presentation—without touching the platform core.
 
-## Who This Document Is For
-
-Backend developers implementing plugins, frontend developers extending UI, and maintainers understanding the plugin architecture.
-
 ## Why This Matters
 
-TronRelic's blockchain pipeline ingests thousands of TRON transactions per second. The plugin system lets us experiment with features like whale alerts, delegation tracking, and custom analytics without:
-
-- **Destabilizing core services** - Plugins use dependency injection and fail in isolation
-- **Fragmenting the codebase** - Each plugin is a single workspace with backend + frontend code
-- **Coupling to infrastructure** - Plugins depend on `@tronrelic/types` interfaces, not concrete implementations
-- **Manual routing changes** - Pages, navigation, API routes, and WebSocket events register automatically
+The plugin system lets features like whale alerts and delegation tracking ship as self-contained workspaces that fail in isolation, depend on interfaces rather than infrastructure, and register their own routes, pages, and observers — all without touching platform core.
 
 ## Core System Components
 
@@ -231,4 +222,4 @@ context.websocket.onSubscribe(async (socket, roomName, payload) => {
 **Related topics:**
 - [Frontend Architecture](../frontend/frontend.md) - Frontend system overview and patterns
 - [Chain Parameters](../tron/tron-chain-parameters.md) - Blockchain data enrichment used by observers
-- [Menu Module](../system/system-modules-menu.md) - Backend menu service that manages plugin navigation items
+- [Menu Module README](../../src/backend/modules/menu/README.md) - Backend menu service that manages plugin navigation items

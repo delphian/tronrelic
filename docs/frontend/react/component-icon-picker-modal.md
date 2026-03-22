@@ -8,14 +8,7 @@ Frontend developers implementing forms, configuration interfaces, or any feature
 
 ## Why This Matters
 
-Text input fields for icon names create poor user experience:
-
-- **Users don't know what icons exist** - Without browsing, they can't discover available options
-- **Typos break functionality** - Misspelled icon names fail silently or cause rendering errors
-- **No visual preview** - Users can't see what an icon looks like before selection
-- **Requires documentation** - Teams need to maintain icon name lists separately
-
-IconPickerModal solves these problems by providing immediate visual feedback, real-time search, and guaranteed valid icon selections.
+Text input fields for icon names force users to guess available options and produce typos that fail silently. IconPickerModal replaces this with a browsable grid, real-time search, and guaranteed valid selections.
 
 ## Core Features
 
@@ -337,7 +330,7 @@ IconPickerModal supports selecting a single icon only. If you need multi-select 
 
 ## Related Documentation
 
-- [Frontend Component Guide](../../ui/ui-component-styling.md) - CSS Modules and design token reference
+- [SCSS Modules and Component Styling](../../ui/ui-scss-modules.md) - CSS Modules and design token reference
 - [Frontend Architecture](../../frontend-architecture.md) - Component organization patterns
 - [System Theme Management](../../../system/system-theme.md) - Example usage in theme editor (if exists)
 

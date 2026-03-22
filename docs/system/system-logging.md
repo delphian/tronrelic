@@ -2,20 +2,9 @@
 
 TronRelic's logging system wraps Pino with automatic MongoDB persistence for operational visibility and troubleshooting.
 
-## Who This Document Is For
-
-Backend developers and plugin authors who need to understand logging best practices, configure log levels, or access historical error data for debugging production issues.
-
 ## Why This Matters
 
-Production errors vanish when they only go to rotating log files. Without centralized error tracking, you cannot:
-
-- **Diagnose intermittent failures** - Logs rotate away before you notice the pattern
-- **Track error trends** - No visibility into which services generate the most warnings
-- **Audit resolution** - No record of which errors were acknowledged and when
-- **Filter by context** - Cannot query logs by plugin, severity, or time range
-
-TronRelic's `ISystemLogService` solves this by automatically persisting logs to MongoDB based on configured severity thresholds. You get structured logging with searchable history, retention policies, and admin UI visibility—all without changing how you write log statements.
+Production errors vanish when they only exist in rotating log files. `ISystemLogService` wraps Pino with automatic MongoDB persistence so logs above a configured severity are searchable, filterable by plugin or time range, and visible in the admin UI — without changing how you write log statements.
 
 ## Core Concept
 

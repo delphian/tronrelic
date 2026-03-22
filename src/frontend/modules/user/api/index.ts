@@ -32,6 +32,7 @@ export {
     adminGetNewUsers,
     // Aggregate analytics functions
     adminGetTrafficSources,
+    adminGetTrafficSourceDetails,
     adminGetTopLandingPages,
     adminGetGeoDistribution,
     adminGetDeviceBreakdown,
@@ -57,6 +58,7 @@ export type {
     // Aggregate analytics types
     AnalyticsPeriod,
     ITrafficSource,
+    ITrafficSourceDetails,
     ILandingPage,
     IGeoEntry,
     IDeviceEntry,

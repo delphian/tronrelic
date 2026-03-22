@@ -2,20 +2,9 @@
 
 This document provides a high-level overview of TronRelic's React component patterns and architectural decisions. For detailed component implementation guides, refer to the specialized documentation in the `react/` subdirectory.
 
-## Who This Document Is For
-
-Frontend developers implementing React components, features, or plugins who need to understand TronRelic's React patterns before writing UI code. This includes understanding context providers, hooks, composition patterns, and server vs client component decisions.
-
 ## Why This Matters
 
-TronRelic's React architecture solves specific problems that arise when building a complex, real-time blockchain monitoring application:
-
-- **Context providers eliminate prop drilling** - Without centralized state management, modal controls, toast notifications, and plugin APIs would need to be passed through 5-10 component layers
-- **Custom hooks encapsulate feature logic** - Without hooks, blockchain subscription logic, WebSocket management, and wallet tracking would duplicate across components
-- **Server and client component separation optimizes performance** - Mixing server and client components without understanding the boundary causes hydration errors and unnecessary client-side JavaScript
-- **Composition over inheritance enables plugin flexibility** - Without composition patterns, plugins couldn't inject custom UI or extend core components cleanly
-
-Following these patterns ensures your components integrate seamlessly with TronRelic's state management, real-time updates, and plugin system.
+TronRelic's React architecture uses context providers, custom hooks, server/client component separation, and composition patterns to manage a real-time blockchain monitoring UI. Deviating from these patterns causes prop drilling through deep component trees, duplicated WebSocket logic, hydration errors from mixed server/client concerns, and plugins that cannot extend the UI cleanly.
 
 ## SSR + Live Updates Pattern
 
@@ -23,29 +12,7 @@ Following these patterns ensures your components integrate seamlessly with TronR
 
 ### Why SSR-First Rendering Matters
 
-Traditional client-side rendering shows loading spinners while fetching data:
-
-```
-User visits page → See loading spinner → Wait for API call → See content
-```
-
-TronRelic's SSR-first pattern eliminates this delay:
-
-```
-User visits page → See content immediately → WebSocket connects → Live updates flow
-```
-
-**Benefits:**
-- **No loading flash** - Data arrives with HTML, users see content instantly
-- **SEO-friendly** - Search engines index complete content
-- **Faster perceived performance** - First contentful paint includes actual data
-- **Progressive enhancement** - Pages work even if JavaScript fails to load
-
-**Risk of ignoring this pattern:**
-- Users see loading spinners on every page visit
-- Hydration errors when server HTML doesn't match client render
-- Poor perceived performance despite fast network
-- SEO penalties for content-sparse initial renders
+Server components fetch data during SSR so HTML arrives with content — users see data immediately instead of loading spinners. After hydration, WebSocket subscriptions provide live updates. Skipping this pattern causes loading flash on every page visit, hydration mismatches when server and client HTML diverge, and SEO penalties from content-sparse initial renders.
 
 ### How It Works
 
@@ -865,7 +832,7 @@ export function GoodTimestamp({ date }: { date: Date }) {
 }
 ```
 
-**See [ui-component-styling.md](./ui/ui-component-styling.md#ssr-hydration-patterns) for complete SSR hydration guidance.**
+**See [ui-ssr-hydration.md](../ui/ui-ssr-hydration.md) for complete SSR hydration guidance.**
 
 ### Environment Variable Access
 
@@ -1025,7 +992,8 @@ Before committing any React component or feature, verify:
 **Detailed documentation:**
 - [frontend-architecture.md](./frontend-architecture.md) - File organization, feature modules, environment configuration
 - [ui.md](./ui/ui.md) - UI system overview with design tokens and styling standards
-- [ui-component-styling.md](./ui/ui-component-styling.md) - CSS Modules, utility classes, accessibility patterns
+- [ui-scss-modules.md](../ui/ui-scss-modules.md) - SCSS architecture and component styling workflow
+- [ui-ssr-hydration.md](../ui/ui-ssr-hydration.md) - Hydration error prevention and ClientTime
 - [documentation.md](../documentation.md) - Documentation standards and writing style
 
 **React-specific component guides:**

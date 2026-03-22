@@ -8,14 +8,7 @@ System administrators managing cron job execution, operations engineers troubles
 
 ## Why This Matters
 
-Scheduled jobs are critical infrastructure that:
-
-- **Keep data fresh** - Market prices, blockchain sync, and cache cleanup run on schedules
-- **Fail silently** - Without monitoring, stale data goes unnoticed for hours
-- **Require restart to modify** - Traditional cron requires backend redeployment to change schedules
-- **Impact user experience** - Disabled jobs cause stale pricing, missing transactions, broken features
-
-SchedulerMonitor solves these problems by providing real-time visibility, inline configuration updates, and isolated job control without affecting other system operations.
+Scheduled jobs fail silently — stale market data or a stalled blockchain sync can go unnoticed for hours. SchedulerMonitor provides real-time visibility into job health and inline controls to enable, disable, or reschedule jobs without restarting the backend.
 
 ## Core Features
 

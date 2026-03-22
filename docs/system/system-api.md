@@ -4,15 +4,7 @@ TronRelic exposes HTTP APIs and WebSocket events for monitoring system health, c
 
 ## Why This Matters
 
-System APIs solve operational problems that would otherwise require manual intervention:
-
-- **Automated health monitoring** - Poll endpoints from external monitoring tools (Datadog, Nagios) to detect issues before users report them
-- **Emergency controls** - Trigger blockchain sync or market refresh without deploying code or restarting services
-- **Runtime configuration** - Adjust scheduler jobs, thresholds, and feature flags without backend restarts
-- **Custom integrations** - Build alerting bots, dashboards, or scripts that react to system state
-- **Real-time data feeds** - Subscribe to whale transactions, market updates, or blockchain events via WebSocket for live UI updates or external notifications
-
-Without these APIs, operators would need to SSH into servers, restart processes, modify environment variables, and manually inspect logs to understand system state.
+System APIs provide programmatic health monitoring, emergency controls, runtime job configuration, and real-time event subscriptions. Without them, operators must SSH into servers, restart processes, and inspect logs manually to understand or change system state.
 
 ## Getting Started
 
@@ -959,6 +951,6 @@ socket.on('subscription:error', (error) => {
 - [system-dashboard.md](./system-dashboard.md) - Web UI for accessing these endpoints
 - [system-scheduler-operations.md](./system-scheduler-operations.md) - Detailed scheduler control and cron syntax
 - [system-blockchain-sync-architecture.md](./system-blockchain-sync-architecture.md) - Blockchain sync implementation details
-- [system-modules-menu.md](./system-modules-menu.md) - Menu module API endpoints and WebSocket events
+- [Menu Module README](../../src/backend/modules/menu/README.md) - Menu module API endpoints and WebSocket events
 - [plugins/plugins-websocket-subscriptions.md](../plugins/plugins-websocket-subscriptions.md) - Plugin WebSocket patterns
 - [environment.md](../environment.md) - Environment variable configuration

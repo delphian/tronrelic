@@ -6,7 +6,7 @@ The TronRelic frontend follows a **module-based architecture** that mirrors the 
 
 **Primary pattern:** New frontend code belongs in `modules/` for cross-cutting domain infrastructure. The legacy `features/` directory contains page-specific code and very small features that don't warrant a full module.
 
-**This document focuses on file organization and folder structure.** For styling guidance (CSS Modules, design system, component patterns), see the [Frontend Component Guide](./ui/ui-component-styling.md).
+**This document focuses on file organization and folder structure.** For styling guidance (CSS Modules, design system, component patterns), see the [SCSS Modules and Component Styling](./ui/ui-scss-modules.md) guide.
 
 ## Directory Structure
 
@@ -447,7 +447,7 @@ components/MarketCard/
 - Clean imports via barrel exports (`import { MarketCard } from './components/MarketCard'`)
 - Scalable pattern that works for simple and complex components
 
-See [Frontend Component Guide](./ui/ui-component-styling.md) for styling patterns and design system usage.
+See [SCSS Modules and Component Styling](./ui/ui-scss-modules.md) for styling patterns and design system usage.
 
 ## Component Folder Organization
 
@@ -654,13 +654,7 @@ Potential improvements:
 
 ### Why This Matters
 
-Next.js applications run in two distinct environments: server-side during rendering (SSR) and client-side in the browser. Using the wrong backend URL in each context causes critical failures:
-
-- **SSR with public URL** - Results in 502 Bad Gateway errors when Docker containers can't reach external URLs
-- **Client with internal URL** - Causes browser requests to fail because `http://backend:4000` isn't accessible from outside the container
-- **Direct environment access** - Makes code fragile and prevents runtime switching between development and production URLs
-
-TronRelic solves this by centralizing all backend URL handling through a single configuration module that detects the runtime context and returns the appropriate URL automatically.
+Next.js SSR runs inside Docker where only internal service names resolve, while client-side JavaScript runs in the browser where only public URLs work. Using the wrong URL in either context causes 502 errors or failed requests. TronRelic centralizes all backend URL handling through a single configuration module that detects the runtime context automatically.
 
 ### Environment Variables by Context
 
@@ -904,7 +898,7 @@ See [config.ts](../../src/frontend/lib/config.ts) for the complete implementatio
 
 ## Related Documentation
 
-- [Frontend Component Guide](./ui/ui-component-styling.md) - How to style components (CSS Modules, design system, patterns)
+- [SCSS Modules and Component Styling](./ui/ui-scss-modules.md) - SCSS architecture, naming conventions, and component styling workflow
 - [Legacy Features README](../../src/frontend/features/README.md) - Documentation for legacy features directory
 - [Plugin System](../plugins/plugins.md) - Plugin architecture (separate from modules)
-- [Backend Modules](../system/system-modules.md) - Backend modular structure and lifecycle patterns
+- [Backend Modules](../system/modules/modules.md) - Backend modular structure and lifecycle patterns

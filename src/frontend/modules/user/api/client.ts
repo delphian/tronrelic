@@ -565,6 +565,19 @@ export interface ITrafficSource {
     percentage: number;
 }
 
+/** Detailed breakdown for a single traffic source (drill-down). */
+export interface ITrafficSourceDetails {
+    source: string;
+    visitors: number;
+    landingPages: Array<{ path: string; count: number; percentage: number }>;
+    countries: Array<{ country: string; count: number; percentage: number }>;
+    devices: Array<{ device: string; count: number; percentage: number }>;
+    utmCampaigns: Array<{ source: string; medium: string; campaign: string; count: number }>;
+    searchKeywords: Array<{ keyword: string; count: number }>;
+    engagement: { avgSessions: number; avgPageViews: number; avgDuration: number };
+    conversion: { walletsConnected: number; walletsVerified: number; conversionRate: number };
+}
+
 /** Landing page entry with engagement metrics. */
 export interface ILandingPage {
     path: string;
@@ -649,6 +662,29 @@ export async function adminGetTrafficSources(
         params: { period }
     });
     return response.data as { sources: ITrafficSource[]; total: number };
+}
+
+/**
+ * Get detailed breakdown for a specific traffic source (admin endpoint).
+ *
+ * Returns landing pages, countries, devices, UTM campaigns, search keywords,
+ * engagement metrics, and conversion rates for visitors from the given source.
+ *
+ * @param token - Admin API token
+ * @param source - Referrer domain (e.g. 'duckduckgo.com') or 'direct'
+ * @param period - Lookback period (default: '30d')
+ * @returns Detailed source breakdown
+ */
+export async function adminGetTrafficSourceDetails(
+    token: string,
+    source: string,
+    period: AnalyticsPeriod = '30d'
+): Promise<ITrafficSourceDetails> {
+    const response = await apiClient.get('/admin/users/analytics/traffic-source-details', {
+        headers: { [adminHeaderKey]: token },
+        params: { source, period }
+    });
+    return response.data as ITrafficSourceDetails;
 }
 
 /**

@@ -17,13 +17,7 @@ The pattern provides the foundation for sophisticated blockchain analysis while 
 
 ## Why We Built This
 
-Previously, all transaction processing logic lived directly inside the blockchain service. As we wanted to add whale detection, delegation tracking, stake monitoring, and other features, the service was becoming increasingly complex with intermingled responsibilities.
-
-The observer pattern solves this by:
-- **Separating concerns** - Each observer handles one specific type of analysis or notification
-- **Enabling parallel development** - Multiple developers can work on different observers without conflicts
-- **Improving testability** - Observers can be tested in isolation
-- **Supporting extensibility** - New features can be added by creating new observers without modifying existing code
+Transaction processing logic was growing inside the blockchain service as we added whale detection, delegation tracking, and staking analysis. The observer pattern extracts each concern into an independent, testable observer that subscribes to transaction types without modifying the sync pipeline.
 
 ## Architecture Overview
 

@@ -4,10 +4,7 @@ Plugins expose REST endpoints so the frontend, automation scripts, and third-par
 
 ## Why the API Layer Matters
 
-- **Feature isolation.** Each plugin owns its namespace and cannot collide with core routes or other plugins.
-- **Framework independence.** Handlers use `IHttpRequest`, `IHttpResponse`, and `IHttpNext` from `@tronrelic/types`, so we can swap Express for another HTTP server without touching plugin code.
-- **Consistent lifecycle.** Routes register when the plugin loads, reuse the same dependency-injected context, and automatically clean up when a plugin is removed.
-- **Centralised middleware.** Auth, rate limiting, validation, and logging follow one shape (`ApiMiddleware[]`), making it easy to share helpers.
+The API registration layer isolates each plugin under `/api/plugins/<plugin-id>/`, uses framework-agnostic request/response objects from `@tronrelic/types`, and ties route lifecycle to plugin enable/disable state. Plugins focus on business logic while the platform handles routing, auth middleware, and error handling.
 
 ## Registration Flow
 
@@ -34,7 +31,7 @@ Remember: `req.params`, `req.query`, `req.body`, and `req.ip` are plain objects;
 - `req.user?.wallets?.length > 0` — user has linked a wallet (may be unverified)
 - `req.user?.wallets?.some(w => w.verified)` — user has a verified wallet (recommended for feature gating)
 
-See [User Module](../system/system-modules-user.md#plugin-access-to-user-data) for complete patterns.
+See [User Module README](../../src/backend/modules/user/README.md#plugin-access-to-user-data) for complete patterns.
 
 ## Minimal Example
 

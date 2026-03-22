@@ -24,11 +24,7 @@ This means:
 
 ## Why Plugin-Managed WebSockets Exist
 
-- **Subscription autonomy** - Plugins define custom subscription patterns matching their feature needs instead of relying on centralized hardcoded logic
-- **Namespace isolation** - All plugin rooms and events are automatically prefixed to prevent naming collisions between features
-- **Flexible filtering** - Plugins validate subscription payloads, apply business rules, and reject invalid requests with custom error messages
-- **Transparent namespacing** - Plugins write code as if using raw Socket.IO, unaware of automatic prefixing behind the scenes
-- **Observable metrics** - All subscription activity, room membership, and event emissions are tracked for admin monitoring
+Plugins need custom real-time subscription logic without colliding with each other in Socket.IO's global namespace. The plugin WebSocket manager automatically prefixes room names and event names with the plugin ID, lets plugins validate subscription payloads, and tracks all activity for admin monitoring — while plugin code stays unaware of the namespacing.
 
 ## How WebSocket Subscriptions Work
 

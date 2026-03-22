@@ -107,6 +107,6 @@ Runtime log level stored in SystemConfig (`logLevel` field). Applied on startup 
 
 **System documentation:**
 - [system-logging.md](../../../../docs/system/system-logging.md) — Logging architecture overview
-- [system-modules.md](../../../../docs/system/system-modules.md) — IModule interface, lifecycle, DI patterns
+- [modules.md](../../../../docs/system/modules/modules.md) — IModule interface, lifecycle, DI patterns
 - [system-database.md](../../../../docs/system/system-database.md) — IDatabaseService abstraction
 - [system-api.md](../../../../docs/system/system-api.md) — Admin API authentication and conventions

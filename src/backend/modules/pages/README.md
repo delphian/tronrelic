@@ -1,52 +1,73 @@
 # Pages Module
 
-The pages module enables administrators to create custom user-facing content (articles, blog posts, static pages) with markdown authoring, file uploads, and dynamic routing. Pages are discoverable at URLs matching their configured slugs, rendered from markdown to HTML, and cached for performance.
+The pages module provides custom content management capabilities, allowing administrators to create user-facing pages (articles, documentation, announcements) with markdown authoring, file uploads, and dynamic routing. Pages are rendered from markdown to HTML, cached for performance, and discoverable at URLs matching their configured slugs.
 
 ## Who This Document Is For
 
-Backend developers implementing content management features, frontend developers integrating custom pages, and maintainers understanding the storage provider architecture.
+Backend developers implementing content management features, frontend developers integrating custom pages into the UI, and maintainers understanding the storage provider abstraction layer.
 
-## Why This Module Exists
+## Why This Matters
 
-TronRelic's plugin system provides powerful blockchain-specific functionality, but administrators often need simpler content pages for documentation, announcements, or static marketing content. Without a dedicated pages system:
+TronRelic's plugin system excels at blockchain-specific features, but administrators need simpler content pages for documentation, announcements, or marketing content. Without the pages module:
 
-- **Content scattered across codebases** - Static pages require code changes, pull requests, and deployments
-- **No admin control** - Content creators depend on developers for every text update
+- **Content scattered across codebases** - Static pages require code changes, pull requests, and deployments for every update
+- **No admin control** - Content creators depend on developers for every text change
 - **Rigid routing** - Adding new pages requires modifying Next.js routing configuration
 - **No file management** - Images and attachments need manual deployment or external hosting
-- **Performance overhead** - Rendering markdown on every request wastes CPU and slows page loads
+- **Performance overhead** - Rendering markdown on every request wastes CPU cycles and slows page loads
+- **SEO limitations** - No structured metadata management for search engines and social sharing
 
-The pages module solves these problems by providing a self-service content management system with:
+The pages module solves these problems by providing:
 
-- **Database-backed storage** - All pages, files, and settings persist in MongoDB
+- **Database-backed storage** - Pages, files, and settings persist in MongoDB without code deployments
 - **Frontmatter metadata** - SEO fields (title, description, keywords, Open Graph images) extracted from YAML blocks
 - **Pluggable storage providers** - File uploads work with local filesystem, S3, or Cloudflare R2 without code changes
-- **Redis-cached HTML** - Rendered markdown caches for 24 hours, reducing CPU load
+- **Redis-cached HTML** - Rendered markdown caches for 24 hours, reducing CPU load by avoiding repeated parsing
 - **Route conflict prevention** - Blacklist patterns prevent pages from overriding `/api` or `/system` routes
-- **Dynamic slug routing** - Pages appear at their configured URLs without frontend configuration changes
+- **Dynamic slug routing** - Pages appear at configured URLs without frontend configuration changes
+- **Automatic redirect preservation** - Old URLs redirect to current locations when slugs change, preventing 404 errors and maintaining SEO value
 
 ## Architecture Overview
 
-The module follows TronRelic's layered architecture pattern that separates infrastructure concerns (storage providers) from business logic (services):
+The module follows TronRelic's layered architecture pattern that separates infrastructure concerns (storage providers) from business logic (services). This enables swapping storage backends without touching business logic.
 
+**Directory structure:**
 ```
-pages/
+modules/pages/
 ├── api/                     # HTTP interface (Express routes and controller)
-├── database/                # MongoDB schemas and models
+│   ├── pages.controller.ts  # Request handlers for all endpoints
+│   ├── pages.routes.ts      # Admin router factory
+│   └── pages.public-routes.ts # Public router factory
+├── database/                # MongoDB schemas and type definitions
+│   ├── IPageDocument.ts     # Page model with frontmatter fields
+│   ├── IPageFileDocument.ts # File upload tracking
+│   ├── IPageSettingsDocument.ts # Configuration model
+│   └── index.ts             # Barrel exports
 ├── services/                # Business logic layer
 │   ├── page.service.ts      # Page/file/settings CRUD orchestration
 │   ├── markdown.service.ts  # Frontmatter parsing and HTML rendering
-│   └── storage/             # Infrastructure layer (providers)
+│   └── storage/             # Infrastructure abstraction layer
 │       ├── StorageProvider.ts      # Abstract provider interface
 │       └── LocalStorageProvider.ts # Local filesystem implementation
-└── index.ts                 # Public API and module initialization
+├── __tests__/              # Unit and integration tests
+├── PagesModule.ts          # IModule implementation
+├── index.ts                # Public API exports
+└── README.md               # Module-specific documentation
 ```
+
+**Key architectural patterns:**
+
+1. **Two-phase lifecycle** - `init()` prepares services, `run()` mounts routes and registers menu items
+2. **Dependency injection** - All services receive typed dependencies via constructor or `setDependencies()`
+3. **Inversion of Control** - Module mounts its own routes using injected `app` instead of returning routers
+4. **Service-Provider separation** - Business logic (PageService) depends on infrastructure interfaces (IStorageProvider)
+5. **Singleton pattern** - PageService implements `IPageService` interface and uses singleton pattern for shared state
 
 ### Why "Provider" Instead of "Service"?
 
-The storage layer uses "Provider" terminology to distinguish infrastructure abstractions from business logic services:
+The storage layer uses "Provider" terminology to signal infrastructure abstraction:
 
-**Providers signal:**
+**Providers indicate:**
 - **Pluggability** - Multiple implementations (LocalStorageProvider, S3StorageProvider, CloudflareProvider) can coexist
 - **Clear abstraction boundary** - Infrastructure (file storage) vs business logic (page management)
 - **Dependency injection friendly** - Concrete providers injected into PageService via constructor
@@ -69,7 +90,7 @@ PageService.setDependencies(database, storageProvider, cacheService, logger);
 const pageService = PageService.getInstance();
 ```
 
-This pattern enables configuration-based provider switching without changing PageService code. Future S3 or Cloudflare providers can be swapped at module initialization without modifying business logic.
+This pattern enables configuration-based provider switching without changing PageService code. Future S3 or Cloudflare providers can be swapped at module initialization.
 
 ## Core Components
 
@@ -85,7 +106,9 @@ PageService implements `IPageService` and orchestrates all page, file, and setti
 
 **Key responsibilities:**
 - **Page CRUD** - Create, read, update, delete operations with frontmatter parsing
-- **Slug management** - Sanitize URLs, validate against blacklist patterns, prevent duplicates
+- **Slug management** - Sanitize URLs, validate against blacklist patterns, prevent duplicates, preserve redirect history
+- **Redirect lookups** - Find pages by old slugs for 301 permanent redirects
+- **Conflict prevention** - Validate slugs against current pages, old slugs, and circular references
 - **File uploads** - Validate extensions/sizes, sanitize filenames, coordinate storage provider
 - **Markdown rendering** - Parse frontmatter, render body to HTML, cache in Redis
 - **Settings management** - Load defaults, merge updates, persist configuration
@@ -107,14 +130,61 @@ static setDependencies(database, storageProvider, cacheService, logger): void
 static getInstance(): PageService
 ```
 
+**Common operations:**
+```typescript
+// Create page from markdown with frontmatter
+const page = await pageService.createPage(markdownContent);
+
+// Get published page by URL slug
+const page = await pageService.getPageBySlug('/docs/api');
+
+// Find page by old slug (for redirects)
+const redirectPage = await pageService.findPageByOldSlug('/old-url');
+if (redirectPage) {
+    // Redirect to redirectPage.slug with 301 status
+}
+
+// Render cached HTML
+const html = await pageService.renderPageHtml(page);
+
+// Upload file with validation
+const file = await pageService.uploadFile(buffer, filename, mimeType);
+
+// Update configuration
+const settings = await pageService.updateSettings({ maxFileSize: 20_000_000 });
+```
+
 ### IStorageProvider Interface (Infrastructure Abstraction)
 
-StorageProvider is an abstract base class that defines the contract for file storage implementations. All concrete providers extend this class and implement three methods:
+StorageProvider is an abstract base class defining the contract for file storage implementations. All concrete providers extend this class and implement three methods.
 
+**Abstract methods:**
 ```typescript
 abstract class StorageProvider implements IStorageProvider {
+    /**
+     * Upload file to storage backend.
+     *
+     * @param file - File buffer to upload
+     * @param filename - Sanitized filename from validation
+     * @param mimeType - Content-Type for serving
+     * @returns Storage path for database tracking
+     */
     abstract upload(file: Buffer, filename: string, mimeType: string): Promise<string>;
-    abstract delete(path: string): Promise<void>;
+
+    /**
+     * Delete file from storage backend.
+     *
+     * @param path - Storage path from database
+     * @returns True if file existed and was deleted, false if already missing
+     */
+    abstract delete(path: string): Promise<boolean>;
+
+    /**
+     * Get public URL for accessing the file.
+     *
+     * @param path - Storage path from database
+     * @returns URL for browser access (relative or absolute)
+     */
     abstract getUrl(path: string): string;
 }
 ```
@@ -124,7 +194,7 @@ abstract class StorageProvider implements IStorageProvider {
 - `delete()` - Deletion varies by provider (unlink files, delete S3 objects, purge CDN cache)
 - `getUrl()` - URLs differ by provider (relative paths for local, absolute URLs for CDN)
 
-### LocalStorageProvider (Concrete Implementation)
+### LocalStorageProvider (Default Implementation)
 
 LocalStorageProvider stores files in `/public/uploads/` organized by date (YY/MM structure). Files are served via Express static middleware at `/uploads/*` routes.
 
@@ -144,13 +214,14 @@ public/uploads/
 - Returns relative paths (`/uploads/25/10/image.png`) for database storage
 - Uses Node.js `fs/promises` API for async operations
 - Creates date-based directories recursively if they don't exist
+- Returns boolean from `delete()` indicating whether file existed
 
 **Adding new providers:**
 
 To add S3 or Cloudflare R2 support, create new provider classes:
 
 ```typescript
-// S3StorageProvider.ts
+// services/storage/S3StorageProvider.ts
 import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { StorageProvider } from './StorageProvider.js';
 
@@ -174,11 +245,19 @@ export class S3StorageProvider extends StorageProvider {
         return key;
     }
 
-    async delete(path: string): Promise<void> {
-        await this.s3Client.send(new DeleteObjectCommand({
-            Bucket: this.bucket,
-            Key: path,
-        }));
+    async delete(path: string): Promise<boolean> {
+        try {
+            await this.s3Client.send(new DeleteObjectCommand({
+                Bucket: this.bucket,
+                Key: path,
+            }));
+            return true;
+        } catch (error) {
+            if (error.name === 'NoSuchKey') {
+                return false;
+            }
+            throw error;
+        }
     }
 
     getUrl(path: string): string {
@@ -190,15 +269,17 @@ export class S3StorageProvider extends StorageProvider {
 Then inject at module initialization:
 
 ```typescript
-// index.ts - Conditional provider selection
+// PagesModule.ts - Conditional provider selection
 const storageProvider = env.STORAGE_PROVIDER === 's3'
     ? new S3StorageProvider(s3Client, bucket, cdnUrl)
     : new LocalStorageProvider();
+
+PageService.setDependencies(database, storageProvider, cacheService, logger);
 ```
 
 ### MarkdownService (Rendering and Caching)
 
-MarkdownService handles markdown parsing, frontmatter extraction, HTML rendering, and Redis caching. It implements `IMarkdownService` for testability.
+MarkdownService handles markdown parsing, frontmatter extraction, HTML rendering, and Redis caching. It uses `gray-matter` for YAML parsing and `remark`/`rehype` for markdown-to-HTML conversion.
 
 **Rendering pipeline:**
 1. Parse frontmatter using `gray-matter` (YAML metadata extraction)
@@ -212,6 +293,7 @@ MarkdownService handles markdown parsing, frontmatter extraction, HTML rendering
 ---
 title: "Getting Started with TronRelic"
 slug: "/docs/getting-started"
+oldSlugs: ["/getting-started", "/docs/setup"]
 description: "Learn how to deploy and configure TronRelic"
 keywords: ["tron", "blockchain", "monitoring"]
 published: true
@@ -228,24 +310,66 @@ Your markdown content here...
 - Automatic on page deletion
 - Manual via `invalidateCache(slug)` method
 
+**Cache key pattern:** `page:html:{slug}` (e.g., `page:html:/docs/getting-started`)
+
 ### PagesController (HTTP Interface)
 
-PagesController exposes REST API endpoints for all CRUD operations. All admin endpoints require `x-admin-token` authentication header. Public endpoints filter to published pages only.
+PagesController exposes REST API endpoints for all CRUD operations. All admin endpoints require `x-admin-token` authentication header (enforced by `requireAdmin` middleware). Public endpoints filter to published pages only.
 
 **Admin endpoints (require auth):**
-- `GET /api/admin/pages` - List pages with filtering
-- `POST /api/admin/pages` - Create page from markdown
-- `PATCH /api/admin/pages/:id` - Update page content
-- `DELETE /api/admin/pages/:id` - Delete page
-- `GET /api/admin/pages/files` - List uploaded files
-- `POST /api/admin/pages/files` - Upload file (multipart/form-data)
-- `DELETE /api/admin/pages/files/:id` - Delete file
-- `GET /api/admin/pages/settings` - Get configuration
+- `GET /api/admin/pages` - List pages with filtering (published status, search, pagination)
+- `GET /api/admin/pages/:id` - Get single page by ID
+- `POST /api/admin/pages` - Create page from markdown with frontmatter
+- `PATCH /api/admin/pages/:id` - Update page content and metadata
+- `DELETE /api/admin/pages/:id` - Delete page and invalidate cache
+- `POST /api/admin/pages/preview` - Preview markdown content without saving (live editor preview)
+- `GET /api/admin/pages/files` - List uploaded files with filtering
+- `POST /api/admin/pages/files` - Upload file (multipart/form-data with Multer)
+- `DELETE /api/admin/pages/files/:id` - Delete file from storage and database
+- `GET /api/admin/pages/settings` - Get configuration (blacklist, file size, extensions)
 - `PATCH /api/admin/pages/settings` - Update configuration
 
 **Public endpoints (no auth):**
-- `GET /api/pages/:slug` - Get published page by slug
-- `GET /api/pages/:slug/render` - Get rendered HTML with metadata
+- `GET /api/pages/:slug` - Get published page metadata by slug (returns page data with slug metadata for client-side redirect if slug is old)
+- `GET /api/pages/:slug/render` - Get rendered HTML with SEO metadata (returns page data with slug metadata for client-side redirect if slug is old)
+
+### Automatic Redirect System
+
+The pages module preserves redirect history when page URLs change, preventing 404 errors and maintaining SEO value. When an admin updates a page's slug field, the old slug is automatically added to the `oldSlugs` array without requiring manual configuration.
+
+**Redirect flow for visitors:**
+
+When a user visits a URL that doesn't match any current page slug, the system checks all pages' `oldSlugs` arrays for a match. If found and the page is published, the backend returns page data with both the current slug and the requested slug in the response body. The frontend Next.js catch-all route detects the slug mismatch, compares `requestedSlug` with `page.slug`, and performs a client-side redirect using Next.js's `redirect()` function. This entire process happens during SSR before any HTML is sent to the browser, ensuring search engines see proper 301 redirects (triggered by the frontend's redirect() call) and transfer all SEO authority to the new URL.
+
+**Example redirect scenario:**
+
+An admin creates a page at `/about` and later changes the slug to `/company/about` in the frontmatter. The system automatically adds `/about` to the `oldSlugs` array when saving the update. Users visiting `/about` now receive page data where `requestedSlug` is `/about` and `page.slug` is `/company/about`. The frontend detects this mismatch and redirects to `/company/about`, and search engines update their indexes to use the new URL. If the admin later changes the slug again to `/company/team`, the `oldSlugs` array becomes `["/about", "/company/about"]`, preserving the complete redirect chain.
+
+**Conflict prevention:**
+
+The validation system prevents all forms of slug conflicts to ensure redirects work reliably. When creating a new page, the system checks that the new slug doesn't match any existing page's current slug or any page's oldSlugs array. When updating a page, the system validates that the new slug isn't in the page's own oldSlugs array (circular reference), doesn't conflict with other pages' current slugs or their oldSlugs arrays, and each oldSlug entry doesn't conflict with any other page's current slug. These comprehensive checks prevent scenarios where multiple pages claim the same URL or redirect loops occur.
+
+**Performance characteristics:**
+
+The oldSlugs index enables sub-millisecond redirect lookups even with thousands of pages. The redirect check only runs when a slug doesn't match any current page, so the performance impact on normal page loads is zero. The client-side redirect happens during SSR (before HTML is sent to the browser), ensuring search engines see proper 301 status codes and the redirect process is transparent to users.
+
+**File upload validation:**
+
+The controller uses a two-layer validation strategy for file uploads:
+
+1. **Multer hard limit** - 100MB ceiling to prevent memory exhaustion
+2. **Database-configured limit** - Runtime validation using `page_settings.maxFileSize`
+
+This enables administrators to adjust the limit via settings API without restarting the backend. When validation fails, the controller returns a 413 Payload Too Large error with friendly JSON:
+
+```json
+{
+    "error": "File too large",
+    "message": "File size 15.23MB exceeds the maximum allowed size of 10.00MB",
+    "fileSize": 15966208,
+    "maxFileSize": 10485760
+}
+```
 
 ## Database Schema
 
@@ -253,54 +377,76 @@ The module stores data in three MongoDB collections:
 
 ### pages Collection
 
-Stores page documents with frontmatter metadata:
+Stores page documents with frontmatter metadata.
 
+**Schema:**
 ```typescript
 interface IPageDocument {
     _id: ObjectId;
-    title: string;
+    title: string;                   // From frontmatter.title
     slug: string;                    // URL path (e.g., "/docs/getting-started")
-    content: string;                 // Full markdown including frontmatter
-    description: string;             // SEO meta description
-    keywords: string[];              // SEO keywords
-    published: boolean;              // Only published pages are publicly accessible
-    ogImage: string | null;          // Open Graph image URL
-    authorId: string | null;         // Always null (admin-created)
+    oldSlugs: string[];              // Previous slugs that redirect to current slug
+    content: string;                 // Full markdown including frontmatter block
+    description: string;             // SEO meta description from frontmatter
+    keywords: string[];              // SEO keywords from frontmatter
+    published: boolean;              // Visibility flag (only published pages public)
+    ogImage: string | null;          // Open Graph image URL from frontmatter
+    authorId: string | null;         // Always null (admin-created, future expansion)
     createdAt: Date;
     updatedAt: Date;
 }
 ```
 
 **Indexes:**
-- `slug` (unique) - Fast lookup by URL
-- `published` - Filter published vs draft pages
-- Text index on `title`, `slug`, `description` for search
+- `slug` (unique) - Fast lookup by URL, prevents duplicate slugs
+- `oldSlugs` - Fast redirect lookups when current slug doesn't match
+- `published` - Filter published vs draft pages efficiently
+- Text index on `title`, `slug`, `description` - Full-text search support
+
+**Validation rules:**
+- Slug must start with `/` (enforced by sanitization)
+- Slug cannot match blacklisted patterns (e.g., `^/api/.*`)
+- Slug cannot conflict with another page's current slug (enforced at create/update)
+- Slug cannot conflict with another page's oldSlugs array (prevents redirect conflicts)
+- Each oldSlug cannot conflict with any other page's current slug
+- Slug cannot appear in its own oldSlugs array (prevents circular redirects)
+- Title is required (enforced in service layer)
+- When slug changes, old slug automatically added to oldSlugs array (no duplicates)
 
 ### page_files Collection
 
-Tracks uploaded files with metadata:
+Tracks uploaded files with metadata for storage provider coordination.
 
+**Schema:**
 ```typescript
 interface IPageFileDocument {
     _id: ObjectId;
-    originalName: string;            // Original filename from user
-    storedName: string;              // Sanitized filename on disk/storage
-    mimeType: string;                // Content-Type for serving
-    size: number;                    // Bytes
-    path: string;                    // Storage provider path
-    uploadedBy: string | null;       // Always null (admin uploads)
+    originalName: string;            // Original filename from user upload
+    storedName: string;              // Sanitized filename after validation
+    mimeType: string;                // Content-Type for serving files
+    size: number;                    // File size in bytes
+    path: string;                    // Storage provider path (relative or absolute)
+    uploadedBy: string | null;       // Always null (admin uploads, future expansion)
     uploadedAt: Date;
 }
 ```
 
 **Indexes:**
-- `mimeType` - Filter by type (images, PDFs, etc.)
-- `uploadedAt` - Sort by recency
+- `mimeType` - Filter by type (images, PDFs, videos, etc.)
+- `uploadedAt` - Sort by recency for file browser
+
+**Filename sanitization:**
+- Converts to lowercase
+- Replaces spaces with hyphens
+- Applies regex pattern from settings (default: removes all non-alphanumeric except `-_.)
+- Preserves file extension
+- Example: `"My Cool Photo.PNG"` → `"my-cool-photo.png"`
 
 ### page_settings Collection
 
-Stores module configuration (singleton document):
+Stores module configuration as a singleton document.
 
+**Schema:**
 ```typescript
 interface IPageSettingsDocument {
     _id: ObjectId;
@@ -333,39 +479,34 @@ interface IPageSettingsDocument {
 }
 ```
 
-## Module Initialization
+**Settings initialization:**
+- Created with defaults on first `getSettings()` call if collection is empty
+- Updates merge with existing settings (partial updates supported)
+- Validation enforced in service layer (e.g., maxFileSize >= 1)
+
+## Module Lifecycle
 
 The pages module implements the `IModule` interface with two-phase initialization:
 
-**Phase 1: init()** - Prepare module without starting
+**Phase 1: init()** - Prepare module without activation
+- Store injected dependencies (database, cache, menu service, app)
+- Ensure uploads directory exists (`/public/uploads/`)
+- Create storage provider instance (default: LocalStorageProvider)
+- Initialize PageService singleton with `setDependencies()`
+- Create controller with service reference
+
 **Phase 2: run()** - Activate and integrate with application
+- Register menu item in `system` namespace at `/system/pages`
+- Mount admin router at `/api/admin/pages` with `requireAdmin` middleware
+- Mount public router at `/api/pages` (no authentication)
 
+**Module metadata:**
 ```typescript
-// PagesModule implements IModule<IPagesModuleDependencies>
-class PagesModule implements IModule {
-    readonly metadata = {
-        id: 'pages',
-        name: 'Pages',
-        version: '1.0.0',
-        description: 'Custom page creation and markdown rendering'
-    };
-
-    async init(dependencies: IPagesModuleDependencies): Promise<void> {
-        // Store dependencies
-        this.database = dependencies.database;
-        this.app = dependencies.app;
-        // Create services
-        this.pageService = new PageService(...);
-    }
-
-    async run(): Promise<void> {
-        // Register menu item (MenuService is guaranteed ready)
-        await this.menuService.create({ ... });
-
-        // Mount routers (IoC - module attaches itself)
-        this.app.use('/api/admin/pages', this.createAdminRouter());
-        this.app.use('/api/pages', this.createPublicRouter());
-    }
+{
+    id: 'pages',
+    name: 'Pages',
+    version: '1.0.0',
+    description: 'Custom page creation and markdown rendering for admin-authored content'
 }
 ```
 
@@ -389,55 +530,177 @@ await pagesModule.init({
 await pagesModule.run();
 ```
 
-**Key architectural patterns:**
+**Key architectural patterns demonstrated:**
 
-1. **Two-phase lifecycle**: `init()` prepares, `run()` activates
-2. **Inversion of Control**: Module mounts its own routes using injected `app`
-3. **Dependency injection**: All services injected as typed dependencies object
-4. **No return values**: Module uses IoC to attach itself (no routers returned)
-5. **Metadata**: Module exposes `id`, `name`, `version` for introspection
+1. **Two-phase lifecycle** - `init()` prepares, `run()` activates (prevents race conditions)
+2. **Inversion of Control** - Module mounts its own routes using injected `app` (no routers returned)
+3. **Dependency injection** - All services injected as typed dependencies object
+4. **Singleton pattern** - PageService uses `setDependencies()` + `getInstance()` pattern
+5. **Menu registration** - Creates navigation entry in `system` namespace during `run()`
+6. **Metadata** - Exposes `id`, `name`, `version` for introspection
 
-**Menu registration:**
-The module creates a navigation entry in the `system` namespace at `/system/pages` during the `run()` phase. By this point, MenuService is guaranteed to be initialized (no need for 'ready' event subscriptions). The menu item persists only in memory (disappears on backend restart) following the plugin pattern.
+**Menu registration details:**
 
-## Public API Exports
+The module creates a navigation entry in the `system` namespace (admin-only section) at `/system/pages` during the `run()` phase. By this point, MenuService is guaranteed to be initialized and ready (no need for 'ready' event subscriptions like plugins require). The menu item uses the default `persist: false` setting, creating a memory-only entry that disappears on backend restart (following the plugin pattern for runtime entries).
 
-The module exposes only necessary types and classes via `index.ts`:
+## REST API Reference
 
-```typescript
-// Primary module export (implements IModule)
-export { PagesModule } from './PagesModule.js';
-export type { IPagesModuleDependencies } from './PagesModule.js';
+All admin endpoints require authentication via `x-admin-token` or `Authorization: Bearer` header. Public endpoints are accessible to all users but filter to published pages only.
 
-// Services (for external consumers if needed)
-export { PageService } from './services/page.service.js';
-export { MarkdownService } from './services/markdown.service.js';
+### Admin Endpoints
 
-// Storage providers (for external consumers or custom configurations)
-export { StorageProvider } from './services/storage/StorageProvider.js';
-export { LocalStorageProvider } from './services/storage/LocalStorageProvider.js';
+**List Pages:**
+```
+GET /api/admin/pages?published=true&search=api&limit=50&skip=0
 
-// HTTP layer (for testing or custom router configurations)
-export { PagesController } from './api/pages.controller.js';
-export { createPagesRouter } from './api/pages.routes.js';
-export { createPublicPagesRouter } from './api/pages.public-routes.js';
-
-// Database types (for external consumers working with page data)
-export type { IPageDocument, IPageFileDocument, IPageSettingsDocument } from './database/index.js';
-export { DEFAULT_PAGE_SETTINGS } from './database/index.js';
+Response: {
+    pages: IPage[],
+    stats: { total: number, published: number, drafts: number }
+}
 ```
 
-**Import pattern for consuming code:**
-```typescript
-// Good - uses public API for module initialization
-import { PagesModule } from './modules/pages/index.js';
-const pagesModule = new PagesModule();
+**Get Page:**
+```
+GET /api/admin/pages/:id
 
-// Good - uses public API for services
-import { PageService, LocalStorageProvider } from './modules/pages/index.js';
+Response: IPage
+```
 
-// Bad - bypasses public API
-import { PageService } from './modules/pages/services/page.service.js';
+**Create Page:**
+```
+POST /api/admin/pages
+Content-Type: application/json
+
+{
+    "content": "---\ntitle: \"My Page\"\nslug: \"/blog/post\"\npublished: true\n---\n# Content"
+}
+
+Response: IPage (201 Created)
+```
+
+**Update Page:**
+```
+PATCH /api/admin/pages/:id
+Content-Type: application/json
+
+{
+    "content": "---\ntitle: \"Updated Title\"\n---\n# Updated content"
+}
+
+Response: IPage
+```
+
+**Delete Page:**
+```
+DELETE /api/admin/pages/:id
+
+Response: 204 No Content
+```
+
+**Preview Markdown:**
+```
+POST /api/admin/pages/preview
+Content-Type: application/json
+
+{
+    "content": "---\ntitle: \"My Page\"\nslug: \"/test\"\n---\n# Test Content"
+}
+
+Response: {
+    html: string,
+    metadata: {
+        title: string,
+        slug: string,
+        oldSlugs: string[] | undefined,
+        description: string | undefined,
+        keywords: string[] | undefined,
+        published: boolean,
+        ogImage: string | undefined
+    }
+}
+```
+
+**List Files:**
+```
+GET /api/admin/pages/files?mimeType=image/&limit=100&skip=0
+
+Response: { files: IPageFile[] }
+```
+
+**Upload File:**
+```
+POST /api/admin/pages/files
+Content-Type: multipart/form-data
+
+file: <binary data>
+
+Response: IPageFile (201 Created)
+```
+
+**Delete File:**
+```
+DELETE /api/admin/pages/files/:id
+
+Response: 204 No Content
+```
+
+**Get Settings:**
+```
+GET /api/admin/pages/settings
+
+Response: IPageSettings
+```
+
+**Update Settings:**
+```
+PATCH /api/admin/pages/settings
+Content-Type: application/json
+
+{
+    "maxFileSize": 20971520,
+    "allowedFileExtensions": [".png", ".jpg", ".webp", ".pdf"]
+}
+
+Response: IPageSettings
+```
+
+### Public Endpoints
+
+**Get Page Metadata:**
+```
+GET /api/pages/:slug
+
+Response: { page: IPage, requestedSlug: string }
+
+# If slug is in a page's oldSlugs array:
+# Returns page data with current slug and requested slug for client-side redirect
+Response: { page: IPage, requestedSlug: string }
+# (Frontend compares page.slug with requestedSlug to trigger redirect)
+```
+
+**Render Page HTML:**
+```
+GET /api/pages/:slug/render
+
+Response: {
+    html: string,
+    metadata: {
+        title: string,
+        description: string,
+        keywords: string[],
+        ogImage: string | undefined
+    },
+    requestedSlug: string
+}
+
+# If slug is in a page's oldSlugs array:
+# Returns page data with current slug metadata for client-side redirect
+Response: {
+    html: string,
+    metadata: { title, description, keywords, ogImage },
+    requestedSlug: string
+}
+# (Frontend compares metadata slug with requestedSlug to trigger redirect)
 ```
 
 ## Usage Examples
@@ -450,18 +713,19 @@ curl -X POST http://localhost:4000/api/admin/pages \
   -H "x-admin-token: $ADMIN_API_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
-    "content": "---\ntitle: \"Announcement\"\nslug: \"/blog/announcement\"\npublished: true\n---\n# Hello World\n\nThis is a test page."
+    "content": "---\ntitle: \"Getting Started\"\nslug: \"/docs/getting-started\"\ndescription: \"Learn TronRelic basics\"\nkeywords: [\"tutorial\", \"docs\"]\npublished: true\n---\n\n# Getting Started\n\nWelcome to TronRelic..."
   }'
 ```
 
 **Programmatic:**
 ```typescript
-const pageService = new PageService(database, storageProvider, cacheService, logger);
+const pageService = PageService.getInstance();
 
 const page = await pageService.createPage(`
 ---
 title: "API Documentation"
 slug: "/docs/api"
+oldSlugs: []
 description: "Complete API reference for TronRelic"
 keywords: ["api", "rest", "documentation"]
 published: true
@@ -487,7 +751,9 @@ curl -X POST http://localhost:4000/api/admin/pages/files \
 
 **Programmatic:**
 ```typescript
+const pageService = PageService.getInstance();
 const fileBuffer = await fs.readFile('/path/to/image.png');
+
 const pageFile = await pageService.uploadFile(
     fileBuffer,
     'hero-image.png',
@@ -520,7 +786,9 @@ curl http://localhost:4000/api/pages/docs/api/render
 
 **Programmatic:**
 ```typescript
+const pageService = PageService.getInstance();
 const page = await pageService.getPageBySlug('/docs/api');
+
 if (page && page.published) {
     const html = await pageService.renderPageHtml(page);
     // HTML is cached in Redis for 24 hours
@@ -542,6 +810,8 @@ curl -X PATCH http://localhost:4000/api/admin/pages/settings \
 
 **Programmatic:**
 ```typescript
+const pageService = PageService.getInstance();
+
 const updatedSettings = await pageService.updateSettings({
     maxFileSize: 20 * 1024 * 1024, // 20 MB
     allowedFileExtensions: ['.png', '.jpg', '.webp', '.pdf', '.mp4']
@@ -552,28 +822,168 @@ console.log(`Max file size: ${updatedSettings.maxFileSize} bytes`);
 
 ## Pre-Implementation Checklist
 
-Before deploying new pages module features, verify:
+Before deploying pages module features, verify:
 
-- [ ] Uses dependency injection for database, storage provider, and cache (no direct imports of concrete implementations)
-- [ ] PageService depends on `IStorageProvider` interface (not `LocalStorageProvider` class)
-- [ ] Storage providers extend `StorageProvider` abstract base class
+- [ ] Module registered in backend bootstrap with two-phase initialization
+- [ ] PageService singleton configured via `setDependencies()` before first use
+- [ ] Storage provider injected as `IStorageProvider` interface (not concrete class)
 - [ ] Frontmatter includes required `title` field (validation enforced in createPage/updatePage)
 - [ ] Slug sanitization removes special characters and ensures leading slash
 - [ ] Blacklist patterns prevent pages from overriding `/api`, `/system`, `/admin` routes
-- [ ] Rendered HTML is cached in Redis with automatic invalidation on updates
+- [ ] Slug conflict validation prevents collisions with current slugs and oldSlugs arrays
+- [ ] Circular reference validation prevents slugs from appearing in their own oldSlugs
+- [ ] oldSlugs index exists in MongoDB for fast redirect lookups (migration `003_add_old_slugs_to_pages`)
+- [ ] Backend returns page data with both `currentSlug` and `requestedSlug` for old slug lookups
+- [ ] Frontend catch-all route compares slugs and triggers redirect with Next.js `redirect()` function
+- [ ] Rendered HTML cached in Redis with automatic invalidation on updates
 - [ ] File uploads validate size and extension against settings before storage
 - [ ] Public endpoints filter to `published: true` pages (drafts return 404)
-- [ ] Admin endpoints require `x-admin-token` authentication header
+- [ ] Admin endpoints protected by `requireAdmin` middleware
+- [ ] Uploads directory exists at `/public/uploads/` before Express static middleware starts
+- [ ] Express static middleware configured to serve `/uploads/` directory
+- [ ] Menu item registered in `system` namespace during `run()` phase
 - [ ] JSDoc comments explain the "why" before showing the "how"
 
-## Related Documentation
+## Troubleshooting
 
-**TronRelic architecture patterns:**
-- [Menu Module](../menu/menu.service.ts) - Similar module structure and database layer
-- [System Log Service](../../services/system-log/system-log.service.ts) - Singleton pattern and dependency injection example
-- [Frontend Architecture](../../../../docs/frontend/frontend-architecture.md) - Feature-based organization pattern
+### Page Appears in Database but Not Accessible
 
-**Core framework documentation:**
-- [Documentation Standards](../../../../docs/documentation.md) - Writing conventions for all TronRelic docs
-- [Environment Variables](../../../../docs/environment.md) - Configuration reference
-- [System Architecture](../../../../docs/system/system.md) - Backend module patterns and dependency injection
+**Diagnosis:**
+```bash
+curl http://localhost:4000/api/pages/my-slug
+# Returns 404
+```
+
+**Common causes:**
+- Page is unpublished (`published: false`)
+- Slug doesn't match exactly (missing leading slash)
+- Slug is blacklisted by settings patterns
+
+**Resolution:**
+```typescript
+const page = await pageService.getPageBySlug('/my-slug');
+console.log('Published:', page?.published);
+console.log('Slug:', page?.slug);
+
+const isBlacklisted = await pageService.isSlugBlacklisted('/my-slug');
+console.log('Blacklisted:', isBlacklisted);
+```
+
+### File Upload Returns 413 Error
+
+**Diagnosis:**
+```bash
+curl -X POST http://localhost:4000/api/admin/pages/files \
+  -H "x-admin-token: $ADMIN_API_TOKEN" \
+  -F "file=@large-file.mp4"
+# Returns: {"error":"File too large","message":"File size 15.23MB exceeds the maximum allowed size of 10.00MB"}
+```
+
+**Resolution:**
+
+Increase file size limit via settings API:
+```bash
+curl -X PATCH http://localhost:4000/api/admin/pages/settings \
+  -H "x-admin-token: $ADMIN_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"maxFileSize": 52428800}'  # 50MB
+```
+
+**Note:** Multer hard limit is 100MB. If you need larger files, modify the Multer configuration in PagesController.
+
+### Rendered HTML Not Updating
+
+**Diagnosis:**
+Page content updated but rendered HTML shows old version.
+
+**Cause:**
+Redis cache not invalidated after update.
+
+**Resolution:**
+```typescript
+const page = await pageService.getPageBySlug('/my-slug');
+await pageService.invalidatePageCache(page);
+```
+
+**Automatic invalidation triggers:**
+- Page updated via `updatePage()` (invalidates old and new slug if slug changed)
+- Page deleted via `deletePage()`
+- Manual via `invalidatePageCache(page)`
+
+### Slug Conflict Errors
+
+**Creating page fails with conflict message:**
+```
+Error: Slug "/blog" conflicts with redirect from page "Old Blog Posts"
+```
+
+**Cause:**
+The slug you're trying to use already exists in another page's oldSlugs array, meaning that page owns the redirect for this URL.
+
+**Resolution:**
+Choose a different slug or manually remove the conflicting slug from the other page's oldSlugs array via the page editor. To find which page owns the redirect:
+```typescript
+const conflictingPage = await pageService.findPageByOldSlug('/blog');
+console.log(`Slug owned by: ${conflictingPage?.title} (${conflictingPage?._id})`);
+```
+
+**Circular reference error:**
+```
+Error: Cannot set slug to "/old-url" - this is already in the page's redirect history
+```
+
+**Cause:**
+You're trying to change a page's slug to a value that's already in its own oldSlugs array, which would create a redirect loop.
+
+**Resolution:**
+Choose a different slug or remove the conflicting entry from oldSlugs before changing the slug. This validation prevents redirect loops where a page redirects to itself.
+
+### Redirect Not Working
+
+**Old URL returns 404 instead of redirecting:**
+
+**Diagnosis:**
+```bash
+curl http://localhost:4000/api/pages/old-url
+# Returns: 404 Not Found (expected: page data with slug metadata)
+```
+
+**Common causes:**
+- Old slug not in any page's oldSlugs array (check database)
+- Target page is unpublished (redirects only work for published pages)
+- oldSlugs index missing (run migration `003_add_old_slugs_to_pages`)
+- Frontend not detecting slug mismatch (check requestedSlug vs page.slug comparison)
+
+**Resolution:**
+```typescript
+// Check if any page has this slug in oldSlugs
+const page = await pageService.findPageByOldSlug('/old-url');
+if (!page) {
+    console.log('No page owns this redirect');
+} else if (!page.published) {
+    console.log('Target page is unpublished');
+} else {
+    console.log(`Backend should return page with slug: ${page.slug}`);
+    console.log(`Frontend should detect mismatch and redirect`);
+}
+```
+
+### Storage Provider Errors
+
+**Local storage path resolution issues:**
+```
+Error: ENOENT: no such file or directory, open '/public/uploads/25/10/image.png'
+```
+
+**Cause:**
+Uploads directory doesn't exist or incorrect working directory.
+
+**Resolution:**
+Verify uploads directory exists and matches expected path:
+```bash
+ls -la public/uploads/
+pwd  # Should be project root
+```
+
+The module creates `/public/uploads/` automatically during `init()`, but if running from a different directory, paths will be incorrect.
+

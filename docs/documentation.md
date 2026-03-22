@@ -22,6 +22,8 @@ Keep sentences short and scannable. Prefer concise paragraphs over bullet points
 
 Documentation must be *authoritative* and *prescriptive*.
 
+**Brevity is mandatory.** Every word must earn its place. Say what needs to be said in the fewest words that preserve meaning. Cut filler ("it should be noted that," "in order to," "it is important to"), hedging ("basically," "essentially," "generally speaking"), and redundant phrasing before cutting structure. Shorter sentences beat longer ones. If a paragraph restates what the reader already knows from context, delete it. Grammar may bend for brevity — fragments, imperative mood, and clipped phrasing are acceptable when the meaning stays clear. The goal is maximum information per word, not literary polish.
+
 ## File Size Limits
 
 Documentation serves both humans and AI tools. AI coding assistants inject project instruction files and referenced documentation into their context window—bloated files waste context on irrelevant content, degrading AI performance. Concise documentation improves both human scanability and AI effectiveness.
@@ -34,6 +36,8 @@ Documentation serves both humans and AI tools. AI coding assistants inject proje
 
 If a topic requires more than 300 lines, split it into multiple focused documents. Summary documents should be lean gateways—provide context and link to details rather than duplicating content.
 
+**Exception: Module and plugin README.md files.** A `README.md` colocated in a module directory (`src/backend/modules/*/README.md`) or plugin directory (`src/plugins/*/README.md`) serves as the *complete* documentation for that feature — architecture, API reference, database schema, usage examples, and troubleshooting in a single file. These files are intentionally exempt from the 300-line limit because they are the canonical source of truth for their feature and splitting them would scatter context that developers need in one place.
+
 ## Structure Template
 
 Every document should follow the "why → how → example" rhythm. Adapt headings as needed, but maintain this flow:
@@ -43,13 +47,9 @@ Every document should follow the "why → how → example" rhythm. Adapt heading
 
 Brief intro stating the core problem solved.
 
-## Who This Document Is For
-
-Target audience description.
-
 ## Why This Matters
 
-Explain risks of ignoring this guidance and benefits of following it.
+Explain why the system exists and the consequences of deviating from it.
 
 ## How It Works
 

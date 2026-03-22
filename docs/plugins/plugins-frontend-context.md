@@ -4,14 +4,7 @@ This document explains how frontend plugins access UI components, API clients, c
 
 ## Why Frontend Context Exists
 
-Frontend plugins located in `src/plugins/` cannot import directly from `src/frontend/` because:
-
-- **Cross-workspace imports fail** - Next.js module resolution doesn't support relative paths across workspace boundaries
-- **Build errors occur** - Paths like `../../../../../../src/frontend/lib/api` break in Turbopack
-- **Tight coupling emerges** - Direct imports make plugins dependent on frontend app internals
-- **Framework independence is lost** - Plugins should depend on interfaces, not implementations
-
-The frontend plugin context solves this by **injecting dependencies** into plugin components, mirroring the backend plugin pattern where `IPluginContext` provides services like `observerRegistry` and `database`.
+Plugins in `src/plugins/` cannot import directly from `src/frontend/` — cross-workspace paths break Next.js module resolution and create tight coupling to app internals. The frontend context solves this by injecting UI components, API client, charts, and WebSocket as props, mirroring the backend's `IPluginContext` dependency injection pattern.
 
 ## What Frontend Context Provides
 
@@ -714,7 +707,7 @@ export function MyPluginPage({ context }: { context: IFrontendPluginContext }) {
 - Tree-shakeable (unused styles are eliminated from bundles)
 - Type-safe imports with TypeScript
 
-See [Frontend Component Guide](../frontend/ui/ui-component-styling.md) for complete CSS Modules guidance and styling patterns.
+See [SCSS Modules and Component Styling](../frontend/ui/ui-scss-modules.md) for complete CSS Modules guidance and styling patterns.
 
 ### Step 5: Remove Type Imports
 

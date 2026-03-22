@@ -4,13 +4,7 @@ TronRelic's plugin widget system enables plugins to inject UI components into de
 
 ## Why Widget Zones Exist
 
-Before widget zones, plugins had three options for UI:
-
-- **Register a full page** (`/my-feature`) - Works, but requires navigation away from the content
-- **Background component** - Can trigger toasts/side effects, but cannot render inline content
-- **Modify core pages** - Breaks plugin isolation, requires core code changes per plugin
-
-None of these allowed autonomous widget injection into existing pages. Widget zones solve this by providing predefined injection points where plugins can render components with SSR data fetching.
+Plugins could register full pages or background components, but had no way to inject inline UI into existing core or plugin pages without modifying their source. Widget zones provide predefined injection points where plugins render SSR-fetched components autonomously — no target page changes required.
 
 ## Architecture Overview
 
@@ -658,7 +652,7 @@ Widget components must follow the [SSR + Live Updates pattern](../frontend/react
 
 Hydration errors occur when server-rendered HTML differs from what React generates on first client render. Widgets are especially vulnerable because SSR data arrives via `fetchData()` but components can accidentally discard it.
 
-**See [react.md](../frontend/react/react.md#common-mistakes) for common SSR mistakes and [ui-component-styling.md](../frontend/ui/ui-component-styling.md#ssr-and-hydration) for hydration error prevention.**
+**See [react.md](../frontend/react/react.md#common-mistakes) for common SSR mistakes and [ui-ssr-hydration.md](../frontend/ui/ui-ssr-hydration.md) for hydration error prevention.**
 
 **Why initializing from SSR data matters:**
 
@@ -730,7 +724,7 @@ Warning: Text content did not match. Server: "12/2/2025" Client: "2/12/2025"
 
 This pinpoints the exact element. The fix is usually: defer that render until `isMounted` is true, or use the `ClientTime` component.
 
-**See [ui-component-styling.md](../frontend/ui/ui-component-styling.md#ssr-and-hydration) for comprehensive hydration guidance** including the `ClientTime` component, two-phase rendering pattern for charts, and additional best practices.
+**See [ui-ssr-hydration.md](../frontend/ui/ui-ssr-hydration.md) for comprehensive hydration guidance** including the `ClientTime` component, two-phase rendering pattern for charts, and additional best practices.
 
 ### Regenerating the Widget Registry
 
@@ -781,7 +775,7 @@ This scans all plugins for `src/frontend/widgets/index.ts` files and creates sta
 - [Plugin Backend Context](./plugins-system-architecture.md) - Backend services and lifecycle hooks
 - [Plugin Frontend Context](./plugins-frontend-context.md) - Frontend dependency injection
 - [Menu Registration](./plugins-page-registration.md) - Registering navigation menu items
-- [SSR and Hydration](../frontend/ui/ui-component-styling.md#ssr-and-hydration) - Comprehensive hydration patterns including `ClientTime` component and two-phase rendering
+- [SSR Hydration Error Prevention](../frontend/ui/ui-ssr-hydration.md) - ClientTime component, two-phase rendering, and hydration patterns
 
 ## Future Enhancements
 

@@ -4,24 +4,7 @@ TronRelic's Chain Parameters Service maintains fresh TRON network parameters for
 
 ## Why This Matters
 
-Market fetchers and other features need to convert between TRX amounts and energy values based on current network conditions. The TRON network's energy-to-TRX ratio is not fixed—it fluctuates based on:
-
-- Total energy available on the network (`totalEnergyLimit`)
-- Total TRX frozen/staked for energy across all accounts (`totalFrozenForEnergy`)
-- Current energy burn fee (`energyFee`)
-
-**Risk of ignoring this system:**
-
-Without fresh chain parameters, the application would use stale or inaccurate conversion ratios. This leads to:
-
-- Incorrect market pricing comparisons (showing wrong TRX costs for energy rentals)
-- Inaccurate APY calculations for energy rental deals
-- Misleading cost estimates for USDT transfers
-- Poor user experience when comparing energy marketplace options
-
-**Why the old system was replaced:**
-
-The legacy `TrEnergyAdapter` used hardcoded approximations from a JavaScript configuration file. Network conditions change daily, making static values unreliable. The new service fetches live data from the blockchain and stores it in MongoDB for fast cached access.
+The TRON network's energy-to-TRX ratio fluctuates daily based on total staked TRX and network energy limits. Market fetchers, cost calculators, and APY displays all depend on fresh conversion ratios. Stale or hardcoded values produce incorrect pricing comparisons and misleading cost estimates. This service replaced the legacy `TrEnergyAdapter` (which used static approximations) with live blockchain polling every 10 minutes.
 
 ## How It Works
 

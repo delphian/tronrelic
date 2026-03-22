@@ -2,25 +2,9 @@
 
 This document introduces TRON blockchain concepts essential for TronRelic development. Understanding TRON's energy system, transaction structure, and network parameters is critical for accurate market pricing, whale tracking, and blockchain synchronization.
 
-## Who This Document Is For
-
-Backend developers implementing blockchain observers, market fetchers requiring energy cost calculations, and maintainers troubleshooting synchronization or pricing accuracy issues.
-
 ## Why This Matters
 
-TronRelic's core features depend on accurate TRON blockchain data:
-
-- **Energy market pricing** - Comparing rental costs requires understanding TRON's 24-hour energy regeneration mechanics
-- **Whale transaction tracking** - Identifying significant transfers depends on TRX/USD conversions and transaction parsing
-- **Cost calculations** - USDT transfer costs vary based on dynamic network parameters, not static values
-- **Blockchain synchronization** - Processing blocks requires understanding TRON's transaction structure and contract types
-
-When TRON knowledge is incomplete:
-
-- Energy cost calculations are orders of magnitude incorrect (missing regeneration multipliers shows 7-30x inflated prices)
-- Market comparisons fail because different platforms quote prices in incompatible formats (TRX vs SUN, hourly vs daily)
-- Whale alerts miss significant transactions due to incorrect value thresholds
-- Blockchain sync stalls because observers don't handle all contract types properly
+Every feature in TronRelic — market pricing, whale tracking, cost calculations, and blockchain sync — depends on accurate TRON blockchain data. Incomplete understanding of the energy regeneration system, SUN/TRX conversions, or dynamic network parameters leads to orders-of-magnitude pricing errors, missed transactions, and broken market comparisons.
 
 ## TRON Fundamentals for TronRelic
 
