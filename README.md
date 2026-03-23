@@ -74,8 +74,13 @@ AGPL-3.0-or-later with plugin exception. Third-party plugins may use any license
 | [Frontend Architecture](docs/frontend/frontend-architecture.md) | Directory structure, modules vs features |
 | [React Components](docs/frontend/react/react.md) | Server/client components, hooks, context |
 | [UI System](docs/frontend/ui/ui.md) | Design tokens, SCSS Modules, layout |
-| [Component Styling](docs/frontend/ui/ui-component-styling.md) | CSS variables, container queries |
+| [SCSS Modules](docs/frontend/ui/ui-scss-modules.md) | CSS variables, naming conventions, component styling |
+| [Responsive Design](docs/frontend/ui/ui-responsive-design.md) | Container queries, breakpoints |
+| [Icons and Feedback](docs/frontend/ui/ui-icons-and-feedback.md) | Lucide icons, animations, state feedback |
+| [Accessibility](docs/frontend/ui/ui-accessibility.md) | Semantic HTML, ARIA labels, plugin styling |
+| [SSR Hydration](docs/frontend/ui/ui-ssr-hydration.md) | Hydration error prevention, ClientTime |
 | [Design Tokens](docs/frontend/ui/ui-design-token-layers.md) | Primitives, semantic tokens, theming |
+| [Theme System](docs/frontend/ui/ui-theme.md) | Admin themes, CSS overrides, SSR injection |
 
 ### TRON Blockchain
 

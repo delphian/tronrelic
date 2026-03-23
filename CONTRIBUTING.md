@@ -241,7 +241,7 @@ Before making significant changes, review these documents:
 
 **Development guides:**
 - [docs/plugins/plugins-blockchain-observers.md](docs/plugins/plugins-blockchain-observers.md) - Creating blockchain observers
-- [docs/frontend/ui-component-styling.md](docs/frontend/ui-component-styling.md) - UI styling standards
+- [docs/frontend/ui/ui.md](docs/frontend/ui/ui.md) - UI styling standards
 - [docs/system/system-testing.md](docs/system/system-testing.md) - Testing patterns
 
 ---
