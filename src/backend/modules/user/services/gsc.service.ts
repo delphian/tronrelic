@@ -344,14 +344,25 @@ export class GscService {
                 break;
             }
 
-            const bulkOps = rows.map(row => {
-                const [query, page, country, device, dateStr] = row.keys ?? [];
+            const bulkOps = rows.reduce<Array<{ updateOne: { filter: Record<string, unknown>; update: { $set: IGscQueryDocument }; upsert: true } }>>((ops, row) => {
+                const keys = row.keys ?? [];
+                const [query, page, country, device, dateStr] = keys;
+
+                // Skip rows with missing keys or unparseable dates
+                if (!query || !page || !country || !device || !dateStr) {
+                    return ops;
+                }
+                const date = new Date(dateStr);
+                if (isNaN(date.getTime())) {
+                    return ops;
+                }
+
                 const doc: IGscQueryDocument = {
-                    query: query ?? '',
-                    page: page ?? '',
-                    country: country ?? '',
-                    device: device ?? '',
-                    date: new Date(dateStr ?? ''),
+                    query,
+                    page,
+                    country,
+                    device,
+                    date,
                     clicks: row.clicks ?? 0,
                     impressions: row.impressions ?? 0,
                     ctr: row.ctr ?? 0,
@@ -359,7 +370,7 @@ export class GscService {
                     fetchedAt: now
                 };
 
-                return {
+                ops.push({
                     updateOne: {
                         filter: {
                             date: doc.date,
@@ -371,10 +382,13 @@ export class GscService {
                         update: { $set: doc },
                         upsert: true
                     }
-                };
-            });
+                });
+                return ops;
+            }, []);
 
-            await this.collection.bulkWrite(bulkOps);
+            if (bulkOps.length > 0) {
+                await this.collection.bulkWrite(bulkOps);
+            }
             totalRows += rows.length;
             startRow += rows.length;
 
@@ -401,24 +415,26 @@ export class GscService {
      * @returns Aggregated keyword data sorted by clicks descending
      */
     async getKeywordsForPeriod(periodHours: number, limit: number = 10): Promise<IGscKeyword[]> {
-        const since = new Date();
-        since.setTime(since.getTime() - (periodHours * 60 * 60 * 1000));
+        // Shift window by the GSC ingestion delay so the period aligns
+        // with available data (e.g. "last 7 days" queries the 7 days
+        // ending at now - GSC_DATA_DELAY_DAYS, not ending at now).
+        const delayMs = GSC_DATA_DELAY_DAYS * 24 * 60 * 60 * 1000;
+        const end = new Date(Date.now() - delayMs);
+        const since = new Date(end.getTime() - (periodHours * 60 * 60 * 1000));
 
         const results = await this.collection.aggregate<{
             _id: string;
             totalClicks: number;
             totalImpressions: number;
-            avgCtr: number;
-            avgPosition: number;
+            weightedPosition: number;
         }>([
-            { $match: { date: { $gte: since } } },
+            { $match: { date: { $gte: since, $lte: end } } },
             {
                 $group: {
                     _id: '$query',
                     totalClicks: { $sum: '$clicks' },
                     totalImpressions: { $sum: '$impressions' },
-                    avgCtr: { $avg: '$ctr' },
-                    avgPosition: { $avg: '$position' }
+                    weightedPosition: { $sum: { $multiply: ['$position', '$impressions'] } }
                 }
             },
             { $sort: { totalClicks: -1 } },
@@ -429,8 +445,12 @@ export class GscService {
             keyword: r._id,
             clicks: r.totalClicks,
             impressions: r.totalImpressions,
-            ctr: Math.round(r.avgCtr * 10000) / 10000,
-            position: Math.round(r.avgPosition * 10) / 10
+            ctr: r.totalImpressions > 0
+                ? Math.round((r.totalClicks / r.totalImpressions) * 10000) / 10000
+                : 0,
+            position: r.totalImpressions > 0
+                ? Math.round((r.weightedPosition / r.totalImpressions) * 10) / 10
+                : 0
         }));
     }
 }

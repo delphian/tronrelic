@@ -54,6 +54,8 @@ export function GscSettings({ token }: Props) {
      * Fetch current GSC configuration status from the backend.
      */
     const fetchStatus = useCallback(async () => {
+        setError(null);
+        setSuccess(null);
         try {
             const result = await adminGetGscStatus(token);
             setStatus(result);

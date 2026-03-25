@@ -294,7 +294,7 @@ Both modules and plugins use prefixed collection names to make ownership visible
 | Consumer | Logical Name | Physical Collection Name |
 |----------|--------------|--------------------------|
 | Module (user) | `gsc_queries` | `module_user_gsc_queries` |
-| Module (user) | `visitors` | `module_user_visitors` |
+| Module (user, legacy) | `users` | `users` (legacy, unprefixed) |
 | Plugin (whale-alerts) | `subscriptions` | `plugin_whale-alerts_subscriptions` |
 | Plugin (whale-alerts) | `_kv` | `plugin_whale-alerts__kv` |
 | Plugin (telegram-bot) | `subscriptions` | `plugin_telegram-bot_subscriptions` |

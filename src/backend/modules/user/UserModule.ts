@@ -189,6 +189,9 @@ export class UserModule implements IModule<IUserModuleDependencies> {
         this.gscService = GscService.getInstance();
         await this.gscService.createIndexes();
 
+        // Inject GscService into UserService for explicit dependency
+        this.userService.setGscService(this.gscService);
+
         // Create controller with singleton service
         this.controller = new UserController(this.userService, this.gscService, this.logger);
 

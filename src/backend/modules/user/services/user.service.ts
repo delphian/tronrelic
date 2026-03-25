@@ -128,6 +128,7 @@ export class UserService {
     private static instance: UserService;
     private readonly collection: Collection<IUserDocument>;
     private readonly signatureService: SignatureService;
+    private gscService: GscService | null = null;
     private readonly CACHE_KEY_PREFIX = 'user:';
     private readonly CACHE_KEY_WALLET_PREFIX = 'user:wallet:';
     private readonly CACHE_TTL = 3600; // 1 hour
@@ -198,6 +199,19 @@ export class UserService {
      */
     public static resetInstance(): void {
         UserService.instance = undefined as any;
+    }
+
+    /**
+     * Inject the GscService for keyword enrichment in traffic source details.
+     *
+     * Called from UserModule.init() after GscService is initialized. This
+     * avoids a hidden singleton lookup and makes the dependency explicit
+     * for testing.
+     *
+     * @param gscService - Initialized GscService singleton
+     */
+    public setGscService(gscService: GscService): void {
+        this.gscService = gscService;
     }
 
     // ==================== Core CRUD Operations ====================
@@ -2253,11 +2267,10 @@ export class UserService {
             count: r.count
         }));
 
-        if (isGoogleDomain) {
+        if (isGoogleDomain && this.gscService) {
             try {
-                const gscService = GscService.getInstance();
-                if (await gscService.isConfigured()) {
-                    gscKeywords = await gscService.getKeywordsForPeriod(periodHours, 10);
+                if (await this.gscService.isConfigured()) {
+                    gscKeywords = await this.gscService.getKeywordsForPeriod(periodHours, 10);
 
                     // Populate searchKeywords from GSC clicks for backward compatibility
                     if (gscKeywords.length > 0 && searchKeywords.length === 0) {
