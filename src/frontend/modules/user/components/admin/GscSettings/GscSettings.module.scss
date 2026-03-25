@@ -5,11 +5,14 @@
  * Uses design tokens for all values.
  */
 
+@use '../../../../../app/breakpoints' as *;
+
 .container {
     display: flex;
     flex-direction: column;
     gap: var(--spacing-10);
-    max-width: 640px;
+    container-type: inline-size;
+    container-name: gsc-settings;
 }
 
 .status {
@@ -39,7 +42,7 @@
     padding: var(--spacing-5) var(--spacing-7);
     background: color-mix(in srgb, var(--color-primary) 6%, transparent);
     border-radius: var(--radius-md);
-    border-left: 3px solid var(--color-primary);
+    border-left: var(--border-width-medium) solid var(--color-primary);
 }
 
 .setup_guide__title {
@@ -110,8 +113,8 @@
 .textarea {
     width: 100%;
     min-height: 120px;
-    padding: var(--spacing-5);
-    font-family: monospace;
+    padding: var(--input-padding);
+    font-family: var(--font-mono);
     font-size: var(--font-size-sm);
     color: var(--color-text);
     background: var(--color-surface);
@@ -120,14 +123,16 @@
     resize: vertical;
 }
 
-.textarea:focus {
-    outline: 2px solid var(--color-primary);
-    outline-offset: -1px;
+.textarea:focus-visible {
+    outline: var(--focus-outline-width) solid var(--color-focus);
+    outline-offset: var(--focus-outline-offset);
+    box-shadow: var(--focus-shadow);
+    border-color: var(--color-primary);
 }
 
 .input {
     width: 100%;
-    padding: var(--spacing-4) var(--spacing-5);
+    padding: var(--input-padding);
     font-size: var(--font-size-sm);
     color: var(--color-text);
     background: var(--color-surface);
@@ -135,9 +140,11 @@
     border-radius: var(--radius-md);
 }
 
-.input:focus {
-    outline: 2px solid var(--color-primary);
-    outline-offset: -1px;
+.input:focus-visible {
+    outline: var(--focus-outline-width) solid var(--color-focus);
+    outline-offset: var(--focus-outline-offset);
+    box-shadow: var(--focus-shadow);
+    border-color: var(--color-primary);
 }
 
 .actions {
@@ -176,4 +183,16 @@
 .info_value {
     color: var(--color-text);
     font-weight: var(--font-weight-medium);
+}
+
+/* Container queries for responsive behavior */
+@container gsc-settings (max-width: #{$breakpoint-mobile-md}) {
+    .info_row {
+        flex-direction: column;
+        gap: var(--spacing-2);
+    }
+
+    .actions {
+        flex-direction: column;
+    }
 }
