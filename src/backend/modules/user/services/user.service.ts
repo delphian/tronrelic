@@ -23,6 +23,7 @@ import {
     getScreenSizeCategory
 } from './geo.service.js';
 import { SignatureService } from '../../auth/signature.service.js';
+import { GscService } from './gsc.service.js';
 
 /**
  * User statistics for admin dashboard.
@@ -127,6 +128,7 @@ export class UserService {
     private static instance: UserService;
     private readonly collection: Collection<IUserDocument>;
     private readonly signatureService: SignatureService;
+    private gscService: GscService | null = null;
     private readonly CACHE_KEY_PREFIX = 'user:';
     private readonly CACHE_KEY_WALLET_PREFIX = 'user:wallet:';
     private readonly CACHE_TTL = 3600; // 1 hour
@@ -197,6 +199,19 @@ export class UserService {
      */
     public static resetInstance(): void {
         UserService.instance = undefined as any;
+    }
+
+    /**
+     * Inject the GscService for keyword enrichment in traffic source details.
+     *
+     * Called from UserModule.init() after GscService is initialized. This
+     * avoids a hidden singleton lookup and makes the dependency explicit
+     * for testing.
+     *
+     * @param gscService - Initialized GscService singleton
+     */
+    public setGscService(gscService: GscService): void {
+        this.gscService = gscService;
     }
 
     // ==================== Core CRUD Operations ====================
@@ -2078,6 +2093,7 @@ export class UserService {
         devices: Array<{ device: string; count: number; percentage: number }>;
         utmCampaigns: Array<{ source: string; medium: string; campaign: string; count: number }>;
         searchKeywords: Array<{ keyword: string; count: number }>;
+        gscKeywords?: Array<{ keyword: string; clicks: number; impressions: number; ctr: number; position: number }>;
         engagement: { avgSessions: number; avgPageViews: number; avgDuration: number };
         conversion: { walletsConnected: number; walletsVerified: number; conversionRate: number };
     }> {
@@ -2243,6 +2259,32 @@ export class UserService {
         const toPercentage = (count: number): number =>
             visitors > 0 ? Math.round((count / visitors) * 10000) / 100 : 0;
 
+        // Enrich with GSC keyword data when source is a Google domain
+        const isGoogleDomain = /^google\.\w+(\.\w+)?$/i.test(source);
+        let gscKeywords: Array<{ keyword: string; clicks: number; impressions: number; ctr: number; position: number }> | undefined;
+        let searchKeywords = (data?.searchKeywords ?? []).map(r => ({
+            keyword: r._id,
+            count: r.count
+        }));
+
+        if (isGoogleDomain && this.gscService) {
+            try {
+                if (await this.gscService.isConfigured()) {
+                    gscKeywords = await this.gscService.getKeywordsForPeriod(periodHours, 10);
+
+                    // Populate searchKeywords from GSC clicks for backward compatibility
+                    if (gscKeywords.length > 0 && searchKeywords.length === 0) {
+                        searchKeywords = gscKeywords.map(kw => ({
+                            keyword: kw.keyword,
+                            count: kw.clicks
+                        }));
+                    }
+                }
+            } catch (error) {
+                this.logger.error({ error }, 'GSC keyword enrichment failed');
+            }
+        }
+
         return {
             source,
             visitors,
@@ -2267,10 +2309,8 @@ export class UserService {
                 campaign: r._id.campaign,
                 count: r.count
             })),
-            searchKeywords: (data?.searchKeywords ?? []).map(r => ({
-                keyword: r._id,
-                count: r.count
-            })),
+            searchKeywords,
+            gscKeywords,
             engagement: {
                 avgSessions: Math.round((summary?.avgSessions ?? 0) * 10) / 10,
                 avgPageViews: Math.round((summary?.avgPageViews ?? 0) * 10) / 10,

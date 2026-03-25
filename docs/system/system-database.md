@@ -132,7 +132,7 @@ await database.delete('tempCache');
 
 ### Modules
 
-Modules receive `IDatabaseService` through dependency injection during their `init()` phase:
+Modules receive `IDatabaseService` through dependency injection during their `init()` phase. Unlike plugins (which get automatic prefixing via `PluginDatabaseService`), modules must manually prefix collection names following the `module_{module-id}_{collection}` convention. This makes collection ownership obvious when inspecting the database and mirrors the plugin prefixing pattern.
 
 ```typescript
 export interface IMyModuleDependencies {
@@ -146,8 +146,8 @@ export class MyModule implements IModule<IMyModuleDependencies> {
     async init(deps: IMyModuleDependencies): Promise<void> {
         this.database = deps.database;
 
-        // Register Mongoose model if needed
-        this.database.registerModel('my_collection', MyModel);
+        // Collection name follows module_{module-id}_{collection} convention
+        this.database.registerModel('module_my-feature_items', MyModel);
     }
 
     async run(): Promise<void> {
@@ -289,27 +289,35 @@ export const delegationTrackerPlugin = definePlugin({
 
 ## Namespace Isolation
 
-The database service enforces strict namespace isolation for plugins:
+Both modules and plugins use prefixed collection names to make ownership visible when inspecting the database. Plugins get automatic prefixing via `PluginDatabaseService`; modules apply the prefix manually.
 
-| Consumer | Collection Name | Physical Name |
-|----------|-----------------|---------------|
-| Core module | `pages` | `pages` |
-| Core module | `system_config` | `system_config` |
-| Whale alerts plugin | `subscriptions` | `plugin_whale-alerts_subscriptions` |
-| Whale alerts plugin | `_kv` | `plugin_whale-alerts__kv` |
-| Telegram plugin | `subscriptions` | `plugin_telegram-bot_subscriptions` |
+| Consumer | Logical Name | Physical Collection Name |
+|----------|--------------|--------------------------|
+| Module (user) | `gsc_queries` | `module_user_gsc_queries` |
+| Module (user, legacy) | `users` | `users` (legacy, unprefixed) |
+| Plugin (whale-alerts) | `subscriptions` | `plugin_whale-alerts_subscriptions` |
+| Plugin (whale-alerts) | `_kv` | `plugin_whale-alerts__kv` |
+| Plugin (telegram-bot) | `subscriptions` | `plugin_telegram-bot_subscriptions` |
+
+**Naming conventions:**
+
+- **Modules:** `module_{module-id}_{collection}` — applied manually when calling `getCollection()` or `registerModel()`
+- **Plugins:** `plugin_{plugin-id}_{collection}` — applied automatically by `PluginDatabaseService`
+- **Legacy collections** (`users`, `pages`, `menu_nodes`, `themes`) predate this convention and will be migrated over time
 
 **Isolation guarantees:**
 
 - Plugins cannot access collections outside their prefix
 - Two plugins using the same logical collection name (`subscriptions`) get separate physical collections
-- Core services use unprefixed collections directly
-- Attempting cross-prefix access throws an error
+- Attempting cross-prefix access from a plugin throws an error
 
 ```typescript
 // In whale-alerts plugin context
 await database.getCollection('subscriptions'); // OK → plugin_whale-alerts_subscriptions
 await database.getCollection('system_config'); // ERROR - cannot access non-prefixed collection
+
+// In user module (manual prefixing)
+const collection = database.getCollection('module_user_gsc_queries');
 ```
 
 ## Quick Reference
@@ -372,7 +380,7 @@ Before writing database access code, verify:
 - [ ] Consumer receives `IDatabaseService` via injection (not direct import)
 - [ ] No direct imports of Mongoose or MongoDB driver
 - [ ] No instantiation of `DatabaseService` (except in bootstrap)
-- [ ] Collection names follow naming conventions (lowercase, underscores)
+- [ ] Collection names follow `module_{module-id}_{collection}` convention (modules) or are auto-prefixed (plugins)
 - [ ] Mongoose models registered in constructor/init if validation needed
 - [ ] Indexes created during initialization (module `init()` or plugin `install()`)
 - [ ] Error handling covers duplicate key errors (code 11000)

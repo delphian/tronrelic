@@ -2,6 +2,7 @@ import type { Request, Response, NextFunction } from 'express';
 import { USER_FILTERS } from '@/types';
 import type { ISystemLogService, UserFilterType } from '@/types';
 import type { UserService, IUserStats } from '../services/index.js';
+import type { GscService } from '../services/index.js';
 import type { IUser, IUserPreferences, IUtmParams } from '../database/index.js';
 import { getClientIP, isInternalReferrer } from '../services/index.js';
 import { SystemConfigService } from '../../../services/system-config/system-config.service.js';
@@ -59,10 +60,12 @@ export class UserController {
      * Create a user controller.
      *
      * @param userService - Service for user operations
+     * @param gscService - Google Search Console service for keyword data
      * @param logger - System log service for error tracking
      */
     constructor(
         private readonly userService: UserService,
+        private readonly gscService: GscService,
         private readonly logger: ISystemLogService
     ) {}
 
@@ -1128,5 +1131,79 @@ export class UserController {
                 message: error instanceof Error ? error.message : 'Unknown error'
             });
         }
+    }
+
+    // ============================================================================
+    // Google Search Console Endpoints
+    // ============================================================================
+
+    /**
+     * GET /api/admin/users/analytics/gsc/status
+     *
+     * Get GSC configuration status (configured, site URL, last fetch).
+     * Never exposes the raw service account key.
+     */
+    async getGscStatus(_req: Request, res: Response): Promise<void> {
+        await this.handleAnalyticsRequest(res, () => {
+            return this.gscService.getStatus();
+        }, 'Failed to get GSC status');
+    }
+
+    /**
+     * POST /api/admin/users/analytics/gsc/credentials
+     *
+     * Save GSC service account credentials and site URL.
+     * Validates the JSON key and tests API access before saving.
+     *
+     * Body: { serviceAccountJson: string, siteUrl: string }
+     */
+    async saveGscCredentials(req: Request, res: Response): Promise<void> {
+        const { serviceAccountJson, siteUrl } = req.body ?? {};
+
+        if (!serviceAccountJson || typeof serviceAccountJson !== 'string') {
+            res.status(400).json({ error: 'Missing required field: serviceAccountJson' });
+            return;
+        }
+        if (!siteUrl || typeof siteUrl !== 'string') {
+            res.status(400).json({ error: 'Missing required field: siteUrl' });
+            return;
+        }
+
+        try {
+            await this.gscService.saveCredentials(serviceAccountJson, siteUrl);
+            const status = await this.gscService.getStatus();
+            res.json(status);
+        } catch (error) {
+            this.logger.error({ error }, 'Failed to save GSC credentials');
+            res.status(400).json({
+                error: 'Failed to save GSC credentials',
+                message: error instanceof Error ? error.message : 'Unknown error'
+            });
+        }
+    }
+
+    /**
+     * DELETE /api/admin/users/analytics/gsc/credentials
+     *
+     * Remove stored GSC credentials. Previously fetched data remains
+     * until the TTL index cleans it up.
+     */
+    async removeGscCredentials(_req: Request, res: Response): Promise<void> {
+        await this.handleAnalyticsRequest(res, async () => {
+            await this.gscService.removeCredentials();
+            return { success: true };
+        }, 'Failed to remove GSC credentials');
+    }
+
+    /**
+     * POST /api/admin/users/analytics/gsc/refresh
+     *
+     * Trigger an on-demand GSC data fetch. Returns the number of
+     * rows fetched from the Search Console API.
+     */
+    async refreshGscData(_req: Request, res: Response): Promise<void> {
+        await this.handleAnalyticsRequest(res, () => {
+            return this.gscService.fetchAndStore();
+        }, 'Failed to refresh GSC data');
     }
 }

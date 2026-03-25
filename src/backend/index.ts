@@ -275,9 +275,10 @@ async function bootstrapInit(): Promise<BootstrapContext> {
     await logsModule.init({ pinoLogger, database: coreDatabase, app });
     await pagesModule.init(sharedDeps);
     await themeModule.init(sharedDeps);
-    await userModule.init(sharedDeps);
-    await addressLabelsModule.init(sharedDeps);
     await schedulerModule.init({ database: coreDatabase, menuService, app });
+    const schedulerService = schedulerModule.getSchedulerService();
+    await userModule.init({ ...sharedDeps, scheduler: schedulerService });
+    await addressLabelsModule.init(sharedDeps);
 
     return {
         app,

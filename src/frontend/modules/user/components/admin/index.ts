@@ -9,3 +9,4 @@ export { UsersMonitor } from './UsersMonitor';
 export { VisitorAnalytics } from './VisitorAnalytics';
 export { AnalyticsDashboard } from './AnalyticsDashboard';
 export { ReferralOverview } from './ReferralOverview';
+export { GscSettings } from './GscSettings';

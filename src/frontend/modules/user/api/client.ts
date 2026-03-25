@@ -565,6 +565,20 @@ export interface ITrafficSource {
     percentage: number;
 }
 
+/** GSC keyword data with full metrics from Google Search Console. */
+export interface IGscKeyword {
+    /** Search keyword */
+    keyword: string;
+    /** Total clicks */
+    clicks: number;
+    /** Total impressions */
+    impressions: number;
+    /** Average click-through rate (0-1) */
+    ctr: number;
+    /** Average position in search results */
+    position: number;
+}
+
 /** Detailed breakdown for a single traffic source (drill-down). */
 export interface ITrafficSourceDetails {
     source: string;
@@ -574,6 +588,7 @@ export interface ITrafficSourceDetails {
     devices: Array<{ device: string; count: number; percentage: number }>;
     utmCampaigns: Array<{ source: string; medium: string; campaign: string; count: number }>;
     searchKeywords: Array<{ keyword: string; count: number }>;
+    gscKeywords?: IGscKeyword[];
     engagement: { avgSessions: number; avgPageViews: number; avgDuration: number };
     conversion: { walletsConnected: number; walletsVerified: number; conversionRate: number };
 }
@@ -859,6 +874,82 @@ export async function adminGetReferralOverview(
         params: options
     });
     return response.data as IReferralOverview;
+}
+
+// ============================================================================
+// Google Search Console API Functions
+// ============================================================================
+
+/** GSC configuration status. */
+export interface IGscStatus {
+    /** Whether GSC credentials are configured */
+    configured: boolean;
+    /** GSC property URL */
+    siteUrl?: string;
+    /** Timestamp of last successful data fetch */
+    lastFetch?: string;
+}
+
+/**
+ * Get GSC configuration status (admin endpoint).
+ *
+ * @param token - Admin API token
+ * @returns GSC configuration status
+ */
+export async function adminGetGscStatus(token: string): Promise<IGscStatus> {
+    const response = await apiClient.get('/admin/users/analytics/gsc/status', {
+        headers: { [adminHeaderKey]: token }
+    });
+    return response.data as IGscStatus;
+}
+
+/**
+ * Save GSC service account credentials (admin endpoint).
+ *
+ * Validates the JSON key and tests API access before saving.
+ *
+ * @param token - Admin API token
+ * @param serviceAccountJson - JSON string of Google service account key
+ * @param siteUrl - GSC property URL (e.g., "https://tronrelic.com")
+ * @returns Updated GSC status
+ */
+export async function adminSaveGscCredentials(
+    token: string,
+    serviceAccountJson: string,
+    siteUrl: string
+): Promise<IGscStatus> {
+    const response = await apiClient.post(
+        '/admin/users/analytics/gsc/credentials',
+        { serviceAccountJson, siteUrl },
+        { headers: { [adminHeaderKey]: token } }
+    );
+    return response.data as IGscStatus;
+}
+
+/**
+ * Remove stored GSC credentials (admin endpoint).
+ *
+ * @param token - Admin API token
+ */
+export async function adminRemoveGscCredentials(token: string): Promise<void> {
+    await apiClient.delete('/admin/users/analytics/gsc/credentials', {
+        headers: { [adminHeaderKey]: token }
+    });
+}
+
+/**
+ * Trigger on-demand GSC data fetch (admin endpoint).
+ *
+ * @param token - Admin API token
+ * @returns Number of rows fetched from GSC API
+ */
+export async function adminRefreshGscData(token: string): Promise<{ rowsFetched: number }> {
+    const response = await apiClient.post(
+        '/admin/users/analytics/gsc/refresh',
+        {},
+        { headers: { [adminHeaderKey]: token } }
+    );
+    return response.data as { rowsFetched: number };
 }
 
 /**

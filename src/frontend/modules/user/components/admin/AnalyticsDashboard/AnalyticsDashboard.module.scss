@@ -354,3 +354,58 @@
     white-space: nowrap;
     flex-shrink: 0;
 }
+
+/* Google Search Console keyword table */
+.gsc_badge {
+    display: inline-block;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
+    color: var(--color-primary);
+    background: color-mix(in srgb, var(--color-primary) 12%, transparent);
+    padding: var(--spacing-1) var(--spacing-3);
+    border-radius: var(--radius-sm);
+    margin-left: var(--spacing-3);
+    vertical-align: middle;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.gsc_table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--font-size-sm);
+    margin-top: var(--spacing-3);
+}
+
+.gsc_table thead {
+    border-bottom: var(--border-width-thin) solid var(--color-border);
+}
+
+.gsc_table th {
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: var(--spacing-2) var(--spacing-3);
+}
+
+.gsc_table td {
+    padding: var(--spacing-2) var(--spacing-3);
+    color: var(--color-text);
+    border-bottom: var(--border-width-thin) solid color-mix(in srgb, var(--color-border) 50%, transparent);
+}
+
+.gsc_table__keyword {
+    text-align: left;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.gsc_table__metric {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}

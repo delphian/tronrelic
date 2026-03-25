@@ -294,6 +294,34 @@ export function createAdminUserRouter(controller: UserController): Router {
      */
     router.get('/analytics/referral-overview', controller.getReferralOverview.bind(controller));
 
+    // ============================================================================
+    // Google Search Console Routes
+    // ============================================================================
+
+    /**
+     * GET /api/admin/users/analytics/gsc/status
+     * Get GSC configuration status
+     */
+    router.get('/analytics/gsc/status', controller.getGscStatus.bind(controller));
+
+    /**
+     * POST /api/admin/users/analytics/gsc/credentials
+     * Save GSC service account credentials
+     */
+    router.post('/analytics/gsc/credentials', controller.saveGscCredentials.bind(controller));
+
+    /**
+     * DELETE /api/admin/users/analytics/gsc/credentials
+     * Remove stored GSC credentials
+     */
+    router.delete('/analytics/gsc/credentials', controller.removeGscCredentials.bind(controller));
+
+    /**
+     * POST /api/admin/users/analytics/gsc/refresh
+     * Trigger on-demand GSC data fetch
+     */
+    router.post('/analytics/gsc/refresh', controller.refreshGscData.bind(controller));
+
     /**
      * GET /api/admin/users/:id
      * Get any user by UUID (admin bypass)

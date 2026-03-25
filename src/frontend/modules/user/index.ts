@@ -168,3 +168,4 @@ export { UsersMonitor } from './components';
 export { VisitorAnalytics } from './components';
 export { AnalyticsDashboard } from './components';
 export { ReferralOverview } from './components';
+export { GscSettings } from './components';
