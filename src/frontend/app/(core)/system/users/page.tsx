@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useSystemAuth } from '../../../../features/system';
-import { Page } from '../../../../components/layout';
+import { Page, PageHeader } from '../../../../components/layout';
 import { Card } from '../../../../components/ui/Card';
 import { UsersMonitor, AnalyticsDashboard, ReferralOverview, GscSettings } from '../../../../modules/user';
 import styles from './page.module.scss';
@@ -37,10 +37,10 @@ export default function SystemUsersPage() {
 
     return (
         <div className={styles.container}>
-            <div className={styles.header}>
-                <h1 className={styles.title}>Users, Analytics &amp; Referrals</h1>
-                <p className={styles.subtitle}>Manage users, analyze traffic, and track referrals</p>
-            </div>
+            <PageHeader
+                title="Users, Analytics & Referrals"
+                subtitle="Manage users, analyze traffic, and track referrals"
+            />
 
             <div className={styles.tabs}>
                 <button

@@ -9,6 +9,7 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
+import { Button } from '../../../../../components/ui/Button';
 import { Card } from '../../../../../components/ui/Card';
 import { ClientTime } from '../../../../../components/ui/ClientTime';
 import { Stack } from '../../../../../components/layout';
@@ -154,9 +155,13 @@ export function GscSettings({ token }: Props) {
                 <Stack gap="md">
                     <h3>Google Search Console</h3>
                     <p className="text-muted">
-                        Connect your Google Search Console to see which keywords
-                        drive traffic from Google. Data appears in the analytics
-                        tab when you expand Google traffic sources.
+                        Google does not expose search keyword data directly &mdash; it
+                        lives behind the Search Console API, which requires a service
+                        account for server-to-server access. That means linking three
+                        things: a Google Cloud project (owns the credentials), a Search
+                        Console property (owns the data), and a service account that
+                        bridges the two. Once connected, keyword data appears in the
+                        analytics tab when you expand Google traffic sources.
                     </p>
 
                     <div className={styles.status}>
@@ -186,29 +191,16 @@ export function GscSettings({ token }: Props) {
 
                     {status?.configured ? (
                         <div className={styles.actions}>
-                            <button
-                                type="button"
-                                className="btn btn--primary btn--sm"
-                                onClick={handleRefresh}
-                                disabled={refreshing}
-                            >
+                            <Button size="sm" onClick={handleRefresh} disabled={refreshing}>
                                 {refreshing ? 'Fetching...' : 'Refresh Now'}
-                            </button>
-                            <button
-                                type="button"
-                                className="btn btn--danger btn--sm"
-                                onClick={handleRemove}
-                            >
+                            </Button>
+                            <Button size="sm" variant="danger" onClick={handleRemove}>
                                 {confirmingRemove ? 'Confirm Remove' : 'Remove Credentials'}
-                            </button>
+                            </Button>
                             {confirmingRemove && (
-                                <button
-                                    type="button"
-                                    className="btn btn--ghost btn--sm"
-                                    onClick={() => setConfirmingRemove(false)}
-                                >
+                                <Button size="sm" variant="ghost" onClick={() => setConfirmingRemove(false)}>
                                     Cancel
-                                </button>
+                                </Button>
                             )}
                         </div>
                     ) : (
@@ -217,22 +209,29 @@ export function GscSettings({ token }: Props) {
                                 <h4 className={styles.setup_guide__title}>Quick Setup</h4>
                                 <ol className={styles.setup_guide__steps}>
                                     <li>
-                                        Create a service account in the{' '}
+                                        <strong>Verify your site</strong> in{' '}
+                                        <a href="https://search.google.com/search-console" target="_blank" rel="noopener noreferrer">
+                                            Google Search Console
+                                        </a>{' '}
+                                        if you haven&rsquo;t already (DNS or HTML verification).
+                                    </li>
+                                    <li>
+                                        <strong>Create a service account</strong> in a{' '}
                                         <a href="https://console.cloud.google.com/iam-admin/serviceaccounts" target="_blank" rel="noopener noreferrer">
-                                            Google Cloud Console
+                                            Google Cloud project
                                         </a>{' '}
                                         and download the JSON key file.
                                     </li>
                                     <li>
-                                        In{' '}
-                                        <a href="https://search.google.com/search-console" target="_blank" rel="noopener noreferrer">
-                                            Search Console
-                                        </a>
-                                        , go to Settings &rarr; Users and permissions &rarr; Add user.
-                                        Enter the service account email (ends in <code>@...iam.gserviceaccount.com</code>) with &ldquo;Full&rdquo; permission.
+                                        <strong>Grant access</strong> &mdash; back in Search Console,
+                                        go to Settings &rarr; Users and permissions &rarr; Add user.
+                                        Paste the service account email
+                                        (ends in <code>@...iam.gserviceaccount.com</code>)
+                                        with &ldquo;Full&rdquo; permission.
                                     </li>
                                     <li>
-                                        Paste the JSON key and your site URL below, then hit &ldquo;Test &amp; Save&rdquo;.
+                                        <strong>Connect</strong> &mdash; paste the JSON key and your
+                                        site URL below, then hit &ldquo;Test &amp; Save&rdquo;.
                                     </li>
                                 </ol>
                             </div>
@@ -277,14 +276,9 @@ export function GscSettings({ token }: Props) {
                             </div>
 
                             <div className={styles.actions}>
-                                <button
-                                    type="button"
-                                    className="btn btn--primary btn--sm"
-                                    onClick={handleSave}
-                                    disabled={saving}
-                                >
+                                <Button size="sm" onClick={handleSave} disabled={saving}>
                                     {saving ? 'Testing & Saving...' : 'Test & Save'}
-                                </button>
+                                </Button>
                             </div>
                         </div>
                     )}

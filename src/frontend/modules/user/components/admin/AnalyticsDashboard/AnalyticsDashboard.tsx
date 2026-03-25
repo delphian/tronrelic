@@ -121,7 +121,7 @@ interface Props {
  * @param props.token - Admin API token from localStorage
  */
 export function AnalyticsDashboard({ token }: Props) {
-    const [period, setPeriod] = useState<AnalyticsPeriod>('30d');
+    const [period, setPeriod] = useState<AnalyticsPeriod>('24h');
     const [loading, setLoading] = useState(true);
 
     // Data state
