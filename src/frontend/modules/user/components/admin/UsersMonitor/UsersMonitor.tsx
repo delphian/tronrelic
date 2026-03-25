@@ -679,6 +679,7 @@ export function UsersMonitor({ token }: Props) {
                                                 </div>
                                             )}
                                         </div>
+                                    </div>
                                                 </td>
                                             </tr>
                                         )}
