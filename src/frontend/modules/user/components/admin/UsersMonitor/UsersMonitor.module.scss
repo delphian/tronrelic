@@ -214,6 +214,8 @@
 .detail_row td {
     padding: var(--spacing-7);
     background: var(--color-surface-elevated);
+    white-space: normal;
+    overflow-wrap: anywhere;
 }
 
 .user_id {
