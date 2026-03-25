@@ -489,8 +489,37 @@ export function AnalyticsDashboard({ token }: Props) {
                                                                                     )}
                                                                                 </div>
 
-                                                                                {/* Search Keywords (if any) */}
-                                                                                {details.searchKeywords.length > 0 && (
+                                                                                {/* Search Keywords — GSC enriched when available */}
+                                                                                {(details.gscKeywords && details.gscKeywords.length > 0) ? (
+                                                                                    <div className={styles.detail_section}>
+                                                                                        <h4 className={styles.detail_section__title}>
+                                                                                            Search Keywords
+                                                                                            <span className={styles.gsc_badge}>Search Console</span>
+                                                                                        </h4>
+                                                                                        <table className={styles.gsc_table}>
+                                                                                            <thead>
+                                                                                                <tr>
+                                                                                                    <th className={styles.gsc_table__keyword}>Keyword</th>
+                                                                                                    <th className={styles.gsc_table__metric}>Clicks</th>
+                                                                                                    <th className={styles.gsc_table__metric}>Impr.</th>
+                                                                                                    <th className={styles.gsc_table__metric}>CTR</th>
+                                                                                                    <th className={styles.gsc_table__metric}>Pos.</th>
+                                                                                                </tr>
+                                                                                            </thead>
+                                                                                            <tbody>
+                                                                                                {details.gscKeywords.map(kw => (
+                                                                                                    <tr key={kw.keyword}>
+                                                                                                        <td className={styles.gsc_table__keyword}>{kw.keyword}</td>
+                                                                                                        <td className={styles.gsc_table__metric}>{kw.clicks.toLocaleString()}</td>
+                                                                                                        <td className={styles.gsc_table__metric}>{kw.impressions.toLocaleString()}</td>
+                                                                                                        <td className={styles.gsc_table__metric}>{(kw.ctr * 100).toFixed(1)}%</td>
+                                                                                                        <td className={styles.gsc_table__metric}>{kw.position.toFixed(1)}</td>
+                                                                                                    </tr>
+                                                                                                ))}
+                                                                                            </tbody>
+                                                                                        </table>
+                                                                                    </div>
+                                                                                ) : details.searchKeywords.length > 0 ? (
                                                                                     <div className={styles.detail_section}>
                                                                                         <h4 className={styles.detail_section__title}>Search Keywords</h4>
                                                                                         <ul className={styles.detail_list}>
@@ -502,7 +531,7 @@ export function AnalyticsDashboard({ token }: Props) {
                                                                                             ))}
                                                                                         </ul>
                                                                                     </div>
-                                                                                )}
+                                                                                ) : null}
 
                                                                                 {/* UTM Campaigns (if any) */}
                                                                                 {details.utmCampaigns.length > 0 && (

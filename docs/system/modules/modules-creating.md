@@ -82,7 +82,7 @@ export { MyService } from './services/my.service.js';
 
 ### 3. Implement Services, Controllers, and Database Schemas
 
-Create services that handle business logic, controllers that handle HTTP request/response, and database interfaces that define your MongoDB document shapes. Follow standard Express and MongoDB patterns — the pages module source files demonstrate all three:
+Create services that handle business logic, controllers that handle HTTP request/response, and database interfaces that define your MongoDB document shapes. Collection names must follow the `module_{module-id}_{collection}` convention (see [system-database.md](../system-database.md#namespace-isolation) for details). Follow standard Express and MongoDB patterns — the pages module source files demonstrate all three:
 
 - **Service:** `src/backend/src/modules/pages/services/page.service.ts`
 - **Controller:** `src/backend/src/modules/pages/api/pages.controller.ts`

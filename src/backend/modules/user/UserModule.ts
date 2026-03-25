@@ -23,9 +23,10 @@
  */
 
 import type { Express, Router } from 'express';
-import type { ICacheService, IDatabaseService, IMenuService, IModule, IModuleMetadata } from '@/types';
+import type { ICacheService, IDatabaseService, IMenuService, IModule, IModuleMetadata, ISchedulerService } from '@/types';
 import { logger } from '../../lib/logger.js';
 import { UserService } from './services/user.service.js';
+import { GscService } from './services/gsc.service.js';
 import { initGeoIP } from './services/geo.service.js';
 import { UserController } from './api/user.controller.js';
 import { createUserRouter, createAdminUserRouter, createProfileRouter } from './api/user.routes.js';
@@ -58,6 +59,12 @@ export interface IUserModuleDependencies {
      * The module will attach its public and admin routers using IoC pattern.
      */
     app: Express;
+
+    /**
+     * Scheduler service for registering the daily GSC fetch job.
+     * Null when the scheduler is disabled via ENABLE_SCHEDULER=false.
+     */
+    scheduler: ISchedulerService | null;
 }
 
 /**
@@ -98,7 +105,8 @@ export interface IUserModuleDependencies {
  *     database: coreDatabase,
  *     cacheService: cacheService,
  *     menuService: MenuService.getInstance(),
- *     app: app
+ *     app: app,
+ *     scheduler: schedulerModule.getSchedulerService()
  * });
  *
  * await userModule.run();
@@ -122,11 +130,13 @@ export class UserModule implements IModule<IUserModuleDependencies> {
     private cacheService!: ICacheService;
     private menuService!: IMenuService;
     private app!: Express;
+    private scheduler!: ISchedulerService | null;
 
     /**
      * Services created during init() phase.
      */
     private userService!: UserService;
+    private gscService!: GscService;
     private controller!: UserController;
 
     /**
@@ -152,6 +162,7 @@ export class UserModule implements IModule<IUserModuleDependencies> {
         this.cacheService = dependencies.cacheService;
         this.menuService = dependencies.menuService;
         this.app = dependencies.app;
+        this.scheduler = dependencies.scheduler;
 
         // Initialize GeoIP lookup for country detection (non-blocking)
         await initGeoIP();
@@ -169,8 +180,17 @@ export class UserModule implements IModule<IUserModuleDependencies> {
         // Create database indexes
         await this.userService.createIndexes();
 
+        // Initialize GscService singleton with dependencies
+        GscService.setDependencies(
+            this.database,
+            this.cacheService,
+            this.logger
+        );
+        this.gscService = GscService.getInstance();
+        await this.gscService.createIndexes();
+
         // Create controller with singleton service
-        this.controller = new UserController(this.userService, this.logger);
+        this.controller = new UserController(this.userService, this.gscService, this.logger);
 
         this.logger.info('User module initialized');
     }
@@ -224,6 +244,20 @@ export class UserModule implements IModule<IUserModuleDependencies> {
         const adminRouter = this.createAdminRouter();
         this.app.use('/api/admin/users', requireAdmin, adminRouter);
         this.logger.info('Admin users router mounted at /api/admin/users');
+
+        // Register GSC fetch scheduled job (daily at 3 AM).
+        // SchedulerService supports late registration — if the scheduler
+        // has already started, the job schedules immediately.
+        if (this.scheduler) {
+            this.scheduler.register('gsc:fetch', '0 3 * * *', async () => {
+                if (await this.gscService.isConfigured()) {
+                    await this.gscService.fetchAndStore();
+                }
+            });
+            this.logger.info('GSC fetch job registered');
+        } else {
+            this.logger.info('Scheduler disabled — GSC fetch job not registered');
+        }
 
         this.logger.info('User module running');
     }

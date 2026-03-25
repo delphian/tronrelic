@@ -1,0 +1,1 @@
+export { GscSettings } from './GscSettings';

@@ -1,0 +1,179 @@
+/**
+ * GscSettings Styles
+ *
+ * Configuration panel for Google Search Console credentials.
+ * Uses design tokens for all values.
+ */
+
+.container {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-10);
+    max-width: 640px;
+}
+
+.status {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-4);
+    font-size: var(--font-size-sm);
+    color: var(--color-text-muted);
+}
+
+.status_dot {
+    width: var(--spacing-4);
+    height: var(--spacing-4);
+    border-radius: var(--radius-full);
+    flex-shrink: 0;
+}
+
+.status_dot--connected {
+    background: var(--color-success);
+}
+
+.status_dot--disconnected {
+    background: var(--color-text-muted);
+}
+
+.setup_guide {
+    padding: var(--spacing-5) var(--spacing-7);
+    background: color-mix(in srgb, var(--color-primary) 6%, transparent);
+    border-radius: var(--radius-md);
+    border-left: 3px solid var(--color-primary);
+}
+
+.setup_guide__title {
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text);
+    margin: 0 0 var(--spacing-4) 0;
+}
+
+.setup_guide__steps {
+    margin: 0;
+    padding-left: var(--spacing-7);
+    font-size: var(--font-size-sm);
+    color: var(--color-text-muted);
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-3);
+}
+
+.setup_guide__steps a {
+    color: var(--color-primary);
+    text-decoration: none;
+}
+
+.setup_guide__steps a:hover {
+    text-decoration: underline;
+}
+
+.setup_guide__steps code {
+    font-size: var(--font-size-xs);
+    background: color-mix(in srgb, var(--color-text) 8%, transparent);
+    padding: var(--spacing-1) var(--spacing-2);
+    border-radius: var(--radius-sm);
+}
+
+.form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-7);
+}
+
+.field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-3);
+}
+
+.label {
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text);
+}
+
+.hint {
+    font-size: var(--font-size-xs);
+    color: var(--color-text-muted);
+}
+
+.hint a {
+    color: var(--color-primary);
+    text-decoration: none;
+}
+
+.hint a:hover {
+    text-decoration: underline;
+}
+
+.textarea {
+    width: 100%;
+    min-height: 120px;
+    padding: var(--spacing-5);
+    font-family: monospace;
+    font-size: var(--font-size-sm);
+    color: var(--color-text);
+    background: var(--color-surface);
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-md);
+    resize: vertical;
+}
+
+.textarea:focus {
+    outline: 2px solid var(--color-primary);
+    outline-offset: -1px;
+}
+
+.input {
+    width: 100%;
+    padding: var(--spacing-4) var(--spacing-5);
+    font-size: var(--font-size-sm);
+    color: var(--color-text);
+    background: var(--color-surface);
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-md);
+}
+
+.input:focus {
+    outline: 2px solid var(--color-primary);
+    outline-offset: -1px;
+}
+
+.actions {
+    display: flex;
+    gap: var(--spacing-5);
+    flex-wrap: wrap;
+}
+
+.error {
+    font-size: var(--font-size-sm);
+    color: var(--color-danger);
+    padding: var(--spacing-4) var(--spacing-5);
+    background: color-mix(in srgb, var(--color-danger) 10%, transparent);
+    border-radius: var(--radius-md);
+}
+
+.success {
+    font-size: var(--font-size-sm);
+    color: var(--color-success);
+    padding: var(--spacing-4) var(--spacing-5);
+    background: color-mix(in srgb, var(--color-success) 10%, transparent);
+    border-radius: var(--radius-md);
+}
+
+.info_row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    font-size: var(--font-size-sm);
+}
+
+.info_label {
+    color: var(--color-text-muted);
+}
+
+.info_value {
+    color: var(--color-text);
+    font-weight: var(--font-weight-medium);
+}

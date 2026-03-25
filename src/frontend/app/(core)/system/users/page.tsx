@@ -4,11 +4,11 @@ import { useState } from 'react';
 import { useSystemAuth } from '../../../../features/system';
 import { Page } from '../../../../components/layout';
 import { Card } from '../../../../components/ui/Card';
-import { UsersMonitor, AnalyticsDashboard, ReferralOverview } from '../../../../modules/user';
+import { UsersMonitor, AnalyticsDashboard, ReferralOverview, GscSettings } from '../../../../modules/user';
 import styles from './page.module.scss';
 
 /** Tab identifiers for the users admin page. */
-type UsersTab = 'users' | 'analytics' | 'referrals';
+type UsersTab = 'users' | 'analytics' | 'referrals' | 'settings';
 
 /**
  * System users administration page with tabbed interface.
@@ -64,12 +64,20 @@ export default function SystemUsersPage() {
                 >
                     Referrals
                 </button>
+                <button
+                    type="button"
+                    className={activeTab === 'settings' ? styles.tab__active : styles.tab}
+                    onClick={() => setActiveTab('settings')}
+                >
+                    Settings
+                </button>
             </div>
 
             <div className={styles.content}>
                 {activeTab === 'users' && <UsersMonitor token={token} />}
                 {activeTab === 'analytics' && <AnalyticsDashboard token={token} />}
                 {activeTab === 'referrals' && <ReferralOverview token={token} />}
+                {activeTab === 'settings' && <GscSettings token={token} />}
             </div>
         </div>
     );
