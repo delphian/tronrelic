@@ -453,40 +453,54 @@ export function UsersMonitor({ token }: Props) {
                 </div>
             ) : (
                 <>
-                    <div className={styles.user_list}>
-                        {users.map((user) => (
-                            <div
-                                key={user.id}
-                                className={`${styles.user_card} ${expandedUserId === user.id ? styles.expanded : ''}`}
-                            >
-                                <div
-                                    className={styles.user_header}
-                                    onClick={() => toggleUserExpanded(user.id)}
-                                >
-                                    <div className={styles.user_info}>
-                                        <span className={styles.user_id}>{user.id}</span>
-                                        <span className={styles.user_meta}>
-                                            {user.wallets.length > 0 && (
-                                                <span className={styles.wallet_badge}>
-                                                    {user.wallets.length} wallet{user.wallets.length !== 1 ? 's' : ''}
-                                                </span>
-                                            )}
-                                            <span className={styles.page_views}>
-                                                {user.activity.pageViews} views
-                                            </span>
-                                        </span>
-                                    </div>
-                                    <div className={styles.user_dates}>
-                                        <span className={styles.last_seen}>
-                                            Last seen: <ClientTime date={user.activity.lastSeen} format="relative" />
-                                        </span>
-                                        <span className={styles.created_at}>
-                                            Created: <ClientTime date={user.createdAt} format="short" />
-                                        </span>
-                                    </div>
-                                </div>
-
-                                {expandedUserId === user.id && (
+                    <div className={styles.table_wrapper}>
+                        <table className={styles.user_table}>
+                            <thead>
+                                <tr>
+                                    <th>User ID</th>
+                                    <th className={styles.col_number}>Wallets</th>
+                                    <th className={styles.col_number}>Views</th>
+                                    <th className={styles.col_number}>Sessions</th>
+                                    <th>Last Seen</th>
+                                    <th>Created</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {users.map((user) => (
+                                    <React.Fragment key={user.id}>
+                                        <tr
+                                            className={`${styles.user_row} ${expandedUserId === user.id ? styles.user_row__expanded : ''}`}
+                                            onClick={() => toggleUserExpanded(user.id)}
+                                            role="button"
+                                            tabIndex={0}
+                                            onKeyDown={(e) => {
+                                                if (e.key === 'Enter' || e.key === ' ') {
+                                                    e.preventDefault();
+                                                    toggleUserExpanded(user.id);
+                                                }
+                                            }}
+                                            aria-expanded={expandedUserId === user.id}
+                                        >
+                                            <td>
+                                                <span className={styles.user_id}>{user.id}</span>
+                                            </td>
+                                            <td className={styles.col_number}>
+                                                {user.wallets.length > 0 ? (
+                                                    <span className={styles.wallet_badge}>
+                                                        {user.wallets.length}
+                                                    </span>
+                                                ) : (
+                                                    <span className={styles.muted_value}>0</span>
+                                                )}
+                                            </td>
+                                            <td className={styles.col_number}>{user.activity.pageViews.toLocaleString()}</td>
+                                            <td className={styles.col_number}>{user.activity.sessionsCount.toLocaleString()}</td>
+                                            <td><ClientTime date={user.activity.lastSeen} format="relative" /></td>
+                                            <td><ClientTime date={user.createdAt} format="short" /></td>
+                                        </tr>
+                                        {expandedUserId === user.id && (
+                                            <tr className={styles.detail_row}>
+                                                <td colSpan={6}>
                                     <div className={styles.user_details}>
                                         <div className={styles.detail_section}>
                                             <h4>Wallets</h4>
@@ -666,9 +680,13 @@ export function UsersMonitor({ token }: Props) {
                                             )}
                                         </div>
                                     </div>
-                                )}
-                            </div>
-                        ))}
+                                                </td>
+                                            </tr>
+                                        )}
+                                    </React.Fragment>
+                                ))}
+                            </tbody>
+                        </table>
                     </div>
 
                     <div className={styles.pagination}>

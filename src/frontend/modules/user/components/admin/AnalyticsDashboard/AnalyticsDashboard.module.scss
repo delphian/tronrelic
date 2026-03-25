@@ -62,6 +62,8 @@
 .metric_card {
     text-align: center;
     padding: var(--spacing-7);
+    background: color-mix(in srgb, var(--color-surface-raised) 50%, transparent);
+    border-radius: var(--radius-md);
 }
 
 .metric_card__value {
@@ -243,6 +245,15 @@
     background: color-mix(in srgb, var(--color-primary) 5%, transparent);
 }
 
+.table__row_expanded {
+    background: color-mix(in srgb, var(--color-primary) 8%, transparent);
+    font-weight: var(--font-weight-medium);
+}
+
+.table__row_expanded td {
+    border-bottom: none;
+}
+
 .table__row_clickable:focus-visible {
     outline: var(--border-width-medium) solid var(--color-primary);
     outline-offset: calc(-1 * var(--border-width-medium));
@@ -250,12 +261,13 @@
 
 /* Detail row expanded below a traffic source */
 .detail_row {
-    background: color-mix(in srgb, var(--color-surface-raised) 50%, transparent);
+    background: color-mix(in srgb, var(--color-primary) 4%, transparent);
 }
 
 .detail_row__cell {
     padding: var(--spacing-7) var(--spacing-7) var(--spacing-7) var(--spacing-10);
-    border-bottom: var(--border-width-thin) solid var(--color-border);
+    border-top: var(--border-width-thin) solid color-mix(in srgb, var(--color-primary) 20%, transparent);
+    border-bottom: var(--border-width-medium) solid color-mix(in srgb, var(--color-primary) 20%, transparent);
 }
 
 .detail_loading {
