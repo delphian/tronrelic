@@ -271,31 +271,31 @@ export function AnalyticsDashboard({ token }: Props) {
                 <>
                     {/* Engagement Summary Cards */}
                     {engagement && (
-                        <section>
+                        <section className="surface surface--padding-md">
                             <h3 className={styles.section_title}>
                                 <TrendingUp size={16} className={styles.section_title__icon} />
                                 Engagement Overview
                             </h3>
                             <div className={styles.metrics_grid}>
-                                <div className={`surface ${styles.metric_card}`}>
+                                <div className={styles.metric_card}>
                                     <div className={styles.metric_card__value}>
                                         {engagement.totalUsers.toLocaleString()}
                                     </div>
                                     <div className={styles.metric_card__label}>Active Visitors</div>
                                 </div>
-                                <div className={`surface ${styles.metric_card}`}>
+                                <div className={styles.metric_card}>
                                     <div className={styles.metric_card__value}>
                                         {formatDuration(engagement.avgSessionDuration)}
                                     </div>
                                     <div className={styles.metric_card__label}>Avg Session Duration</div>
                                 </div>
-                                <div className={`surface ${styles.metric_card}`}>
+                                <div className={styles.metric_card}>
                                     <div className={styles.metric_card__value}>
                                         {engagement.avgPagesPerSession}
                                     </div>
                                     <div className={styles.metric_card__label}>Pages / Session</div>
                                 </div>
-                                <div className={`surface ${styles.metric_card}`}>
+                                <div className={styles.metric_card}>
                                     <div className={styles.metric_card__value}>
                                         {engagement.bounceRate}%
                                     </div>
@@ -307,28 +307,26 @@ export function AnalyticsDashboard({ token }: Props) {
 
                     {/* Conversion Funnel */}
                     {funnel.length > 0 && (
-                        <section>
+                        <section className="surface surface--padding-md">
                             <h3 className={styles.section_title}>
                                 <Target size={16} className={styles.section_title__icon} />
                                 Conversion Funnel
                             </h3>
-                            <div className="surface surface--padding-md">
-                                <div className={styles.funnel}>
-                                    {funnel.map(stage => (
-                                        <div key={stage.stage} className={styles.funnel_stage}>
-                                            <span className={styles.funnel_stage__label}>{stage.stage}</span>
-                                            <div className={styles.funnel_stage__bar_wrapper}>
-                                                <div
-                                                    className={styles.funnel_stage__bar}
-                                                    style={{ width: `${stage.percentage}%` }}
-                                                />
-                                            </div>
-                                            <span className={styles.funnel_stage__stats}>
-                                                {stage.count.toLocaleString()} ({stage.percentage}%)
-                                            </span>
+                            <div className={styles.funnel}>
+                                {funnel.map(stage => (
+                                    <div key={stage.stage} className={styles.funnel_stage}>
+                                        <span className={styles.funnel_stage__label}>{stage.stage}</span>
+                                        <div className={styles.funnel_stage__bar_wrapper}>
+                                            <div
+                                                className={styles.funnel_stage__bar}
+                                                style={{ width: `${stage.percentage}%` }}
+                                            />
                                         </div>
-                                    ))}
-                                </div>
+                                        <span className={styles.funnel_stage__stats}>
+                                            {stage.count.toLocaleString()} ({stage.percentage}%)
+                                        </span>
+                                    </div>
+                                ))}
                             </div>
                         </section>
                     )}
@@ -336,7 +334,7 @@ export function AnalyticsDashboard({ token }: Props) {
                     {/* Traffic Sources + Top Landing Pages side by side */}
                     <div className={styles.split_grid}>
                         {/* Traffic Sources */}
-                        <section>
+                        <section className="surface surface--padding-md">
                             <h3 className={styles.section_title}>
                                 <Globe size={16} className={styles.section_title__icon} />
                                 Traffic Sources
@@ -346,7 +344,7 @@ export function AnalyticsDashboard({ token }: Props) {
                                     </span>
                                 )}
                             </h3>
-                            <div className="surface surface--padding-sm">
+                            <div>
                                 {trafficSources.length === 0 ? (
                                     <div className={styles.empty_state}>No traffic data for this period</div>
                                 ) : (
@@ -370,7 +368,7 @@ export function AnalyticsDashboard({ token }: Props) {
                                                     return (
                                                         <React.Fragment key={s.source}>
                                                             <tr
-                                                                className={styles.table__row_clickable}
+                                                                className={`${styles.table__row_clickable} ${isExpanded ? styles.table__row_expanded : ''}`}
                                                                 onClick={() => toggleSourceDetails(s.source)}
                                                                 role="button"
                                                                 tabIndex={0}
@@ -568,12 +566,12 @@ export function AnalyticsDashboard({ token }: Props) {
                         </section>
 
                         {/* Top Landing Pages */}
-                        <section>
+                        <section className="surface surface--padding-md">
                             <h3 className={styles.section_title}>
                                 <MousePointerClick size={16} className={styles.section_title__icon} />
                                 Top Landing Pages
                             </h3>
-                            <div className="surface surface--padding-sm">
+                            <div>
                                 {landingPages.length === 0 ? (
                                     <div className={styles.empty_state}>No landing page data for this period</div>
                                 ) : (
@@ -614,12 +612,12 @@ export function AnalyticsDashboard({ token }: Props) {
                     {/* Geography + Devices side by side */}
                     <div className={styles.split_grid}>
                         {/* Geographic Distribution */}
-                        <section>
+                        <section className="surface surface--padding-md">
                             <h3 className={styles.section_title}>
                                 <Globe size={16} className={styles.section_title__icon} />
                                 Geographic Distribution
                             </h3>
-                            <div className="surface surface--padding-sm">
+                            <div>
                                 {geoData.length === 0 ? (
                                     <div className={styles.empty_state}>No geographic data for this period</div>
                                 ) : (
@@ -655,12 +653,12 @@ export function AnalyticsDashboard({ token }: Props) {
                         </section>
 
                         {/* Device Breakdown */}
-                        <section>
+                        <section className="surface surface--padding-md">
                             <h3 className={styles.section_title}>
                                 <Smartphone size={16} className={styles.section_title__icon} />
                                 Device Breakdown
                             </h3>
-                            <div className="surface surface--padding-md">
+                            <div>
                                 {devices.length === 0 ? (
                                     <div className={styles.empty_state}>No device data for this period</div>
                                 ) : (
@@ -687,12 +685,12 @@ export function AnalyticsDashboard({ token }: Props) {
 
                     {/* Campaign Performance */}
                     {campaigns.length > 0 && (
-                        <section>
+                        <section className="surface surface--padding-md">
                             <h3 className={styles.section_title}>
                                 <BarChart3 size={16} className={styles.section_title__icon} />
                                 Campaign Performance (UTM)
                             </h3>
-                            <div className="surface surface--padding-sm">
+                            <div>
                                 <div className={styles.table_wrapper}>
                                     <table className={styles.table}>
                                         <thead>
@@ -727,19 +725,17 @@ export function AnalyticsDashboard({ token }: Props) {
 
                     {/* Retention Chart: New vs Returning */}
                     {retention.length > 0 && (
-                        <section>
+                        <section className="surface surface--padding-md">
                             <h3 className={styles.section_title}>
                                 <Users size={16} className={styles.section_title__icon} />
                                 New vs Returning Visitors
                             </h3>
-                            <div className="surface surface--padding-md">
-                                <LineChart
-                                    series={retentionSeries}
-                                    height={280}
-                                    yAxisFormatter={(v) => v.toLocaleString()}
-                                    emptyLabel="No retention data for this period"
-                                />
-                            </div>
+                            <LineChart
+                                series={retentionSeries}
+                                height={280}
+                                yAxisFormatter={(v) => v.toLocaleString()}
+                                emptyLabel="No retention data for this period"
+                            />
                         </section>
                     )}
                 </>

@@ -226,7 +226,16 @@ export function GscSettings({ token }: Props) {
                                         <a href="https://console.cloud.google.com/iam-admin/serviceaccounts" target="_blank" rel="noopener noreferrer">
                                             Google Cloud project
                                         </a>{' '}
-                                        and download the JSON key file.
+                                        and download the JSON key file. No special
+                                        GCP IAM roles are needed.
+                                    </li>
+                                    <li>
+                                        <strong>Enable the API</strong> &mdash; in the same GCP project,
+                                        go to{' '}
+                                        <a href="https://console.cloud.google.com/apis/library/searchconsole.googleapis.com" target="_blank" rel="noopener noreferrer">
+                                            APIs &amp; Services
+                                        </a>{' '}
+                                        and enable the <em>Google Search Console API</em>.
                                     </li>
                                     <li>
                                         <strong>Grant access</strong> &mdash; back in Search Console,
@@ -238,6 +247,10 @@ export function GscSettings({ token }: Props) {
                                     <li>
                                         <strong>Connect</strong> &mdash; paste the JSON key and your
                                         site URL below, then hit &ldquo;Test &amp; Save&rdquo;.
+                                        For domain properties use{' '}
+                                        <code>sc-domain:example.com</code> format;
+                                        for URL-prefix properties use{' '}
+                                        <code>https://example.com</code>.
                                     </li>
                                 </ol>
                             </div>
@@ -252,7 +265,7 @@ export function GscSettings({ token }: Props) {
                                     className={styles.input}
                                     value={siteUrl}
                                     onChange={e => setSiteUrl(e.target.value)}
-                                    placeholder="https://tronrelic.com"
+                                    placeholder="sc-domain:example.com or https://example.com"
                                 />
                                 <span className={styles.hint}>
                                     Must match exactly how your property appears in{' '}
