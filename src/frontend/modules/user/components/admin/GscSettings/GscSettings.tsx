@@ -191,14 +191,14 @@ export function GscSettings({ token }: Props) {
 
                     {status?.configured ? (
                         <div className={styles.actions}>
-                            <Button size="sm" onClick={handleRefresh} disabled={refreshing}>
-                                {refreshing ? 'Fetching...' : 'Refresh Now'}
+                            <Button type="button" size="sm" onClick={handleRefresh} loading={refreshing}>
+                                Refresh Now
                             </Button>
-                            <Button size="sm" variant="danger" onClick={handleRemove}>
+                            <Button type="button" size="sm" variant="danger" onClick={handleRemove}>
                                 {confirmingRemove ? 'Confirm Remove' : 'Remove Credentials'}
                             </Button>
                             {confirmingRemove && (
-                                <Button size="sm" variant="ghost" onClick={() => setConfirmingRemove(false)}>
+                                <Button type="button" size="sm" variant="ghost" onClick={() => setConfirmingRemove(false)}>
                                     Cancel
                                 </Button>
                             )}
@@ -276,8 +276,8 @@ export function GscSettings({ token }: Props) {
                             </div>
 
                             <div className={styles.actions}>
-                                <Button size="sm" onClick={handleSave} disabled={saving}>
-                                    {saving ? 'Testing & Saving...' : 'Test & Save'}
+                                <Button type="button" size="sm" onClick={handleSave} loading={saving}>
+                                    Test & Save
                                 </Button>
                             </div>
                         </div>
