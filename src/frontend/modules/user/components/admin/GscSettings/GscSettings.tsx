@@ -9,6 +9,7 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
+import { isAxiosError } from 'axios';
 import { Button } from '../../../../../components/ui/Button';
 import { Card } from '../../../../../components/ui/Card';
 import { ClientTime } from '../../../../../components/ui/ClientTime';
@@ -90,8 +91,13 @@ export function GscSettings({ token }: Props) {
             setServiceAccountJson('');
             setSiteUrl('');
             setSuccess('Credentials saved and verified successfully');
-        } catch (err) {
-            const message = err instanceof Error ? err.message : 'Failed to save credentials';
+        } catch (err: unknown) {
+            let message = 'Failed to save credentials';
+            if (isAxiosError<{ message?: string; error?: string }>(err)) {
+                message = err.response?.data?.message || err.response?.data?.error || message;
+            } else if (err instanceof Error) {
+                message = err.message;
+            }
             setError(message);
         } finally {
             setSaving(false);
