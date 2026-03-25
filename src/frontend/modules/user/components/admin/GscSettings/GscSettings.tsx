@@ -90,8 +90,9 @@ export function GscSettings({ token }: Props) {
             setServiceAccountJson('');
             setSiteUrl('');
             setSuccess('Credentials saved and verified successfully');
-        } catch (err) {
-            const message = err instanceof Error ? err.message : 'Failed to save credentials';
+        } catch (err: unknown) {
+            const axiosData = (err as { response?: { data?: { message?: string; error?: string } } })?.response?.data;
+            const message = axiosData?.message || axiosData?.error || (err instanceof Error ? err.message : 'Failed to save credentials');
             setError(message);
         } finally {
             setSaving(false);
