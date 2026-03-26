@@ -762,7 +762,7 @@ describe('UserService', () => {
                 // The mock aggregate doesn't support complex $group with $cond/$filter,
                 // so this test verifies the method handles empty data gracefully and
                 // returns the correct response shape.
-                const overview = await userService.getReferralOverview(30 * 24);
+                const overview = await userService.getReferralOverview({ since: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) });
 
                 expect(overview).toHaveProperty('totalReferrals');
                 expect(overview).toHaveProperty('totalConverted');
@@ -796,7 +796,7 @@ describe('UserService', () => {
                     }
                 );
 
-                const overview = await userService.getReferralOverview(30 * 24);
+                const overview = await userService.getReferralOverview({ since: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) });
 
                 // Recent referrals use find() (not aggregate), so the mock handles it
                 expect(overview.recentReferrals.length).toBe(1);
@@ -814,7 +814,7 @@ describe('UserService', () => {
                     { $set: { referral: { code: 'ee556677', referredBy: null, referredAt: null } } }
                 );
 
-                const overview = await userService.getReferralOverview(30 * 24);
+                const overview = await userService.getReferralOverview({ since: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) });
 
                 // countDocuments with $ne + $exists is handled by mock
                 expect(overview.usersWithCodes).toBeGreaterThanOrEqual(1);

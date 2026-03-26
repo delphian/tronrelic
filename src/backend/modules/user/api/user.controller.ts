@@ -1,7 +1,7 @@
 import type { Request, Response, NextFunction } from 'express';
 import { USER_FILTERS } from '@/types';
 import type { ISystemLogService, UserFilterType } from '@/types';
-import type { UserService, IUserStats } from '../services/index.js';
+import type { UserService, IUserStats, IDateRange } from '../services/index.js';
 import type { GscService } from '../services/index.js';
 import type { IUser, IUserPreferences, IUtmParams } from '../database/index.js';
 import { getClientIP, isInternalReferrer } from '../services/index.js';
@@ -797,16 +797,16 @@ export class UserController {
      */
     async getVisitorOrigins(req: Request, res: Response): Promise<void> {
         try {
-            const { period, limit, skip } = req.query;
+            const { limit, skip } = req.query;
 
-            const periodHours = this.parsePeriodHours(period as string, '24h');
+            const range = this.parseDateRange(req.query, '24h');
 
             const parsedLimit = limit ? parseInt(limit as string, 10) : 50;
             const parsedSkip = skip ? parseInt(skip as string, 10) : 0;
             const limitNum = Number.isNaN(parsedLimit) ? 50 : Math.min(Math.max(1, parsedLimit), 100);
             const skipNum = Number.isNaN(parsedSkip) ? 0 : Math.max(0, parsedSkip);
 
-            const result = await this.userService.getVisitorOrigins(periodHours, limitNum, skipNum);
+            const result = await this.userService.getVisitorOrigins(range, limitNum, skipNum);
 
             res.json(result);
         } catch (error) {
@@ -834,16 +834,16 @@ export class UserController {
      */
     async getNewUsers(req: Request, res: Response): Promise<void> {
         try {
-            const { period, limit, skip } = req.query;
+            const { limit, skip } = req.query;
 
-            const periodHours = this.parsePeriodHours(period as string, '24h');
+            const range = this.parseDateRange(req.query, '24h');
 
             const parsedLimit = limit ? parseInt(limit as string, 10) : 50;
             const parsedSkip = skip ? parseInt(skip as string, 10) : 0;
             const limitNum = Number.isNaN(parsedLimit) ? 50 : Math.min(Math.max(1, parsedLimit), 100);
             const skipNum = Number.isNaN(parsedSkip) ? 0 : Math.max(0, parsedSkip);
 
-            const result = await this.userService.getNewUsers(periodHours, limitNum, skipNum);
+            const result = await this.userService.getNewUsers(range, limitNum, skipNum);
 
             res.json(result);
         } catch (error) {
@@ -860,24 +860,37 @@ export class UserController {
     // ============================================================================
 
     /**
-     * Parse period query parameter into hours.
+     * Parse query parameters into a date range for analytics queries.
      *
-     * Centralizes period parsing for all analytics endpoints. The default
-     * period varies by endpoint: aggregate dashboards default to '30d',
-     * while per-visitor tables default to '24h' for recency.
+     * Supports two modes: preset periods ('24h', '7d', '30d', '90d') computed
+     * as a rolling window from now, or custom date ranges via startDate/endDate
+     * ISO strings aligned to localized midnight boundaries.
      *
-     * @param period - Period string (e.g., '24h', '7d', '30d', '90d')
+     * @param query - Express query parameters
      * @param defaultPeriod - Default period when none provided (default: '30d')
-     * @returns Number of hours
+     * @returns Date range with since and optional until
      */
-    private parsePeriodHours(period: string | undefined, defaultPeriod: string = '30d'): number {
+    private parseDateRange(query: Record<string, any>, defaultPeriod: string = '30d'): IDateRange {
+        const { startDate, endDate, period } = query;
+
+        if (startDate && endDate) {
+            const since = new Date(startDate as string);
+            const until = new Date(endDate as string);
+            if (!isNaN(since.getTime()) && !isNaN(until.getTime())) {
+                return { since, until };
+            }
+        }
+
         const map: Record<string, number> = {
             '24h': 24,
             '7d': 7 * 24,
             '30d': 30 * 24,
             '90d': 90 * 24
         };
-        return map[period ?? defaultPeriod] ?? map[defaultPeriod] ?? 30 * 24;
+        const hours = map[(period as string) ?? defaultPeriod] ?? map[defaultPeriod] ?? 30 * 24;
+        const since = new Date();
+        since.setTime(since.getTime() - (hours * 60 * 60 * 1000));
+        return { since };
     }
 
     /**
@@ -933,8 +946,8 @@ export class UserController {
      */
     async getTrafficSources(req: Request, res: Response): Promise<void> {
         await this.handleAnalyticsRequest(res, () => {
-            const periodHours = this.parsePeriodHours(req.query.period as string);
-            return this.userService.getTrafficSources(periodHours);
+            const range = this.parseDateRange(req.query);
+            return this.userService.getTrafficSources(range);
         }, 'Failed to get traffic sources');
     }
 
@@ -956,8 +969,8 @@ export class UserController {
             return;
         }
         await this.handleAnalyticsRequest(res, () => {
-            const periodHours = this.parsePeriodHours(req.query.period as string);
-            return this.userService.getTrafficSourceDetails(source, periodHours);
+            const range = this.parseDateRange(req.query);
+            return this.userService.getTrafficSourceDetails(source, range);
         }, 'Failed to get traffic source details');
     }
 
@@ -974,9 +987,9 @@ export class UserController {
      */
     async getTopLandingPages(req: Request, res: Response): Promise<void> {
         await this.handleAnalyticsRequest(res, () => {
-            const periodHours = this.parsePeriodHours(req.query.period as string);
+            const range = this.parseDateRange(req.query);
             const limit = this.parseLimit(req.query.limit as string, 20, 50);
-            return this.userService.getTopLandingPages(periodHours, limit);
+            return this.userService.getTopLandingPages(range, limit);
         }, 'Failed to get top landing pages');
     }
 
@@ -993,9 +1006,9 @@ export class UserController {
      */
     async getGeoDistribution(req: Request, res: Response): Promise<void> {
         await this.handleAnalyticsRequest(res, () => {
-            const periodHours = this.parsePeriodHours(req.query.period as string);
+            const range = this.parseDateRange(req.query);
             const limit = this.parseLimit(req.query.limit as string, 30, 100);
-            return this.userService.getGeoDistribution(periodHours, limit);
+            return this.userService.getGeoDistribution(range, limit);
         }, 'Failed to get geo distribution');
     }
 
@@ -1011,8 +1024,8 @@ export class UserController {
      */
     async getDeviceBreakdown(req: Request, res: Response): Promise<void> {
         await this.handleAnalyticsRequest(res, () => {
-            const periodHours = this.parsePeriodHours(req.query.period as string);
-            return this.userService.getDeviceBreakdown(periodHours);
+            const range = this.parseDateRange(req.query);
+            return this.userService.getDeviceBreakdown(range);
         }, 'Failed to get device breakdown');
     }
 
@@ -1029,9 +1042,9 @@ export class UserController {
      */
     async getCampaignPerformance(req: Request, res: Response): Promise<void> {
         await this.handleAnalyticsRequest(res, () => {
-            const periodHours = this.parsePeriodHours(req.query.period as string);
+            const range = this.parseDateRange(req.query);
             const limit = this.parseLimit(req.query.limit as string, 20, 50);
-            return this.userService.getCampaignPerformance(periodHours, limit);
+            return this.userService.getCampaignPerformance(range, limit);
         }, 'Failed to get campaign performance');
     }
 
@@ -1047,8 +1060,8 @@ export class UserController {
      */
     async getEngagementMetrics(req: Request, res: Response): Promise<void> {
         await this.handleAnalyticsRequest(res, () => {
-            const periodHours = this.parsePeriodHours(req.query.period as string);
-            return this.userService.getEngagementMetrics(periodHours);
+            const range = this.parseDateRange(req.query);
+            return this.userService.getEngagementMetrics(range);
         }, 'Failed to get engagement metrics');
     }
 
@@ -1064,8 +1077,8 @@ export class UserController {
      */
     async getConversionFunnel(req: Request, res: Response): Promise<void> {
         await this.handleAnalyticsRequest(res, () => {
-            const periodHours = this.parsePeriodHours(req.query.period as string);
-            return this.userService.getConversionFunnel(periodHours);
+            const range = this.parseDateRange(req.query);
+            return this.userService.getConversionFunnel(range);
         }, 'Failed to get conversion funnel');
     }
 
@@ -1081,8 +1094,8 @@ export class UserController {
      */
     async getRetention(req: Request, res: Response): Promise<void> {
         await this.handleAnalyticsRequest(res, () => {
-            const periodHours = this.parsePeriodHours(req.query.period as string);
-            return this.userService.getRetention(periodHours);
+            const range = this.parseDateRange(req.query);
+            return this.userService.getRetention(range);
         }, 'Failed to get retention data');
     }
 
@@ -1099,9 +1112,9 @@ export class UserController {
      */
     async getReferralOverview(req: Request, res: Response): Promise<void> {
         await this.handleAnalyticsRequest(res, () => {
-            const periodHours = this.parsePeriodHours(req.query.period as string);
+            const range = this.parseDateRange(req.query);
             const limit = this.parseLimit(req.query.limit as string, 15, 50);
-            return this.userService.getReferralOverview(periodHours, limit);
+            return this.userService.getReferralOverview(range, limit);
         }, 'Failed to get referral overview');
     }
 

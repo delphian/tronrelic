@@ -57,6 +57,7 @@ export type {
     IReferralStats,
     // Aggregate analytics types
     AnalyticsPeriod,
+    ICustomDateRange,
     ITrafficSource,
     ITrafficSourceDetails,
     ILandingPage,

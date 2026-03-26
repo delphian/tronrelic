@@ -26,6 +26,20 @@ import { SignatureService } from '../../auth/signature.service.js';
 import { GscService } from './gsc.service.js';
 
 /**
+ * Date range for analytics queries.
+ *
+ * Preset periods (24h, 7d, etc.) produce a range with only `since` set,
+ * meaning "from since to now". Custom ranges set both `since` and `until`
+ * to bound the query window at both ends.
+ */
+export interface IDateRange {
+    /** Start of the query window (inclusive). */
+    since: Date;
+    /** End of the query window (inclusive). When omitted, queries run to now. */
+    until?: Date;
+}
+
+/**
  * User statistics for admin dashboard.
  */
 export interface IUserStats {
@@ -1875,20 +1889,17 @@ export class UserService {
      * from their first-ever session. Falls back to oldest available session
      * for users created before the origin field was introduced.
      *
-     * @param periodHours - Lookback period in hours
+     * @param range - Date range for the query window
      * @param limit - Maximum results to return
      * @param skip - Number of results to skip for pagination
      * @returns Paginated list of visitor origins with total count
      */
     async getVisitorOrigins(
-        periodHours: number,
+        range: IDateRange,
         limit: number = 50,
         skip: number = 0
     ): Promise<{ visitors: IVisitorOrigin[]; total: number }> {
-        const since = new Date();
-        since.setTime(since.getTime() - (periodHours * 60 * 60 * 1000));
-
-        const query = { 'activity.lastSeen': { $gte: since } };
+        const query = this.buildDateFilter(range, 'activity.lastSeen');
 
         const [total, users] = await Promise.all([
             this.collection.countDocuments(query),
@@ -1930,20 +1941,17 @@ export class UserService {
      * by firstSeen descending so the most recent arrivals appear first.
      * This differs from getVisitorOrigins which filters by lastSeen (recent activity).
      *
-     * @param periodHours - How far back to look for new users
+     * @param range - Date range for the query window
      * @param limit - Maximum number of results to return
      * @param skip - Number of results to skip for pagination
      * @returns Paginated list of new user origins with total count
      */
     async getNewUsers(
-        periodHours: number,
+        range: IDateRange,
         limit: number = 50,
         skip: number = 0
     ): Promise<{ visitors: IVisitorOrigin[]; total: number }> {
-        const since = new Date();
-        since.setTime(since.getTime() - (periodHours * 60 * 60 * 1000));
-
-        const query = { 'activity.firstSeen': { $gte: since } };
+        const query = this.buildDateFilter(range, 'activity.firstSeen');
 
         const [total, users] = await Promise.all([
             this.collection.countDocuments(query),
@@ -1981,18 +1989,21 @@ export class UserService {
     // ==================== Aggregate Analytics ====================
 
     /**
-     * Build a date filter for analytics queries based on period string.
+     * Build a MongoDB date filter from a date range.
      *
-     * Uses activity.lastSeen to identify users active within the period,
-     * which aligns with "who visited during this window" semantics.
+     * Returns `{ $gte: since }` for open-ended ranges (preset periods)
+     * and `{ $gte: since, $lte: until }` for bounded ranges (custom dates).
      *
-     * @param periodHours - Lookback period in hours
-     * @returns MongoDB query filter
+     * @param range - Date range with required since and optional until
+     * @param field - MongoDB field path to filter on
+     * @returns MongoDB filter object for the specified field
      */
-    private buildPeriodFilter(periodHours: number): Record<string, any> {
-        const since = new Date();
-        since.setTime(since.getTime() - (periodHours * 60 * 60 * 1000));
-        return { 'activity.lastSeen': { $gte: since } };
+    private buildDateFilter(range: IDateRange, field: string): Record<string, any> {
+        const condition: Record<string, Date> = { $gte: range.since };
+        if (range.until) {
+            condition.$lte = range.until;
+        }
+        return { [field]: condition };
     }
 
     /**
@@ -2030,20 +2041,17 @@ export class UserService {
      * categories (direct, organic, social, or raw domain). Returns counts and
      * percentages for each source.
      *
-     * @param periodHours - Lookback period in hours
+     * @param range - Date range for the query window
      * @returns Traffic source breakdown with counts and percentages
      */
-    async getTrafficSources(periodHours: number): Promise<{
+    async getTrafficSources(range: IDateRange): Promise<{
         sources: Array<{ source: string; category: string; count: number; percentage: number }>;
         total: number;
     }> {
-        const since = new Date();
-        since.setTime(since.getTime() - (periodHours * 60 * 60 * 1000));
-
         // Group by referrer domain in MongoDB, then classify small result set in JS.
         // This avoids loading all user documents into memory.
         const results = await this.collection.aggregate<{ _id: string | null; count: number }>([
-            { $match: { 'activity.lastSeen': { $gte: since } } },
+            { $match: this.buildDateFilter(range, 'activity.lastSeen') },
             {
                 $project: {
                     domain: {
@@ -2082,10 +2090,10 @@ export class UserService {
      * referrer matches the given source domain.
      *
      * @param source - Referrer domain to drill into (use 'direct' for null referrer)
-     * @param periodHours - Lookback period in hours
+     * @param range - Date range for the query window
      * @returns Breakdown of landing pages, countries, devices, UTM, engagement, and conversions
      */
-    async getTrafficSourceDetails(source: string, periodHours: number): Promise<{
+    async getTrafficSourceDetails(source: string, range: IDateRange): Promise<{
         source: string;
         visitors: number;
         landingPages: Array<{ path: string; count: number; percentage: number }>;
@@ -2097,9 +2105,6 @@ export class UserService {
         engagement: { avgSessions: number; avgPageViews: number; avgDuration: number };
         conversion: { walletsConnected: number; walletsVerified: number; conversionRate: number };
     }> {
-        const since = new Date();
-        since.setTime(since.getTime() - (periodHours * 60 * 60 * 1000));
-
         // Project a unified domain field using the same logic as getTrafficSources():
         // prefer activity.origin.referrerDomain, fall back to oldest session's referrerDomain.
         // Then match on the projected domain so legacy users without activity.origin are handled correctly.
@@ -2124,7 +2129,7 @@ export class UserService {
         }
 
         const results = await this.collection.aggregate<IFacetResult>([
-            { $match: { 'activity.lastSeen': { $gte: since } } },
+            { $match: this.buildDateFilter(range, 'activity.lastSeen') },
             {
                 $addFields: {
                     _sourceDomain: {
@@ -2270,7 +2275,8 @@ export class UserService {
         if (isGoogleDomain && this.gscService) {
             try {
                 if (await this.gscService.isConfigured()) {
-                    gscKeywords = await this.gscService.getKeywordsForPeriod(periodHours, 10);
+                    const gscHours = Math.round((Date.now() - range.since.getTime()) / (60 * 60 * 1000));
+                    gscKeywords = await this.gscService.getKeywordsForPeriod(gscHours, 10);
 
                     // Populate searchKeywords from GSC clicks for backward compatibility
                     if (gscKeywords.length > 0 && searchKeywords.length === 0) {
@@ -2332,21 +2338,18 @@ export class UserService {
      * Aggregates the first-session landing page across visitors, including
      * average engagement metrics (sessions count, page views) per landing page.
      *
-     * @param periodHours - Lookback period in hours
+     * @param range - Date range for the query window
      * @param limit - Maximum landing pages to return (default: 20)
      * @returns Landing pages sorted by visitor count descending
      */
-    async getTopLandingPages(periodHours: number, limit: number = 20): Promise<{
+    async getTopLandingPages(range: IDateRange, limit: number = 20): Promise<{
         pages: Array<{ path: string; visitors: number; avgSessions: number; avgPageViews: number }>;
         totalPages: number;
         totalVisitors: number;
     }> {
-        const since = new Date();
-        since.setTime(since.getTime() - (periodHours * 60 * 60 * 1000));
-
         // Common pipeline stages before facet
         const commonStages = [
-            { $match: { 'activity.lastSeen': { $gte: since } } },
+            { $match: this.buildDateFilter(range, 'activity.lastSeen') },
             {
                 $project: {
                     landingPage: {
@@ -2406,19 +2409,16 @@ export class UserService {
      * Uses the first-session origin country for each user, falling back
      * to the most recent session country when origin data is unavailable.
      *
-     * @param periodHours - Lookback period in hours
+     * @param range - Date range for the query window
      * @param limit - Maximum countries to return (default: 30)
      * @returns Countries sorted by visitor count descending
      */
-    async getGeoDistribution(periodHours: number, limit: number = 30): Promise<{
+    async getGeoDistribution(range: IDateRange, limit: number = 30): Promise<{
         countries: Array<{ country: string; count: number; percentage: number }>;
         total: number;
     }> {
-        const since = new Date();
-        since.setTime(since.getTime() - (periodHours * 60 * 60 * 1000));
-
         const results = await this.collection.aggregate<{ _id: string | null; count: number }>([
-            { $match: { 'activity.lastSeen': { $gte: since } } },
+            { $match: this.buildDateFilter(range, 'activity.lastSeen') },
             {
                 $project: {
                     country: {
@@ -2450,20 +2450,17 @@ export class UserService {
      * Returns both device category (mobile/tablet/desktop) and screen size
      * category distributions from origin data.
      *
-     * @param periodHours - Lookback period in hours
+     * @param range - Date range for the query window
      * @returns Device and screen size breakdowns
      */
-    async getDeviceBreakdown(periodHours: number): Promise<{
+    async getDeviceBreakdown(range: IDateRange): Promise<{
         devices: Array<{ device: string; count: number; percentage: number }>;
         screenSizes: Array<{ screenSize: string; count: number; percentage: number }>;
         total: number;
     }> {
-        const since = new Date();
-        since.setTime(since.getTime() - (periodHours * 60 * 60 * 1000));
-
         const users = await this.collection
             .find(
-                { 'activity.lastSeen': { $gte: since } },
+                this.buildDateFilter(range, 'activity.lastSeen'),
                 { projection: { 'activity.origin.device': 1, 'activity.sessions': { $slice: 1 } } }
             )
             .toArray();
@@ -2507,11 +2504,11 @@ export class UserService {
      * Groups users by their utm_source/medium/campaign combination and
      * calculates wallet conversion rates per campaign.
      *
-     * @param periodHours - Lookback period in hours
+     * @param range - Date range for the query window
      * @param limit - Maximum campaigns to return (default: 20)
      * @returns Campaign performance sorted by visitor count descending
      */
-    async getCampaignPerformance(periodHours: number, limit: number = 20): Promise<{
+    async getCampaignPerformance(range: IDateRange, limit: number = 20): Promise<{
         campaigns: Array<{
             source: string;
             medium: string;
@@ -2523,16 +2520,13 @@ export class UserService {
         }>;
         total: number;
     }> {
-        const since = new Date();
-        since.setTime(since.getTime() - (periodHours * 60 * 60 * 1000));
-
         const results = await this.collection.aggregate<{
             _id: { source: string; medium: string; campaign: string };
             visitors: number;
             walletsConnected: number;
             walletsVerified: number;
         }>([
-            { $match: { 'activity.lastSeen': { $gte: since }, 'activity.origin.utm': { $ne: null } } },
+            { $match: { ...this.buildDateFilter(range, 'activity.lastSeen'), 'activity.origin.utm': { $ne: null } } },
             {
                 $project: {
                     utm: '$activity.origin.utm',
@@ -2588,19 +2582,16 @@ export class UserService {
      * Calculates average session duration, pages per session, bounce rate,
      * and average sessions per user from lifetime aggregate fields.
      *
-     * @param periodHours - Lookback period in hours
+     * @param range - Date range for the query window
      * @returns Engagement summary metrics
      */
-    async getEngagementMetrics(periodHours: number): Promise<{
+    async getEngagementMetrics(range: IDateRange): Promise<{
         avgSessionDuration: number;
         avgPagesPerSession: number;
         bounceRate: number;
         avgSessionsPerUser: number;
         totalUsers: number;
     }> {
-        const since = new Date();
-        since.setTime(since.getTime() - (periodHours * 60 * 60 * 1000));
-
         // Sum totals across all sessions then divide by total session count
         // to avoid "average of averages" bias (where light users get equal weight
         // to heavy users). This produces true weighted averages.
@@ -2612,9 +2603,9 @@ export class UserService {
             totalPages: number;
             singlePageSessions: number;
         }>([
-            { $match: { 'activity.lastSeen': { $gte: since } } },
+            { $match: this.buildDateFilter(range, 'activity.lastSeen') },
             { $unwind: { path: '$activity.sessions', preserveNullAndEmptyArrays: false } },
-            { $match: { 'activity.sessions.startedAt': { $gte: since } } },
+            { $match: this.buildDateFilter(range, 'activity.sessions.startedAt') },
             {
                 $group: {
                     _id: null,
@@ -2662,15 +2653,12 @@ export class UserService {
      * Stages: total visitors → return visitors → wallet connected → wallet verified.
      * Each stage includes count and drop-off percentage from the previous stage.
      *
-     * @param periodHours - Lookback period in hours
+     * @param range - Date range for the query window
      * @returns Funnel stages with counts and percentages
      */
-    async getConversionFunnel(periodHours: number): Promise<{
+    async getConversionFunnel(range: IDateRange): Promise<{
         stages: Array<{ stage: string; count: number; percentage: number; dropOff: number }>;
     }> {
-        const since = new Date();
-        since.setTime(since.getTime() - (periodHours * 60 * 60 * 1000));
-
         // Single aggregation with conditional sums instead of 4 separate queries.
         const results = await this.collection.aggregate<{
             _id: null;
@@ -2679,7 +2667,7 @@ export class UserService {
             walletConnected: number;
             walletVerified: number;
         }>([
-            { $match: { 'activity.lastSeen': { $gte: since } } },
+            { $match: this.buildDateFilter(range, 'activity.lastSeen') },
             {
                 $group: {
                     _id: null,
@@ -2735,27 +2723,29 @@ export class UserService {
      * For each day in the period, counts users first seen that day (new)
      * versus users with earlier firstSeen who were active that day (returning).
      *
-     * @param periodHours - Lookback period in hours
+     * @param range - Date range for the query window
      * @returns Daily new vs returning visitor counts
      */
-    async getRetention(periodHours: number): Promise<{
+    async getRetention(range: IDateRange): Promise<{
         data: Array<{ date: string; newVisitors: number; returningVisitors: number }>;
     }> {
-        const since = new Date();
-        since.setTime(since.getTime() - (periodHours * 60 * 60 * 1000));
-        // Only floor to midnight for multi-day periods where daily bucketing makes sense.
-        // For short periods (< 48h), use exact hour math so "24 Hours" means exactly that.
-        if (periodHours >= 48) {
-            since.setHours(0, 0, 0, 0);
+        // For preset periods shorter than 48h without an explicit until bound,
+        // use exact hour math so "24 Hours" means exactly that. For longer periods
+        // or custom ranges, the caller already provides midnight-aligned dates.
+        const periodMs = (range.until ?? new Date()).getTime() - range.since.getTime();
+        const effectiveSince = new Date(range.since);
+        if (periodMs >= 48 * 60 * 60 * 1000 && !range.until) {
+            effectiveSince.setHours(0, 0, 0, 0);
         }
+        const effectiveRange: IDateRange = { since: effectiveSince, until: range.until };
 
         const results = await this.collection.aggregate<{
             _id: { date: string; isNew: boolean };
             count: number;
         }>([
-            { $match: { 'activity.lastSeen': { $gte: since }, 'activity.sessions': { $exists: true, $ne: [] } } },
+            { $match: { ...this.buildDateFilter(effectiveRange, 'activity.lastSeen'), 'activity.sessions': { $exists: true, $ne: [] } } },
             { $unwind: '$activity.sessions' },
-            { $match: { 'activity.sessions.startedAt': { $gte: since } } },
+            { $match: this.buildDateFilter(effectiveRange, 'activity.sessions.startedAt') },
             {
                 $project: {
                     sessionDate: { $dateToString: { format: '%Y-%m-%d', date: '$activity.sessions.startedAt' } },
@@ -2843,11 +2833,11 @@ export class UserService {
      * and recent referral activity. Provides the data needed to evaluate whether
      * the referral program is driving growth.
      *
-     * @param periodHours - Lookback period for "recent" activity
+     * @param range - Date range for "recent" activity
      * @param topLimit - Max top referrers to return (default: 15)
      * @returns Aggregate referral metrics
      */
-    async getReferralOverview(periodHours: number, topLimit: number = 15): Promise<{
+    async getReferralOverview(range: IDateRange, topLimit: number = 15): Promise<{
         totalReferrals: number;
         totalConverted: number;
         conversionRate: number;
@@ -2865,9 +2855,6 @@ export class UserService {
             hasVerifiedWallet: boolean;
         }>;
     }> {
-        const since = new Date();
-        since.setTime(since.getTime() - (periodHours * 60 * 60 * 1000));
-
         // Filter for users with actual referral attribution (not just missing fields)
         const referredFilter = { 'referral.referredBy': { $ne: null, $exists: true } };
 
@@ -2971,9 +2958,10 @@ export class UserService {
         }));
 
         // Recent referrals within the period
+        const referredAtFilter = this.buildDateFilter(range, 'referral.referredAt');
         const recentResult = await this.collection
             .find(
-                { 'referral.referredBy': { $ne: null, $exists: true }, 'referral.referredAt': { $gte: since } },
+                { 'referral.referredBy': { $ne: null, $exists: true }, ...referredAtFilter },
                 { projection: { id: 1, referral: 1, wallets: 1 } }
             )
             .sort({ 'referral.referredAt': -1 })
