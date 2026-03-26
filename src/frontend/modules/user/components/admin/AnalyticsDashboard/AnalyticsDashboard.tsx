@@ -18,14 +18,15 @@
 
 'use client';
 
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import {
     Users, TrendingUp, MousePointerClick,
-    Globe, Smartphone, BarChart3, Target, ChevronDown, ChevronRight
+    Globe, Smartphone, BarChart3, Target, ChevronDown, ChevronRight, Calendar
 } from 'lucide-react';
 import { LineChart } from '../../../../../features/charts/components/LineChart';
 import type { ChartSeries } from '../../../../../features/charts/components/LineChart';
 import { Button } from '../../../../../components/ui/Button';
+import { Card } from '../../../../../components/ui/Card';
 import {
     adminGetTrafficSources,
     adminGetTrafficSourceDetails,
@@ -39,6 +40,7 @@ import {
 } from '../../../api';
 import type {
     AnalyticsPeriod,
+    ICustomDateRange,
     ITrafficSource,
     ITrafficSourceDetails,
     ILandingPage,
@@ -120,9 +122,30 @@ interface Props {
  * @param props - Component props
  * @param props.token - Admin API token from localStorage
  */
+/**
+ * Format a Date as a YYYY-MM-DD string for native date inputs.
+ *
+ * @param date - Date to format
+ * @returns ISO date string without time component
+ */
+function toDateInputValue(date: Date): string {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+}
+
 export function AnalyticsDashboard({ token }: Props) {
     const [period, setPeriod] = useState<AnalyticsPeriod>('24h');
     const [loading, setLoading] = useState(true);
+
+    // Custom date range state — dates as YYYY-MM-DD strings in local time
+    const [customStart, setCustomStart] = useState(() => {
+        const d = new Date();
+        d.setDate(d.getDate() - 7);
+        return toDateInputValue(d);
+    });
+    const [customEnd, setCustomEnd] = useState(() => toDateInputValue(new Date()));
 
     // Data state
     const [engagement, setEngagement] = useState<IEngagementMetrics | null>(null);
@@ -141,6 +164,20 @@ export function AnalyticsDashboard({ token }: Props) {
     const [sourceDetailsLoading, setSourceDetailsLoading] = useState<string | null>(null);
 
     /**
+     * Memoized custom date range built from the date input values.
+     * Aligns to localized midnight: start at 00:00:00 of start date,
+     * end at 23:59:59.999 of end date. Returns undefined if period is
+     * not 'custom' or either date input is empty/invalid.
+     */
+    const customRange = useMemo<ICustomDateRange | undefined>(() => {
+        if (period !== 'custom' || !customStart || !customEnd) return undefined;
+        const start = new Date(`${customStart}T00:00:00`);
+        const end = new Date(`${customEnd}T23:59:59.999`);
+        if (isNaN(start.getTime()) || isNaN(end.getTime())) return undefined;
+        return { startDate: start.toISOString(), endDate: end.toISOString() };
+    }, [period, customStart, customEnd]);
+
+    /**
      * Toggle drill-down for a traffic source row.
      *
      * Fetches details on first expand, then caches for subsequent toggles.
@@ -157,7 +194,7 @@ export function AnalyticsDashboard({ token }: Props) {
         if (!sourceDetails[source]) {
             setSourceDetailsLoading(source);
             try {
-                const details = await adminGetTrafficSourceDetails(token, source, period);
+                const details = await adminGetTrafficSourceDetails(token, source, period, customRange);
                 setSourceDetails(prev => ({ ...prev, [source]: details }));
             } catch (error) {
                 console.error('Failed to fetch source details:', error);
@@ -166,7 +203,7 @@ export function AnalyticsDashboard({ token }: Props) {
                 setSourceDetailsLoading(prev => prev === source ? null : prev);
             }
         }
-    }, [expandedSource, sourceDetails, token, period]);
+    }, [expandedSource, sourceDetails, token, period, customRange]);
 
     /**
      * Fetch all analytics data for the selected period.
@@ -187,14 +224,14 @@ export function AnalyticsDashboard({ token }: Props) {
                 campaignRes,
                 retentionRes,
             ] = await Promise.all([
-                adminGetEngagement(token, period),
-                adminGetConversionFunnel(token, period),
-                adminGetTrafficSources(token, period),
-                adminGetTopLandingPages(token, { period, limit: 15 }),
-                adminGetGeoDistribution(token, { period, limit: 20 }),
-                adminGetDeviceBreakdown(token, period),
-                adminGetCampaignPerformance(token, { period, limit: 15 }),
-                adminGetRetention(token, period),
+                adminGetEngagement(token, period, customRange),
+                adminGetConversionFunnel(token, period, customRange),
+                adminGetTrafficSources(token, period, customRange),
+                adminGetTopLandingPages(token, { period, limit: 15, customRange }),
+                adminGetGeoDistribution(token, { period, limit: 20, customRange }),
+                adminGetDeviceBreakdown(token, period, customRange),
+                adminGetCampaignPerformance(token, { period, limit: 15, customRange }),
+                adminGetRetention(token, period, customRange),
             ]);
 
             setEngagement(engagementRes);
@@ -211,7 +248,7 @@ export function AnalyticsDashboard({ token }: Props) {
         } finally {
             setLoading(false);
         }
-    }, [token, period]);
+    }, [token, period, customRange]);
 
     useEffect(() => {
         fetchAll();
@@ -263,6 +300,37 @@ export function AnalyticsDashboard({ token }: Props) {
                         {opt.label}
                     </Button>
                 ))}
+                <Button
+                    variant={period === 'custom' ? 'primary' : 'secondary'}
+                    size="sm"
+                    onClick={() => setPeriod('custom')}
+                    aria-label="Custom date range"
+                >
+                    <Calendar size={14} className={styles.controls__icon} />
+                    Custom
+                </Button>
+                {period === 'custom' && (
+                    <div className={styles.date_range}>
+                        <input
+                            type="date"
+                            className={styles.date_input}
+                            value={customStart}
+                            max={customEnd}
+                            onChange={(e) => setCustomStart(e.target.value)}
+                            aria-label="Start date"
+                        />
+                        <span className={styles.date_range__separator}>to</span>
+                        <input
+                            type="date"
+                            className={styles.date_input}
+                            value={customEnd}
+                            min={customStart}
+                            max={toDateInputValue(new Date())}
+                            onChange={(e) => setCustomEnd(e.target.value)}
+                            aria-label="End date"
+                        />
+                    </div>
+                )}
             </div>
 
             {loading ? (
@@ -271,7 +339,7 @@ export function AnalyticsDashboard({ token }: Props) {
                 <>
                     {/* Engagement Summary Cards */}
                     {engagement && (
-                        <section className="surface surface--padding-md">
+                        <Card>
                             <h3 className={styles.section_title}>
                                 <TrendingUp size={16} className={styles.section_title__icon} />
                                 Engagement Overview
@@ -302,12 +370,12 @@ export function AnalyticsDashboard({ token }: Props) {
                                     <div className={styles.metric_card__label}>Bounce Rate</div>
                                 </div>
                             </div>
-                        </section>
+                        </Card>
                     )}
 
                     {/* Conversion Funnel */}
                     {funnel.length > 0 && (
-                        <section className="surface surface--padding-md">
+                        <Card>
                             <h3 className={styles.section_title}>
                                 <Target size={16} className={styles.section_title__icon} />
                                 Conversion Funnel
@@ -328,13 +396,13 @@ export function AnalyticsDashboard({ token }: Props) {
                                     </div>
                                 ))}
                             </div>
-                        </section>
+                        </Card>
                     )}
 
                     {/* Traffic Sources + Top Landing Pages side by side */}
                     <div className={styles.split_grid}>
                         {/* Traffic Sources */}
-                        <section className="surface surface--padding-md">
+                        <Card>
                             <h3 className={styles.section_title}>
                                 <Globe size={16} className={styles.section_title__icon} />
                                 Traffic Sources
@@ -563,10 +631,10 @@ export function AnalyticsDashboard({ token }: Props) {
                                     </div>
                                 )}
                             </div>
-                        </section>
+                        </Card>
 
                         {/* Top Landing Pages */}
-                        <section className="surface surface--padding-md">
+                        <Card>
                             <h3 className={styles.section_title}>
                                 <MousePointerClick size={16} className={styles.section_title__icon} />
                                 Top Landing Pages
@@ -606,13 +674,13 @@ export function AnalyticsDashboard({ token }: Props) {
                                     </div>
                                 )}
                             </div>
-                        </section>
+                        </Card>
                     </div>
 
                     {/* Geography + Devices side by side */}
                     <div className={styles.split_grid}>
                         {/* Geographic Distribution */}
-                        <section className="surface surface--padding-md">
+                        <Card>
                             <h3 className={styles.section_title}>
                                 <Globe size={16} className={styles.section_title__icon} />
                                 Geographic Distribution
@@ -650,10 +718,10 @@ export function AnalyticsDashboard({ token }: Props) {
                                     </div>
                                 )}
                             </div>
-                        </section>
+                        </Card>
 
                         {/* Device Breakdown */}
-                        <section className="surface surface--padding-md">
+                        <Card>
                             <h3 className={styles.section_title}>
                                 <Smartphone size={16} className={styles.section_title__icon} />
                                 Device Breakdown
@@ -680,12 +748,12 @@ export function AnalyticsDashboard({ token }: Props) {
                                     </div>
                                 )}
                             </div>
-                        </section>
+                        </Card>
                     </div>
 
                     {/* Campaign Performance */}
                     {campaigns.length > 0 && (
-                        <section className="surface surface--padding-md">
+                        <Card>
                             <h3 className={styles.section_title}>
                                 <BarChart3 size={16} className={styles.section_title__icon} />
                                 Campaign Performance (UTM)
@@ -720,12 +788,12 @@ export function AnalyticsDashboard({ token }: Props) {
                                     </table>
                                 </div>
                             </div>
-                        </section>
+                        </Card>
                     )}
 
                     {/* Retention Chart: New vs Returning */}
                     {retention.length > 0 && (
-                        <section className="surface surface--padding-md">
+                        <Card>
                             <h3 className={styles.section_title}>
                                 <Users size={16} className={styles.section_title__icon} />
                                 New vs Returning Visitors
@@ -736,7 +804,7 @@ export function AnalyticsDashboard({ token }: Props) {
                                 yAxisFormatter={(v) => v.toLocaleString()}
                                 emptyLabel="No retention data for this period"
                             />
-                        </section>
+                        </Card>
                     )}
                 </>
             )}

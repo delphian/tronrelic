@@ -555,7 +555,15 @@ export async function adminGetNewUsers(
 // ============================================================================
 
 /** Valid period options for aggregate analytics queries. */
-export type AnalyticsPeriod = '24h' | '7d' | '30d' | '90d';
+export type AnalyticsPeriod = '24h' | '7d' | '30d' | '90d' | 'custom';
+
+/** Custom date range parameters sent as ISO date strings. */
+export interface ICustomDateRange {
+    /** Start date ISO string (e.g. '2026-03-01T00:00:00.000Z'). */
+    startDate: string;
+    /** End date ISO string (e.g. '2026-03-15T23:59:59.999Z'). */
+    endDate: string;
+}
 
 /** Traffic source entry in aggregate breakdown. */
 export interface ITrafficSource {
@@ -670,11 +678,13 @@ export interface IRetentionEntry {
  */
 export async function adminGetTrafficSources(
     token: string,
-    period: AnalyticsPeriod = '30d'
+    period: AnalyticsPeriod = '30d',
+    customRange?: ICustomDateRange
 ): Promise<{ sources: ITrafficSource[]; total: number }> {
+    const params = customRange ? customRange : { period };
     const response = await apiClient.get('/admin/users/analytics/traffic-sources', {
         headers: { [adminHeaderKey]: token },
-        params: { period }
+        params
     });
     return response.data as { sources: ITrafficSource[]; total: number };
 }
@@ -693,11 +703,13 @@ export async function adminGetTrafficSources(
 export async function adminGetTrafficSourceDetails(
     token: string,
     source: string,
-    period: AnalyticsPeriod = '30d'
+    period: AnalyticsPeriod = '30d',
+    customRange?: ICustomDateRange
 ): Promise<ITrafficSourceDetails> {
+    const params = customRange ? { source, ...customRange } : { source, period };
     const response = await apiClient.get('/admin/users/analytics/traffic-source-details', {
         headers: { [adminHeaderKey]: token },
-        params: { source, period }
+        params
     });
     return response.data as ITrafficSourceDetails;
 }
@@ -711,11 +723,13 @@ export async function adminGetTrafficSourceDetails(
  */
 export async function adminGetTopLandingPages(
     token: string,
-    options?: { period?: AnalyticsPeriod; limit?: number }
+    options?: { period?: AnalyticsPeriod; limit?: number; customRange?: ICustomDateRange }
 ): Promise<{ pages: ILandingPage[]; totalPages: number; totalVisitors: number }> {
+    const { customRange, ...rest } = options ?? {};
+    const params = customRange ? { ...customRange, limit: rest.limit } : rest;
     const response = await apiClient.get('/admin/users/analytics/top-landing-pages', {
         headers: { [adminHeaderKey]: token },
-        params: options
+        params
     });
     return response.data as { pages: ILandingPage[]; totalPages: number; totalVisitors: number };
 }
@@ -729,11 +743,13 @@ export async function adminGetTopLandingPages(
  */
 export async function adminGetGeoDistribution(
     token: string,
-    options?: { period?: AnalyticsPeriod; limit?: number }
+    options?: { period?: AnalyticsPeriod; limit?: number; customRange?: ICustomDateRange }
 ): Promise<{ countries: IGeoEntry[]; total: number }> {
+    const { customRange, ...rest } = options ?? {};
+    const params = customRange ? { ...customRange, limit: rest.limit } : rest;
     const response = await apiClient.get('/admin/users/analytics/geo-distribution', {
         headers: { [adminHeaderKey]: token },
-        params: options
+        params
     });
     return response.data as { countries: IGeoEntry[]; total: number };
 }
@@ -747,11 +763,13 @@ export async function adminGetGeoDistribution(
  */
 export async function adminGetDeviceBreakdown(
     token: string,
-    period: AnalyticsPeriod = '30d'
+    period: AnalyticsPeriod = '30d',
+    customRange?: ICustomDateRange
 ): Promise<{ devices: IDeviceEntry[]; screenSizes: IScreenSizeEntry[]; total: number }> {
+    const params = customRange ? customRange : { period };
     const response = await apiClient.get('/admin/users/analytics/device-breakdown', {
         headers: { [adminHeaderKey]: token },
-        params: { period }
+        params
     });
     return response.data as { devices: IDeviceEntry[]; screenSizes: IScreenSizeEntry[]; total: number };
 }
@@ -765,11 +783,13 @@ export async function adminGetDeviceBreakdown(
  */
 export async function adminGetCampaignPerformance(
     token: string,
-    options?: { period?: AnalyticsPeriod; limit?: number }
+    options?: { period?: AnalyticsPeriod; limit?: number; customRange?: ICustomDateRange }
 ): Promise<{ campaigns: ICampaignEntry[]; total: number }> {
+    const { customRange, ...rest } = options ?? {};
+    const params = customRange ? { ...customRange, limit: rest.limit } : rest;
     const response = await apiClient.get('/admin/users/analytics/campaign-performance', {
         headers: { [adminHeaderKey]: token },
-        params: options
+        params
     });
     return response.data as { campaigns: ICampaignEntry[]; total: number };
 }
@@ -783,11 +803,13 @@ export async function adminGetCampaignPerformance(
  */
 export async function adminGetEngagement(
     token: string,
-    period: AnalyticsPeriod = '30d'
+    period: AnalyticsPeriod = '30d',
+    customRange?: ICustomDateRange
 ): Promise<IEngagementMetrics> {
+    const params = customRange ? customRange : { period };
     const response = await apiClient.get('/admin/users/analytics/engagement', {
         headers: { [adminHeaderKey]: token },
-        params: { period }
+        params
     });
     return response.data as IEngagementMetrics;
 }
@@ -801,11 +823,13 @@ export async function adminGetEngagement(
  */
 export async function adminGetConversionFunnel(
     token: string,
-    period: AnalyticsPeriod = '30d'
+    period: AnalyticsPeriod = '30d',
+    customRange?: ICustomDateRange
 ): Promise<{ stages: IFunnelStage[] }> {
+    const params = customRange ? customRange : { period };
     const response = await apiClient.get('/admin/users/analytics/conversion-funnel', {
         headers: { [adminHeaderKey]: token },
-        params: { period }
+        params
     });
     return response.data as { stages: IFunnelStage[] };
 }
@@ -819,11 +843,13 @@ export async function adminGetConversionFunnel(
  */
 export async function adminGetRetention(
     token: string,
-    period: AnalyticsPeriod = '30d'
+    period: AnalyticsPeriod = '30d',
+    customRange?: ICustomDateRange
 ): Promise<{ data: IRetentionEntry[] }> {
+    const params = customRange ? customRange : { period };
     const response = await apiClient.get('/admin/users/analytics/retention', {
         headers: { [adminHeaderKey]: token },
-        params: { period }
+        params
     });
     return response.data as { data: IRetentionEntry[] };
 }
@@ -867,11 +893,13 @@ export interface IReferralOverview {
  */
 export async function adminGetReferralOverview(
     token: string,
-    options?: { period?: AnalyticsPeriod; limit?: number }
+    options?: { period?: AnalyticsPeriod; limit?: number; customRange?: ICustomDateRange }
 ): Promise<IReferralOverview> {
+    const { customRange, ...rest } = options ?? {};
+    const params = customRange ? { ...customRange, limit: rest.limit } : rest;
     const response = await apiClient.get('/admin/users/analytics/referral-overview', {
         headers: { [adminHeaderKey]: token },
-        params: options
+        params
     });
     return response.data as IReferralOverview;
 }

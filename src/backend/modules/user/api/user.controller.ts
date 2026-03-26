@@ -1,7 +1,7 @@
 import type { Request, Response, NextFunction } from 'express';
 import { USER_FILTERS } from '@/types';
 import type { ISystemLogService, UserFilterType } from '@/types';
-import type { UserService, IUserStats } from '../services/index.js';
+import type { UserService, IUserStats, IDateRange } from '../services/index.js';
 import type { GscService } from '../services/index.js';
 import type { IUser, IUserPreferences, IUtmParams } from '../database/index.js';
 import { getClientIP, isInternalReferrer } from '../services/index.js';
@@ -789,7 +789,9 @@ export class UserController {
      * Get visitor traffic origins from first-ever sessions.
      *
      * Query parameters:
-     * - period: Lookback period ('24h', '7d', '30d', '90d', default: '24h')
+     * - period: Lookback period ('24h', '7d', '30d', '90d', default: '24h'), or omit with startDate/endDate
+     * - startDate: Custom range start (ISO string, e.g. '2026-03-01T00:00:00.000Z')
+     * - endDate: Custom range end (ISO string, e.g. '2026-03-07T23:59:59.999Z')
      * - limit: Maximum results (default: 50, max: 100)
      * - skip: Pagination offset (default: 0)
      *
@@ -797,16 +799,16 @@ export class UserController {
      */
     async getVisitorOrigins(req: Request, res: Response): Promise<void> {
         try {
-            const { period, limit, skip } = req.query;
+            const { limit, skip } = req.query;
 
-            const periodHours = this.parsePeriodHours(period as string, '24h');
+            const range = this.parseDateRange(req.query, '24h');
 
             const parsedLimit = limit ? parseInt(limit as string, 10) : 50;
             const parsedSkip = skip ? parseInt(skip as string, 10) : 0;
             const limitNum = Number.isNaN(parsedLimit) ? 50 : Math.min(Math.max(1, parsedLimit), 100);
             const skipNum = Number.isNaN(parsedSkip) ? 0 : Math.max(0, parsedSkip);
 
-            const result = await this.userService.getVisitorOrigins(periodHours, limitNum, skipNum);
+            const result = await this.userService.getVisitorOrigins(range, limitNum, skipNum);
 
             res.json(result);
         } catch (error) {
@@ -826,7 +828,9 @@ export class UserController {
      * lastSeen (recent activity), this filters by firstSeen (new arrivals).
      *
      * Query parameters:
-     * - period: Lookback period ('24h', '7d', '30d', '90d', default: '24h')
+     * - period: Lookback period ('24h', '7d', '30d', '90d', default: '24h'), or omit with startDate/endDate
+     * - startDate: Custom range start (ISO string, e.g. '2026-03-01T00:00:00.000Z')
+     * - endDate: Custom range end (ISO string, e.g. '2026-03-07T23:59:59.999Z')
      * - limit: Maximum results (default: 50, max: 100)
      * - skip: Pagination offset (default: 0)
      *
@@ -834,16 +838,16 @@ export class UserController {
      */
     async getNewUsers(req: Request, res: Response): Promise<void> {
         try {
-            const { period, limit, skip } = req.query;
+            const { limit, skip } = req.query;
 
-            const periodHours = this.parsePeriodHours(period as string, '24h');
+            const range = this.parseDateRange(req.query, '24h');
 
             const parsedLimit = limit ? parseInt(limit as string, 10) : 50;
             const parsedSkip = skip ? parseInt(skip as string, 10) : 0;
             const limitNum = Number.isNaN(parsedLimit) ? 50 : Math.min(Math.max(1, parsedLimit), 100);
             const skipNum = Number.isNaN(parsedSkip) ? 0 : Math.max(0, parsedSkip);
 
-            const result = await this.userService.getNewUsers(periodHours, limitNum, skipNum);
+            const result = await this.userService.getNewUsers(range, limitNum, skipNum);
 
             res.json(result);
         } catch (error) {
@@ -860,24 +864,40 @@ export class UserController {
     // ============================================================================
 
     /**
-     * Parse period query parameter into hours.
+     * Parse query parameters into a date range for analytics queries.
      *
-     * Centralizes period parsing for all analytics endpoints. The default
-     * period varies by endpoint: aggregate dashboards default to '30d',
-     * while per-visitor tables default to '24h' for recency.
+     * Supports two modes: preset periods ('24h', '7d', '30d', '90d') computed
+     * as a rolling window from now, or custom date ranges via startDate/endDate
+     * ISO strings aligned to localized midnight boundaries.
      *
-     * @param period - Period string (e.g., '24h', '7d', '30d', '90d')
+     * @param query - Express query parameters
      * @param defaultPeriod - Default period when none provided (default: '30d')
-     * @returns Number of hours
+     * @returns Date range with since and optional until
      */
-    private parsePeriodHours(period: string | undefined, defaultPeriod: string = '30d'): number {
+    private parseDateRange(query: Record<string, any>, defaultPeriod: string = '30d'): IDateRange {
+        const { startDate, endDate, period } = query;
+
+        if (startDate && endDate) {
+            const since = new Date(startDate as string);
+            const until = new Date(endDate as string);
+            if (!isNaN(since.getTime()) && !isNaN(until.getTime())) {
+                if (since.getTime() > until.getTime()) {
+                    throw new Error('startDate must be before or equal to endDate');
+                }
+                return { since, until };
+            }
+        }
+
         const map: Record<string, number> = {
             '24h': 24,
             '7d': 7 * 24,
             '30d': 30 * 24,
             '90d': 90 * 24
         };
-        return map[period ?? defaultPeriod] ?? map[defaultPeriod] ?? 30 * 24;
+        const hours = map[(period as string) ?? defaultPeriod] ?? map[defaultPeriod] ?? 30 * 24;
+        const since = new Date();
+        since.setTime(since.getTime() - (hours * 60 * 60 * 1000));
+        return { since };
     }
 
     /**
@@ -927,14 +947,16 @@ export class UserController {
      * Get aggregate traffic source breakdown.
      *
      * Query parameters:
-     * - period: '24h' | '7d' | '30d' | '90d' (default: '30d')
+     * - period: '24h' | '7d' | '30d' | '90d' (default: '30d'), or omit with startDate/endDate
+     * - startDate: Custom range start (ISO string)
+     * - endDate: Custom range end (ISO string)
      *
      * Response: { sources: [...], total: number }
      */
     async getTrafficSources(req: Request, res: Response): Promise<void> {
         await this.handleAnalyticsRequest(res, () => {
-            const periodHours = this.parsePeriodHours(req.query.period as string);
-            return this.userService.getTrafficSources(periodHours);
+            const range = this.parseDateRange(req.query);
+            return this.userService.getTrafficSources(range);
         }, 'Failed to get traffic sources');
     }
 
@@ -945,7 +967,9 @@ export class UserController {
      *
      * Query parameters:
      * - source: referrer domain (e.g. 'duckduckgo.com', 'direct') (required)
-     * - period: '24h' | '7d' | '30d' | '90d' (default: '30d')
+     * - period: '24h' | '7d' | '30d' | '90d' (default: '30d'), or omit with startDate/endDate
+     * - startDate: Custom range start (ISO string)
+     * - endDate: Custom range end (ISO string)
      *
      * Response: { source, visitors, landingPages, countries, devices, utmCampaigns, searchKeywords, engagement, conversion }
      */
@@ -956,8 +980,8 @@ export class UserController {
             return;
         }
         await this.handleAnalyticsRequest(res, () => {
-            const periodHours = this.parsePeriodHours(req.query.period as string);
-            return this.userService.getTrafficSourceDetails(source, periodHours);
+            const range = this.parseDateRange(req.query);
+            return this.userService.getTrafficSourceDetails(source, range);
         }, 'Failed to get traffic source details');
     }
 
@@ -967,16 +991,18 @@ export class UserController {
      * Get top landing pages by visitor count.
      *
      * Query parameters:
-     * - period: '24h' | '7d' | '30d' | '90d' (default: '30d')
+     * - period: '24h' | '7d' | '30d' | '90d' (default: '30d'), or omit with startDate/endDate
+     * - startDate: Custom range start (ISO string)
+     * - endDate: Custom range end (ISO string)
      * - limit: max results (default: 20, max: 50)
      *
      * Response: { pages: [...], total: number }
      */
     async getTopLandingPages(req: Request, res: Response): Promise<void> {
         await this.handleAnalyticsRequest(res, () => {
-            const periodHours = this.parsePeriodHours(req.query.period as string);
+            const range = this.parseDateRange(req.query);
             const limit = this.parseLimit(req.query.limit as string, 20, 50);
-            return this.userService.getTopLandingPages(periodHours, limit);
+            return this.userService.getTopLandingPages(range, limit);
         }, 'Failed to get top landing pages');
     }
 
@@ -986,16 +1012,18 @@ export class UserController {
      * Get geographic distribution of visitors.
      *
      * Query parameters:
-     * - period: '24h' | '7d' | '30d' | '90d' (default: '30d')
+     * - period: '24h' | '7d' | '30d' | '90d' (default: '30d'), or omit with startDate/endDate
+     * - startDate: Custom range start (ISO string)
+     * - endDate: Custom range end (ISO string)
      * - limit: max countries (default: 30, max: 100)
      *
      * Response: { countries: [...], total: number }
      */
     async getGeoDistribution(req: Request, res: Response): Promise<void> {
         await this.handleAnalyticsRequest(res, () => {
-            const periodHours = this.parsePeriodHours(req.query.period as string);
+            const range = this.parseDateRange(req.query);
             const limit = this.parseLimit(req.query.limit as string, 30, 100);
-            return this.userService.getGeoDistribution(periodHours, limit);
+            return this.userService.getGeoDistribution(range, limit);
         }, 'Failed to get geo distribution');
     }
 
@@ -1005,14 +1033,16 @@ export class UserController {
      * Get device and screen size breakdown.
      *
      * Query parameters:
-     * - period: '24h' | '7d' | '30d' | '90d' (default: '30d')
+     * - period: '24h' | '7d' | '30d' | '90d' (default: '30d'), or omit with startDate/endDate
+     * - startDate: Custom range start (ISO string)
+     * - endDate: Custom range end (ISO string)
      *
      * Response: { devices: [...], screenSizes: [...], total: number }
      */
     async getDeviceBreakdown(req: Request, res: Response): Promise<void> {
         await this.handleAnalyticsRequest(res, () => {
-            const periodHours = this.parsePeriodHours(req.query.period as string);
-            return this.userService.getDeviceBreakdown(periodHours);
+            const range = this.parseDateRange(req.query);
+            return this.userService.getDeviceBreakdown(range);
         }, 'Failed to get device breakdown');
     }
 
@@ -1022,16 +1052,18 @@ export class UserController {
      * Get UTM campaign performance with conversion rates.
      *
      * Query parameters:
-     * - period: '24h' | '7d' | '30d' | '90d' (default: '30d')
+     * - period: '24h' | '7d' | '30d' | '90d' (default: '30d'), or omit with startDate/endDate
+     * - startDate: Custom range start (ISO string)
+     * - endDate: Custom range end (ISO string)
      * - limit: max campaigns (default: 20, max: 50)
      *
      * Response: { campaigns: [...], total: number }
      */
     async getCampaignPerformance(req: Request, res: Response): Promise<void> {
         await this.handleAnalyticsRequest(res, () => {
-            const periodHours = this.parsePeriodHours(req.query.period as string);
+            const range = this.parseDateRange(req.query);
             const limit = this.parseLimit(req.query.limit as string, 20, 50);
-            return this.userService.getCampaignPerformance(periodHours, limit);
+            return this.userService.getCampaignPerformance(range, limit);
         }, 'Failed to get campaign performance');
     }
 
@@ -1041,14 +1073,16 @@ export class UserController {
      * Get engagement metrics (avg duration, pages/session, bounce rate).
      *
      * Query parameters:
-     * - period: '24h' | '7d' | '30d' | '90d' (default: '30d')
+     * - period: '24h' | '7d' | '30d' | '90d' (default: '30d'), or omit with startDate/endDate
+     * - startDate: Custom range start (ISO string)
+     * - endDate: Custom range end (ISO string)
      *
      * Response: { avgSessionDuration, avgPagesPerSession, bounceRate, avgSessionsPerUser, totalUsers }
      */
     async getEngagementMetrics(req: Request, res: Response): Promise<void> {
         await this.handleAnalyticsRequest(res, () => {
-            const periodHours = this.parsePeriodHours(req.query.period as string);
-            return this.userService.getEngagementMetrics(periodHours);
+            const range = this.parseDateRange(req.query);
+            return this.userService.getEngagementMetrics(range);
         }, 'Failed to get engagement metrics');
     }
 
@@ -1058,14 +1092,16 @@ export class UserController {
      * Get conversion funnel (visitors → return → wallet → verified).
      *
      * Query parameters:
-     * - period: '24h' | '7d' | '30d' | '90d' (default: '30d')
+     * - period: '24h' | '7d' | '30d' | '90d' (default: '30d'), or omit with startDate/endDate
+     * - startDate: Custom range start (ISO string)
+     * - endDate: Custom range end (ISO string)
      *
      * Response: { stages: [...] }
      */
     async getConversionFunnel(req: Request, res: Response): Promise<void> {
         await this.handleAnalyticsRequest(res, () => {
-            const periodHours = this.parsePeriodHours(req.query.period as string);
-            return this.userService.getConversionFunnel(periodHours);
+            const range = this.parseDateRange(req.query);
+            return this.userService.getConversionFunnel(range);
         }, 'Failed to get conversion funnel');
     }
 
@@ -1075,14 +1111,16 @@ export class UserController {
      * Get new vs returning visitor breakdown over time.
      *
      * Query parameters:
-     * - period: '24h' | '7d' | '30d' | '90d' (default: '30d')
+     * - period: '24h' | '7d' | '30d' | '90d' (default: '30d'), or omit with startDate/endDate
+     * - startDate: Custom range start (ISO string)
+     * - endDate: Custom range end (ISO string)
      *
      * Response: { data: [{ date, newVisitors, returningVisitors }] }
      */
     async getRetention(req: Request, res: Response): Promise<void> {
         await this.handleAnalyticsRequest(res, () => {
-            const periodHours = this.parsePeriodHours(req.query.period as string);
-            return this.userService.getRetention(periodHours);
+            const range = this.parseDateRange(req.query);
+            return this.userService.getRetention(range);
         }, 'Failed to get retention data');
     }
 
@@ -1092,16 +1130,18 @@ export class UserController {
      * Get aggregate referral program metrics.
      *
      * Query parameters:
-     * - period: '24h' | '7d' | '30d' | '90d' (default: '30d')
+     * - period: '24h' | '7d' | '30d' | '90d' (default: '30d'), or omit with startDate/endDate
+     * - startDate: Custom range start (ISO string)
+     * - endDate: Custom range end (ISO string)
      * - limit: max top referrers (default: 15, max: 50)
      *
      * Response: { totalReferrals, totalConverted, conversionRate, usersWithCodes, topReferrers, recentReferrals }
      */
     async getReferralOverview(req: Request, res: Response): Promise<void> {
         await this.handleAnalyticsRequest(res, () => {
-            const periodHours = this.parsePeriodHours(req.query.period as string);
+            const range = this.parseDateRange(req.query);
             const limit = this.parseLimit(req.query.limit as string, 15, 50);
-            return this.userService.getReferralOverview(periodHours, limit);
+            return this.userService.getReferralOverview(range, limit);
         }, 'Failed to get referral overview');
     }
 
