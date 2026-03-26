@@ -1991,15 +1991,39 @@ export class UserService {
     /**
      * Build a MongoDB date filter from a date range.
      *
-     * Returns `{ $gte: since }` for open-ended ranges (preset periods)
-     * and `{ $gte: since, $lte: until }` for bounded ranges (custom dates).
+     * For `activity.lastSeen` (user-level field): only applies `$gte` even for
+     * bounded ranges, because `lastSeen` records the most recent visit globally.
+     * A user active during March 1-7 who also visited March 20 has `lastSeen =
+     * March 20`, so `$lte: March 7` would incorrectly exclude them. Instead, the
+     * upper bound is enforced via `$elemMatch` on `activity.sessions` to check
+     * whether any session falls within the window.
+     *
+     * For session-level fields (used after `$unwind`): applies both `$gte` and
+     * `$lte` directly since each unwound document represents a single session.
      *
      * @param range - Date range with required since and optional until
      * @param field - MongoDB field path to filter on
-     * @returns MongoDB filter object for the specified field
+     * @returns MongoDB filter object for the specified field(s)
      */
     private buildDateFilter(range: IDateRange, field: string): Record<string, any> {
         const condition: Record<string, Date> = { $gte: range.since };
+
+        // User-level date fields record a single global timestamp (e.g. most
+        // recent visit, first visit, referral date). Applying $lte directly would
+        // exclude users whose global timestamp moved past the window end. Instead,
+        // use $elemMatch on sessions to verify the user had activity within the window.
+        const userLevelFields = ['activity.lastSeen', 'activity.firstSeen', 'referral.referredAt'];
+        if (userLevelFields.includes(field) && range.until) {
+            const filter: Record<string, any> = { [field]: condition };
+            filter['activity.sessions'] = {
+                $elemMatch: {
+                    startedAt: { $gte: range.since, $lte: range.until }
+                }
+            };
+            return filter;
+        }
+
+        // Session-level fields (post-$unwind) or open-ended ranges get bounds directly
         if (range.until) {
             condition.$lte = range.until;
         }
@@ -2275,7 +2299,8 @@ export class UserService {
         if (isGoogleDomain && this.gscService) {
             try {
                 if (await this.gscService.isConfigured()) {
-                    const gscHours = Math.round((Date.now() - range.since.getTime()) / (60 * 60 * 1000));
+                    const upperBound = range.until?.getTime() ?? Date.now();
+                    const gscHours = Math.ceil((upperBound - range.since.getTime()) / (60 * 60 * 1000));
                     gscKeywords = await this.gscService.getKeywordsForPeriod(gscHours, 10);
 
                     // Populate searchKeywords from GSC clicks for backward compatibility
@@ -2743,7 +2768,7 @@ export class UserService {
             _id: { date: string; isNew: boolean };
             count: number;
         }>([
-            { $match: { ...this.buildDateFilter(effectiveRange, 'activity.lastSeen'), 'activity.sessions': { $exists: true, $ne: [] } } },
+            { $match: { 'activity.lastSeen': { $gte: effectiveRange.since }, 'activity.sessions': { $exists: true, $ne: [] } } },
             { $unwind: '$activity.sessions' },
             { $match: this.buildDateFilter(effectiveRange, 'activity.sessions.startedAt') },
             {

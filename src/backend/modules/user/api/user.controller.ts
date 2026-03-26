@@ -789,7 +789,9 @@ export class UserController {
      * Get visitor traffic origins from first-ever sessions.
      *
      * Query parameters:
-     * - period: Lookback period ('24h', '7d', '30d', '90d', default: '24h')
+     * - period: Lookback period ('24h', '7d', '30d', '90d', default: '24h'), or omit with startDate/endDate
+     * - startDate: Custom range start (ISO string, e.g. '2026-03-01T00:00:00.000Z')
+     * - endDate: Custom range end (ISO string, e.g. '2026-03-07T23:59:59.999Z')
      * - limit: Maximum results (default: 50, max: 100)
      * - skip: Pagination offset (default: 0)
      *
@@ -826,7 +828,9 @@ export class UserController {
      * lastSeen (recent activity), this filters by firstSeen (new arrivals).
      *
      * Query parameters:
-     * - period: Lookback period ('24h', '7d', '30d', '90d', default: '24h')
+     * - period: Lookback period ('24h', '7d', '30d', '90d', default: '24h'), or omit with startDate/endDate
+     * - startDate: Custom range start (ISO string, e.g. '2026-03-01T00:00:00.000Z')
+     * - endDate: Custom range end (ISO string, e.g. '2026-03-07T23:59:59.999Z')
      * - limit: Maximum results (default: 50, max: 100)
      * - skip: Pagination offset (default: 0)
      *
@@ -877,6 +881,9 @@ export class UserController {
             const since = new Date(startDate as string);
             const until = new Date(endDate as string);
             if (!isNaN(since.getTime()) && !isNaN(until.getTime())) {
+                if (since.getTime() > until.getTime()) {
+                    throw new Error('startDate must be before or equal to endDate');
+                }
                 return { since, until };
             }
         }
@@ -940,7 +947,9 @@ export class UserController {
      * Get aggregate traffic source breakdown.
      *
      * Query parameters:
-     * - period: '24h' | '7d' | '30d' | '90d' (default: '30d')
+     * - period: '24h' | '7d' | '30d' | '90d' (default: '30d'), or omit with startDate/endDate
+     * - startDate: Custom range start (ISO string)
+     * - endDate: Custom range end (ISO string)
      *
      * Response: { sources: [...], total: number }
      */
@@ -958,7 +967,9 @@ export class UserController {
      *
      * Query parameters:
      * - source: referrer domain (e.g. 'duckduckgo.com', 'direct') (required)
-     * - period: '24h' | '7d' | '30d' | '90d' (default: '30d')
+     * - period: '24h' | '7d' | '30d' | '90d' (default: '30d'), or omit with startDate/endDate
+     * - startDate: Custom range start (ISO string)
+     * - endDate: Custom range end (ISO string)
      *
      * Response: { source, visitors, landingPages, countries, devices, utmCampaigns, searchKeywords, engagement, conversion }
      */
@@ -980,7 +991,9 @@ export class UserController {
      * Get top landing pages by visitor count.
      *
      * Query parameters:
-     * - period: '24h' | '7d' | '30d' | '90d' (default: '30d')
+     * - period: '24h' | '7d' | '30d' | '90d' (default: '30d'), or omit with startDate/endDate
+     * - startDate: Custom range start (ISO string)
+     * - endDate: Custom range end (ISO string)
      * - limit: max results (default: 20, max: 50)
      *
      * Response: { pages: [...], total: number }
@@ -999,7 +1012,9 @@ export class UserController {
      * Get geographic distribution of visitors.
      *
      * Query parameters:
-     * - period: '24h' | '7d' | '30d' | '90d' (default: '30d')
+     * - period: '24h' | '7d' | '30d' | '90d' (default: '30d'), or omit with startDate/endDate
+     * - startDate: Custom range start (ISO string)
+     * - endDate: Custom range end (ISO string)
      * - limit: max countries (default: 30, max: 100)
      *
      * Response: { countries: [...], total: number }
@@ -1018,7 +1033,9 @@ export class UserController {
      * Get device and screen size breakdown.
      *
      * Query parameters:
-     * - period: '24h' | '7d' | '30d' | '90d' (default: '30d')
+     * - period: '24h' | '7d' | '30d' | '90d' (default: '30d'), or omit with startDate/endDate
+     * - startDate: Custom range start (ISO string)
+     * - endDate: Custom range end (ISO string)
      *
      * Response: { devices: [...], screenSizes: [...], total: number }
      */
@@ -1035,7 +1052,9 @@ export class UserController {
      * Get UTM campaign performance with conversion rates.
      *
      * Query parameters:
-     * - period: '24h' | '7d' | '30d' | '90d' (default: '30d')
+     * - period: '24h' | '7d' | '30d' | '90d' (default: '30d'), or omit with startDate/endDate
+     * - startDate: Custom range start (ISO string)
+     * - endDate: Custom range end (ISO string)
      * - limit: max campaigns (default: 20, max: 50)
      *
      * Response: { campaigns: [...], total: number }
@@ -1054,7 +1073,9 @@ export class UserController {
      * Get engagement metrics (avg duration, pages/session, bounce rate).
      *
      * Query parameters:
-     * - period: '24h' | '7d' | '30d' | '90d' (default: '30d')
+     * - period: '24h' | '7d' | '30d' | '90d' (default: '30d'), or omit with startDate/endDate
+     * - startDate: Custom range start (ISO string)
+     * - endDate: Custom range end (ISO string)
      *
      * Response: { avgSessionDuration, avgPagesPerSession, bounceRate, avgSessionsPerUser, totalUsers }
      */
@@ -1071,7 +1092,9 @@ export class UserController {
      * Get conversion funnel (visitors → return → wallet → verified).
      *
      * Query parameters:
-     * - period: '24h' | '7d' | '30d' | '90d' (default: '30d')
+     * - period: '24h' | '7d' | '30d' | '90d' (default: '30d'), or omit with startDate/endDate
+     * - startDate: Custom range start (ISO string)
+     * - endDate: Custom range end (ISO string)
      *
      * Response: { stages: [...] }
      */
@@ -1088,7 +1111,9 @@ export class UserController {
      * Get new vs returning visitor breakdown over time.
      *
      * Query parameters:
-     * - period: '24h' | '7d' | '30d' | '90d' (default: '30d')
+     * - period: '24h' | '7d' | '30d' | '90d' (default: '30d'), or omit with startDate/endDate
+     * - startDate: Custom range start (ISO string)
+     * - endDate: Custom range end (ISO string)
      *
      * Response: { data: [{ date, newVisitors, returningVisitors }] }
      */
@@ -1105,7 +1130,9 @@ export class UserController {
      * Get aggregate referral program metrics.
      *
      * Query parameters:
-     * - period: '24h' | '7d' | '30d' | '90d' (default: '30d')
+     * - period: '24h' | '7d' | '30d' | '90d' (default: '30d'), or omit with startDate/endDate
+     * - startDate: Custom range start (ISO string)
+     * - endDate: Custom range end (ISO string)
      * - limit: max top referrers (default: 15, max: 50)
      *
      * Response: { totalReferrals, totalConverted, conversionRate, usersWithCodes, topReferrers, recentReferrals }

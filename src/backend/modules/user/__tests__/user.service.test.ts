@@ -757,6 +757,113 @@ describe('UserService', () => {
             });
         });
 
+        describe('date range filtering (via getEngagementMetrics)', () => {
+            it('should return results for open-ended range (preset period)', async () => {
+                const collection = mockDatabase.getCollection('users');
+                await userService.getOrCreate(validUUID);
+                await collection.updateOne(
+                    { id: validUUID },
+                    {
+                        $set: {
+                            'activity.lastSeen': new Date(),
+                            'activity.sessions': [{
+                                startedAt: new Date(),
+                                durationSeconds: 60,
+                                pages: [{ path: '/', timestamp: new Date() }]
+                            }]
+                        }
+                    }
+                );
+
+                const result = await userService.getEngagementMetrics({
+                    since: new Date(Date.now() - 24 * 60 * 60 * 1000)
+                });
+
+                expect(result).toHaveProperty('totalUsers');
+                expect(result).toHaveProperty('avgSessionDuration');
+                expect(result).toHaveProperty('bounceRate');
+            });
+
+            it('should return results for bounded range (custom dates)', async () => {
+                const now = new Date();
+                const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+                const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+
+                const collection = mockDatabase.getCollection('users');
+                await userService.getOrCreate(validUUID);
+                await collection.updateOne(
+                    { id: validUUID },
+                    {
+                        $set: {
+                            'activity.lastSeen': now,
+                            'activity.sessions': [{
+                                startedAt: now,
+                                durationSeconds: 120,
+                                pages: [{ path: '/', timestamp: now }]
+                            }]
+                        }
+                    }
+                );
+
+                const result = await userService.getEngagementMetrics({
+                    since: yesterday,
+                    until: tomorrow
+                });
+
+                expect(result).toHaveProperty('totalUsers');
+                expect(result).toHaveProperty('avgSessionDuration');
+            });
+
+            it('should return empty results when bounded range has no matching sessions', async () => {
+                const collection = mockDatabase.getCollection('users');
+                await userService.getOrCreate(validUUID);
+                await collection.updateOne(
+                    { id: validUUID },
+                    {
+                        $set: {
+                            'activity.lastSeen': new Date(),
+                            'activity.sessions': [{
+                                startedAt: new Date(),
+                                durationSeconds: 60,
+                                pages: [{ path: '/', timestamp: new Date() }]
+                            }]
+                        }
+                    }
+                );
+
+                // Range entirely in the past — no sessions should match
+                const longAgo = new Date('2020-01-01');
+                const alsoLongAgo = new Date('2020-01-02');
+                const result = await userService.getEngagementMetrics({
+                    since: longAgo,
+                    until: alsoLongAgo
+                });
+
+                expect(result.totalUsers).toBe(0);
+                expect(result.avgSessionDuration).toBe(0);
+            });
+
+            it('should handle getConversionFunnel with bounded range', async () => {
+                const result = await userService.getConversionFunnel({
+                    since: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
+                    until: new Date()
+                });
+
+                expect(result).toHaveProperty('stages');
+                expect(Array.isArray(result.stages)).toBe(true);
+            });
+
+            it('should handle getTrafficSources with bounded range', async () => {
+                const result = await userService.getTrafficSources({
+                    since: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
+                    until: new Date()
+                });
+
+                expect(result).toHaveProperty('sources');
+                expect(result).toHaveProperty('total');
+            });
+        });
+
         describe('getReferralOverview', () => {
             it('should return correct shape with zero totals when no referrals exist', async () => {
                 // The mock aggregate doesn't support complex $group with $cond/$filter,

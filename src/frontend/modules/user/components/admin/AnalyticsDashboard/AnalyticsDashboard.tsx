@@ -18,7 +18,7 @@
 
 'use client';
 
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import {
     Users, TrendingUp, MousePointerClick,
     Globe, Smartphone, BarChart3, Target, ChevronDown, ChevronRight, Calendar
@@ -164,6 +164,20 @@ export function AnalyticsDashboard({ token }: Props) {
     const [sourceDetailsLoading, setSourceDetailsLoading] = useState<string | null>(null);
 
     /**
+     * Memoized custom date range built from the date input values.
+     * Aligns to localized midnight: start at 00:00:00 of start date,
+     * end at 23:59:59.999 of end date. Returns undefined if period is
+     * not 'custom' or either date input is empty/invalid.
+     */
+    const customRange = useMemo<ICustomDateRange | undefined>(() => {
+        if (period !== 'custom' || !customStart || !customEnd) return undefined;
+        const start = new Date(`${customStart}T00:00:00`);
+        const end = new Date(`${customEnd}T23:59:59.999`);
+        if (isNaN(start.getTime()) || isNaN(end.getTime())) return undefined;
+        return { startDate: start.toISOString(), endDate: end.toISOString() };
+    }, [period, customStart, customEnd]);
+
+    /**
      * Toggle drill-down for a traffic source row.
      *
      * Fetches details on first expand, then caches for subsequent toggles.
@@ -189,20 +203,7 @@ export function AnalyticsDashboard({ token }: Props) {
                 setSourceDetailsLoading(prev => prev === source ? null : prev);
             }
         }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [expandedSource, sourceDetails, token, period, customStart, customEnd]);
-
-    /**
-     * Build the custom date range object when period is 'custom'.
-     * Aligns to localized midnight: start at 00:00:00 of start date,
-     * end at 23:59:59.999 of end date.
-     */
-    const customRange: ICustomDateRange | undefined = period === 'custom'
-        ? {
-            startDate: new Date(`${customStart}T00:00:00`).toISOString(),
-            endDate: new Date(`${customEnd}T23:59:59.999`).toISOString(),
-        }
-        : undefined;
+    }, [expandedSource, sourceDetails, token, period, customRange]);
 
     /**
      * Fetch all analytics data for the selected period.
@@ -247,8 +248,7 @@ export function AnalyticsDashboard({ token }: Props) {
         } finally {
             setLoading(false);
         }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [token, period, customStart, customEnd]);
+    }, [token, period, customRange]);
 
     useEffect(() => {
         fetchAll();
