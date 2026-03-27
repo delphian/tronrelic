@@ -21,6 +21,7 @@ import { ClientTime } from '../components/ui/ClientTime';
 import { Tooltip } from '../components/ui/Tooltip';
 import { LazyIconPickerModal as IconPickerModal } from '../components/ui/IconPickerModal';
 import { useModal as useModalHook } from '../components/ui/ModalProvider';
+import { useToast as useToastHook } from '../components/ui/ToastProvider';
 import { LineChart } from '../features/charts/components/LineChart';
 import { SchedulerMonitor } from '../modules/scheduler';
 import { Page, PageHeader, Stack, Grid, Section } from '../components/layout';
@@ -456,7 +457,8 @@ export function FrontendPluginContextProvider({ children }: { children: React.Re
             api,
             websocket,
             useModal: useModalHook,
-            useUser: usePluginUser
+            useUser: usePluginUser,
+            useToast: useToastHook
         };
     }, []);
 

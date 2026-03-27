@@ -704,4 +704,34 @@ export interface IFrontendPluginContext {
      * ```
      */
     useUser: () => IPluginUserState;
+
+    /**
+     * Toast notification hook for displaying temporary notification messages.
+     *
+     * Returns methods to push and dismiss toast notifications. Must be called
+     * within a component context (similar to React hooks pattern).
+     *
+     * @example
+     * ```typescript
+     * const { push } = context.useToast();
+     * push({
+     *     tone: 'warning',
+     *     title: 'Whale transfer detected',
+     *     description: '1,500,000 TRX transferred',
+     *     duration: 7000
+     * });
+     * ```
+     */
+    useToast: () => {
+        push: (toast: {
+            id?: string;
+            tone?: 'info' | 'success' | 'warning' | 'danger';
+            title: string;
+            description?: string;
+            duration?: number;
+            actionLabel?: string;
+            onAction?: () => void;
+        }) => string;
+        dismiss: (id: string) => void;
+    };
 }
