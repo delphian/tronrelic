@@ -774,35 +774,43 @@ export class SystemLogService implements ISystemLogService {
             limit = 50
         } = query;
 
-        // Build MongoDB filter
+        // Build MongoDB filter with input sanitization to prevent NoSQL injection.
+        // Query parameters originate from req.query which Express can parse as
+        // objects (e.g., service[$gt]= becomes { $gt: '' }). Coerce all values
+        // to their expected primitive types before including them in the filter.
         const filter: any = {};
 
         // Track whether the level filter is effectively "all levels" (no real filtering).
         // When all levels are selected the $in adds overhead without excluding anything,
         // so we skip it entirely and let MongoDB use a simple index scan.
-        const allLevelsSelected = levels
-            && levels.length >= SystemLogService.ALL_LEVELS.length
-            && SystemLogService.ALL_LEVELS.every(l => levels.includes(l as LogLevel));
+        const sanitizedLevels = levels?.filter(
+            (l): l is LogLevel => typeof l === 'string' && SystemLogService.ALL_LEVELS.includes(l)
+        );
+        const allLevelsSelected = sanitizedLevels
+            && sanitizedLevels.length >= SystemLogService.ALL_LEVELS.length;
 
-        if (levels && levels.length > 0 && !allLevelsSelected) {
-            filter.level = { $in: levels };
+        if (sanitizedLevels && sanitizedLevels.length > 0 && !allLevelsSelected) {
+            filter.level = { $in: sanitizedLevels };
         }
 
-        if (service) {
+        if (service && typeof service === 'string') {
             filter.service = service;
         }
 
-        if (resolved !== undefined) {
+        if (resolved !== undefined && typeof resolved === 'boolean') {
             filter.resolved = resolved;
         }
 
         if (startDate || endDate) {
             filter.timestamp = {};
-            if (startDate) {
+            if (startDate instanceof Date && !isNaN(startDate.getTime())) {
                 filter.timestamp.$gte = startDate;
             }
-            if (endDate) {
+            if (endDate instanceof Date && !isNaN(endDate.getTime())) {
                 filter.timestamp.$lte = endDate;
+            }
+            if (Object.keys(filter.timestamp).length === 0) {
+                delete filter.timestamp;
             }
         }
 
