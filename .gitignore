@@ -149,8 +149,6 @@ src/plugins/*
 !src/plugins/.gitkeep
 !src/plugins/whale-alerts/
 !src/plugins/example-dashboard/
-!src/plugins/resource-tracking/
-!src/plugins/telegram-bot/
 
 # Plugin configuration (user-specific)
 plugins.json
