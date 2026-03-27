@@ -57,6 +57,23 @@ export class SystemLogService implements ISystemLogService {
     private initializationPromise: Promise<void>;
     private resolveInitialization: (() => void) | null = null;
 
+    /** In-memory cache for statistics to avoid repeated full collection scans. */
+    private cachedStatistics: {
+        total: number;
+        byLevel: Record<LogLevel, number>;
+        byService: Record<string, number>;
+        unresolved: number;
+    } | null = null;
+
+    /** Timestamp of last statistics fetch for TTL-based invalidation. */
+    private statisticsCachedAt = 0;
+
+    /** Statistics cache TTL in milliseconds (30 seconds). */
+    private static readonly STATISTICS_CACHE_TTL_MS = 30_000;
+
+    /** All valid log levels for detecting unfiltered queries. */
+    private static readonly ALL_LEVELS: readonly string[] = ['trace', 'debug', 'info', 'warn', 'error', 'fatal'];
+
     /**
      * Private constructor enforces singleton pattern.
      *
@@ -760,7 +777,14 @@ export class SystemLogService implements ISystemLogService {
         // Build MongoDB filter
         const filter: any = {};
 
-        if (levels && levels.length > 0) {
+        // Track whether the level filter is effectively "all levels" (no real filtering).
+        // When all levels are selected the $in adds overhead without excluding anything,
+        // so we skip it entirely and let MongoDB use a simple index scan.
+        const allLevelsSelected = levels
+            && levels.length >= SystemLogService.ALL_LEVELS.length
+            && SystemLogService.ALL_LEVELS.every(l => levels.includes(l as LogLevel));
+
+        if (levels && levels.length > 0 && !allLevelsSelected) {
             filter.level = { $in: levels };
         }
 
@@ -785,7 +809,11 @@ export class SystemLogService implements ISystemLogService {
         // Calculate pagination
         const skip = (page - 1) * limit;
 
-        // Execute query
+        // When filter is empty (all levels, no service/date/resolved filters), use
+        // estimatedDocumentCount() which reads from collection metadata instead of
+        // scanning the entire collection. This avoids a 1M+ document count on every poll.
+        const isUnfiltered = Object.keys(filter).length === 0;
+
         const [logs, total] = await Promise.all([
             SystemLog.find(filter)
                 .sort({ timestamp: -1 })
@@ -793,7 +821,9 @@ export class SystemLogService implements ISystemLogService {
                 .limit(limit)
                 .lean()
                 .exec(),
-            SystemLog.countDocuments(filter).exec()
+            isUnfiltered
+                ? SystemLog.estimatedDocumentCount().exec()
+                : SystemLog.countDocuments(filter).exec()
         ]);
 
         const totalPages = Math.ceil(total / limit);
@@ -825,6 +855,7 @@ export class SystemLogService implements ISystemLogService {
             },
             { new: true }
         ).exec();
+        this.invalidateStatisticsCache();
     }
 
     /**
@@ -848,8 +879,17 @@ export class SystemLogService implements ISystemLogService {
         byService: Record<string, number>;
         unresolved: number;
     }> {
+        // Return cached statistics if within TTL. The two $group aggregations
+        // perform full collection scans on 1M+ docs each — running these on
+        // every poll (1-10s) saturates MongoDB CPU. A 30-second cache keeps
+        // the sidebar counts slightly stale while avoiding repeated scans.
+        const now = Date.now();
+        if (this.cachedStatistics && (now - this.statisticsCachedAt) < SystemLogService.STATISTICS_CACHE_TTL_MS) {
+            return this.cachedStatistics;
+        }
+
         const [total, byLevel, byService, unresolved] = await Promise.all([
-            SystemLog.countDocuments().exec(),
+            SystemLog.estimatedDocumentCount().exec(),
             SystemLog.aggregate([
                 { $group: { _id: '$level', count: { $sum: 1 } } }
             ]).exec(),
@@ -877,12 +917,26 @@ export class SystemLogService implements ISystemLogService {
             serviceCounts[item._id] = item.count;
         }
 
-        return {
+        this.cachedStatistics = {
             total,
             byLevel: levelCounts,
             byService: serviceCounts,
             unresolved
         };
+        this.statisticsCachedAt = now;
+
+        return this.cachedStatistics;
+    }
+
+    /**
+     * Invalidate the in-memory statistics cache.
+     *
+     * Called after mutations (resolve, unresolve, delete) so the next
+     * getStatistics() call fetches fresh data from MongoDB.
+     */
+    private invalidateStatisticsCache(): void {
+        this.cachedStatistics = null;
+        this.statisticsCachedAt = 0;
     }
 
     // ========================================================================
@@ -905,7 +959,7 @@ export class SystemLogService implements ISystemLogService {
      * @param id - MongoDB document ID
      */
     public async markAsUnresolved(id: string): Promise<any> {
-        return await SystemLog.findByIdAndUpdate(
+        const result = await SystemLog.findByIdAndUpdate(
             id,
             {
                 resolved: false,
@@ -913,6 +967,8 @@ export class SystemLogService implements ISystemLogService {
             },
             { new: true }
         ).lean().exec();
+        this.invalidateStatisticsCache();
+        return result;
     }
 
     /**
@@ -926,6 +982,7 @@ export class SystemLogService implements ISystemLogService {
             timestamp: { $lt: beforeDate }
         }).exec();
 
+        this.invalidateStatisticsCache();
         return result.deletedCount || 0;
     }
 
@@ -953,6 +1010,7 @@ export class SystemLogService implements ISystemLogService {
             timestamp: { $lt: cutoffTimestamp }
         }).exec();
 
+        this.invalidateStatisticsCache();
         return result.deletedCount || 0;
     }
 
@@ -963,6 +1021,7 @@ export class SystemLogService implements ISystemLogService {
      */
     public async deleteAllLogs(): Promise<number> {
         const result = await SystemLog.deleteMany({}).exec();
+        this.invalidateStatisticsCache();
         return result.deletedCount || 0;
     }
 
