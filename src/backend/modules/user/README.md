@@ -2,10 +2,6 @@
 
 The user module provides visitor identity management, enabling anonymous tracking via UUID with optional upgrade to verified TRON wallet addresses. Users start with client-generated UUIDs stored in cookies/localStorage, can link multiple wallets via TronLink signature verification, and have their preferences and activity tracked across sessions.
 
-## Who This Document Is For
-
-Backend developers implementing identity-aware features, frontend developers integrating wallet connection flows, and maintainers understanding the cookie-based authentication pattern.
-
 ## Why This Matters
 
 TronRelic needs to track visitor behavior and preferences without requiring registration. Without the user module:

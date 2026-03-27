@@ -2,10 +2,6 @@
 
 The pages module provides custom content management capabilities, allowing administrators to create user-facing pages (articles, documentation, announcements) with markdown authoring, file uploads, and dynamic routing. Pages are rendered from markdown to HTML, cached for performance, and discoverable at URLs matching their configured slugs.
 
-## Who This Document Is For
-
-Backend developers implementing content management features, frontend developers integrating custom pages into the UI, and maintainers understanding the storage provider abstraction layer.
-
 ## Why This Matters
 
 TronRelic's plugin system excels at blockchain-specific features, but administrators need simpler content pages for documentation, announcements, or marketing content. Without the pages module:

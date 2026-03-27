@@ -2,10 +2,6 @@
 
 The menu module manages hierarchical navigation menus with event-driven validation, real-time WebSocket updates, and support for multiple independent menu trees (namespaces). It implements the IModule interface with two-phase lifecycle initialization.
 
-## Who This Document Is For
-
-Backend developers implementing plugins that need navigation entries, frontend developers building navigation UI, and administrators managing menu structure through the admin API.
-
 ## Why This Matters
 
 Navigation is critical infrastructure that every feature depends on:
