@@ -147,7 +147,6 @@ yarn.lock
 # Cloned external plugins (setup.sh downloads these)
 src/plugins/*
 !src/plugins/.gitkeep
-!src/plugins/whale-alerts/
 !src/plugins/example-dashboard/
 
 # Plugin configuration (user-specific)
