@@ -15,6 +15,7 @@ vi.mock('../database/index.js', () => ({
         findById: vi.fn(),
         findByIdAndUpdate: vi.fn(),
         countDocuments: vi.fn(),
+        estimatedDocumentCount: vi.fn(),
         aggregate: vi.fn(),
         deleteMany: vi.fn()
     }
@@ -1076,12 +1077,12 @@ describe('SystemLogService - MongoDB Operations', () => {
             exec: vi.fn().mockResolvedValue(mockLogs)
         };
 
-        const mockCountDocuments = {
+        const mockEstimatedCount = {
             exec: vi.fn().mockResolvedValue(10)
         };
 
         (SystemLog.find as any) = vi.fn().mockReturnValue(mockFind);
-        (SystemLog.countDocuments as any) = vi.fn().mockReturnValue(mockCountDocuments);
+        (SystemLog.estimatedDocumentCount as any) = vi.fn().mockReturnValue(mockEstimatedCount);
 
         const result = await service.getLogs({ page: 1, limit: 2 });
 
@@ -1192,9 +1193,8 @@ describe('SystemLogService - MongoDB Operations', () => {
      * Verifies that statistics method aggregates by level and service.
      */
     it('should get log statistics', async () => {
-        const mockCountExec = vi.fn()
-            .mockResolvedValueOnce(100) // total
-            .mockResolvedValueOnce(25); // unresolved
+        const mockEstimatedExec = vi.fn().mockResolvedValue(100);
+        const mockCountExec = vi.fn().mockResolvedValue(25);
 
         const mockAggregateExec = vi.fn()
             .mockResolvedValueOnce([
@@ -1207,6 +1207,7 @@ describe('SystemLogService - MongoDB Operations', () => {
                 { _id: 'plugin:whale-alerts', count: 30 }
             ]);
 
+        (SystemLog.estimatedDocumentCount as any) = vi.fn(() => ({ exec: mockEstimatedExec }));
         (SystemLog.countDocuments as any) = vi.fn(() => ({ exec: mockCountExec }));
         (SystemLog.aggregate as any) = vi.fn(() => ({ exec: mockAggregateExec }));
 
