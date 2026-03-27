@@ -71,8 +71,16 @@ export class SystemLogService implements ISystemLogService {
     /** Statistics cache TTL in milliseconds (30 seconds). */
     private static readonly STATISTICS_CACHE_TTL_MS = 30_000;
 
+    /** In-flight statistics refresh promise to coalesce concurrent cache misses. */
+    private statisticsRefreshPromise: Promise<{
+        total: number;
+        byLevel: Record<LogLevel, number>;
+        byService: Record<string, number>;
+        unresolved: number;
+    }> | null = null;
+
     /** All valid log levels for detecting unfiltered queries. */
-    private static readonly ALL_LEVELS: readonly string[] = ['trace', 'debug', 'info', 'warn', 'error', 'fatal'];
+    private static readonly ALL_LEVELS: readonly LogLevel[] = ['trace', 'debug', 'info', 'warn', 'error', 'fatal'];
 
     /**
      * Private constructor enforces singleton pattern.
@@ -896,6 +904,33 @@ export class SystemLogService implements ISystemLogService {
             return this.cachedStatistics;
         }
 
+        // Coalesce concurrent cache misses: if a refresh is already in flight,
+        // return the same promise instead of launching duplicate aggregations.
+        if (this.statisticsRefreshPromise) {
+            return this.statisticsRefreshPromise;
+        }
+
+        this.statisticsRefreshPromise = this.refreshStatistics();
+
+        try {
+            return await this.statisticsRefreshPromise;
+        } finally {
+            this.statisticsRefreshPromise = null;
+        }
+    }
+
+    /**
+     * Execute the actual statistics queries against MongoDB.
+     *
+     * Separated from getStatistics() so the in-flight promise can be
+     * stored and shared across concurrent callers.
+     */
+    private async refreshStatistics(): Promise<{
+        total: number;
+        byLevel: Record<LogLevel, number>;
+        byService: Record<string, number>;
+        unresolved: number;
+    }> {
         const [total, byLevel, byService, unresolved] = await Promise.all([
             SystemLog.estimatedDocumentCount().exec(),
             SystemLog.aggregate([
@@ -931,7 +966,7 @@ export class SystemLogService implements ISystemLogService {
             byService: serviceCounts,
             unresolved
         };
-        this.statisticsCachedAt = now;
+        this.statisticsCachedAt = Date.now();
 
         return this.cachedStatistics;
     }
