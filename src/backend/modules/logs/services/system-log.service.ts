@@ -57,6 +57,31 @@ export class SystemLogService implements ISystemLogService {
     private initializationPromise: Promise<void>;
     private resolveInitialization: (() => void) | null = null;
 
+    /** In-memory cache for statistics to avoid repeated full collection scans. */
+    private cachedStatistics: {
+        total: number;
+        byLevel: Record<LogLevel, number>;
+        byService: Record<string, number>;
+        unresolved: number;
+    } | null = null;
+
+    /** Timestamp of last statistics fetch for TTL-based invalidation. */
+    private statisticsCachedAt = 0;
+
+    /** Statistics cache TTL in milliseconds (30 seconds). */
+    private static readonly STATISTICS_CACHE_TTL_MS = 30_000;
+
+    /** In-flight statistics refresh promise to coalesce concurrent cache misses. */
+    private statisticsRefreshPromise: Promise<{
+        total: number;
+        byLevel: Record<LogLevel, number>;
+        byService: Record<string, number>;
+        unresolved: number;
+    }> | null = null;
+
+    /** All valid log levels for detecting unfiltered queries. */
+    private static readonly ALL_LEVELS: readonly LogLevel[] = ['trace', 'debug', 'info', 'warn', 'error', 'fatal'];
+
     /**
      * Private constructor enforces singleton pattern.
      *
@@ -757,35 +782,54 @@ export class SystemLogService implements ISystemLogService {
             limit = 50
         } = query;
 
-        // Build MongoDB filter
+        // Build MongoDB filter with input sanitization to prevent NoSQL injection.
+        // Query parameters originate from req.query which Express can parse as
+        // objects (e.g., service[$gt]= becomes { $gt: '' }). Coerce all values
+        // to their expected primitive types before including them in the filter.
         const filter: any = {};
 
-        if (levels && levels.length > 0) {
-            filter.level = { $in: levels };
+        // Track whether the level filter is effectively "all levels" (no real filtering).
+        // When all levels are selected the $in adds overhead without excluding anything,
+        // so we skip it entirely and let MongoDB use a simple index scan.
+        const sanitizedLevels = levels?.filter(
+            (l): l is LogLevel => typeof l === 'string' && SystemLogService.ALL_LEVELS.includes(l)
+        );
+        const allLevelsSelected = sanitizedLevels
+            && sanitizedLevels.length >= SystemLogService.ALL_LEVELS.length;
+
+        if (sanitizedLevels && sanitizedLevels.length > 0 && !allLevelsSelected) {
+            filter.level = { $in: sanitizedLevels };
         }
 
-        if (service) {
+        if (service && typeof service === 'string') {
             filter.service = service;
         }
 
-        if (resolved !== undefined) {
+        if (resolved !== undefined && typeof resolved === 'boolean') {
             filter.resolved = resolved;
         }
 
         if (startDate || endDate) {
             filter.timestamp = {};
-            if (startDate) {
+            if (startDate instanceof Date && !isNaN(startDate.getTime())) {
                 filter.timestamp.$gte = startDate;
             }
-            if (endDate) {
+            if (endDate instanceof Date && !isNaN(endDate.getTime())) {
                 filter.timestamp.$lte = endDate;
+            }
+            if (Object.keys(filter.timestamp).length === 0) {
+                delete filter.timestamp;
             }
         }
 
         // Calculate pagination
         const skip = (page - 1) * limit;
 
-        // Execute query
+        // When filter is empty (all levels, no service/date/resolved filters), use
+        // estimatedDocumentCount() which reads from collection metadata instead of
+        // scanning the entire collection. This avoids a 1M+ document count on every poll.
+        const isUnfiltered = Object.keys(filter).length === 0;
+
         const [logs, total] = await Promise.all([
             SystemLog.find(filter)
                 .sort({ timestamp: -1 })
@@ -793,7 +837,9 @@ export class SystemLogService implements ISystemLogService {
                 .limit(limit)
                 .lean()
                 .exec(),
-            SystemLog.countDocuments(filter).exec()
+            isUnfiltered
+                ? SystemLog.estimatedDocumentCount().exec()
+                : SystemLog.countDocuments(filter).exec()
         ]);
 
         const totalPages = Math.ceil(total / limit);
@@ -825,6 +871,7 @@ export class SystemLogService implements ISystemLogService {
             },
             { new: true }
         ).exec();
+        this.invalidateStatisticsCache();
     }
 
     /**
@@ -848,8 +895,44 @@ export class SystemLogService implements ISystemLogService {
         byService: Record<string, number>;
         unresolved: number;
     }> {
+        // Return cached statistics if within TTL. The two $group aggregations
+        // perform full collection scans on 1M+ docs each — running these on
+        // every poll (1-10s) saturates MongoDB CPU. A 30-second cache keeps
+        // the sidebar counts slightly stale while avoiding repeated scans.
+        const now = Date.now();
+        if (this.cachedStatistics && (now - this.statisticsCachedAt) < SystemLogService.STATISTICS_CACHE_TTL_MS) {
+            return this.cachedStatistics;
+        }
+
+        // Coalesce concurrent cache misses: if a refresh is already in flight,
+        // return the same promise instead of launching duplicate aggregations.
+        if (this.statisticsRefreshPromise) {
+            return this.statisticsRefreshPromise;
+        }
+
+        this.statisticsRefreshPromise = this.refreshStatistics();
+
+        try {
+            return await this.statisticsRefreshPromise;
+        } finally {
+            this.statisticsRefreshPromise = null;
+        }
+    }
+
+    /**
+     * Execute the actual statistics queries against MongoDB.
+     *
+     * Separated from getStatistics() so the in-flight promise can be
+     * stored and shared across concurrent callers.
+     */
+    private async refreshStatistics(): Promise<{
+        total: number;
+        byLevel: Record<LogLevel, number>;
+        byService: Record<string, number>;
+        unresolved: number;
+    }> {
         const [total, byLevel, byService, unresolved] = await Promise.all([
-            SystemLog.countDocuments().exec(),
+            SystemLog.estimatedDocumentCount().exec(),
             SystemLog.aggregate([
                 { $group: { _id: '$level', count: { $sum: 1 } } }
             ]).exec(),
@@ -877,12 +960,26 @@ export class SystemLogService implements ISystemLogService {
             serviceCounts[item._id] = item.count;
         }
 
-        return {
+        this.cachedStatistics = {
             total,
             byLevel: levelCounts,
             byService: serviceCounts,
             unresolved
         };
+        this.statisticsCachedAt = Date.now();
+
+        return this.cachedStatistics;
+    }
+
+    /**
+     * Invalidate the in-memory statistics cache.
+     *
+     * Called after mutations (resolve, unresolve, delete) so the next
+     * getStatistics() call fetches fresh data from MongoDB.
+     */
+    private invalidateStatisticsCache(): void {
+        this.cachedStatistics = null;
+        this.statisticsCachedAt = 0;
     }
 
     // ========================================================================
@@ -905,7 +1002,7 @@ export class SystemLogService implements ISystemLogService {
      * @param id - MongoDB document ID
      */
     public async markAsUnresolved(id: string): Promise<any> {
-        return await SystemLog.findByIdAndUpdate(
+        const result = await SystemLog.findByIdAndUpdate(
             id,
             {
                 resolved: false,
@@ -913,6 +1010,8 @@ export class SystemLogService implements ISystemLogService {
             },
             { new: true }
         ).lean().exec();
+        this.invalidateStatisticsCache();
+        return result;
     }
 
     /**
@@ -926,6 +1025,7 @@ export class SystemLogService implements ISystemLogService {
             timestamp: { $lt: beforeDate }
         }).exec();
 
+        this.invalidateStatisticsCache();
         return result.deletedCount || 0;
     }
 
@@ -953,6 +1053,7 @@ export class SystemLogService implements ISystemLogService {
             timestamp: { $lt: cutoffTimestamp }
         }).exec();
 
+        this.invalidateStatisticsCache();
         return result.deletedCount || 0;
     }
 
@@ -963,6 +1064,7 @@ export class SystemLogService implements ISystemLogService {
      */
     public async deleteAllLogs(): Promise<number> {
         const result = await SystemLog.deleteMany({}).exec();
+        this.invalidateStatisticsCache();
         return result.deletedCount || 0;
     }
 
