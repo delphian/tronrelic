@@ -28,21 +28,21 @@ Use `@container` instead of `@media`. Import breakpoints from `_breakpoints.scss
 ```scss
 @use '../../../app/breakpoints' as *;
 
-.analytics_card { padding: var(--spacing-10); }
+.analytics_card { padding: var(--card-padding-md); }
 
 @container analytics-card (min-width: #{$breakpoint-mobile-md}) {
     .grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: var(--spacing-7);
+        gap: var(--grid-gap-sm);
     }
 }
 
 @container analytics-card (min-width: 720px) {
     .grid {
         grid-template-columns: repeat(3, minmax(0, 1fr));
-        gap: var(--spacing-10);
+        gap: var(--grid-gap-md);
     }
-    .analytics_card { padding: var(--spacing-12); }
+    .analytics_card { padding: var(--card-padding-lg); }
 }
 ```
 

@@ -668,14 +668,14 @@ Create CSS Module files colocated with your plugin components:
 /* Component-specific styles scoped automatically by CSS Modules */
 .dashboard {
     display: grid;
-    gap: 2rem;
+    gap: var(--grid-gap-md);
     container-type: inline-size;
 }
 
 .card {
-    padding: 1rem;
+    padding: var(--card-padding-sm);
     border-radius: var(--radius-md);
-    background: rgba(9, 15, 28, 0.6);
+    background: var(--color-surface-muted);
 }
 
 @container (min-width: 600px) {
