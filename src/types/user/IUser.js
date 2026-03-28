@@ -9,3 +9,4 @@
  * @module @tronrelic/types/user
  */
 export {};
+//# sourceMappingURL=IUser.js.map
