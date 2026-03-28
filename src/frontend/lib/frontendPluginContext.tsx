@@ -544,6 +544,7 @@ export function createPluginContext(pluginId: string): IFrontendPluginContext {
         api,
         websocket,
         useModal: useModalHook,
-        useUser: usePluginUser
+        useUser: usePluginUser,
+        useToast: useToastHook
     };
 }
