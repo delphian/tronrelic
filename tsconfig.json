@@ -34,7 +34,7 @@
     "dist",
     ".next",
     "src/frontend/.next",
-    "src/plugins/resource-markets",
+    "src/plugins/trp-resource-markets",
     "src/plugins/trp-delegation-pools",
     "src/plugins/trp-memo-tracker",
     "src/plugins/trp-dust-tracker"
