@@ -668,7 +668,7 @@ Create CSS Module files colocated with your plugin components:
 /* Component-specific styles scoped automatically by CSS Modules */
 .dashboard {
     display: grid;
-    gap: var(--grid-gap-md);
+    gap: var(--grid-gap-lg);
     container-type: inline-size;
 }
 

@@ -37,7 +37,7 @@ Use `@container` instead of `@media`. Import breakpoints from `_breakpoints.scss
     }
 }
 
-@container analytics-card (min-width: 720px) {
+@container analytics-card (min-width: #{$breakpoint-mobile-lg}) {
     .grid {
         grid-template-columns: repeat(3, minmax(0, 1fr));
         gap: var(--grid-gap-md);
@@ -125,15 +125,15 @@ export function TransactionCard({ transaction }: { transaction: ITransaction }) 
 @use '../../../app/breakpoints' as *;
 
 .card { container-type: inline-size; container-name: transaction-card; }
-.grid { display: grid; grid-template-columns: 1fr; gap: var(--spacing-4); }
+.grid { display: grid; grid-template-columns: 1fr; gap: var(--grid-gap-sm); }
 .stat { font-size: var(--font-size-sm); color: var(--color-text-muted); }
 
 @container transaction-card (min-width: #{$breakpoint-mobile-md}) {
-    .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--spacing-7); }
+    .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--grid-gap-sm); }
 }
 
-@container transaction-card (min-width: 720px) {
-    .grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--spacing-10); }
+@container transaction-card (min-width: #{$breakpoint-mobile-lg}) {
+    .grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--grid-gap-md); }
 }
 ```
 

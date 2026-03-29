@@ -187,7 +187,7 @@ export function MyPluginPage({ context }: { context: IFrontendPluginContext }) {
 
 **Key principles:**
 - Always reference semantic CSS variables (e.g., `var(--card-padding-sm)`, `var(--grid-gap-md)`, `var(--color-primary)`)
-- Combine CSS Modules with utility classes (`.surface`, `.btn`, `.badge`) for consistency
+- Use shared UI components from `context.ui` (`Card`, `Button`, `Badge`) rather than global class names
 - Use container queries instead of viewport media queries for plugin responsiveness
 
 For complete CSS architecture guidance, see [SCSS Modules and Component Styling](../frontend/ui/ui-scss-modules.md) and [Plugin Frontend Context](./plugins-frontend-context.md).
