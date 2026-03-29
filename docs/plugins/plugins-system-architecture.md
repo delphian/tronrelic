@@ -175,7 +175,7 @@ export function MyPluginPage({ context }: { context: IFrontendPluginContext }) {
 
 .grid {
     display: grid;
-    gap: 1.5rem;
+    gap: var(--grid-gap-md);
 }
 
 @container (min-width: 600px) {
@@ -186,8 +186,8 @@ export function MyPluginPage({ context }: { context: IFrontendPluginContext }) {
 ```
 
 **Key principles:**
-- Always reference CSS variables from `src/frontend/app/globals.css` (e.g., `var(--color-primary)`, `var(--radius-md)`)
-- Combine CSS Modules with utility classes (`.surface`, `.btn`, `.badge`) for consistency
+- Always reference semantic CSS variables (e.g., `var(--card-padding-sm)`, `var(--grid-gap-md)`, `var(--color-primary)`)
+- Use shared UI components from `context.ui` (`Card`, `Button`, `Badge`) rather than global class names
 - Use container queries instead of viewport media queries for plugin responsiveness
 
 For complete CSS architecture guidance, see [SCSS Modules and Component Styling](../frontend/ui/ui-scss-modules.md) and [Plugin Frontend Context](./plugins-frontend-context.md).
