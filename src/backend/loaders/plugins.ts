@@ -1,6 +1,6 @@
 import axios from 'axios';
 import mongoose from 'mongoose';
-import type { IPluginContext, IPlugin, IDatabaseService, ISchedulerService } from '@/types';
+import type { IPluginContext, IPlugin, IDatabaseService, ISchedulerService, IServiceRegistry } from '@/types';
 import { logger } from '../lib/logger.js';
 import { BlockchainObserverService } from '../services/blockchain-observer/index.js';
 import { BaseObserver, BaseBatchObserver, BaseBlockObserver } from '../modules/blockchain/observers/index.js';
@@ -59,7 +59,7 @@ function loadAllPlugins(): IPlugin[] {
  * @param database - Shared database service instance from bootstrap
  * @param scheduler - Scheduler service instance for plugin cron job registration (null if disabled)
  */
-export async function loadPlugins(database: IDatabaseService, scheduler: ISchedulerService | null): Promise<void> {
+export async function loadPlugins(database: IDatabaseService, scheduler: ISchedulerService | null, serviceRegistry: IServiceRegistry): Promise<void> {
     await logger.waitUntilInitialized();
 
     const pluginList = await loadAllPlugins();
@@ -153,6 +153,7 @@ export async function loadPlugins(database: IDatabaseService, scheduler: ISchedu
                 blockchainService,
                 addressLabelService,
                 userService: UserService.getInstance(),
+                services: serviceRegistry,
                 logger: pluginLogger
             };
 

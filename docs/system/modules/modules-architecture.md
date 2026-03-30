@@ -57,6 +57,32 @@ The bootstrap constructs these dependencies and injects them during `init()`. Mo
 
 Never import and instantiate dependencies directly, use global singletons (except logger), or access dependencies before `init()` completes. Never assume other modules are initialized during `init()` — only `run()` guarantees all modules are ready.
 
+### Service Registry — Late-Binding DI
+
+Constructor injection handles static, known-at-bootstrap dependencies. The service registry (`IServiceRegistry`) handles dynamic, runtime-discovered services — primarily those provided by plugins.
+
+Both mechanisms enforce the same DI principle: consumers depend on abstractions, never concrete implementations. Constructor injection resolves statically at bootstrap (the bootstrap file wires the concrete instance). The registry resolves dynamically at call time (the consumer asks for a name and gets whatever was registered). The contract is still interface-based either way.
+
+Modules continue using constructor injection for core infrastructure — database, cache, menu service. The registry complements this by giving modules access to optional, plugin-provided services they couldn't receive at bootstrap because plugins load after modules. A module that wants to use an AI service provided by a plugin would look it up via the registry during request handling, not at initialization time.
+
+```typescript
+// Module uses constructor DI for core infrastructure
+async init(deps: IMyModuleDependencies): Promise<void> {
+    this.database = deps.database;  // Static, always available
+}
+
+// Module uses registry for optional plugin-provided services
+async handleRequest(req: Request, res: Response): Promise<void> {
+    const ai = this.serviceRegistry.get<IAiAssistantService>('ai-assistant');
+    if (ai) {
+        // Plugin service available — use it
+    }
+    // Plugin service unavailable — proceed without it
+}
+```
+
+The registry does not replace constructor injection. Modules keep their typed dependency interfaces for everything that must be present at bootstrap. The registry adds the ability to discover services that may or may not exist depending on which plugins are enabled. See [plugins.md](../../plugins/plugins.md#cross-component-service-sharing) for the plugin-side registration pattern.
+
 ## Service Types and Singleton Usage
 
 Services implementing `IXxxService` interfaces are public APIs with shared single state. All consumers use the same instance configured once at bootstrap. Utilities (no `IXxxService` interface) are tools each consumer configures independently.

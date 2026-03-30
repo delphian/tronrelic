@@ -101,6 +101,37 @@ Every plugin gets an isolated MongoDB sandbox with automatic collection prefixin
 - Key-value storage patterns for configuration
 - Best practices for data modeling and cleanup
 
+### Cross-Component Service Sharing
+
+The service registry (`context.services`) enables plugins to register named services that other plugins and modules consume at runtime. This is TronRelic's mechanism for plugin-to-plugin and plugin-to-module collaboration — a plugin provides a capability, and any consumer discovers it by name without importing concrete implementations.
+
+The registry follows the same DI principle as constructor injection — consumers depend on abstractions, not implementations. The difference is resolution timing: constructor injection is static and wired at bootstrap, the registry is late-binding and resolved at call time. This makes it the natural fit for optional, plugin-provided services where the provider may be disabled or not yet initialized.
+
+**Providing a service** — register during `init()`, unregister during `disable()`:
+
+```typescript
+init: async (context: IPluginContext) => {
+    const myService = new MyService(context.database, context.logger);
+    context.services.register('ai-assistant', myService);
+},
+disable: async (context: IPluginContext) => {
+    context.services.unregister('ai-assistant');
+}
+```
+
+**Consuming a service** — always handle the undefined case, because the providing plugin may be disabled:
+
+```typescript
+init: async (context: IPluginContext) => {
+    const ai = context.services.get<IAiAssistantService>('ai-assistant');
+    if (ai) {
+        await ai.submitPrompt('Analyze recent transactions');
+    }
+}
+```
+
+**Architectural direction:** The registry exists so that features providing shared capabilities — AI analysis, notification dispatch, data enrichment — can remain plugins rather than requiring promotion to modules. A plugin that exposes a shared service is still a plugin if the application functions without it. Consumers must handle the service being unavailable, which enforces graceful degradation by design. See [modules.md](../system/modules/modules.md#module-vs-plugin-decision-matrix) for how this changes the module vs plugin decision.
+
 ### WebSocket Real-Time Events
 
 Plugins manage custom real-time subscriptions through a namespaced WebSocket manager that prevents collisions while maintaining Socket.IO semantics. The system provides:
@@ -205,6 +236,25 @@ context.websocket.onSubscribe(async (socket, roomName, payload) => {
     // Client auto-joined to 'plugin:my-plugin:{roomName}'
     context.websocket.emitToSocket(socket, 'subscribed', { roomName, threshold });
 });
+```
+
+**Service registry — providing and consuming shared services:**
+```typescript
+// Provider plugin registers its service during init()
+init: async (context: IPluginContext) => {
+    context.services.register('ai-assistant', myAiService);
+},
+disable: async (context: IPluginContext) => {
+    context.services.unregister('ai-assistant');
+}
+
+// Consumer plugin looks up the service (handles undefined gracefully)
+init: async (context: IPluginContext) => {
+    const ai = context.services.get<IAiAssistantService>('ai-assistant');
+    if (ai) {
+        ai.registerTool('get_market_prices', schema, handler);
+    }
+}
 ```
 
 ## Further Reading

@@ -22,6 +22,7 @@ import { createRedisClient, disconnectRedis, getRedisClient } from './loaders/re
 import { logger, createLogger } from './lib/logger.js';
 import { WebSocketService } from './services/websocket.service.js';
 import { loadPlugins } from './loaders/plugins.js';
+import { ServiceRegistry } from './services/service-registry.js';
 import { SchedulerModule } from './modules/scheduler/index.js';
 import { MenuModule } from './modules/menu/index.js';
 import { LogsModule } from './modules/logs/index.js';
@@ -136,9 +137,11 @@ async function bootstrap(): Promise<void> {
 
         try {
             await logger.waitUntilInitialized();
+            // Create shared service registry for cross-component service discovery
+            const serviceRegistry = new ServiceRegistry(logger);
             // Pass scheduler to plugins for context.scheduler injection
             const scheduler = ctx.modules.scheduler.getSchedulerService();
-            await loadPlugins(ctx.coreDatabase, scheduler);
+            await loadPlugins(ctx.coreDatabase, scheduler, serviceRegistry);
         } catch (pluginError) {
             logger.error({ pluginError, stack: pluginError instanceof Error ? pluginError.stack : undefined }, 'Plugin initialization failed');
         }
