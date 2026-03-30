@@ -18,6 +18,7 @@ import type { ITronGridService } from '../tron-grid/ITronGridService.js';
 import type { IBlockchainService } from '../blockchain/IBlockchainService.js';
 import type { IAddressLabelService } from '../address-label/IAddressLabelService.js';
 import type { IUserService } from '../user/IUserService.js';
+import type { IServiceRegistry } from '../services/IServiceRegistry.js';
 import { ISystemLogService } from '../system-log/ISystemLogService.js';
 /**
  * Plugin context provided to backend plugins during initialization.
@@ -96,6 +97,26 @@ export interface IPluginContext {
     addressLabelService: IAddressLabelService;
     /** User service for accessing user identity and wallet verification status */
     userService: IUserService;
+    /**
+     * Shared service registry for cross-component service discovery.
+     *
+     * Plugins register named services during init() and other consumers
+     * retrieve them by name. Enables plugin-to-plugin and plugin-to-module
+     * service sharing without modifying the plugin system architecture.
+     *
+     * @example
+     * ```typescript
+     * // Register a service
+     * context.services.register('ai-assistant', myService);
+     *
+     * // Consume a service (handle undefined — provider may be disabled)
+     * const ai = context.services.get<IAiAssistantService>('ai-assistant');
+     * if (ai) {
+     *     await ai.submitPrompt('Analyze this data');
+     * }
+     * ```
+     */
+    services: IServiceRegistry;
     /** Structured logger scoped to the plugin for consistent telemetry */
     logger: ISystemLogService;
 }
