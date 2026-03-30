@@ -8,6 +8,7 @@ import type { Express } from 'express';
 import { requestContext } from '../api/middleware/request-context.js';
 import { errorHandler } from '../api/middleware/error-handler.js';
 import { env } from '../config/env.js';
+import { corsOriginCallback } from '../config/cors.js';
 
 export function createExpressApp(): Express {
   const app = express();
@@ -16,34 +17,8 @@ export function createExpressApp(): Express {
   app.use(requestContext);
   app.use(helmet());
 
-  // CORS: Build allowed origins dynamically from environment
-  const allowedOrigins: string[] = [
-    'http://localhost:3000',
-    'http://localhost:4000'
-  ];
-
-  // Add configured site URL if present
-  if (env.SITE_URL) {
-    allowedOrigins.push(env.SITE_URL);
-
-    // Add www variant for production domains
-    if (env.SITE_URL.startsWith('https://') && !env.SITE_URL.includes('www.')) {
-      const wwwUrl = env.SITE_URL.replace('https://', 'https://www.');
-      allowedOrigins.push(wwwUrl);
-    }
-  }
-
   app.use(cors({
-    origin: (origin, callback) => {
-      // Allow requests with no origin (like mobile apps, curl, Postman)
-      if (!origin) return callback(null, true);
-
-      if (allowedOrigins.includes(origin)) {
-        callback(null, true);
-      } else {
-        callback(new Error('CORS policy: Origin not allowed'));
-      }
-    },
+    origin: corsOriginCallback,
     credentials: true
   }));
 
