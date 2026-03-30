@@ -43,9 +43,9 @@ See [frontend-architecture.md](../../frontend/frontend-architecture.md#module-pa
 
 **Module examples:** Pages, Menu, User, Migrations. **Plugin examples:** Telegram Bot, Whale Alerts, Energy Delegation, AI Assistant.
 
-The service registry (`context.services`) enables plugins to provide shared services that other plugins and modules consume at runtime. The architectural direction is for features that provide shared capabilities — such as AI-assisted analysis — to expose their services through the registry rather than requiring promotion to a module. The deciding factor is no longer "does it provide shared services?" but "can the application function without it?" If the answer is no, it's a module. If the answer is yes — even if other components optionally consume its services — it's a plugin.
+The deciding factor between module and plugin is no longer "does it provide shared services?" but "can the application function without it?" If the answer is no, it's a module. If yes — even if other components optionally consume its services — it's a plugin. The service registry (`context.services`) makes this possible by enabling plugins to expose shared capabilities at runtime without requiring promotion to a module.
 
-See [modules-architecture.md](./modules-architecture.md#dependency-injection-pattern) for how the registry complements constructor injection, and [plugins.md](../../plugins/plugins.md#cross-component-service-sharing) for registration and consumption patterns.
+See [modules-architecture.md](./modules-architecture.md#service-registry--late-binding-di) for how the registry complements constructor injection, and [plugins.md](../../plugins/plugins.md#cross-component-service-sharing) for registration and consumption patterns.
 
 When migrating between the two, see [modules-architecture.md](./modules-architecture.md#migration-considerations) for step-by-step guidance.
 

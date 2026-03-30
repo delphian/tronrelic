@@ -44,6 +44,9 @@ export class ServiceRegistry implements IServiceRegistry {
      * @throws Error if a service with this name is already registered
      */
     register<T>(name: string, service: T): void {
+        if (service === null || service === undefined) {
+            throw new Error(`Cannot register null or undefined for service '${name}'.`);
+        }
         if (this.services.has(name)) {
             throw new Error(`Service '${name}' is already registered. Unregister it first to replace.`);
         }

@@ -238,24 +238,7 @@ context.websocket.onSubscribe(async (socket, roomName, payload) => {
 });
 ```
 
-**Service registry — providing and consuming shared services:**
-```typescript
-// Provider plugin registers its service during init()
-init: async (context: IPluginContext) => {
-    context.services.register('ai-assistant', myAiService);
-},
-disable: async (context: IPluginContext) => {
-    context.services.unregister('ai-assistant');
-}
-
-// Consumer plugin looks up the service (handles undefined gracefully)
-init: async (context: IPluginContext) => {
-    const ai = context.services.get<IAiAssistantService>('ai-assistant');
-    if (ai) {
-        ai.registerTool('get_market_prices', schema, handler);
-    }
-}
-```
+**Service registry** — see [Cross-Component Service Sharing](#cross-component-service-sharing) for examples of registering and consuming shared services via `context.services`.
 
 ## Further Reading
 

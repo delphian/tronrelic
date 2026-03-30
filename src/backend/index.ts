@@ -41,7 +41,7 @@ import { UsdtParametersFetcher } from './modules/usdt-parameters/usdt-parameters
 import { UsdtParametersService } from './modules/usdt-parameters/usdt-parameters.service.js';
 import { createApiRouter } from './api/routes/index.js';
 import type { Express } from 'express';
-import type { IDatabaseService, IMenuService } from '@/types';
+import type { IDatabaseService, IMenuService, IServiceRegistry } from '@/types';
 import axios from 'axios';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -137,11 +137,9 @@ async function bootstrap(): Promise<void> {
 
         try {
             await logger.waitUntilInitialized();
-            // Create shared service registry for cross-component service discovery
-            const serviceRegistry = new ServiceRegistry(logger);
             // Pass scheduler to plugins for context.scheduler injection
             const scheduler = ctx.modules.scheduler.getSchedulerService();
-            await loadPlugins(ctx.coreDatabase, scheduler, serviceRegistry);
+            await loadPlugins(ctx.coreDatabase, scheduler, ctx.serviceRegistry);
         } catch (pluginError) {
             logger.error({ pluginError, stack: pluginError instanceof Error ? pluginError.stack : undefined }, 'Plugin initialization failed');
         }
@@ -197,6 +195,7 @@ interface BootstrapContext {
     pinoLogger: ReturnType<typeof createLogger>;
     coreDatabase: IDatabaseService;
     menuService: IMenuService;
+    serviceRegistry: IServiceRegistry;
     modules: {
         database: DatabaseModule;
         clickhouse: ClickHouseModule;
@@ -266,7 +265,8 @@ async function bootstrapInit(): Promise<BootstrapContext> {
     const menuService = menuModule.getMenuService();
 
     const cacheService = new CacheService(getRedisClient(), coreDatabase);
-    const sharedDeps = { database: coreDatabase, cacheService, menuService, app };
+    const serviceRegistry = new ServiceRegistry(logger);
+    const sharedDeps = { database: coreDatabase, cacheService, menuService, serviceRegistry, app };
 
     const logsModule = new LogsModule();
     const pagesModule = new PagesModule();
@@ -289,6 +289,7 @@ async function bootstrapInit(): Promise<BootstrapContext> {
         pinoLogger,
         coreDatabase,
         menuService,
+        serviceRegistry,
         modules: {
             database: databaseModule,
             clickhouse: clickHouseModule,
