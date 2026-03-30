@@ -37,11 +37,15 @@ See [frontend-architecture.md](../../frontend/frontend-architecture.md#module-pa
 | Essential infrastructure | Yes — app fails without it | No — app works without it |
 | Runtime toggle | Cannot disable | Enable/disable via admin UI |
 | Bootstrap timing | Initializes before plugins | Loads after modules |
-| Provides shared services | Yes (`IXxxService` singletons) | No — self-contained |
+| Provides shared services | Yes (`IXxxService` singletons via constructor DI) | Yes (via `IServiceRegistry` — late-binding, runtime discovery) |
 | Deep integration | Express app, core database | Injected `IPluginContext` only |
 | Frontend UI | Optional | Typically included |
 
-**Module examples:** Pages, Menu, User, Migrations. **Plugin examples:** Telegram Bot, Whale Alerts, Energy Delegation.
+**Module examples:** Pages, Menu, User, Migrations. **Plugin examples:** Telegram Bot, Whale Alerts, Energy Delegation, AI Assistant.
+
+The deciding factor between module and plugin is no longer "does it provide shared services?" but "can the application function without it?" If the answer is no, it's a module. If yes — even if other components optionally consume its services — it's a plugin. The service registry (`context.services`) makes this possible by enabling plugins to expose shared capabilities at runtime without requiring promotion to a module.
+
+See [modules-architecture.md](./modules-architecture.md#service-registry--late-binding-di) for how the registry complements constructor injection, and [plugins.md](../../plugins/plugins.md#cross-component-service-sharing) for registration and consumption patterns.
 
 When migrating between the two, see [modules-architecture.md](./modules-architecture.md#migration-considerations) for step-by-step guidance.
 
