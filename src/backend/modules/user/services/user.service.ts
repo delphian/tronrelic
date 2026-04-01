@@ -1,7 +1,16 @@
 import { v4 as uuidv4 } from 'uuid';
 import { randomBytes } from 'crypto';
 import type { Collection } from 'mongodb';
-import type { IDatabaseService, ICacheService, ISystemLogService, UserFilterType } from '@/types';
+import type {
+    IDatabaseService,
+    ICacheService,
+    ISystemLogService,
+    UserFilterType,
+    IUserActivitySummary,
+    IUserWalletSummary,
+    IUserRetentionSummary,
+    IUserPreferencesSummary
+} from '@/types';
 import type {
     IUserDocument,
     IWalletLink,
@@ -1811,7 +1820,7 @@ export class UserService {
                 {
                     $group: {
                         _id: null,
-                        totalWalletLinks: { $sum: { $size: '$wallets' } }
+                        totalWalletLinks: { $sum: { $size: { $ifNull: ['$wallets', []] } } }
                     }
                 }
             ]).toArray()
@@ -3031,6 +3040,256 @@ export class UserService {
             }
         }
         throw new Error('Failed to generate unique referral code after 5 attempts');
+    }
+
+    // ==================== Health Summary Methods ====================
+    // These methods implement IUserService and provide aggregate stats
+    // for cross-component consumers (e.g., AI assistant template variables).
+
+    /**
+     * Get aggregate user activity metrics for health monitoring.
+     *
+     * Combines user counts, engagement stats, and a 7-day daily visitor
+     * trend. Reuses existing getStats(), getEngagementMetrics(), and
+     * getDailyVisitorCounts() internally.
+     *
+     * @returns Activity summary snapshot
+     */
+    async getActivitySummary(): Promise<IUserActivitySummary> {
+        const now = new Date();
+        const todayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+        const weekStart = new Date(todayStart.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+        const [stats, engagement, dailyTrend, newToday, newThisWeek] = await Promise.all([
+            this.getStats(),
+            this.getEngagementMetrics({ since: weekStart }),
+            this.getDailyVisitorCounts(7),
+            this.collection.countDocuments({ 'activity.firstSeen': { $gte: todayStart } }),
+            this.collection.countDocuments({ 'activity.firstSeen': { $gte: weekStart } })
+        ]);
+
+        return {
+            totalUsers: stats.totalUsers,
+            activeToday: stats.activeToday,
+            activeThisWeek: stats.activeThisWeek,
+            newUsersToday: newToday,
+            newUsersThisWeek: newThisWeek,
+            avgSessionDuration: engagement.avgSessionDuration,
+            avgPagesPerSession: engagement.avgPagesPerSession,
+            bounceRate: engagement.bounceRate,
+            dailyTrend
+        };
+    }
+
+    /**
+     * Get wallet linking statistics for health monitoring.
+     *
+     * Tracks adoption rates, verification progress, and the conversion
+     * funnel from anonymous visitor to verified wallet holder.
+     *
+     * @returns Wallet summary with counts, rates, and funnel stages
+     */
+    async getWalletSummary(): Promise<IUserWalletSummary> {
+        const now = new Date();
+        const todayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+        const weekStart = new Date(todayStart.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+        const [stats, walletBreakdown, funnel] = await Promise.all([
+            this.getStats(),
+            this.collection.aggregate<{
+                _id: null;
+                usersWithoutWallets: number;
+                usersWithMultiple: number;
+                verifiedWallets: number;
+                unverifiedWallets: number;
+                walletsLinkedToday: number;
+                walletsLinkedThisWeek: number;
+            }>([
+                {
+                    $facet: {
+                        counts: [
+                            {
+                                $group: {
+                                    _id: null,
+                                    usersWithoutWallets: {
+                                        $sum: { $cond: [{ $eq: [{ $size: { $ifNull: ['$wallets', []] } }, 0] }, 1, 0] }
+                                    },
+                                    usersWithMultiple: {
+                                        $sum: { $cond: [{ $gt: [{ $size: { $ifNull: ['$wallets', []] } }, 1] }, 1, 0] }
+                                    }
+                                }
+                            }
+                        ],
+                        walletDetails: [
+                            { $unwind: { path: '$wallets', preserveNullAndEmptyArrays: false } },
+                            {
+                                $group: {
+                                    _id: null,
+                                    verifiedWallets: {
+                                        $sum: { $cond: [{ $eq: ['$wallets.verified', true] }, 1, 0] }
+                                    },
+                                    unverifiedWallets: {
+                                        $sum: { $cond: [{ $ne: ['$wallets.verified', true] }, 1, 0] }
+                                    },
+                                    walletsLinkedToday: {
+                                        $sum: { $cond: [{ $gte: ['$wallets.linkedAt', todayStart] }, 1, 0] }
+                                    },
+                                    walletsLinkedThisWeek: {
+                                        $sum: { $cond: [{ $gte: ['$wallets.linkedAt', weekStart] }, 1, 0] }
+                                    }
+                                }
+                            }
+                        ]
+                    }
+                },
+                {
+                    $project: {
+                        usersWithoutWallets: { $arrayElemAt: ['$counts.usersWithoutWallets', 0] },
+                        usersWithMultiple: { $arrayElemAt: ['$counts.usersWithMultiple', 0] },
+                        verifiedWallets: { $arrayElemAt: ['$walletDetails.verifiedWallets', 0] },
+                        unverifiedWallets: { $arrayElemAt: ['$walletDetails.unverifiedWallets', 0] },
+                        walletsLinkedToday: { $arrayElemAt: ['$walletDetails.walletsLinkedToday', 0] },
+                        walletsLinkedThisWeek: { $arrayElemAt: ['$walletDetails.walletsLinkedThisWeek', 0] }
+                    }
+                }
+            ]).toArray(),
+            this.getConversionFunnel({ since: weekStart })
+        ]);
+
+        const breakdown = walletBreakdown[0];
+
+        return {
+            totalWalletLinks: stats.totalWalletLinks,
+            usersWithWallets: stats.usersWithWallets,
+            usersWithoutWallets: breakdown?.usersWithoutWallets ?? 0,
+            usersWithMultipleWallets: breakdown?.usersWithMultiple ?? 0,
+            averageWalletsPerUser: stats.averageWalletsPerUser,
+            verifiedWallets: breakdown?.verifiedWallets ?? 0,
+            unverifiedWallets: breakdown?.unverifiedWallets ?? 0,
+            walletsLinkedToday: breakdown?.walletsLinkedToday ?? 0,
+            walletsLinkedThisWeek: breakdown?.walletsLinkedThisWeek ?? 0,
+            conversionFunnel: funnel.stages.map(s => ({
+                stage: s.stage,
+                count: s.count,
+                percentage: s.percentage
+            }))
+        };
+    }
+
+    /**
+     * Get user retention metrics for health monitoring.
+     *
+     * Provides new vs returning visitor breakdown, dormant user detection,
+     * and a 7-day daily retention trend.
+     *
+     * @returns Retention summary with daily breakdown and dormant count
+     */
+    async getRetentionSummary(): Promise<IUserRetentionSummary> {
+        const now = new Date();
+        const todayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+        const weekStart = new Date(todayStart.getTime() - 7 * 24 * 60 * 60 * 1000);
+        const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+        const [retention, newToday, returningToday, dormantCount] = await Promise.all([
+            this.getRetention({ since: weekStart }),
+            this.collection.countDocuments({
+                'activity.firstSeen': { $gte: todayStart }
+            }),
+            this.collection.countDocuments({
+                'activity.lastSeen': { $gte: todayStart },
+                'activity.firstSeen': { $lt: todayStart }
+            }),
+            this.collection.countDocuments({
+                'activity.lastSeen': { $lt: thirtyDaysAgo },
+                'activity.pageViews': { $gt: 10 }
+            })
+        ]);
+
+        return {
+            newUsersToday: newToday,
+            returningUsersToday: returningToday,
+            dormantUsers: dormantCount,
+            dailyRetention: retention.data
+        };
+    }
+
+    /**
+     * Get user preference distribution for health monitoring.
+     *
+     * Aggregates theme choices and notification opt-in rates across
+     * the user base.
+     *
+     * @returns Preference summary with theme distribution and opt-in rates
+     */
+    async getPreferencesSummary(): Promise<IUserPreferencesSummary> {
+        const results = await this.collection.aggregate<{
+            _id: null;
+            totalWithPreferences: number;
+            notificationsEnabled: number;
+            totalUsers: number;
+            themes: Array<{ _id: string; count: number }>;
+        }>([
+            {
+                $facet: {
+                    counts: [
+                        {
+                            $group: {
+                                _id: null,
+                                totalUsers: { $sum: 1 },
+                                totalWithPreferences: {
+                                    $sum: {
+                                        $cond: [{
+                                            $or: [
+                                                { $ne: ['$preferences.theme', null] },
+                                                { $eq: ['$preferences.notifications', true] }
+                                            ]
+                                        }, 1, 0]
+                                    }
+                                },
+                                notificationsEnabled: {
+                                    $sum: { $cond: [{ $eq: ['$preferences.notifications', true] }, 1, 0] }
+                                }
+                            }
+                        }
+                    ],
+                    themes: [
+                        {
+                            $group: {
+                                _id: { $ifNull: ['$preferences.theme', 'unset'] },
+                                count: { $sum: 1 }
+                            }
+                        }
+                    ]
+                }
+            },
+            {
+                $project: {
+                    totalUsers: { $arrayElemAt: ['$counts.totalUsers', 0] },
+                    totalWithPreferences: { $arrayElemAt: ['$counts.totalWithPreferences', 0] },
+                    notificationsEnabled: { $arrayElemAt: ['$counts.notificationsEnabled', 0] },
+                    themes: '$themes'
+                }
+            }
+        ]).toArray();
+
+        const data = results[0];
+        const totalUsers = data?.totalUsers ?? 0;
+        const notificationsEnabled = data?.notificationsEnabled ?? 0;
+
+        const themeDistribution: Record<string, number> = {};
+        if (data?.themes) {
+            for (const entry of data.themes) {
+                themeDistribution[entry._id] = entry.count;
+            }
+        }
+
+        return {
+            themeDistribution,
+            notificationOptInRate: totalUsers > 0
+                ? Math.round((notificationsEnabled / totalUsers) * 10000) / 100
+                : 0,
+            totalWithPreferences: data?.totalWithPreferences ?? 0
+        };
     }
 
     // ==================== Index Management ====================

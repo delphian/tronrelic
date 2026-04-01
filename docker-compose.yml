@@ -174,6 +174,12 @@ services:
             # Node Environment (unified with image tag)
             - NODE_ENV=${ENV}
 
+            # Next.js standalone reads HOSTNAME to determine bind address.
+            # Docker auto-sets HOSTNAME to the container ID, causing Next.js to
+            # bind only to the container's network IP instead of all interfaces.
+            # Override to 0.0.0.0 so the health check (localhost:3000) works.
+            - HOSTNAME=0.0.0.0
+
             # Backend URL for SSR (reads from .env: http://backend:4000 for Docker, http://localhost:4000 for local)
             - SITE_BACKEND=${SITE_BACKEND}
 

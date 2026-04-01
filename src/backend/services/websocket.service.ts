@@ -4,6 +4,7 @@ import { Server as SocketIOServer, type Socket } from 'socket.io';
 import type { TronRelicSocketEvent, SocketSubscriptions } from '@/shared';
 import { logger } from '../lib/logger.js';
 import { PluginWebSocketRegistry } from './plugin-websocket-registry.js';
+import { corsOriginCallback } from '../config/cors.js';
 
 export class WebSocketService implements IWebSocketService {
   private static instance: WebSocketService;
@@ -22,7 +23,8 @@ export class WebSocketService implements IWebSocketService {
     this.io = new SocketIOServer(server, {
       transports: ['websocket', 'polling'],
       cors: {
-        origin: '*'
+        origin: corsOriginCallback,
+        credentials: true
       },
       pingInterval: 25000,
       pingTimeout: 20000
