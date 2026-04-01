@@ -466,10 +466,20 @@ export function createMockDatabaseService(): IDatabaseService & {
                                                     const fieldPath = exprObj.$sum.substring(1);
                                                     result[fieldName] = groupDocs.reduce((acc, doc) => acc + (doc[fieldPath] || 0), 0);
                                                 } else if (typeof exprObj.$sum === 'object' && exprObj.$sum.$size) {
-                                                    // Handle { $sum: { $size: '$arrayField' } }
-                                                    const fieldPath = exprObj.$sum.$size.substring(1);
+                                                    // Handle { $sum: { $size: '$arrayField' } } and { $sum: { $size: { $ifNull: ['$field', []] } } }
+                                                    const sizeExpr = exprObj.$sum.$size;
+                                                    let fieldPath: string;
+                                                    let fallback: unknown[] = [];
+                                                    if (typeof sizeExpr === 'string') {
+                                                        fieldPath = sizeExpr.substring(1);
+                                                    } else if (sizeExpr && sizeExpr.$ifNull && Array.isArray(sizeExpr.$ifNull)) {
+                                                        fieldPath = sizeExpr.$ifNull[0].substring(1);
+                                                        fallback = sizeExpr.$ifNull[1] ?? [];
+                                                    } else {
+                                                        fieldPath = '';
+                                                    }
                                                     result[fieldName] = groupDocs.reduce((acc, doc) => {
-                                                        const arr = doc[fieldPath];
+                                                        const arr = doc[fieldPath] ?? fallback;
                                                         return acc + (Array.isArray(arr) ? arr.length : 0);
                                                     }, 0);
                                                 }
