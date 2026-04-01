@@ -22,16 +22,25 @@ export function getAllowedOrigins(): string[] {
     ];
 
     if (env.SITE_URL) {
-        origins.push(env.SITE_URL);
+        try {
+            const parsed = new URL(env.SITE_URL.trim());
+            const baseOrigin = parsed.origin;
+            origins.push(baseOrigin);
 
-        // Add www variant for production domains
-        if (env.SITE_URL.startsWith('https://') && !env.SITE_URL.includes('www.')) {
-            origins.push(env.SITE_URL.replace('https://', 'https://www.'));
+            // Add www variant for production domains
+            if (parsed.protocol === 'https:' && !parsed.hostname.startsWith('www.')) {
+                origins.push(`${parsed.protocol}//www.${parsed.hostname}${parsed.port ? `:${parsed.port}` : ''}`);
+            }
+        } catch {
+            // Invalid SITE_URL — skip rather than crash at startup
         }
     }
 
     return origins;
 }
+
+/** Cached allowed origins — computed once at module load from environment. */
+const allowedOrigins = getAllowedOrigins();
 
 /**
  * CORS origin callback compatible with both the `cors` npm package and
@@ -53,7 +62,7 @@ export function corsOriginCallback(
         return;
     }
 
-    if (getAllowedOrigins().includes(origin)) {
+    if (allowedOrigins.includes(origin)) {
         callback(null, true);
     } else {
         callback(new Error('CORS policy: Origin not allowed'));

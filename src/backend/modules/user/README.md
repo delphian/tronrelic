@@ -67,7 +67,7 @@ For operations outside request handlers (observers, scheduled jobs), plugins can
 const userService = context.services.get<IUserService>('user');
 if (userService) {
     const activity = await userService.getActivitySummary();
-    logger.info({ activeToday: activity.activeToday }, 'User health snapshot');
+    context.logger.info({ activeToday: activity.activeToday }, 'User health snapshot');
 }
 
 // Via plugin context (always available for enabled plugins)

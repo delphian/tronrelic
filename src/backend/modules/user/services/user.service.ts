@@ -1820,7 +1820,7 @@ export class UserService {
                 {
                     $group: {
                         _id: null,
-                        totalWalletLinks: { $sum: { $size: '$wallets' } }
+                        totalWalletLinks: { $sum: { $size: { $ifNull: ['$wallets', []] } } }
                     }
                 }
             ]).toArray()
@@ -3057,9 +3057,8 @@ export class UserService {
      */
     async getActivitySummary(): Promise<IUserActivitySummary> {
         const now = new Date();
-        const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-        const weekStart = new Date(todayStart);
-        weekStart.setDate(weekStart.getDate() - 7);
+        const todayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+        const weekStart = new Date(todayStart.getTime() - 7 * 24 * 60 * 60 * 1000);
 
         const [stats, engagement, dailyTrend, newToday, newThisWeek] = await Promise.all([
             this.getStats(),
@@ -3092,9 +3091,8 @@ export class UserService {
      */
     async getWalletSummary(): Promise<IUserWalletSummary> {
         const now = new Date();
-        const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-        const weekStart = new Date(todayStart);
-        weekStart.setDate(weekStart.getDate() - 7);
+        const todayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+        const weekStart = new Date(todayStart.getTime() - 7 * 24 * 60 * 60 * 1000);
 
         const [stats, walletBreakdown, funnel] = await Promise.all([
             this.getStats(),
@@ -3188,11 +3186,9 @@ export class UserService {
      */
     async getRetentionSummary(): Promise<IUserRetentionSummary> {
         const now = new Date();
-        const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-        const weekStart = new Date(todayStart);
-        weekStart.setDate(weekStart.getDate() - 7);
-        const thirtyDaysAgo = new Date(now);
-        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+        const todayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+        const weekStart = new Date(todayStart.getTime() - 7 * 24 * 60 * 60 * 1000);
+        const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
 
         const [retention, newToday, returningToday, dormantCount] = await Promise.all([
             this.getRetention({ since: weekStart }),
@@ -3244,7 +3240,7 @@ export class UserService {
                                     $sum: {
                                         $cond: [{
                                             $or: [
-                                                { $ne: [{ $ifNull: ['$preferences.theme', null] }, null] },
+                                                { $ne: ['$preferences.theme', null] },
                                                 { $eq: ['$preferences.notifications', true] }
                                             ]
                                         }, 1, 0]

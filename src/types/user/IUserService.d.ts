@@ -155,7 +155,7 @@ export interface IUserPreferencesSummary {
  * const userService = context.services.get<IUserService>('user');
  * if (userService) {
  *     const activity = await userService.getActivitySummary();
- *     logger.info({ activeToday: activity.activeToday }, 'User activity snapshot');
+ *     context.logger.info({ activeToday: activity.activeToday }, 'User activity snapshot');
  * }
  * ```
  */
