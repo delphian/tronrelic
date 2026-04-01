@@ -23,7 +23,7 @@
  */
 
 import type { Express, Router } from 'express';
-import type { ICacheService, IDatabaseService, IMenuService, IModule, IModuleMetadata, ISchedulerService } from '@/types';
+import type { ICacheService, IDatabaseService, IMenuService, IModule, IModuleMetadata, ISchedulerService, IServiceRegistry } from '@/types';
 import { logger } from '../../lib/logger.js';
 import { UserService } from './services/user.service.js';
 import { GscService } from './services/gsc.service.js';
@@ -65,6 +65,12 @@ export interface IUserModuleDependencies {
      * Null when the scheduler is disabled via ENABLE_SCHEDULER=false.
      */
     scheduler: ISchedulerService | null;
+
+    /**
+     * Service registry for exposing UserService to plugins via late-binding DI.
+     * Plugins discover the user service with context.services.get('user').
+     */
+    serviceRegistry: IServiceRegistry;
 }
 
 /**
@@ -131,6 +137,7 @@ export class UserModule implements IModule<IUserModuleDependencies> {
     private menuService!: IMenuService;
     private app!: Express;
     private scheduler!: ISchedulerService | null;
+    private serviceRegistry!: IServiceRegistry;
 
     /**
      * Services created during init() phase.
@@ -163,6 +170,7 @@ export class UserModule implements IModule<IUserModuleDependencies> {
         this.menuService = dependencies.menuService;
         this.app = dependencies.app;
         this.scheduler = dependencies.scheduler;
+        this.serviceRegistry = dependencies.serviceRegistry;
 
         // Initialize GeoIP lookup for country detection (non-blocking)
         await initGeoIP();
@@ -231,6 +239,12 @@ export class UserModule implements IModule<IUserModuleDependencies> {
             this.logger.error({ error }, 'Failed to register users menu item');
             throw new Error(`Failed to register users menu item: ${error instanceof Error ? error.message : 'Unknown error'}`);
         }
+
+        // Register UserService on the service registry so plugins can discover
+        // it via context.services.get<IUserService>('user') for aggregate stats
+        // and user lookups without direct module coupling.
+        this.serviceRegistry.register('user', this.userService);
+        this.logger.info('UserService registered on service registry as "user"');
 
         // Create and mount public router (IoC - module attaches itself to app)
         const publicRouter = this.createPublicRouter();

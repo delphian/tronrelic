@@ -13,4 +13,10 @@ export type {
     ScreenSizeCategory
 } from './IUser.js';
 
-export type { IUserService } from './IUserService.js';
+export type {
+    IUserService,
+    IUserActivitySummary,
+    IUserWalletSummary,
+    IUserRetentionSummary,
+    IUserPreferencesSummary
+} from './IUserService.js';

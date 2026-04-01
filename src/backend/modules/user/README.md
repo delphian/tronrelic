@@ -60,26 +60,32 @@ The middleware parses the `tronrelic_uid` cookie and resolves the user via `User
 
 ### IUserService (For Non-Request Context)
 
-For operations outside request handlers (observers, scheduled jobs), plugins can use `IUserService` via `IPluginContext`:
+For operations outside request handlers (observers, scheduled jobs), plugins can access user data through two discovery mechanisms. The `IPluginContext.userService` property provides direct access injected at bootstrap. The service registry provides late-binding discovery via `context.services.get<IUserService>('user')`, which is the preferred approach for optional consumers that should gracefully degrade if the User Module is unavailable.
 
 ```typescript
-// In plugin init()
-init: async (context: IPluginContext) => {
-    const { userService, logger } = context;
-
-    // Look up user by wallet address
-    const user = await userService.getByWallet('TXyz...');
-    if (user) {
-        logger.info({ userId: user.id }, 'Found user for wallet');
-    }
+// Via service registry (preferred for optional consumers)
+const userService = context.services.get<IUserService>('user');
+if (userService) {
+    const activity = await userService.getActivitySummary();
+    logger.info({ activeToday: activity.activeToday }, 'User health snapshot');
 }
+
+// Via plugin context (always available for enabled plugins)
+const user = await context.userService.getByWallet('TXyz...');
 ```
 
 **Available IUserService methods:**
-- `getById(id: string): Promise<IUser | null>` - Look up user by UUID
-- `getByWallet(address: string): Promise<IUser | null>` - Look up user by wallet address
 
-The `IUser` interface includes `id`, `wallets`, `preferences`, `activity`, and timestamps. The internal `IUserDocument` (with MongoDB-specific fields) stays in the module.
+| Method | Purpose |
+|--------|---------|
+| `getById(id)` | Look up user by UUID |
+| `getByWallet(address)` | Look up user by TRON wallet address |
+| `getActivitySummary()` | Aggregate user counts, engagement metrics, 7-day visitor trend |
+| `getWalletSummary()` | Wallet adoption rates, verification progress, conversion funnel |
+| `getRetentionSummary()` | New vs returning visitors, dormant user count, 7-day retention |
+| `getPreferencesSummary()` | Theme distribution, notification opt-in rates |
+
+The `IUser` interface includes `id`, `wallets`, `preferences`, `activity`, and timestamps. The summary return types (`IUserActivitySummary`, `IUserWalletSummary`, `IUserRetentionSummary`, `IUserPreferencesSummary`) are defined in `@tronrelic/types`. The internal `IUserDocument` (with MongoDB-specific fields) stays in the module.
 
 ## Architecture Overview
 
@@ -454,6 +460,7 @@ The user module implements the `IModule` interface with two-phase initialization
 - Create controller with service reference
 
 **Phase 2: run()** - Activate and integrate with application
+- Register UserService on the service registry as `'user'` for late-binding plugin discovery
 - Register menu item in `system` namespace at `/system/users`
 - Mount public router at `/api/user` (cookie validation on `:id` routes)
 - Mount admin router at `/api/admin/users` with `requireAdmin` middleware
