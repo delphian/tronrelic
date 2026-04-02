@@ -404,6 +404,92 @@ export class GscService {
     }
 
     /**
+     * Get keyword data grouped by day for a configurable number of days.
+     *
+     * Aggregates stored GSC query rows into daily buckets, each containing
+     * the top keywords ranked by clicks. Accounts for the 3-day GSC data
+     * delay — the most recent bucket will be offset accordingly.
+     *
+     * @param days - Number of daily buckets to return (default: 14)
+     * @param topN - Maximum keywords per bucket (default: 15)
+     * @returns Daily keyword buckets ordered chronologically (oldest first)
+     */
+    async getKeywordsByDay(days: number = 14, topN: number = 15): Promise<{
+        days: number;
+        buckets: Array<{
+            date: string;
+            totalClicks: number;
+            totalImpressions: number;
+            keywords: Array<{ keyword: string; clicks: number; impressions: number; ctr: number; position: number }>;
+        }>;
+    }> {
+        const now = new Date();
+        const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - GSC_DATA_DELAY_DAYS, 23, 59, 59, 999));
+        const since = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - GSC_DATA_DELAY_DAYS - days + 1, 0, 0, 0, 0));
+
+        const results = await this.collection.aggregate<{
+            _id: { date: string; query: string };
+            clicks: number;
+            impressions: number;
+            weightedPosition: number;
+        }>([
+            { $match: { date: { $gte: since, $lte: end } } },
+            {
+                $group: {
+                    _id: {
+                        date: { $dateToString: { format: '%Y-%m-%d', date: '$date' } },
+                        query: '$query'
+                    },
+                    clicks: { $sum: '$clicks' },
+                    impressions: { $sum: '$impressions' },
+                    weightedPosition: { $sum: { $multiply: ['$position', '$impressions'] } }
+                }
+            },
+            { $sort: { '_id.date': 1, clicks: -1 } }
+        ]).toArray();
+
+        const dayMap = new Map<string, {
+            totalClicks: number;
+            totalImpressions: number;
+            keywords: Array<{ keyword: string; clicks: number; impressions: number; ctr: number; position: number }>;
+        }>();
+
+        for (const row of results) {
+            const date = row._id.date;
+            if (!dayMap.has(date)) {
+                dayMap.set(date, { totalClicks: 0, totalImpressions: 0, keywords: [] });
+            }
+            const bucket = dayMap.get(date)!;
+            bucket.totalClicks += row.clicks;
+            bucket.totalImpressions += row.impressions;
+            if (bucket.keywords.length < topN) {
+                bucket.keywords.push({
+                    keyword: row._id.query,
+                    clicks: row.clicks,
+                    impressions: row.impressions,
+                    ctr: row.impressions > 0
+                        ? Math.round((row.clicks / row.impressions) * 10000) / 10000
+                        : 0,
+                    position: row.impressions > 0
+                        ? Math.round((row.weightedPosition / row.impressions) * 10) / 10
+                        : 0
+                });
+            }
+        }
+
+        const buckets = Array.from(dayMap.entries())
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([date, bucket]) => ({
+                date,
+                totalClicks: bucket.totalClicks,
+                totalImpressions: bucket.totalImpressions,
+                keywords: bucket.keywords
+            }));
+
+        return { days: buckets.length, buckets };
+    }
+
+    /**
      * Get aggregated keyword data for a given time period.
      *
      * Aggregates stored GSC query rows by keyword, summing clicks and
