@@ -1887,8 +1887,8 @@ export class UserService {
      */
     async getDailyVisitorCounts(days: number = 90): Promise<{ date: string; count: number }[]> {
         const since = new Date();
-        since.setDate(since.getDate() - days);
-        since.setHours(0, 0, 0, 0);
+        since.setUTCDate(since.getUTCDate() - days);
+        since.setUTCHours(0, 0, 0, 0);
 
         const results = await this.collection.aggregate<{ _id: string; count: number }>([
             { $match: { 'activity.lastSeen': { $gte: since }, 'activity.sessions': { $exists: true, $ne: [] } } },
@@ -2071,7 +2071,7 @@ export class UserService {
      * @param domain - Referrer domain or null
      * @returns Source category string
      */
-    private classifyTrafficSource(domain: string | null): string {
+    private classifyTrafficSource(domain: string | null): 'direct' | 'organic' | 'social' | 'referral' {
         if (!domain) return 'direct';
 
         const lower = domain.toLowerCase();
@@ -3330,8 +3330,8 @@ export class UserService {
      */
     async getPageTrafficHistory(days = 14, topN = 30): Promise<IPageTrafficHistory> {
         const since = new Date();
-        since.setDate(since.getDate() - days);
-        since.setHours(0, 0, 0, 0);
+        since.setUTCDate(since.getUTCDate() - days);
+        since.setUTCHours(0, 0, 0, 0);
 
         const results = await this.collection.aggregate<{
             _id: string;
@@ -3445,8 +3445,8 @@ export class UserService {
      */
     async getTrafficSourcesByDay(days = 14, topN = 15): Promise<ITrafficSourcesHistory> {
         const since = new Date();
-        since.setDate(since.getDate() - days);
-        since.setHours(0, 0, 0, 0);
+        since.setUTCDate(since.getUTCDate() - days);
+        since.setUTCHours(0, 0, 0, 0);
 
         const results = await this.collection.aggregate<{
             _id: { date: string; domain: string | null };
@@ -3464,7 +3464,16 @@ export class UserService {
                 $group: {
                     _id: {
                         date: { $dateToString: { format: '%Y-%m-%d', date: '$activity.sessions.startedAt' } },
-                        domain: { $ifNull: ['$activity.sessions.referrerDomain', null] }
+                        domain: { $ifNull: ['$activity.sessions.referrerDomain', null] },
+                        userId: '$_id'
+                    }
+                }
+            },
+            {
+                $group: {
+                    _id: {
+                        date: '$_id.date',
+                        domain: '$_id.domain'
                     },
                     count: { $sum: 1 }
                 }
@@ -3519,8 +3528,8 @@ export class UserService {
      */
     async getGeoDistributionByDay(days = 14, topN = 20): Promise<IGeoDistributionHistory> {
         const since = new Date();
-        since.setDate(since.getDate() - days);
-        since.setHours(0, 0, 0, 0);
+        since.setUTCDate(since.getUTCDate() - days);
+        since.setUTCHours(0, 0, 0, 0);
 
         const results = await this.collection.aggregate<{
             _id: { date: string; country: string | null };
@@ -3538,7 +3547,16 @@ export class UserService {
                 $group: {
                     _id: {
                         date: { $dateToString: { format: '%Y-%m-%d', date: '$activity.sessions.startedAt' } },
-                        country: { $ifNull: ['$activity.sessions.country', null] }
+                        country: { $ifNull: ['$activity.sessions.country', null] },
+                        userId: '$_id'
+                    }
+                }
+            },
+            {
+                $group: {
+                    _id: {
+                        date: '$_id.date',
+                        country: '$_id.country'
                     },
                     count: { $sum: 1 }
                 }
@@ -3577,8 +3595,8 @@ export class UserService {
      */
     async getDeviceBreakdownByDay(days = 14): Promise<IDeviceBreakdownHistory> {
         const since = new Date();
-        since.setDate(since.getDate() - days);
-        since.setHours(0, 0, 0, 0);
+        since.setUTCDate(since.getUTCDate() - days);
+        since.setUTCHours(0, 0, 0, 0);
 
         const results = await this.collection.aggregate<{
             _id: { date: string; device: string };
@@ -3633,8 +3651,8 @@ export class UserService {
      */
     async getLandingPagesByDay(days = 14, topN = 20): Promise<ILandingPagesHistory> {
         const since = new Date();
-        since.setDate(since.getDate() - days);
-        since.setHours(0, 0, 0, 0);
+        since.setUTCDate(since.getUTCDate() - days);
+        since.setUTCHours(0, 0, 0, 0);
 
         const results = await this.collection.aggregate<{
             _id: { date: string; landingPage: string };
@@ -3703,8 +3721,8 @@ export class UserService {
      */
     async getCampaignPerformanceByDay(days = 14, topN = 10): Promise<ICampaignPerformanceHistory> {
         const since = new Date();
-        since.setDate(since.getDate() - days);
-        since.setHours(0, 0, 0, 0);
+        since.setUTCDate(since.getUTCDate() - days);
+        since.setUTCHours(0, 0, 0, 0);
 
         const results = await this.collection.aggregate<{
             _id: { date: string; source: string; medium: string; campaign: string };
@@ -3729,7 +3747,18 @@ export class UserService {
                         date: { $dateToString: { format: '%Y-%m-%d', date: '$activity.sessions.startedAt' } },
                         source: { $ifNull: ['$activity.sessions.utm.source', '(none)'] },
                         medium: { $ifNull: ['$activity.sessions.utm.medium', '(none)'] },
-                        campaign: { $ifNull: ['$activity.sessions.utm.campaign', '(none)'] }
+                        campaign: { $ifNull: ['$activity.sessions.utm.campaign', '(none)'] },
+                        userId: '$_id'
+                    }
+                }
+            },
+            {
+                $group: {
+                    _id: {
+                        date: '$_id.date',
+                        source: '$_id.source',
+                        medium: '$_id.medium',
+                        campaign: '$_id.campaign'
                     },
                     visitors: { $sum: 1 }
                 }
@@ -3773,8 +3802,8 @@ export class UserService {
      */
     async getSessionDurationByDay(days = 14): Promise<ISessionDurationHistory> {
         const since = new Date();
-        since.setDate(since.getDate() - days);
-        since.setHours(0, 0, 0, 0);
+        since.setUTCDate(since.getUTCDate() - days);
+        since.setUTCHours(0, 0, 0, 0);
 
         const results = await this.collection.aggregate<{
             _id: string;
@@ -3831,8 +3860,8 @@ export class UserService {
      */
     async getPagesPerSessionByDay(days = 14): Promise<IPagesPerSessionHistory> {
         const since = new Date();
-        since.setDate(since.getDate() - days);
-        since.setHours(0, 0, 0, 0);
+        since.setUTCDate(since.getUTCDate() - days);
+        since.setUTCHours(0, 0, 0, 0);
 
         const results = await this.collection.aggregate<{
             _id: string;
@@ -3891,8 +3920,8 @@ export class UserService {
      */
     async getNewVsReturningByDay(days = 14): Promise<INewVsReturningHistory> {
         const since = new Date();
-        since.setDate(since.getDate() - days);
-        since.setHours(0, 0, 0, 0);
+        since.setUTCDate(since.getUTCDate() - days);
+        since.setUTCHours(0, 0, 0, 0);
 
         const results = await this.collection.aggregate<{
             _id: string;
@@ -3964,8 +3993,8 @@ export class UserService {
      */
     async getWalletConversionByDay(days = 14): Promise<IWalletConversionHistory> {
         const since = new Date();
-        since.setDate(since.getDate() - days);
-        since.setHours(0, 0, 0, 0);
+        since.setUTCDate(since.getUTCDate() - days);
+        since.setUTCHours(0, 0, 0, 0);
 
         const results = await this.collection.aggregate<{
             _id: string;
@@ -4039,8 +4068,8 @@ export class UserService {
      */
     async getExitPagesByDay(days = 14, topN = 20): Promise<IExitPagesHistory> {
         const since = new Date();
-        since.setDate(since.getDate() - days);
-        since.setHours(0, 0, 0, 0);
+        since.setUTCDate(since.getUTCDate() - days);
+        since.setUTCHours(0, 0, 0, 0);
 
         const results = await this.collection.aggregate<{
             _id: { date: string; exitPage: string };

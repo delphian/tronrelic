@@ -161,8 +161,8 @@ export interface IRecentPageViewsResult {
 export interface IDailyTrafficSourceEntry {
     /** Referrer domain (or 'direct' for no referrer). */
     source: string;
-    /** Traffic category (direct, search, social, referral). */
-    category: string;
+    /** Traffic category (direct, organic, social, referral). */
+    category: 'direct' | 'organic' | 'social' | 'referral';
     /** Number of unique visitors from this source on this day. */
     count: number;
 }
