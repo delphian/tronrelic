@@ -414,6 +414,86 @@ export class GscService {
      * @param limit - Maximum keywords to return (default: 10)
      * @returns Aggregated keyword data sorted by clicks descending
      */
+    /**
+     * Get keyword data grouped by day for a configurable number of days.
+     *
+     * Aggregates stored GSC query rows into daily buckets, each containing
+     * the top keywords ranked by clicks. Accounts for the 3-day GSC data
+     * delay — the most recent bucket will be offset accordingly.
+     *
+     * @param days - Number of daily buckets to return (default: 14)
+     * @param topN - Maximum keywords per bucket (default: 15)
+     * @returns Daily keyword buckets ordered chronologically (oldest first)
+     */
+    async getKeywordsByDay(days: number = 14, topN: number = 15): Promise<{
+        days: number;
+        buckets: Array<{
+            date: string;
+            totalClicks: number;
+            totalImpressions: number;
+            keywords: Array<{ keyword: string; clicks: number; impressions: number; ctr: number; position: number }>;
+        }>;
+    }> {
+        const delayMs = GSC_DATA_DELAY_DAYS * 24 * 60 * 60 * 1000;
+        const end = new Date(Date.now() - delayMs);
+        const since = new Date(end.getTime() - (days * 24 * 60 * 60 * 1000));
+
+        const results = await this.collection.aggregate<{
+            _id: { date: string; query: string };
+            clicks: number;
+            impressions: number;
+            weightedPosition: number;
+        }>([
+            { $match: { date: { $gte: since, $lte: end } } },
+            {
+                $group: {
+                    _id: {
+                        date: { $dateToString: { format: '%Y-%m-%d', date: '$date' } },
+                        query: '$query'
+                    },
+                    clicks: { $sum: '$clicks' },
+                    impressions: { $sum: '$impressions' },
+                    weightedPosition: { $sum: { $multiply: ['$position', '$impressions'] } }
+                }
+            },
+            { $sort: { '_id.date': 1, clicks: -1 } }
+        ]).toArray();
+
+        const dayMap = new Map<string, Array<{ keyword: string; clicks: number; impressions: number; ctr: number; position: number }>>();
+
+        for (const row of results) {
+            const date = row._id.date;
+            if (!dayMap.has(date)) {
+                dayMap.set(date, []);
+            }
+            const bucket = dayMap.get(date)!;
+            if (bucket.length < topN) {
+                bucket.push({
+                    keyword: row._id.query,
+                    clicks: row.clicks,
+                    impressions: row.impressions,
+                    ctr: row.impressions > 0
+                        ? Math.round((row.clicks / row.impressions) * 10000) / 10000
+                        : 0,
+                    position: row.impressions > 0
+                        ? Math.round((row.weightedPosition / row.impressions) * 10) / 10
+                        : 0
+                });
+            }
+        }
+
+        const buckets = Array.from(dayMap.entries())
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([date, keywords]) => ({
+                date,
+                totalClicks: keywords.reduce((sum, k) => sum + k.clicks, 0),
+                totalImpressions: keywords.reduce((sum, k) => sum + k.impressions, 0),
+                keywords
+            }));
+
+        return { days: buckets.length, buckets };
+    }
+
     async getKeywordsForPeriod(periodHours: number, limit: number = 10): Promise<IGscKeyword[]> {
         // Shift window by the GSC ingestion delay so the period aligns
         // with available data (e.g. "last 7 days" queries the 7 days

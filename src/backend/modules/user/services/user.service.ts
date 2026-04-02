@@ -9,7 +9,30 @@ import type {
     IUserActivitySummary,
     IUserWalletSummary,
     IUserRetentionSummary,
-    IUserPreferencesSummary
+    IUserPreferencesSummary,
+    IPageTrafficHistory,
+    IPageTrafficBucket,
+    IRecentPageViewsResult,
+    ITrafficSourcesHistory,
+    IDailyTrafficSourceBucket,
+    IGeoDistributionHistory,
+    IDailyGeoBucket,
+    IDeviceBreakdownHistory,
+    IDailyDeviceBucket,
+    ILandingPagesHistory,
+    IDailyLandingPageBucket,
+    ICampaignPerformanceHistory,
+    IDailyCampaignBucket,
+    ISessionDurationHistory,
+    IDailySessionDurationBucket,
+    IPagesPerSessionHistory,
+    IDailyPagesPerSessionBucket,
+    INewVsReturningHistory,
+    IDailyNewVsReturningBucket,
+    IWalletConversionHistory,
+    IDailyWalletConversionBucket,
+    IExitPagesHistory,
+    IDailyExitPageBucket
 } from '@/types';
 import type {
     IUserDocument,
@@ -3290,6 +3313,782 @@ export class UserService {
                 : 0,
             totalWithPreferences: data?.totalWithPreferences ?? 0
         };
+    }
+
+    // ==================== Page Traffic Analytics ====================
+
+    /**
+     * Get page traffic history broken into daily buckets.
+     *
+     * Unwinds session page data across all users, groups by day and path,
+     * and returns the top N paths per day with an "other" rollup for
+     * remaining traffic. Buckets are ordered chronologically (oldest first).
+     *
+     * @param days - Number of daily buckets to return (default 14)
+     * @param topN - Number of top paths per bucket (default 30)
+     * @returns Daily traffic buckets with top paths and "other" rollup
+     */
+    async getPageTrafficHistory(days = 14, topN = 30): Promise<IPageTrafficHistory> {
+        const since = new Date();
+        since.setDate(since.getDate() - days);
+        since.setHours(0, 0, 0, 0);
+
+        const results = await this.collection.aggregate<{
+            _id: string;
+            paths: Array<{ path: string; views: number }>;
+            totalViews: number;
+        }>([
+            {
+                $match: {
+                    'activity.lastSeen': { $gte: since },
+                    'activity.sessions': { $exists: true, $ne: [] }
+                }
+            },
+            { $unwind: '$activity.sessions' },
+            { $match: { 'activity.sessions.startedAt': { $gte: since } } },
+            { $unwind: '$activity.sessions.pages' },
+            { $match: { 'activity.sessions.pages.timestamp': { $gte: since } } },
+            {
+                $group: {
+                    _id: {
+                        date: { $dateToString: { format: '%Y-%m-%d', date: '$activity.sessions.pages.timestamp' } },
+                        path: '$activity.sessions.pages.path'
+                    },
+                    views: { $sum: 1 }
+                }
+            },
+            { $sort: { '_id.date': 1, views: -1 } },
+            {
+                $group: {
+                    _id: '$_id.date',
+                    paths: { $push: { path: '$_id.path', views: '$views' } },
+                    totalViews: { $sum: '$views' }
+                }
+            },
+            { $sort: { _id: 1 } }
+        ]).toArray();
+
+        const buckets: IPageTrafficBucket[] = results.map(day => {
+            const topPaths = day.paths.slice(0, topN);
+            const topViews = topPaths.reduce((sum, p) => sum + p.views, 0);
+
+            return {
+                date: day._id,
+                totalViews: day.totalViews,
+                topPaths,
+                otherViews: day.totalViews - topViews
+            };
+        });
+
+        return { days: buckets.length, buckets };
+    }
+
+    /**
+     * Get recent individual page view events.
+     *
+     * Unwinds session page data across all users for the specified time
+     * window, returning individual page view events sorted most-recent-first.
+     * Capped at the requested limit to prevent unbounded output.
+     *
+     * @param hours - How many hours back to query (default 24)
+     * @param limit - Maximum events to return (default 500)
+     * @returns Recent page view events, most recent first
+     */
+    async getRecentPageViews(hours = 24, limit = 500): Promise<IRecentPageViewsResult> {
+        const since = new Date(Date.now() - hours * 60 * 60 * 1000);
+
+        const results = await this.collection.aggregate<{
+            userId: string;
+            path: string;
+            timestamp: Date;
+        }>([
+            {
+                $match: {
+                    'activity.lastSeen': { $gte: since },
+                    'activity.sessions': { $exists: true, $ne: [] }
+                }
+            },
+            { $unwind: '$activity.sessions' },
+            { $match: { 'activity.sessions.startedAt': { $gte: since } } },
+            { $unwind: '$activity.sessions.pages' },
+            { $match: { 'activity.sessions.pages.timestamp': { $gte: since } } },
+            {
+                $project: {
+                    _id: 0,
+                    userId: '$id',
+                    path: '$activity.sessions.pages.path',
+                    timestamp: '$activity.sessions.pages.timestamp'
+                }
+            },
+            { $sort: { timestamp: -1 } },
+            { $limit: limit }
+        ]).toArray();
+
+        const views = results.map(r => ({
+            timestamp: r.timestamp.toISOString(),
+            userId: r.userId,
+            path: r.path
+        }));
+
+        return { count: views.length, views };
+    }
+
+    /**
+     * Get traffic sources broken into daily buckets with optional GSC keywords.
+     *
+     * Unwinds sessions to group visitors by day and referrer domain,
+     * classifies each source, and merges GSC keyword data when available.
+     *
+     * @param days - Number of daily buckets to return (default 14)
+     * @param topN - Top sources per bucket (default 15)
+     * @returns Daily traffic source buckets with GSC keyword data
+     */
+    async getTrafficSourcesByDay(days = 14, topN = 15): Promise<ITrafficSourcesHistory> {
+        const since = new Date();
+        since.setDate(since.getDate() - days);
+        since.setHours(0, 0, 0, 0);
+
+        const results = await this.collection.aggregate<{
+            _id: { date: string; domain: string | null };
+            count: number;
+        }>([
+            {
+                $match: {
+                    'activity.lastSeen': { $gte: since },
+                    'activity.sessions': { $exists: true, $ne: [] }
+                }
+            },
+            { $unwind: '$activity.sessions' },
+            { $match: { 'activity.sessions.startedAt': { $gte: since } } },
+            {
+                $group: {
+                    _id: {
+                        date: { $dateToString: { format: '%Y-%m-%d', date: '$activity.sessions.startedAt' } },
+                        domain: { $ifNull: ['$activity.sessions.referrerDomain', null] }
+                    },
+                    count: { $sum: 1 }
+                }
+            },
+            { $sort: { '_id.date': 1, count: -1 } }
+        ]).toArray();
+
+        const dayMap = new Map<string, IDailyTrafficSourceBucket>();
+
+        for (const row of results) {
+            const date = row._id.date;
+            if (!dayMap.has(date)) {
+                dayMap.set(date, { date, totalVisitors: 0, sources: [] });
+            }
+            const bucket = dayMap.get(date)!;
+            bucket.totalVisitors += row.count;
+            if (bucket.sources.length < topN) {
+                const source = row._id.domain || 'direct';
+                bucket.sources.push({
+                    source,
+                    category: this.classifyTrafficSource(row._id.domain),
+                    count: row.count
+                });
+            }
+        }
+
+        const buckets = Array.from(dayMap.values()).sort((a, b) => a.date.localeCompare(b.date));
+
+        let keywords: ITrafficSourcesHistory['keywords'] = [];
+        if (this.gscService) {
+            try {
+                if (await this.gscService.isConfigured()) {
+                    const gscData = await this.gscService.getKeywordsByDay(days, 15);
+                    keywords = gscData.buckets;
+                }
+            } catch {
+                // GSC unavailable — proceed without keywords
+            }
+        }
+
+        return { days: buckets.length, buckets, keywords };
+    }
+
+    /**
+     * Get geographic distribution broken into daily buckets.
+     *
+     * Unwinds sessions to group visitors by day and country code.
+     *
+     * @param days - Number of daily buckets to return (default 14)
+     * @param topN - Top countries per bucket (default 20)
+     * @returns Daily geo distribution buckets
+     */
+    async getGeoDistributionByDay(days = 14, topN = 20): Promise<IGeoDistributionHistory> {
+        const since = new Date();
+        since.setDate(since.getDate() - days);
+        since.setHours(0, 0, 0, 0);
+
+        const results = await this.collection.aggregate<{
+            _id: { date: string; country: string | null };
+            count: number;
+        }>([
+            {
+                $match: {
+                    'activity.lastSeen': { $gte: since },
+                    'activity.sessions': { $exists: true, $ne: [] }
+                }
+            },
+            { $unwind: '$activity.sessions' },
+            { $match: { 'activity.sessions.startedAt': { $gte: since } } },
+            {
+                $group: {
+                    _id: {
+                        date: { $dateToString: { format: '%Y-%m-%d', date: '$activity.sessions.startedAt' } },
+                        country: { $ifNull: ['$activity.sessions.country', null] }
+                    },
+                    count: { $sum: 1 }
+                }
+            },
+            { $sort: { '_id.date': 1, count: -1 } }
+        ]).toArray();
+
+        const dayMap = new Map<string, IDailyGeoBucket>();
+
+        for (const row of results) {
+            const date = row._id.date;
+            if (!dayMap.has(date)) {
+                dayMap.set(date, { date, totalVisitors: 0, countries: [] });
+            }
+            const bucket = dayMap.get(date)!;
+            bucket.totalVisitors += row.count;
+            if (bucket.countries.length < topN && row._id.country) {
+                bucket.countries.push({ country: row._id.country, count: row.count });
+            }
+        }
+
+        const buckets = Array.from(dayMap.values()).sort((a, b) => a.date.localeCompare(b.date));
+
+        return { days: buckets.length, buckets };
+    }
+
+    /**
+     * Get device breakdown broken into daily buckets.
+     *
+     * Unwinds sessions to group by day and device category.
+     * Device categories are a fixed set (desktop, mobile, tablet, unknown)
+     * so no topN cap is needed.
+     *
+     * @param days - Number of daily buckets to return (default 14)
+     * @returns Daily device breakdown buckets
+     */
+    async getDeviceBreakdownByDay(days = 14): Promise<IDeviceBreakdownHistory> {
+        const since = new Date();
+        since.setDate(since.getDate() - days);
+        since.setHours(0, 0, 0, 0);
+
+        const results = await this.collection.aggregate<{
+            _id: { date: string; device: string };
+            count: number;
+        }>([
+            {
+                $match: {
+                    'activity.lastSeen': { $gte: since },
+                    'activity.sessions': { $exists: true, $ne: [] }
+                }
+            },
+            { $unwind: '$activity.sessions' },
+            { $match: { 'activity.sessions.startedAt': { $gte: since } } },
+            {
+                $group: {
+                    _id: {
+                        date: { $dateToString: { format: '%Y-%m-%d', date: '$activity.sessions.startedAt' } },
+                        device: { $ifNull: ['$activity.sessions.device', 'unknown'] }
+                    },
+                    count: { $sum: 1 }
+                }
+            },
+            { $sort: { '_id.date': 1, count: -1 } }
+        ]).toArray();
+
+        const dayMap = new Map<string, IDailyDeviceBucket>();
+
+        for (const row of results) {
+            const date = row._id.date;
+            if (!dayMap.has(date)) {
+                dayMap.set(date, { date, totalSessions: 0, devices: [] });
+            }
+            const bucket = dayMap.get(date)!;
+            bucket.totalSessions += row.count;
+            bucket.devices.push({ device: row._id.device, count: row.count });
+        }
+
+        const buckets = Array.from(dayMap.values()).sort((a, b) => a.date.localeCompare(b.date));
+
+        return { days: buckets.length, buckets };
+    }
+
+    /**
+     * Get landing page performance broken into daily buckets.
+     *
+     * Unwinds sessions to group by day and landing page, calculates
+     * bounce rate per page (sessions with 1 or fewer pages).
+     *
+     * @param days - Number of daily buckets to return (default 14)
+     * @param topN - Top landing pages per bucket (default 20)
+     * @returns Daily landing page buckets with bounce counts
+     */
+    async getLandingPagesByDay(days = 14, topN = 20): Promise<ILandingPagesHistory> {
+        const since = new Date();
+        since.setDate(since.getDate() - days);
+        since.setHours(0, 0, 0, 0);
+
+        const results = await this.collection.aggregate<{
+            _id: { date: string; landingPage: string };
+            entries: number;
+            bounces: number;
+        }>([
+            {
+                $match: {
+                    'activity.lastSeen': { $gte: since },
+                    'activity.sessions': { $exists: true, $ne: [] }
+                }
+            },
+            { $unwind: '$activity.sessions' },
+            { $match: { 'activity.sessions.startedAt': { $gte: since } } },
+            {
+                $group: {
+                    _id: {
+                        date: { $dateToString: { format: '%Y-%m-%d', date: '$activity.sessions.startedAt' } },
+                        landingPage: { $ifNull: ['$activity.sessions.landingPage', '(unknown)'] }
+                    },
+                    entries: { $sum: 1 },
+                    bounces: {
+                        $sum: {
+                            $cond: [
+                                { $lte: [{ $size: { $ifNull: ['$activity.sessions.pages', []] } }, 1] },
+                                1, 0
+                            ]
+                        }
+                    }
+                }
+            },
+            { $sort: { '_id.date': 1, entries: -1 } }
+        ]).toArray();
+
+        const dayMap = new Map<string, IDailyLandingPageBucket>();
+
+        for (const row of results) {
+            const date = row._id.date;
+            if (!dayMap.has(date)) {
+                dayMap.set(date, { date, totalSessions: 0, pages: [] });
+            }
+            const bucket = dayMap.get(date)!;
+            bucket.totalSessions += row.entries;
+            if (bucket.pages.length < topN) {
+                bucket.pages.push({
+                    path: row._id.landingPage,
+                    entries: row.entries,
+                    bounces: row.bounces
+                });
+            }
+        }
+
+        const buckets = Array.from(dayMap.values()).sort((a, b) => a.date.localeCompare(b.date));
+
+        return { days: buckets.length, buckets };
+    }
+
+    /**
+     * Get UTM campaign performance broken into daily buckets.
+     *
+     * Unwinds sessions to group by day and UTM source/medium/campaign.
+     *
+     * @param days - Number of daily buckets to return (default 14)
+     * @param topN - Top campaigns per bucket (default 10)
+     * @returns Daily campaign performance buckets
+     */
+    async getCampaignPerformanceByDay(days = 14, topN = 10): Promise<ICampaignPerformanceHistory> {
+        const since = new Date();
+        since.setDate(since.getDate() - days);
+        since.setHours(0, 0, 0, 0);
+
+        const results = await this.collection.aggregate<{
+            _id: { date: string; source: string; medium: string; campaign: string };
+            visitors: number;
+        }>([
+            {
+                $match: {
+                    'activity.lastSeen': { $gte: since },
+                    'activity.sessions': { $exists: true, $ne: [] }
+                }
+            },
+            { $unwind: '$activity.sessions' },
+            {
+                $match: {
+                    'activity.sessions.startedAt': { $gte: since },
+                    'activity.sessions.utm': { $ne: null }
+                }
+            },
+            {
+                $group: {
+                    _id: {
+                        date: { $dateToString: { format: '%Y-%m-%d', date: '$activity.sessions.startedAt' } },
+                        source: { $ifNull: ['$activity.sessions.utm.source', '(none)'] },
+                        medium: { $ifNull: ['$activity.sessions.utm.medium', '(none)'] },
+                        campaign: { $ifNull: ['$activity.sessions.utm.campaign', '(none)'] }
+                    },
+                    visitors: { $sum: 1 }
+                }
+            },
+            { $sort: { '_id.date': 1, visitors: -1 } }
+        ]).toArray();
+
+        const dayMap = new Map<string, IDailyCampaignBucket>();
+
+        for (const row of results) {
+            const date = row._id.date;
+            if (!dayMap.has(date)) {
+                dayMap.set(date, { date, totalVisitors: 0, campaigns: [] });
+            }
+            const bucket = dayMap.get(date)!;
+            bucket.totalVisitors += row.visitors;
+            if (bucket.campaigns.length < topN) {
+                bucket.campaigns.push({
+                    source: row._id.source,
+                    medium: row._id.medium,
+                    campaign: row._id.campaign,
+                    visitors: row.visitors
+                });
+            }
+        }
+
+        const buckets = Array.from(dayMap.values()).sort((a, b) => a.date.localeCompare(b.date));
+
+        return { days: buckets.length, buckets };
+    }
+
+    /**
+     * Get session duration distribution broken into daily buckets.
+     *
+     * Unwinds sessions and classifies each by duration into buckets:
+     * 0-10s, 10-60s, 1-5m, 5-15m, 15m+. Shows engagement depth
+     * beyond simple averages.
+     *
+     * @param days - Number of daily buckets to return (default 14)
+     * @returns Daily session duration distribution buckets
+     */
+    async getSessionDurationByDay(days = 14): Promise<ISessionDurationHistory> {
+        const since = new Date();
+        since.setDate(since.getDate() - days);
+        since.setHours(0, 0, 0, 0);
+
+        const results = await this.collection.aggregate<{
+            _id: string;
+            total: number;
+            under10s: number;
+            s10to60: number;
+            m1to5: number;
+            m5to15: number;
+            over15m: number;
+        }>([
+            {
+                $match: {
+                    'activity.lastSeen': { $gte: since },
+                    'activity.sessions': { $exists: true, $ne: [] }
+                }
+            },
+            { $unwind: '$activity.sessions' },
+            { $match: { 'activity.sessions.startedAt': { $gte: since } } },
+            {
+                $group: {
+                    _id: { $dateToString: { format: '%Y-%m-%d', date: '$activity.sessions.startedAt' } },
+                    total: { $sum: 1 },
+                    under10s: { $sum: { $cond: [{ $lte: [{ $ifNull: ['$activity.sessions.durationSeconds', 0] }, 10] }, 1, 0] } },
+                    s10to60: { $sum: { $cond: [{ $and: [{ $gt: [{ $ifNull: ['$activity.sessions.durationSeconds', 0] }, 10] }, { $lte: [{ $ifNull: ['$activity.sessions.durationSeconds', 0] }, 60] }] }, 1, 0] } },
+                    m1to5: { $sum: { $cond: [{ $and: [{ $gt: [{ $ifNull: ['$activity.sessions.durationSeconds', 0] }, 60] }, { $lte: [{ $ifNull: ['$activity.sessions.durationSeconds', 0] }, 300] }] }, 1, 0] } },
+                    m5to15: { $sum: { $cond: [{ $and: [{ $gt: [{ $ifNull: ['$activity.sessions.durationSeconds', 0] }, 300] }, { $lte: [{ $ifNull: ['$activity.sessions.durationSeconds', 0] }, 900] }] }, 1, 0] } },
+                    over15m: { $sum: { $cond: [{ $gt: [{ $ifNull: ['$activity.sessions.durationSeconds', 0] }, 900] }, 1, 0] } }
+                }
+            },
+            { $sort: { _id: 1 } }
+        ]).toArray();
+
+        const buckets: IDailySessionDurationBucket[] = results.map(r => ({
+            date: r._id,
+            totalSessions: r.total,
+            under10s: r.under10s,
+            s10to60: r.s10to60,
+            m1to5: r.m1to5,
+            m5to15: r.m5to15,
+            over15m: r.over15m
+        }));
+
+        return { days: buckets.length, buckets };
+    }
+
+    /**
+     * Get pages-per-session distribution broken into daily buckets.
+     *
+     * Unwinds sessions and classifies each by page count: 1 (bounce),
+     * 2-3, 4-6, 7+. Complements bounce rate by showing depth of engagement.
+     *
+     * @param days - Number of daily buckets to return (default 14)
+     * @returns Daily pages-per-session distribution buckets
+     */
+    async getPagesPerSessionByDay(days = 14): Promise<IPagesPerSessionHistory> {
+        const since = new Date();
+        since.setDate(since.getDate() - days);
+        since.setHours(0, 0, 0, 0);
+
+        const results = await this.collection.aggregate<{
+            _id: string;
+            total: number;
+            onePage: number;
+            twoToThree: number;
+            fourToSix: number;
+            sevenPlus: number;
+        }>([
+            {
+                $match: {
+                    'activity.lastSeen': { $gte: since },
+                    'activity.sessions': { $exists: true, $ne: [] }
+                }
+            },
+            { $unwind: '$activity.sessions' },
+            { $match: { 'activity.sessions.startedAt': { $gte: since } } },
+            {
+                $addFields: {
+                    _pageCount: { $size: { $ifNull: ['$activity.sessions.pages', []] } }
+                }
+            },
+            {
+                $group: {
+                    _id: { $dateToString: { format: '%Y-%m-%d', date: '$activity.sessions.startedAt' } },
+                    total: { $sum: 1 },
+                    onePage: { $sum: { $cond: [{ $lte: ['$_pageCount', 1] }, 1, 0] } },
+                    twoToThree: { $sum: { $cond: [{ $and: [{ $gte: ['$_pageCount', 2] }, { $lte: ['$_pageCount', 3] }] }, 1, 0] } },
+                    fourToSix: { $sum: { $cond: [{ $and: [{ $gte: ['$_pageCount', 4] }, { $lte: ['$_pageCount', 6] }] }, 1, 0] } },
+                    sevenPlus: { $sum: { $cond: [{ $gte: ['$_pageCount', 7] }, 1, 0] } }
+                }
+            },
+            { $sort: { _id: 1 } }
+        ]).toArray();
+
+        const buckets: IDailyPagesPerSessionBucket[] = results.map(r => ({
+            date: r._id,
+            totalSessions: r.total,
+            onePage: r.onePage,
+            twoToThree: r.twoToThree,
+            fourToSix: r.fourToSix,
+            sevenPlus: r.sevenPlus
+        }));
+
+        return { days: buckets.length, buckets };
+    }
+
+    /**
+     * Get new vs returning visitor breakdown by day.
+     *
+     * Unwinds sessions and classifies each user as new (firstSeen on
+     * that day) or returning (firstSeen before that day).
+     *
+     * @param days - Number of daily buckets to return (default 14)
+     * @returns Daily new vs returning visitor buckets
+     */
+    async getNewVsReturningByDay(days = 14): Promise<INewVsReturningHistory> {
+        const since = new Date();
+        since.setDate(since.getDate() - days);
+        since.setHours(0, 0, 0, 0);
+
+        const results = await this.collection.aggregate<{
+            _id: string;
+            total: number;
+            newVisitors: number;
+            returningVisitors: number;
+        }>([
+            {
+                $match: {
+                    'activity.lastSeen': { $gte: since },
+                    'activity.sessions': { $exists: true, $ne: [] }
+                }
+            },
+            { $unwind: '$activity.sessions' },
+            { $match: { 'activity.sessions.startedAt': { $gte: since } } },
+            {
+                $group: {
+                    _id: {
+                        date: { $dateToString: { format: '%Y-%m-%d', date: '$activity.sessions.startedAt' } },
+                        userId: '$id'
+                    },
+                    firstSeen: { $first: '$activity.firstSeen' },
+                    sessionDate: { $first: '$activity.sessions.startedAt' }
+                }
+            },
+            {
+                $group: {
+                    _id: '$_id.date',
+                    total: { $sum: 1 },
+                    newVisitors: {
+                        $sum: {
+                            $cond: [
+                                { $eq: [
+                                    { $dateToString: { format: '%Y-%m-%d', date: '$firstSeen' } },
+                                    '$_id.date'
+                                ] },
+                                1, 0
+                            ]
+                        }
+                    }
+                }
+            },
+            {
+                $addFields: {
+                    returningVisitors: { $subtract: ['$total', '$newVisitors'] }
+                }
+            },
+            { $sort: { _id: 1 } }
+        ]).toArray();
+
+        const buckets: IDailyNewVsReturningBucket[] = results.map(r => ({
+            date: r._id,
+            totalVisitors: r.total,
+            newVisitors: r.newVisitors,
+            returningVisitors: r.returningVisitors
+        }));
+
+        return { days: buckets.length, buckets };
+    }
+
+    /**
+     * Get wallet conversion funnel broken into daily buckets.
+     *
+     * For each day, counts unique visitors and how many have wallets
+     * connected or verified. Shows conversion rate trends over time.
+     *
+     * @param days - Number of daily buckets to return (default 14)
+     * @returns Daily wallet conversion funnel buckets
+     */
+    async getWalletConversionByDay(days = 14): Promise<IWalletConversionHistory> {
+        const since = new Date();
+        since.setDate(since.getDate() - days);
+        since.setHours(0, 0, 0, 0);
+
+        const results = await this.collection.aggregate<{
+            _id: string;
+            total: number;
+            walletsConnected: number;
+            walletsVerified: number;
+        }>([
+            {
+                $match: {
+                    'activity.lastSeen': { $gte: since },
+                    'activity.sessions': { $exists: true, $ne: [] }
+                }
+            },
+            { $unwind: '$activity.sessions' },
+            { $match: { 'activity.sessions.startedAt': { $gte: since } } },
+            {
+                $group: {
+                    _id: {
+                        date: { $dateToString: { format: '%Y-%m-%d', date: '$activity.sessions.startedAt' } },
+                        userId: '$id'
+                    },
+                    hasWallet: {
+                        $first: { $gt: [{ $size: { $ifNull: ['$wallets', []] } }, 0] }
+                    },
+                    hasVerified: {
+                        $first: {
+                            $gt: [{
+                                $size: {
+                                    $filter: {
+                                        input: { $ifNull: ['$wallets', []] },
+                                        as: 'w',
+                                        cond: { $eq: ['$$w.verified', true] }
+                                    }
+                                }
+                            }, 0]
+                        }
+                    }
+                }
+            },
+            {
+                $group: {
+                    _id: '$_id.date',
+                    total: { $sum: 1 },
+                    walletsConnected: { $sum: { $cond: ['$hasWallet', 1, 0] } },
+                    walletsVerified: { $sum: { $cond: ['$hasVerified', 1, 0] } }
+                }
+            },
+            { $sort: { _id: 1 } }
+        ]).toArray();
+
+        const buckets: IDailyWalletConversionBucket[] = results.map(r => ({
+            date: r._id,
+            totalVisitors: r.total,
+            walletsConnected: r.walletsConnected,
+            walletsVerified: r.walletsVerified
+        }));
+
+        return { days: buckets.length, buckets };
+    }
+
+    /**
+     * Get exit page performance broken into daily buckets.
+     *
+     * Unwinds sessions, extracts the last page viewed in each session,
+     * and groups by day + path. High exit counts on specific pages
+     * suggest confusion or dead-ends.
+     *
+     * @param days - Number of daily buckets to return (default 14)
+     * @param topN - Top exit pages per bucket (default 20)
+     * @returns Daily exit page buckets
+     */
+    async getExitPagesByDay(days = 14, topN = 20): Promise<IExitPagesHistory> {
+        const since = new Date();
+        since.setDate(since.getDate() - days);
+        since.setHours(0, 0, 0, 0);
+
+        const results = await this.collection.aggregate<{
+            _id: { date: string; exitPage: string };
+            exits: number;
+        }>([
+            {
+                $match: {
+                    'activity.lastSeen': { $gte: since },
+                    'activity.sessions': { $exists: true, $ne: [] }
+                }
+            },
+            { $unwind: '$activity.sessions' },
+            { $match: { 'activity.sessions.startedAt': { $gte: since } } },
+            {
+                $addFields: {
+                    _exitPage: { $arrayElemAt: ['$activity.sessions.pages.path', -1] }
+                }
+            },
+            { $match: { _exitPage: { $ne: null } } },
+            {
+                $group: {
+                    _id: {
+                        date: { $dateToString: { format: '%Y-%m-%d', date: '$activity.sessions.startedAt' } },
+                        exitPage: '$_exitPage'
+                    },
+                    exits: { $sum: 1 }
+                }
+            },
+            { $sort: { '_id.date': 1, exits: -1 } }
+        ]).toArray();
+
+        const dayMap = new Map<string, IDailyExitPageBucket>();
+
+        for (const row of results) {
+            const date = row._id.date;
+            if (!dayMap.has(date)) {
+                dayMap.set(date, { date, totalSessions: 0, pages: [] });
+            }
+            const bucket = dayMap.get(date)!;
+            bucket.totalSessions += row.exits;
+            if (bucket.pages.length < topN) {
+                bucket.pages.push({ path: row._id.exitPage, exits: row.exits });
+            }
+        }
+
+        const buckets = Array.from(dayMap.values()).sort((a, b) => a.date.localeCompare(b.date));
+
+        return { days: buckets.length, buckets };
     }
 
     // ==================== Index Management ====================
