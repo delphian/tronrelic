@@ -32,7 +32,8 @@ import type {
     IWalletConversionHistory,
     IDailyWalletConversionBucket,
     IExitPagesHistory,
-    IDailyExitPageBucket
+    IDailyExitPageBucket,
+    BucketInterval
 } from '@/types';
 import type {
     IUserDocument,
@@ -3315,23 +3316,105 @@ export class UserService {
         };
     }
 
+    // ==================== Bucket Interval Helpers ====================
+
+    /**
+     * Parse a BucketInterval string into its numeric amount and time unit.
+     *
+     * @param interval - Duration string like '1h', '4h', '1d'
+     * @returns Parsed unit ('hour' or 'day') and numeric amount
+     */
+    private parseBucketInterval(interval: BucketInterval): { unit: 'hour' | 'day'; amount: number } {
+        const match = interval.match(/^(\d+)(h|d)$/);
+        if (!match) {
+            throw new Error(`Invalid bucket interval: ${interval}`);
+        }
+
+        const amount = parseInt(match[1], 10);
+        if (amount <= 0) {
+            throw new Error(`Bucket interval amount must be positive: ${interval}`);
+        }
+
+        return {
+            amount,
+            unit: match[2] === 'h' ? 'hour' : 'day'
+        };
+    }
+
+    /**
+     * Compute the "since" cutoff date for a bucket query.
+     *
+     * Aligns to the appropriate boundary (hour or day in UTC) so
+     * bucket edges are clean and predictable.
+     *
+     * @param interval - Duration per bucket (e.g., '1h', '1d')
+     * @param count - Number of buckets
+     * @returns Date representing the start of the oldest bucket
+     */
+    private computeBucketSince(interval: BucketInterval, count: number): Date {
+        if (!Number.isInteger(count) || count <= 0) {
+            throw new Error(`Bucket count must be a positive integer: ${count}`);
+        }
+        const { unit, amount } = this.parseBucketInterval(interval);
+        const since = new Date();
+
+        if (unit === 'hour') {
+            since.setTime(since.getTime() - amount * count * 60 * 60 * 1000);
+            since.setUTCMinutes(0, 0, 0);
+            // Snap to amount-aligned hour boundary so cutoff matches $dateTrunc bin edges
+            since.setUTCHours(since.getUTCHours() - (since.getUTCHours() % amount));
+        } else {
+            since.setUTCDate(since.getUTCDate() - amount * count);
+            since.setUTCHours(0, 0, 0, 0);
+        }
+
+        return since;
+    }
+
+    /**
+     * Build a MongoDB expression that truncates a date field to the bucket boundary.
+     *
+     * For '1d' intervals, uses $dateToString with '%Y-%m-%d' format for backwards
+     * compatibility. For all other intervals, uses $dateTrunc (MongoDB 5.0+) then
+     * formats the result to a readable string.
+     *
+     * @param dateField - MongoDB field path (e.g., '$activity.sessions.startedAt')
+     * @param interval - Duration per bucket (e.g., '1h', '1d')
+     * @returns MongoDB aggregation expression producing a bucket date string
+     */
+    private buildBucketDateExpr(dateField: string, interval: BucketInterval): object {
+        const { unit, amount } = this.parseBucketInterval(interval);
+
+        if (unit === 'day' && amount === 1) {
+            return { $dateToString: { format: '%Y-%m-%d', date: dateField } };
+        }
+
+        const format = unit === 'hour' ? '%Y-%m-%dT%H:00' : '%Y-%m-%d';
+
+        return {
+            $dateToString: {
+                format,
+                date: { $dateTrunc: { date: dateField, unit, binSize: amount } }
+            }
+        };
+    }
+
     // ==================== Page Traffic Analytics ====================
 
     /**
-     * Get page traffic history broken into daily buckets.
+     * Get page traffic history broken into time-interval buckets.
      *
-     * Unwinds session page data across all users, groups by day and path,
-     * and returns the top N paths per day with an "other" rollup for
+     * Unwinds session page data across all users, groups by bucket and path,
+     * and returns the top N paths per bucket with an "other" rollup for
      * remaining traffic. Buckets are ordered chronologically (oldest first).
      *
-     * @param days - Number of daily buckets to return (default 14)
+     * @param bucketInterval - Duration per bucket, e.g. '1h' or '1d' (default '1d')
+     * @param bucketCount - Number of buckets to return (default 14)
      * @param topN - Number of top paths per bucket (default 30)
-     * @returns Daily traffic buckets with top paths and "other" rollup
+     * @returns Traffic buckets with top paths and "other" rollup
      */
-    async getPageTrafficHistory(days = 14, topN = 30): Promise<IPageTrafficHistory> {
-        const since = new Date();
-        since.setUTCDate(since.getUTCDate() - days);
-        since.setUTCHours(0, 0, 0, 0);
+    async getPageTrafficHistory(bucketInterval: BucketInterval = '1d', bucketCount = 14, topN = 30): Promise<IPageTrafficHistory> {
+        const since = this.computeBucketSince(bucketInterval, bucketCount);
 
         const results = await this.collection.aggregate<{
             _id: string;
@@ -3351,7 +3434,7 @@ export class UserService {
             {
                 $group: {
                     _id: {
-                        date: { $dateToString: { format: '%Y-%m-%d', date: '$activity.sessions.pages.timestamp' } },
+                        date: this.buildBucketDateExpr('$activity.sessions.pages.timestamp', bucketInterval),
                         path: '$activity.sessions.pages.path'
                     },
                     views: { $sum: 1 }
@@ -3380,7 +3463,7 @@ export class UserService {
             };
         });
 
-        return { days: buckets.length, buckets };
+        return { days: buckets.length, bucketCount: buckets.length, bucketInterval, buckets };
     }
 
     /**
@@ -3434,19 +3517,18 @@ export class UserService {
     }
 
     /**
-     * Get traffic sources broken into daily buckets with optional GSC keywords.
+     * Get traffic sources broken into time-interval buckets with optional GSC keywords.
      *
-     * Unwinds sessions to group visitors by day and referrer domain,
+     * Unwinds sessions to group visitors by bucket interval and referrer domain,
      * classifies each source, and merges GSC keyword data when available.
      *
-     * @param days - Number of daily buckets to return (default 14)
+     * @param bucketInterval - Duration per bucket (e.g., '1h', '1d')
+     * @param bucketCount - Number of buckets to return (default 14)
      * @param topN - Top sources per bucket (default 15)
      * @returns Daily traffic source buckets with GSC keyword data
      */
-    async getTrafficSourcesByDay(days = 14, topN = 15): Promise<ITrafficSourcesHistory> {
-        const since = new Date();
-        since.setUTCDate(since.getUTCDate() - days);
-        since.setUTCHours(0, 0, 0, 0);
+    async getTrafficSourcesByDay(bucketInterval: BucketInterval = '1d', bucketCount = 14, topN = 15): Promise<ITrafficSourcesHistory> {
+        const since = this.computeBucketSince(bucketInterval, bucketCount);
 
         const results = await this.collection.aggregate<{
             _id: { date: string; domain: string | null };
@@ -3463,7 +3545,7 @@ export class UserService {
             {
                 $group: {
                     _id: {
-                        date: { $dateToString: { format: '%Y-%m-%d', date: '$activity.sessions.startedAt' } },
+                        date: this.buildBucketDateExpr('$activity.sessions.startedAt', bucketInterval),
                         domain: { $ifNull: ['$activity.sessions.referrerDomain', null] },
                         userId: '$_id'
                     }
@@ -3506,7 +3588,9 @@ export class UserService {
         if (this.gscService) {
             try {
                 if (await this.gscService.isConfigured()) {
-                    const gscData = await this.gscService.getKeywordsByDay(days, 15);
+                    const { unit, amount } = this.parseBucketInterval(bucketInterval);
+                    const gscDays = unit === 'hour' ? Math.ceil((amount * bucketCount) / 24) : amount * bucketCount;
+                    const gscData = await this.gscService.getKeywordsByDay(gscDays, 15);
                     keywords = gscData.buckets;
                 }
             } catch {
@@ -3514,22 +3598,21 @@ export class UserService {
             }
         }
 
-        return { days: buckets.length, buckets, keywords };
+        return { days: buckets.length, bucketCount: buckets.length, bucketInterval, buckets, keywords };
     }
 
     /**
-     * Get geographic distribution broken into daily buckets.
+     * Get geographic distribution broken into time-interval buckets.
      *
-     * Unwinds sessions to group visitors by day and country code.
+     * Unwinds sessions to group visitors by bucket interval and country code.
      *
-     * @param days - Number of daily buckets to return (default 14)
+     * @param bucketInterval - Duration per bucket (e.g., '1h', '1d')
+     * @param bucketCount - Number of buckets to return (default 14)
      * @param topN - Top countries per bucket (default 20)
      * @returns Daily geo distribution buckets
      */
-    async getGeoDistributionByDay(days = 14, topN = 20): Promise<IGeoDistributionHistory> {
-        const since = new Date();
-        since.setUTCDate(since.getUTCDate() - days);
-        since.setUTCHours(0, 0, 0, 0);
+    async getGeoDistributionByDay(bucketInterval: BucketInterval = '1d', bucketCount = 14, topN = 20): Promise<IGeoDistributionHistory> {
+        const since = this.computeBucketSince(bucketInterval, bucketCount);
 
         const results = await this.collection.aggregate<{
             _id: { date: string; country: string | null };
@@ -3546,7 +3629,7 @@ export class UserService {
             {
                 $group: {
                     _id: {
-                        date: { $dateToString: { format: '%Y-%m-%d', date: '$activity.sessions.startedAt' } },
+                        date: this.buildBucketDateExpr('$activity.sessions.startedAt', bucketInterval),
                         country: { $ifNull: ['$activity.sessions.country', null] },
                         userId: '$_id'
                     }
@@ -3580,23 +3663,22 @@ export class UserService {
 
         const buckets = Array.from(dayMap.values()).sort((a, b) => a.date.localeCompare(b.date));
 
-        return { days: buckets.length, buckets };
+        return { days: buckets.length, bucketCount: buckets.length, bucketInterval, buckets };
     }
 
     /**
-     * Get device breakdown broken into daily buckets.
+     * Get device breakdown broken into time-interval buckets.
      *
-     * Unwinds sessions to group by day and device category.
+     * Unwinds sessions to group by bucket interval and device category.
      * Device categories are a fixed set (desktop, mobile, tablet, unknown)
      * so no topN cap is needed.
      *
-     * @param days - Number of daily buckets to return (default 14)
-     * @returns Daily device breakdown buckets
+     * @param bucketInterval - Duration per bucket (e.g., '1h', '1d')
+     * @param bucketCount - Number of buckets to return (default 14)
+     * @returns Device breakdown buckets
      */
-    async getDeviceBreakdownByDay(days = 14): Promise<IDeviceBreakdownHistory> {
-        const since = new Date();
-        since.setUTCDate(since.getUTCDate() - days);
-        since.setUTCHours(0, 0, 0, 0);
+    async getDeviceBreakdownByDay(bucketInterval: BucketInterval = '1d', bucketCount = 14): Promise<IDeviceBreakdownHistory> {
+        const since = this.computeBucketSince(bucketInterval, bucketCount);
 
         const results = await this.collection.aggregate<{
             _id: { date: string; device: string };
@@ -3613,7 +3695,7 @@ export class UserService {
             {
                 $group: {
                     _id: {
-                        date: { $dateToString: { format: '%Y-%m-%d', date: '$activity.sessions.startedAt' } },
+                        date: this.buildBucketDateExpr('$activity.sessions.startedAt', bucketInterval),
                         device: { $ifNull: ['$activity.sessions.device', 'unknown'] }
                     },
                     count: { $sum: 1 }
@@ -3636,23 +3718,22 @@ export class UserService {
 
         const buckets = Array.from(dayMap.values()).sort((a, b) => a.date.localeCompare(b.date));
 
-        return { days: buckets.length, buckets };
+        return { days: buckets.length, bucketCount: buckets.length, bucketInterval, buckets };
     }
 
     /**
-     * Get landing page performance broken into daily buckets.
+     * Get landing page performance broken into time-interval buckets.
      *
-     * Unwinds sessions to group by day and landing page, calculates
+     * Unwinds sessions to group by bucket interval and landing page, calculates
      * bounce rate per page (sessions with 1 or fewer pages).
      *
-     * @param days - Number of daily buckets to return (default 14)
+     * @param bucketInterval - Duration per bucket (e.g., '1h', '1d')
+     * @param bucketCount - Number of buckets to return (default 14)
      * @param topN - Top landing pages per bucket (default 20)
-     * @returns Daily landing page buckets with bounce counts
+     * @returns Landing page buckets with bounce counts
      */
-    async getLandingPagesByDay(days = 14, topN = 20): Promise<ILandingPagesHistory> {
-        const since = new Date();
-        since.setUTCDate(since.getUTCDate() - days);
-        since.setUTCHours(0, 0, 0, 0);
+    async getLandingPagesByDay(bucketInterval: BucketInterval = '1d', bucketCount = 14, topN = 20): Promise<ILandingPagesHistory> {
+        const since = this.computeBucketSince(bucketInterval, bucketCount);
 
         const results = await this.collection.aggregate<{
             _id: { date: string; landingPage: string };
@@ -3670,7 +3751,7 @@ export class UserService {
             {
                 $group: {
                     _id: {
-                        date: { $dateToString: { format: '%Y-%m-%d', date: '$activity.sessions.startedAt' } },
+                        date: this.buildBucketDateExpr('$activity.sessions.startedAt', bucketInterval),
                         landingPage: { $ifNull: ['$activity.sessions.landingPage', '(unknown)'] }
                     },
                     entries: { $sum: 1 },
@@ -3707,22 +3788,21 @@ export class UserService {
 
         const buckets = Array.from(dayMap.values()).sort((a, b) => a.date.localeCompare(b.date));
 
-        return { days: buckets.length, buckets };
+        return { days: buckets.length, bucketCount: buckets.length, bucketInterval, buckets };
     }
 
     /**
-     * Get UTM campaign performance broken into daily buckets.
+     * Get UTM campaign performance broken into time-interval buckets.
      *
-     * Unwinds sessions to group by day and UTM source/medium/campaign.
+     * Unwinds sessions to group by bucket interval and UTM source/medium/campaign.
      *
-     * @param days - Number of daily buckets to return (default 14)
+     * @param bucketInterval - Duration per bucket (e.g., '1h', '1d')
+     * @param bucketCount - Number of buckets to return (default 14)
      * @param topN - Top campaigns per bucket (default 10)
-     * @returns Daily campaign performance buckets
+     * @returns Campaign performance buckets
      */
-    async getCampaignPerformanceByDay(days = 14, topN = 10): Promise<ICampaignPerformanceHistory> {
-        const since = new Date();
-        since.setUTCDate(since.getUTCDate() - days);
-        since.setUTCHours(0, 0, 0, 0);
+    async getCampaignPerformanceByDay(bucketInterval: BucketInterval = '1d', bucketCount = 14, topN = 10): Promise<ICampaignPerformanceHistory> {
+        const since = this.computeBucketSince(bucketInterval, bucketCount);
 
         const results = await this.collection.aggregate<{
             _id: { date: string; source: string; medium: string; campaign: string };
@@ -3744,7 +3824,7 @@ export class UserService {
             {
                 $group: {
                     _id: {
-                        date: { $dateToString: { format: '%Y-%m-%d', date: '$activity.sessions.startedAt' } },
+                        date: this.buildBucketDateExpr('$activity.sessions.startedAt', bucketInterval),
                         source: { $ifNull: ['$activity.sessions.utm.source', '(none)'] },
                         medium: { $ifNull: ['$activity.sessions.utm.medium', '(none)'] },
                         campaign: { $ifNull: ['$activity.sessions.utm.campaign', '(none)'] },
@@ -3787,23 +3867,22 @@ export class UserService {
 
         const buckets = Array.from(dayMap.values()).sort((a, b) => a.date.localeCompare(b.date));
 
-        return { days: buckets.length, buckets };
+        return { days: buckets.length, bucketCount: buckets.length, bucketInterval, buckets };
     }
 
     /**
-     * Get session duration distribution broken into daily buckets.
+     * Get session duration distribution broken into time-interval buckets.
      *
      * Unwinds sessions and classifies each by duration into buckets:
      * 0-10s, 10-60s, 1-5m, 5-15m, 15m+. Shows engagement depth
      * beyond simple averages.
      *
-     * @param days - Number of daily buckets to return (default 14)
-     * @returns Daily session duration distribution buckets
+     * @param bucketInterval - Duration per bucket (e.g., '1h', '1d')
+     * @param bucketCount - Number of buckets to return (default 14)
+     * @returns Session duration distribution buckets
      */
-    async getSessionDurationByDay(days = 14): Promise<ISessionDurationHistory> {
-        const since = new Date();
-        since.setUTCDate(since.getUTCDate() - days);
-        since.setUTCHours(0, 0, 0, 0);
+    async getSessionDurationByDay(bucketInterval: BucketInterval = '1d', bucketCount = 14): Promise<ISessionDurationHistory> {
+        const since = this.computeBucketSince(bucketInterval, bucketCount);
 
         const results = await this.collection.aggregate<{
             _id: string;
@@ -3824,7 +3903,7 @@ export class UserService {
             { $match: { 'activity.sessions.startedAt': { $gte: since } } },
             {
                 $group: {
-                    _id: { $dateToString: { format: '%Y-%m-%d', date: '$activity.sessions.startedAt' } },
+                    _id: this.buildBucketDateExpr('$activity.sessions.startedAt', bucketInterval),
                     total: { $sum: 1 },
                     under10s: { $sum: { $cond: [{ $lte: [{ $ifNull: ['$activity.sessions.durationSeconds', 0] }, 10] }, 1, 0] } },
                     s10to60: { $sum: { $cond: [{ $and: [{ $gt: [{ $ifNull: ['$activity.sessions.durationSeconds', 0] }, 10] }, { $lte: [{ $ifNull: ['$activity.sessions.durationSeconds', 0] }, 60] }] }, 1, 0] } },
@@ -3846,22 +3925,21 @@ export class UserService {
             over15m: r.over15m
         }));
 
-        return { days: buckets.length, buckets };
+        return { days: buckets.length, bucketCount: buckets.length, bucketInterval, buckets };
     }
 
     /**
-     * Get pages-per-session distribution broken into daily buckets.
+     * Get pages-per-session distribution broken into time-interval buckets.
      *
      * Unwinds sessions and classifies each by page count: 1 (bounce),
      * 2-3, 4-6, 7+. Complements bounce rate by showing depth of engagement.
      *
-     * @param days - Number of daily buckets to return (default 14)
-     * @returns Daily pages-per-session distribution buckets
+     * @param bucketInterval - Duration per bucket (e.g., '1h', '1d')
+     * @param bucketCount - Number of buckets to return (default 14)
+     * @returns Pages-per-session distribution buckets
      */
-    async getPagesPerSessionByDay(days = 14): Promise<IPagesPerSessionHistory> {
-        const since = new Date();
-        since.setUTCDate(since.getUTCDate() - days);
-        since.setUTCHours(0, 0, 0, 0);
+    async getPagesPerSessionByDay(bucketInterval: BucketInterval = '1d', bucketCount = 14): Promise<IPagesPerSessionHistory> {
+        const since = this.computeBucketSince(bucketInterval, bucketCount);
 
         const results = await this.collection.aggregate<{
             _id: string;
@@ -3886,7 +3964,7 @@ export class UserService {
             },
             {
                 $group: {
-                    _id: { $dateToString: { format: '%Y-%m-%d', date: '$activity.sessions.startedAt' } },
+                    _id: this.buildBucketDateExpr('$activity.sessions.startedAt', bucketInterval),
                     total: { $sum: 1 },
                     onePage: { $sum: { $cond: [{ $lte: ['$_pageCount', 1] }, 1, 0] } },
                     twoToThree: { $sum: { $cond: [{ $and: [{ $gte: ['$_pageCount', 2] }, { $lte: ['$_pageCount', 3] }] }, 1, 0] } },
@@ -3906,22 +3984,21 @@ export class UserService {
             sevenPlus: r.sevenPlus
         }));
 
-        return { days: buckets.length, buckets };
+        return { days: buckets.length, bucketCount: buckets.length, bucketInterval, buckets };
     }
 
     /**
-     * Get new vs returning visitor breakdown by day.
+     * Get new vs returning visitor breakdown by time-interval bucket.
      *
-     * Unwinds sessions and classifies each user as new (firstSeen on
-     * that day) or returning (firstSeen before that day).
+     * Unwinds sessions and classifies each user as new (firstSeen within
+     * that bucket) or returning (firstSeen before that bucket).
      *
-     * @param days - Number of daily buckets to return (default 14)
-     * @returns Daily new vs returning visitor buckets
+     * @param bucketInterval - Duration per bucket (e.g., '1h', '1d')
+     * @param bucketCount - Number of buckets to return (default 14)
+     * @returns New vs returning visitor buckets
      */
-    async getNewVsReturningByDay(days = 14): Promise<INewVsReturningHistory> {
-        const since = new Date();
-        since.setUTCDate(since.getUTCDate() - days);
-        since.setUTCHours(0, 0, 0, 0);
+    async getNewVsReturningByDay(bucketInterval: BucketInterval = '1d', bucketCount = 14): Promise<INewVsReturningHistory> {
+        const since = this.computeBucketSince(bucketInterval, bucketCount);
 
         const results = await this.collection.aggregate<{
             _id: string;
@@ -3940,7 +4017,7 @@ export class UserService {
             {
                 $group: {
                     _id: {
-                        date: { $dateToString: { format: '%Y-%m-%d', date: '$activity.sessions.startedAt' } },
+                        date: this.buildBucketDateExpr('$activity.sessions.startedAt', bucketInterval),
                         userId: '$id'
                     },
                     firstSeen: { $first: '$activity.firstSeen' },
@@ -3955,7 +4032,7 @@ export class UserService {
                         $sum: {
                             $cond: [
                                 { $eq: [
-                                    { $dateToString: { format: '%Y-%m-%d', date: '$firstSeen' } },
+                                    this.buildBucketDateExpr('$firstSeen', bucketInterval),
                                     '$_id.date'
                                 ] },
                                 1, 0
@@ -3979,22 +4056,21 @@ export class UserService {
             returningVisitors: r.returningVisitors
         }));
 
-        return { days: buckets.length, buckets };
+        return { days: buckets.length, bucketCount: buckets.length, bucketInterval, buckets };
     }
 
     /**
-     * Get wallet conversion funnel broken into daily buckets.
+     * Get wallet conversion funnel broken into time-interval buckets.
      *
-     * For each day, counts unique visitors and how many have wallets
+     * For each bucket, counts unique visitors and how many have wallets
      * connected or verified. Shows conversion rate trends over time.
      *
-     * @param days - Number of daily buckets to return (default 14)
-     * @returns Daily wallet conversion funnel buckets
+     * @param bucketInterval - Duration per bucket (e.g., '1h', '1d')
+     * @param bucketCount - Number of buckets to return (default 14)
+     * @returns Wallet conversion funnel buckets
      */
-    async getWalletConversionByDay(days = 14): Promise<IWalletConversionHistory> {
-        const since = new Date();
-        since.setUTCDate(since.getUTCDate() - days);
-        since.setUTCHours(0, 0, 0, 0);
+    async getWalletConversionByDay(bucketInterval: BucketInterval = '1d', bucketCount = 14): Promise<IWalletConversionHistory> {
+        const since = this.computeBucketSince(bucketInterval, bucketCount);
 
         const results = await this.collection.aggregate<{
             _id: string;
@@ -4013,7 +4089,7 @@ export class UserService {
             {
                 $group: {
                     _id: {
-                        date: { $dateToString: { format: '%Y-%m-%d', date: '$activity.sessions.startedAt' } },
+                        date: this.buildBucketDateExpr('$activity.sessions.startedAt', bucketInterval),
                         userId: '$id'
                     },
                     hasWallet: {
@@ -4052,24 +4128,23 @@ export class UserService {
             walletsVerified: r.walletsVerified
         }));
 
-        return { days: buckets.length, buckets };
+        return { days: buckets.length, bucketCount: buckets.length, bucketInterval, buckets };
     }
 
     /**
-     * Get exit page performance broken into daily buckets.
+     * Get exit page performance broken into time-interval buckets.
      *
      * Unwinds sessions, extracts the last page viewed in each session,
-     * and groups by day + path. High exit counts on specific pages
+     * and groups by bucket interval + path. High exit counts on specific pages
      * suggest confusion or dead-ends.
      *
-     * @param days - Number of daily buckets to return (default 14)
+     * @param bucketInterval - Duration per bucket (e.g., '1h', '1d')
+     * @param bucketCount - Number of buckets to return (default 14)
      * @param topN - Top exit pages per bucket (default 20)
-     * @returns Daily exit page buckets
+     * @returns Exit page buckets
      */
-    async getExitPagesByDay(days = 14, topN = 20): Promise<IExitPagesHistory> {
-        const since = new Date();
-        since.setUTCDate(since.getUTCDate() - days);
-        since.setUTCHours(0, 0, 0, 0);
+    async getExitPagesByDay(bucketInterval: BucketInterval = '1d', bucketCount = 14, topN = 20): Promise<IExitPagesHistory> {
+        const since = this.computeBucketSince(bucketInterval, bucketCount);
 
         const results = await this.collection.aggregate<{
             _id: { date: string; exitPage: string };
@@ -4092,7 +4167,7 @@ export class UserService {
             {
                 $group: {
                     _id: {
-                        date: { $dateToString: { format: '%Y-%m-%d', date: '$activity.sessions.startedAt' } },
+                        date: this.buildBucketDateExpr('$activity.sessions.startedAt', bucketInterval),
                         exitPage: '$_exitPage'
                     },
                     exits: { $sum: 1 }
@@ -4117,7 +4192,7 @@ export class UserService {
 
         const buckets = Array.from(dayMap.values()).sort((a, b) => a.date.localeCompare(b.date));
 
-        return { days: buckets.length, buckets };
+        return { days: buckets.length, bucketCount: buckets.length, bucketInterval, buckets };
     }
 
     // ==================== Index Management ====================

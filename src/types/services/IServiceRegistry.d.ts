@@ -40,7 +40,7 @@ export interface IServiceRegistry {
      *
      * @param name - Unique service identifier (kebab-case by convention)
      * @param service - The service instance to register
-     * @throws Error if a service with this name is already registered, or if `service` is `null` or `undefined`
+     * @throws Error if a service with this name is already registered
      */
     register<T>(name: string, service: T): void;
     /**

@@ -18,6 +18,14 @@
 import type { IUser } from './IUser.js';
 
 /**
+ * Duration string for analytics bucketing.
+ *
+ * Combines a numeric amount with a time unit to define bucket width.
+ * Examples: '1h' (one hour), '4h' (four hours), '1d' (one day).
+ */
+export type BucketInterval = `${number}h` | `${number}d`;
+
+/**
  * Aggregate user activity metrics for health monitoring.
  *
  * Combines user counts, engagement metrics, and daily visitor trends
@@ -107,9 +115,9 @@ export interface IPageTrafficEntry {
  * "other" count for all remaining paths that fell outside the top N.
  */
 export interface IPageTrafficBucket {
-    /** ISO date string for the day (YYYY-MM-DD). */
+    /** Bucket start timestamp (YYYY-MM-DD for daily, YYYY-MM-DDTHH:00 for hourly). */
     date: string;
-    /** Total page views across all paths for this day. */
+    /** Total page views across all paths for this bucket. */
     totalViews: number;
     /** Top paths ranked by view count (capped at the requested limit). */
     topPaths: IPageTrafficEntry[];
@@ -118,15 +126,19 @@ export interface IPageTrafficBucket {
 }
 
 /**
- * Two-week page traffic history broken into daily buckets.
+ * Page traffic history broken into time-interval buckets.
  *
- * Each bucket contains the top paths for that day, enabling
+ * Each bucket contains the top paths for that interval, enabling
  * trend analysis of which pages gain or lose traffic over time.
  */
 export interface IPageTrafficHistory {
-    /** Number of daily buckets returned (up to 14). */
+    /** @deprecated Use bucketCount instead. */
     days: number;
-    /** Daily traffic buckets ordered chronologically (oldest first). */
+    /** Number of time-interval buckets returned. */
+    bucketCount: number;
+    /** Interval used for bucketing (e.g., '1h', '1d'). */
+    bucketInterval: BucketInterval;
+    /** Traffic buckets ordered chronologically (oldest first). */
     buckets: IPageTrafficBucket[];
 }
 
@@ -171,21 +183,25 @@ export interface IDailyTrafficSourceEntry {
  * One day's traffic source breakdown.
  */
 export interface IDailyTrafficSourceBucket {
-    /** ISO date string (YYYY-MM-DD). */
+    /** Bucket start timestamp (YYYY-MM-DD for daily, YYYY-MM-DDTHH:00 for hourly). */
     date: string;
-    /** Total unique visitors for this day. */
+    /** Total unique visitors for this bucket. */
     totalVisitors: number;
     /** Top sources ranked by visitor count. */
     sources: IDailyTrafficSourceEntry[];
 }
 
 /**
- * Daily traffic source history with optional GSC keyword data.
+ * Traffic source history with optional GSC keyword data.
  */
 export interface ITrafficSourcesHistory {
-    /** Number of daily buckets returned. */
+    /** @deprecated Use bucketCount instead. */
     days: number;
-    /** Daily traffic source buckets ordered chronologically. */
+    /** Number of time-interval buckets returned. */
+    bucketCount: number;
+    /** Interval used for bucketing (e.g., '1h', '1d'). */
+    bucketInterval: BucketInterval;
+    /** Traffic source buckets ordered chronologically. */
     buckets: IDailyTrafficSourceBucket[];
     /** GSC keyword data per day (may be sparse due to 3-day delay). */
     keywords: Array<{
@@ -210,21 +226,25 @@ export interface IDailyGeoEntry {
  * One day's geographic distribution breakdown.
  */
 export interface IDailyGeoBucket {
-    /** ISO date string (YYYY-MM-DD). */
+    /** Bucket start timestamp (YYYY-MM-DD for daily, YYYY-MM-DDTHH:00 for hourly). */
     date: string;
-    /** Total unique visitors for this day. */
+    /** Total unique visitors for this bucket. */
     totalVisitors: number;
     /** Top countries ranked by visitor count. */
     countries: IDailyGeoEntry[];
 }
 
 /**
- * Daily geographic distribution history.
+ * Geographic distribution history.
  */
 export interface IGeoDistributionHistory {
-    /** Number of daily buckets returned. */
+    /** @deprecated Use bucketCount instead. */
     days: number;
-    /** Daily geo buckets ordered chronologically. */
+    /** Number of time-interval buckets returned. */
+    bucketCount: number;
+    /** Interval used for bucketing (e.g., '1h', '1d'). */
+    bucketInterval: BucketInterval;
+    /** Geo buckets ordered chronologically. */
     buckets: IDailyGeoBucket[];
 }
 
@@ -232,21 +252,25 @@ export interface IGeoDistributionHistory {
  * One day's device breakdown.
  */
 export interface IDailyDeviceBucket {
-    /** ISO date string (YYYY-MM-DD). */
+    /** Bucket start timestamp (YYYY-MM-DD for daily, YYYY-MM-DDTHH:00 for hourly). */
     date: string;
-    /** Total sessions for this day. */
+    /** Total sessions for this bucket. */
     totalSessions: number;
-    /** Device category counts for this day. */
+    /** Device category counts for this bucket. */
     devices: Array<{ device: string; count: number }>;
 }
 
 /**
- * Daily device breakdown history.
+ * Device breakdown history.
  */
 export interface IDeviceBreakdownHistory {
-    /** Number of daily buckets returned. */
+    /** @deprecated Use bucketCount instead. */
     days: number;
-    /** Daily device buckets ordered chronologically. */
+    /** Number of time-interval buckets returned. */
+    bucketCount: number;
+    /** Interval used for bucketing (e.g., '1h', '1d'). */
+    bucketInterval: BucketInterval;
+    /** Device buckets ordered chronologically. */
     buckets: IDailyDeviceBucket[];
 }
 
@@ -266,21 +290,25 @@ export interface IDailyLandingPageEntry {
  * One day's landing page breakdown.
  */
 export interface IDailyLandingPageBucket {
-    /** ISO date string (YYYY-MM-DD). */
+    /** Bucket start timestamp (YYYY-MM-DD for daily, YYYY-MM-DDTHH:00 for hourly). */
     date: string;
-    /** Total sessions for this day. */
+    /** Total sessions for this bucket. */
     totalSessions: number;
     /** Top landing pages ranked by entry count. */
     pages: IDailyLandingPageEntry[];
 }
 
 /**
- * Daily landing page history.
+ * Landing page history.
  */
 export interface ILandingPagesHistory {
-    /** Number of daily buckets returned. */
+    /** @deprecated Use bucketCount instead. */
     days: number;
-    /** Daily landing page buckets ordered chronologically. */
+    /** Number of time-interval buckets returned. */
+    bucketCount: number;
+    /** Interval used for bucketing (e.g., '1h', '1d'). */
+    bucketInterval: BucketInterval;
+    /** Landing page buckets ordered chronologically. */
     buckets: IDailyLandingPageBucket[];
 }
 
@@ -302,21 +330,25 @@ export interface IDailyCampaignEntry {
  * One day's UTM campaign breakdown.
  */
 export interface IDailyCampaignBucket {
-    /** ISO date string (YYYY-MM-DD). */
+    /** Bucket start timestamp (YYYY-MM-DD for daily, YYYY-MM-DDTHH:00 for hourly). */
     date: string;
-    /** Total UTM-tagged visitors for this day. */
+    /** Total UTM-tagged visitors for this bucket. */
     totalVisitors: number;
     /** Top campaigns ranked by visitor count. */
     campaigns: IDailyCampaignEntry[];
 }
 
 /**
- * Daily campaign performance history.
+ * Campaign performance history.
  */
 export interface ICampaignPerformanceHistory {
-    /** Number of daily buckets returned. */
+    /** @deprecated Use bucketCount instead. */
     days: number;
-    /** Daily campaign buckets ordered chronologically. */
+    /** Number of time-interval buckets returned. */
+    bucketCount: number;
+    /** Interval used for bucketing (e.g., '1h', '1d'). */
+    bucketInterval: BucketInterval;
+    /** Campaign buckets ordered chronologically. */
     buckets: IDailyCampaignBucket[];
 }
 
@@ -324,9 +356,9 @@ export interface ICampaignPerformanceHistory {
  * One day's session duration distribution.
  */
 export interface IDailySessionDurationBucket {
-    /** ISO date string (YYYY-MM-DD). */
+    /** Bucket start timestamp (YYYY-MM-DD for daily, YYYY-MM-DDTHH:00 for hourly). */
     date: string;
-    /** Total sessions for this day. */
+    /** Total sessions for this bucket. */
     totalSessions: number;
     /** Sessions lasting 0-10 seconds (likely bounces). */
     under10s: number;
@@ -341,12 +373,16 @@ export interface IDailySessionDurationBucket {
 }
 
 /**
- * Daily session duration distribution history.
+ * Session duration distribution history.
  */
 export interface ISessionDurationHistory {
-    /** Number of daily buckets returned. */
+    /** @deprecated Use bucketCount instead. */
     days: number;
-    /** Daily session duration buckets ordered chronologically. */
+    /** Number of time-interval buckets returned. */
+    bucketCount: number;
+    /** Interval used for bucketing (e.g., '1h', '1d'). */
+    bucketInterval: BucketInterval;
+    /** Session duration buckets ordered chronologically. */
     buckets: IDailySessionDurationBucket[];
 }
 
@@ -354,9 +390,9 @@ export interface ISessionDurationHistory {
  * One day's pages-per-session distribution.
  */
 export interface IDailyPagesPerSessionBucket {
-    /** ISO date string (YYYY-MM-DD). */
+    /** Bucket start timestamp (YYYY-MM-DD for daily, YYYY-MM-DDTHH:00 for hourly). */
     date: string;
-    /** Total sessions for this day. */
+    /** Total sessions for this bucket. */
     totalSessions: number;
     /** Sessions with exactly 1 page view (bounce). */
     onePage: number;
@@ -369,12 +405,16 @@ export interface IDailyPagesPerSessionBucket {
 }
 
 /**
- * Daily pages-per-session distribution history.
+ * Pages-per-session distribution history.
  */
 export interface IPagesPerSessionHistory {
-    /** Number of daily buckets returned. */
+    /** @deprecated Use bucketCount instead. */
     days: number;
-    /** Daily pages-per-session buckets ordered chronologically. */
+    /** Number of time-interval buckets returned. */
+    bucketCount: number;
+    /** Interval used for bucketing (e.g., '1h', '1d'). */
+    bucketInterval: BucketInterval;
+    /** Pages-per-session buckets ordered chronologically. */
     buckets: IDailyPagesPerSessionBucket[];
 }
 
@@ -382,23 +422,27 @@ export interface IPagesPerSessionHistory {
  * One day's new vs returning visitor breakdown.
  */
 export interface IDailyNewVsReturningBucket {
-    /** ISO date string (YYYY-MM-DD). */
+    /** Bucket start timestamp (YYYY-MM-DD for daily, YYYY-MM-DDTHH:00 for hourly). */
     date: string;
-    /** Total unique visitors for this day. */
+    /** Total unique visitors for this bucket. */
     totalVisitors: number;
-    /** Visitors whose first session was on this day. */
+    /** Visitors whose first session was in this bucket. */
     newVisitors: number;
-    /** Visitors who had sessions before this day. */
+    /** Visitors who had sessions before this bucket. */
     returningVisitors: number;
 }
 
 /**
- * Daily new vs returning visitor history.
+ * New vs returning visitor history.
  */
 export interface INewVsReturningHistory {
-    /** Number of daily buckets returned. */
+    /** @deprecated Use bucketCount instead. */
     days: number;
-    /** Daily new vs returning buckets ordered chronologically. */
+    /** Number of time-interval buckets returned. */
+    bucketCount: number;
+    /** Interval used for bucketing (e.g., '1h', '1d'). */
+    bucketInterval: BucketInterval;
+    /** New vs returning buckets ordered chronologically. */
     buckets: IDailyNewVsReturningBucket[];
 }
 
@@ -406,9 +450,9 @@ export interface INewVsReturningHistory {
  * One day's wallet conversion funnel.
  */
 export interface IDailyWalletConversionBucket {
-    /** ISO date string (YYYY-MM-DD). */
+    /** Bucket start timestamp (YYYY-MM-DD for daily, YYYY-MM-DDTHH:00 for hourly). */
     date: string;
-    /** Total unique visitors for this day. */
+    /** Total unique visitors for this bucket. */
     totalVisitors: number;
     /** Visitors with at least one wallet connected (verified or not). */
     walletsConnected: number;
@@ -417,12 +461,16 @@ export interface IDailyWalletConversionBucket {
 }
 
 /**
- * Daily wallet conversion funnel history.
+ * Wallet conversion funnel history.
  */
 export interface IWalletConversionHistory {
-    /** Number of daily buckets returned. */
+    /** @deprecated Use bucketCount instead. */
     days: number;
-    /** Daily wallet conversion buckets ordered chronologically. */
+    /** Number of time-interval buckets returned. */
+    bucketCount: number;
+    /** Interval used for bucketing (e.g., '1h', '1d'). */
+    bucketInterval: BucketInterval;
+    /** Wallet conversion buckets ordered chronologically. */
     buckets: IDailyWalletConversionBucket[];
 }
 
@@ -440,21 +488,25 @@ export interface IDailyExitPageEntry {
  * One day's exit page breakdown.
  */
 export interface IDailyExitPageBucket {
-    /** ISO date string (YYYY-MM-DD). */
+    /** Bucket start timestamp (YYYY-MM-DD for daily, YYYY-MM-DDTHH:00 for hourly). */
     date: string;
-    /** Total sessions for this day. */
+    /** Total sessions for this bucket. */
     totalSessions: number;
     /** Top exit pages ranked by exit count. */
     pages: IDailyExitPageEntry[];
 }
 
 /**
- * Daily exit page history.
+ * Exit page history.
  */
 export interface IExitPagesHistory {
-    /** Number of daily buckets returned. */
+    /** @deprecated Use bucketCount instead. */
     days: number;
-    /** Daily exit page buckets ordered chronologically. */
+    /** Number of time-interval buckets returned. */
+    bucketCount: number;
+    /** Interval used for bucketing (e.g., '1h', '1d'). */
+    bucketInterval: BucketInterval;
+    /** Exit page buckets ordered chronologically. */
     buckets: IDailyExitPageBucket[];
 }
 
@@ -586,16 +638,17 @@ export interface IUserService {
     getPreferencesSummary(): Promise<IUserPreferencesSummary>;
 
     /**
-     * Get page traffic history broken into daily buckets.
+     * Get page traffic history broken into time-interval buckets.
      *
-     * Aggregates page views from user sessions over the last N days,
-     * returning the top paths per day with an "other" rollup for the rest.
+     * Aggregates page views from user sessions, returning the top paths
+     * per bucket with an "other" rollup for the rest.
      *
-     * @param days - Number of daily buckets to return (default 14)
+     * @param bucketInterval - Duration per bucket, e.g. '1h' or '1d' (default '1d')
+     * @param bucketCount - Number of buckets to return (default 14)
      * @param topN - Number of top paths per bucket (default 30)
-     * @returns Daily traffic buckets ordered chronologically
+     * @returns Traffic buckets ordered chronologically
      */
-    getPageTrafficHistory(days?: number, topN?: number): Promise<IPageTrafficHistory>;
+    getPageTrafficHistory(bucketInterval?: BucketInterval, bucketCount?: number, topN?: number): Promise<IPageTrafficHistory>;
 
     /**
      * Get recent individual page view events.
@@ -610,87 +663,97 @@ export interface IUserService {
     getRecentPageViews(hours?: number, limit?: number): Promise<IRecentPageViewsResult>;
 
     /**
-     * Get traffic sources broken into daily buckets with optional GSC keywords.
+     * Get traffic sources broken into time-interval buckets with optional GSC keywords.
      *
-     * @param days - Number of daily buckets (default 14)
+     * @param bucketInterval - Duration per bucket (default '1d')
+     * @param bucketCount - Number of buckets (default 14)
      * @param topN - Top sources per bucket (default 15)
-     * @returns Daily traffic source buckets with GSC keyword data
+     * @returns Traffic source buckets with GSC keyword data
      */
-    getTrafficSourcesByDay(days?: number, topN?: number): Promise<ITrafficSourcesHistory>;
+    getTrafficSourcesByDay(bucketInterval?: BucketInterval, bucketCount?: number, topN?: number): Promise<ITrafficSourcesHistory>;
 
     /**
-     * Get geographic distribution broken into daily buckets.
+     * Get geographic distribution broken into time-interval buckets.
      *
-     * @param days - Number of daily buckets (default 14)
+     * @param bucketInterval - Duration per bucket (default '1d')
+     * @param bucketCount - Number of buckets (default 14)
      * @param topN - Top countries per bucket (default 20)
-     * @returns Daily geo distribution buckets
+     * @returns Geo distribution buckets
      */
-    getGeoDistributionByDay(days?: number, topN?: number): Promise<IGeoDistributionHistory>;
+    getGeoDistributionByDay(bucketInterval?: BucketInterval, bucketCount?: number, topN?: number): Promise<IGeoDistributionHistory>;
 
     /**
-     * Get device breakdown broken into daily buckets.
+     * Get device breakdown broken into time-interval buckets.
      *
-     * @param days - Number of daily buckets (default 14)
-     * @returns Daily device breakdown buckets
+     * @param bucketInterval - Duration per bucket (default '1d')
+     * @param bucketCount - Number of buckets (default 14)
+     * @returns Device breakdown buckets
      */
-    getDeviceBreakdownByDay(days?: number): Promise<IDeviceBreakdownHistory>;
+    getDeviceBreakdownByDay(bucketInterval?: BucketInterval, bucketCount?: number): Promise<IDeviceBreakdownHistory>;
 
     /**
-     * Get landing page performance broken into daily buckets.
+     * Get landing page performance broken into time-interval buckets.
      *
-     * @param days - Number of daily buckets (default 14)
+     * @param bucketInterval - Duration per bucket (default '1d')
+     * @param bucketCount - Number of buckets (default 14)
      * @param topN - Top landing pages per bucket (default 20)
-     * @returns Daily landing page buckets with bounce rates
+     * @returns Landing page buckets with bounce rates
      */
-    getLandingPagesByDay(days?: number, topN?: number): Promise<ILandingPagesHistory>;
+    getLandingPagesByDay(bucketInterval?: BucketInterval, bucketCount?: number, topN?: number): Promise<ILandingPagesHistory>;
 
     /**
-     * Get UTM campaign performance broken into daily buckets.
+     * Get UTM campaign performance broken into time-interval buckets.
      *
-     * @param days - Number of daily buckets (default 14)
+     * @param bucketInterval - Duration per bucket (default '1d')
+     * @param bucketCount - Number of buckets (default 14)
      * @param topN - Top campaigns per bucket (default 10)
-     * @returns Daily campaign performance buckets
+     * @returns Campaign performance buckets
      */
-    getCampaignPerformanceByDay(days?: number, topN?: number): Promise<ICampaignPerformanceHistory>;
+    getCampaignPerformanceByDay(bucketInterval?: BucketInterval, bucketCount?: number, topN?: number): Promise<ICampaignPerformanceHistory>;
 
     /**
-     * Get session duration distribution broken into daily buckets.
+     * Get session duration distribution broken into time-interval buckets.
      *
-     * @param days - Number of daily buckets (default 14)
-     * @returns Daily session duration distribution buckets
+     * @param bucketInterval - Duration per bucket (default '1d')
+     * @param bucketCount - Number of buckets (default 14)
+     * @returns Session duration distribution buckets
      */
-    getSessionDurationByDay(days?: number): Promise<ISessionDurationHistory>;
+    getSessionDurationByDay(bucketInterval?: BucketInterval, bucketCount?: number): Promise<ISessionDurationHistory>;
 
     /**
-     * Get pages-per-session distribution broken into daily buckets.
+     * Get pages-per-session distribution broken into time-interval buckets.
      *
-     * @param days - Number of daily buckets (default 14)
-     * @returns Daily pages-per-session distribution buckets
+     * @param bucketInterval - Duration per bucket (default '1d')
+     * @param bucketCount - Number of buckets (default 14)
+     * @returns Pages-per-session distribution buckets
      */
-    getPagesPerSessionByDay(days?: number): Promise<IPagesPerSessionHistory>;
+    getPagesPerSessionByDay(bucketInterval?: BucketInterval, bucketCount?: number): Promise<IPagesPerSessionHistory>;
 
     /**
-     * Get new vs returning visitor breakdown by day.
+     * Get new vs returning visitor breakdown by time-interval bucket.
      *
-     * @param days - Number of daily buckets (default 14)
-     * @returns Daily new vs returning visitor buckets
+     * @param bucketInterval - Duration per bucket (default '1d')
+     * @param bucketCount - Number of buckets (default 14)
+     * @returns New vs returning visitor buckets
      */
-    getNewVsReturningByDay(days?: number): Promise<INewVsReturningHistory>;
+    getNewVsReturningByDay(bucketInterval?: BucketInterval, bucketCount?: number): Promise<INewVsReturningHistory>;
 
     /**
-     * Get wallet conversion funnel broken into daily buckets.
+     * Get wallet conversion funnel broken into time-interval buckets.
      *
-     * @param days - Number of daily buckets (default 14)
-     * @returns Daily wallet conversion funnel buckets
+     * @param bucketInterval - Duration per bucket (default '1d')
+     * @param bucketCount - Number of buckets (default 14)
+     * @returns Wallet conversion funnel buckets
      */
-    getWalletConversionByDay(days?: number): Promise<IWalletConversionHistory>;
+    getWalletConversionByDay(bucketInterval?: BucketInterval, bucketCount?: number): Promise<IWalletConversionHistory>;
 
     /**
-     * Get exit page performance broken into daily buckets.
+     * Get exit page performance broken into time-interval buckets.
      *
-     * @param days - Number of daily buckets (default 14)
+     * @param bucketInterval - Duration per bucket (default '1d')
+     * @param bucketCount - Number of buckets (default 14)
      * @param topN - Top exit pages per bucket (default 20)
-     * @returns Daily exit page buckets
+     * @returns Exit page buckets
      */
-    getExitPagesByDay(days?: number, topN?: number): Promise<IExitPagesHistory>;
+    getExitPagesByDay(bucketInterval?: BucketInterval, bucketCount?: number, topN?: number): Promise<IExitPagesHistory>;
 }

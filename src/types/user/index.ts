@@ -14,6 +14,7 @@ export type {
 } from './IUser.js';
 
 export type {
+    BucketInterval,
     IUserService,
     IUserActivitySummary,
     IUserWalletSummary,
