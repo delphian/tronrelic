@@ -3330,8 +3330,13 @@ export class UserService {
             throw new Error(`Invalid bucket interval: ${interval}`);
         }
 
+        const amount = parseInt(match[1], 10);
+        if (amount <= 0) {
+            throw new Error(`Bucket interval amount must be positive: ${interval}`);
+        }
+
         return {
-            amount: parseInt(match[1], 10),
+            amount,
             unit: match[2] === 'h' ? 'hour' : 'day'
         };
     }
@@ -3347,12 +3352,17 @@ export class UserService {
      * @returns Date representing the start of the oldest bucket
      */
     private computeBucketSince(interval: BucketInterval, count: number): Date {
+        if (!Number.isInteger(count) || count <= 0) {
+            throw new Error(`Bucket count must be a positive integer: ${count}`);
+        }
         const { unit, amount } = this.parseBucketInterval(interval);
         const since = new Date();
 
         if (unit === 'hour') {
             since.setTime(since.getTime() - amount * count * 60 * 60 * 1000);
             since.setUTCMinutes(0, 0, 0);
+            // Snap to amount-aligned hour boundary so cutoff matches $dateTrunc bin edges
+            since.setUTCHours(since.getUTCHours() - (since.getUTCHours() % amount));
         } else {
             since.setUTCDate(since.getUTCDate() - amount * count);
             since.setUTCHours(0, 0, 0, 0);
@@ -3507,12 +3517,13 @@ export class UserService {
     }
 
     /**
-     * Get traffic sources broken into daily buckets with optional GSC keywords.
+     * Get traffic sources broken into time-interval buckets with optional GSC keywords.
      *
-     * Unwinds sessions to group visitors by day and referrer domain,
+     * Unwinds sessions to group visitors by bucket interval and referrer domain,
      * classifies each source, and merges GSC keyword data when available.
      *
-     * @param days - Number of daily buckets to return (default 14)
+     * @param bucketInterval - Duration per bucket (e.g., '1h', '1d')
+     * @param bucketCount - Number of buckets to return (default 14)
      * @param topN - Top sources per bucket (default 15)
      * @returns Daily traffic source buckets with GSC keyword data
      */
@@ -3591,11 +3602,12 @@ export class UserService {
     }
 
     /**
-     * Get geographic distribution broken into daily buckets.
+     * Get geographic distribution broken into time-interval buckets.
      *
-     * Unwinds sessions to group visitors by day and country code.
+     * Unwinds sessions to group visitors by bucket interval and country code.
      *
-     * @param days - Number of daily buckets to return (default 14)
+     * @param bucketInterval - Duration per bucket (e.g., '1h', '1d')
+     * @param bucketCount - Number of buckets to return (default 14)
      * @param topN - Top countries per bucket (default 20)
      * @returns Daily geo distribution buckets
      */
@@ -3657,12 +3669,13 @@ export class UserService {
     /**
      * Get device breakdown broken into time-interval buckets.
      *
-     * Unwinds sessions to group by day and device category.
+     * Unwinds sessions to group by bucket interval and device category.
      * Device categories are a fixed set (desktop, mobile, tablet, unknown)
      * so no topN cap is needed.
      *
-     * @param days - Number of daily buckets to return (default 14)
-     * @returns Daily device breakdown buckets
+     * @param bucketInterval - Duration per bucket (e.g., '1h', '1d')
+     * @param bucketCount - Number of buckets to return (default 14)
+     * @returns Device breakdown buckets
      */
     async getDeviceBreakdownByDay(bucketInterval: BucketInterval = '1d', bucketCount = 14): Promise<IDeviceBreakdownHistory> {
         const since = this.computeBucketSince(bucketInterval, bucketCount);
@@ -3711,12 +3724,13 @@ export class UserService {
     /**
      * Get landing page performance broken into time-interval buckets.
      *
-     * Unwinds sessions to group by day and landing page, calculates
+     * Unwinds sessions to group by bucket interval and landing page, calculates
      * bounce rate per page (sessions with 1 or fewer pages).
      *
-     * @param days - Number of daily buckets to return (default 14)
+     * @param bucketInterval - Duration per bucket (e.g., '1h', '1d')
+     * @param bucketCount - Number of buckets to return (default 14)
      * @param topN - Top landing pages per bucket (default 20)
-     * @returns Daily landing page buckets with bounce counts
+     * @returns Landing page buckets with bounce counts
      */
     async getLandingPagesByDay(bucketInterval: BucketInterval = '1d', bucketCount = 14, topN = 20): Promise<ILandingPagesHistory> {
         const since = this.computeBucketSince(bucketInterval, bucketCount);
@@ -3780,11 +3794,12 @@ export class UserService {
     /**
      * Get UTM campaign performance broken into time-interval buckets.
      *
-     * Unwinds sessions to group by day and UTM source/medium/campaign.
+     * Unwinds sessions to group by bucket interval and UTM source/medium/campaign.
      *
-     * @param days - Number of daily buckets to return (default 14)
+     * @param bucketInterval - Duration per bucket (e.g., '1h', '1d')
+     * @param bucketCount - Number of buckets to return (default 14)
      * @param topN - Top campaigns per bucket (default 10)
-     * @returns Daily campaign performance buckets
+     * @returns Campaign performance buckets
      */
     async getCampaignPerformanceByDay(bucketInterval: BucketInterval = '1d', bucketCount = 14, topN = 10): Promise<ICampaignPerformanceHistory> {
         const since = this.computeBucketSince(bucketInterval, bucketCount);
@@ -3862,8 +3877,9 @@ export class UserService {
      * 0-10s, 10-60s, 1-5m, 5-15m, 15m+. Shows engagement depth
      * beyond simple averages.
      *
-     * @param days - Number of daily buckets to return (default 14)
-     * @returns Daily session duration distribution buckets
+     * @param bucketInterval - Duration per bucket (e.g., '1h', '1d')
+     * @param bucketCount - Number of buckets to return (default 14)
+     * @returns Session duration distribution buckets
      */
     async getSessionDurationByDay(bucketInterval: BucketInterval = '1d', bucketCount = 14): Promise<ISessionDurationHistory> {
         const since = this.computeBucketSince(bucketInterval, bucketCount);
@@ -3918,8 +3934,9 @@ export class UserService {
      * Unwinds sessions and classifies each by page count: 1 (bounce),
      * 2-3, 4-6, 7+. Complements bounce rate by showing depth of engagement.
      *
-     * @param days - Number of daily buckets to return (default 14)
-     * @returns Daily pages-per-session distribution buckets
+     * @param bucketInterval - Duration per bucket (e.g., '1h', '1d')
+     * @param bucketCount - Number of buckets to return (default 14)
+     * @returns Pages-per-session distribution buckets
      */
     async getPagesPerSessionByDay(bucketInterval: BucketInterval = '1d', bucketCount = 14): Promise<IPagesPerSessionHistory> {
         const since = this.computeBucketSince(bucketInterval, bucketCount);
@@ -3973,11 +3990,12 @@ export class UserService {
     /**
      * Get new vs returning visitor breakdown by time-interval bucket.
      *
-     * Unwinds sessions and classifies each user as new (firstSeen on
-     * that day) or returning (firstSeen before that day).
+     * Unwinds sessions and classifies each user as new (firstSeen within
+     * that bucket) or returning (firstSeen before that bucket).
      *
-     * @param days - Number of daily buckets to return (default 14)
-     * @returns Daily new vs returning visitor buckets
+     * @param bucketInterval - Duration per bucket (e.g., '1h', '1d')
+     * @param bucketCount - Number of buckets to return (default 14)
+     * @returns New vs returning visitor buckets
      */
     async getNewVsReturningByDay(bucketInterval: BucketInterval = '1d', bucketCount = 14): Promise<INewVsReturningHistory> {
         const since = this.computeBucketSince(bucketInterval, bucketCount);
@@ -4044,11 +4062,12 @@ export class UserService {
     /**
      * Get wallet conversion funnel broken into time-interval buckets.
      *
-     * For each day, counts unique visitors and how many have wallets
+     * For each bucket, counts unique visitors and how many have wallets
      * connected or verified. Shows conversion rate trends over time.
      *
-     * @param days - Number of daily buckets to return (default 14)
-     * @returns Daily wallet conversion funnel buckets
+     * @param bucketInterval - Duration per bucket (e.g., '1h', '1d')
+     * @param bucketCount - Number of buckets to return (default 14)
+     * @returns Wallet conversion funnel buckets
      */
     async getWalletConversionByDay(bucketInterval: BucketInterval = '1d', bucketCount = 14): Promise<IWalletConversionHistory> {
         const since = this.computeBucketSince(bucketInterval, bucketCount);
@@ -4116,12 +4135,13 @@ export class UserService {
      * Get exit page performance broken into time-interval buckets.
      *
      * Unwinds sessions, extracts the last page viewed in each session,
-     * and groups by day + path. High exit counts on specific pages
+     * and groups by bucket interval + path. High exit counts on specific pages
      * suggest confusion or dead-ends.
      *
-     * @param days - Number of daily buckets to return (default 14)
+     * @param bucketInterval - Duration per bucket (e.g., '1h', '1d')
+     * @param bucketCount - Number of buckets to return (default 14)
      * @param topN - Top exit pages per bucket (default 20)
-     * @returns Daily exit page buckets
+     * @returns Exit page buckets
      */
     async getExitPagesByDay(bucketInterval: BucketInterval = '1d', bucketCount = 14, topN = 20): Promise<IExitPagesHistory> {
         const since = this.computeBucketSince(bucketInterval, bucketCount);
