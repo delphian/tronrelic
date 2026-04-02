@@ -19,6 +19,7 @@ import type { IBlockchainService } from '../blockchain/IBlockchainService.js';
 import type { IAddressLabelService } from '../address-label/IAddressLabelService.js';
 import type { IUserService } from '../user/IUserService.js';
 import type { IServiceRegistry } from '../services/IServiceRegistry.js';
+import type { ISignatureService } from '../services/ISignatureService.js';
 import { ISystemLogService } from '../system-log/ISystemLogService.js';
 
 /**
@@ -116,6 +117,9 @@ export interface IPluginContext {
 
     /** User service for accessing user identity and wallet verification status */
     userService: IUserService;
+
+    /** Signature verification service for proving TRON wallet ownership */
+    signatureService: ISignatureService;
 
     /**
      * Shared service registry for cross-component service discovery.
