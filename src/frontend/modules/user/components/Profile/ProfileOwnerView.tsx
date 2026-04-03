@@ -18,6 +18,7 @@ import { useWallet } from '../../hooks/useWallet';
 import { useToast } from '../../../../components/ui/ToastProvider';
 import { getRuntimeConfig } from '../../../../lib/runtimeConfig';
 import { ReferralCard } from './ReferralCard';
+import { WalletCard } from './WalletCard';
 import styles from './Profile.module.scss';
 
 /**
@@ -86,6 +87,7 @@ export function ProfileOwnerView({ profile }: ProfileOwnerViewProps): JSX.Elemen
             </PageHeader>
 
             <Stack gap="lg">
+                <WalletCard />
                 <ReferralCard
                     userId={profile.userId}
                     siteUrl={getRuntimeConfig().siteUrl}
