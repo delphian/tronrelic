@@ -1,0 +1,120 @@
+/**
+ * WalletCard Styles
+ *
+ * Styling for the linked wallets card on the profile owner view.
+ * Uses design tokens and container queries for responsive layout.
+ */
+
+@use '../../../../../app/breakpoints' as *;
+
+.card {
+    container-type: inline-size;
+    container-name: wallet-card;
+}
+
+.card_title {
+    margin: 0;
+    font-size: var(--font-size-lg);
+    font-weight: var(--font-weight-semibold);
+}
+
+.title_icon {
+    margin-right: var(--spacing-4);
+    vertical-align: middle;
+}
+
+.wallet_list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-5);
+}
+
+.wallet_row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-7);
+    padding: var(--spacing-7);
+    background: var(--color-background);
+    border-radius: var(--radius-md);
+}
+
+.wallet_info {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-7);
+    min-width: 0;
+}
+
+.wallet_address {
+    font-family: monospace;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+    color: var(--color-text);
+    white-space: nowrap;
+}
+
+.wallet_badges {
+    display: flex;
+    gap: var(--spacing-3);
+    flex-shrink: 0;
+}
+
+.badge {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacing-2);
+}
+
+.wallet_actions {
+    display: flex;
+    gap: var(--spacing-3);
+    flex-shrink: 0;
+}
+
+.action_btn {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacing-3);
+    white-space: nowrap;
+}
+
+.action_btn__danger:hover:not(:disabled) {
+    color: var(--color-danger);
+}
+
+.empty_state {
+    text-align: center;
+    padding: var(--spacing-10);
+    color: var(--color-text-muted);
+    font-size: var(--font-size-sm);
+}
+
+.spinner {
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+/* Stack vertically on narrow containers */
+@container wallet-card (max-width: #{$breakpoint-mobile-md}) {
+    .wallet_row {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: var(--spacing-5);
+    }
+
+    .wallet_info {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: var(--spacing-3);
+    }
+
+    .wallet_actions {
+        width: 100%;
+        flex-wrap: wrap;
+    }
+}

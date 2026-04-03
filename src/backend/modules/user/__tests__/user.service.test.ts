@@ -441,12 +441,10 @@ describe('UserService', () => {
     describe('setPrimaryWallet', () => {
         // Valid TRON address format: 34 characters, starts with T, base58 encoded
         const validTronAddress = 'T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwb';
-        const mockMessage = 'Set primary wallet';
-        const mockSignature = 'mock-signature';
 
         it('should throw error if user not found', async () => {
             await expect(
-                userService.setPrimaryWallet(validUUID, validTronAddress, mockMessage, mockSignature)
+                userService.setPrimaryWallet(validUUID, validTronAddress)
             ).rejects.toThrow('User with id');
         });
 
@@ -454,7 +452,7 @@ describe('UserService', () => {
             await userService.getOrCreate(validUUID);
 
             await expect(
-                userService.setPrimaryWallet(validUUID, validTronAddress, mockMessage, mockSignature)
+                userService.setPrimaryWallet(validUUID, validTronAddress)
             ).rejects.toThrow('Wallet is not linked to this user');
         });
     });

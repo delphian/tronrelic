@@ -300,16 +300,16 @@ export function useWallet() {
      * instead of linking to current user. The signature proves wallet ownership
      * and the backend will return the existing user's data.
      */
-    const verify = useCallback(async () => {
+    const verify = useCallback(async (): Promise<boolean> => {
         if (!userId || !connectedAddress) {
             console.warn('Cannot verify: no user or wallet connected');
-            return;
+            return false;
         }
 
         const tronWeb = getTronWeb();
         if (!tronWeb?.trx?.signMessageV2) {
             dispatch(setConnectionError('TronLink signature capability not available.'));
-            return;
+            return false;
         }
 
         try {
@@ -342,6 +342,8 @@ export function useWallet() {
             } else {
                 console.log(`Wallet ${connectedAddress} verified for user ${userId}`);
             }
+
+            return true;
         } catch (error) {
             setStatus('connected');
             const errorMessage = error instanceof Error
@@ -349,6 +351,7 @@ export function useWallet() {
                 : 'Failed to verify wallet.';
             dispatch(setConnectionError(errorMessage));
             console.warn('Wallet verification failed:', error);
+            return false;
         }
     }, [dispatch, userId, connectedAddress, setStatus, walletLoginRequired]);
 

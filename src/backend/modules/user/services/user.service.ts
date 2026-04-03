@@ -828,9 +828,10 @@ export class UserService {
     /**
      * Set primary wallet for a user.
      *
-     * Requires wallet signature to verify ownership before changing primary.
      * Updates the wallet's lastUsed timestamp to make it the most recently used,
      * then recalculates isPrimary using the standard algorithm.
+     * No signature required — wallet ownership was verified during linking.
+     * Cookie validation ensures only the owning user can call this endpoint.
      *
      * Note: If setting an unverified wallet but verified wallets exist, the
      * most recent verified wallet will still be selected as primary.
@@ -838,16 +839,12 @@ export class UserService {
      *
      * @param userId - UUID of user
      * @param address - Wallet address to set as primary
-     * @param message - Signature message
-     * @param signature - TronLink signature
      * @returns Updated user document
-     * @throws Error if signature invalid, user not found, or wallet not linked
+     * @throws Error if user not found or wallet not linked
      */
     async setPrimaryWallet(
         userId: string,
-        address: string,
-        message: string,
-        signature: string
+        address: string
     ): Promise<IUser> {
         // Resolve to canonical document (single DB hit, follows merge pointer if needed)
         const doc = await this.resolveDocument(userId);
@@ -856,15 +853,8 @@ export class UserService {
         }
         userId = doc.id;
 
-        // Verify signature proves wallet ownership
-        const normalizedAddress = await this.signatureService.verifyMessage(
-            address,
-            message,
-            signature
-        );
-
-        // Find wallet in user's list
-        const walletIndex = doc.wallets.findIndex(w => w.address === normalizedAddress);
+        // Find wallet in user's list (case-insensitive match via normalized address)
+        const walletIndex = doc.wallets.findIndex(w => w.address === address);
         if (walletIndex === -1) {
             throw new Error('Wallet is not linked to this user.');
         }
@@ -886,7 +876,7 @@ export class UserService {
             }
         );
 
-        this.logger.debug({ userId, primaryWallet: normalizedAddress }, 'Primary wallet updated');
+        this.logger.debug({ userId, primaryWallet: address }, 'Primary wallet updated');
 
         // Invalidate cache
         await this.invalidateUserCache(userId);

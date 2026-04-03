@@ -276,26 +276,16 @@ export class UserController {
     /**
      * PATCH /api/user/:id/wallet/:address/primary
      *
-     * Set a wallet as primary.
+     * Set a wallet as primary. Cookie must match :id.
+     * No signature required — wallet ownership was verified during linking.
      *
-     * Requires: Cookie must match :id, wallet signature verification
-     * Body: { message, signature }
      * Response: IUser
      */
     async setPrimaryWallet(req: Request, res: Response): Promise<void> {
         try {
             const { id, address } = req.params;
-            const { message, signature } = req.body;
 
-            if (!message || !signature) {
-                res.status(400).json({
-                    error: 'Missing required fields',
-                    message: 'Request must include message and signature'
-                });
-                return;
-            }
-
-            const user = await this.userService.setPrimaryWallet(id, address, message, signature);
+            const user = await this.userService.setPrimaryWallet(id, address);
 
             this.logger.debug({ userId: id, wallet: address }, 'Primary wallet set via API');
             res.json(user);

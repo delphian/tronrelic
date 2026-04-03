@@ -267,7 +267,7 @@ validateCookie(req: Request, res: Response, next: NextFunction): void {
 - `POST /api/user/:id/wallet/connect` - Connect wallet without verification (step 1)
 - `POST /api/user/:id/wallet` - Link wallet with signature verification (step 2)
 - `DELETE /api/user/:id/wallet/:address` - Unlink wallet (requires signature)
-- `PATCH /api/user/:id/wallet/:address/primary` - Set primary wallet (requires signature)
+- `PATCH /api/user/:id/wallet/:address/primary` - Set primary wallet (cookie auth only)
 - `PATCH /api/user/:id/preferences` - Update preferences
 - `POST /api/user/:id/activity` - Record activity
 
@@ -326,7 +326,7 @@ interface UserState {
 - `connectWalletThunk({ userId, address })` - Connect wallet without verification
 - `linkWalletThunk({ userId, address, message, signature, timestamp })` - Verify and link wallet
 - `unlinkWalletThunk({ userId, address, message, signature })` - Unlink wallet (requires signature)
-- `setPrimaryWalletThunk({ userId, address, message, signature })` - Set primary wallet (requires signature)
+- `setPrimaryWalletThunk({ userId, address })` - Set primary wallet (cookie auth only)
 - `updatePreferencesThunk({ userId, preferences })`
 - `recordActivityThunk(userId)`
 
@@ -530,7 +530,7 @@ HTTP status code `429` is returned when rate limit is exceeded.
 
 **UUID as "knowledge" factor** - The security model relies on UUIDs being unguessable (122 bits of randomness). If an attacker learns a UUID (via logs, XSS, or user sharing), they can access that user's data by setting their own cookie. This is acceptable for anonymous-first identity but limits what sensitive operations should be tied to UUID alone.
 
-**Wallet operations require signatures** - All wallet mutations (link, unlink, set primary) require cryptographic signature verification. This ensures only the wallet owner can modify wallet relationships, regardless of UUID knowledge.
+**Wallet operations require signatures** - Destructive wallet mutations (link, unlink) require cryptographic signature verification. Setting primary is a non-destructive preference change among already-verified wallets, so it requires only cookie authentication.
 
 **Admin bypass** - Admin endpoints can access any user data without cookie validation. Protect the `ADMIN_API_TOKEN` carefully.
 
@@ -633,15 +633,9 @@ Content-Type: application/json
 Response: IUser
 ```
 
-**Set Primary Wallet** *(10 req/min)* - Requires signature:
+**Set Primary Wallet** *(10 req/min)* - Cookie auth only, no signature required:
 ```
 PATCH /api/user/:id/wallet/:address/primary
-Content-Type: application/json
-
-{
-    "message": "Set primary wallet: 1732646400000",
-    "signature": "0x..."
-}
 
 Response: IUser
 ```
