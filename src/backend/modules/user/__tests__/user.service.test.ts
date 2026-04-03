@@ -586,6 +586,31 @@ describe('UserService', () => {
                 expect(user).toBeNull();
             });
 
+            it('getOrCreate should log error and return tombstone for broken merge pointer', async () => {
+                await userService.getOrCreate(validUUID);
+
+                // Point to non-existent UUID
+                const collection = mockDatabase.getCollection('users');
+                await collection.updateOne(
+                    { id: validUUID },
+                    { $set: { mergedInto: validUUID3 } }
+                );
+                mockCache.clear();
+                mockLogger.clear();
+
+                // Should return the tombstone (degraded but reachable) instead of
+                // creating a new user or throwing
+                const user = await userService.getOrCreate(validUUID);
+                expect(user.id).toBe(validUUID);
+
+                // Should log an error for operator visibility
+                const errorLogs = mockLogger.logs.filter(l => l.level === 'error');
+                const hasBrokenPointerLog = errorLogs.some(l =>
+                    l.message?.includes('Broken merge pointer')
+                );
+                expect(hasBrokenPointerLog).toBe(true);
+            });
+
             it('getOrCreate should follow pointer even when cache is empty', async () => {
                 await userService.getOrCreate(validUUID);
                 const canonical = await userService.getOrCreate(validUUID2);
