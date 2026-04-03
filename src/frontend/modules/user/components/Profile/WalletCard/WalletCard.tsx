@@ -42,7 +42,7 @@ export function WalletCard(): JSX.Element {
     const dispatch = useAppDispatch();
     const wallets = useAppSelector(selectWallets);
     const userId = useAppSelector(selectUserId);
-    const { signMessage, verify } = useWallet();
+    const { signMessage, verify, connectedAddress } = useWallet();
     const { push } = useToast();
 
     const [pendingAction, setPendingAction] = useState<string | null>(null);
@@ -67,9 +67,23 @@ export function WalletCard(): JSX.Element {
 
     /**
      * Unlink a wallet. Requires TronLink signature to prove ownership.
+     * Guards that the connected wallet matches the target and prompts for confirmation.
      */
     const handleUnlink = useCallback(async (address: string) => {
         if (!userId) return;
+
+        if (connectedAddress && connectedAddress !== address) {
+            push({
+                tone: 'warning',
+                title: 'Wrong wallet connected',
+                description: `Switch to ${truncateAddress(address)} in TronLink to unlink.`
+            });
+            return;
+        }
+
+        if (!window.confirm(`Unlink wallet ${truncateAddress(address)}?`)) {
+            return;
+        }
 
         setPendingAction(`unlink:${address}`);
         try {
@@ -90,29 +104,44 @@ export function WalletCard(): JSX.Element {
         } finally {
             setPendingAction(null);
         }
-    }, [dispatch, userId, signMessage, push]);
+    }, [dispatch, userId, signMessage, push, connectedAddress]);
 
     /**
      * Verify an unverified wallet via TronLink signature.
+     * Guards that the currently connected TronLink wallet matches the target address.
      */
-    const handleVerify = useCallback(async () => {
-        setPendingAction('verify');
+    const handleVerify = useCallback(async (address: string) => {
+        if (connectedAddress && connectedAddress !== address) {
+            push({
+                tone: 'warning',
+                title: 'Wrong wallet connected',
+                description: `Switch to ${truncateAddress(address)} in TronLink to verify.`
+            });
+            return;
+        }
+
+        setPendingAction(`verify:${address}`);
         try {
-            await verify();
-            push({ tone: 'success', title: 'Wallet verified' });
+            const success = await verify();
+            if (success) {
+                push({ tone: 'success', title: 'Wallet verified' });
+            } else {
+                push({ tone: 'warning', title: 'Verification failed' });
+            }
         } catch {
             push({ tone: 'warning', title: 'Verification failed' });
         } finally {
             setPendingAction(null);
         }
-    }, [verify, push]);
+    }, [verify, push, connectedAddress]);
 
     /**
      * Render a single wallet row with status badges and actions.
      */
     const renderWalletRow = useCallback((wallet: IWalletLink) => {
-        const isPending = pendingAction?.endsWith(wallet.address) || false;
-        const isVerifyPending = pendingAction === 'verify';
+        const isRowBusy = pendingAction !== null && pendingAction.endsWith(wallet.address);
+        const isAnyBusy = pendingAction !== null;
+        const isVerifyPending = pendingAction === `verify:${wallet.address}`;
 
         return (
             <div key={wallet.address} className={styles.wallet_row}>
@@ -142,8 +171,8 @@ export function WalletCard(): JSX.Element {
                     {!wallet.verified && (
                         <button
                             className={`btn btn--primary btn--sm ${styles.action_btn}`}
-                            onClick={handleVerify}
-                            disabled={isVerifyPending}
+                            onClick={() => handleVerify(wallet.address)}
+                            disabled={isAnyBusy}
                             aria-label={`Verify wallet ${truncateAddress(wallet.address)}`}
                         >
                             {isVerifyPending ? <Loader2 size={14} className={styles.spinner} /> : <ShieldCheck size={14} />}
@@ -154,7 +183,7 @@ export function WalletCard(): JSX.Element {
                         <button
                             className={`btn btn--secondary btn--sm ${styles.action_btn}`}
                             onClick={() => handleSetPrimary(wallet.address)}
-                            disabled={isPending}
+                            disabled={isAnyBusy}
                             aria-label={`Set ${truncateAddress(wallet.address)} as primary`}
                         >
                             {pendingAction === `primary:${wallet.address}`
@@ -166,7 +195,7 @@ export function WalletCard(): JSX.Element {
                     <button
                         className={`btn btn--ghost btn--sm ${styles.action_btn} ${styles.action_btn__danger}`}
                         onClick={() => handleUnlink(wallet.address)}
-                        disabled={isPending}
+                        disabled={isAnyBusy}
                         aria-label={`Unlink wallet ${truncateAddress(wallet.address)}`}
                     >
                         {pendingAction === `unlink:${wallet.address}`
