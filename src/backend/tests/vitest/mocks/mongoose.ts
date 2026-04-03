@@ -162,6 +162,10 @@ export function matchesFilter(doc: any, filter: Filter<any>): boolean {
         // Handle nested field paths (e.g., 'user.name' or 'wallets.address')
         if (key.includes('.')) {
             const docValue = getNestedValue(doc, key);
+            // Array traversal may return multiple values — check if any match
+            if (Array.isArray(docValue)) {
+                return docValue.includes(value);
+            }
             return docValue === value;
         }
 

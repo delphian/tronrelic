@@ -129,13 +129,27 @@ const initialState: UserState = {
 
 /**
  * Initialize user identity by fetching/creating from backend.
+ *
+ * When the backend returns a user with a different ID than requested,
+ * the local UUID was merged into another identity via wallet-based
+ * reconciliation. Updates cookie/localStorage to the canonical UUID
+ * so subsequent requests use the correct identity.
  */
 export const initializeUser = createAsyncThunk(
     'user/initialize',
     async (userId: string, { rejectWithValue }) => {
         try {
             const userData = await fetchUser(userId);
-            return { userId, userData };
+
+            // If returned user has different ID, identity was merged — update local storage
+            if (userData.id !== userId) {
+                setUserIdCookie(userData.id);
+                if (typeof localStorage !== 'undefined') {
+                    localStorage.setItem(USER_ID_STORAGE_KEY, userData.id);
+                }
+            }
+
+            return { userId: userData.id, userData };
         } catch (error) {
             return rejectWithValue(
                 error instanceof Error ? error.message : 'Failed to initialize user'
@@ -196,14 +210,17 @@ export const linkWalletThunk = createAsyncThunk(
                 payload.timestamp
             );
 
-            // Handle identity swap - update cookie and localStorage
+            // Handle identity swap — update cookie/localStorage then full reload
+            // to reset Redux, WebSocket subscriptions, and all cached state.
             if (result.identitySwapped && result.user) {
                 const newUserId = result.user.id;
                 setUserIdCookie(newUserId);
                 if (typeof localStorage !== 'undefined') {
                     localStorage.setItem(USER_ID_STORAGE_KEY, newUserId);
                 }
-                console.log(`Identity swapped: ${result.previousUserId} -> ${newUserId}`);
+                if (typeof window !== 'undefined') {
+                    window.location.reload();
+                }
             }
 
             return result;

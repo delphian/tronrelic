@@ -207,6 +207,13 @@ export interface IUserDocument {
     /** UUID v4 primary identifier (client-generated, validated on server) */
     id: string;
     /**
+     * When set, this UUID has been merged into another user via wallet-based
+     * identity reconciliation. All lookups follow this pointer to the canonical
+     * UUID. Pointer chains are flattened during merge (always single-hop).
+     * The document retains its `id` but wallets are transferred to the target.
+     */
+    mergedInto?: string | null;
+    /**
      * UI/feature gate controlling what is surfaced to the user.
      * When false, frontend shows "Connect" button and hides logged-in features.
      * UUID tracking continues regardless of this flag.

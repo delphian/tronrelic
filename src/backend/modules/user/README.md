@@ -556,6 +556,30 @@ TronLink prompts only appear after explicit user action:
 
 SSR hydrates linked wallet addresses for display, but no TronLink API calls occur on page load. When the user clicks to verify an SSR-hydrated wallet, `connect()` is called first to ensure TronLink's signing API is accessible, then `verify()` requests the signature. For whitelisted sites, `connect()` returns silently (no popup). For non-whitelisted browsers/devices, both prompts appear sequentially after the single button click.
 
+## Cross-Browser Identity Reconciliation
+
+Users without a verified wallet should expect ephemeral settings — their preferences and data are tied to a browser-local UUID that can be lost if cookies or localStorage are cleared. A verified wallet signature is the only mechanism that bridges identity across browsers or devices.
+
+### How It Works
+
+When a user attempts to connect a wallet address that is already claimed by another UUID (verified or unverified), the backend returns `loginRequired: true` and the frontend forces a signature verification. No two UUIDs may share the same wallet address without cryptographic proof of ownership.
+
+Once the signature is verified, identity reconciliation occurs. The UUID that already held the wallet is the "winner" (canonical identity). The calling UUID is the "loser" (merged identity). The reconciliation operation transfers all wallets from the loser to the winner (skipping duplicates), marks the disputed wallet as verified on the winner, creates a tombstone on the loser by setting `mergedInto` to the winner's UUID and clearing its wallets array, and flattens any existing pointer chains so that any UUID already pointing to the loser now points directly to the winner.
+
+After reconciliation the frontend updates cookie/localStorage to the winner's UUID and triggers a full page reload to reset Redux state, WebSocket subscriptions, and all cached data.
+
+### Merge Pointer Resolution
+
+When `getById()` or `getOrCreate()` encounters a document with `mergedInto` set, it follows the pointer to the canonical UUID in a single hop (chains are flattened during merge, so multi-hop resolution is never needed). This handles the case where a user returns with a stale cookie — the backend transparently resolves to the correct identity and the frontend's `initializeUser` thunk detects the ID mismatch and silently updates local storage.
+
+### Data Semantics
+
+The loser UUID's wallets are transferred to the winner. The loser's preferences, activity history, and referral data remain on the tombstone record (not merged). Users are warned through the UI that settings without a verified wallet are at risk. The tombstone record is retained as a pointer so that any existing references to the loser UUID (in plugin collections, activity logs, etc.) can still resolve to the canonical identity.
+
+### Database Schema
+
+The `mergedInto` field is an optional string on `IUserDocument`. A sparse index on `mergedInto` enables efficient pointer chain flattening via `updateMany({ mergedInto: loserId })` during reconciliation.
+
 ## REST API Reference
 
 ### Public Endpoints

@@ -146,6 +146,7 @@ describe('UserService', () => {
 
     const validUUID = '550e8400-e29b-41d4-a716-446655440000';
     const validUUID2 = '660e8400-e29b-41d4-a716-446655440001';
+    const validUUID3 = '770e8400-e29b-41d4-a716-446655440002';
 
     beforeEach(() => {
         mockDatabase = createMockDatabaseService();
@@ -524,6 +525,491 @@ describe('UserService', () => {
             const infoLogs = mockLogger.logs.filter(l => l.level === 'info');
             const hasIndexLog = infoLogs.some(l => l.message?.includes('indexes'));
             expect(hasIndexLog).toBe(true);
+        });
+    });
+
+    describe('Identity Reconciliation', () => {
+        const walletAddress = 'mocked-address';
+        const otherWallet = 'other-wallet';
+
+        describe('merge pointer resolution', () => {
+            it('getById should follow mergedInto pointer to canonical user', async () => {
+                // Create two users
+                await userService.getOrCreate(validUUID);
+                await userService.getOrCreate(validUUID2);
+
+                // Manually create tombstone: validUUID merged into validUUID2
+                const collection = mockDatabase.getCollection('users');
+                await collection.updateOne(
+                    { id: validUUID },
+                    { $set: { mergedInto: validUUID2, wallets: [] } }
+                );
+                mockCache.clear();
+
+                // Lookup by merged UUID should return canonical user
+                const user = await userService.getById(validUUID);
+
+                expect(user).not.toBeNull();
+                expect(user!.id).toBe(validUUID2);
+            });
+
+            it('getOrCreate should follow mergedInto pointer to canonical user', async () => {
+                await userService.getOrCreate(validUUID);
+                await userService.getOrCreate(validUUID2);
+
+                const collection = mockDatabase.getCollection('users');
+                await collection.updateOne(
+                    { id: validUUID },
+                    { $set: { mergedInto: validUUID2, wallets: [] } }
+                );
+                mockCache.clear();
+
+                // getOrCreate with merged UUID should return canonical user, not create new
+                const user = await userService.getOrCreate(validUUID);
+
+                expect(user.id).toBe(validUUID2);
+            });
+
+            it('getById should return null for broken merge pointer', async () => {
+                await userService.getOrCreate(validUUID);
+
+                // Point to non-existent UUID
+                const collection = mockDatabase.getCollection('users');
+                await collection.updateOne(
+                    { id: validUUID },
+                    { $set: { mergedInto: validUUID3 } }
+                );
+                mockCache.clear();
+
+                const user = await userService.getById(validUUID);
+
+                expect(user).toBeNull();
+            });
+
+            it('getOrCreate should follow pointer even when cache is empty', async () => {
+                await userService.getOrCreate(validUUID);
+                const canonical = await userService.getOrCreate(validUUID2);
+
+                const collection = mockDatabase.getCollection('users');
+                await collection.updateOne(
+                    { id: validUUID },
+                    { $set: { mergedInto: validUUID2, wallets: [] } }
+                );
+                mockCache.clear();
+                mockDatabase.getCollection('users'); // ensure no stale refs
+
+                const resolved = await userService.getOrCreate(validUUID);
+                expect(resolved.id).toBe(canonical.id);
+            });
+        });
+
+        describe('connectWallet - cross-UUID conflict detection', () => {
+            it('should return loginRequired when wallet belongs to another user', async () => {
+                // User A owns wallet
+                await userService.getOrCreate(validUUID);
+                await userService.connectWallet(validUUID, walletAddress);
+
+                // User B tries to claim same wallet
+                await userService.getOrCreate(validUUID2);
+                const result = await userService.connectWallet(validUUID2, walletAddress);
+
+                expect(result.success).toBe(false);
+                expect(result.loginRequired).toBe(true);
+                expect(result.existingUserId).toBe(validUUID);
+            });
+
+            it('should allow reconnecting own wallet without loginRequired', async () => {
+                await userService.getOrCreate(validUUID);
+                await userService.connectWallet(validUUID, walletAddress);
+
+                // Same user reconnects same wallet
+                const result = await userService.connectWallet(validUUID, walletAddress);
+
+                expect(result.success).toBe(true);
+                expect(result.loginRequired).toBeUndefined();
+            });
+        });
+
+        describe('linkWallet - identity swap', () => {
+            it('should transfer wallets from loser to winner', async () => {
+                // User A (winner) has walletAddress
+                await userService.getOrCreate(validUUID);
+                await userService.connectWallet(validUUID, walletAddress);
+
+                // User B (loser) has otherWallet
+                await userService.getOrCreate(validUUID2);
+                await userService.connectWallet(validUUID2, otherWallet);
+
+                // User B proves ownership of walletAddress → swap
+                const result = await userService.linkWallet(validUUID2, {
+                    address: walletAddress,
+                    message: `Link wallet ${walletAddress}`,
+                    signature: 'mock-sig',
+                    timestamp: Date.now()
+                });
+
+                expect(result.identitySwapped).toBe(true);
+                expect(result.previousUserId).toBe(validUUID2);
+                expect(result.user.id).toBe(validUUID);
+
+                // Winner should have both wallets
+                const winnerWalletAddresses = result.user.wallets.map(w => w.address);
+                expect(winnerWalletAddresses).toContain(walletAddress);
+                expect(winnerWalletAddresses).toContain(otherWallet);
+            });
+
+            it('should mark disputed wallet as verified on winner', async () => {
+                await userService.getOrCreate(validUUID);
+                await userService.connectWallet(validUUID, walletAddress);
+
+                await userService.getOrCreate(validUUID2);
+
+                const result = await userService.linkWallet(validUUID2, {
+                    address: walletAddress,
+                    message: `Link wallet ${walletAddress}`,
+                    signature: 'mock-sig',
+                    timestamp: Date.now()
+                });
+
+                const disputed = result.user.wallets.find(w => w.address === walletAddress);
+                expect(disputed).toBeDefined();
+                expect(disputed!.verified).toBe(true);
+            });
+
+            it('should create tombstone on loser with mergedInto pointer', async () => {
+                await userService.getOrCreate(validUUID);
+                await userService.connectWallet(validUUID, walletAddress);
+
+                await userService.getOrCreate(validUUID2);
+                await userService.connectWallet(validUUID2, otherWallet);
+
+                await userService.linkWallet(validUUID2, {
+                    address: walletAddress,
+                    message: `Link wallet ${walletAddress}`,
+                    signature: 'mock-sig',
+                    timestamp: Date.now()
+                });
+
+                // Read loser document directly from database (bypass pointer resolution)
+                const collection = mockDatabase.getCollection('users');
+                const loserDoc = await collection.findOne({ id: validUUID2 });
+
+                expect(loserDoc).not.toBeNull();
+                expect(loserDoc!.mergedInto).toBe(validUUID);
+                expect(loserDoc!.wallets).toEqual([]);
+            });
+
+            it('should flatten existing pointer chains', async () => {
+                // Create 3 users: A (winner), B (loser), C (already points to B)
+                await userService.getOrCreate(validUUID);
+                await userService.connectWallet(validUUID, walletAddress);
+
+                await userService.getOrCreate(validUUID2);
+                await userService.getOrCreate(validUUID3);
+
+                // C already merged into B from a previous reconciliation
+                const collection = mockDatabase.getCollection('users');
+                await collection.updateOne(
+                    { id: validUUID3 },
+                    { $set: { mergedInto: validUUID2, wallets: [] } }
+                );
+
+                // B proves ownership of walletAddress → swap B into A
+                await userService.linkWallet(validUUID2, {
+                    address: walletAddress,
+                    message: `Link wallet ${walletAddress}`,
+                    signature: 'mock-sig',
+                    timestamp: Date.now()
+                });
+
+                // C should now point directly to A (not B)
+                const cDoc = await collection.findOne({ id: validUUID3 });
+                expect(cDoc!.mergedInto).toBe(validUUID);
+            });
+
+            it('should not create duplicate wallets when both users share a wallet', async () => {
+                // Edge case: both users somehow have the same wallet
+                // (shouldn't happen with new guards, but defensive)
+                await userService.getOrCreate(validUUID);
+                await userService.connectWallet(validUUID, walletAddress);
+
+                await userService.getOrCreate(validUUID2);
+                // Manually add same wallet to loser to simulate legacy data
+                const collection = mockDatabase.getCollection('users');
+                await collection.updateOne(
+                    { id: validUUID2 },
+                    {
+                        $set: {
+                            wallets: [{
+                                address: walletAddress,
+                                linkedAt: new Date(),
+                                isPrimary: false,
+                                verified: false,
+                                lastUsed: new Date()
+                            }]
+                        }
+                    }
+                );
+
+                const result = await userService.linkWallet(validUUID2, {
+                    address: walletAddress,
+                    message: `Link wallet ${walletAddress}`,
+                    signature: 'mock-sig',
+                    timestamp: Date.now()
+                });
+
+                // Winner should not have duplicate wallet entries
+                const matchingWallets = result.user.wallets.filter(w => w.address === walletAddress);
+                expect(matchingWallets.length).toBe(1);
+            });
+
+            it('should invalidate caches for both winner and loser', async () => {
+                await userService.getOrCreate(validUUID);
+                await userService.connectWallet(validUUID, walletAddress);
+
+                await userService.getOrCreate(validUUID2);
+
+                // Ensure both are cached
+                await userService.getById(validUUID);
+                await userService.getById(validUUID2);
+
+                await userService.linkWallet(validUUID2, {
+                    address: walletAddress,
+                    message: `Link wallet ${walletAddress}`,
+                    signature: 'mock-sig',
+                    timestamp: Date.now()
+                });
+
+                // Both user caches should be invalidated
+                const winnerCached = await mockCache.get(`user:${validUUID}`);
+                const loserCached = await mockCache.get(`user:${validUUID2}`);
+                expect(winnerCached).toBeNull();
+                expect(loserCached).toBeNull();
+            });
+
+            it('should throw on expired signature timestamp during swap', async () => {
+                await userService.getOrCreate(validUUID);
+                await userService.connectWallet(validUUID, walletAddress);
+
+                await userService.getOrCreate(validUUID2);
+
+                // Timestamp 10 minutes ago (beyond 5-minute window)
+                const expiredTimestamp = Date.now() - 10 * 60 * 1000;
+
+                await expect(
+                    userService.linkWallet(validUUID2, {
+                        address: walletAddress,
+                        message: `Link wallet ${walletAddress}`,
+                        signature: 'mock-sig',
+                        timestamp: expiredTimestamp
+                    })
+                ).rejects.toThrow('Signature timestamp expired');
+            });
+
+            it('should throw on invalid message format during swap', async () => {
+                await userService.getOrCreate(validUUID);
+                await userService.connectWallet(validUUID, walletAddress);
+
+                await userService.getOrCreate(validUUID2);
+
+                await expect(
+                    userService.linkWallet(validUUID2, {
+                        address: walletAddress,
+                        message: 'This message does not contain the wallet address',
+                        signature: 'mock-sig',
+                        timestamp: Date.now()
+                    })
+                ).rejects.toThrow('Invalid message format');
+            });
+
+            it('should throw when loser user does not exist', async () => {
+                await expect(
+                    userService.linkWallet(validUUID, {
+                        address: walletAddress,
+                        message: `Link wallet ${walletAddress}`,
+                        signature: 'mock-sig',
+                        timestamp: Date.now()
+                    })
+                ).rejects.toThrow('User with id');
+            });
+
+            it('should log reconciliation with wallet transfer count', async () => {
+                await userService.getOrCreate(validUUID);
+                await userService.connectWallet(validUUID, walletAddress);
+
+                await userService.getOrCreate(validUUID2);
+                await userService.connectWallet(validUUID2, otherWallet);
+                mockLogger.clear();
+
+                await userService.linkWallet(validUUID2, {
+                    address: walletAddress,
+                    message: `Link wallet ${walletAddress}`,
+                    signature: 'mock-sig',
+                    timestamp: Date.now()
+                });
+
+                const infoLogs = mockLogger.logs.filter(l => l.level === 'info');
+                const hasReconciliationLog = infoLogs.some(l =>
+                    l.message?.includes('reconciliation') || l.message?.includes('Identity reconciliation')
+                );
+                expect(hasReconciliationLog).toBe(true);
+            });
+        });
+
+        describe('post-merge behavior', () => {
+            it('getById on loser UUID should resolve to winner after swap', async () => {
+                await userService.getOrCreate(validUUID);
+                await userService.connectWallet(validUUID, walletAddress);
+
+                await userService.getOrCreate(validUUID2);
+
+                await userService.linkWallet(validUUID2, {
+                    address: walletAddress,
+                    message: `Link wallet ${walletAddress}`,
+                    signature: 'mock-sig',
+                    timestamp: Date.now()
+                });
+                mockCache.clear();
+
+                // Looking up loser should resolve to winner
+                const resolved = await userService.getById(validUUID2);
+                expect(resolved).not.toBeNull();
+                expect(resolved!.id).toBe(validUUID);
+            });
+
+            it('getByWallet on transferred wallet should return winner', async () => {
+                await userService.getOrCreate(validUUID);
+                await userService.connectWallet(validUUID, walletAddress);
+
+                await userService.getOrCreate(validUUID2);
+                await userService.connectWallet(validUUID2, otherWallet);
+
+                await userService.linkWallet(validUUID2, {
+                    address: walletAddress,
+                    message: `Link wallet ${walletAddress}`,
+                    signature: 'mock-sig',
+                    timestamp: Date.now()
+                });
+                mockCache.clear();
+
+                // otherWallet was transferred from loser to winner
+                const user = await userService.getByWallet(otherWallet);
+                expect(user).not.toBeNull();
+                expect(user!.id).toBe(validUUID);
+            });
+
+            it('connectWallet on loser wallet after merge should find winner', async () => {
+                await userService.getOrCreate(validUUID);
+                await userService.connectWallet(validUUID, walletAddress);
+
+                await userService.getOrCreate(validUUID2);
+                await userService.connectWallet(validUUID2, otherWallet);
+
+                // Perform merge
+                await userService.linkWallet(validUUID2, {
+                    address: walletAddress,
+                    message: `Link wallet ${walletAddress}`,
+                    signature: 'mock-sig',
+                    timestamp: Date.now()
+                });
+
+                // Third user tries to claim otherWallet (now on winner)
+                await userService.getOrCreate(validUUID3);
+                const result = await userService.connectWallet(validUUID3, otherWallet);
+
+                expect(result.success).toBe(false);
+                expect(result.loginRequired).toBe(true);
+                expect(result.existingUserId).toBe(validUUID);
+            });
+        });
+    });
+
+    describe('Mutation methods resolve merged UUIDs', () => {
+        /**
+         * These tests verify that all mutation methods transparently
+         * redirect operations to the canonical user when called with
+         * a merged (tombstone) UUID. Without this, a stale cookie
+         * arriving during the narrow window between identity swap and
+         * page reload would silently mutate the tombstone instead of
+         * the real user.
+         */
+        const walletAddress = 'mocked-address';
+
+        /**
+         * Helper: create two users, merge loser into winner via wallet swap,
+         * clear caches so subsequent calls hit the resolveUserId path.
+         */
+        async function setupMerge(
+            svc: UserService,
+            db: ReturnType<typeof createMockDatabaseService>,
+            cache: MockCacheService,
+            winnerId: string,
+            loserId: string
+        ): Promise<void> {
+            await svc.getOrCreate(winnerId);
+            await svc.connectWallet(winnerId, walletAddress);
+            await svc.getOrCreate(loserId);
+
+            await svc.linkWallet(loserId, {
+                address: walletAddress,
+                message: `Link wallet ${walletAddress}`,
+                signature: 'mock-sig',
+                timestamp: Date.now()
+            });
+            cache.clear();
+        }
+
+        it('updatePreferences with merged UUID should update canonical user', async () => {
+            await setupMerge(userService, mockDatabase, mockCache, validUUID, validUUID2);
+
+            const updated = await userService.updatePreferences(validUUID2, { theme: 'dark-id' });
+
+            expect(updated.id).toBe(validUUID);
+            expect(updated.preferences.theme).toBe('dark-id');
+        });
+
+        it('login with merged UUID should log in canonical user', async () => {
+            await setupMerge(userService, mockDatabase, mockCache, validUUID, validUUID2);
+
+            const result = await userService.login(validUUID2);
+
+            expect(result.id).toBe(validUUID);
+            expect(result.isLoggedIn).toBe(true);
+        });
+
+        it('logout with merged UUID should log out canonical user', async () => {
+            await setupMerge(userService, mockDatabase, mockCache, validUUID, validUUID2);
+            await userService.login(validUUID);
+            mockCache.clear();
+
+            const result = await userService.logout(validUUID2);
+
+            expect(result.id).toBe(validUUID);
+            expect(result.isLoggedIn).toBe(false);
+        });
+
+        it('recordActivity with merged UUID should increment canonical user pageViews', async () => {
+            await setupMerge(userService, mockDatabase, mockCache, validUUID, validUUID2);
+
+            const before = await userService.getById(validUUID);
+            const beforeViews = before!.activity.pageViews;
+
+            await userService.recordActivity(validUUID2);
+            mockCache.clear();
+
+            const after = await userService.getById(validUUID);
+            expect(after!.activity.pageViews).toBe(beforeViews + 1);
+        });
+
+        it('connectWallet with merged UUID should attach wallet to canonical user', async () => {
+            await setupMerge(userService, mockDatabase, mockCache, validUUID, validUUID2);
+
+            const result = await userService.connectWallet(validUUID2, 'brand-new-wallet');
+
+            expect(result.success).toBe(true);
+            expect(result.user!.id).toBe(validUUID);
+            const walletAddresses = result.user!.wallets.map(w => w.address);
+            expect(walletAddresses).toContain('brand-new-wallet');
         });
     });
 

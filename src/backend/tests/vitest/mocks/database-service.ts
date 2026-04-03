@@ -315,6 +315,20 @@ export function createMockDatabaseService(): IDatabaseService & {
 
                     return { modifiedCount: 0, matchedCount: 0, acknowledged: true, upsertedCount: 0 };
                 },
+                updateMany: async (filter: Filter<T>, update: UpdateFilter<T>) => {
+                    checkInjectedError(name, 'updateMany');
+                    let modifiedCount = 0;
+
+                    for (let i = 0; i < data.length; i++) {
+                        if (matchesFilter(data[i], filter)) {
+                            const updateFields = (update as any).$set || {};
+                            data[i] = { ...data[i], ...updateFields };
+                            modifiedCount++;
+                        }
+                    }
+
+                    return { modifiedCount, matchedCount: modifiedCount, acknowledged: true };
+                },
                 deleteOne: async (filter: Filter<T>) => {
                     checkInjectedError(name, 'deleteOne');
                     const docIndex = data.findIndex((d: any) => matchesFilter(d, filter));

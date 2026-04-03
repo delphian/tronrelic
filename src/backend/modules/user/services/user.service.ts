@@ -287,6 +287,15 @@ export class UserService {
         // Try database
         const existing = await this.collection.findOne({ id });
         if (existing) {
+            // Follow merge pointer (single hop — chains are flattened during merge)
+            if (existing.mergedInto) {
+                const target = await this.collection.findOne({ id: existing.mergedInto });
+                if (target) {
+                    const user = this.toPublicUser(target);
+                    await this.cacheUser(user);
+                    return user;
+                }
+            }
             const user = this.toPublicUser(existing);
             await this.cacheUser(user);
             return user;
@@ -326,6 +335,10 @@ export class UserService {
     /**
      * Get a user by UUID.
      *
+     * Follows merge pointers when a UUID has been merged into another user
+     * via wallet-based identity reconciliation. Pointer chains are flattened
+     * during merge, so resolution is always a single hop.
+     *
      * @param id - UUID v4 identifier
      * @returns User document or null if not found
      */
@@ -344,6 +357,17 @@ export class UserService {
         const doc = await this.collection.findOne({ id });
         if (!doc) {
             return null;
+        }
+
+        // Follow merge pointer (single hop — chains are flattened during merge)
+        if (doc.mergedInto) {
+            const target = await this.collection.findOne({ id: doc.mergedInto });
+            if (!target) {
+                return null;
+            }
+            const user = this.toPublicUser(target);
+            await this.cacheUser(user);
+            return user;
         }
 
         const user = this.toPublicUser(doc);
@@ -449,6 +473,9 @@ export class UserService {
      * @throws Error if user not found or address invalid
      */
     async connectWallet(userId: string, address: string): Promise<IConnectWalletResult> {
+        // Resolve to canonical UUID if this identity was merged
+        userId = await this.resolveUserId(userId);
+
         // Validate user exists
         const doc = await this.collection.findOne({ id: userId });
         if (!doc) {
@@ -544,6 +571,9 @@ export class UserService {
      * @throws Error if signature invalid or user not found
      */
     async linkWallet(userId: string, input: ILinkWalletInput): Promise<ILinkWalletResult> {
+        // Resolve to canonical UUID if this identity was merged
+        userId = await this.resolveUserId(userId);
+
         // Validate user exists
         const doc = await this.collection.findOne({ id: userId });
         if (!doc) {
@@ -576,37 +606,91 @@ export class UserService {
         });
 
         if (existingLink) {
-            // Wallet belongs to another user - perform identity swap
-            // User has proven wallet ownership via signature, so swap to existing identity
+            // Wallet belongs to another user — perform identity reconciliation.
+            // The signer has proven wallet ownership, so merge the current UUID
+            // (loser) into the existing wallet owner (winner).
+            const winnerId = existingLink.id;
+            const loserId = userId;
             const nowDate = new Date();
 
-            // Update wallet atomically using positional operator to avoid race conditions
+            // Transfer wallets from loser to winner (skip duplicates)
+            const loserWallets = doc.wallets.filter(w =>
+                !existingLink.wallets.some(ew => ew.address === w.address)
+            );
+            const mergedWallets = [...existingLink.wallets, ...loserWallets];
+
+            // Mark the disputed wallet as verified on winner
+            const disputedIdx = mergedWallets.findIndex(w => w.address === normalizedAddress);
+            if (disputedIdx >= 0) {
+                mergedWallets[disputedIdx].verified = true;
+                mergedWallets[disputedIdx].lastUsed = nowDate;
+            }
+
+            // Recalculate primary wallet across merged set
+            this.recalculatePrimaryWallet(mergedWallets);
+
+            // Generate referral code on winner if they don't have one yet
+            const winnerUpdateFields: Record<string, unknown> = {
+                wallets: mergedWallets,
+                'activity.lastSeen': nowDate,
+                updatedAt: nowDate
+            };
+            if (!existingLink.referral?.code) {
+                const referralCode = await this.generateUniqueReferralCode();
+                winnerUpdateFields.referral = {
+                    code: referralCode,
+                    referredBy: existingLink.referral?.referredBy ?? null,
+                    referredAt: existingLink.referral?.referredAt ?? null
+                };
+            }
+
+            // Update winner with transferred wallets
             await this.collection.updateOne(
-                { id: existingLink.id, 'wallets.address': normalizedAddress },
+                { id: winnerId },
+                { $set: winnerUpdateFields }
+            );
+
+            // Create tombstone on loser — clear wallets, set merge pointer
+            await this.collection.updateOne(
+                { id: loserId },
                 {
                     $set: {
-                        'wallets.$.lastUsed': nowDate,
-                        'wallets.$.verified': true,
-                        'activity.lastSeen': nowDate,
+                        wallets: [],
+                        mergedInto: winnerId,
                         updatedAt: nowDate
                     }
                 }
             );
 
-            this.logger.info(
-                { previousUserId: userId, newUserId: existingLink.id, wallet: normalizedAddress },
-                'Identity swap: user logged in via wallet ownership proof'
+            // Flatten pointer chains: any UUID already pointing to loser now points to winner
+            await this.collection.updateMany(
+                { mergedInto: loserId },
+                { $set: { mergedInto: winnerId } }
             );
 
-            // Invalidate cache for the existing user
-            await this.invalidateUserCache(existingLink.id);
+            this.logger.info(
+                {
+                    previousUserId: loserId,
+                    newUserId: winnerId,
+                    wallet: normalizedAddress,
+                    walletsTransferred: loserWallets.length
+                },
+                'Identity reconciliation: wallets transferred, tombstone created'
+            );
 
-            // Fetch and return the existing user's data
-            const updated = await this.collection.findOne({ id: existingLink.id });
+            // Invalidate caches for both users and transferred wallet mappings
+            await this.invalidateUserCache(winnerId);
+            await this.invalidateUserCache(loserId);
+            for (const w of doc.wallets) {
+                await this.cacheService.invalidate(`${this.CACHE_KEY_WALLET_PREFIX}${w.address}`);
+            }
+
+            // Fetch and return the winner's updated data
+            const updated = await this.collection.findOne({ id: winnerId });
             return {
                 user: this.toPublicUser(updated!),
                 identitySwapped: true,
-                previousUserId: userId
+                previousUserId: loserId
             };
         }
 
@@ -689,6 +773,9 @@ export class UserService {
         message: string,
         signature: string
     ): Promise<IUser> {
+        // Resolve to canonical UUID if this identity was merged
+        userId = await this.resolveUserId(userId);
+
         // Validate user exists
         const doc = await this.collection.findOne({ id: userId });
         if (!doc) {
@@ -760,6 +847,9 @@ export class UserService {
         message: string,
         signature: string
     ): Promise<IUser> {
+        // Resolve to canonical UUID if this identity was merged
+        userId = await this.resolveUserId(userId);
+
         const doc = await this.collection.findOne({ id: userId });
         if (!doc) {
             throw new Error(`User with id "${userId}" not found`);
@@ -821,6 +911,9 @@ export class UserService {
         userId: string,
         preferences: Partial<IUserPreferences>
     ): Promise<IUser> {
+        // Resolve to canonical UUID if this identity was merged
+        userId = await this.resolveUserId(userId);
+
         const doc = await this.collection.findOne({ id: userId });
         if (!doc) {
             throw new Error(`User with id "${userId}" not found`);
@@ -869,6 +962,9 @@ export class UserService {
      * @throws Error if user not found
      */
     async login(userId: string): Promise<IUser> {
+        // Resolve to canonical UUID if this identity was merged
+        userId = await this.resolveUserId(userId);
+
         const doc = await this.collection.findOne({ id: userId });
         if (!doc) {
             throw new Error(`User with id "${userId}" not found`);
@@ -903,6 +999,9 @@ export class UserService {
      * @throws Error if user not found
      */
     async logout(userId: string): Promise<IUser> {
+        // Resolve to canonical UUID if this identity was merged
+        userId = await this.resolveUserId(userId);
+
         const doc = await this.collection.findOne({ id: userId });
         if (!doc) {
             throw new Error(`User with id "${userId}" not found`);
@@ -951,6 +1050,9 @@ export class UserService {
         landingPage?: string
     ): Promise<IUserSession> {
         try {
+            // Resolve to canonical UUID if this identity was merged
+            userId = await this.resolveUserId(userId);
+
             const doc = await this.collection.findOne({ id: userId });
             if (!doc) {
                 throw new Error(`User with id "${userId}" not found`);
@@ -1107,6 +1209,9 @@ export class UserService {
      */
     async recordPage(userId: string, path: string): Promise<void> {
         try {
+            // Resolve to canonical UUID if this identity was merged
+            userId = await this.resolveUserId(userId);
+
             const doc = await this.collection.findOne({ id: userId });
             if (!doc) {
                 return; // Silently ignore if user doesn't exist
@@ -1221,6 +1326,9 @@ export class UserService {
      */
     async heartbeat(userId: string): Promise<void> {
         try {
+            // Resolve to canonical UUID if this identity was merged
+            userId = await this.resolveUserId(userId);
+
             const doc = await this.collection.findOne({ id: userId });
             if (!doc) {
                 return;
@@ -1266,6 +1374,9 @@ export class UserService {
      */
     async endSession(userId: string): Promise<void> {
         try {
+            // Resolve to canonical UUID if this identity was merged
+            userId = await this.resolveUserId(userId);
+
             const doc = await this.collection.findOne({ id: userId });
             if (!doc) {
                 return;
@@ -1319,6 +1430,9 @@ export class UserService {
      */
     async recordActivity(userId: string): Promise<void> {
         try {
+            // Resolve to canonical UUID if this identity was merged
+            userId = await this.resolveUserId(userId);
+
             await this.collection.updateOne(
                 { id: userId },
                 {
@@ -4205,6 +4319,7 @@ export class UserService {
     async createIndexes(): Promise<void> {
         await this.collection.createIndex({ id: 1 }, { unique: true });
         await this.collection.createIndex({ 'wallets.address': 1 });
+        await this.collection.createIndex({ mergedInto: 1 }, { sparse: true });
         await this.collection.createIndex({ 'activity.lastSeen': 1 });
         await this.collection.createIndex({ 'activity.firstSeen': 1 });
         await this.collection.createIndex({ 'activity.sessions.endedAt': 1 });
@@ -4215,6 +4330,28 @@ export class UserService {
     }
 
     // ==================== Private Helpers ====================
+
+    /**
+     * Resolve a UUID to its canonical identity.
+     *
+     * If the UUID has been merged into another user (tombstone record),
+     * returns the canonical UUID. Otherwise returns the input unchanged.
+     * Pointer chains are flattened during merge, so this is always a
+     * single database lookup.
+     *
+     * All mutation methods call this before operating to prevent
+     * accidental writes to tombstone records.
+     *
+     * @param userId - UUID that may be a tombstone
+     * @returns Canonical UUID (same as input if not merged)
+     */
+    private async resolveUserId(userId: string): Promise<string> {
+        const doc = await this.collection.findOne({ id: userId });
+        if (doc?.mergedInto) {
+            return doc.mergedInto;
+        }
+        return userId;
+    }
 
     /**
      * Recalculate which wallet should be primary.
