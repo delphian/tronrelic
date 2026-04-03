@@ -98,6 +98,7 @@ export class BlockchainService implements IBlockchainService {
     private readonly priceService = PriceService.getInstance();
     private readonly addressInsights = new AddressInsightService();
     private readonly observerService = BlockchainObserverService.getInstance();
+    private wasCaughtUp: boolean | null = null;
 
     /**
      * Initialize the blockchain service with required dependencies and configure the block processing queue.
@@ -666,6 +667,16 @@ export class BlockchainService implements IBlockchainService {
             const blocksBehind = latestNetworkBlock - lastProcessed;
             const isCaughtUp = blocksBehind <= blockchainConfig.network.liveChainThrottleBlocks;
 
+            // Log transitions between caught-up and backfill modes
+            if (this.wasCaughtUp !== null && isCaughtUp !== this.wasCaughtUp) {
+                if (isCaughtUp) {
+                    logger.info({ blocksBehind, lastProcessed, latestNetworkBlock }, 'Blockchain sync caught up to chain head');
+                } else {
+                    logger.info({ blocksBehind, lastProcessed, latestNetworkBlock }, 'Blockchain sync entering backfill mode');
+                }
+            }
+            this.wasCaughtUp = isCaughtUp;
+
             for (const blockNumber of eligibleTargets) {
                 await this.queue.enqueue(
                     'sync-block',
@@ -932,7 +943,7 @@ export class BlockchainService implements IBlockchainService {
         const timings: Record<string, number> = {};
         const startTotal = Date.now();
 
-        logger.info({ blockNumber }, `Processing block ${blockNumber}`);
+        logger.debug({ blockNumber }, `Processing block ${blockNumber}`);
 
         try {
             // Stage 1: Fetch block from TronGrid first to get its timestamp for calculations
