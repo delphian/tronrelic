@@ -55,6 +55,7 @@ import {
     getDeviceCategory,
     getScreenSizeCategory
 } from './geo.service.js';
+import type TronWeb from 'tronweb';
 import { SignatureService } from '../../auth/signature.service.js';
 import { GscService } from './gsc.service.js';
 
@@ -202,10 +203,11 @@ export class UserService {
     private constructor(
         private readonly database: IDatabaseService,
         private readonly cacheService: ICacheService,
-        private readonly logger: ISystemLogService
+        private readonly logger: ISystemLogService,
+        tronWeb: TronWeb
     ) {
         this.collection = database.getCollection<IUserDocument>('users');
-        this.signatureService = new SignatureService();
+        this.signatureService = new SignatureService(tronWeb);
     }
 
     /**
@@ -218,13 +220,25 @@ export class UserService {
      * @param cacheService - Cache service
      * @param logger - System log service
      */
+    /**
+     * Initialize the singleton instance with dependencies.
+     *
+     * Must be called before getInstance(). Typically invoked during
+     * application bootstrap in the user module's init() phase.
+     *
+     * @param database - Database service
+     * @param cacheService - Cache service
+     * @param logger - System log service
+     * @param tronWeb - Configured TronWeb instance from the service registry
+     */
     public static setDependencies(
         database: IDatabaseService,
         cacheService: ICacheService,
-        logger: ISystemLogService
+        logger: ISystemLogService,
+        tronWeb: TronWeb
     ): void {
         if (!UserService.instance) {
-            UserService.instance = new UserService(database, cacheService, logger);
+            UserService.instance = new UserService(database, cacheService, logger, tronWeb);
         }
     }
 

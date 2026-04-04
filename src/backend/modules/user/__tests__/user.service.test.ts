@@ -157,7 +157,7 @@ describe('UserService', () => {
         UserService.resetInstance();
 
         // Initialize service
-        UserService.setDependencies(mockDatabase, mockCache, mockLogger);
+        UserService.setDependencies(mockDatabase, mockCache, mockLogger, {} as any);
         userService = UserService.getInstance();
     });
 

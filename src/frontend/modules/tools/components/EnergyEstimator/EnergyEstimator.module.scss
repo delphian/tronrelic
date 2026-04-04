@@ -1,0 +1,45 @@
+.label {
+    display: block;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+    color: var(--color-text-muted);
+    margin-bottom: var(--spacing-2);
+}
+
+.error {
+    color: var(--color-danger);
+    font-size: var(--font-size-sm);
+    margin: 0;
+}
+
+.results {
+    padding: var(--card-padding-sm);
+    background: var(--color-surface-muted);
+    border-radius: var(--radius-sm);
+}
+
+.stat_grid {
+    display: grid;
+    gap: var(--grid-gap-sm);
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.stat {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-2);
+
+    &__label {
+        font-size: var(--font-size-xs);
+        font-weight: var(--font-weight-semibold);
+        color: var(--color-text-muted);
+        text-transform: uppercase;
+        letter-spacing: var(--letter-spacing-wide);
+    }
+
+    &__value {
+        font-size: var(--font-size-xl);
+        font-weight: var(--font-weight-bold);
+        color: var(--color-text);
+    }
+}

@@ -5,12 +5,10 @@ import { accountsRouter } from './accounts.router.js';
 import { transactionsRouter } from './transactions.router.js';
 import { transactionRouter } from './transaction.router.js';
 import { notificationsRouter } from './notifications.router.js';
-import { toolsRouter } from './tools.router.js';
 import { inflowsRouter } from './inflows.router.js';
 import { outflowsRouter } from './outflows.router.js';
 import { dashboardRouter } from './dashboard.router.js';
 import { energyRouter } from './energy.router.js';
-import { base58checkRouter } from './base58check.router.js';
 import { liveRouter } from './live.router.js';
 import { tokensRouter } from './tokens.router.js';
 import { systemRouter } from './system.router.js';
@@ -38,7 +36,6 @@ export function createApiRouter(database: IDatabaseService) {
   router.use('/config', configRouter());
   router.use('/blockchain', blockchainRouter());
   router.use('/energy', energyRouter());
-  router.use('/base58check', base58checkRouter());
   router.use('/widgets', widgetRouter());
   router.use('/plugins', pluginsRouter);
   router.use('/plugin-management', pluginManagementRouter);
@@ -50,7 +47,7 @@ export function createApiRouter(database: IDatabaseService) {
   router.use('/inflows', inflowsRouter(database));
   router.use('/outflows', outflowsRouter(database));
   router.use('/notifications', notificationsRouter(database));
-  router.use('/tools', toolsRouter(database));
+  // Tools routes mounted by ToolsModule via IoC pattern
   router.use('/live', liveRouter(database));
   router.use('/tokens', tokensRouter(database));
   router.use('/admin/system', systemRouter(database));
