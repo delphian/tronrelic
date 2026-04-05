@@ -32,6 +32,7 @@ import { PagesModule } from './modules/pages/index.js';
 import { ThemeModule } from './modules/theme/index.js';
 import { UserModule } from './modules/user/index.js';
 import { AddressLabelsModule } from './modules/address-labels/index.js';
+import { ToolsModule } from './modules/tools/index.js';
 import { BlockchainObserverService } from './services/blockchain-observer/index.js';
 import { SystemConfigService } from './services/system-config/index.js';
 import { CacheService } from './services/cache.service.js';
@@ -40,6 +41,7 @@ import { ChainParametersService } from './modules/chain-parameters/chain-paramet
 import { UsdtParametersFetcher } from './modules/usdt-parameters/usdt-parameters-fetcher.js';
 import { UsdtParametersService } from './modules/usdt-parameters/usdt-parameters.service.js';
 import { createApiRouter } from './api/routes/index.js';
+import TronWeb from 'tronweb';
 import type { Express } from 'express';
 import type { IDatabaseService, IMenuService, IServiceRegistry } from '@/types';
 import axios from 'axios';
@@ -205,6 +207,7 @@ interface BootstrapContext {
         theme: ThemeModule;
         user: UserModule;
         addressLabels: AddressLabelsModule;
+        tools: ToolsModule;
         scheduler: SchedulerModule;
     };
 }
@@ -266,6 +269,14 @@ async function bootstrapInit(): Promise<BootstrapContext> {
 
     const cacheService = new CacheService(getRedisClient(), coreDatabase);
     const serviceRegistry = new ServiceRegistry(logger);
+
+    // Register shared infrastructure on the service registry so modules and
+    // plugins can discover them via late-binding DI instead of importing
+    // concrete classes.
+    const tronWeb = new TronWeb({ fullHost: 'https://api.trongrid.io' });
+    serviceRegistry.register('tronweb', tronWeb);
+    serviceRegistry.register('chain-parameters', ChainParametersService.getInstance());
+
     const sharedDeps = { database: coreDatabase, cacheService, menuService, serviceRegistry, app };
 
     const logsModule = new LogsModule();
@@ -273,6 +284,7 @@ async function bootstrapInit(): Promise<BootstrapContext> {
     const themeModule = new ThemeModule();
     const userModule = new UserModule();
     const addressLabelsModule = new AddressLabelsModule();
+    const toolsModule = new ToolsModule();
     const schedulerModule = new SchedulerModule();
 
     await logsModule.init({ pinoLogger, database: coreDatabase, app });
@@ -282,6 +294,7 @@ async function bootstrapInit(): Promise<BootstrapContext> {
     const schedulerService = schedulerModule.getSchedulerService();
     await userModule.init({ ...sharedDeps, scheduler: schedulerService });
     await addressLabelsModule.init(sharedDeps);
+    await toolsModule.init(sharedDeps);
 
     return {
         app,
@@ -299,6 +312,7 @@ async function bootstrapInit(): Promise<BootstrapContext> {
             theme: themeModule,
             user: userModule,
             addressLabels: addressLabelsModule,
+            tools: toolsModule,
             scheduler: schedulerModule,
         },
     };
@@ -329,6 +343,7 @@ async function bootstrapRun(ctx: BootstrapContext): Promise<void> {
     await modules.theme.run();
     await modules.user.run();
     await modules.addressLabels.run();
+    await modules.tools.run();
     await modules.scheduler.run();
 
     await registerTemporaryMenuItems(menuService);

@@ -1,0 +1,61 @@
+@use '../../../../app/breakpoints' as *;
+
+.container {
+    container-type: inline-size;
+    container-name: address-converter;
+}
+
+.label {
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+    color: var(--color-text-muted);
+}
+
+.input_row {
+    display: flex;
+    gap: var(--spacing-5);
+    align-items: center;
+}
+
+.error {
+    color: var(--color-danger);
+    font-size: var(--font-size-sm);
+    margin: 0;
+}
+
+.result {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-5);
+    padding: var(--card-padding-sm);
+    background: var(--color-surface-muted);
+    border-radius: var(--radius-sm);
+
+    &__field {
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-2);
+    }
+
+    &__label {
+        font-size: var(--font-size-xs);
+        font-weight: var(--font-weight-semibold);
+        color: var(--color-text-muted);
+        text-transform: uppercase;
+        letter-spacing: var(--letter-spacing-wide);
+    }
+
+    &__value {
+        font-family: var(--font-mono);
+        font-size: var(--font-size-sm);
+        color: var(--color-text);
+        word-break: break-all;
+    }
+}
+
+@container address-converter (max-width: #{$breakpoint-mobile-md}) {
+    .input_row {
+        flex-direction: column;
+        align-items: stretch;
+    }
+}

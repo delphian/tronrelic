@@ -1,9 +1,8 @@
 import type { Request, Response } from 'express';
 import type { Redis as RedisClient } from 'ioredis';
-import type { IDatabaseService } from '@/types';
+import type { IDatabaseService, ISignatureService } from '@/types';
 import { z } from 'zod';
 import { CalculatorService } from './calculator.service.js';
-import { SignatureService } from '../auth/signature.service.js';
 
 const energySchema = z.object({
   contractType: z.string().min(1),
@@ -23,9 +22,13 @@ const stakeSchema = z.object({
 
 export class CalculatorController {
   private readonly calculator: CalculatorService;
-  private readonly signatureService = new SignatureService();
 
-  constructor(redis: RedisClient, database: IDatabaseService) {
+  /**
+   * @param redis - Redis client for caching
+   * @param database - Database service for transaction lookups
+   * @param signatureService - Signature verification service
+   */
+  constructor(redis: RedisClient, database: IDatabaseService, private readonly signatureService: ISignatureService) {
     this.calculator = new CalculatorService(redis, database);
   }
 

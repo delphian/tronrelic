@@ -175,11 +175,18 @@ export class UserModule implements IModule<IUserModuleDependencies> {
         // Initialize GeoIP lookup for country detection (non-blocking)
         await initGeoIP();
 
+        // Resolve TronWeb from service registry for signature verification
+        const tronWeb = dependencies.serviceRegistry.get<import('tronweb').default>('tronweb');
+        if (!tronWeb) {
+            throw new Error('TronWeb not found on service registry. Ensure it is registered as "tronweb" before user module init.');
+        }
+
         // Initialize UserService singleton with dependencies
         UserService.setDependencies(
             this.database,
             this.cacheService,
-            this.logger
+            this.logger,
+            tronWeb
         );
 
         // Get UserService singleton instance
