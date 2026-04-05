@@ -8,4 +8,4 @@ export {
     estimateStakeFromTrx,
     estimateStakeFromEnergy,
     verifySignature
-} from './client.js';
+} from './client';

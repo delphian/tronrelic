@@ -219,16 +219,6 @@ export class UserService {
      * @param database - Database service
      * @param cacheService - Cache service
      * @param logger - System log service
-     */
-    /**
-     * Initialize the singleton instance with dependencies.
-     *
-     * Must be called before getInstance(). Typically invoked during
-     * application bootstrap in the user module's init() phase.
-     *
-     * @param database - Database service
-     * @param cacheService - Cache service
-     * @param logger - System log service
      * @param tronWeb - Configured TronWeb instance from the service registry
      */
     public static setDependencies(

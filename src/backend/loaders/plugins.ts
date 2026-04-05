@@ -101,6 +101,13 @@ export async function loadPlugins(database: IDatabaseService, scheduler: ISchedu
         ? ClickHouseService.getInstance()
         : undefined;
 
+    // Resolve TronWeb from the service registry once before the plugin loop
+    // so that every plugin context receives the same configured instance.
+    const tronWebInstance = serviceRegistry.get<TronWeb>('tronweb');
+    if (!tronWebInstance) {
+        throw new Error('TronWeb service not registered — ensure bootstrap registers "tronweb" before loading plugins');
+    }
+
     // Create shared HTTP client for all plugins
     const httpClient = axios.create({
         timeout: 30000,
@@ -155,7 +162,7 @@ export async function loadPlugins(database: IDatabaseService, scheduler: ISchedu
                 blockchainService,
                 addressLabelService,
                 userService: UserService.getInstance(),
-                signatureService: new SignatureService(serviceRegistry.get<TronWeb>('tronweb')!),
+                signatureService: new SignatureService(tronWebInstance),
                 services: serviceRegistry,
                 logger: pluginLogger
             };

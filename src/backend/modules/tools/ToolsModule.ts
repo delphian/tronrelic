@@ -13,6 +13,7 @@ import type { Express } from 'express';
 import type { ICacheService, IChainParametersService, IDatabaseService, IMenuService, IModule, IModuleMetadata, IServiceRegistry } from '@/types';
 import { logger } from '../../lib/logger.js';
 import { TransactionModel } from '../../database/models/transaction-model.js';
+import { AddressService } from './services/address.service.js';
 import { CalculatorService } from './services/calculator.service.js';
 import { SignatureService } from '../auth/signature.service.js';
 import { ToolsController } from './api/tools.controller.js';
@@ -116,6 +117,7 @@ export class ToolsModule implements IModule<IToolsModuleDependencies> {
             throw new Error('TronWeb not found on service registry. Ensure it is registered as "tronweb" before tools module init.');
         }
 
+        const addressService = new AddressService(tronWeb);
         const calculatorService = new CalculatorService(
             dependencies.cacheService,
             this.database,
@@ -123,7 +125,7 @@ export class ToolsModule implements IModule<IToolsModuleDependencies> {
         );
         const signatureService = new SignatureService(tronWeb);
 
-        this.controller = new ToolsController(calculatorService, signatureService);
+        this.controller = new ToolsController(addressService, calculatorService, signatureService);
 
         this.logger.info('Tools module initialized');
     }
@@ -175,8 +177,8 @@ export class ToolsModule implements IModule<IToolsModuleDependencies> {
                 { label: 'Signature Verifier', url: '/tools/signature-verifier', icon: 'ShieldCheck', order: 40 },
             ];
 
-            for (const child of children) {
-                await this.menuService.create({
+            await Promise.all(children.map(child =>
+                this.menuService.create({
                     namespace: 'main',
                     label: child.label,
                     url: child.url,
@@ -184,8 +186,8 @@ export class ToolsModule implements IModule<IToolsModuleDependencies> {
                     order: child.order,
                     parent: parentId,
                     enabled: true
-                });
-            }
+                })
+            ));
 
             this.logger.info('Tools menu items registered in main namespace');
         } catch (error) {

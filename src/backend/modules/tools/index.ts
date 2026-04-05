@@ -11,8 +11,8 @@ export { ToolsModule } from './ToolsModule.js';
 export type { IToolsModuleDependencies } from './ToolsModule.js';
 
 // Services (for external consumers or testing)
+export { AddressService } from './services/address.service.js';
 export { CalculatorService } from './services/calculator.service.js';
-export { convertAddress } from './services/address.service.js';
 export type { IAddressConversionResult } from './services/address.service.js';
 export type { IEnergyEstimate, IStakeEstimate, IEnergyEstimateInput } from './services/calculator.service.js';
 

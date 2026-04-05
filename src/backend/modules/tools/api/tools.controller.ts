@@ -8,7 +8,7 @@
 
 import type { Request, Response } from 'express';
 import { z } from 'zod';
-import { convertAddress } from '../services/address.service.js';
+import type { AddressService } from '../services/address.service.js';
 import type { CalculatorService } from '../services/calculator.service.js';
 import type { SignatureService } from '../../auth/signature.service.js';
 
@@ -44,15 +44,17 @@ const signatureSchema = z.object({
 /**
  * Tools controller exposing all tool endpoints.
  *
- * Receives calculator and signature services via constructor injection
- * so the module controls instantiation timing.
+ * Receives all services via constructor injection so the module
+ * controls instantiation timing.
  */
 export class ToolsController {
     /**
+     * @param addressService - TRON address format converter
      * @param calculatorService - Energy and stake calculator
      * @param signatureService - TRON signature verifier
      */
     constructor(
+        private readonly addressService: AddressService,
         private readonly calculatorService: CalculatorService,
         private readonly signatureService: SignatureService
     ) {}
@@ -64,7 +66,7 @@ export class ToolsController {
      */
     convertAddress = async (req: Request, res: Response): Promise<void> => {
         const payload = addressSchema.parse(req.body);
-        const result = convertAddress(payload);
+        const result = this.addressService.convertAddress(payload);
         res.json({ success: true, transform: result });
     };
 

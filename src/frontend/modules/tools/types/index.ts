@@ -2,6 +2,8 @@
  * @fileoverview Type definitions for the tools frontend module.
  */
 
+import type { ReactNode } from 'react';
+
 /** Address conversion result from the API. */
 export interface IAddressConversionResult {
     hex: string;
@@ -50,5 +52,5 @@ export interface IToolDescriptor {
     title: string;
     description: string;
     href: string;
-    icon: string;
+    icon: ReactNode;
 }
