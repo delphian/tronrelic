@@ -156,6 +156,7 @@ export interface IUIComponents {
     Input: ComponentType<{
         value?: string;
         onChange?: (e: React.ChangeEvent<HTMLInputElement>) => void;
+        onKeyDown?: (e: React.KeyboardEvent) => void;
         placeholder?: string;
         disabled?: boolean;
         required?: boolean;
