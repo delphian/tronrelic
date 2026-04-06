@@ -25,6 +25,8 @@ export interface ITronGridAccountResponse {
     address?: string;
     /** Account TRX balance in SUN */
     balance?: number;
+    /** Account creation timestamp in milliseconds (from first on-chain activation) */
+    create_time?: number;
     /** Custom active permissions (id >= 2) */
     active_permission?: ITronGridAccountPermission[];
     /** Owner permission (id = 0) */

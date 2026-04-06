@@ -267,6 +267,7 @@ export interface TronGridAccountPermission {
 export interface TronGridAccountResponse {
     address?: string;
     balance?: number;
+    create_time?: number;
     active_permission?: TronGridAccountPermission[];
     owner_permission?: TronGridAccountPermission;
 }
