@@ -58,6 +58,11 @@ Plugins extend the frontend through:
 - Plugin admin pages and settings screens
 - Migration from deprecated `adminUI` pattern
 
+**See [plugins-seo-and-ssr.md](./plugins-seo-and-ssr.md) for complete details on:**
+- SEO fields on `IPageConfig` (title, description, keywords, ogImage, structuredData, noindex)
+- `serverDataFetcher` for pre-fetching plugin page data during SSR
+- bazi-fortune as the canonical reference implementation
+
 **See [plugins-widget-zones.md](./plugins-widget-zones.md) for complete details on:**
 - Registering widgets to inject UI into page zones
 - Zone naming conventions and routing
@@ -246,6 +251,7 @@ context.websocket.onSubscribe(async (socket, roomName, payload) => {
 - [plugins-system-architecture.md](./plugins-system-architecture.md) - Package layout, manifests, lifecycle hooks, admin interface
 - [plugins-blockchain-observers.md](./plugins-blockchain-observers.md) - Observer pattern, transaction processing, subscriptions
 - [plugins-page-registration.md](./plugins-page-registration.md) - Menu items, pages, routing, admin UI
+- [plugins-seo-and-ssr.md](./plugins-seo-and-ssr.md) - SEO metadata fields and `serverDataFetcher` for body SSR (bazi-fortune as canonical example)
 - [plugins-widget-zones.md](./plugins-widget-zones.md) - Widget zones for injecting UI into existing pages
 - [plugins-frontend-context.md](./plugins-frontend-context.md) - Context injection, UI components, API client, WebSocket
 - [plugins-api-registration.md](./plugins-api-registration.md) - REST routes, middleware, admin endpoints

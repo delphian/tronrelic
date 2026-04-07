@@ -131,29 +131,28 @@ Only these JavaScript/TypeScript declaration files should exist:
 
 ### Start Development
 ```bash
-npm run dev --workspace apps/frontend
-# Runs: next dev --turbo
+npm run dev
+# Runs: node scripts/dev.mjs (concurrent backend + frontend with plugin generation)
 # Output: .next/ (dev build, auto-refreshes)
 ```
 
 ### Type Check
 ```bash
-npm run typecheck --workspace apps/frontend
-# Runs: tsc --noEmit
+npm run typecheck:frontend
+# Runs: tsc --noEmit -p src/frontend/tsconfig.json
 # Output: Console errors only, no files
 ```
 
 ### Build for Production
 ```bash
-npm run build --workspace apps/frontend
-# Runs: next build
+npm run build:frontend
+# Runs: npm run generate:plugins && next build src/frontend
 # Output: .next/ (optimized production build)
 ```
 
 ### Start Production Server
 ```bash
-npm run start --workspace apps/frontend
-# Runs: next start
+next start src/frontend
 # Serves: .next/ folder
 ```
 

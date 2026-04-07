@@ -508,7 +508,7 @@ npm list lucide-react
 If missing, install it:
 
 ```bash
-npm install lucide-react --workspace apps/frontend
+npm install lucide-react
 ```
 
 ### Search Not Working

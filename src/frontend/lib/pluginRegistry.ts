@@ -1,4 +1,5 @@
 import type { IMenuItemConfig, IPageConfig, IPlugin } from '@/types';
+import { frontendPlugins } from '../components/plugins/plugins.generated';
 
 /**
  * Plugin menu and page registry for dynamic navigation.
@@ -6,6 +7,17 @@ import type { IMenuItemConfig, IPageConfig, IPlugin } from '@/types';
  * This module provides centralized access to plugin-provided menu items and pages.
  * It aggregates navigation and routing configurations from all loaded plugins,
  * enabling the UI to discover and render plugin features without hardcoding imports.
+ *
+ * The registry is self-bootstrapping at module load time: importing this module
+ * synchronously registers every plugin from `plugins.generated.ts`. This works on
+ * both server (for catch-all route SSR) and client (for synchronous render-time
+ * lookups in PluginPageHandler), eliminating the polling pattern that previously
+ * caused loading flash on plugin pages.
+ *
+ * Enabled-state filtering happens elsewhere — the catch-all server route filters
+ * via /api/plugins/manifests in the request path, and PluginLoader filters
+ * side-effect components by the same mechanism. The registry itself contains
+ * every built-in plugin regardless of enabled state.
  */
 
 interface PluginRegistryState {
@@ -22,6 +34,16 @@ class PluginRegistry {
         menuItems: [],
         pages: []
     };
+
+    private bootstrapped = false;
+
+    /**
+     * When true, registerPlugin() skips the per-call menu sort and notify().
+     * Bootstrap flips this on while iterating the generated plugin list and
+     * flushes once at the end, turning O(n × m log m) sorts into a single
+     * O(m log m) sort and one notification.
+     */
+    private bulkRegistering = false;
 
     private listeners: Set<PluginRegistryListener> = new Set();
 
@@ -71,26 +93,47 @@ class PluginRegistry {
             this.state.menuItems.push(...plugin.menuItems);
         }
 
+        // First-wins collision policy. The server-side registry uses the same
+        // policy in serverPluginRegistry.buildPermanentMap, so SSR and client
+        // hydration always resolve to the same plugin for any given path —
+        // preventing React hydration mismatches when two plugins accidentally
+        // register the same path.
+        const addPageIfFirst = (page: IPageConfig) => {
+            const existing = this.state.pages.find(p => p.path === page.path);
+            if (existing) {
+                console.warn(
+                    `[pluginRegistry] Duplicate page path '${page.path}' detected. ` +
+                        `Plugin '${plugin.manifest.id}' will be ignored; ` +
+                        `'${existing.pluginId}' keeps the route.`
+                );
+                return;
+            }
+            this.state.pages.push({ ...page, pluginId: plugin.manifest.id });
+        };
+
         if (plugin.pages) {
-            // Add plugin ID to each page for context injection
-            const pagesWithPluginId = plugin.pages.map(page => ({
-                ...page,
-                pluginId: plugin.manifest.id
-            }));
-            this.state.pages.push(...pagesWithPluginId);
+            plugin.pages.forEach(addPageIfFirst);
         }
 
         // Register admin pages (also added to pages array)
         if (plugin.adminPages) {
-            // Add plugin ID to each admin page for context injection
-            const adminPagesWithPluginId = plugin.adminPages.map(page => ({
-                ...page,
-                pluginId: plugin.manifest.id
-            }));
-            this.state.pages.push(...adminPagesWithPluginId);
+            plugin.adminPages.forEach(addPageIfFirst);
         }
 
-        // Sort menu items by order and category
+        // Skip the sort + notify when called from bootstrap(); the bulk
+        // path sorts once and notifies once at the end of the loop.
+        if (!this.bulkRegistering) {
+            this.sortMenuItems();
+            this.notify();
+        }
+    }
+
+    /**
+     * Sort menu items by category, then by order within category. Extracted
+     * so bootstrap() can sort once after registering every plugin instead of
+     * after each plugin individually.
+     */
+    private sortMenuItems(): void {
         this.state.menuItems.sort((a, b) => {
             // Group by category first
             const categoryA = a.category || 'default';
@@ -104,9 +147,47 @@ class PluginRegistry {
             const orderB = b.order ?? 999;
             return orderA - orderB;
         });
+    }
 
-        // Notify subscribers of the change
+    /**
+     * Bootstrap the registry from a known set of plugins, idempotently.
+     *
+     * Called once at module load time with the synchronously-imported list from
+     * `plugins.generated.ts`. Subsequent calls are no-ops. The registry's
+     * existing `clear()` and `registerPlugin()` methods remain available for
+     * tests that need to reset state.
+     *
+     * @param plugins - Plugin instances to register synchronously
+     */
+    bootstrap(plugins: IPlugin[]): void {
+        if (this.bootstrapped) {
+            return;
+        }
+        this.bootstrapped = true;
+        this.bulkRegistering = true;
+        try {
+            for (const plugin of plugins) {
+                this.registerPlugin(plugin);
+            }
+        } finally {
+            this.bulkRegistering = false;
+        }
+        // Single sort + notify after registering every plugin, instead of
+        // sorting and notifying after each one. With ~20 plugins this turns
+        // 20 sorts into 1 and 20 listener invocations into 1.
+        this.sortMenuItems();
         this.notify();
+    }
+
+    /**
+     * Get every plugin registered with the registry, regardless of enabled
+     * state. Consumers that care about enabled state must filter externally
+     * (typically via /api/plugins/manifests).
+     *
+     * @returns Array of all registered plugin instances
+     */
+    getAllPlugins(): IPlugin[] {
+        return this.state.plugins;
     }
 
     /**
@@ -151,7 +232,8 @@ class PluginRegistry {
      * Clear all registered plugins, menu items, and pages.
      *
      * This is primarily useful for testing or hot-reloading scenarios where
-     * you need to reset the registry state and re-register plugins.
+     * you need to reset the registry state and re-register plugins. Also resets
+     * the bootstrap flag so a subsequent bootstrap() call repopulates state.
      */
     clear(): void {
         this.state = {
@@ -159,8 +241,13 @@ class PluginRegistry {
             menuItems: [],
             pages: []
         };
+        this.bootstrapped = false;
     }
 }
 
 // Export singleton instance
 export const pluginRegistry = new PluginRegistry();
+
+// Self-bootstrap from the generated plugin list at module load. Runs once on
+// both server and client thanks to Node's module cache and Next.js's bundling.
+pluginRegistry.bootstrap(frontendPlugins);
