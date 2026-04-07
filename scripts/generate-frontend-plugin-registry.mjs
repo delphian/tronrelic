@@ -107,37 +107,46 @@ async function collectPluginMetadata() {
 /**
  * Renders the TypeScript source for the registry module.
  *
- * It generates lazy loader functions that import plugin frontends on demand. This lets the frontend dynamically initialize plugins without bundling them all upfront.
+ * Generates synchronous static imports for every plugin's frontend entry file
+ * and exports a `frontendPlugins` array. Static imports are required for SSR:
+ * the catch-all route's generateMetadata reads the registry server-side, and the
+ * client-side PluginPageHandler now does a synchronous lookup during render
+ * instead of polling, so the registry must be populated at module load time on
+ * both server and client.
+ *
+ * CSS code splitting is preserved because each plugin's frontend.ts uses
+ * next/dynamic() to lazy-load its actual page components — the static import
+ * here only pulls in the manifest and the dynamic wrappers, not the page CSS.
  */
 function renderModule(metadata) {
-    const header = `/**\n * AUTO-GENERATED FILE. DO NOT EDIT.\n *\n * This module is produced by scripts/generate-frontend-plugin-registry.mjs\n * and exposes lazy loaders for plugin frontend modules.\n */\n`;
+    const header = `/**\n * AUTO-GENERATED FILE. DO NOT EDIT.\n *\n * This module is produced by scripts/generate-frontend-plugin-registry.mjs\n * and exposes a synchronous, statically-imported array of plugin frontends.\n *\n * Static imports are required so the plugin registry can be populated at\n * module load time on both server and client. CSS code splitting is preserved\n * because plugin frontend entry files use next/dynamic() for their page\n * components — only the manifest and dynamic wrappers are pulled in here.\n */\n`;
 
     const imports = `import type { IPlugin } from '@/types';\n\n`;
 
     if (metadata.length === 0) {
-        const emptyBody = `export const frontendPluginLoaders: Record<string, () => Promise<IPlugin>> = {};\n\nfunction resolvePluginExport(pluginId: string): IPlugin {\n    throw new Error(\`Plugin registry attempted to load '\${pluginId}' but no loaders were generated.\`);\n}\n`;
+        const emptyBody = `export const frontendPlugins: IPlugin[] = [];\n`;
         return `${header}${imports}${emptyBody}`;
     }
 
-    const loaderBodies = metadata
+    const staticImports = metadata
         .map(({ id, importPath }) => {
             const safeId = id.replace(/[^a-zA-Z0-9_]/g, '_');
-            return `async function load_${safeId}(): Promise<IPlugin> {\n    const module = await import('${importPath}');\n    return resolvePluginExport('${id}', module);\n}\n`;
+            return `import * as ${safeId}_module from '${importPath}';`;
         })
         .join('\n');
 
-    const registryEntries = metadata
+    const arrayEntries = metadata
         .map(({ id }) => {
             const safeId = id.replace(/[^a-zA-Z0-9_]/g, '_');
-            return `    '${id}': load_${safeId},`;
+            return `    resolvePluginExport('${id}', ${safeId}_module),`;
         })
         .join('\n');
 
-    const registry = `export const frontendPluginLoaders: Record<string, () => Promise<IPlugin>> = {\n${registryEntries}\n};\n`;
+    const arrayDecl = `export const frontendPlugins: IPlugin[] = [\n${arrayEntries}\n];\n`;
 
     const resolver = `function resolvePluginExport(pluginId: string, module: Record<string, unknown>): IPlugin {\n    const candidate = Object.values(module).find((value): value is IPlugin => {\n        return typeof value === 'object' && value !== null && 'manifest' in value;\n    });\n\n    if (!candidate) {\n        throw new Error(\`Failed to locate plugin export for '\${pluginId}'. Ensure the module exports an IPlugin.\`);\n    }\n\n    return candidate;\n}\n`;
 
-    return `${header}${imports}${loaderBodies}\n${registry}\n${resolver}`;
+    return `${header}${imports}${staticImports}\n\n${resolver}\n${arrayDecl}`;
 }
 
 /**

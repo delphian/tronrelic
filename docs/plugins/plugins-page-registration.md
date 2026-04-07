@@ -44,25 +44,29 @@ await context.menuService.create({
 Plugins declare routable pages in their frontend manifest:
 ```typescript
 interface IPageConfig {
-    path: string;               // URL route
-    component: ComponentType;   // React component
-    title?: string;             // Page title (metadata)
-    description?: string;       // Page description (metadata)
-    requiresAuth?: boolean;     // Authentication required
-    requiresAdmin?: boolean;    // Admin privileges required
+    path: string;                 // URL route
+    component: ComponentType;     // React component
+    title?: string;               // Page title (metadata)
+    description?: string;         // Page description (metadata)
+    keywords?: string[];          // SEO keywords
+    ogImage?: string;             // Open Graph image
+    ogType?: 'website' | 'article';
+    canonical?: string;           // Canonical URL override
+    noindex?: boolean;            // Set true on admin pages
+    structuredData?: Record<string, unknown>;  // Schema.org JSON-LD
+    serverDataFetcher?: (ctx) => Promise<unknown>;  // SSR data hook
+    requiresAuth?: boolean;       // Authentication required
+    requiresAdmin?: boolean;      // Admin privileges required
 }
 ```
 
-### 3. Plugin Loader Integration
+**For SEO fields and the `serverDataFetcher` SSR pattern in detail (with bazi-fortune as the canonical example), see [plugins-seo-and-ssr.md](./plugins-seo-and-ssr.md).** This guide focuses on routing and menu integration; SEO and server-side data fetching live in the dedicated doc.
 
-The `PluginLoader` component (in `src/frontend/components/plugins/PluginLoader.tsx`) automatically registers plugins with the menu/page system:
+### 3. Plugin Registry Bootstrap
 
-1. Fetches plugin manifests from backend
-2. Lazy loads frontend plugin modules
-3. Registers each plugin with `pluginRegistry`
-4. Renders plugin components
+Plugin frontends are statically imported into `src/frontend/components/plugins/plugins.generated.ts` by the `generate:plugins` script and registered with `pluginRegistry` (`src/frontend/lib/pluginRegistry.ts`) at module load time. The registry is populated synchronously on both server and client — no fetch, no polling, no loading flash.
 
-This ensures all plugin UI surfaces are discovered before the app renders navigation or routes.
+The `PluginLoader` component (`src/frontend/components/plugins/PluginLoader.tsx`) no longer loads plugins. Its only remaining job is to mount the global side-effect components some plugins ship (toast handlers, notification listeners) and to filter them by enabled state via a single `/api/plugins/manifests` fetch.
 
 ### 4. Dynamic Routing
 
@@ -74,11 +78,11 @@ Two systems consume the registry:
 - Renders clickable navigation links
 - Respects adminOnly and other access controls
 
-**Dynamic Route Handler** (`src/frontend/app/(core)/[...plugin]/page.tsx`):
+**Catch-all Route Handler** (`src/frontend/app/[...slug]/page.tsx`):
 - Catches all plugin page requests via Next.js catch-all route
-- Looks up page configuration by URL path
-- Renders the associated React component
-- Shows loading states and 404 errors
+- Resolves the page through the server-side registry (`src/frontend/lib/serverPluginRegistry.ts`), filtering by currently-enabled plugin manifests
+- Calls `notFound()` server-side for unknown URLs and disabled plugins
+- Generates `<head>` metadata from `IPageConfig` SEO fields and awaits `serverDataFetcher` to forward `initialData` to the page component
 
 ## How It Works
 
@@ -134,26 +138,25 @@ export const myFrontendPlugin = definePlugin({
 });
 ```
 
-2. **PluginLoader discovers pages** at runtime:
-   - Fetches manifests from `/api/plugins/manifests`
-   - Filters for plugins with `frontend: true`
-   - Lazy loads the plugin module
-   - Calls `pluginRegistry.registerPlugin(myPlugin)`
+2. **Generator script picks up the new plugin** at build time:
+   - `generate:plugins` discovers every plugin with a `src/frontend/frontend.ts` entry
+   - Emits a static-import line into `src/frontend/components/plugins/plugins.generated.ts`
+   - The registry is populated at module load via `pluginRegistry.bootstrap()`
 
-3. **Registry stores page configuration**:
-   - Extracts pages array
-   - Makes them available via `getPageByPath()`
-   - Dynamic route handler uses registry for lookups
+3. **Catch-all route resolves the page** server-side:
+   - `getEnabledPluginPageConfig(slug)` looks up the path in the server-side registry
+   - Filters by the currently-enabled plugin manifests
+   - Returns `null` for disabled plugins, triggering `notFound()`
 
 ### URL Routing Flow
 
 When a user navigates to `/my-feature`:
 
-1. Next.js matches the catch-all route `[...plugin]/page.tsx`
-2. Dynamic route handler extracts path from URL params
-3. Calls `pluginRegistry.getPageByPath('/my-feature')`
-4. Retrieves page config with component
-5. Renders: `<MyFeaturePage />`
+1. Next.js matches the catch-all route `app/[...slug]/page.tsx`
+2. The route resolves the slug via `getEnabledPluginPageConfig('/my-feature')`
+3. `generateMetadata` reads `IPageConfig` SEO fields and emits the `<head>` metadata
+4. The page render awaits `serverDataFetcher` (if defined) and forwards `initialData`
+5. `<PluginPageHandler>` looks the page up synchronously in the client registry and renders `<MyFeaturePage context={...} initialData={...} />`
 
 ### Menu Rendering Flow
 
@@ -292,7 +295,7 @@ export const myManifest: IPluginManifest = {
 ### Step 5: Build and Enable Plugin
 
 1. Build your plugin: `npm run build --workspace src/plugins/my-plugin`
-2. Generate frontend registry: `npm run generate:plugins --workspace apps/frontend`
+2. Generate frontend registry: `npm run generate:plugins`
 3. Restart the app (Ctrl+C then `npm run dev`)
 4. Navigate to `/system/plugins` admin UI
 5. Install and enable your plugin
@@ -401,20 +404,11 @@ pages: [
 ]
 ```
 
-### Page with Metadata
+### Page with SEO and SSR
 
-Add SEO and metadata:
+Plugin pages can declare full SEO metadata (title, description, keywords, ogImage, structuredData, noindex) and a `serverDataFetcher` for pre-fetching body data server-side. The catch-all route reads these fields during SSR, populates `<head>` via Next.js Metadata, and forwards `serverDataFetcher`'s return value to the page component as `initialData`.
 
-```typescript
-pages: [
-    {
-        path: '/my-page',
-        component: MyPageComponent,
-        title: 'My Feature - TronRelic',
-        description: 'Explore my feature with detailed analytics'
-    }
-]
-```
+**See [plugins-seo-and-ssr.md](./plugins-seo-and-ssr.md) for the full reference**, including the SEO field table, the `serverDataFetcher` contract, common pitfalls (timezone-sensitive data, JSON serialization), and bazi-fortune as the canonical implementation example.
 
 ### Page with API and Charts
 
@@ -604,10 +598,9 @@ await context.menuService.create({
 
 1. Confirm page `path` in frontend matches menu item `url` in backend
 2. Check `pages` array includes the route
-3. Verify plugin registered successfully (check React DevTools)
-4. Ensure dynamic route exists at `app/(core)/[...plugin]/page.tsx`
-5. Look for path lookup errors in console
-6. Verify frontend plugin has `manifest.frontend === true`
+3. Verify the plugin is enabled in `/system/plugins` — disabled plugins return 404 server-side
+4. Confirm `plugins.generated.ts` includes the plugin (re-run `npm run generate:plugins` if missing)
+5. Verify frontend plugin has `manifest.frontend === true`
 
 ### Menu items in wrong order
 
@@ -679,6 +672,8 @@ Planned improvements to the menu/page system:
 - **Hierarchical menus** - Container nodes with parent-child relationships (via IMenuService)
 - **WebSocket updates** - Real-time menu updates when plugins register/unregister
 - **Icon rendering** - Full Lucide icon support in NavBar
+- **Dynamic metadata** - Automatic Next.js metadata generation from `IPageConfig` SEO fields, including OpenGraph tags, Twitter cards, JSON-LD structured data, and per-page `noindex`. See [plugins-seo-and-ssr.md](./plugins-seo-and-ssr.md).
+- **Server-side data fetching** - `IPageConfig.serverDataFetcher` for pre-fetching plugin page data during SSR, eliminating the loading flash on plugin pages. See [plugins-seo-and-ssr.md](./plugins-seo-and-ssr.md).
 
 ### 🚧 Planned
 
@@ -692,13 +687,6 @@ pages: [
         requiresAdmin: true  // Auto-redirect if not admin
     }
 ]
-```
-
-**Dynamic Metadata** - Automatic Next.js metadata generation from page configs:
-
-```typescript
-// Generates:
-// export const metadata = { title: '...', description: '...' }
 ```
 
 **Permission-Based Visibility** - Hide menu items based on user permissions:
@@ -739,12 +727,16 @@ Core implementation files:
   - `packages/types/src/observer/IPluginContext.ts` - Backend context with menuService
 
 - **Page registry system**:
-  - `src/frontend/lib/pluginRegistry.ts` - Plugin page registry
-  - `src/frontend/components/plugins/PluginLoader.tsx` - Plugin loader with registry integration
+  - `src/frontend/lib/pluginRegistry.ts` - Client-side plugin registry, self-bootstrapped from `plugins.generated.ts`
+  - `src/frontend/lib/serverPluginRegistry.ts` - Server-only registry that filters by enabled manifests
+  - `src/frontend/components/plugins/plugins.generated.ts` - Auto-generated static-import registry
+  - `src/frontend/components/plugins/PluginLoader.tsx` - Mounts global side-effect components for enabled plugins
 
 - **UI integration**:
   - `src/frontend/components/layout/NavBar.tsx` - Navigation with WebSocket menu updates
-  - `src/frontend/app/(core)/[...plugin]/page.tsx` - Dynamic route handler
+  - `src/frontend/app/[...slug]/page.tsx` - Catch-all route handler (custom pages + plugin pages)
+  - `src/frontend/components/PluginPageHandler.tsx` - Client-side synchronous registry lookup
+  - `src/frontend/components/PluginPageWithZones.tsx` - Server wrapper with widget zones
 
 - **Example plugins**:
   - `src/plugins/resource-tracking/` - Uses IMenuService with hierarchical menus
@@ -760,7 +752,7 @@ When building plugins with UI:
 4. **Create hierarchies**: Use container nodes (no `url`) to group related menu items
 5. **Require backend flag**: Set `manifest.backend = true` even if plugin only registers menus
 6. **Provide metadata**: Always include page titles and descriptions for SEO
-7. **Handle loading states**: Pages should show spinners during data fetching
+7. **Render with SSR data, not loading spinners**: Pre-fetch via `serverDataFetcher` and initialize state from `initialData` so the first render contains real content. See [plugins-seo-and-ssr.md](./plugins-seo-and-ssr.md). Loading spinners are only appropriate for user-triggered actions (form submission, pagination), not initial render
 8. **Error boundaries**: Wrap page content in error boundaries for resilience
 9. **Responsive design**: Ensure pages work on mobile and desktop
 10. **Document your UI**: Add README.md explaining your plugin's pages and navigation structure
@@ -776,7 +768,7 @@ After implementing a plugin with menu items and pages, verify it works correctly
 npm run build --workspace src/plugins/my-plugin
 
 # Generate frontend registry
-npm run generate:plugins --workspace apps/frontend
+npm run generate:plugins
 
 # Restart application (Ctrl+C first if running, then:)
 npm run dev
@@ -870,11 +862,14 @@ For developers working on the plugin system itself, here are the key files:
 - `packages/types/src/plugin/index.ts` - Type exports
 
 ### Frontend Infrastructure
-- `src/frontend/lib/pluginRegistry.ts` - Plugin page registry singleton
-- `src/frontend/components/plugins/PluginLoader.tsx` - Plugin loader with registry integration
+- `src/frontend/lib/pluginRegistry.ts` - Client-side plugin registry singleton, self-bootstrapped at module load
+- `src/frontend/lib/serverPluginRegistry.ts` - Server-only registry that filters by currently-enabled plugin manifests
+- `src/frontend/components/plugins/PluginLoader.tsx` - Mounts global side-effect components for enabled plugins
+- `src/frontend/components/PluginPageHandler.tsx` - Client-side synchronous registry lookup
+- `src/frontend/components/PluginPageWithZones.tsx` - Server wrapper with widget zones
 - `src/frontend/components/layout/NavBar.tsx` - Navigation with WebSocket menu updates
-- `src/frontend/app/(core)/[...plugin]/page.tsx` - Dynamic route handler
-- `src/frontend/components/plugins/plugins.generated.ts` - Auto-generated plugin loaders
+- `src/frontend/app/[...slug]/page.tsx` - Catch-all route handler (handles custom pages and plugin pages)
+- `src/frontend/components/plugins/plugins.generated.ts` - Auto-generated static-import registry of all plugin frontends
 
 ### Example Plugins
 - `src/plugins/resource-tracking/` - Complete example with IMenuService

@@ -5,79 +5,8 @@ import { PluginPageWithZones } from '../../components/PluginPageWithZones';
 import { getServerSideApiUrlWithPath } from '../../lib/api-url';
 import { buildMetadata, buildArticleStructuredData } from '../../lib/seo';
 import { getServerConfig } from '../../lib/serverConfig';
+import { getEnabledPluginPageConfig } from '../../lib/serverPluginRegistry';
 import styles from './page.module.css';
-
-/**
- * Static SEO metadata and structured data for known plugin pages.
- *
- * Plugin pages are client-rendered and cannot generate their own server-side metadata.
- * This map provides titles, descriptions, keywords, and Schema.org structured data
- * so crawlers see meaningful content in the initial HTML response.
- */
-interface PluginSeoEntry {
-    title: string;
-    description: string;
-    keywords: string[];
-    /** Schema.org structured data type and properties for rich results. */
-    structuredData?: Record<string, unknown>;
-}
-
-const PLUGIN_SEO_METADATA: Record<string, PluginSeoEntry> = {
-    '/resource-markets': {
-        title: 'Compare TRON Energy Rental Prices | Live Market Tracker | TronRelic',
-        description: 'Compare real-time TRON energy rental prices across 20+ platforms. Find the cheapest rates for TRC-20 USDT transfers and save up to 90% on transaction fees. Updated every 10 minutes.',
-        keywords: [
-            'rent TRON energy',
-            'TRON energy rental',
-            'TRC20 transfer fee',
-            'cheapest TRON energy',
-            'TRON energy market',
-            'TronSave',
-            'JustLend',
-            'energy price comparison',
-            'TRX staking'
-        ],
-        structuredData: {
-            '@context': 'https://schema.org',
-            '@type': 'WebApplication',
-            'name': 'TronRelic Energy Market Comparison',
-            'applicationCategory': 'FinanceApplication',
-            'description': 'Compare real-time TRON energy rental prices across 20+ platforms to find the cheapest rates for TRC-20 USDT transfers.',
-            'offers': {
-                '@type': 'Offer',
-                'price': '0',
-                'priceCurrency': 'USD'
-            },
-            'operatingSystem': 'Web'
-        }
-    },
-    '/tools': {
-        title: 'TRON Blockchain Tools | Staking Calculator, Address Generator | TronRelic',
-        description: 'Free TRON blockchain tools: energy fee calculator, staking calculator, custom address generator, signature verification, and hex/base58 converters.',
-        keywords: [
-            'TRON tools',
-            'TRX staking calculator',
-            'TRON energy calculator',
-            'TRON address generator',
-            'TRC20 fee calculator',
-            'hex to base58',
-            'TRON signature verification'
-        ],
-        structuredData: {
-            '@context': 'https://schema.org',
-            '@type': 'WebApplication',
-            'name': 'TronRelic Blockchain Tools',
-            'applicationCategory': 'UtilitiesApplication',
-            'description': 'Free TRON blockchain tools including staking calculator, energy fee calculator, custom address generator, and format converters.',
-            'offers': {
-                '@type': 'Offer',
-                'price': '0',
-                'priceCurrency': 'USD'
-            },
-            'operatingSystem': 'Web'
-        }
-    }
-};
 
 /**
  * Page metadata response from backend.
@@ -144,8 +73,15 @@ async function isCustomPage(slug: string): Promise<boolean> {
 /**
  * Generate metadata for the page.
  *
- * Only generates metadata for custom pages (not plugin pages, as they handle
- * their own metadata client-side).
+ * Resolves metadata in priority order:
+ * 1. Custom pages (database-backed CMS): fetched from /api/pages
+ * 2. Enabled plugin pages: read from the plugin's IPageConfig via the
+ *    server-side plugin registry, then composed via buildMetadata()
+ * 3. Otherwise: empty metadata (Next.js applies the layout-level defaults)
+ *
+ * Plugin SEO is now declared per-page in each plugin's frontend.ts page config
+ * (title, description, keywords, ogImage, ogType, structuredData, noindex).
+ * The hardcoded PLUGIN_SEO_METADATA map this used to live in has been removed.
  *
  * @param params - Next.js route params containing slug array (Promise in Next.js 15+)
  * @returns Metadata object for Next.js
@@ -156,18 +92,76 @@ export async function generateMetadata({ params }: { params: Promise<IPageParams
     const isCustom = await isCustomPage(slug);
 
     if (!isCustom) {
-        const pluginSeo = PLUGIN_SEO_METADATA[slug];
-        if (pluginSeo) {
-            const { siteUrl } = await getServerConfig();
-            return buildMetadata({
-                siteUrl,
-                title: pluginSeo.title,
-                description: pluginSeo.description,
-                path: slug,
-                keywords: pluginSeo.keywords
-            });
+        const pluginPage = await getEnabledPluginPageConfig(slug);
+        if (!pluginPage) {
+            return {};
         }
-        return {};
+
+        const { siteUrl } = await getServerConfig();
+        let metadata: Metadata;
+
+        // When both title and description are present, emit the full SEO
+        // bundle via the shared buildMetadata helper (canonical, openGraph,
+        // twitter card, keywords). For pages that declare only a subset of
+        // fields, fall through to a fields-only path that emits whatever
+        // was actually declared. Either way, noindex is honored below
+        // independently of which other fields are present.
+        if (pluginPage.title && pluginPage.description) {
+            metadata = buildMetadata({
+                siteUrl,
+                title: pluginPage.title,
+                description: pluginPage.description,
+                path: slug,
+                image: pluginPage.ogImage,
+                type: pluginPage.ogType,
+                keywords: pluginPage.keywords,
+                canonical: pluginPage.canonical
+            });
+        } else {
+            metadata = {};
+            if (pluginPage.title) {
+                metadata.title = pluginPage.title;
+            }
+            if (pluginPage.description) {
+                metadata.description = pluginPage.description;
+            }
+            if (pluginPage.keywords) {
+                metadata.keywords = pluginPage.keywords;
+            }
+            if (pluginPage.canonical) {
+                metadata.alternates = { canonical: pluginPage.canonical };
+            }
+            // Build openGraph only when at least one OG-relevant field is
+            // present, so we don't synthesize an empty default OG block for
+            // pages that explicitly opted out by omitting all SEO fields.
+            if (pluginPage.title || pluginPage.description || pluginPage.ogImage || pluginPage.ogType) {
+                metadata.openGraph = {
+                    type: pluginPage.ogType ?? 'website',
+                    ...(pluginPage.title ? { title: pluginPage.title } : {}),
+                    ...(pluginPage.description ? { description: pluginPage.description } : {}),
+                    ...(pluginPage.canonical ? { url: pluginPage.canonical } : {}),
+                    ...(pluginPage.ogImage
+                        ? {
+                            images: [{
+                                url: pluginPage.ogImage,
+                                width: 1200,
+                                height: 630,
+                                alt: pluginPage.title ?? 'TronRelic'
+                            }]
+                        }
+                        : {})
+                };
+            }
+        }
+
+        // noindex applies independently of which other fields are present —
+        // admin pages frequently set noindex without bothering to populate
+        // crawler-friendly title/description copy.
+        if (pluginPage.noindex) {
+            metadata.robots = { index: false, follow: false };
+        }
+
+        return metadata;
     }
 
     const apiUrl = getServerSideApiUrlWithPath();
@@ -281,10 +275,39 @@ export default async function UnifiedPage({ params }: { params: Promise<IPagePar
         );
     }
 
-    // Not a custom page, let plugin handler check the registry.
-    // Inject structured data for known plugin pages (resource-markets, tools, etc.)
-    const pluginSeo = PLUGIN_SEO_METADATA[slug];
-    const pluginStructuredData = pluginSeo?.structuredData ?? null;
+    // Not a custom page — look up an enabled plugin page in the server-side
+    // registry. Disabled plugins and unknown URLs both return null and 404
+    // server-side, so the HTTP status code is correct (200 → only for real
+    // pages) and disabled plugin URLs disappear from search engine indexes.
+    const pluginPage = await getEnabledPluginPageConfig(slug);
+    if (!pluginPage) {
+        notFound();
+    }
+
+    const pluginStructuredData = pluginPage.structuredData ?? null;
+
+    // If the plugin declares a serverDataFetcher, run it server-side and pass
+    // the result to the plugin component as `initialData`. This is the SSR +
+    // Live Updates pattern for plugin pages — the plugin's body content arrives
+    // in the initial HTML so crawlers see it without executing JavaScript, and
+    // the client component initializes its state from the same data after
+    // hydration. Errors are logged and the page renders without initialData
+    // rather than 500ing.
+    let initialData: unknown = undefined;
+    if (pluginPage.serverDataFetcher) {
+        try {
+            const { siteUrl } = await getServerConfig();
+            initialData = await pluginPage.serverDataFetcher({
+                apiBaseUrl: getServerSideApiUrlWithPath(),
+                siteUrl
+            });
+        } catch (error) {
+            console.error(
+                `[catch-all] serverDataFetcher failed for ${slug}:`,
+                error
+            );
+        }
+    }
 
     // PluginPageWithZones wraps with widget zones for cross-plugin content injection
     return (
@@ -295,7 +318,7 @@ export default async function UnifiedPage({ params }: { params: Promise<IPagePar
                     dangerouslySetInnerHTML={{ __html: JSON.stringify(pluginStructuredData) }}
                 />
             )}
-            <PluginPageWithZones slug={slug} />
+            <PluginPageWithZones slug={slug} initialData={initialData} />
         </>
     );
 }

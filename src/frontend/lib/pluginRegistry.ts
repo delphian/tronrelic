@@ -1,4 +1,5 @@
 import type { IMenuItemConfig, IPageConfig, IPlugin } from '@/types';
+import { frontendPlugins } from '../components/plugins/plugins.generated';
 
 /**
  * Plugin menu and page registry for dynamic navigation.
@@ -6,6 +7,17 @@ import type { IMenuItemConfig, IPageConfig, IPlugin } from '@/types';
  * This module provides centralized access to plugin-provided menu items and pages.
  * It aggregates navigation and routing configurations from all loaded plugins,
  * enabling the UI to discover and render plugin features without hardcoding imports.
+ *
+ * The registry is self-bootstrapping at module load time: importing this module
+ * synchronously registers every plugin from `plugins.generated.ts`. This works on
+ * both server (for catch-all route SSR) and client (for synchronous render-time
+ * lookups in PluginPageHandler), eliminating the polling pattern that previously
+ * caused loading flash on plugin pages.
+ *
+ * Enabled-state filtering happens elsewhere — the catch-all server route filters
+ * via /api/plugins/manifests in the request path, and PluginLoader filters
+ * side-effect components by the same mechanism. The registry itself contains
+ * every built-in plugin regardless of enabled state.
  */
 
 interface PluginRegistryState {
@@ -22,6 +34,8 @@ class PluginRegistry {
         menuItems: [],
         pages: []
     };
+
+    private bootstrapped = false;
 
     private listeners: Set<PluginRegistryListener> = new Set();
 
@@ -110,6 +124,37 @@ class PluginRegistry {
     }
 
     /**
+     * Bootstrap the registry from a known set of plugins, idempotently.
+     *
+     * Called once at module load time with the synchronously-imported list from
+     * `plugins.generated.ts`. Subsequent calls are no-ops. The registry's
+     * existing `clear()` and `registerPlugin()` methods remain available for
+     * tests that need to reset state.
+     *
+     * @param plugins - Plugin instances to register synchronously
+     */
+    bootstrap(plugins: IPlugin[]): void {
+        if (this.bootstrapped) {
+            return;
+        }
+        this.bootstrapped = true;
+        for (const plugin of plugins) {
+            this.registerPlugin(plugin);
+        }
+    }
+
+    /**
+     * Get every plugin registered with the registry, regardless of enabled
+     * state. Consumers that care about enabled state must filter externally
+     * (typically via /api/plugins/manifests).
+     *
+     * @returns Array of all registered plugin instances
+     */
+    getAllPlugins(): IPlugin[] {
+        return this.state.plugins;
+    }
+
+    /**
      * Get all registered menu items.
      *
      * Returns menu items sorted by category and order. This enables the
@@ -151,7 +196,8 @@ class PluginRegistry {
      * Clear all registered plugins, menu items, and pages.
      *
      * This is primarily useful for testing or hot-reloading scenarios where
-     * you need to reset the registry state and re-register plugins.
+     * you need to reset the registry state and re-register plugins. Also resets
+     * the bootstrap flag so a subsequent bootstrap() call repopulates state.
      */
     clear(): void {
         this.state = {
@@ -159,8 +205,13 @@ class PluginRegistry {
             menuItems: [],
             pages: []
         };
+        this.bootstrapped = false;
     }
 }
 
 // Export singleton instance
 export const pluginRegistry = new PluginRegistry();
+
+// Self-bootstrap from the generated plugin list at module load. Runs once on
+// both server and client thanks to Node's module cache and Next.js's bundling.
+pluginRegistry.bootstrap(frontendPlugins);

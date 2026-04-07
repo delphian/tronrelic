@@ -731,7 +731,7 @@ This pinpoints the exact element. The fix is usually: defer that render until `i
 After adding or modifying widget components, regenerate the registry:
 
 ```bash
-npm run generate:plugins --workspace apps/frontend
+npm run generate:plugins
 ```
 
 This scans all plugins for `src/frontend/widgets/index.ts` files and creates static imports in `widgets.generated.ts`.

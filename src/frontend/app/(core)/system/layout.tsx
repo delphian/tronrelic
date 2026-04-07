@@ -1,4 +1,5 @@
 import { type ReactNode } from 'react';
+import type { Metadata } from 'next';
 import { SystemAuthProvider, SystemAuthGate } from '../../../features/system';
 import { MenuNavSSR } from '../../../components/layout/MenuNav';
 
@@ -10,6 +11,27 @@ import { MenuNavSSR } from '../../../components/layout/MenuNav';
  * attempting static pre-rendering at build time when the backend isn't available.
  */
 export const dynamic = 'force-dynamic';
+
+/**
+ * Block search engine indexing for the entire /system/* admin surface.
+ *
+ * Why this exists:
+ * Every route under /system/* is admin-only and gated by SystemAuthGate, so the
+ * only thing a crawler would index is the login form — a pure reconnaissance
+ * leak that exposes the admin entry point without exposing data. Setting robots
+ * here cascades to every nested route (overview, plugin admin pages, scheduler,
+ * websockets, users, etc.) without each page having to opt in.
+ *
+ * Next.js merges metadata across the layout hierarchy by replacing the robots
+ * field rather than merging it, so this overrides the root layout's
+ * `robots: { index: true, follow: true }` for all /system/* paths.
+ */
+export const metadata: Metadata = {
+    robots: {
+        index: false,
+        follow: false
+    }
+};
 
 /**
  * System monitoring layout with server-side navigation and authentication.

@@ -731,6 +731,8 @@ interface TimeseriesPoint {
 
 Server-side rendering (SSR) with live data updates is the preferred pattern for plugin UI components. This approach provides instant display without loading flash, while still supporting real-time data changes.
 
+**Where `initialData` comes from:** Plugin pages declare a `serverDataFetcher` on their `IPageConfig`, which the catch-all route awaits server-side and passes to the page component as the `initialData` prop. **See [plugins-seo-and-ssr.md](./plugins-seo-and-ssr.md) for the `serverDataFetcher` contract, the bazi-fortune reference example, and pitfalls around timezone-sensitive and non-serializable data.** This section covers the component-side pattern; the page-config side (SEO fields plus the SSR data hook) lives in the dedicated doc.
+
 ### How It Works
 
 1. **Build time** - Generator creates static imports for plugin components
@@ -804,7 +806,7 @@ Export components from standard locations so the generator can discover them:
 After adding new components, regenerate the registry:
 
 ```bash
-npm run generate:plugins --workspace apps/frontend
+npm run generate:plugins
 ```
 
 ## Best Practices
