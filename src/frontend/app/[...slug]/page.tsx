@@ -291,31 +291,51 @@ export default async function UnifiedPage({ params }: { params: Promise<IPagePar
     // Live Updates pattern for plugin pages — the plugin's body content arrives
     // in the initial HTML so crawlers see it without executing JavaScript, and
     // the client component initializes its state from the same data after
-    // hydration. Errors are logged and the page renders without initialData
-    // rather than 500ing.
+    // hydration.
+    //
+    // The fetched value is normalized via JSON round-trip before being passed
+    // across the RSC boundary. This guarantees the value is plain-data
+    // serializable: Date instances become ISO strings, undefined fields are
+    // dropped, and class instances / Map / Set / functions are coerced to
+    // empty objects rather than throwing the React serialization error after
+    // this try/catch has already returned. Round-trip failures (circular refs,
+    // BigInt, etc.) are caught and degrade gracefully — the page renders
+    // without initialData rather than 500ing, matching what the docstring
+    // and IPageConfig comment promise plugin authors.
     let initialData: unknown = undefined;
     if (pluginPage.serverDataFetcher) {
         try {
             const { siteUrl } = await getServerConfig();
-            initialData = await pluginPage.serverDataFetcher({
+            const raw = await pluginPage.serverDataFetcher({
                 apiBaseUrl: getServerSideApiUrlWithPath(),
                 siteUrl
             });
+            initialData = raw === undefined ? undefined : JSON.parse(JSON.stringify(raw));
         } catch (error) {
             console.error(
                 `[catch-all] serverDataFetcher failed for ${slug}:`,
                 error
             );
+            initialData = undefined;
         }
     }
 
-    // PluginPageWithZones wraps with widget zones for cross-plugin content injection
+    // PluginPageWithZones wraps with widget zones for cross-plugin content injection.
+    // The structured data JSON is escaped so any string value containing
+    // '</script>' (or any '<') can't break out of the script tag and become an
+    // injection vector. Replacing '<' with the unicode escape '\u003c' is
+    // sufficient because JSON.stringify never emits unescaped '\u003c' on its
+    // own and the JSON parser still treats the escape as a literal '<'.
+    const pluginStructuredDataJson = pluginStructuredData
+        ? JSON.stringify(pluginStructuredData).replace(/</g, '\\u003c')
+        : null;
+
     return (
         <>
-            {pluginStructuredData && (
+            {pluginStructuredDataJson && (
                 <script
                     type="application/ld+json"
-                    dangerouslySetInnerHTML={{ __html: JSON.stringify(pluginStructuredData) }}
+                    dangerouslySetInnerHTML={{ __html: pluginStructuredDataJson }}
                 />
             )}
             <PluginPageWithZones slug={slug} initialData={initialData} />

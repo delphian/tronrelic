@@ -53,6 +53,13 @@ let permanentMap: Map<string, IResolvedPluginPage> | null = null;
  * Walks the synchronously-imported plugin list and indexes every plugin's
  * pages and adminPages by URL path.
  *
+ * Collision policy: first-wins. The first plugin to register a given path
+ * keeps it; later plugins are warned and skipped. This matches the
+ * client-side `pluginRegistry.getPageByPath` semantics (which uses
+ * `Array.find` and returns the first match), so the server and client
+ * always resolve the same plugin for any given path — preventing React
+ * hydration mismatches when two plugins accidentally collide.
+ *
  * @returns A path-to-resolved-page map covering every plugin's pages
  */
 function buildPermanentMap(): Map<string, IResolvedPluginPage> {
@@ -62,6 +69,14 @@ function buildPermanentMap(): Map<string, IResolvedPluginPage> {
         const pages = plugin.pages ?? [];
         const adminPages = plugin.adminPages ?? [];
         for (const page of [...pages, ...adminPages]) {
+            const existing = map.get(page.path);
+            if (existing) {
+                console.warn(
+                    `[serverPluginRegistry] Duplicate page path '${page.path}' detected. ` +
+                        `Plugin '${pluginId}' will be ignored; '${existing.pluginId}' keeps the route.`
+                );
+                continue;
+            }
             map.set(page.path, {
                 pluginId,
                 config: { ...page, pluginId }

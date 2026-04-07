@@ -70,7 +70,13 @@ export interface IPageConfig {
      */
     component: ComponentType<{
         context: IFrontendPluginContext;
-        initialData?: any;
+        /**
+         * SSR-fetched data forwarded by the catch-all route from
+         * `serverDataFetcher`. Typed as `unknown` so plugin authors are
+         * forced to narrow (cast or runtime-validate) before use, rather
+         * than silently relying on a shape the fetcher might not return.
+         */
+        initialData?: unknown;
     }>;
 
     /**
@@ -127,9 +133,11 @@ export interface IPageConfig {
     ogType?: 'website' | 'article';
 
     /**
-     * Optional canonical URL override. Defaults to the page's `path`.
+     * Optional canonical URL override.
      * Set this when the page is reachable from multiple paths and you want
-     * search engines to consolidate signals to one canonical URL.
+     * search engines to consolidate signals to one canonical URL. If omitted,
+     * this page config does not request an explicit canonical override and
+     * the catch-all route emits no `<link rel="canonical">` for the page.
      */
     canonical?: string;
 

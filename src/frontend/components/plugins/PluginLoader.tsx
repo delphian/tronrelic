@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import type { IPluginManifest } from '@/types';
 import { pluginRegistry } from '../../lib/pluginRegistry';
 import { createPluginContext } from '../../lib/frontendPluginContext';
-import { config } from '../../lib/config';
+import { getRuntimeConfig } from '../../lib/runtimeConfig';
 
 /**
  * Plugin Loader component.
@@ -31,7 +31,11 @@ export function PluginLoader() {
 
         async function loadEnabledManifests() {
             try {
-                const response = await fetch(`${config.apiBaseUrl}/plugins/manifests`);
+                // Use the SSR-injected runtime config (lib/runtimeConfig) instead
+                // of the deprecated lib/config build-time module, so the URL is
+                // correct in universal Docker images regardless of build-time env.
+                const { apiUrl } = getRuntimeConfig();
+                const response = await fetch(`${apiUrl}/plugins/manifests`);
                 const data = await response.json();
                 const manifests: IPluginManifest[] = data.manifests ?? [];
                 if (!cancelled) {
