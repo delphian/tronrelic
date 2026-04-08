@@ -31,7 +31,7 @@ All fields live in `IPageConfig` (`src/types/plugin/IPageConfig.ts`). Every fiel
 | `title` | `<title>`, `og:title`, `twitter:title` |
 | `description` | `<meta description>`, `og:description`, `twitter:description` |
 | `keywords` | `<meta name="keywords">` |
-| `ogImage` | `og:image`, `twitter:image` (relative paths resolve against siteUrl) |
+| `ogImage` | `og:image`, `twitter:image` (relative paths resolve against siteUrl — see [Plugin-Owned OG Images](#plugin-owned-og-images)) |
 | `ogType` | `og:type` — defaults to `'website'`, use `'article'` for time-stamped content |
 | `canonical` | Override the canonical URL (defaults to the page's `path`) |
 | `noindex` | Adds `<meta name="robots" content="noindex,nofollow">` for admin pages |
@@ -94,6 +94,20 @@ useEffect(() => {
 ```
 
 The user-triggered fetch (entering a wallet address and clicking "Read Fortune") stays client-only — it doesn't belong in `serverDataFetcher` because it depends on user input, not on what should appear in the initial HTML.
+
+## Plugin-Owned OG Images
+
+OG images, manifest icons, and any other static assets that external consumers cache long-term need stable, unfingerprinted URLs. Webpack-imported assets (the `src/frontend/assets/` convention) get hashed paths that change every build, which breaks social previews already cached by Facebook, Twitter, Discord, and Slack for weeks at a time. The plugin static asset convention solves this without coupling the asset to the core frontend's `public/` directory.
+
+Drop static files in `src/plugins/<plugin-id>/src/frontend/public/`. The frontend plugin registry generator (`scripts/generate-frontend-plugin-registry.mjs`) mirrors that directory into `src/frontend/public/plugins/<plugin-id>/` before every dev startup and every production build, so Next.js's static file server picks the files up automatically. Reference the deployed path as `/plugins/<plugin-id>/<file>` from your `IPageConfig.ogImage`, page components, or anywhere else in the plugin. The destination directory is git-ignored because it is a build artifact reproducible from the plugin sources.
+
+The bazi-fortune plugin demonstrates the pattern. The 1200×630 OG image lives at `src/plugins/trp-bazi-fortune/src/frontend/public/og-bazi-fortune.jpg` and is referenced from the page config:
+
+```typescript
+ogImage: '/plugins/bazi-fortune/og-bazi-fortune.jpg',
+```
+
+After adding or replacing assets, run `npm run generate:plugins` (or restart `npm run dev`, which calls the generator on startup) so the destination directory is refreshed. Removed and renamed plugins clean up automatically because the destination is wiped at the start of each generator run.
 
 ## Common Pitfalls
 

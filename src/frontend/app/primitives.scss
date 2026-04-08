@@ -20,6 +20,7 @@
     --font-mono: 'Courier New', Courier, monospace;
 
     /* Typography - Font Sizes (based on actual usage) */
+    --font-size-xxs: 0.5rem;     /* 8px - footnote-tier metadata (use sparingly) */
     --font-size-xs: 0.72rem;     /* 11.52px - table headers, tiny labels */
     --font-size-sm: 0.85rem;     /* 13.6px - most common small text */
     --font-size-base: 0.95rem;   /* 15.2px - default body, buttons */

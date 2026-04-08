@@ -178,7 +178,8 @@ src/plugins/{plugin-id}/
 │   ├── frontend/
 │   │   ├── frontend.ts         # Entry point with pages/menu items
 │   │   ├── *.tsx               # React components
-│   │   └── *.module.css        # CSS Modules for scoped styles
+│   │   ├── *.module.css        # CSS Modules for scoped styles
+│   │   └── public/             # Stable-URL static assets (OG images, icons) — optional
 │   └── shared/                  # Types shared between backend/frontend
 │       ├── types/
 │       └── constants.ts
