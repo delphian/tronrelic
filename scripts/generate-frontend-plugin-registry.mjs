@@ -352,7 +352,10 @@ async function countFilesRecursive(directory) {
  */
 async function copyPluginPublicAssets() {
     // Wipe stale assets from previous runs (handles removed/renamed plugins)
+    // and recreate the parent so the destination is always present for inspection
+    // even when no plugins ship public/ directories.
     await fs.rm(publicAssetsOutputRoot, { recursive: true, force: true });
+    await fs.mkdir(publicAssetsOutputRoot, { recursive: true });
 
     const entries = await fs.readdir(pluginsRoot, { withFileTypes: true });
     let pluginsWithAssets = 0;
@@ -368,10 +371,15 @@ async function copyPluginPublicAssets() {
         const manifestPath = join(pluginDirectory, 'src', 'manifest.ts');
         const packageJsonPath = join(pluginDirectory, 'package.json');
 
-        // Skip plugins that don't ship a public/ directory
+        // Skip plugins that don't ship a public/ directory. Use lstat (not stat)
+        // so a symlinked public/ dir is rejected outright instead of being followed
+        // — see the symlink filter on fs.cp below for the same defense in depth.
         try {
-            const stat = await fs.stat(sourcePublicDir);
+            const stat = await fs.lstat(sourcePublicDir);
             if (!stat.isDirectory()) {
+                if (stat.isSymbolicLink()) {
+                    console.warn(`⚠️  Skipping public assets for ${entry.name}: src/frontend/public is a symlink (refused)`);
+                }
                 continue;
             }
         } catch {
@@ -388,8 +396,33 @@ async function copyPluginPublicAssets() {
             continue;
         }
 
+        // Validate pluginId before using it as a filesystem path segment.
+        // readPluginId() returns whatever string sits between quotes in manifest.ts,
+        // which would let an id like '../foo' or 'a/b' write outside the destination
+        // root or produce broken public URLs. Restrict to the same character set
+        // every other TronRelic plugin id uses in practice.
+        if (!pluginId || !/^[a-zA-Z0-9_-]+$/.test(pluginId)) {
+            console.warn(`⚠️  Skipping public assets for ${entry.name}: invalid plugin id "${pluginId}" (must match [a-zA-Z0-9_-]+)`);
+            continue;
+        }
+
         const destinationDir = join(publicAssetsOutputRoot, pluginId);
-        await fs.cp(sourcePublicDir, destinationDir, { recursive: true });
+
+        // Refuse to follow symlinks anywhere inside the plugin's public/ tree.
+        // Plugins are first-party code, but a stray symlink pointing at host files
+        // would silently mirror them into the publicly-served Next.js folder. The
+        // filter walks every entry, lstat's it, and rejects symlinks before copy.
+        await fs.cp(sourcePublicDir, destinationDir, {
+            recursive: true,
+            filter: async (src) => {
+                const stat = await fs.lstat(src);
+                if (stat.isSymbolicLink()) {
+                    console.warn(`⚠️  Skipping symlink in ${entry.name} public assets: ${relative(pluginDirectory, src)}`);
+                    return false;
+                }
+                return true;
+            }
+        });
 
         const fileCount = await countFilesRecursive(destinationDir);
         pluginsWithAssets++;
