@@ -48,6 +48,7 @@ We organize every plugin under `src/plugins/<plugin-id>` so backend and frontend
 - `src/frontend/frontend.ts` exports the `definePlugin` wrapper for the browser runtime and imports the plugin's CSS file.
 - `src/frontend/*.tsx` files contain the React implementation (toasts, dashboards, etc.).
 - `src/frontend/styles.css` contains plugin-specific styles with scoped class names (e.g., `.whale-dashboard`, `.whale-stat-card`).
+- `src/frontend/public/` (optional) holds plugin-owned static assets that need stable, unfingerprinted public URLs — Open Graph images, manifest icons, favicons. Files are mirrored to `src/frontend/public/plugins/<plugin-id>/` by the registry generator before `next build` runs and are served by Next.js at `/plugins/<plugin-id>/<file>`. See [plugins-seo-and-ssr.md](./plugins-seo-and-ssr.md#plugin-owned-og-images) for the convention and bazi-fortune as the canonical example. Distinct from `src/frontend/assets/`, which holds webpack-imported assets that get hashed bundle URLs.
 - `src/shared/` (optional) contains types, constants, and utilities shared between backend and frontend to eliminate duplication and maintain a single source of truth.
 - `dist/` contains everything the backend loader consumes: `manifest.js`, `manifest.d.ts`, `backend/backend.js`, and type maps.
 - `dist/frontend.bundle.js` is produced by the shared esbuild task so we have a browser-friendly artifact for CDN or static hosting scenarios, even though Next currently imports the source file directly.
@@ -63,6 +64,7 @@ src/plugins/{plugin-id}/
 ├── src/
 │   ├── backend/          # Server-side implementation
 │   ├── frontend/         # Client-side implementation
+│   │   └── public/       # Stable-URL static assets (OG images, icons) — optional
 │   └── shared/           # Code shared between backend and frontend
 │       ├── types/        # TypeScript interfaces (one per file)
 │       │   ├── IPluginConfig.ts

@@ -8,6 +8,7 @@ const repoRoot = join(__dirname, '..');
 const pluginsRoot = join(repoRoot, 'src', 'plugins');
 const outputPath = join(repoRoot, 'src', 'frontend', 'components', 'plugins', 'plugins.generated.ts');
 const widgetsOutputPath = join(repoRoot, 'src', 'frontend', 'components', 'widgets', 'widgets.generated.ts');
+const publicAssetsOutputRoot = join(repoRoot, 'src', 'frontend', 'public', 'plugins');
 const outputDir = dirname(outputPath);
 const widgetsOutputDir = dirname(widgetsOutputPath);
 
@@ -312,10 +313,136 @@ export function getWidgetComponent(widgetId: string): WidgetComponent | undefine
 }
 
 /**
+ * Recursively counts files inside a directory.
+ *
+ * Used purely for the asset-copy log line so operators can see at a glance
+ * how many plugin-owned files were staged into the frontend public folder.
+ */
+async function countFilesRecursive(directory) {
+    let count = 0;
+    const entries = await fs.readdir(directory, { withFileTypes: true });
+    for (const entry of entries) {
+        if (entry.isDirectory()) {
+            count += await countFilesRecursive(join(directory, entry.name));
+        } else {
+            count++;
+        }
+    }
+    return count;
+}
+
+/**
+ * Copies plugin-owned static assets into the frontend public folder.
+ *
+ * Why this exists: plugins need stable, unfingerprinted public URLs for assets
+ * that external consumers cache long-term — Open Graph images, manifest icons,
+ * favicons. Webpack-imported assets (the `src/frontend/assets/` convention)
+ * get hashed URLs that change every build, which breaks social media previews
+ * cached by Facebook, Twitter, Discord, and Slack for weeks at a time.
+ *
+ * Convention: each plugin may declare a `src/frontend/public/` directory.
+ * Everything inside is mirrored to `src/frontend/public/plugins/<plugin-id>/`
+ * before `next build` runs, so Next.js's static file server picks them up
+ * automatically. Plugin authors reference the deployed path as
+ * `/plugins/<plugin-id>/<file>` from page configs, components, or metadata.
+ *
+ * The destination directory is wiped before each run so removed or renamed
+ * plugins don't leave orphan files behind. The destination is git-ignored
+ * (see .gitignore) because it is a build artifact reproducible from sources.
+ */
+async function copyPluginPublicAssets() {
+    // Wipe stale assets from previous runs (handles removed/renamed plugins)
+    // and recreate the parent so the destination is always present for inspection
+    // even when no plugins ship public/ directories.
+    await fs.rm(publicAssetsOutputRoot, { recursive: true, force: true });
+    await fs.mkdir(publicAssetsOutputRoot, { recursive: true });
+
+    const entries = await fs.readdir(pluginsRoot, { withFileTypes: true });
+    let pluginsWithAssets = 0;
+    let totalFilesCopied = 0;
+
+    for (const entry of entries) {
+        if (!entry.isDirectory()) {
+            continue;
+        }
+
+        const pluginDirectory = join(pluginsRoot, entry.name);
+        const sourcePublicDir = join(pluginDirectory, 'src', 'frontend', 'public');
+        const manifestPath = join(pluginDirectory, 'src', 'manifest.ts');
+        const packageJsonPath = join(pluginDirectory, 'package.json');
+
+        // Skip plugins that don't ship a public/ directory. Use lstat (not stat)
+        // so a symlinked public/ dir is rejected outright instead of being followed
+        // — see the symlink filter on fs.cp below for the same defense in depth.
+        try {
+            const stat = await fs.lstat(sourcePublicDir);
+            if (!stat.isDirectory()) {
+                if (stat.isSymbolicLink()) {
+                    console.warn(`⚠️  Skipping public assets for ${entry.name}: src/frontend/public is a symlink (refused)`);
+                }
+                continue;
+            }
+        } catch {
+            continue;
+        }
+
+        // Resolve plugin id from manifest (matches the import-registry convention)
+        let pluginId;
+        try {
+            const packageJson = await readJson(packageJsonPath);
+            pluginId = await readPluginId(manifestPath, packageJson.name.split('/').at(-1));
+        } catch (error) {
+            console.warn(`⚠️  Skipping public assets for ${entry.name}: failed to resolve plugin id (${error.message})`);
+            continue;
+        }
+
+        // Validate pluginId before using it as a filesystem path segment.
+        // readPluginId() returns whatever string sits between quotes in manifest.ts,
+        // which would let an id like '../foo' or 'a/b' write outside the destination
+        // root or produce broken public URLs. Restrict to the same character set
+        // every other TronRelic plugin id uses in practice.
+        if (!pluginId || !/^[a-zA-Z0-9_-]+$/.test(pluginId)) {
+            console.warn(`⚠️  Skipping public assets for ${entry.name}: invalid plugin id "${pluginId}" (must match [a-zA-Z0-9_-]+)`);
+            continue;
+        }
+
+        const destinationDir = join(publicAssetsOutputRoot, pluginId);
+
+        // Refuse to follow symlinks anywhere inside the plugin's public/ tree.
+        // Plugins are first-party code, but a stray symlink pointing at host files
+        // would silently mirror them into the publicly-served Next.js folder. The
+        // filter walks every entry, lstat's it, and rejects symlinks before copy.
+        await fs.cp(sourcePublicDir, destinationDir, {
+            recursive: true,
+            filter: async (src) => {
+                const stat = await fs.lstat(src);
+                if (stat.isSymbolicLink()) {
+                    console.warn(`⚠️  Skipping symlink in ${entry.name} public assets: ${relative(pluginDirectory, src)}`);
+                    return false;
+                }
+                return true;
+            }
+        });
+
+        const fileCount = await countFilesRecursive(destinationDir);
+        pluginsWithAssets++;
+        totalFilesCopied += fileCount;
+    }
+
+    if (pluginsWithAssets > 0) {
+        console.log(`✅ Copied ${totalFilesCopied} public asset(s) from ${pluginsWithAssets} plugin(s) → src/frontend/public/plugins/`);
+    } else {
+        console.log(`✅ No plugin public assets to copy`);
+    }
+}
+
+/**
  * Orchestrates registry generation.
  *
  * Generates both the plugin loader registry (lazy imports for pages/components)
- * and the widget component registry (static imports for SSR).
+ * and the widget component registry (static imports for SSR), then mirrors
+ * each plugin's `src/frontend/public/` directory into the frontend's public
+ * folder so Next.js can serve plugin-owned static assets at stable URLs.
  */
 async function run() {
     // Generate plugin loaders (lazy imports)
@@ -327,6 +454,9 @@ async function run() {
     const widgetMetadata = await collectWidgetMetadata();
     const widgetModuleSource = renderWidgetsModule(widgetMetadata);
     await writeIfChanged(widgetsOutputPath, widgetModuleSource);
+
+    // Mirror plugin-owned static assets into the frontend public folder
+    await copyPluginPublicAssets();
 
     console.log(`✅ Generated plugin registry: ${pluginMetadata.length} plugins`);
     console.log(`✅ Generated widget registry: ${widgetMetadata.length} plugins with widgets`);
