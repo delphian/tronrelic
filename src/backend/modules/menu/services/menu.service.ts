@@ -288,9 +288,13 @@ export class MenuService implements IMenuService {
                 .replace(/[^a-z0-9-]/g, '')
                 .replace(/-+/g, '-')
                 .replace(/^-+|-+$/g, '');
+            if (!slug) {
+                throw new Error(`Cannot auto-derive URL from label "${nodeData.label}": slugification produced an empty string. Provide an explicit url.`);
+            }
             if (nodeData.parent) {
                 const parentNode = this.getNode(nodeData.parent);
-                derivedUrl = parentNode?.url ? `${parentNode.url}/${slug}` : `/${slug}`;
+                const baseUrl = parentNode?.url === '/' ? '' : (parentNode?.url || '');
+                derivedUrl = `${baseUrl}/${slug}`;
             } else {
                 derivedUrl = `/${slug}`;
             }

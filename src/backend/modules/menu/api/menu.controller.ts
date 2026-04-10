@@ -622,13 +622,18 @@ export class MenuController {
      */
     resolve = async (req: Request, res: Response) => {
         try {
-            const url = req.query.url as string;
-            if (!url) {
+            if (!req.query.url || typeof req.query.url !== 'string') {
                 res.status(400).json({ success: false, error: 'Missing required query parameter: url' });
                 return;
             }
 
-            const namespace = (req.query.namespace as string) || 'main';
+            // Normalize: ensure leading slash and strip trailing slash
+            let url = req.query.url;
+            if (!url.startsWith('/')) url = '/' + url;
+            if (url.length > 1 && url.endsWith('/')) url = url.slice(0, -1);
+
+            const rawNamespace = req.query.namespace;
+            const namespace = (typeof rawNamespace === 'string' && rawNamespace) ? rawNamespace : 'main';
             const tree = this.service.getTree(namespace);
 
             // Find node matching the URL
@@ -638,9 +643,9 @@ export class MenuController {
                 return;
             }
 
-            // Get enabled children sorted by order
+            // Get enabled children with URLs sorted by order
             const children = this.service.getChildren(node._id!, namespace)
-                .filter(c => c.enabled);
+                .filter(c => c.enabled && c.url);
 
             if (children.length === 0) {
                 res.status(404).json({ success: false, error: 'No children found for category node' });

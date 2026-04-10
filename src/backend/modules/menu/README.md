@@ -88,7 +88,7 @@ Override persistence applies to `order`, `label`, `description`, `icon`, and `en
 
 ### Auto-Derived URLs for Container Nodes
 
-Container nodes that omit a URL receive one automatically by slugifying their label. For root-level containers, the URL is `/{slug}` (e.g., label "Tools" becomes `/tools`). For nested containers, the URL is `{parent-url}/{slug}`. This auto-derived URL serves as the stable override key and as the route for the auto-generated category landing page. Admins can override the URL through the admin API.
+Container nodes that omit a URL receive one automatically by slugifying their label. For root-level containers, the URL is `/{slug}` (e.g., label "Tools" becomes `/tools`). For nested containers, the URL is `{parent-url}/{slug}`. This auto-derived URL serves as the stable override key and as the route for the auto-generated category landing page. Admins can change the URL at runtime through the admin API, but for memory-only/plugin-registered nodes that change does not persist across restarts via `menu_node_overrides`. Only `order`, `label`, `description`, `icon`, and `enabled` are persisted for memory-only nodes. Persisted database-backed nodes save URL changes normally.
 
 ### Category Landing Pages
 

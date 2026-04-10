@@ -267,7 +267,7 @@ export function MenuNavClient({ namespace, items, ariaLabel }: IMenuNavClientPro
     const renderCategoryWithLink = (item: IMenuItem): JSX.Element => {
         const isExpanded = expandedCategoryId === item._id;
         const isActive = item.url
-            ? (item.url === '/' ? pathname === '/' : pathname.startsWith(item.url))
+            ? (item.url === '/' ? pathname === '/' : pathname === item.url || pathname.startsWith(`${item.url}/`))
             : false;
 
         return (
@@ -276,6 +276,7 @@ export function MenuNavClient({ namespace, items, ariaLabel }: IMenuNavClientPro
                     <Link
                         href={item.url}
                         className={`${styles.categoryLink} ${isActive ? styles.active : ''}`}
+                        aria-current={isActive ? 'page' : undefined}
                     >
                         {item.label}
                     </Link>
