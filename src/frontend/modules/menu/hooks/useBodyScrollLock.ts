@@ -1,3 +1,5 @@
+'use client';
+
 /**
  * useBodyScrollLock Hook
  *
