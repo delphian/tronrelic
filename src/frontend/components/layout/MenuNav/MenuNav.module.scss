@@ -83,72 +83,42 @@
     gap: 0;
 }
 
-.categoryLink {
-    padding: var(--spacing-4) var(--spacing-4) var(--spacing-4) var(--spacing-7);
+.categoryButton {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacing-2);
+    padding: var(--spacing-4) var(--spacing-7);
     background: transparent;
     border: var(--border-width-thin) solid transparent;
-    border-right: none;
-    border-radius: var(--radius-sm) 0 0 var(--radius-sm);
+    border-radius: var(--radius-sm);
     text-transform: capitalize;
-    color: inherit;
-    transition: all var(--transition-base);
-    font-size: var(--font-size-sm);
-    line-height: var(--line-height-normal);
-    white-space: nowrap;
-    text-decoration: none;
-}
-
-.categoryLink:hover {
-    background: var(--color-surface-elevated);
-    border-color: rgba(255, 255, 255, 0.1);
-    color: inherit;
-}
-
-.categoryLink:focus-visible {
-    outline: var(--focus-outline-width) solid var(--color-focus);
-    outline-offset: var(--focus-outline-offset);
-}
-
-.categoryLink.active {
-    background: rgba(255, 255, 255, 0.1);
-    border-color: rgba(255, 255, 255, 0.2);
-    font-weight: var(--font-weight-medium);
-}
-
-.categoryLabel {
-    padding: var(--spacing-4) var(--spacing-4) var(--spacing-4) var(--spacing-7);
-    font-size: var(--font-size-sm);
-    line-height: var(--line-height-normal);
-    white-space: nowrap;
-    color: inherit;
-}
-
-.categoryToggle {
-    padding: var(--spacing-4) var(--spacing-5) var(--spacing-4) var(--spacing-2);
-    background: transparent;
-    border: var(--border-width-thin) solid transparent;
-    border-left: none;
-    border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
     color: inherit;
     transition: all var(--transition-base);
     cursor: pointer;
     font-size: var(--font-size-sm);
     line-height: var(--line-height-normal);
-    display: inline-flex;
-    align-items: center;
     font-family: inherit;
-    opacity: 0.6;
+    white-space: nowrap;
 }
 
-.categoryToggle:hover {
+.categoryButton:hover {
     background: var(--color-surface-elevated);
     border-color: rgba(255, 255, 255, 0.1);
-    opacity: 1;
 }
 
-.categoryToggle:focus-visible {
+.categoryButton:focus-visible {
     outline: var(--focus-outline-width) solid var(--color-focus);
     outline-offset: var(--focus-outline-offset);
+}
+
+.categoryButton.active {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.2);
+    font-weight: var(--font-weight-medium);
+}
+
+.categoryChevron {
+    opacity: 0.6;
 }
 
 .nested {
