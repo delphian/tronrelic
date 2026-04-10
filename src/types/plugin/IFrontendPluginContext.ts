@@ -128,6 +128,7 @@ export interface IUIComponents {
     Badge: ComponentType<{
         children?: React.ReactNode;
         tone?: 'neutral' | 'success' | 'warning' | 'danger';
+        title?: string;
         className?: string;
     }>;
 
