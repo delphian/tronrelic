@@ -279,10 +279,28 @@ export class MenuService implements IMenuService {
      */
     public async create(nodeData: Partial<IMenuNode>, persist = false): Promise<IMenuNode> {
         const namespace = nodeData.namespace || this.DEFAULT_NAMESPACE;
+        // Auto-derive URL for container nodes that omit it.
+        // Slugifies the label and prepends parent URL for hierarchical paths.
+        let derivedUrl = nodeData.url;
+        if (!derivedUrl && nodeData.label) {
+            const slug = nodeData.label.toLowerCase()
+                .replace(/\s+/g, '-')
+                .replace(/[^a-z0-9-]/g, '')
+                .replace(/-+/g, '-')
+                .replace(/^-+|-+$/g, '');
+            if (nodeData.parent) {
+                const parentNode = this.getNode(nodeData.parent);
+                derivedUrl = parentNode?.url ? `${parentNode.url}/${slug}` : `/${slug}`;
+            } else {
+                derivedUrl = `/${slug}`;
+            }
+        }
+
         const node: IMenuNode = {
             namespace,
             label: nodeData.label || '',
-            url: nodeData.url,
+            description: nodeData.description,
+            url: derivedUrl,
             icon: nodeData.icon,
             order: nodeData.order ?? 0,
             parent: nodeData.parent ?? null,
@@ -305,6 +323,7 @@ export class MenuService implements IMenuService {
             const docToInsert: Partial<IMenuNodeDocument> = {
                 namespace,
                 label: node.label,
+                description: node.description,
                 url: node.url,
                 icon: node.icon,
                 order: node.order,
@@ -333,6 +352,7 @@ export class MenuService implements IMenuService {
                 _id: new ObjectId().toString(),
                 namespace,
                 label: override?.label ?? node.label,
+                description: override?.description ?? node.description,
                 url: node.url,
                 icon: override?.icon ?? node.icon,
                 order: override?.order ?? node.order,
@@ -425,6 +445,7 @@ export class MenuService implements IMenuService {
                 const updateDoc: Partial<IMenuNodeDocument> = {
                     ...(updates.namespace !== undefined && { namespace: updates.namespace }),
                     ...(updates.label !== undefined && { label: updates.label }),
+                    ...(updates.description !== undefined && { description: updates.description }),
                     ...(updates.url !== undefined && { url: updates.url }),
                     ...(updates.icon !== undefined && { icon: updates.icon }),
                     ...(updates.order !== undefined && { order: updates.order }),
@@ -940,6 +961,7 @@ export class MenuService implements IMenuService {
                 ...(updates.order !== undefined && { order: updates.order }),
                 ...(updates.icon !== undefined && { icon: updates.icon }),
                 ...(updates.label !== undefined && { label: updates.label }),
+                ...(updates.description !== undefined && { description: updates.description }),
                 ...(updates.enabled !== undefined && { enabled: updates.enabled }),
                 updatedAt: now
             };
@@ -1027,6 +1049,7 @@ export class MenuService implements IMenuService {
             _id: doc._id.toString(),
             namespace: doc.namespace || this.DEFAULT_NAMESPACE,
             label: doc.label,
+            description: doc.description,
             url: doc.url,
             icon: doc.icon,
             order: doc.order ?? 0,

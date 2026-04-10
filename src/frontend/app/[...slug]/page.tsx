@@ -1,7 +1,9 @@
 import { notFound, redirect } from 'next/navigation';
 import type { Metadata } from 'next';
+import { cache } from 'react';
 import { Page } from '../../components/layout';
 import { PluginPageWithZones } from '../../components/PluginPageWithZones';
+import { CategoryLandingPage } from '../../modules/menu';
 import { getServerSideApiUrlWithPath } from '../../lib/api-url';
 import { buildMetadata, buildArticleStructuredData } from '../../lib/seo';
 import { getServerConfig } from '../../lib/serverConfig';
@@ -49,39 +51,98 @@ interface IPageParams {
 }
 
 /**
- * Check if a path matches a custom page in the database.
- *
- * This runs server-side and cannot access the client-side plugin registry,
- * so we need to check by attempting to fetch from the custom pages API.
- * If the custom page API returns 404, we assume it might be a plugin page
- * and let the client-side handler check the plugin registry.
+ * Menu category node data from the resolve endpoint.
  */
-async function isCustomPage(slug: string): Promise<boolean> {
+interface ICategoryResolveResponse {
+    success: boolean;
+    node: {
+        _id?: string;
+        label: string;
+        description?: string;
+        url?: string;
+        icon?: string;
+    };
+    children: {
+        _id?: string;
+        label: string;
+        description?: string;
+        url: string;
+        icon?: string;
+    }[];
+}
+
+/**
+ * Discriminated result from resolving a slug to a page type.
+ *
+ * The catch-all route must determine which system owns a given URL:
+ * custom CMS pages, plugin pages, menu category pages, or nothing.
+ * This union type captures that result so both generateMetadata() and
+ * the page component resolve the slug exactly once per request via
+ * React.cache().
+ */
+type ISlugResolution =
+    | { type: 'custom' }
+    | { type: 'plugin'; config: NonNullable<Awaited<ReturnType<typeof getEnabledPluginPageConfig>>> }
+    | { type: 'category'; data: ICategoryResolveResponse }
+    | { type: 'notFound' };
+
+/**
+ * Resolve a slug to its owning page system.
+ *
+ * Checks in priority order: custom CMS pages, enabled plugin pages, menu
+ * category pages. Wrapped with React.cache() so generateMetadata() and
+ * the page component share the same result within a single render pass
+ * without duplicating API calls.
+ *
+ * @param slug - URL path to resolve (e.g., '/tools', '/plugins/whale-alerts')
+ * @returns Discriminated result indicating which system owns the slug
+ */
+const resolveSlug = cache(async (slug: string): Promise<ISlugResolution> => {
     const apiUrl = getServerSideApiUrlWithPath();
 
+    // 1. Custom CMS page
     try {
         const response = await fetch(`${apiUrl}/pages/${encodeURIComponent(slug)}`, {
             next: { revalidate: 60 }
         });
-
-        return response.ok;
+        if (response.ok) {
+            return { type: 'custom' };
+        }
     } catch {
-        return false;
+        // Not a custom page — continue
     }
-}
+
+    // 2. Enabled plugin page
+    const pluginPage = await getEnabledPluginPageConfig(slug);
+    if (pluginPage) {
+        return { type: 'plugin', config: pluginPage };
+    }
+
+    // 3. Menu category page
+    try {
+        const response = await fetch(
+            `${apiUrl}/menu/resolve?url=${encodeURIComponent(slug)}`,
+            { next: { revalidate: 60 } }
+        );
+        if (response.ok) {
+            const data: ICategoryResolveResponse = await response.json();
+            if (data.success) {
+                return { type: 'category', data };
+            }
+        }
+    } catch {
+        // Not a category page — continue
+    }
+
+    return { type: 'notFound' };
+});
 
 /**
  * Generate metadata for the page.
  *
- * Resolves metadata in priority order:
- * 1. Custom pages (database-backed CMS): fetched from /api/pages
- * 2. Enabled plugin pages: read from the plugin's IPageConfig via the
- *    server-side plugin registry, then composed via buildMetadata()
- * 3. Otherwise: empty metadata (Next.js applies the layout-level defaults)
- *
- * Plugin SEO is now declared per-page in each plugin's frontend.ts page config
- * (title, description, keywords, ogImage, ogType, structuredData, noindex).
- * The hardcoded PLUGIN_SEO_METADATA map this used to live in has been removed.
+ * Uses resolveSlug() to determine which system owns the URL, then builds
+ * metadata accordingly. The resolution result is cached per request so the
+ * page component reuses it without re-fetching.
  *
  * @param params - Next.js route params containing slug array (Promise in Next.js 15+)
  * @returns Metadata object for Next.js
@@ -89,14 +150,47 @@ async function isCustomPage(slug: string): Promise<boolean> {
 export async function generateMetadata({ params }: { params: Promise<IPageParams> }): Promise<Metadata> {
     const resolvedParams = await params;
     const slug = '/' + resolvedParams.slug.join('/');
-    const isCustom = await isCustomPage(slug);
+    const resolution = await resolveSlug(slug);
 
-    if (!isCustom) {
-        const pluginPage = await getEnabledPluginPageConfig(slug);
-        if (!pluginPage) {
+    if (resolution.type === 'custom') {
+        const apiUrl = getServerSideApiUrlWithPath();
+
+        try {
+            const response = await fetch(`${apiUrl}/pages/${encodeURIComponent(slug)}`, {
+                next: { revalidate: 60 }
+            });
+
+            if (!response.ok) {
+                return {};
+            }
+
+            const data: IPageResponse = await response.json();
+            const { page } = data;
+
+            return {
+                title: page.title,
+                description: page.description,
+                keywords: page.keywords,
+                openGraph: {
+                    title: page.title,
+                    description: page.description,
+                    images: page.ogImage ? [page.ogImage] : undefined
+                },
+                twitter: {
+                    card: 'summary_large_image',
+                    title: page.title,
+                    description: page.description,
+                    images: page.ogImage ? [page.ogImage] : undefined
+                }
+            };
+        } catch (error) {
+            console.error('Failed to fetch page metadata:', error);
             return {};
         }
+    }
 
+    if (resolution.type === 'plugin') {
+        const pluginPage = resolution.config;
         const { siteUrl } = await getServerConfig();
         let metadata: Metadata;
 
@@ -164,51 +258,29 @@ export async function generateMetadata({ params }: { params: Promise<IPageParams
         return metadata;
     }
 
-    const apiUrl = getServerSideApiUrlWithPath();
-
-    try {
-        const response = await fetch(`${apiUrl}/pages/${encodeURIComponent(slug)}`, {
-            next: { revalidate: 60 }
-        });
-
-        if (!response.ok) {
-            return {};
+    if (resolution.type === 'category') {
+        const category = resolution.data;
+        const { siteUrl } = await getServerConfig();
+        if (category.node.label && category.node.description) {
+            return buildMetadata({
+                siteUrl,
+                title: category.node.label,
+                description: category.node.description,
+                path: slug
+            });
         }
-
-        const data: IPageResponse = await response.json();
-        const { page } = data;
-
-        return {
-            title: page.title,
-            description: page.description,
-            keywords: page.keywords,
-            openGraph: {
-                title: page.title,
-                description: page.description,
-                images: page.ogImage ? [page.ogImage] : undefined
-            },
-            twitter: {
-                card: 'summary_large_image',
-                title: page.title,
-                description: page.description,
-                images: page.ogImage ? [page.ogImage] : undefined
-            }
-        };
-    } catch (error) {
-        console.error('Failed to fetch page metadata:', error);
-        return {};
+        return category.node.label ? { title: category.node.label } : {};
     }
+
+    return {};
 }
 
 /**
  * Unified catch-all route handler.
  *
- * Handles both plugin pages and custom user-created pages:
- * 1. First checks if it's a custom page in the database
- * 2. If not, renders the plugin page handler (which checks plugin registry)
- * 3. Plugin handler shows 404 if neither exists
- *
- * This allows both systems to coexist at root level URLs.
+ * Uses resolveSlug() to determine which system owns the URL, then renders
+ * the appropriate page. The resolution result is shared with generateMetadata()
+ * via React.cache() so no duplicate API calls occur.
  *
  * @param params - Next.js route params containing slug array (Promise in Next.js 15+)
  * @returns Rendered page content
@@ -216,10 +288,10 @@ export async function generateMetadata({ params }: { params: Promise<IPageParams
 export default async function UnifiedPage({ params }: { params: Promise<IPageParams> }) {
     const resolvedParams = await params;
     const slug = '/' + resolvedParams.slug.join('/');
-    const isCustom = await isCustomPage(slug);
+    const resolution = await resolveSlug(slug);
 
-    // If it's a custom page, render it server-side with Article structured data
-    if (isCustom) {
+    // Custom CMS page — render server-side with Article structured data
+    if (resolution.type === 'custom') {
         const apiUrl = getServerSideApiUrlWithPath();
         const encodedSlug = encodeURIComponent(slug);
 
@@ -275,15 +347,17 @@ export default async function UnifiedPage({ params }: { params: Promise<IPagePar
         );
     }
 
-    // Not a custom page — look up an enabled plugin page in the server-side
-    // registry. Disabled plugins and unknown URLs both return null and 404
-    // server-side, so the HTTP status code is correct (200 → only for real
-    // pages) and disabled plugin URLs disappear from search engine indexes.
-    const pluginPage = await getEnabledPluginPageConfig(slug);
-    if (!pluginPage) {
+    // Menu category page — auto-generated landing page for container nodes
+    if (resolution.type === 'category') {
+        return <CategoryLandingPage node={resolution.data.node} items={resolution.data.children} />;
+    }
+
+    // No system owns this URL
+    if (resolution.type !== 'plugin') {
         notFound();
     }
 
+    const pluginPage = resolution.config;
     const pluginStructuredData = pluginPage.structuredData ?? null;
 
     // If the plugin declares a serverDataFetcher, run it server-side and pass

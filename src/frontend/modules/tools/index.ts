@@ -5,7 +5,6 @@
  */
 
 // Components
-export { ToolsLandingPage } from './components/ToolsLandingPage';
 export { AddressConverter } from './components/AddressConverter';
 export { EnergyEstimator } from './components/EnergyEstimator';
 export { StakeCalculator } from './components/StakeCalculator';

@@ -210,6 +210,7 @@ export class MenuModule implements IModule<IMenuModuleDependencies> {
         const router = ExpressRouter();
 
         // Public routes (no auth required for reading navigation structure)
+        router.get('/resolve', this.controller.resolve);
         router.get('/namespaces', this.controller.getNamespaces);
         router.get('/namespace/:namespace/config', this.controller.getNamespaceConfig);
         router.get('/', this.controller.getTree);

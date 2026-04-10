@@ -15,6 +15,7 @@ export interface IMenuNodeOverrideDocument {
     order?: number;
     icon?: string;
     label?: string;
+    description?: string;
     enabled?: boolean;
     createdAt: Date;
     updatedAt: Date;

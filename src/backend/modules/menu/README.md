@@ -84,7 +84,19 @@ menuService.subscribe('before:create', async (event) => {
 
 When an admin reorders a memory-only menu item (e.g., changes a plugin's menu position via the admin UI), the service saves the customization to a `menu_node_overrides` collection keyed by `(namespace, url)`. On the next startup, when the plugin re-registers the same menu item, the service looks up any saved overrides and applies them instead of the plugin's defaults. This ensures user-customized ordering survives deployments without requiring plugins to change their registration code.
 
-Override persistence applies to `order`, `label`, `icon`, and `enabled` fields. Only nodes with a URL are eligible for overrides since the URL serves as the stable identity across restarts.
+Override persistence applies to `order`, `label`, `description`, `icon`, and `enabled` fields. Only nodes with a URL are eligible for overrides since the URL serves as the stable identity across restarts.
+
+### Auto-Derived URLs for Container Nodes
+
+Container nodes that omit a URL receive one automatically by slugifying their label. For root-level containers, the URL is `/{slug}` (e.g., label "Tools" becomes `/tools`). For nested containers, the URL is `{parent-url}/{slug}`. This auto-derived URL serves as the stable override key and as the route for the auto-generated category landing page. Admins can override the URL through the admin API.
+
+### Category Landing Pages
+
+Every container node with children automatically gets a landing page at its URL. The page renders a card grid showing each child's icon, title, and description. This is handled by the frontend catch-all route (`[...slug]/page.tsx`) which calls `GET /api/menu/resolve?url=...` to fetch the container and its children. Plugin or custom pages registered at the same URL take precedence over the auto-generated page.
+
+### Description Field
+
+Menu nodes support an optional `description` field for short text describing the item's purpose. Descriptions appear on auto-generated category landing pages as card subtitle text. Like `label` and `icon`, descriptions are overridable by admins and persist in the `menu_node_overrides` collection.
 
 ## Menu Node Lifecycle
 
@@ -103,8 +115,9 @@ All endpoints require admin authentication via `ADMIN_API_TOKEN` in `x-admin-tok
 | Endpoint | Method | Purpose | Key Fields |
 |----------|--------|---------|------------|
 | `/api/menu` | GET | Get menu tree for namespace | Query: `namespace` (optional, defaults to 'main') |
+| `/api/menu/resolve` | GET | Resolve URL to category node with children | Query: `url` (required), `namespace` (optional) |
 | `/api/menu/namespaces` | GET | Get all namespaces | Returns array of namespace strings |
-| `/api/menu` | POST | Create persisted menu node | Body: `label` (required), `url`, `icon`, `order`, `parent`, `enabled`, `requiredRole` |
+| `/api/menu` | POST | Create persisted menu node | Body: `label` (required), `description`, `url`, `icon`, `order`, `parent`, `enabled`, `requiredRole` |
 | `/api/menu/:id` | PATCH | Update menu node | Body: any fields to update |
 | `/api/menu/:id` | DELETE | Delete menu node | Fails if node has children unless cascade logic implemented |
 

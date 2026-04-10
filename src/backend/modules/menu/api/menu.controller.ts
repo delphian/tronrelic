@@ -21,8 +21,14 @@ const createNodeSchema = z.object({
     label: z.string().min(1).max(200),
 
     /**
+     * Optional short description of the menu item's purpose.
+     * Used in auto-generated category landing pages.
+     */
+    description: z.string().max(500).optional(),
+
+    /**
      * Optional navigation URL or route path.
-     * Omit for container/category nodes.
+     * Omit for container/category nodes (URL will be auto-derived from label).
      */
     url: z.string().optional(),
 
@@ -64,6 +70,7 @@ const createNodeSchema = z.object({
 const updateNodeSchema = z.object({
     namespace: z.string().optional(),
     label: z.string().min(1).max(200).optional(),
+    description: z.string().max(500).optional(),
     url: z.string().optional(),
     icon: z.string().optional(),
     order: z.number().int().min(0).optional(),
@@ -580,6 +587,70 @@ export class MenuController {
             const message = error instanceof Error ? error.message : 'Failed to delete namespace config';
             const status = message.includes('not found') ? 404 : 400;
             res.status(status).json({ success: false, error: message });
+        }
+    };
+
+    /**
+     * Resolve a URL to a menu category node and its children.
+     *
+     * Searches the in-memory menu tree for a node matching the given URL that has
+     * at least one enabled child. Returns the node and its direct children sorted
+     * by order. Used by the frontend catch-all route to render auto-generated
+     * category landing pages.
+     *
+     * **Route:** GET /api/menu/resolve
+     *
+     * **Authentication:** None (public endpoint)
+     *
+     * **Query Parameters:**
+     * - `url` (required) - The URL to resolve (e.g., '/tools')
+     * - `namespace` (optional) - Menu namespace to search in (defaults to 'main')
+     *
+     * **Response:**
+     * ```json
+     * {
+     *   "success": true,
+     *   "node": { "_id": "...", "label": "Tools", "description": "...", "url": "/tools", "icon": "Wrench" },
+     *   "children": [
+     *     { "_id": "...", "label": "Address Converter", "description": "...", "url": "/tools/address-converter", "icon": "ArrowLeftRight" }
+     *   ]
+     * }
+     * ```
+     *
+     * @param req - Express request with url query parameter
+     * @param res - Express response
+     */
+    resolve = async (req: Request, res: Response) => {
+        try {
+            const url = req.query.url as string;
+            if (!url) {
+                res.status(400).json({ success: false, error: 'Missing required query parameter: url' });
+                return;
+            }
+
+            const namespace = (req.query.namespace as string) || 'main';
+            const tree = this.service.getTree(namespace);
+
+            // Find node matching the URL
+            const node = tree.all.find(n => n.url === url && n.enabled);
+            if (!node) {
+                res.status(404).json({ success: false, error: 'No menu node found for URL' });
+                return;
+            }
+
+            // Get enabled children sorted by order
+            const children = this.service.getChildren(node._id!, namespace)
+                .filter(c => c.enabled);
+
+            if (children.length === 0) {
+                res.status(404).json({ success: false, error: 'No children found for category node' });
+                return;
+            }
+
+            res.json({ success: true, node, children });
+        } catch (error) {
+            const message = error instanceof Error ? error.message : 'Failed to resolve menu node';
+            res.status(500).json({ success: false, error: message });
         }
     };
 }

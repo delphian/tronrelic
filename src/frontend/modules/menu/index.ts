@@ -30,6 +30,7 @@
 // Components
 export { PriorityNav } from './components';
 export type { IPriorityNavProps, IPriorityNavItem } from './components';
+export { CategoryLandingPage } from './components';
 
 // Hooks
 export { useMenuConfig, useBodyScrollLock } from './hooks';
