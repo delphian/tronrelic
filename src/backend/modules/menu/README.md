@@ -78,7 +78,13 @@ menuService.subscribe('before:create', async (event) => {
 **Memory-only entries (persist=false, default):**
 - Created by plugins for runtime pages
 - Stored only in-memory tree
-- Disappear on backend restart
+- Re-created by plugins on each startup
+
+### Order Override Persistence
+
+When an admin reorders a memory-only menu item (e.g., changes a plugin's menu position via the admin UI), the service saves the customization to a `menu_node_overrides` collection keyed by `(namespace, url)`. On the next startup, when the plugin re-registers the same menu item, the service looks up any saved overrides and applies them instead of the plugin's defaults. This ensures user-customized ordering survives deployments without requiring plugins to change their registration code.
+
+Override persistence applies to `order`, `label`, `icon`, and `enabled` fields. Only nodes with a URL are eligible for overrides since the URL serves as the stable identity across restarts.
 
 ## Menu Node Lifecycle
 
