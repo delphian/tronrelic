@@ -242,6 +242,7 @@ export function MenuNavClient({ namespace, items, ariaLabel }: IMenuNavClientPro
                 key={item._id}
                 href={item.url!}
                 className={`${styles.tab} ${isActive ? styles.active : ''} ${isNested ? styles.nested : ''}`}
+                role={isNested ? 'menuitem' : undefined}
                 aria-current={isActive ? 'page' : undefined}
                 onClick={() => {
                     if (isNested) {
@@ -257,14 +258,14 @@ export function MenuNavClient({ namespace, items, ariaLabel }: IMenuNavClientPro
     };
 
     /**
-     * Renders a category with link and dropdown chevron.
+     * Renders a category as a toggle button for the dropdown.
      *
-     * The label is a navigable link to the category landing page.
-     * The chevron button toggles the dropdown for quick access to children.
-     * Uses stopPropagation to prevent PriorityNav's "More" dropdown from closing
-     * when the chevron is clicked.
+     * Clicking anywhere on the category opens the dropdown, which shows the
+     * category itself as the first item (acting as the navigable link) followed
+     * by its children. Uses stopPropagation to prevent PriorityNav's "More"
+     * dropdown from closing when the category is clicked.
      */
-    const renderCategoryWithLink = (item: IMenuItem): JSX.Element => {
+    const renderCategoryToggle = (item: IMenuItem): JSX.Element => {
         const isExpanded = expandedCategoryId === item._id;
         const isActive = item.url
             ? (item.url === '/' ? pathname === '/' : pathname === item.url || pathname.startsWith(`${item.url}/`))
@@ -272,18 +273,8 @@ export function MenuNavClient({ namespace, items, ariaLabel }: IMenuNavClientPro
 
         return (
             <div key={item._id} className={styles.category}>
-                {item.url ? (
-                    <Link
-                        href={item.url}
-                        className={`${styles.categoryLink} ${isActive ? styles.active : ''}`}
-                        aria-current={isActive ? 'page' : undefined}
-                    >
-                        {item.label}
-                    </Link>
-                ) : (
-                    <span className={styles.categoryLabel}>{item.label}</span>
-                )}
                 <button
+                    type="button"
                     ref={(el) => {
                         if (el) {
                             categoryButtonRefs.current.set(item._id, el);
@@ -291,7 +282,7 @@ export function MenuNavClient({ namespace, items, ariaLabel }: IMenuNavClientPro
                             categoryButtonRefs.current.delete(item._id);
                         }
                     }}
-                    className={styles.categoryToggle}
+                    className={`${styles.categoryButton} ${isActive ? styles.active : ''}`}
                     onClick={(e) => {
                         e.stopPropagation();
                         toggleCategory(item._id);
@@ -300,10 +291,11 @@ export function MenuNavClient({ namespace, items, ariaLabel }: IMenuNavClientPro
                     aria-haspopup="true"
                     aria-label={`${isExpanded ? 'Collapse' : 'Expand'} ${item.label} submenu`}
                 >
+                    {item.label}
                     {isExpanded ? (
-                        <ChevronDown size={16} />
+                        <ChevronDown size={16} className={styles.categoryChevron} />
                     ) : (
-                        <ChevronRight size={16} />
+                        <ChevronRight size={16} className={styles.categoryChevron} />
                     )}
                 </button>
             </div>
@@ -318,7 +310,7 @@ export function MenuNavClient({ namespace, items, ariaLabel }: IMenuNavClientPro
 
         // Category node with children - render link + dropdown chevron
         if (hasChildren) {
-            return renderCategoryWithLink(item);
+            return renderCategoryToggle(item);
         }
 
         // Link node - render as navigation link
@@ -392,11 +384,19 @@ export function MenuNavClient({ namespace, items, ariaLabel }: IMenuNavClientPro
                         left: position.left
                     }}
                 >
+                    {expandedCategory.url && (
+                        <div
+                            className={styles.categoryDropdownItem}
+                            role="none"
+                        >
+                            {renderLinkItem(expandedCategory, true)}
+                        </div>
+                    )}
                     {expandedCategory.children.map(child => (
                         <div
                             key={child._id}
                             className={styles.categoryDropdownItem}
-                            role="menuitem"
+                            role="none"
                         >
                             {renderLinkItem(child, true)}
                         </div>
