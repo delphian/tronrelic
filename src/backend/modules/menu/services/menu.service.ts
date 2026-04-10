@@ -13,7 +13,7 @@ import type {
 import { logger } from '../../../lib/logger.js';
 import { WebSocketService } from '../../../services/websocket.service.js';
 import { ObjectId } from 'mongodb';
-import type { IMenuNodeDocument, IMenuNamespaceConfigDocument } from '../database/index.js';
+import type { IMenuNodeDocument, IMenuNamespaceConfigDocument, IMenuNodeOverrideDocument } from '../database/index.js';
 
 /**
  * Singleton service managing the hierarchical menu system.
@@ -68,6 +68,8 @@ export class MenuService implements IMenuService {
     private initialized = false;
     private database: IDatabaseService;
     private readonly DEFAULT_NAMESPACE = 'main';
+    private readonly OVERRIDES_COLLECTION = 'menu_node_overrides';
+    private persistedNodeIds = new Set<string>();
 
     /**
      * Private constructor enforcing singleton pattern with dependency injection.
@@ -145,8 +147,16 @@ export class MenuService implements IMenuService {
             const collection = this.database.getCollection<IMenuNodeDocument>('menu_nodes');
             const nodes = await collection.find({}).toArray();
 
+            // Ensure overrides index exists for fast lookups
+            const overridesCollection = this.database.getCollection<IMenuNodeOverrideDocument>(this.OVERRIDES_COLLECTION);
+            await overridesCollection.createIndex(
+                { namespace: 1, url: 1 },
+                { unique: true }
+            ).catch(err => logger.debug({ err }, 'Overrides index already exists'));
+
             // Build in-memory tree organized by namespace
             this.menuTree.clear();
+            this.persistedNodeIds.clear();
             for (const node of nodes) {
                 const normalized = this.normalizeNode(node);
                 const namespace = normalized.namespace || this.DEFAULT_NAMESPACE;
@@ -156,6 +166,7 @@ export class MenuService implements IMenuService {
                 }
 
                 this.menuTree.get(namespace)!.set(normalized._id!, normalized);
+                this.persistedNodeIds.add(normalized._id!);
             }
 
             // Create default 'Home' root node if menu is empty
@@ -268,10 +279,32 @@ export class MenuService implements IMenuService {
      */
     public async create(nodeData: Partial<IMenuNode>, persist = false): Promise<IMenuNode> {
         const namespace = nodeData.namespace || this.DEFAULT_NAMESPACE;
+        // Auto-derive URL for container nodes that omit it.
+        // Slugifies the label and prepends parent URL for hierarchical paths.
+        let derivedUrl = nodeData.url;
+        if (!derivedUrl && nodeData.label) {
+            const slug = nodeData.label.toLowerCase()
+                .replace(/\s+/g, '-')
+                .replace(/[^a-z0-9-]/g, '')
+                .replace(/-+/g, '-')
+                .replace(/^-+|-+$/g, '');
+            if (!slug) {
+                throw new Error(`Cannot auto-derive URL from label "${nodeData.label}": slugification produced an empty string. Provide an explicit url.`);
+            }
+            if (nodeData.parent) {
+                const parentNode = this.getNode(nodeData.parent);
+                const baseUrl = parentNode?.url === '/' ? '' : (parentNode?.url || '');
+                derivedUrl = `${baseUrl}/${slug}`;
+            } else {
+                derivedUrl = `/${slug}`;
+            }
+        }
+
         const node: IMenuNode = {
             namespace,
             label: nodeData.label || '',
-            url: nodeData.url,
+            description: nodeData.description,
+            url: derivedUrl,
             icon: nodeData.icon,
             order: nodeData.order ?? 0,
             parent: nodeData.parent ?? null,
@@ -294,6 +327,7 @@ export class MenuService implements IMenuService {
             const docToInsert: Partial<IMenuNodeDocument> = {
                 namespace,
                 label: node.label,
+                description: node.description,
                 url: node.url,
                 icon: node.icon,
                 order: node.order,
@@ -312,17 +346,22 @@ export class MenuService implements IMenuService {
             }
 
             created = this.normalizeNode(insertedDoc);
+            this.persistedNodeIds.add(created._id!);
         } else {
             // Memory-only entry (plugin pages, runtime entries)
+            // Apply any saved overrides so user customizations survive restarts
+            const override = node.url ? await this.loadOverride(namespace, node.url) : null;
+
             created = {
                 _id: new ObjectId().toString(),
                 namespace,
-                label: node.label,
+                label: override?.label ?? node.label,
+                description: override?.description ?? node.description,
                 url: node.url,
-                icon: node.icon,
-                order: node.order,
+                icon: override?.icon ?? node.icon,
+                order: override?.order ?? node.order,
                 parent: node.parent,
-                enabled: node.enabled,
+                enabled: override?.enabled ?? node.enabled,
                 requiredRole: node.requiredRole,
                 createdAt: new Date(),
                 updatedAt: new Date()
@@ -404,25 +443,29 @@ export class MenuService implements IMenuService {
         }
 
         if (persist) {
-            // Update database for persisted entries only
-            const collection = this.database.getCollection<IMenuNodeDocument>('menu_nodes');
-            const updateDoc: Partial<IMenuNodeDocument> = {
-                ...(updates.namespace !== undefined && { namespace: updates.namespace }),
-                ...(updates.label !== undefined && { label: updates.label }),
-                ...(updates.url !== undefined && { url: updates.url }),
-                ...(updates.icon !== undefined && { icon: updates.icon }),
-                ...(updates.order !== undefined && { order: updates.order }),
-                ...(updates.parent !== undefined && { parent: updates.parent ? new ObjectId(updates.parent) : null }),
-                ...(updates.enabled !== undefined && { enabled: updates.enabled }),
-                ...(updates.requiredRole !== undefined && { requiredRole: updates.requiredRole }),
-                updatedAt: new Date()
-            };
+            if (this.persistedNodeIds.has(id)) {
+                // Node exists in menu_nodes — update it directly
+                const collection = this.database.getCollection<IMenuNodeDocument>('menu_nodes');
+                const updateDoc: Partial<IMenuNodeDocument> = {
+                    ...(updates.namespace !== undefined && { namespace: updates.namespace }),
+                    ...(updates.label !== undefined && { label: updates.label }),
+                    ...(updates.description !== undefined && { description: updates.description }),
+                    ...(updates.url !== undefined && { url: updates.url }),
+                    ...(updates.icon !== undefined && { icon: updates.icon }),
+                    ...(updates.order !== undefined && { order: updates.order }),
+                    ...(updates.parent !== undefined && { parent: updates.parent ? new ObjectId(updates.parent) : null }),
+                    ...(updates.enabled !== undefined && { enabled: updates.enabled }),
+                    ...(updates.requiredRole !== undefined && { requiredRole: updates.requiredRole }),
+                    updatedAt: new Date()
+                };
 
-            await collection.updateOne({ _id: new ObjectId(id) }, { $set: updateDoc });
-        } else {
-            // Memory-only update - just update the timestamp
-            updated.updatedAt = new Date();
+                await collection.updateOne({ _id: new ObjectId(id) }, { $set: updateDoc });
+            } else if (existing.url) {
+                // Memory-only node with a URL — save overrides so changes survive restarts
+                await this.saveOverride(existing.namespace || this.DEFAULT_NAMESPACE, existing.url, updates);
+            }
         }
+        updated.updatedAt = new Date();
 
         // Update in-memory tree (handle namespace change)
         if (newNamespace !== existingNamespace) {
@@ -882,6 +925,67 @@ export class MenuService implements IMenuService {
     }
 
     /**
+     * Load a saved override for a memory-only menu node.
+     *
+     * Looks up user-customized properties by (namespace, url) from the overrides
+     * collection. Returns null if no override exists.
+     *
+     * @param namespace - Menu namespace
+     * @param url - Node URL (stable identifier across restarts)
+     * @returns Override document or null
+     */
+    private async loadOverride(namespace: string, url: string): Promise<IMenuNodeOverrideDocument | null> {
+        try {
+            const collection = this.database.getCollection<IMenuNodeOverrideDocument>(this.OVERRIDES_COLLECTION);
+            const result = await collection.findOne({ namespace, url });
+
+            return result;
+        } catch (error) {
+            logger.error({ error, namespace, url }, 'Failed to load menu node override');
+            return null;
+        }
+    }
+
+    /**
+     * Save user-customized properties for a memory-only menu node.
+     *
+     * Upserts an override document keyed by (namespace, url) so that when a plugin
+     * re-registers the same menu item on next startup, user customizations are applied.
+     *
+     * @param namespace - Menu namespace
+     * @param url - Node URL (stable identifier across restarts)
+     * @param updates - The properties being changed by the admin
+     */
+    private async saveOverride(namespace: string, url: string, updates: Partial<IMenuNode>): Promise<void> {
+        try {
+            const collection = this.database.getCollection<IMenuNodeOverrideDocument>(this.OVERRIDES_COLLECTION);
+            const now = new Date();
+
+            const overrideFields: Partial<IMenuNodeOverrideDocument> = {
+                ...(updates.order !== undefined && { order: updates.order }),
+                ...(updates.icon !== undefined && { icon: updates.icon }),
+                ...(updates.label !== undefined && { label: updates.label }),
+                ...(updates.description !== undefined && { description: updates.description }),
+                ...(updates.enabled !== undefined && { enabled: updates.enabled }),
+                updatedAt: now
+            };
+
+            await collection.updateOne(
+                { namespace, url },
+                {
+                    $set: overrideFields,
+                    $setOnInsert: { namespace, url, createdAt: now }
+                },
+                { upsert: true }
+            );
+
+            logger.debug({ namespace, url, overrideFields }, 'Menu node override saved');
+        } catch (error) {
+            logger.error({ error, namespace, url }, 'Failed to save menu node override');
+        }
+    }
+
+    /**
      * Build hierarchical tree structure from flat node list.
      *
      * Organizes nodes by parent-child relationships, creating nested children arrays.
@@ -949,6 +1053,7 @@ export class MenuService implements IMenuService {
             _id: doc._id.toString(),
             namespace: doc.namespace || this.DEFAULT_NAMESPACE,
             label: doc.label,
+            description: doc.description,
             url: doc.url,
             icon: doc.icon,
             order: doc.order ?? 0,

@@ -5,3 +5,4 @@
  */
 export type { IMenuNodeDocument } from './IMenuNodeDocument.js';
 export type { IMenuNamespaceConfigDocument } from './IMenuNamespaceConfigDocument.js';
+export type { IMenuNodeOverrideDocument } from './IMenuNodeOverrideDocument.js';

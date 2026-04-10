@@ -50,8 +50,15 @@ export interface IMenuNode {
     label: string;
 
     /**
-     * Optional navigation URL or route path.
-     * If omitted, the node acts as a non-clickable container/category.
+     * Optional short description of the menu item's purpose.
+     * Used in auto-generated category landing pages as card subtitle text.
+     */
+    description?: string;
+
+    /**
+     * Navigation URL or route path.
+     * Container nodes that omit this field receive an auto-derived URL
+     * based on the slugified label (e.g., label "Tools" → url "/tools").
      * Examples: '/dashboard', '/plugins/whale-alerts', 'https://external.com'
      */
     url?: string;

@@ -153,15 +153,18 @@ export class ToolsModule implements IModule<IToolsModuleDependencies> {
     /**
      * Register the Tools menu category and child items in the main namespace.
      *
-     * Creates a container node (no URL) with child entries for each tool page.
+     * Creates a container node with child entries for each tool page.
+     * The container URL is auto-derived as '/tools' from the label.
      * Uses memory-only persistence (persist=false default) since these entries
-     * are recreated on every application boot.
+     * are recreated on every application boot. The auto-generated category
+     * landing page renders a card grid of children at the container URL.
      */
     private async registerMenuItems(): Promise<void> {
         try {
             const container = await this.menuService.create({
                 namespace: 'main',
                 label: 'Tools',
+                description: 'TRON blockchain utilities',
                 icon: 'Wrench',
                 order: 60,
                 parent: null,
@@ -171,16 +174,17 @@ export class ToolsModule implements IModule<IToolsModuleDependencies> {
             const parentId = container._id?.toString() ?? null;
 
             const children = [
-                { label: 'Address Converter', url: '/tools/address-converter', icon: 'ArrowLeftRight', order: 10 },
-                { label: 'Energy Estimator', url: '/tools/energy-estimator', icon: 'Zap', order: 20 },
-                { label: 'Stake Calculator', url: '/tools/stake-calculator', icon: 'Calculator', order: 30 },
-                { label: 'Signature Verifier', url: '/tools/signature-verifier', icon: 'ShieldCheck', order: 40 },
+                { label: 'Address Converter', url: '/tools/address-converter', icon: 'ArrowLeftRight', order: 10, description: 'Convert between TRON hex and base58check address formats.' },
+                { label: 'Energy Estimator', url: '/tools/energy-estimator', icon: 'Zap', order: 20, description: 'Estimate daily energy requirements and compare staking vs rental costs.' },
+                { label: 'Stake Calculator', url: '/tools/stake-calculator', icon: 'Calculator', order: 30, description: 'Calculate energy and bandwidth from a TRX stake, or TRX needed for a target energy amount.' },
+                { label: 'Signature Verifier', url: '/tools/signature-verifier', icon: 'ShieldCheck', order: 40, description: 'Verify a TRON wallet signed a specific message. Supports direct URL linking.' },
             ];
 
             await Promise.all(children.map(child =>
                 this.menuService.create({
                     namespace: 'main',
                     label: child.label,
+                    description: child.description,
                     url: child.url,
                     icon: child.icon,
                     order: child.order,

@@ -257,16 +257,32 @@ export function MenuNavClient({ namespace, items, ariaLabel }: IMenuNavClientPro
     };
 
     /**
-     * Renders a category button (without the dropdown - that's portaled separately).
+     * Renders a category with link and dropdown chevron.
      *
+     * The label is a navigable link to the category landing page.
+     * The chevron button toggles the dropdown for quick access to children.
      * Uses stopPropagation to prevent PriorityNav's "More" dropdown from closing
-     * when a category button inside it is clicked.
+     * when the chevron is clicked.
      */
-    const renderCategoryButton = (item: IMenuItem): JSX.Element => {
+    const renderCategoryWithLink = (item: IMenuItem): JSX.Element => {
         const isExpanded = expandedCategoryId === item._id;
+        const isActive = item.url
+            ? (item.url === '/' ? pathname === '/' : pathname === item.url || pathname.startsWith(`${item.url}/`))
+            : false;
 
         return (
             <div key={item._id} className={styles.category}>
+                {item.url ? (
+                    <Link
+                        href={item.url}
+                        className={`${styles.categoryLink} ${isActive ? styles.active : ''}`}
+                        aria-current={isActive ? 'page' : undefined}
+                    >
+                        {item.label}
+                    </Link>
+                ) : (
+                    <span className={styles.categoryLabel}>{item.label}</span>
+                )}
                 <button
                     ref={(el) => {
                         if (el) {
@@ -275,15 +291,15 @@ export function MenuNavClient({ namespace, items, ariaLabel }: IMenuNavClientPro
                             categoryButtonRefs.current.delete(item._id);
                         }
                     }}
-                    className={styles.categoryButton}
+                    className={styles.categoryToggle}
                     onClick={(e) => {
                         e.stopPropagation();
                         toggleCategory(item._id);
                     }}
                     aria-expanded={isExpanded}
                     aria-haspopup="true"
+                    aria-label={`${isExpanded ? 'Collapse' : 'Expand'} ${item.label} submenu`}
                 >
-                    <span>{item.label}</span>
                     {isExpanded ? (
                         <ChevronDown size={16} />
                     ) : (
@@ -295,14 +311,14 @@ export function MenuNavClient({ namespace, items, ariaLabel }: IMenuNavClientPro
     };
 
     /**
-     * Renders menu items - categories get buttons, links get rendered directly.
+     * Renders menu items - categories get link + chevron, leaves get links.
      */
     const renderMenuItem = (item: IMenuItem): JSX.Element => {
         const hasChildren = item.children && item.children.length > 0;
 
-        // Container node (no URL) - render as category button
-        if (!item.url && hasChildren) {
-            return renderCategoryButton(item);
+        // Category node with children - render link + dropdown chevron
+        if (hasChildren) {
+            return renderCategoryWithLink(item);
         }
 
         // Link node - render as navigation link

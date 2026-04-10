@@ -20,6 +20,7 @@ export interface IMenuNodeDocument {
     _id: ObjectId;
     namespace: string;
     label: string;
+    description?: string;
     url?: string;
     icon?: string;
     order: number;
