@@ -1,0 +1,69 @@
+@use '../../../../app/breakpoints' as *;
+
+.container {
+    container-type: inline-size;
+    container-name: approval-checker;
+}
+
+.label {
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+    color: var(--color-text-muted);
+}
+
+.input_row {
+    display: flex;
+    gap: var(--spacing-5);
+    align-items: center;
+}
+
+.error {
+    color: var(--color-danger);
+    font-size: var(--font-size-sm);
+    margin: 0;
+}
+
+.empty {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-sm);
+    margin: 0;
+}
+
+.results {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-5);
+}
+
+.token_name {
+    display: block;
+    font-weight: var(--font-weight-semibold);
+    font-size: var(--font-size-sm);
+    color: var(--color-text);
+}
+
+.token_address {
+    display: block;
+    font-size: var(--font-size-xs);
+    color: var(--color-text-muted);
+}
+
+.address_cell {
+    font-family: var(--font-mono);
+    font-size: var(--font-size-xs);
+    color: var(--color-text);
+    word-break: break-all;
+}
+
+.truncated {
+    color: var(--color-warning);
+    font-size: var(--font-size-sm);
+    margin: 0;
+}
+
+@container approval-checker (max-width: #{$breakpoint-mobile-md}) {
+    .input_row {
+        flex-direction: column;
+        align-items: stretch;
+    }
+}

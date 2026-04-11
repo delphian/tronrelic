@@ -6,9 +6,12 @@
 
 // Components
 export { AddressConverter } from './components/AddressConverter';
+export { AddressGenerator } from './components/AddressGenerator';
 export { EnergyEstimator } from './components/EnergyEstimator';
 export { StakeCalculator } from './components/StakeCalculator';
 export { SignatureVerifier } from './components/SignatureVerifier';
+export { ApprovalChecker } from './components/ApprovalChecker';
+export { TimestampConverter } from './components/TimestampConverter';
 
 // API
 export {
@@ -16,7 +19,9 @@ export {
     estimateEnergy,
     estimateStakeFromTrx,
     estimateStakeFromEnergy,
-    verifySignature
+    verifySignature,
+    checkApprovals,
+    convertTimestamp
 } from './api';
 
 // Types
@@ -25,5 +30,8 @@ export type {
     IEnergyEstimate,
     IStakeEstimate,
     ISignatureResult,
-    IToolDescriptor
+    IToolDescriptor,
+    IApprovalEntry,
+    IApprovalCheckResult,
+    ITimestampConversionResult
 } from './types';

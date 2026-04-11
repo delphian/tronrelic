@@ -7,5 +7,7 @@ export {
     estimateEnergy,
     estimateStakeFromTrx,
     estimateStakeFromEnergy,
-    verifySignature
+    verifySignature,
+    checkApprovals,
+    convertTimestamp
 } from './client';

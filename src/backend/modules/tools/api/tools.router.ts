@@ -30,11 +30,19 @@ export function createToolsRouter(controller: ToolsController): Router {
         keyPrefix: 'tools'
     });
 
+    const approvalRateLimiter = createRateLimiter({
+        windowSeconds: 60,
+        maxRequests: 10,
+        keyPrefix: 'tools:approval'
+    });
+
     router.post('/address/convert', rateLimiter, asyncHandler(controller.convertAddress));
     router.post('/energy/estimate', rateLimiter, asyncHandler(controller.estimateEnergy));
     router.post('/stake/from-trx', rateLimiter, asyncHandler(controller.estimateStakeFromTrx));
     router.post('/stake/from-energy', rateLimiter, asyncHandler(controller.estimateStakeFromEnergy));
     router.post('/signature/verify', rateLimiter, asyncHandler(controller.verifySignature));
+    router.post('/approval/check', approvalRateLimiter, asyncHandler(controller.checkApprovals));
+    router.post('/timestamp/convert', rateLimiter, asyncHandler(controller.convertTimestamp));
 
     return router;
 }

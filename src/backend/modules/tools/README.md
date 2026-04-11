@@ -1,10 +1,10 @@
 # Tools Module
 
-The tools module provides user-facing TRON blockchain utilities: address format conversion, energy estimation, bidirectional stake calculation, and signature verification. Each tool has its own page accessible from the "Tools" navigation menu.
+The tools module provides user-facing TRON blockchain utilities: address format conversion, energy estimation, bidirectional stake calculation, signature verification, token approval checking, and timestamp/block conversion. Each tool has its own page accessible from the "Tools" navigation menu.
 
 ## Why This Matters
 
-TRON developers and users frequently need to convert address formats, estimate energy costs, calculate staking yields, and verify signatures. Without a centralized tools section, these operations require external websites or manual API calls. The tools module consolidates these utilities into the TronRelic interface with live network data powering all calculations.
+TRON developers and users frequently need to convert address formats, estimate energy costs, calculate staking yields, verify signatures, audit token approvals, and look up block timestamps. Without a centralized tools section, these operations require external websites or manual API calls. The tools module consolidates these utilities into the TronRelic interface with live network data powering all calculations.
 
 ## Architecture Overview
 
@@ -35,6 +35,8 @@ Both are required — `init()` throws if either is missing, causing application 
 | Energy Estimator | `/tools/energy-estimator` | `POST /api/tools/energy/estimate` | Daily energy needs with staking vs rental cost comparison |
 | Stake Calculator | `/tools/stake-calculator` | `POST /api/tools/stake/from-trx` and `/from-energy` | Bidirectional TRX/energy calculation |
 | Signature Verifier | `/tools/signature-verifier` | `POST /api/tools/signature/verify` | Wallet signature verification |
+| Approval Checker | `/tools/approval-checker` | `POST /api/tools/approval/check` | Scan TRC20 token approvals for a wallet |
+| Timestamp Converter | `/tools/timestamp-converter` | `POST /api/tools/timestamp/convert` | Bidirectional timestamp/block/date conversion |
 
 The Signature Verifier supports direct URL linking via query parameters: `/tools/signature-verifier?wallet=T...&message=hello&signature=0x...` — it auto-fills and verifies on page load.
 
@@ -62,6 +64,10 @@ The controller validates all inputs with Zod schemas before reaching service cod
 | `wallet` | string | min 34 characters |
 | `message` | string | min 1 character |
 | `signature` | string | min 1 character |
+| `address` (approval) | string | 34-42 characters |
+| `timestamp` | integer | 0-32,503,680,000 (optional) |
+| `blockNumber` | integer | 1-999,999,999,999 (optional) |
+| `dateString` | string | max 100 characters (optional) |
 
 ### Cache Key Sanitization
 
