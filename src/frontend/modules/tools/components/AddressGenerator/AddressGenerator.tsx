@@ -60,21 +60,14 @@ function validateBase58(pattern: string): string | null {
 }
 
 /**
- * Characters that exist in only one case within the Base58 alphabet.
- * Lowercase 'l' and uppercase 'I' are excluded from Base58 to avoid visual
- * ambiguity, so their counterparts ('L' and 'i') have no case partner —
- * giving them 1/58 probability even in case-insensitive search.
- */
-const SINGLE_CASE_LETTERS = new Set(['i', 'l', 'I', 'L']);
-
-/**
  * Estimate the expected number of addresses to check before finding a vanity
  * match anywhere in a 34-character TRON address.
  *
  * In case-insensitive mode, most letters match two Base58 characters (e.g.
- * 'a'/'A' both exist), giving 2/58 probability per position. But 'i' and 'L'
- * have no case partner in Base58 ('I' and 'l' are excluded), so they remain
- * 1/58 even when case-insensitive.
+ * 'a'/'A' both exist), giving 2/58 probability per position. But Base58
+ * excludes 'I', 'O', and 'l', so their counterparts ('i', 'o', 'L') have
+ * no case partner and remain 1/58 even when case-insensitive. Partner
+ * existence is derived from BASE58_SET rather than a hardcoded list.
  *
  * @param pattern - The search pattern
  * @param caseSensitive - Whether matching is case-sensitive
@@ -92,7 +85,9 @@ function getDifficultyEstimate(pattern: string, caseSensitive: boolean): string 
     } else {
         probPerPosition = [...pattern].reduce((prob, ch) => {
             const isLetter = /[a-zA-Z]/.test(ch);
-            const hasPartner = isLetter && !SINGLE_CASE_LETTERS.has(ch);
+            const hasPartner = isLetter
+                && BASE58_SET.has(ch.toLowerCase())
+                && BASE58_SET.has(ch.toUpperCase());
             return prob * ((hasPartner ? 2 : 1) / 58);
         }, 1);
     }
