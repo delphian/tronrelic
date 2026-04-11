@@ -192,7 +192,7 @@ describe('ToolsModule', () => {
             expect(module.metadata).toBeDefined();
             expect(module.metadata.id).toBe('tools');
             expect(module.metadata.name).toBe('Tools');
-            expect(module.metadata.version).toBe('1.0.0');
+            expect(module.metadata.version).toBe('1.1.0');
             expect(module.metadata.description).toBeDefined();
         });
     });
@@ -351,17 +351,26 @@ describe('ToolsModule', () => {
 
             await module.run();
 
-            // 1 container + 4 children = 5 create calls
-            expect(mockMenu.create).toHaveBeenCalledTimes(5);
+            // 1 container + 7 children = 8 create calls
+            expect(mockMenu.create).toHaveBeenCalledTimes(8);
 
             const calls = mockMenu.create.mock.calls;
 
             // Verify child items reference the container parent
             const parentId = 'mock-container-id';
-            expect(calls[1][0]).toMatchObject({ label: 'Address Converter', parent: parentId });
-            expect(calls[2][0]).toMatchObject({ label: 'Energy Estimator', parent: parentId });
-            expect(calls[3][0]).toMatchObject({ label: 'Stake Calculator', parent: parentId });
-            expect(calls[4][0]).toMatchObject({ label: 'Signature Verifier', parent: parentId });
+            const childLabels = calls.slice(1).map((c: unknown[]) => (c[0] as { label: string }).label);
+            expect(childLabels).toContain('Address Converter');
+            expect(childLabels).toContain('Address Generator');
+            expect(childLabels).toContain('Energy Estimator');
+            expect(childLabels).toContain('Stake Calculator');
+            expect(childLabels).toContain('Signature Verifier');
+            expect(childLabels).toContain('Approval Checker');
+            expect(childLabels).toContain('Timestamp Converter');
+
+            // All children reference the container parent
+            for (const call of calls.slice(1)) {
+                expect((call[0] as { parent: string }).parent).toBe(parentId);
+            }
         });
 
         it('should mount tools router at /api/tools during run()', async () => {

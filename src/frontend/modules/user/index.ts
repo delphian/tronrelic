@@ -78,6 +78,7 @@ export {
     selectUserError,
     selectUserInitialized,
     selectHasWallets,
+    selectHasVerifiedWallet,
     selectIsLoggedIn,
     // Wallet connection selectors
     selectConnectedAddress,

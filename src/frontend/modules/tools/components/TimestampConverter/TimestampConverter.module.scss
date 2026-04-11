@@ -1,0 +1,118 @@
+@use '../../../../app/breakpoints' as *;
+
+.container {
+    container-type: inline-size;
+    container-name: timestamp-converter;
+}
+
+.type_selector {
+    display: flex;
+    gap: var(--spacing-2);
+    background: var(--color-surface-muted);
+    border-radius: var(--radius-full);
+    padding: var(--spacing-1);
+    border: var(--border-width-thin) solid var(--color-border);
+}
+
+.type_button {
+    border: none;
+    background: transparent;
+    color: var(--color-text-muted);
+    font-size: var(--font-size-sm);
+    padding: var(--spacing-3) var(--spacing-7);
+    border-radius: var(--radius-full);
+    cursor: pointer;
+    transition: background-color var(--transition-base), color var(--transition-base);
+
+    &:hover {
+        color: var(--color-text);
+    }
+}
+
+.type_button_active {
+    background: var(--gradient-primary);
+    color: var(--color-text);
+}
+
+.label {
+    display: block;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+    color: var(--color-text-muted);
+}
+
+.input_row {
+    display: flex;
+    gap: var(--spacing-5);
+    align-items: center;
+}
+
+.error {
+    color: var(--color-danger);
+    font-size: var(--font-size-sm);
+    margin: 0;
+}
+
+.results {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-7);
+    padding: var(--card-padding-sm);
+    background: var(--color-surface-muted);
+    border-radius: var(--radius-sm);
+}
+
+.stat_grid {
+    display: grid;
+    gap: var(--grid-gap-sm);
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.stat {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-2);
+
+    &__label {
+        font-size: var(--font-size-xs);
+        font-weight: var(--font-weight-semibold);
+        color: var(--color-text-muted);
+        text-transform: uppercase;
+        letter-spacing: var(--letter-spacing-wide);
+    }
+
+    &__value {
+        font-size: var(--font-size-xl);
+        font-weight: var(--font-weight-bold);
+        color: var(--color-text);
+        word-break: break-all;
+    }
+}
+
+.estimate_badge {
+    font-weight: var(--font-weight-normal);
+    text-transform: none;
+    letter-spacing: normal;
+    color: var(--color-warning);
+}
+
+.disclaimer {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-xs);
+    margin: 0;
+}
+
+@container timestamp-converter (max-width: #{$breakpoint-mobile-md}) {
+    .input_row {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .type_selector {
+        flex-direction: column;
+    }
+
+    .stat__value {
+        font-size: var(--font-size-lg);
+    }
+}

@@ -10,7 +10,9 @@ import type {
     IAddressConversionResult,
     IEnergyEstimate,
     IStakeEstimate,
-    ISignatureResult
+    ISignatureResult,
+    IApprovalCheckResult,
+    ITimestampConversionResult
 } from '../types';
 
 /**
@@ -78,4 +80,32 @@ export async function estimateStakeFromEnergy(energy: number): Promise<IStakeEst
 export async function verifySignature(wallet: string, message: string, signature: string): Promise<ISignatureResult> {
     const response = await apiClient.post('/tools/signature/verify', { wallet, message, signature });
     return response.data;
+}
+
+/**
+ * Scan a TRON wallet for active TRC20 token approvals.
+ *
+ * Uses a 30-second timeout since the backend fans out to multiple TronGrid calls.
+ *
+ * @param address - TRON wallet address to scan
+ * @returns Approval check result with active approvals
+ */
+export async function checkApprovals(address: string): Promise<IApprovalCheckResult> {
+    const response = await apiClient.post('/tools/approval/check', { address }, { timeout: 30000 });
+    return response.data.result;
+}
+
+/**
+ * Convert between Unix timestamp, ISO date, and TRON block number.
+ *
+ * @param input - Object with exactly one of timestamp, blockNumber, or dateString
+ * @returns All three representations plus relative time
+ */
+export async function convertTimestamp(input: {
+    timestamp?: number;
+    blockNumber?: number;
+    dateString?: string;
+}): Promise<ITimestampConversionResult> {
+    const response = await apiClient.post('/tools/timestamp/convert', input);
+    return response.data.result;
 }

@@ -461,6 +461,35 @@ export class TronGridClient {
         }
     }
 
+    /**
+     * Fetch paginated TRC20 transactions for an account via the v1 REST API.
+     *
+     * @param base58Address - Account address in base58 format
+     * @param params - Query parameters (only_confirmed, limit, fingerprint, etc.)
+     * @returns Raw response data with transactions and pagination metadata
+     */
+    async getTrc20Transactions<T>(base58Address: string, params: Record<string, string | number | boolean>): Promise<T> {
+        return enqueueRequest(async () => {
+            const response = await httpClient.get<T>(
+                `${BASE_URL}/v1/accounts/${base58Address}/transactions/trc20`,
+                { params, headers: buildHeaders(), timeout: 15000 }
+            );
+            return response.data;
+        });
+    }
+
+    /**
+     * Execute a read-only smart contract call via triggerconstantcontract.
+     *
+     * No gas cost — used for querying contract state (e.g. allowance, balanceOf).
+     *
+     * @param payload - Contract call parameters (owner_address, contract_address, function_selector, parameter, visible)
+     * @returns Trigger constant contract response with result data
+     */
+    async triggerConstantContract<T>(payload: Record<string, unknown>): Promise<T> {
+        return this.post<T>('/wallet/triggerconstantcontract', payload);
+    }
+
     private async post<T>(path: string, payload: Record<string, unknown>): Promise<T> {
         return enqueueRequest(async () => {
             try {

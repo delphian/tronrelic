@@ -2,8 +2,9 @@
  * @fileoverview Controller for all user-facing tool endpoints.
  *
  * Handles HTTP request/response for address conversion, energy estimation,
- * bidirectional stake calculation, and signature verification. Each method
- * validates input with Zod schemas and delegates to the appropriate service.
+ * bidirectional stake calculation, signature verification, token approval
+ * checking, and timestamp/block conversion. Each method validates input
+ * with Zod schemas and delegates to the appropriate service.
  */
 
 import type { Request, Response } from 'express';
@@ -11,6 +12,8 @@ import { z } from 'zod';
 import type { AddressService } from '../services/address.service.js';
 import type { CalculatorService } from '../services/calculator.service.js';
 import type { SignatureService } from '../../auth/signature.service.js';
+import type { ApprovalService } from '../services/approval.service.js';
+import type { TimestampService } from '../services/timestamp.service.js';
 
 const addressSchema = z
     .object({
@@ -41,6 +44,19 @@ const signatureSchema = z.object({
     signature: z.string().min(1)
 });
 
+const approvalCheckSchema = z.object({
+    address: z.string().trim().min(34).max(44)
+});
+
+const timestampConvertSchema = z.object({
+    timestamp: z.coerce.number().int().min(0).max(32503680000).optional(),
+    blockNumber: z.coerce.number().int().min(1).max(999_999_999_999).optional(),
+    dateString: z.string().trim().max(100).optional()
+}).refine(
+    data => [data.timestamp, data.blockNumber, data.dateString].filter(v => v !== undefined).length === 1,
+    { message: 'Provide exactly one of: timestamp, blockNumber, or dateString' }
+);
+
 /**
  * Tools controller exposing all tool endpoints.
  *
@@ -52,11 +68,15 @@ export class ToolsController {
      * @param addressService - TRON address format converter
      * @param calculatorService - Energy and stake calculator
      * @param signatureService - TRON signature verifier
+     * @param approvalService - TRC20 token approval scanner
+     * @param timestampService - Timestamp/block/date converter
      */
     constructor(
         private readonly addressService: AddressService,
         private readonly calculatorService: CalculatorService,
-        private readonly signatureService: SignatureService
+        private readonly signatureService: SignatureService,
+        private readonly approvalService: ApprovalService,
+        private readonly timestampService: TimestampService
     ) {}
 
     /**
@@ -113,5 +133,29 @@ export class ToolsController {
         const body = signatureSchema.parse(req.body);
         const normalized = await this.signatureService.verifyMessage(body.wallet, body.message, body.signature);
         res.json({ success: true, verified: true, wallet: normalized });
+    };
+
+    /**
+     * Scan a TRON wallet for active TRC20 token approvals.
+     *
+     * Queries TronGrid for approval history and checks live allowances.
+     * May take several seconds due to fan-out to multiple contract queries.
+     */
+    checkApprovals = async (req: Request, res: Response): Promise<void> => {
+        const { address } = approvalCheckSchema.parse(req.body);
+        const result = await this.approvalService.checkApprovals(address);
+        res.json({ success: true, result });
+    };
+
+    /**
+     * Convert between Unix timestamps, ISO dates, and TRON block numbers.
+     *
+     * Accepts exactly one input type and returns all three representations
+     * plus a relative time string and the reference block used.
+     */
+    convertTimestamp = async (req: Request, res: Response): Promise<void> => {
+        const body = timestampConvertSchema.parse(req.body);
+        const result = await this.timestampService.convert(body);
+        res.json({ success: true, result });
     };
 }

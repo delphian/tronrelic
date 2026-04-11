@@ -54,3 +54,37 @@ export interface IToolDescriptor {
     href: string;
     icon: ReactNode;
 }
+
+/** Single token approval entry from the API. */
+export interface IApprovalEntry {
+    tokenAddress: string;
+    tokenName: string;
+    tokenSymbol: string;
+    tokenDecimals: number;
+    spenderAddress: string;
+    allowance: string;
+    allowanceFormatted: string;
+    isUnlimited: boolean;
+}
+
+/** Approval check result from the API. */
+export interface IApprovalCheckResult {
+    ownerAddress: string;
+    approvals: IApprovalEntry[];
+    scannedAt: number;
+    truncated: boolean;
+}
+
+/** Timestamp conversion result from the API. */
+export interface ITimestampConversionResult {
+    timestamp: number;
+    timestampMs: number;
+    dateString: string;
+    blockNumber: number;
+    blockNumberIsEstimate: boolean;
+    relativeTime: string;
+    referenceBlock: {
+        number: number;
+        timestamp: number;
+    };
+}

@@ -2,8 +2,9 @@
  * @fileoverview Tools module implementation.
  *
  * Provides user-facing TRON utility tools: address conversion, energy estimation,
- * bidirectional stake calculation, and signature verification. Registers a "Tools"
- * menu category with individual entries for each tool.
+ * bidirectional stake calculation, signature verification, token approval checking,
+ * and timestamp/block conversion. Registers a "Tools" menu category with individual
+ * entries for each tool.
  *
  * Follows TronRelic's two-phase initialization pattern with dependency injection.
  */
@@ -13,8 +14,11 @@ import type { Express } from 'express';
 import type { ICacheService, IChainParametersService, IDatabaseService, IMenuService, IModule, IModuleMetadata, IServiceRegistry } from '@/types';
 import { logger } from '../../lib/logger.js';
 import { TransactionModel } from '../../database/models/transaction-model.js';
+import { TronGridClient } from '../blockchain/tron-grid.client.js';
 import { AddressService } from './services/address.service.js';
 import { CalculatorService } from './services/calculator.service.js';
+import { ApprovalService } from './services/approval.service.js';
+import { TimestampService } from './services/timestamp.service.js';
 import { SignatureService } from '../auth/signature.service.js';
 import { ToolsController } from './api/tools.controller.js';
 import { createToolsRouter } from './api/tools.router.js';
@@ -73,8 +77,8 @@ export class ToolsModule implements IModule<IToolsModuleDependencies> {
     readonly metadata: IModuleMetadata = {
         id: 'tools',
         name: 'Tools',
-        version: '1.0.0',
-        description: 'User-facing TRON utility tools: address converter, energy estimator, stake calculator, signature verifier'
+        version: '1.1.0',
+        description: 'User-facing TRON utility tools: address converter, energy estimator, stake calculator, signature verifier, approval checker, timestamp converter'
     };
 
     /** Stored dependencies from init() phase. */
@@ -124,8 +128,13 @@ export class ToolsModule implements IModule<IToolsModuleDependencies> {
             chainParameters
         );
         const signatureService = new SignatureService(tronWeb);
+        const approvalService = new ApprovalService(TronGridClient.getInstance(), dependencies.cacheService);
+        const timestampService = new TimestampService(TronGridClient.getInstance(), dependencies.cacheService);
 
-        this.controller = new ToolsController(addressService, calculatorService, signatureService);
+        this.controller = new ToolsController(
+            addressService, calculatorService, signatureService,
+            approvalService, timestampService
+        );
 
         this.logger.info('Tools module initialized');
     }
@@ -175,9 +184,12 @@ export class ToolsModule implements IModule<IToolsModuleDependencies> {
 
             const children = [
                 { label: 'Address Converter', url: '/tools/address-converter', icon: 'ArrowLeftRight', order: 10, description: 'Convert between TRON hex and base58check address formats.' },
+                { label: 'Address Generator', url: '/tools/address-generator', icon: 'KeyRound', order: 15, description: 'Generate random TRON addresses in-browser with vanity pattern search.' },
                 { label: 'Energy Estimator', url: '/tools/energy-estimator', icon: 'Zap', order: 20, description: 'Estimate daily energy requirements and compare staking vs rental costs.' },
                 { label: 'Stake Calculator', url: '/tools/stake-calculator', icon: 'Calculator', order: 30, description: 'Calculate energy and bandwidth from a TRX stake, or TRX needed for a target energy amount.' },
                 { label: 'Signature Verifier', url: '/tools/signature-verifier', icon: 'ShieldCheck', order: 40, description: 'Verify a TRON wallet signed a specific message. Supports direct URL linking.' },
+                { label: 'Approval Checker', url: '/tools/approval-checker', icon: 'Shield', order: 45, description: 'Scan a TRON address for active TRC20 token approvals and unlimited allowances.' },
+                { label: 'Timestamp Converter', url: '/tools/timestamp-converter', icon: 'Clock', order: 50, description: 'Convert between Unix timestamps, dates, and TRON block numbers.' },
             ];
 
             await Promise.all(children.map(child =>
