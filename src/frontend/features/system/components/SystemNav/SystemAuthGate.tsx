@@ -107,19 +107,12 @@ function AuthenticatedLayout({ navigation, children }: { navigation?: ReactNode;
     return (
         <div className={styles.layout_container}>
             <div className={styles.layout_content}>
-                <header className={styles.layout_header}>
-                    <div className={styles.layout_header_text}>
-                        <h1 className={styles.layout_title}>System Dashboard</h1>
-                        <p className={styles.layout_subtitle}>
-                            Real-time visibility into blockchain sync, jobs, markets, and system health
-                        </p>
-                    </div>
-                    <Button onClick={logout} variant="secondary" size="md" aria-label="Logout from system dashboard">
+                <div className={styles.layout_nav_row}>
+                    {navigation}
+                    <Button onClick={logout} variant="secondary" size="sm" aria-label="Logout from system dashboard">
                         Logout
                     </Button>
-                </header>
-
-                {navigation}
+                </div>
 
                 <section className={styles.layout_section}>
                     {children}

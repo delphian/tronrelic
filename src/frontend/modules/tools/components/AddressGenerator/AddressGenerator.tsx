@@ -32,10 +32,12 @@ const CONFUSED_CHARS: Record<string, string> = {
     'l': '(lowercase L) — excluded to avoid confusion with I',
 };
 
-/** Generated address with its private key. */
+/** Generated address with its private key, optional mnemonic, and derived gender. */
 interface IGeneratedAddress {
     address: string;
     privateKey: string;
+    mnemonic?: string;
+    gender: 'male' | 'female';
 }
 
 /**
@@ -86,11 +88,11 @@ function getDifficultyEstimate(pattern: string, caseSensitive: boolean): string 
     const probAnyPosition = Math.min(1, positions * probPerPosition);
     const expected = Math.round(1 / probAnyPosition);
 
-    if (expected < 1000) return `~${expected} attempts (instant)`;
-    if (expected < 1_000_000) return `~${(expected / 1000).toFixed(1)}K attempts (seconds)`;
-    if (expected < 1_000_000_000) return `~${(expected / 1_000_000).toFixed(1)}M attempts (minutes to hours)`;
+    if (expected < 1000) return `~${expected} attempts`;
+    if (expected < 1_000_000) return `~${(expected / 1000).toFixed(1)}K attempts`;
+    if (expected < 1_000_000_000) return `~${(expected / 1_000_000).toFixed(1)}M attempts`;
 
-    return `~${(expected / 1_000_000_000).toFixed(1)}B attempts (hours to days)`;
+    return `~${(expected / 1_000_000_000).toFixed(1)}B attempts`;
 }
 
 /**
@@ -104,12 +106,153 @@ function formatNumber(num: number): string {
 }
 
 /**
- * Single address row with copy buttons and private key reveal toggle.
+ * Display a single generated address with mnemonic and private key, both masked by default.
+ *
+ * @param props - Component props
+ * @param props.entry - The generated address entry including mnemonic
+ */
+function SingleAddressResult({ entry }: { entry: IGeneratedAddress }) {
+    const [revealedMnemonic, setRevealedMnemonic] = useState(false);
+    const [revealedKey, setRevealedKey] = useState(false);
+    const [copiedField, setCopiedField] = useState<'address' | 'mnemonic' | 'key' | null>(null);
+
+    /** Copy a value to clipboard and show confirmation. */
+    const handleCopy = useCallback(async (value: string, field: 'address' | 'mnemonic' | 'key') => {
+        try {
+            await navigator.clipboard.writeText(value);
+            setCopiedField(field);
+            setTimeout(() => setCopiedField(null), 2000);
+        } catch {
+            /* Clipboard API unavailable — fail silently */
+        }
+    }, []);
+
+    const maskedMnemonic = revealedMnemonic
+        ? entry.mnemonic!
+        : entry.mnemonic!.split(' ').map(() => '\u2022\u2022\u2022\u2022').join(' ');
+    const maskedKey = revealedKey ? entry.privateKey : '\u2022'.repeat(entry.privateKey.length);
+
+    return (
+        <div className={styles.single_result}>
+            <div className={styles.single_result__field}>
+                <span className={styles.single_result__label}>Address</span>
+                <div className={styles.single_result__value_row}>
+                    <code className={styles.single_result__mono}>{entry.address}</code>
+                    <Badge tone="neutral">{entry.gender === 'male' ? 'Yang ☰' : 'Yin ☷'}</Badge>
+                    <button
+                        className={styles.icon_button}
+                        onClick={() => handleCopy(entry.address, 'address')}
+                        aria-label="Copy address"
+                        title="Copy address"
+                    >
+                        {copiedField === 'address'
+                            ? <Check size={14} style={{ color: 'var(--color-success)' }} />
+                            : <Copy size={14} />
+                        }
+                    </button>
+                </div>
+            </div>
+            <div className={styles.single_result__field}>
+                <span className={styles.single_result__label}>Recovery Phrase</span>
+                <div className={styles.single_result__value_row}>
+                    <code className={`${styles.single_result__mono} ${!revealedMnemonic ? styles.single_result__masked : ''}`}>
+                        {maskedMnemonic}
+                    </code>
+                    <button
+                        className={styles.icon_button}
+                        onClick={() => setRevealedMnemonic(prev => !prev)}
+                        aria-label={revealedMnemonic ? 'Hide recovery phrase' : 'Reveal recovery phrase'}
+                        title={revealedMnemonic ? 'Hide' : 'Reveal'}
+                    >
+                        {revealedMnemonic ? <EyeOff size={14} /> : <Eye size={14} />}
+                    </button>
+                    <button
+                        className={styles.icon_button}
+                        onClick={() => handleCopy(entry.mnemonic!, 'mnemonic')}
+                        aria-label="Copy recovery phrase"
+                        title="Copy recovery phrase"
+                    >
+                        {copiedField === 'mnemonic'
+                            ? <Check size={14} style={{ color: 'var(--color-success)' }} />
+                            : <Copy size={14} />
+                        }
+                    </button>
+                </div>
+            </div>
+            <div className={styles.single_result__field}>
+                <span className={styles.single_result__label}>Private Key</span>
+                <div className={styles.single_result__value_row}>
+                    <code className={`${styles.single_result__mono} ${!revealedKey ? styles.single_result__masked : ''}`}>
+                        {maskedKey}
+                    </code>
+                    <button
+                        className={styles.icon_button}
+                        onClick={() => setRevealedKey(prev => !prev)}
+                        aria-label={revealedKey ? 'Hide private key' : 'Reveal private key'}
+                        title={revealedKey ? 'Hide' : 'Reveal'}
+                    >
+                        {revealedKey ? <EyeOff size={14} /> : <Eye size={14} />}
+                    </button>
+                    <button
+                        className={styles.icon_button}
+                        onClick={() => handleCopy(entry.privateKey, 'key')}
+                        aria-label="Copy private key"
+                        title="Copy private key"
+                    >
+                        {copiedField === 'key'
+                            ? <Check size={14} style={{ color: 'var(--color-success)' }} />
+                            : <Copy size={14} />
+                        }
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+/**
+ * Render an address with the first occurrence of the vanity pattern highlighted.
+ *
+ * @param address - Full TRON address
+ * @param pattern - Vanity search pattern
+ * @param caseSensitive - Whether the match was case-sensitive
+ * @returns JSX with the matched substring wrapped in a highlight span
+ */
+function HighlightedAddress({ address, pattern, caseSensitive }: {
+    address: string;
+    pattern: string;
+    caseSensitive: boolean;
+}): React.ReactElement {
+    if (!pattern) return <>{address}</>;
+
+    const haystack = caseSensitive ? address : address.toLowerCase();
+    const needle = caseSensitive ? pattern : pattern.toLowerCase();
+    const matchIndex = haystack.indexOf(needle);
+
+    if (matchIndex === -1) return <>{address}</>;
+
+    const before = address.slice(0, matchIndex);
+    const match = address.slice(matchIndex, matchIndex + pattern.length);
+    const after = address.slice(matchIndex + pattern.length);
+
+    return <>{before}<span className={styles.match_highlight}>{match}</span>{after}</>;
+}
+
+/**
+ * Single vanity match row displayed as a compact table-like entry.
  *
  * @param props - Component props
  * @param props.entry - The generated address entry
+ * @param props.index - Row number (1-based) for display
+ * @param props.pattern - Vanity search pattern for highlight
+ * @param props.caseSensitive - Whether match was case-sensitive
  */
-function AddressRow({ entry }: { entry: IGeneratedAddress }) {
+function AddressRow({ entry, index, pattern, caseSensitive }: {
+    entry: IGeneratedAddress;
+    index: number;
+    pattern: string;
+    caseSensitive: boolean;
+}) {
     const [revealed, setRevealed] = useState(false);
     const [copiedField, setCopiedField] = useState<'address' | 'key' | null>(null);
 
@@ -127,52 +270,52 @@ function AddressRow({ entry }: { entry: IGeneratedAddress }) {
     const maskedKey = revealed ? entry.privateKey : '\u2022'.repeat(entry.privateKey.length);
 
     return (
-        <div className={styles.address_row}>
-            <div className={styles.address_row__field}>
-                <span className={styles.address_row__label}>Address</span>
-                <div className={styles.address_row__value_group}>
-                    <code className={styles.address_row__value}>{entry.address}</code>
-                    <button
-                        className={styles.icon_button}
-                        onClick={() => handleCopy(entry.address, 'address')}
-                        aria-label="Copy address"
-                        title="Copy address"
-                    >
-                        {copiedField === 'address'
-                            ? <Check size={14} style={{ color: 'var(--color-success)' }} />
-                            : <Copy size={14} />
-                        }
-                    </button>
-                </div>
-            </div>
-            <div className={styles.address_row__field}>
-                <span className={styles.address_row__label}>Private Key</span>
-                <div className={styles.address_row__value_group}>
-                    <code className={`${styles.address_row__value} ${!revealed ? styles['address_row__value--masked'] : ''}`}>
-                        {maskedKey}
-                    </code>
-                    <button
-                        className={styles.icon_button}
-                        onClick={() => setRevealed(prev => !prev)}
-                        aria-label={revealed ? 'Hide private key' : 'Reveal private key'}
-                        title={revealed ? 'Hide' : 'Reveal'}
-                    >
-                        {revealed ? <EyeOff size={14} /> : <Eye size={14} />}
-                    </button>
-                    <button
-                        className={styles.icon_button}
-                        onClick={() => handleCopy(entry.privateKey, 'key')}
-                        aria-label="Copy private key"
-                        title="Copy private key"
-                    >
-                        {copiedField === 'key'
-                            ? <Check size={14} style={{ color: 'var(--color-success)' }} />
-                            : <Copy size={14} />
-                        }
-                    </button>
-                </div>
-            </div>
-        </div>
+        <tr className={styles.match_row}>
+            <td className={styles.match_row__index}>{index}</td>
+            <td className={styles.match_row__cell}>
+                <code className={styles.match_row__mono}>
+                    <HighlightedAddress address={entry.address} pattern={pattern} caseSensitive={caseSensitive} />
+                </code>
+                <button
+                    className={styles.icon_button}
+                    onClick={() => handleCopy(entry.address, 'address')}
+                    aria-label="Copy address"
+                    title="Copy address"
+                >
+                    {copiedField === 'address'
+                        ? <Check size={12} style={{ color: 'var(--color-success)' }} />
+                        : <Copy size={12} />
+                    }
+                </button>
+            </td>
+            <td className={styles.match_row__cell}>
+                <span className={styles.match_row__gender}>{entry.gender === 'male' ? '☰' : '☷'}</span>
+            </td>
+            <td className={styles.match_row__cell}>
+                <code className={`${styles.match_row__mono} ${!revealed ? styles.match_row__masked : ''}`}>
+                    {maskedKey}
+                </code>
+                <button
+                    className={styles.icon_button}
+                    onClick={() => setRevealed(prev => !prev)}
+                    aria-label={revealed ? 'Hide private key' : 'Reveal private key'}
+                    title={revealed ? 'Hide' : 'Reveal'}
+                >
+                    {revealed ? <EyeOff size={12} /> : <Eye size={12} />}
+                </button>
+                <button
+                    className={styles.icon_button}
+                    onClick={() => handleCopy(entry.privateKey, 'key')}
+                    aria-label="Copy private key"
+                    title="Copy private key"
+                >
+                    {copiedField === 'key'
+                        ? <Check size={12} style={{ color: 'var(--color-success)' }} />
+                        : <Copy size={12} />
+                    }
+                </button>
+            </td>
+        </tr>
     );
 }
 
@@ -207,7 +350,12 @@ export function AddressGenerator() {
 
             switch (type) {
                 case 'generated':
-                    setSingleResult({ address: event.data.address, privateKey: event.data.privateKey });
+                    setSingleResult({
+                        address: event.data.address,
+                        privateKey: event.data.privateKey,
+                        mnemonic: event.data.mnemonic,
+                        gender: event.data.gender,
+                    });
                     setGenerating(false);
                     break;
                 case 'vanity-match':
@@ -216,7 +364,7 @@ export function AddressGenerator() {
                             worker.postMessage({ type: 'vanity-stop' });
                             return prev;
                         }
-                        return [...prev, { address: event.data.address, privateKey: event.data.privateKey }];
+                        return [...prev, { address: event.data.address, privateKey: event.data.privateKey, gender: event.data.gender }];
                     });
                     break;
                 case 'vanity-progress':
@@ -295,7 +443,7 @@ export function AddressGenerator() {
                             </Button>
                         </div>
 
-                        {singleResult && <AddressRow entry={singleResult} />}
+                        {singleResult && <SingleAddressResult entry={singleResult} />}
                     </Stack>
                 </Card>
 
@@ -362,7 +510,7 @@ export function AddressGenerator() {
                                     {searching ? 'Searching' : 'Stopped'}
                                 </Badge>
                                 <span className={styles.stats__text}>
-                                    {formatNumber(stats.checked)} checked &mdash; ~{formatNumber(stats.rate)}/sec
+                                    {formatNumber(stats.checked)} attempts &mdash; ~{formatNumber(stats.rate)}/sec
                                 </span>
                                 {matches.length > 0 && (
                                     <span className={styles.stats__matches}>
@@ -374,9 +522,21 @@ export function AddressGenerator() {
 
                         {matches.length > 0 && (
                             <div className={styles.matches}>
-                                {matches.map((entry, i) => (
-                                    <AddressRow key={`${entry.address}-${i}`} entry={entry} />
-                                ))}
+                                <table className={styles.match_table}>
+                                    <thead>
+                                        <tr>
+                                            <th className={styles.match_table__th}>#</th>
+                                            <th className={styles.match_table__th}>Address</th>
+                                            <th className={styles.match_table__th}>Gender</th>
+                                            <th className={styles.match_table__th}>Private Key</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {matches.map((entry, i) => (
+                                            <AddressRow key={`${entry.address}-${i}`} entry={entry} index={i + 1} pattern={vanityPattern.trim()} caseSensitive={caseSensitive} />
+                                        ))}
+                                    </tbody>
+                                </table>
                             </div>
                         )}
                     </Stack>

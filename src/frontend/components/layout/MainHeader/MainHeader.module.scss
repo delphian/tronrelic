@@ -14,7 +14,7 @@
 .container {
     display: flex;
     align-items: center;
-    padding: var(--spacing-14) var(--spacing-15) 0;
+    padding: var(--spacing-2) var(--spacing-15) 0;
     width: min($breakpoint-desktop, 100%);
     margin: 0 auto;
     gap: var(--spacing-6);
@@ -50,13 +50,13 @@
 /* Tablet and below */
 @media (max-width: $breakpoint-desktop) {
     .container {
-        padding: var(--spacing-12) var(--spacing-10) 0;
+        padding: var(--spacing-2) var(--spacing-10) 0;
     }
 }
 
 /* Mobile and below */
 @media (max-width: $breakpoint-mobile) {
     .container {
-        padding: var(--spacing-10) var(--spacing-9) 0;
+        padding: var(--spacing-2) var(--spacing-9) 0;
     }
 }
