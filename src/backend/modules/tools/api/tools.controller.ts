@@ -45,7 +45,7 @@ const signatureSchema = z.object({
 });
 
 const approvalCheckSchema = z.object({
-    address: z.string().trim().min(34).max(42)
+    address: z.string().trim().min(34).max(44)
 });
 
 const timestampConvertSchema = z.object({

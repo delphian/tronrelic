@@ -13,7 +13,6 @@ import type TronWeb from 'tronweb';
 import type { Express } from 'express';
 import type { ICacheService, IChainParametersService, IDatabaseService, IMenuService, IModule, IModuleMetadata, IServiceRegistry } from '@/types';
 import { logger } from '../../lib/logger.js';
-import { httpClient } from '../../lib/http-client.js';
 import { TransactionModel } from '../../database/models/transaction-model.js';
 import { TronGridClient } from '../blockchain/tron-grid.client.js';
 import { AddressService } from './services/address.service.js';
@@ -129,7 +128,7 @@ export class ToolsModule implements IModule<IToolsModuleDependencies> {
             chainParameters
         );
         const signatureService = new SignatureService(tronWeb);
-        const approvalService = new ApprovalService(httpClient, dependencies.cacheService);
+        const approvalService = new ApprovalService(TronGridClient.getInstance(), dependencies.cacheService);
         const timestampService = new TimestampService(TronGridClient.getInstance(), dependencies.cacheService);
 
         this.controller = new ToolsController(

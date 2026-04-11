@@ -44,6 +44,7 @@
   },
   "dependencies": {
     "@clickhouse/client": "^1.8.1",
+    "@noble/hashes": "^1.8.0",
     "@reduxjs/toolkit": "^2.2.5",
     "@types/multer": "^2.0.0",
     "axios": "^1.7.5",
@@ -52,6 +53,7 @@
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
+    "elliptic": "^6.6.1",
     "express": "^4.19.2",
     "express-mongo-sanitize": "^2.2.0",
     "geoip-lite": "^1.4.10",
@@ -61,6 +63,7 @@
     "http-status-codes": "^2.3.0",
     "ioredis": "^5.4.1",
     "ipaddr.js": "^2.2.0",
+    "js-sha3": "^0.8.0",
     "js-yaml": "^4.1.1",
     "lucide": "^0.555.0",
     "lucide-react": "^0.545.0",

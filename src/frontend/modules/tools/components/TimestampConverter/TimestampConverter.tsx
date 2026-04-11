@@ -54,7 +54,13 @@ export function TimestampConverter() {
         try {
             const payload: Record<string, string | number> = {};
             if (inputType === 'timestamp' || inputType === 'blockNumber') {
-                payload[inputType] = Number(trimmed);
+                const parsed = Number(trimmed);
+                if (!Number.isFinite(parsed) || !Number.isInteger(parsed) || parsed < 0) {
+                    setError(`Invalid ${inputType === 'timestamp' ? 'timestamp' : 'block number'}: must be a non-negative integer`);
+                    setLoading(false);
+                    return;
+                }
+                payload[inputType] = parsed;
             } else {
                 payload[inputType] = trimmed;
             }

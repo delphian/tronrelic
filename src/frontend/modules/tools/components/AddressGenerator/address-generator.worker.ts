@@ -122,8 +122,12 @@ function generateAddress(): { address: string; privateKey: string } {
 let searching = false;
 
 /**
- * Run a vanity search loop. Generates addresses continuously, posting
- * matches and periodic progress updates back to the main thread.
+ * Run a vanity search loop using batched iterations with setTimeout(0) yields.
+ *
+ * Each batch generates BATCH_SIZE addresses, then yields the event loop via
+ * setTimeout so the worker can process incoming messages (e.g. vanity-stop).
+ * Without yielding, the synchronous loop would block the event loop and
+ * prevent stop messages from being handled.
  *
  * @param pattern - Substring to search for inside the address
  * @param caseSensitive - Whether the match should be case-sensitive
@@ -134,16 +138,26 @@ function runVanitySearch(pattern: string, caseSensitive: boolean): void {
     const startTime = Date.now();
     const searchPattern = caseSensitive ? pattern : pattern.toLowerCase();
 
+    const BATCH_SIZE = 100;
     const PROGRESS_INTERVAL = 500;
     let lastProgressTime = startTime;
 
-    while (searching) {
-        const { address, privateKey } = generateAddress();
-        checked++;
+    const processBatch = (): void => {
+        if (!searching) {
+            const elapsed = (Date.now() - startTime) / 1000;
+            const rate = elapsed > 0 ? Math.round(checked / elapsed) : 0;
+            self.postMessage({ type: 'vanity-stopped', checked, rate });
+            return;
+        }
 
-        const haystack = caseSensitive ? address : address.toLowerCase();
-        if (haystack.includes(searchPattern)) {
-            self.postMessage({ type: 'vanity-match', address, privateKey });
+        for (let i = 0; i < BATCH_SIZE && searching; i++) {
+            const { address, privateKey } = generateAddress();
+            checked++;
+
+            const haystack = caseSensitive ? address : address.toLowerCase();
+            if (haystack.includes(searchPattern)) {
+                self.postMessage({ type: 'vanity-match', address, privateKey });
+            }
         }
 
         const now = Date.now();
@@ -153,11 +167,11 @@ function runVanitySearch(pattern: string, caseSensitive: boolean): void {
             self.postMessage({ type: 'vanity-progress', checked, rate });
             lastProgressTime = now;
         }
-    }
 
-    const elapsed = (Date.now() - startTime) / 1000;
-    const rate = elapsed > 0 ? Math.round(checked / elapsed) : 0;
-    self.postMessage({ type: 'vanity-stopped', checked, rate });
+        setTimeout(processBatch, 0);
+    };
+
+    processBatch();
 }
 
 self.onmessage = (event: MessageEvent) => {

@@ -21,6 +21,9 @@ import styles from './AddressGenerator.module.scss';
 const BASE58_CHARS = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
 const BASE58_SET = new Set(BASE58_CHARS);
 
+/** Maximum vanity matches to store before auto-stopping the search. */
+const MAX_VANITY_MATCHES = 100;
+
 /** Characters commonly confused with valid Base58 characters. */
 const CONFUSED_CHARS: Record<string, string> = {
     '0': '(zero) — did you mean O? (also excluded)',
@@ -121,7 +124,7 @@ function AddressRow({ entry }: { entry: IGeneratedAddress }) {
         }
     }, []);
 
-    const maskedKey = revealed ? entry.privateKey : '\u2022'.repeat(32);
+    const maskedKey = revealed ? entry.privateKey : '\u2022'.repeat(entry.privateKey.length);
 
     return (
         <div className={styles.address_row}>
@@ -208,7 +211,13 @@ export function AddressGenerator() {
                     setGenerating(false);
                     break;
                 case 'vanity-match':
-                    setMatches(prev => [...prev, { address: event.data.address, privateKey: event.data.privateKey }]);
+                    setMatches(prev => {
+                        if (prev.length >= MAX_VANITY_MATCHES) {
+                            worker.postMessage({ type: 'vanity-stop' });
+                            return prev;
+                        }
+                        return [...prev, { address: event.data.address, privateKey: event.data.privateKey }];
+                    });
                     break;
                 case 'vanity-progress':
                     setStats({ checked: event.data.checked, rate: event.data.rate });

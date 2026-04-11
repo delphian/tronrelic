@@ -105,15 +105,18 @@ export class TimestampService {
 
         const timestampSec = Math.floor(timestampMs / 1000);
         const dateString = new Date(timestampMs).toISOString();
-        const blockDelta = Math.round((timestampMs - ref.timestamp) / BLOCK_INTERVAL_MS);
-        const blockNumber = Math.max(1, ref.number + blockDelta);
+
+        const blockNumberIsEstimate = input.blockNumber === undefined;
+        const blockNumber = blockNumberIsEstimate
+            ? Math.max(1, ref.number + Math.round((timestampMs - ref.timestamp) / BLOCK_INTERVAL_MS))
+            : input.blockNumber!;
 
         const result: ITimestampConversionResult = {
             timestamp: timestampSec,
             timestampMs,
             dateString,
             blockNumber,
-            blockNumberIsEstimate: true,
+            blockNumberIsEstimate,
             relativeTime: this.getRelativeTime(timestampMs),
             referenceBlock: ref
         };

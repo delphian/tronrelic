@@ -6,8 +6,8 @@
  * Results are cached briefly to avoid redundant multi-call fan-out.
  */
 
-import type { AxiosInstance } from 'axios';
 import type { ICacheService } from '@/types';
+import type { TronGridClient } from '../../blockchain/tron-grid.client.js';
 import { normalizeAddress, toHexAddress } from '../../../lib/tron-address.js';
 import { logger } from '../../../lib/logger.js';
 
@@ -16,9 +16,6 @@ const MAX_ALLOWANCE_QUERIES = 20;
 
 /** Cache TTL for approval scan results in seconds. */
 const APPROVAL_CACHE_TTL = 60;
-
-/** TronGrid base URL for API calls. */
-const TRONGRID_BASE = 'https://api.trongrid.io';
 
 /** Maximum uint256 hex — indicates unlimited approval. */
 const MAX_UINT256_HEX = 'f'.repeat(64);
@@ -89,11 +86,11 @@ export class ApprovalService {
     private readonly logger = logger.child({ service: 'ApprovalService' });
 
     /**
-     * @param http - Axios instance for TronGrid API calls
+     * @param tronGridClient - TronGridClient singleton for rate-limited TronGrid access
      * @param cache - Cache service for TTL-based result caching
      */
     constructor(
-        private readonly http: AxiosInstance,
+        private readonly tronGridClient: TronGridClient,
         private readonly cache: ICacheService
     ) {}
 
@@ -184,7 +181,6 @@ export class ApprovalService {
         const maxPages = 5;
 
         for (let page = 0; page < maxPages; page++) {
-            const url = `${TRONGRID_BASE}/v1/accounts/${base58Address}/transactions/trc20`;
             const params: Record<string, string | number | boolean> = {
                 only_confirmed: true,
                 limit: 200
@@ -194,16 +190,16 @@ export class ApprovalService {
             }
 
             try {
-                const response = await this.http.get<{
+                const response = await this.tronGridClient.getTrc20Transactions<{
                     data: TronGridTrc20Transaction[];
                     meta?: { fingerprint?: string };
-                }>(url, { params, timeout: 15000 });
+                }>(base58Address, params);
 
-                const data = response.data?.data ?? [];
+                const data = response?.data ?? [];
                 const approveTransactions = data.filter(tx => tx.type === 'Approve');
                 allApprovals.push(...approveTransactions);
 
-                fingerprint = response.data?.meta?.fingerprint;
+                fingerprint = response?.meta?.fingerprint;
                 if (!fingerprint || data.length < 200) {
                     break;
                 }
@@ -290,23 +286,19 @@ export class ApprovalService {
 
         const parameter = ownerHex.padStart(64, '0') + spenderHex.padStart(64, '0');
 
-        const response = await this.http.post<TriggerConstantResponse>(
-            `${TRONGRID_BASE}/wallet/triggerconstantcontract`,
-            {
-                owner_address: ownerBase58,
-                contract_address: tokenBase58,
-                function_selector: 'allowance(address,address)',
-                parameter,
-                visible: true
-            },
-            { timeout: 10000 }
-        );
+        const response = await this.tronGridClient.triggerConstantContract<TriggerConstantResponse>({
+            owner_address: ownerBase58,
+            contract_address: tokenBase58,
+            function_selector: 'allowance(address,address)',
+            parameter,
+            visible: true
+        });
 
-        if (!response.data?.result?.result) {
+        if (!response?.result?.result) {
             return null;
         }
 
-        const raw = response.data.constant_result?.[0];
+        const raw = response.constant_result?.[0];
         if (!raw || raw.length < 64) {
             return null;
         }
@@ -351,7 +343,7 @@ export class ApprovalService {
         const fractionalStr = fractionalPart
             .toString()
             .padStart(decimals, '0')
-            .slice(0, 4)
+            .slice(0, 6)
             .replace(/0+$/, '');
 
         if (!fractionalStr) {
