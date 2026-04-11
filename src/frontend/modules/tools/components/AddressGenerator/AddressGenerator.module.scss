@@ -87,15 +87,80 @@
 }
 
 .matches {
-    display: flex;
-    flex-direction: column;
-    gap: var(--spacing-5);
+    overflow-x: auto;
+    border-radius: var(--table-border-radius);
 }
 
-.address_row {
+.match_table {
+    width: 100%;
+    border-collapse: collapse;
+    background: var(--table-background);
+
+    &__th {
+        font-size: var(--table-header-font-size);
+        font-weight: var(--font-weight-semibold);
+        color: var(--color-text-muted);
+        text-transform: uppercase;
+        letter-spacing: var(--table-header-letter-spacing);
+        text-align: left;
+        padding: var(--spacing-3) var(--spacing-4);
+        background: var(--table-header-background);
+        white-space: nowrap;
+    }
+}
+
+.match_row {
+    transition: var(--table-row-transition);
+
+    &:hover {
+        background: var(--table-row-background-hover);
+    }
+
+    &:not(:last-child) td {
+        border-bottom: var(--table-cell-border);
+    }
+
+    &__index {
+        font-size: var(--font-size-xs);
+        color: var(--color-text-muted);
+        padding: var(--spacing-2) var(--spacing-4);
+        text-align: center;
+        white-space: nowrap;
+    }
+
+    &__cell {
+        padding: var(--spacing-2) var(--spacing-4);
+        white-space: nowrap;
+    }
+
+    &__mono {
+        font-family: var(--font-mono);
+        font-size: var(--font-size-xs);
+        color: var(--color-text);
+    }
+
+    &__masked {
+        color: var(--color-text-subtle);
+        user-select: none;
+        letter-spacing: var(--letter-spacing-tight);
+    }
+
+    &__gender {
+        font-size: var(--font-size-sm);
+        color: var(--color-text-muted);
+        text-align: center;
+    }
+}
+
+.match_highlight {
+    color: var(--color-primary);
+    font-weight: var(--font-weight-semibold);
+}
+
+.single_result {
     display: flex;
     flex-direction: column;
-    gap: var(--spacing-3);
+    gap: var(--spacing-4);
     padding: var(--card-padding-sm);
     background: var(--color-surface-muted);
     border-radius: var(--radius-sm);
@@ -114,25 +179,25 @@
         letter-spacing: var(--letter-spacing-wide);
     }
 
-    &__value_group {
+    &__value_row {
         display: flex;
         align-items: center;
         gap: var(--spacing-3);
     }
 
-    &__value {
+    &__mono {
         font-family: var(--font-mono);
         font-size: var(--font-size-sm);
         color: var(--color-text);
         word-break: break-all;
         flex: 1;
         min-width: 0;
+    }
 
-        &--masked {
-            color: var(--color-text-subtle);
-            user-select: none;
-            letter-spacing: var(--letter-spacing-tight);
-        }
+    &__masked {
+        color: var(--color-text-subtle);
+        user-select: none;
+        letter-spacing: var(--letter-spacing-tight);
     }
 }
 
@@ -193,7 +258,8 @@
         align-items: stretch;
     }
 
-    .address_row__value_group {
-        flex-wrap: wrap;
+    .match_row__cell {
+        white-space: normal;
+        word-break: break-all;
     }
 }

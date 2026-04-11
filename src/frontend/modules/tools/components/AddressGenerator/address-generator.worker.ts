@@ -3,8 +3,8 @@
  *
  * Runs secp256k1 key derivation and Base58Check encoding off the main thread
  * so the UI stays responsive during vanity search. Uses elliptic for EC math,
- * js-sha3 for Keccak-256, and @noble/hashes for SHA-256 (pure JS, no Node
- * crypto dependency).
+ * js-sha3 for Keccak-256, @noble/hashes for SHA-256, and @scure/bip39 +
+ * @scure/bip32 for HD wallet mnemonic generation (single-address mode only).
  */
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -12,6 +12,9 @@
 import { ec as EC } from 'elliptic';
 import { keccak256 } from 'js-sha3';
 import { sha256 } from '@noble/hashes/sha256';
+import { generateMnemonic, mnemonicToSeedSync } from '@scure/bip39';
+import { wordlist } from '@scure/bip39/wordlists/english';
+import { HDKey } from '@scure/bip32';
 
 /** Base58 alphabet — excludes 0, O, I, l to avoid visual ambiguity. */
 const BASE58_ALPHABET = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
@@ -96,7 +99,7 @@ function hexToBytes(hex: string): Uint8Array {
  *
  * @returns Object with base58 address and hex private key
  */
-function generateAddress(): { address: string; privateKey: string } {
+function generateAddress(): { address: string; privateKey: string; gender: 'male' | 'female' } {
     const keyPair = secp256k1.genKeyPair();
     const privateKey = keyPair.getPrivate('hex').padStart(64, '0');
     const publicKeyHex = keyPair.getPublic(false, 'hex');
@@ -111,7 +114,70 @@ function generateAddress(): { address: string; privateKey: string } {
 
     const address = base58CheckEncode(rawAddress);
 
-    return { address, privateKey };
+    return { address, privateKey, gender: deriveGender(rawAddress) };
+}
+
+/**
+ * Generate a TRON address from a BIP39 mnemonic via BIP44 derivation.
+ *
+ * Generates 12-word mnemonic, derives seed, then follows the TRON BIP44
+ * path (m/44'/195'/0'/0/0) to produce a deterministic key pair. The
+ * resulting address is identical to what TronLink and other HD wallets
+ * would derive from the same mnemonic.
+ *
+ * @returns Object with base58 address, hex private key, and mnemonic phrase
+ */
+function generateHdAddress(): { address: string; privateKey: string; mnemonic: string; gender: 'male' | 'female' } {
+    const mnemonic = generateMnemonic(wordlist);
+    const seed = mnemonicToSeedSync(mnemonic);
+    const master = HDKey.fromMasterSeed(seed);
+    const derived = master.derive("m/44'/195'/0'/0/0");
+
+    const privKeyBytes = derived.privateKey!;
+    const privateKey = Array.from(privKeyBytes)
+        .map(b => b.toString(16).padStart(2, '0'))
+        .join('');
+
+    const keyPair = secp256k1.keyFromPrivate(privateKey);
+    const publicKeyHex = keyPair.getPublic(false, 'hex');
+
+    const pubBytes = hexToBytes(publicKeyHex.slice(2));
+    const hash = keccak256(pubBytes);
+
+    const rawAddress = new Uint8Array(21);
+    rawAddress[0] = 0x41;
+    const hashBytes = hexToBytes(hash.slice(-40));
+    rawAddress.set(hashBytes, 1);
+
+    const address = base58CheckEncode(rawAddress);
+
+    return { address, privateKey, mnemonic, gender: deriveGender(rawAddress) };
+}
+
+/* ------------------------------------------------------------------ */
+/*  Gender derivation (mirrors IToolsService.deriveGender)             */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Derive the yin/yang gender of a TRON address from its raw bytes.
+ *
+ * Mirrors the IToolsService.deriveGender algorithm from the backend service
+ * registry so the client-side address generator can display gender without
+ * sending addresses to the server. Accepts the 21-byte raw address directly
+ * (version + 20-byte hash) to avoid redundant base58 encode/decode during
+ * high-frequency vanity searches. Sums the 21 bytes, reads parity:
+ * odd = male, even = female.
+ *
+ * @param rawAddress - 21-byte Uint8Array (0x41 prefix + 20-byte address hash)
+ * @returns 'male' or 'female'
+ */
+function deriveGender(rawAddress: Uint8Array): 'male' | 'female' {
+    let byteSum = 0;
+    for (let i = 0; i < 21; i++) {
+        byteSum += rawAddress[i];
+    }
+
+    return byteSum % 2 === 1 ? 'male' : 'female';
 }
 
 /* ------------------------------------------------------------------ */
@@ -151,12 +217,12 @@ function runVanitySearch(pattern: string, caseSensitive: boolean): void {
         }
 
         for (let i = 0; i < BATCH_SIZE && searching; i++) {
-            const { address, privateKey } = generateAddress();
+            const { address, privateKey, gender } = generateAddress();
             checked++;
 
             const haystack = caseSensitive ? address : address.toLowerCase();
             if (haystack.includes(searchPattern)) {
-                self.postMessage({ type: 'vanity-match', address, privateKey });
+                self.postMessage({ type: 'vanity-match', address, privateKey, gender });
             }
         }
 
@@ -179,7 +245,7 @@ self.onmessage = (event: MessageEvent) => {
 
     switch (type) {
         case 'generate': {
-            const result = generateAddress();
+            const result = generateHdAddress();
             self.postMessage({ type: 'generated', ...result });
             break;
         }

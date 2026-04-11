@@ -19,6 +19,7 @@ import { AddressService } from './services/address.service.js';
 import { CalculatorService } from './services/calculator.service.js';
 import { ApprovalService } from './services/approval.service.js';
 import { TimestampService } from './services/timestamp.service.js';
+import { ToolsService } from './services/tools.service.js';
 import { SignatureService } from '../auth/signature.service.js';
 import { ToolsController } from './api/tools.controller.js';
 import { createToolsRouter } from './api/tools.router.js';
@@ -84,10 +85,12 @@ export class ToolsModule implements IModule<IToolsModuleDependencies> {
     /** Stored dependencies from init() phase. */
     private database!: IDatabaseService;
     private menuService!: IMenuService;
+    private serviceRegistry!: IServiceRegistry;
     private app!: Express;
 
     /** Services created during init() phase. */
     private controller!: ToolsController;
+    private toolsService!: ToolsService;
 
     /** Logger instance for this module. */
     private readonly logger = logger.child({ module: 'tools' });
@@ -107,6 +110,7 @@ export class ToolsModule implements IModule<IToolsModuleDependencies> {
 
         this.database = dependencies.database;
         this.menuService = dependencies.menuService;
+        this.serviceRegistry = dependencies.serviceRegistry;
         this.app = dependencies.app;
 
         this.database.registerModel(TRANSACTIONS_COLLECTION, TransactionModel);
@@ -122,6 +126,8 @@ export class ToolsModule implements IModule<IToolsModuleDependencies> {
         }
 
         const addressService = new AddressService(tronWeb);
+        this.toolsService = new ToolsService(addressService);
+
         const calculatorService = new CalculatorService(
             dependencies.cacheService,
             this.database,
@@ -149,6 +155,9 @@ export class ToolsModule implements IModule<IToolsModuleDependencies> {
      */
     async run(): Promise<void> {
         this.logger.info('Running tools module...');
+
+        this.serviceRegistry.register('tools', this.toolsService);
+        this.logger.info('ToolsService registered on service registry as "tools"');
 
         await this.registerMenuItems();
 
