@@ -114,7 +114,7 @@ function generateAddress(): { address: string; privateKey: string; gender: 'male
 
     const address = base58CheckEncode(rawAddress);
 
-    return { address, privateKey, gender: deriveGender(address) };
+    return { address, privateKey, gender: deriveGender(rawAddress) };
 }
 
 /**
@@ -151,7 +151,7 @@ function generateHdAddress(): { address: string; privateKey: string; mnemonic: s
 
     const address = base58CheckEncode(rawAddress);
 
-    return { address, privateKey, mnemonic, gender: deriveGender(address) };
+    return { address, privateKey, mnemonic, gender: deriveGender(rawAddress) };
 }
 
 /* ------------------------------------------------------------------ */
@@ -163,30 +163,18 @@ function generateHdAddress(): { address: string; privateKey: string; mnemonic: s
  *
  * Mirrors the IToolsService.deriveGender algorithm from the backend service
  * registry so the client-side address generator can display gender without
- * sending addresses to the server. Decodes base58 to 25 bytes, sums the
- * first 21 (version + address, excluding checksum), reads parity: odd = male,
- * even = female.
+ * sending addresses to the server. Accepts the 21-byte raw address directly
+ * (version + 20-byte hash) to avoid redundant base58 encode/decode during
+ * high-frequency vanity searches. Sums the 21 bytes, reads parity:
+ * odd = male, even = female.
  *
- * @param address - 34-character TRON address starting with 'T'
+ * @param rawAddress - 21-byte Uint8Array (0x41 prefix + 20-byte address hash)
  * @returns 'male' or 'female'
  */
-function deriveGender(address: string): 'male' | 'female' {
-    let num = BigInt(0);
-    for (const c of address) {
-        const idx = BASE58_ALPHABET.indexOf(c);
-        if (idx < 0) return 'male';
-        num = num * BigInt(58) + BigInt(idx);
-    }
-
-    const raw = new Uint8Array(25);
-    for (let i = 24; i >= 0; i--) {
-        raw[i] = Number(num & BigInt(0xff));
-        num >>= BigInt(8);
-    }
-
+function deriveGender(rawAddress: Uint8Array): 'male' | 'female' {
     let byteSum = 0;
     for (let i = 0; i < 21; i++) {
-        byteSum += raw[i];
+        byteSum += rawAddress[i];
     }
 
     return byteSum % 2 === 1 ? 'male' : 'female';

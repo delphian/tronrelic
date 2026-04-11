@@ -127,9 +127,12 @@ function SingleAddressResult({ entry }: { entry: IGeneratedAddress }) {
         }
     }, []);
 
-    const maskedMnemonic = revealedMnemonic
-        ? entry.mnemonic!
-        : entry.mnemonic!.split(' ').map(() => '\u2022\u2022\u2022\u2022').join(' ');
+    const mnemonic = entry.mnemonic;
+    const maskedMnemonic = !mnemonic
+        ? 'Unavailable'
+        : revealedMnemonic
+            ? mnemonic
+            : mnemonic.split(' ').map(() => '\u2022\u2022\u2022\u2022').join(' ');
     const maskedKey = revealedKey ? entry.privateKey : '\u2022'.repeat(entry.privateKey.length);
 
     return (
