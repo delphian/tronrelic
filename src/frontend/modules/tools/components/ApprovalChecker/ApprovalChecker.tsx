@@ -9,7 +9,9 @@
 'use client';
 
 import { useState } from 'react';
-import { Shield } from 'lucide-react';
+import { Shield, ShieldAlert } from 'lucide-react';
+import { useAppSelector } from '../../../../store/hooks';
+import { selectHasVerifiedWallet } from '../../../user';
 import { Page, PageHeader, Stack } from '../../../../components/layout';
 import { Card } from '../../../../components/ui/Card';
 import { Input } from '../../../../components/ui/Input';
@@ -27,6 +29,7 @@ import styles from './ApprovalChecker.module.scss';
  * No SSR data needed — purely interactive.
  */
 export function ApprovalChecker() {
+    const hasVerifiedWallet = useAppSelector(selectHasVerifiedWallet);
     const [address, setAddress] = useState('');
     const [result, setResult] = useState<IApprovalCheckResult | null>(null);
     const [error, setError] = useState<string | null>(null);
@@ -50,6 +53,30 @@ export function ApprovalChecker() {
             setLoading(false);
         }
     };
+
+    if (!hasVerifiedWallet) {
+        return (
+            <Page>
+                <PageHeader title="Token Approval Checker" subtitle="Scan a TRON wallet for active TRC20 token approvals" />
+                <div className={styles.container}>
+                    <Card>
+                        <Stack gap="md">
+                            <div className={styles.gate_message}>
+                                <ShieldAlert size={24} />
+                                <p>
+                                    This tool requires a verified wallet. Connect and verify your TRON wallet
+                                    via TronLink signature to use the approval checker.
+                                </p>
+                                <a href="/profile" className="btn btn--primary btn--md">
+                                    Verify Wallet
+                                </a>
+                            </div>
+                        </Stack>
+                    </Card>
+                </div>
+            </Page>
+        );
+    }
 
     return (
         <Page>

@@ -696,6 +696,12 @@ export const selectHasWallets = (state: { user: UserState }): boolean =>
     (state.user.userData?.wallets?.length ?? 0) > 0;
 
 /**
+ * Select whether user has at least one cryptographically verified wallet.
+ */
+export const selectHasVerifiedWallet = (state: { user: UserState }): boolean =>
+    state.user.userData?.wallets?.some(w => w.verified) ?? false;
+
+/**
  * Select whether user is logged in (UI/feature gate).
  *
  * When false, frontend shows "Connect" button and hides logged-in features.

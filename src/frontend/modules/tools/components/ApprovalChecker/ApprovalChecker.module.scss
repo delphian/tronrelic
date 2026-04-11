@@ -55,6 +55,16 @@
     word-break: break-all;
 }
 
+.gate_message {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--spacing-7);
+    text-align: center;
+    padding: var(--spacing-10) 0;
+    color: var(--color-text-muted);
+}
+
 .truncated {
     color: var(--color-warning);
     font-size: var(--font-size-sm);
