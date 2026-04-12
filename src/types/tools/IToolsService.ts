@@ -6,7 +6,7 @@
  * Registered as 'tools' on the IServiceRegistry during ToolsModule.run().
  */
 
-import type { IAddressConversionResult } from './IToolsTypes.js';
+import type { IAddressConversionResult, IAddressValidationResult } from './IToolsTypes.js';
 
 /**
  * Service interface for TRON address and wallet utilities.
@@ -42,4 +42,16 @@ export interface IToolsService {
      * @throws If the address contains invalid base58 characters
      */
     deriveGender(address: string): 'male' | 'female';
+
+    /**
+     * Validate whether a string is a well-formed TRON address.
+     *
+     * Checks format (base58 or hex), prefix, length, and checksum without
+     * throwing on invalid input. When valid, returns both normalized address
+     * formats for convenience.
+     *
+     * @param input - Candidate address string in base58 or hex format
+     * @returns Validation result with format detection and normalized addresses
+     */
+    validateAddress(input: string): IAddressValidationResult;
 }

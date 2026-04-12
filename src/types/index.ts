@@ -32,4 +32,4 @@ export type { UserFilterType, BucketInterval, IUser, IWalletLink, IUserPreferenc
 export type { ITronGridService, ITronGridAccountResponse, ITronGridAccountPermission } from './tron-grid/index.js';
 export type { IBlockStats, IBlock, IBlockchainService, ITransactionTimeseriesPoint } from './blockchain/index.js';
 export type { IAddressLabel, IResolvedAddressLabel, AddressCategory, AddressLabelSourceType, ITronAddressMetadata, IAddressLabelService, ICreateAddressLabelInput, IUpdateAddressLabelInput, IAddressLabelFilter, IAddressLabelImportResult, IAddressLabelListResult } from './address-label/index.js';
-export type { IToolsService, IAddressConversionResult } from './tools/index.js';
+export type { IToolsService, IAddressConversionResult, IAddressValidationResult } from './tools/index.js';
