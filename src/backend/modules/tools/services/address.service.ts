@@ -145,8 +145,9 @@ export class AddressService {
 
         if (HEX_REGEX.test(hex)) {
             try {
-                const base58check = this.tronWeb.address.fromHex(hex.toUpperCase());
-                return { valid: true, format: 'hex', base58check, hex: hex.toUpperCase() };
+                const normalizedHex = hex.toUpperCase();
+                const base58check = this.tronWeb.address.fromHex(normalizedHex);
+                return { valid: true, format: 'hex', base58check, hex: normalizedHex };
             } catch {
                 return { valid: false, format: 'hex', error: 'Invalid hex address' };
             }
@@ -175,7 +176,7 @@ export class AddressService {
         if (hex.length === 40) {
             hex = `41${hex}`;
         }
-        if (!/^41[0-9a-fA-F]{40}$/u.test(hex)) {
+        if (!HEX_REGEX.test(hex)) {
             throw new ValidationError('Invalid Tron hex address', { hex: input });
         }
         return hex.toUpperCase();
