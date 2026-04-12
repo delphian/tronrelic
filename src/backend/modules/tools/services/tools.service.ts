@@ -6,7 +6,7 @@
  * IToolsService without importing concrete implementations.
  */
 
-import type { IToolsService, IAddressConversionResult } from '@/types';
+import type { IToolsService, IAddressConversionResult, IAddressValidationResult } from '@/types';
 import type { AddressService } from './address.service.js';
 
 /**
@@ -30,6 +30,20 @@ export class ToolsService implements IToolsService {
      */
     convertAddress(input: { hex?: string; base58Check?: string }): IAddressConversionResult {
         return this.addressService.convertAddress(input);
+    }
+
+    /**
+     * Validate whether a string is a well-formed TRON address.
+     *
+     * Delegates to AddressService for format detection, prefix/length
+     * checking, and TronWeb checksum verification. Never throws on
+     * invalid input — returns a result object instead.
+     *
+     * @param input - Candidate address string in base58 or hex format
+     * @returns Validation result with format detection and normalized addresses
+     */
+    validateAddress(input: string): IAddressValidationResult {
+        return this.addressService.validateAddress(input);
     }
 
     /**
