@@ -125,13 +125,15 @@ function formatNumber(num: number): string {
 function InlineQrCode({ value, label }: { value: string; label: string }) {
     return (
         <div className={styles.qr_panel}>
-            <QRCodeSVG
-                value={value}
-                size={180}
-                level="M"
-                bgColor="transparent"
-                fgColor="currentColor"
-            />
+            <div className={styles.qr_panel__code}>
+                <QRCodeSVG
+                    value={value}
+                    size={180}
+                    level="M"
+                    bgColor="#ffffff"
+                    fgColor="#000000"
+                />
+            </div>
             <span className={styles.qr_panel__label}>{label}</span>
         </div>
     );
@@ -148,13 +150,15 @@ function InlineQrCode({ value, label }: { value: string; label: string }) {
 function QrModalContent({ address, privateKey }: { address: string; privateKey: string }) {
     return (
         <div className={styles.qr_modal}>
-            <QRCodeSVG
-                value={privateKey}
-                size={220}
-                level="M"
-                bgColor="transparent"
-                fgColor="currentColor"
-            />
+            <div className={styles.qr_panel__code}>
+                <QRCodeSVG
+                    value={privateKey}
+                    size={220}
+                    level="M"
+                    bgColor="#ffffff"
+                    fgColor="#000000"
+                />
+            </div>
             <code className={styles.qr_modal__address}>{address}</code>
             <p className={styles.qr_modal__hint}>
                 Scan to import private key into a mobile wallet
@@ -175,6 +179,15 @@ function SingleAddressResult({ entry }: { entry: IGeneratedAddress }) {
     const [copiedField, setCopiedField] = useState<'address' | 'mnemonic' | 'key' | null>(null);
     const [showMnemonicQr, setShowMnemonicQr] = useState(false);
     const [showKeyQr, setShowKeyQr] = useState(false);
+
+    /** Reset all reveal/QR state when the underlying entry changes. */
+    useEffect(() => {
+        setRevealedMnemonic(false);
+        setRevealedKey(false);
+        setCopiedField(null);
+        setShowMnemonicQr(false);
+        setShowKeyQr(false);
+    }, [entry.address, entry.privateKey, entry.mnemonic]);
 
     /** Copy a value to clipboard and show confirmation. */
     const handleCopy = useCallback(async (value: string, field: 'address' | 'mnemonic' | 'key') => {
@@ -223,7 +236,11 @@ function SingleAddressResult({ entry }: { entry: IGeneratedAddress }) {
                     </code>
                     <button
                         className={styles.icon_button}
-                        onClick={() => setRevealedMnemonic(prev => !prev)}
+                        onClick={() => {
+                            const next = !revealedMnemonic;
+                            setRevealedMnemonic(next);
+                            if (!next) setShowMnemonicQr(false);
+                        }}
                         aria-label={revealedMnemonic ? 'Hide recovery phrase' : 'Reveal recovery phrase'}
                         title={revealedMnemonic ? 'Hide' : 'Reveal'}
                     >
@@ -240,7 +257,7 @@ function SingleAddressResult({ entry }: { entry: IGeneratedAddress }) {
                             : <Copy size={14} />
                         }
                     </button>
-                    {mnemonic && (
+                    {mnemonic && revealedMnemonic && (
                         <button
                             className={styles.icon_button}
                             onClick={() => setShowMnemonicQr(prev => !prev)}
@@ -251,7 +268,7 @@ function SingleAddressResult({ entry }: { entry: IGeneratedAddress }) {
                         </button>
                     )}
                 </div>
-                {showMnemonicQr && mnemonic && (
+                {showMnemonicQr && revealedMnemonic && mnemonic && (
                     <InlineQrCode value={mnemonic} label="Recovery Phrase" />
                 )}
             </div>
@@ -263,7 +280,11 @@ function SingleAddressResult({ entry }: { entry: IGeneratedAddress }) {
                     </code>
                     <button
                         className={styles.icon_button}
-                        onClick={() => setRevealedKey(prev => !prev)}
+                        onClick={() => {
+                            const next = !revealedKey;
+                            setRevealedKey(next);
+                            if (!next) setShowKeyQr(false);
+                        }}
                         aria-label={revealedKey ? 'Hide private key' : 'Reveal private key'}
                         title={revealedKey ? 'Hide' : 'Reveal'}
                     >
@@ -280,16 +301,18 @@ function SingleAddressResult({ entry }: { entry: IGeneratedAddress }) {
                             : <Copy size={14} />
                         }
                     </button>
-                    <button
-                        className={styles.icon_button}
-                        onClick={() => setShowKeyQr(prev => !prev)}
-                        aria-label={showKeyQr ? 'Hide QR code' : 'Show QR code'}
-                        title={showKeyQr ? 'Hide QR' : 'Show QR'}
-                    >
-                        <QrCode size={14} />
-                    </button>
+                    {revealedKey && (
+                        <button
+                            className={styles.icon_button}
+                            onClick={() => setShowKeyQr(prev => !prev)}
+                            aria-label={showKeyQr ? 'Hide QR code' : 'Show QR code'}
+                            title={showKeyQr ? 'Hide QR' : 'Show QR'}
+                        >
+                            <QrCode size={14} />
+                        </button>
+                    )}
                 </div>
-                {showKeyQr && (
+                {showKeyQr && revealedKey && (
                     <InlineQrCode value={entry.privateKey} label="Private Key" />
                 )}
             </div>
@@ -404,14 +427,18 @@ function AddressRow({ entry, index, pattern, caseSensitive }: {
                 </button>
                 <button
                     className={styles.icon_button}
-                    onClick={() => openModal({
-                        title: 'Private Key QR Code',
-                        size: 'sm',
-                        content: <QrModalContent address={entry.address} privateKey={entry.privateKey} />,
-                        dismissible: true,
-                    })}
-                    aria-label="Show QR code"
-                    title="Show QR"
+                    onClick={() => {
+                        if (!revealed) return;
+                        openModal({
+                            title: 'Private Key QR Code',
+                            size: 'sm',
+                            content: <QrModalContent address={entry.address} privateKey={entry.privateKey} />,
+                            dismissible: true,
+                        });
+                    }}
+                    disabled={!revealed}
+                    aria-label={revealed ? 'Show QR code' : 'Reveal private key before showing QR code'}
+                    title={revealed ? 'Show QR' : 'Reveal private key first'}
                 >
                     <QrCode size={12} />
                 </button>

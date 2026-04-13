@@ -236,6 +236,13 @@
     border-radius: var(--radius-sm);
     width: fit-content;
 
+    &__code {
+        background: #ffffff;
+        padding: var(--spacing-4);
+        border-radius: var(--radius-sm);
+        line-height: 0;
+    }
+
     &__label {
         font-size: var(--font-size-xs);
         color: var(--color-text-muted);
