@@ -9,12 +9,14 @@
 'use client';
 
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { KeyRound, Search, Square, Copy, Check, Eye, EyeOff, ShieldCheck, TriangleAlert } from 'lucide-react';
+import { KeyRound, Search, Square, Copy, Check, Eye, EyeOff, ShieldCheck, TriangleAlert, QrCode } from 'lucide-react';
+import { QRCodeSVG } from 'qrcode.react';
 import { Page, PageHeader, Stack } from '../../../../components/layout';
 import { Card } from '../../../../components/ui/Card';
 import { Input } from '../../../../components/ui/Input';
 import { Button } from '../../../../components/ui/Button';
 import { Badge } from '../../../../components/ui/Badge';
+import { useModal } from '../../../../components/ui/ModalProvider';
 import styles from './AddressGenerator.module.scss';
 
 /** Valid Base58 characters — excludes 0, O, I, l. */
@@ -113,6 +115,59 @@ function formatNumber(num: number): string {
 }
 
 /**
+ * Inline QR code panel shown below a field when toggled. Renders the value as a
+ * scannable SVG QR code with a label indicating what the code contains.
+ *
+ * @param props - Component props
+ * @param props.value - String to encode in the QR code
+ * @param props.label - Caption shown below the QR code (e.g. "Private Key" or "Recovery Phrase")
+ */
+function InlineQrCode({ value, label }: { value: string; label: string }) {
+    return (
+        <div className={styles.qr_panel}>
+            <div className={styles.qr_panel__code}>
+                <QRCodeSVG
+                    value={value}
+                    size={180}
+                    level="M"
+                    bgColor="#ffffff"
+                    fgColor="#000000"
+                />
+            </div>
+            <span className={styles.qr_panel__label}>{label}</span>
+        </div>
+    );
+}
+
+/**
+ * Modal content for displaying a QR code. Used by vanity search rows where
+ * inline display would clutter the table layout.
+ *
+ * @param props - Component props
+ * @param props.address - TRON address shown as a heading
+ * @param props.privateKey - Private key to encode in the QR code
+ */
+function QrModalContent({ address, privateKey }: { address: string; privateKey: string }) {
+    return (
+        <div className={styles.qr_modal}>
+            <div className={styles.qr_panel__code}>
+                <QRCodeSVG
+                    value={privateKey}
+                    size={220}
+                    level="M"
+                    bgColor="#ffffff"
+                    fgColor="#000000"
+                />
+            </div>
+            <code className={styles.qr_modal__address}>{address}</code>
+            <p className={styles.qr_modal__hint}>
+                Scan to import private key into a mobile wallet
+            </p>
+        </div>
+    );
+}
+
+/**
  * Display a single generated address with mnemonic and private key, both masked by default.
  *
  * @param props - Component props
@@ -122,6 +177,17 @@ function SingleAddressResult({ entry }: { entry: IGeneratedAddress }) {
     const [revealedMnemonic, setRevealedMnemonic] = useState(false);
     const [revealedKey, setRevealedKey] = useState(false);
     const [copiedField, setCopiedField] = useState<'address' | 'mnemonic' | 'key' | null>(null);
+    const [showMnemonicQr, setShowMnemonicQr] = useState(false);
+    const [showKeyQr, setShowKeyQr] = useState(false);
+
+    /** Reset all reveal/QR state when the underlying entry changes. */
+    useEffect(() => {
+        setRevealedMnemonic(false);
+        setRevealedKey(false);
+        setCopiedField(null);
+        setShowMnemonicQr(false);
+        setShowKeyQr(false);
+    }, [entry.address, entry.privateKey, entry.mnemonic]);
 
     /** Copy a value to clipboard and show confirmation. */
     const handleCopy = useCallback(async (value: string, field: 'address' | 'mnemonic' | 'key') => {
@@ -170,7 +236,11 @@ function SingleAddressResult({ entry }: { entry: IGeneratedAddress }) {
                     </code>
                     <button
                         className={styles.icon_button}
-                        onClick={() => setRevealedMnemonic(prev => !prev)}
+                        onClick={() => {
+                            const next = !revealedMnemonic;
+                            setRevealedMnemonic(next);
+                            if (!next) setShowMnemonicQr(false);
+                        }}
                         aria-label={revealedMnemonic ? 'Hide recovery phrase' : 'Reveal recovery phrase'}
                         title={revealedMnemonic ? 'Hide' : 'Reveal'}
                     >
@@ -187,7 +257,20 @@ function SingleAddressResult({ entry }: { entry: IGeneratedAddress }) {
                             : <Copy size={14} />
                         }
                     </button>
+                    {mnemonic && revealedMnemonic && (
+                        <button
+                            className={styles.icon_button}
+                            onClick={() => setShowMnemonicQr(prev => !prev)}
+                            aria-label={showMnemonicQr ? 'Hide QR code' : 'Show QR code'}
+                            title={showMnemonicQr ? 'Hide QR' : 'Show QR'}
+                        >
+                            <QrCode size={14} />
+                        </button>
+                    )}
                 </div>
+                {showMnemonicQr && revealedMnemonic && mnemonic && (
+                    <InlineQrCode value={mnemonic} label="Recovery Phrase" />
+                )}
             </div>
             <div className={styles.single_result__field}>
                 <span className={styles.single_result__label}>Private Key</span>
@@ -197,7 +280,11 @@ function SingleAddressResult({ entry }: { entry: IGeneratedAddress }) {
                     </code>
                     <button
                         className={styles.icon_button}
-                        onClick={() => setRevealedKey(prev => !prev)}
+                        onClick={() => {
+                            const next = !revealedKey;
+                            setRevealedKey(next);
+                            if (!next) setShowKeyQr(false);
+                        }}
                         aria-label={revealedKey ? 'Hide private key' : 'Reveal private key'}
                         title={revealedKey ? 'Hide' : 'Reveal'}
                     >
@@ -214,7 +301,20 @@ function SingleAddressResult({ entry }: { entry: IGeneratedAddress }) {
                             : <Copy size={14} />
                         }
                     </button>
+                    {revealedKey && (
+                        <button
+                            className={styles.icon_button}
+                            onClick={() => setShowKeyQr(prev => !prev)}
+                            aria-label={showKeyQr ? 'Hide QR code' : 'Show QR code'}
+                            title={showKeyQr ? 'Hide QR' : 'Show QR'}
+                        >
+                            <QrCode size={14} />
+                        </button>
+                    )}
                 </div>
+                {showKeyQr && revealedKey && (
+                    <InlineQrCode value={entry.privateKey} label="Private Key" />
+                )}
             </div>
         </div>
     );
@@ -265,6 +365,7 @@ function AddressRow({ entry, index, pattern, caseSensitive }: {
 }) {
     const [revealed, setRevealed] = useState(false);
     const [copiedField, setCopiedField] = useState<'address' | 'key' | null>(null);
+    const { open: openModal } = useModal();
 
     /** Copy a value to clipboard and show confirmation. */
     const handleCopy = useCallback(async (value: string, field: 'address' | 'key') => {
@@ -323,6 +424,23 @@ function AddressRow({ entry, index, pattern, caseSensitive }: {
                         ? <Check size={12} style={{ color: 'var(--color-success)' }} />
                         : <Copy size={12} />
                     }
+                </button>
+                <button
+                    className={styles.icon_button}
+                    onClick={() => {
+                        if (!revealed) return;
+                        openModal({
+                            title: 'Private Key QR Code',
+                            size: 'sm',
+                            content: <QrModalContent address={entry.address} privateKey={entry.privateKey} />,
+                            dismissible: true,
+                        });
+                    }}
+                    disabled={!revealed}
+                    aria-label={revealed ? 'Show QR code' : 'Reveal private key before showing QR code'}
+                    title={revealed ? 'Show QR' : 'Reveal private key first'}
+                >
+                    <QrCode size={12} />
                 </button>
             </td>
         </tr>
