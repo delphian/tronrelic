@@ -25,6 +25,7 @@
 import type { Express, Router } from 'express';
 import type { ICacheService, IDatabaseService, IMenuService, IModule, IModuleMetadata, ISchedulerService, IServiceRegistry } from '@/types';
 import { logger } from '../../lib/logger.js';
+import { TronGridClient } from '../blockchain/tron-grid.client.js';
 import { UserService } from './services/user.service.js';
 import { GscService } from './services/gsc.service.js';
 import { initGeoIP } from './services/geo.service.js';
@@ -175,11 +176,8 @@ export class UserModule implements IModule<IUserModuleDependencies> {
         // Initialize GeoIP lookup for country detection (non-blocking)
         await initGeoIP();
 
-        // Resolve TronWeb from service registry for signature verification
-        const tronWeb = dependencies.serviceRegistry.get<import('tronweb').default>('tronweb');
-        if (!tronWeb) {
-            throw new Error('TronWeb not found on service registry. Ensure it is registered as "tronweb" before user module init.');
-        }
+        // Create independent TronWeb instance for signature verification
+        const tronWeb = TronGridClient.getInstance().createTronWeb();
 
         // Initialize UserService singleton with dependencies
         UserService.setDependencies(

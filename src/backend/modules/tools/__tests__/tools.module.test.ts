@@ -9,6 +9,27 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+
+/** Mock TronWeb instance with address utilities and signature verification. */
+const mockTronWeb = {
+    address: {
+        toHex: vi.fn((addr: string) => '41' + 'a'.repeat(40)),
+        fromHex: vi.fn((hex: string) => 'T' + 'a'.repeat(33))
+    },
+    trx: {
+        verifyMessageV2: vi.fn().mockResolvedValue(true)
+    },
+    setHeader: vi.fn()
+};
+
+vi.mock('../../blockchain/tron-grid.client.js', () => ({
+    TronGridClient: {
+        getInstance: vi.fn(() => ({
+            createTronWeb: vi.fn(() => mockTronWeb)
+        }))
+    }
+}));
+
 import { ToolsModule } from '../index.js';
 import type { ICacheService, IChainParameters, IChainParametersService, IMenuService, IServiceRegistry } from '@/types';
 import { createMockDatabaseService } from '../../../tests/vitest/mocks/database-service.js';
@@ -135,20 +156,8 @@ class MockChainParametersService implements IChainParametersService {
  * Pre-loaded with a mock ChainParametersService so the tools module
  * can resolve it during init().
  */
-/** Mock TronWeb instance with address utilities and signature verification. */
-const mockTronWeb = {
-    address: {
-        toHex: vi.fn((addr: string) => '41' + 'a'.repeat(40)),
-        fromHex: vi.fn((hex: string) => 'T' + 'a'.repeat(33))
-    },
-    trx: {
-        verifyMessageV2: vi.fn().mockResolvedValue(true)
-    }
-};
-
 function createMockServiceRegistry(chainParams?: IChainParametersService): IServiceRegistry {
     const services = new Map<string, unknown>();
-    services.set('tronweb', mockTronWeb);
     if (chainParams) {
         services.set('chain-parameters', chainParams);
     }
@@ -268,23 +277,6 @@ describe('ToolsModule', () => {
                 serviceRegistry: emptyRegistry,
                 app: mockApp as any
             })).rejects.toThrow('ChainParametersService not found on service registry');
-        });
-
-        it('should throw if TronWeb is not registered on service registry', async () => {
-            const registryWithoutTronWeb = createMockServiceRegistry(mockChainParams);
-            // Remove tronweb to simulate missing registration
-            (registryWithoutTronWeb.get as ReturnType<typeof vi.fn>).mockImplementation(
-                (name: string) => name === 'chain-parameters' ? mockChainParams : undefined
-            );
-            const module = new ToolsModule();
-
-            await expect(module.init({
-                database: mockDatabase,
-                cacheService: mockCache,
-                menuService: mockMenu,
-                serviceRegistry: registryWithoutTronWeb,
-                app: mockApp as any
-            })).rejects.toThrow('TronWeb not found on service registry');
         });
 
         it('should look up chain-parameters from the service registry', async () => {

@@ -9,7 +9,6 @@
  * Follows TronRelic's two-phase initialization pattern with dependency injection.
  */
 
-import type TronWeb from 'tronweb';
 import type { Express } from 'express';
 import type { ICacheService, IChainParametersService, IDatabaseService, IMenuService, IModule, IModuleMetadata, IServiceRegistry } from '@/types';
 import { logger } from '../../lib/logger.js';
@@ -120,10 +119,8 @@ export class ToolsModule implements IModule<IToolsModuleDependencies> {
             throw new Error('ChainParametersService not found on service registry. Ensure it is registered as "chain-parameters" before tools module init.');
         }
 
-        const tronWeb = dependencies.serviceRegistry.get<TronWeb>('tronweb');
-        if (!tronWeb) {
-            throw new Error('TronWeb not found on service registry. Ensure it is registered as "tronweb" before tools module init.');
-        }
+        const tronGridClient = TronGridClient.getInstance();
+        const tronWeb = tronGridClient.createTronWeb();
 
         const addressService = new AddressService(tronWeb);
         this.toolsService = new ToolsService(addressService);

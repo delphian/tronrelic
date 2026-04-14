@@ -12,7 +12,7 @@ type TronWebUtils = {
 
 declare module 'tronweb' {
   export default class TronWeb {
-    constructor(options: { fullHost: string });
+    constructor(options: { fullHost: string; privateKey?: string });
     static utils: TronWebUtils;
     static address: TronWebAddress;
     utils: TronWebUtils;
@@ -20,5 +20,6 @@ declare module 'tronweb' {
     trx: {
       verifyMessageV2: (message: string, signature: string, address: string) => Promise<boolean>;
     };
+    setHeader: (headers: Record<string, string>) => void;
   }
 }
