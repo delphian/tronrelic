@@ -41,7 +41,6 @@ import { ChainParametersService } from './modules/chain-parameters/chain-paramet
 import { UsdtParametersFetcher } from './modules/usdt-parameters/usdt-parameters-fetcher.js';
 import { UsdtParametersService } from './modules/usdt-parameters/usdt-parameters.service.js';
 import { createApiRouter } from './api/routes/index.js';
-import { TronGridClient } from './modules/blockchain/tron-grid.client.js';
 import type { Express } from 'express';
 import type { IDatabaseService, IMenuService, IServiceRegistry } from '@/types';
 import axios from 'axios';

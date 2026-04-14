@@ -3,8 +3,8 @@
  *
  * Exposes forum post CRUD and reaction operations via the service registry
  * so plugins and modules can create, query, and manage forum posts
- * programmatically. Registered as 'forum' on the IServiceRegistry during
- * the forum plugin's init() hook.
+ * programmatically. Intended for registration as 'forum' on the
+ * IServiceRegistry by the forum plugin during its init() hook.
  */
 
 /**
@@ -43,7 +43,7 @@ export interface IForumPost {
  * ```typescript
  * const forum = context.services.get<IForumService>('forum');
  * if (forum) {
- *     const post = await forum.createPost(content, walletAddress, userId, signature);
+ *     const post = await forum.createPost(content, walletAddress, userId, message, signature, timestamp);
  * }
  * ```
  */

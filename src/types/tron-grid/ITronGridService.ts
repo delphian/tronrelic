@@ -64,5 +64,5 @@ export interface ITronGridService {
      * @param options.fullHost - Override the default TronGrid endpoint
      * @returns A new, fully independent TronWeb instance
      */
-    createTronWeb(options?: { privateKey?: string; fullHost?: string }): unknown;
+    createTronWeb(options?: { privateKey?: string; fullHost?: string }): any;
 }
