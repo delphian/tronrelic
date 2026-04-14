@@ -33,3 +33,4 @@ export type { ITronGridService, ITronGridAccountResponse, ITronGridAccountPermis
 export type { IBlockStats, IBlock, IBlockchainService, ITransactionTimeseriesPoint } from './blockchain/index.js';
 export type { IAddressLabel, IResolvedAddressLabel, AddressCategory, AddressLabelSourceType, ITronAddressMetadata, IAddressLabelService, ICreateAddressLabelInput, IUpdateAddressLabelInput, IAddressLabelFilter, IAddressLabelImportResult, IAddressLabelListResult } from './address-label/index.js';
 export type { IToolsService, IAddressConversionResult, IAddressValidationResult } from './tools/index.js';
+export type { IForumService, IForumPost, IForumReaction } from './forum/index.js';

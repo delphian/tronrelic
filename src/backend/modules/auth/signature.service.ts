@@ -2,8 +2,8 @@
  * @fileoverview TRON signature verification and address normalization.
  *
  * Implements ISignatureService using a TronWeb instance received via
- * constructor injection. All consumers should obtain TronWeb from the
- * IServiceRegistry ('tronweb') rather than importing the library directly.
+ * constructor injection. Consumers obtain TronWeb instances from
+ * TronGridClient.createTronWeb() which provides platform defaults.
  */
 
 import type TronWeb from 'tronweb';

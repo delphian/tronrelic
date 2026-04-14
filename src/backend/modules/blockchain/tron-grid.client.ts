@@ -301,6 +301,31 @@ export class TronGridClient {
         TronGridClient.instance = null;
     }
 
+    /**
+     * Create an independent TronWeb instance pre-configured with the platform's
+     * TronGrid host and a rotating API key.
+     *
+     * Each call returns a fresh instance that the caller owns completely. The
+     * caller may set a private key, change the address, or reconfigure the
+     * instance without affecting other consumers or the shared TronGridClient.
+     *
+     * @param options - Optional overrides for the default platform configuration
+     * @param options.privateKey - Private key to enable signing and wallet operations
+     * @param options.fullHost - Override the default TronGrid endpoint
+     * @returns A new, fully independent TronWeb instance
+     */
+    createTronWeb(options?: { privateKey?: string; fullHost?: string }): TronWeb {
+        const instance = new TronWeb({
+            fullHost: options?.fullHost ?? BASE_URL,
+            privateKey: options?.privateKey
+        });
+        const apiKey = getNextApiKey();
+        if (apiKey) {
+            instance.setHeader({ 'TRON-PRO-API-KEY': apiKey });
+        }
+        return instance;
+    }
+
     async getNowBlock(): Promise<TronGridBlock> {
         return retry(() => this.post<TronGridBlock>('/wallet/getnowblock', {}), {
             ...blockchainConfig.retry,

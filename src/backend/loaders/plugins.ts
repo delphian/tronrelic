@@ -21,7 +21,6 @@ import { TronGridClient } from '../modules/blockchain/tron-grid.client.js';
 import { BlockchainService } from '../modules/blockchain/blockchain.service.js';
 import { ClickHouseService } from '../modules/clickhouse/services/clickhouse.service.js';
 import { AddressLabelService } from '../modules/address-labels/services/address-label.service.js';
-import type TronWeb from 'tronweb';
 import { UserService } from '../modules/user/services/user.service.js';
 import { SignatureService } from '../modules/auth/signature.service.js';
 import { getRedisClient } from './redis.js';
@@ -101,12 +100,10 @@ export async function loadPlugins(database: IDatabaseService, scheduler: ISchedu
         ? ClickHouseService.getInstance()
         : undefined;
 
-    // Resolve TronWeb from the service registry once before the plugin loop
-    // so that every plugin context receives the same configured instance.
-    const tronWebInstance = serviceRegistry.get<TronWeb>('tronweb');
-    if (!tronWebInstance) {
-        throw new Error('TronWeb service not registered — ensure bootstrap registers "tronweb" before loading plugins');
-    }
+    // Create a TronWeb instance for signature verification in plugin contexts.
+    // Uses the TronGridClient factory so the instance has platform defaults
+    // (TronGrid host, API key) baked in without importing them directly.
+    const tronWebInstance = tronGridClient.createTronWeb();
 
     // Create shared HTTP client for all plugins
     const httpClient = axios.create({

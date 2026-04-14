@@ -41,7 +41,6 @@ import { ChainParametersService } from './modules/chain-parameters/chain-paramet
 import { UsdtParametersFetcher } from './modules/usdt-parameters/usdt-parameters-fetcher.js';
 import { UsdtParametersService } from './modules/usdt-parameters/usdt-parameters.service.js';
 import { createApiRouter } from './api/routes/index.js';
-import TronWeb from 'tronweb';
 import type { Express } from 'express';
 import type { IDatabaseService, IMenuService, IServiceRegistry } from '@/types';
 import axios from 'axios';
@@ -273,8 +272,6 @@ async function bootstrapInit(): Promise<BootstrapContext> {
     // Register shared infrastructure on the service registry so modules and
     // plugins can discover them via late-binding DI instead of importing
     // concrete classes.
-    const tronWeb = new TronWeb({ fullHost: 'https://api.trongrid.io' });
-    serviceRegistry.register('tronweb', tronWeb);
     serviceRegistry.register('chain-parameters', ChainParametersService.getInstance());
 
     const sharedDeps = { database: coreDatabase, cacheService, menuService, serviceRegistry, app };
