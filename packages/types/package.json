@@ -44,6 +44,7 @@
         "socket.io-client": { "optional": true }
     },
     "devDependencies": {
+        "@types/node": "^20.11.0",
         "@types/react": "^18.2.46",
         "axios": "^1.7.5",
         "mongodb": "^6.0.0",
