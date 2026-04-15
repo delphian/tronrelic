@@ -9,7 +9,7 @@
 /**
  * Menu namespace configuration structure.
  *
- * Matches IMenuNamespaceConfig from @tronrelic/types. Contains UI rendering
+ * Matches IMenuNamespaceConfig from @/types. Contains UI rendering
  * preferences that control how a menu namespace is displayed.
  */
 export interface IMenuNamespaceConfig {

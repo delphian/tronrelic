@@ -33,7 +33,7 @@ Every observer extends a base class that provides:
 
 Example structure:
 ```typescript
-import type { IBaseObserver, ITransaction, IObserverStats } from '@tronrelic/types';
+import type { IBaseObserver, ITransaction, IObserverStats } from '@/types';
 
 export abstract class BaseObserver implements IBaseObserver {
     protected abstract readonly name: string;
@@ -53,7 +53,7 @@ export abstract class BaseObserver implements IBaseObserver {
 }
 ```
 
-**Important:** Plugins receive `BaseObserver` through dependency injection and should type transaction parameters as `ITransaction` from `@tronrelic/types`. The actual runtime object may be a `ProcessedTransaction` class instance, but plugins should use the interface for type safety.
+**Important:** Plugins receive `BaseObserver` through dependency injection and should type transaction parameters as `ITransaction` from `@/types`. The actual runtime object may be a `ProcessedTransaction` class instance, but plugins should use the interface for type safety.
 
 ### 2. Observer Registry
 
@@ -99,7 +99,7 @@ Observers are notified **after** a transaction is enriched but **before** it's w
 
 ## Data Model
 
-Observers receive transactions typed as `ITransaction` (from `@tronrelic/types`). The runtime instance is a `ProcessedTransaction` class, but plugins should use the `ITransaction` interface for type annotations to maintain framework independence.
+Observers receive transactions typed as `ITransaction` (from `@/types`). The runtime instance is a `ProcessedTransaction` class, but plugins should use the `ITransaction` interface for type annotations to maintain framework independence.
 
 ### ITransaction Interface
 
@@ -130,7 +130,7 @@ All addresses are already converted to Base58 format, amounts are calculated in 
 
 **For plugin observers:**
 ```typescript
-import type { ITransaction } from '@tronrelic/types';
+import type { ITransaction } from '@/types';
 
 protected async process(transaction: ITransaction): Promise<void> {
     // Use ITransaction interface for type annotations
@@ -164,7 +164,7 @@ import type {
     IObserverRegistry,
     IPluginWebSocketManager,
     ISystemLogService
-} from '@tronrelic/types';
+} from '@/types';
 
 /**
  * Create delegation tracker observer with injected dependencies.
@@ -225,7 +225,7 @@ export function createDelegationTrackerObserver(
 In your plugin's `src/backend/backend.ts`, call the factory from the `init` hook:
 
 ```typescript
-import { definePlugin, type IPluginContext } from '@tronrelic/types';
+import { definePlugin, type IPluginContext } from '@/types';
 import { myPluginManifest } from '../manifest.js';
 
 export const myPluginBackendPlugin = definePlugin({
@@ -256,7 +256,7 @@ export const myPluginBackendPlugin = definePlugin({
 **Why this pattern?**
 - **Dependency injection** - All infrastructure comes through `IPluginContext`
 - **No singleton access** - Observer registry and services are injected, not imported
-- **Framework independence** - Plugin only depends on `@tronrelic/types` interfaces
+- **Framework independence** - Plugin only depends on `@/types` interfaces
 - **Lifecycle control** - Observer instantiates during plugin init, not module load
 - **Type safety** - Full TypeScript support through interface contracts
 - **Structured logging** - `context.logger` adds plugin metadata automatically so logs are traceable
@@ -448,7 +448,7 @@ Our first observer demonstrates the pattern:
 
 **Key Code:**
 ```typescript
-import type { ITransaction } from '@tronrelic/types';
+import type { ITransaction } from '@/types';
 
 protected async process(transaction: ITransaction): Promise<void> {
     // Check whale threshold (500k TRX in this example)
@@ -483,7 +483,7 @@ protected async process(transaction: ITransaction): Promise<void> {
 ```
 
 **Key differences:**
-- Uses `ITransaction` type from `@tronrelic/types`
+- Uses `ITransaction` type from `@/types`
 - Checks threshold directly instead of using deprecated `categories` flags
 - **New:** Emits to namespaced rooms via `context.websocket` instead of global broadcast
 - **New:** Supports multiple subscription thresholds through room-based routing

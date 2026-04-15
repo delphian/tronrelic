@@ -4,7 +4,7 @@ Plugins expose REST endpoints so the frontend, automation scripts, and third-par
 
 ## Why the API Layer Matters
 
-The API registration layer isolates each plugin under `/api/plugins/<plugin-id>/`, uses framework-agnostic request/response objects from `@tronrelic/types`, and ties route lifecycle to plugin enable/disable state. Plugins focus on business logic while the platform handles routing, auth middleware, and error handling.
+The API registration layer isolates each plugin under `/api/plugins/<plugin-id>/`, uses framework-agnostic request/response objects from `@/types`, and ties route lifecycle to plugin enable/disable state. Plugins focus on business logic while the platform handles routing, auth middleware, and error handling.
 
 ## Registration Flow
 
@@ -36,7 +36,7 @@ See [User Module README](../../src/backend/modules/user/README.md#plugin-access-
 ## Minimal Example
 
 ```typescript
-import { definePlugin, type IHttpRequest, type IHttpResponse, type IHttpNext } from '@tronrelic/types';
+import { definePlugin, type IHttpRequest, type IHttpResponse, type IHttpNext } from '@/types';
 import { whaleAlertsManifest } from '../manifest.js';
 
 export const whaleAlertsBackendPlugin = definePlugin({

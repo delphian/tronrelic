@@ -1,7 +1,7 @@
 /**
  * Widget data structure for SSR rendering.
  *
- * Mirrors the IWidgetData interface from @tronrelic/types but without
+ * Mirrors the IWidgetData interface from @/types but without
  * the fetchData function (which only exists on the backend).
  */
 export interface WidgetData {

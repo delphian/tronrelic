@@ -1,4 +1,4 @@
-import type { IMigration, IDatabaseService } from '@tronrelic/types';
+import type { IMigration, IDatabaseService } from '@/types';
 
 /**
  * Example system migration: Add index to improve query performance.

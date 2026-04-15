@@ -8,7 +8,7 @@ Modules are fail-fast infrastructure — an initialization error shuts down the 
 
 ## IModule Interface Contract
 
-All modules implement `IModule<TDependencies>` from `@tronrelic/types` (see `packages/types/src/module/IModule.ts`):
+All modules implement `IModule<TDependencies>` from `@/types` (see `packages/types/src/module/IModule.ts`):
 
 ```typescript
 interface IModule<TDependencies extends Record<string, any> = Record<string, any>> {

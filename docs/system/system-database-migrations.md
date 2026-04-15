@@ -62,7 +62,7 @@ ClickHouse-targeted migrations are skipped with a warning if ClickHouse is not c
 ### IMigration Interface
 
 ```typescript
-import type { IMigration, IMigrationContext } from '@tronrelic/types';
+import type { IMigration, IMigrationContext } from '@/types';
 
 export const migration: IMigration = {
     id: '001_example',

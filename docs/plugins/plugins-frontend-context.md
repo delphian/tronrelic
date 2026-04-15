@@ -190,7 +190,7 @@ export function MyPluginPage({ context }: { context: IFrontendPluginContext }) {
 Plugin pages receive the context as a prop and destructure what they need:
 
 ```typescript
-import type { IFrontendPluginContext } from '@tronrelic/types';
+import type { IFrontendPluginContext } from '@/types';
 
 export function MyPluginPage({ context }: { context: IFrontendPluginContext }) {
     const { layout, ui, charts, api, websocket } = context;
@@ -227,7 +227,7 @@ export function MyPluginPage({ context }: { context: IFrontendPluginContext }) {
 Side-effect components (toast handlers, event listeners) also receive context:
 
 ```typescript
-import type { IFrontendPluginContext } from '@tronrelic/types';
+import type { IFrontendPluginContext } from '@/types';
 
 export function MyPluginHandler({ context }: { context: IFrontendPluginContext }) {
     const { websocket } = context;
@@ -289,7 +289,7 @@ Here's a complete plugin demonstrating all context features:
 
 ```typescript
 // src/plugins/example-analytics/src/frontend/frontend.ts
-import { definePlugin } from '@tronrelic/types';
+import { definePlugin } from '@/types';
 import { exampleAnalyticsManifest } from '../manifest';
 import { AnalyticsPage } from './AnalyticsPage';
 import { AnalyticsEventHandler } from './AnalyticsEventHandler';
@@ -322,7 +322,7 @@ export const exampleAnalyticsFrontendPlugin = definePlugin({
 'use client';
 
 import { useEffect, useState } from 'react';
-import type { IFrontendPluginContext } from '@tronrelic/types';
+import type { IFrontendPluginContext } from '@/types';
 
 interface MetricData {
     date: string;
@@ -390,7 +390,7 @@ export function AnalyticsPage({ context }: { context: IFrontendPluginContext }) 
 'use client';
 
 import { useEffect } from 'react';
-import type { IFrontendPluginContext } from '@tronrelic/types';
+import type { IFrontendPluginContext } from '@/types';
 
 export function AnalyticsEventHandler({ context }: { context: IFrontendPluginContext }) {
     const { websocket } = context;
@@ -630,7 +630,7 @@ return <Card><LineChart series={data} /></Card>;
 
 **After:**
 ```typescript
-import type { IFrontendPluginContext } from '@tronrelic/types';
+import type { IFrontendPluginContext } from '@/types';
 
 // In component with context prop:
 const data = await context.api.get('/plugins/my-plugin/data');
@@ -688,7 +688,7 @@ Create CSS Module files colocated with your plugin components:
 **Import and use** in `src/frontend/MyPluginPage.tsx`:
 ```typescript
 import styles from './MyPluginPage.module.css';
-import type { IFrontendPluginContext } from '@tronrelic/types';
+import type { IFrontendPluginContext } from '@/types';
 
 export function MyPluginPage({ context }: { context: IFrontendPluginContext }) {
     return (
@@ -856,10 +856,10 @@ export function MyComponent({ context }: { context: IFrontendPluginContext }) {
 
 ### "Property 'ui' does not exist on type 'IFrontendPluginContext'"
 
-Make sure you're importing the type from `@tronrelic/types`:
+Make sure you're importing the type from `@/types`:
 
 ```typescript
-import type { IFrontendPluginContext } from '@tronrelic/types';
+import type { IFrontendPluginContext } from '@/types';
 ```
 
 ### Component doesn't receive context prop

@@ -38,27 +38,27 @@
 - Do not use suffixes like `.interface.ts` or `.type.ts` - the file name itself should match the export
 
 ## Package Architecture
-- All packages should use workspace imports (e.g., `@tronrelic/types`, `@tronrelic/plugins`) instead of relative paths
+- All packages should use workspace imports (e.g., `@/types`, `@tronrelic/plugins`) instead of relative paths
 - Frontend and backend both import from workspace packages using the same pattern
-- Type packages (`@tronrelic/types`) must have `"composite": true` in tsconfig for project references
+- Type packages (`@/types`) must have `"composite": true` in tsconfig for project references
 - Packages that are imported by other workspaces need project references in consuming workspace tsconfigs
 - Plugin types should use direct component types, not async loaders (e.g., `component?: ComponentType<any>`)
 
 ### Type Organization Strategy
 
-**@tronrelic/types** is the central repository for all framework-independent core models and interfaces:
+**@/types** is the central repository for all framework-independent core models and interfaces:
 
 - **Primary purpose**: Define all non-dependent core models that can be shared across the entire application
-- **Blockchain models**: Especially prioritize blockchain-related models in `@tronrelic/types` to maximize code sharing between frontend and backend
+- **Blockchain models**: Especially prioritize blockchain-related models in `@/types` to maximize code sharing between frontend and backend
 - **Framework independence**: Types must not depend on external libraries (except React types for UI components)
 - **Organized structure**: Group related types in folders (e.g., `observer/`, `plugin/`, `transaction/`)
 - **One type per file**: Each file exports exactly one interface, type, or utility matching its filename
 
-**When to use @tronrelic/types vs @tronrelic/shared:**
-- `@tronrelic/types` - Core interfaces, blockchain models, observer patterns, plugin definitions (framework-independent)
+**When to use @/types vs @tronrelic/shared:**
+- `@/types` - Core interfaces, blockchain models, observer patterns, plugin definitions (framework-independent)
 - `@tronrelic/shared` - Runtime data structures for Socket.IO events, API responses, legacy compatibility
 
-**Migration strategy**: As new blockchain models are created or existing models are refactored, move them to `@tronrelic/types` to centralize shared type definitions and reduce duplication between frontend and backend.
+**Migration strategy**: As new blockchain models are created or existing models are refactored, move them to `@/types` to centralize shared type definitions and reduce duplication between frontend and backend.
 
 ## Build and Deployment
 

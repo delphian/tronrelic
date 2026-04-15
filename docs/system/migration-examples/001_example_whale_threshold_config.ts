@@ -1,4 +1,4 @@
-import type { IMigration, IDatabaseService } from '@tronrelic/types';
+import type { IMigration, IDatabaseService } from '@/types';
 
 /**
  * Example plugin migration: Seed default whale threshold configuration.

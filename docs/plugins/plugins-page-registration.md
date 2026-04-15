@@ -180,7 +180,7 @@ Follow this pattern to add UI to a plugin:
 In your plugin's `src/backend/backend.ts`:
 
 ```typescript
-import { definePlugin, type IPluginContext } from '@tronrelic/types';
+import { definePlugin, type IPluginContext } from '@/types';
 import { myManifest } from '../manifest.js';
 
 export const myBackendPlugin = definePlugin({
@@ -220,7 +220,7 @@ export const myBackendPlugin = definePlugin({
 In your plugin's `src/frontend/frontend.ts`:
 
 ```typescript
-import { definePlugin } from '@tronrelic/types';
+import { definePlugin } from '@/types';
 import { myManifest } from '../manifest';
 import { MyDashboardPage } from './MyDashboardPage';
 import { MySettingsPage } from './MySettingsPage';
@@ -254,7 +254,7 @@ Create React components for each page. **All page components must accept `contex
 // src/frontend/MyDashboardPage.tsx
 'use client';
 
-import type { IFrontendPluginContext } from '@tronrelic/types';
+import type { IFrontendPluginContext } from '@/types';
 
 /**
  * My Dashboard Page.
@@ -385,7 +385,7 @@ pages: [
 Minimum configuration:
 
 ```typescript
-import type { IFrontendPluginContext } from '@tronrelic/types';
+import type { IFrontendPluginContext } from '@/types';
 
 // Page component receives context prop
 function MyPageComponent({ context }: { context: IFrontendPluginContext }) {
@@ -416,7 +416,7 @@ Use injected context for data fetching and visualization:
 
 ```typescript
 import { useEffect, useState } from 'react';
-import type { IFrontendPluginContext } from '@tronrelic/types';
+import type { IFrontendPluginContext } from '@/types';
 
 function AnalyticsPage({ context }: { context: IFrontendPluginContext }) {
     const { ui, charts, api } = context;

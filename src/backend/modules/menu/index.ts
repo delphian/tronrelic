@@ -31,7 +31,7 @@ export type { IMenuModuleDependencies } from './MenuModule.js';
 export { MenuService } from './services/menu.service.js';
 export { MenuController } from './api/menu.controller.js';
 
-// Re-export types from @tronrelic/types for convenience
+// Re-export types from @/types for convenience
 export type {
     IMenuService,
     IMenuNode,

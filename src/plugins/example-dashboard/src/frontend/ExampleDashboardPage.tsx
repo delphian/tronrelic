@@ -1,6 +1,6 @@
 'use client';
 
-import type { IFrontendPluginContext } from '@/types';
+import type { IFrontendPluginContext } from '@delphian/tronrelic-types';
 
 /**
  * Example Dashboard Page Component.

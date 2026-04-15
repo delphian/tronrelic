@@ -10,7 +10,7 @@ The module system solves these problems with a two-phase lifecycle (`init()` pre
 
 ## Core Architecture
 
-Every module implements the `IModule<TDependencies>` interface from `@tronrelic/types`, which enforces metadata (`id`, `name`, `version`), an `init(dependencies)` method, and a `run()` method. Both lifecycle hooks are async and fail-fast — errors cause application shutdown with no degraded mode.
+Every module implements the `IModule<TDependencies>` interface from `@/types`, which enforces metadata (`id`, `name`, `version`), an `init(dependencies)` method, and a `run()` method. Both lifecycle hooks are async and fail-fast — errors cause application shutdown with no degraded mode.
 
 Modules initialize after core infrastructure (database, Redis, WebSocket, MenuService) and before plugins, jobs, and the HTTP server. During `init()`, modules store injected dependencies and create services. During `run()`, they mount routes, register menu items, and integrate with the application. This separation ensures all modules prepare themselves before any module interacts with shared services.
 

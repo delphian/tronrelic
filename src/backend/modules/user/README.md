@@ -85,7 +85,7 @@ const user = await context.userService.getByWallet('TXyz...');
 | `getRetentionSummary()` | New vs returning visitors, dormant user count, 7-day retention |
 | `getPreferencesSummary()` | Theme distribution, notification opt-in rates |
 
-The `IUser` interface includes `id`, `wallets`, `preferences`, `activity`, and timestamps. The summary return types (`IUserActivitySummary`, `IUserWalletSummary`, `IUserRetentionSummary`, `IUserPreferencesSummary`) are defined in `@tronrelic/types`. The internal `IUserDocument` (with MongoDB-specific fields) stays in the module.
+The `IUser` interface includes `id`, `wallets`, `preferences`, `activity`, and timestamps. The summary return types (`IUserActivitySummary`, `IUserWalletSummary`, `IUserRetentionSummary`, `IUserPreferencesSummary`) are defined in `@/types`. The internal `IUserDocument` (with MongoDB-specific fields) stays in the module.
 
 ## Architecture Overview
 

@@ -1,4 +1,4 @@
-import type { IMigration, IDatabaseService } from '@tronrelic/types';
+import type { IMigration, IDatabaseService } from '@/types';
 
 /**
  * Example module migration: Transform legacy market data format.

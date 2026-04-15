@@ -228,10 +228,10 @@ export const whaleAlertsPlugin = definePlugin({
 
 ```typescript
 // Old (still works but deprecated)
-import type { IPluginDatabase } from '@tronrelic/types';
+import type { IPluginDatabase } from '@/types';
 
 // New (preferred)
-import type { IDatabaseService } from '@tronrelic/types';
+import type { IDatabaseService } from '@/types';
 ```
 
 #### Plugin Lifecycle Database Usage
