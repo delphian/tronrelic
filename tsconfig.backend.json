@@ -6,7 +6,6 @@
   },
   "include": [
     "src/backend/**/*",
-    "src/types/**/*",
     "src/shared/**/*"
   ],
   "exclude": [

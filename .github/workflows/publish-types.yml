@@ -4,8 +4,9 @@ on:
   push:
     branches: [main]
     paths:
-      - 'src/types/**'
+      - 'packages/types/src/**'
       - 'packages/types/package.json'
+      - 'packages/types/tsconfig.json'
   workflow_dispatch:
 
 jobs:
@@ -27,7 +28,6 @@ jobs:
           registry-url: 'https://npm.pkg.github.com'
 
       - name: Install dependencies
-        working-directory: packages/types
         run: npm ci
 
       - name: Build types

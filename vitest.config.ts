@@ -37,7 +37,7 @@ export default defineConfig({
     },
     resolve: {
         alias: {
-            '@/types': path.resolve(__dirname, 'src/types'),
+            '@/types': path.resolve(__dirname, 'packages/types/src'),
             '@/shared': path.resolve(__dirname, 'src/shared'),
             '@/backend': path.resolve(__dirname, 'src/backend'),
             '@/frontend': path.resolve(__dirname, 'src/frontend'),
