@@ -76,7 +76,7 @@ RUN npx playwright install chromium
 COPY --from=builder /app/dist/backend ./dist/backend
 
 # Copy source files needed at runtime (types, plugins for runtime discovery)
-COPY --from=builder /app/src/types ./src/types
+COPY --from=builder /app/packages/types ./packages/types
 COPY --from=builder /app/src/shared ./src/shared
 COPY --from=builder /app/src/plugins ./src/plugins
 

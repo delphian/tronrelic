@@ -22,7 +22,7 @@ const projectRoot = path.resolve(__dirname, '..');
 
 /** Path aliases shared between the main bundle and migration file compilation. */
 const aliases = {
-    '@/types': path.join(projectRoot, 'src/types'),
+    '@/types': path.join(projectRoot, 'packages/types/src'),
     '@/shared': path.join(projectRoot, 'src/shared'),
     '@/backend': path.join(projectRoot, 'src/backend'),
     '@/frontend': path.join(projectRoot, 'src/frontend'),

@@ -20,10 +20,10 @@
     "baseUrl": "../..",
     "paths": {
       "@/types": [
-        "src/types"
+        "packages/types/src"
       ],
       "@/types/*": [
-        "src/types/*"
+        "packages/types/src/*"
       ],
       "@/shared": [
         "src/shared"

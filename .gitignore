@@ -178,9 +178,7 @@ plugins.json
 /src/backend/**/*.d.ts
 !/src/backend/types/**/*.d.ts
 
-# Types package compiled output (regenerated via: npx tsc -b src/types)
-/src/types/**/*.js
-/src/types/**/*.d.ts
+# Types package compiled output handled by packages/types/.gitignore
 
 # Frontend compiled files (Next.js compiles to .next/, not source)
 /src/frontend/**/*.js

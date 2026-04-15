@@ -16,8 +16,8 @@
     "incremental": true,
     "baseUrl": ".",
     "paths": {
-      "@/types": ["src/types"],
-      "@/types/*": ["src/types/*"],
+      "@/types": ["packages/types/src"],
+      "@/types/*": ["packages/types/src/*"],
       "@/shared": ["src/shared"],
       "@/shared/*": ["src/shared/*"],
       "@/backend/*": ["src/backend/*"],
