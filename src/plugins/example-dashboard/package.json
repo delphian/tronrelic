@@ -24,7 +24,7 @@
         "clean": "rm -rf dist"
     },
     "dependencies": {
-        "@delphian/tronrelic-types": "^1.0.0"
+        "@delphian/tronrelic-types": "*"
     },
     "devDependencies": {
         "@types/react": "^18.2.0",
