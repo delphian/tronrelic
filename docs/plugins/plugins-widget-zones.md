@@ -49,7 +49,7 @@ Plugins register widgets in their backend `init()` hook using `context.widgetSer
 
 ```typescript
 // In plugin backend init() hook
-import { definePlugin, type IPluginContext } from '@tronrelic/types';
+import { definePlugin, type IPluginContext } from '@/types';
 
 export const myBackendPlugin = definePlugin({
     manifest: myManifest,
@@ -178,7 +178,7 @@ Here's a complete example of a plugin that displays a feed widget on the homepag
 
 ```typescript
 // src/plugins/reddit-sentiment/src/backend/backend.ts
-import { definePlugin, type IPluginContext } from '@tronrelic/types';
+import { definePlugin, type IPluginContext } from '@/types';
 import { redditManifest } from '../manifest';
 
 export const redditBackendPlugin = definePlugin({
@@ -227,7 +227,7 @@ export const redditBackendPlugin = definePlugin({
 
 ```typescript
 // src/plugins/reddit-sentiment/src/manifest.ts
-import type { IPluginManifest } from '@tronrelic/types';
+import type { IPluginManifest } from '@/types';
 
 export const redditManifest: IPluginManifest = {
     id: 'reddit-sentiment',
@@ -537,7 +537,7 @@ interface IWidgetComponentProps {
 // src/plugins/my-plugin/src/frontend/widgets/MyFeedWidget.tsx
 'use client';
 
-import type { IWidgetComponentProps } from '@tronrelic/types';
+import type { IWidgetComponentProps } from '@/types';
 
 interface FeedData {
     posts: Array<{ id: string; title: string; timestamp: string }>;

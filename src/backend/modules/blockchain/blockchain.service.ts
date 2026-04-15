@@ -29,10 +29,10 @@ interface BlockSyncJob {
     isCaughtUp: boolean;
 }
 
-// Re-export types from @tronrelic/types for backward compatibility
+// Re-export types from @/types for backward compatibility
 export type TransactionCategoryFlags = ITransactionCategoryFlags;
 export type TransactionPersistencePayload = ITransactionPersistencePayload;
-// ProcessedTransaction is now a class, imported directly from @tronrelic/types
+// ProcessedTransaction is now a class, imported directly from @/types
 
 /**
  * Accumulator for tracking smart contract activity within a block.

@@ -12,7 +12,7 @@
  * IPluginContext.userService dependency injection, or discover it on the
  * service registry via `context.services.get<IUserService>('user')`.
  *
- * @module @tronrelic/types/user
+ * @module @/types/user
  */
 
 import type { IUser } from './IUser.js';

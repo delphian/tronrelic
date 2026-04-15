@@ -2,7 +2,7 @@
  * Address label MongoDB document interface.
  *
  * Internal document type for MongoDB storage. The public API uses
- * IAddressLabel from @tronrelic/types which excludes the MongoDB _id.
+ * IAddressLabel from @/types which excludes the MongoDB _id.
  *
  * ## Design Decisions
  *

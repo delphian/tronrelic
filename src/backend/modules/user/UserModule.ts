@@ -18,7 +18,7 @@
  *
  * ## Future Extensibility
  *
- * If plugins need access to user data, create `IUserService` in `@tronrelic/types`
+ * If plugins need access to user data, create `IUserService` in `@/types`
  * and expose via `IPluginContext`. The `IUserDocument` stays internal to this module.
  */
 

@@ -435,7 +435,7 @@ interface IChainParametersFetcher {
 
 **Type location rationale:**
 
-All interfaces live in `@tronrelic/types` because they are framework-independent core models that can be shared across frontend, backend, and plugins without circular dependencies.
+All interfaces live in `@/types` because they are framework-independent core models that can be shared across frontend, backend, and plugins without circular dependencies.
 
 ## Technical Reference
 
@@ -599,7 +599,7 @@ export interface MarketFetcherContext {
 
 **Migration steps completed:**
 
-1. Created `@tronrelic/types` interfaces for chain parameters
+1. Created `@/types` interfaces for chain parameters
 2. Implemented `ChainParametersService` with same method signatures as legacy adapter
 3. Added `ChainParametersFetcher` with TronGrid API integration
 4. Registered scheduler job for automatic updates

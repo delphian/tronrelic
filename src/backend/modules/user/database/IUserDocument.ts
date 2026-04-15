@@ -309,7 +309,7 @@ export interface IRecordPageInput {
  * ## Future Extensibility
  *
  * If plugins need access to user data, this interface should be moved
- * to `@tronrelic/types` as `IUser` to enable cross-package consumption.
+ * to `@/types` as `IUser` to enable cross-package consumption.
  * The `IUserDocument` (MongoDB-specific) stays in this module.
  */
 export interface IUser {

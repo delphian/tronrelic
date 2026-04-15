@@ -81,7 +81,7 @@ src/plugins/{plugin-id}/
 - Type definitions for WebSocket payloads emitted by the plugin
 - Any interface or type that appears in both `src/backend/` and `src/frontend/`
 
-**When to use `@tronrelic/types` instead:**
+**When to use `@/types` instead:**
 
 - Framework contracts that define how plugins integrate with the platform (`IPluginContext`, `IPluginManifest`)
 - Core blockchain primitives consumed across multiple plugins (`ITransaction`, `IBlock`)
@@ -221,7 +221,7 @@ See [Adding or updating a plugin](#adding-or-updating-a-plugin) for the full wal
 
 ## Manifest contract
 
-The manifest is the single source of truth for plugin identity and surface availability. We keep it in TypeScript so both runtimes share one definition via the `PluginManifest` interface from `@tronrelic/types`.
+The manifest is the single source of truth for plugin identity and surface availability. We keep it in TypeScript so both runtimes share one definition via the `PluginManifest` interface from `@/types`.
 
 Why it matters:
 
@@ -263,7 +263,7 @@ Plugin discovery uses a generated registry (`src/backend/loaders/plugins.generat
 
 Plugins never reach into `src/backend/src` directly. Instead they rely on the injected context:
 
-- `observerRegistry` lets a plugin subscribe to TRON transaction types and receive enriched transactions (typed as `ITransaction` from `@tronrelic/types`).
+- `observerRegistry` lets a plugin subscribe to TRON transaction types and receive enriched transactions (typed as `ITransaction` from `@/types`).
 - `websocketService` exposes `emit` and `emitToWallet` so plugins can broadcast real-time events.
 - `BaseObserver` gives plugins the queueing, back-pressure, and telemetry scaffolding used throughout the blockchain pipeline (injected as a constructor, not imported directly).
 - `database` provides scoped MongoDB access with automatic collection prefixing for data persistence (see [Database Access Architecture](../system/system-database.md#plugins)).
@@ -294,7 +294,7 @@ import type {
     IObserverRegistry,
     IWebSocketService,
     ISystemLogService
-} from "@tronrelic/types";
+} from "@/types";
 
 /**
  * Factory that wires a hello-world observer into the registry.
@@ -354,7 +354,7 @@ Replace the placeholder `init` from the scaffolded backend entry with logic that
 `src/plugins/example-dashboard/src/backend/backend.ts`
 
 ```typescript
-import { definePlugin, type IPluginContext } from "@tronrelic/types";
+import { definePlugin, type IPluginContext } from "@/types";
 import { exampleAlertsManifest } from "../manifest";
 import { createHelloWorldObserver } from "./hello-world.observer";
 

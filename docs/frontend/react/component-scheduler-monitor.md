@@ -133,7 +133,7 @@ Show only plugin-specific jobs in a plugin admin page (recommended pattern for p
 'use client';
 
 import { useEffect, useState } from 'react';
-import type { IFrontendPluginContext } from '@tronrelic/types';
+import type { IFrontendPluginContext } from '@/types';
 
 interface SchedulerMonitorProps {
     token: string;

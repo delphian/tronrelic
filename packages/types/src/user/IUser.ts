@@ -6,7 +6,7 @@
  * The actual IUserDocument (with MongoDB-specific fields) remains internal to
  * the user module.
  *
- * @module @tronrelic/types/user
+ * @module @/types/user
  */
 
 /**

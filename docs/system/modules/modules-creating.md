@@ -34,7 +34,7 @@ Define a typed dependencies interface specifying exactly what your module needs,
 
 ```typescript
 import type { Express } from 'express';
-import type { IDatabaseService, ICacheService, IModule, IModuleMetadata } from '@tronrelic/types';
+import type { IDatabaseService, ICacheService, IModule, IModuleMetadata } from '@/types';
 
 export interface IMyFeatureDependencies {
     database: IDatabaseService;

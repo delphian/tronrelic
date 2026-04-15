@@ -16,7 +16,7 @@ Never include sensitive data in documentation: API keys, credentials, database c
 
 ## Tone and Language
 
-Write in plain English as if explaining to a teammate, not writing a reference manual. Prefer active voice ("Use `database.set` to seed defaults" instead of "Defaults should be seeded with `database.set`"). Define unavoidable domain terms once, then rely on that definition. Use exact terminology from `@tronrelic/types` and shared packages for consistency.
+Write in plain English as if explaining to a teammate, not writing a reference manual. Prefer active voice ("Use `database.set` to seed defaults" instead of "Defaults should be seeded with `database.set`"). Define unavoidable domain terms once, then rely on that definition. Use exact terminology from `@/types` and shared packages for consistency.
 
 Keep sentences short and scannable. Prefer concise paragraphs over bullet points. Use bullet points only when the added clarity outweighs the preference for prose—such as listing discrete items where paragraph form would obscure structure. Tables work well for quick reference sections, command summaries, and comparison matrices where scanability matters more than narrative flow.
 

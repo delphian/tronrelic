@@ -1,4 +1,4 @@
-import type { IPluginManifest } from "@/types";
+import type { IPluginManifest } from '@delphian/tronrelic-types';
 
 /**
  * Example Dashboard plugin manifest.

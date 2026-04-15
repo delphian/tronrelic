@@ -620,7 +620,7 @@ Dependency injection system for plugins to access layout components, UI primitiv
 **Usage in plugins:**
 
 ```typescript
-import type { IFrontendPluginContext } from '@tronrelic/types';
+import type { IFrontendPluginContext } from '@/types';
 
 export function MyPluginPage({ context }: { context: IFrontendPluginContext }) {
   const { ui, layout, api, charts, websocket } = context;

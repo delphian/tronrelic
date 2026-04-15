@@ -1,5 +1,5 @@
 import dynamic from 'next/dynamic';
-import { definePlugin } from '@/types';
+import { definePlugin } from '@delphian/tronrelic-types';
 import { exampleDashboardManifest } from '../manifest';
 
 /**
