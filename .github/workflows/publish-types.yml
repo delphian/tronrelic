@@ -6,6 +6,7 @@ on:
     paths:
       - 'packages/types/src/**'
       - 'packages/types/package.json'
+      - 'packages/types/tsconfig.json'
   workflow_dispatch:
 
 jobs:

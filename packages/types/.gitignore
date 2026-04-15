@@ -1,7 +1,3 @@
 dist/
 node_modules/
-
-# Compiled output in source directory (outDir is ./dist)
-src/**/*.js
-src/**/*.d.ts
 *.tsbuildinfo
