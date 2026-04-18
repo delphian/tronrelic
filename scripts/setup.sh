@@ -189,30 +189,9 @@ if [[ ${#FAILED[@]} -gt 0 ]]; then
     exit 1
 fi
 
-# Install dependencies for each cloned plugin
-log_info "Installing plugin dependencies..."
-INSTALL_FAILED=()
-
-for target in "${CLONED[@]}"; do
-    plugin_name=$(basename "$target")
-    if [[ -f "$target/package.json" ]]; then
-        log_info "Installing dependencies for $plugin_name..."
-        if (cd "$target" && npm install --silent); then
-            log_info "Dependencies installed for $plugin_name"
-        else
-            log_error "Failed to install dependencies for $plugin_name"
-            INSTALL_FAILED+=("$plugin_name")
-        fi
-    else
-        log_warn "No package.json found in $plugin_name, skipping npm install"
-    fi
-done
-
-echo ""
-if [[ ${#INSTALL_FAILED[@]} -gt 0 ]]; then
-    log_error "Failed to install dependencies: ${INSTALL_FAILED[*]}"
-    exit 1
-else
-    log_info "All plugins configured successfully"
-    log_info "Run 'npm install' in the project root to install core dependencies"
-fi
+# Plugin dependencies are installed by the root `npm install`, which treats
+# src/plugins/* as npm workspaces. This hoists shared deps and symlinks the
+# local packages/types build into each plugin instead of downloading a
+# duplicate @delphian/tronrelic-types per plugin.
+log_info "All plugins cloned successfully"
+log_info "Run 'npm install' in the project root to install all dependencies (including plugins via workspaces)"
