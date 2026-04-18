@@ -10,19 +10,13 @@ WORKDIR /app
 # Install necessary build tools
 RUN apk add --no-cache libc6-compat
 
-# Copy package files and workspace package manifests.
-# Plugins (src/plugins/*) and the types package (packages/*) are npm workspaces,
-# so their package.json files must exist on disk before `npm ci` runs — otherwise
-# workspace symlinks won't be created and @delphian/tronrelic-types would
-# duplicate per plugin instead of resolving to the local packages/types build.
+# Copy package files
 COPY package.json package-lock.json ./
-COPY packages ./packages
-COPY src/plugins ./src/plugins
 
 # Install all dependencies (needed for building)
 RUN npm ci
 
-# Copy remaining source code
+# Copy all source code
 COPY . .
 
 # Build backend
