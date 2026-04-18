@@ -34,15 +34,6 @@
     "dist",
     ".next",
     "src/frontend/.next",
-    "src/plugins/trp-resource-markets",
-    "src/plugins/trp-delegation-pools",
-    "src/plugins/trp-memo-tracker",
-    "src/plugins/trp-dust-tracker",
-    "src/plugins/trp-ai-assistant",
-    "src/plugins/trp-resource-tracker",
-    "src/plugins/trp-telegram-bot",
-    "src/plugins/trp-forum",
-    "src/plugins/trp-bazi-fortune",
-    "src/plugins/trp-x-poster"
+    "src/plugins/**"
   ]
 }
