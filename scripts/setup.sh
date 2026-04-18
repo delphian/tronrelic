@@ -212,7 +212,43 @@ echo ""
 if [[ ${#INSTALL_FAILED[@]} -gt 0 ]]; then
     log_error "Failed to install dependencies: ${INSTALL_FAILED[*]}"
     exit 1
-else
-    log_info "All plugins configured successfully"
-    log_info "Run 'npm install' in the project root to install core dependencies"
 fi
+
+# Replace each plugin's node_modules/@delphian/tronrelic-types with a symlink
+# to packages/types. This deduplicates the types package across plugins —
+# without this, every plugin carries its own copy of @delphian/tronrelic-types
+# downloaded from the registry, producing duplicate type identities that break
+# `tsc --noEmit` (see scripts/reset-generated.mjs for the original workaround).
+#
+# Plugins remain buildable standalone (outside the monorepo) because their
+# package.json still declares the dependency normally; this only rewires
+# resolution inside this checkout.
+log_info "Linking @delphian/tronrelic-types from packages/types into each plugin..."
+LINK_FAILED=()
+
+for target in "${CLONED[@]}"; do
+    plugin_name=$(basename "$target")
+    types_link="$target/node_modules/@delphian/tronrelic-types"
+
+    if [[ ! -e "$target/node_modules/@delphian" ]]; then
+        # Plugin doesn't depend on @delphian/tronrelic-types — skip silently.
+        continue
+    fi
+
+    if rm -rf "$types_link" && \
+       mkdir -p "$(dirname "$types_link")" && \
+       ln -sfn "../../../../../packages/types" "$types_link"; then
+        log_info "Linked types into $plugin_name"
+    else
+        log_error "Failed to link types into $plugin_name"
+        LINK_FAILED+=("$plugin_name")
+    fi
+done
+
+if [[ ${#LINK_FAILED[@]} -gt 0 ]]; then
+    log_error "Failed to link types: ${LINK_FAILED[*]}"
+    exit 1
+fi
+
+log_info "All plugins configured successfully"
+log_info "Run 'npm install' in the project root to install core dependencies"
