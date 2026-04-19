@@ -65,10 +65,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     fonts-liberation \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy package files and workspace manifests so npm ci can create the
-# @delphian/* workspace symlinks in node_modules during install.
+# Copy package files and the prebuilt workspace outputs so npm ci can
+# create the @delphian/* symlinks in node_modules without rebuilding.
+# We only copy the manifest + dist/ (no src/ or tsconfig) to keep the
+# runtime image lean, and strip the "prepare" script so npm does not
+# re-run tsc (devDependency) during the production install.
 COPY --from=builder /app/package*.json ./
-COPY --from=builder /app/packages ./packages
+COPY --from=builder /app/packages/types/package.json ./packages/types/package.json
+COPY --from=builder /app/packages/types/dist ./packages/types/dist
+RUN node -e "const f='packages/types/package.json';const p=require('./'+f);if(p.scripts){delete p.scripts.prepare;delete p.scripts.prepublishOnly;}require('fs').writeFileSync(f, JSON.stringify(p,null,4)+'\n');"
 
 # Install production dependencies only
 RUN npm ci --only=production
@@ -144,10 +149,15 @@ WORKDIR /app
 # Install necessary build tools
 RUN apk add --no-cache libc6-compat
 
-# Copy package files and workspace manifests so npm ci can create the
-# @delphian/* workspace symlinks in node_modules during install.
+# Copy package files and the prebuilt workspace outputs so npm ci can
+# create the @delphian/* symlinks in node_modules without rebuilding.
+# We only copy the manifest + dist/ (no src/ or tsconfig) to keep the
+# runtime image lean, and strip the "prepare" script so npm does not
+# re-run tsc (devDependency) during the production install.
 COPY --from=builder /app/package*.json ./
-COPY --from=builder /app/packages ./packages
+COPY --from=builder /app/packages/types/package.json ./packages/types/package.json
+COPY --from=builder /app/packages/types/dist ./packages/types/dist
+RUN node -e "const f='packages/types/package.json';const p=require('./'+f);if(p.scripts){delete p.scripts.prepare;delete p.scripts.prepublishOnly;}require('fs').writeFileSync(f, JSON.stringify(p,null,4)+'\n');"
 
 # Install production dependencies only
 RUN npm ci --only=production
