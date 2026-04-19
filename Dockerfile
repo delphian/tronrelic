@@ -10,8 +10,10 @@ WORKDIR /app
 # Install necessary build tools
 RUN apk add --no-cache libc6-compat
 
-# Copy package files
+# Copy package files and workspace manifests so npm ci can create the
+# @delphian/* workspace symlinks during install.
 COPY package.json package-lock.json ./
+COPY packages ./packages
 
 # Install all dependencies (needed for building)
 RUN npm ci
@@ -63,8 +65,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     fonts-liberation \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy package files
+# Copy package files and workspace manifests so npm ci can create the
+# @delphian/* workspace symlinks in node_modules during install.
 COPY --from=builder /app/package*.json ./
+COPY --from=builder /app/packages ./packages
 
 # Install production dependencies only
 RUN npm ci --only=production
@@ -75,8 +79,8 @@ RUN npx playwright install chromium
 # Copy built backend from builder
 COPY --from=builder /app/dist/backend ./dist/backend
 
-# Copy source files needed at runtime (types, plugins for runtime discovery)
-COPY --from=builder /app/packages/types ./packages/types
+# Copy source files needed at runtime (plugins for runtime discovery).
+# packages/types is already on disk from the workspace install above.
 COPY --from=builder /app/src/shared ./src/shared
 COPY --from=builder /app/src/plugins ./src/plugins
 
@@ -140,8 +144,10 @@ WORKDIR /app
 # Install necessary build tools
 RUN apk add --no-cache libc6-compat
 
-# Copy package files
+# Copy package files and workspace manifests so npm ci can create the
+# @delphian/* workspace symlinks in node_modules during install.
 COPY --from=builder /app/package*.json ./
+COPY --from=builder /app/packages ./packages
 
 # Install production dependencies only
 RUN npm ci --only=production
