@@ -157,14 +157,15 @@ Plugins manage custom real-time subscriptions through a namespaced WebSocket man
 
 ### Creating a New Plugin
 
-1. **Scaffold** - Copy `src/plugins/example-dashboard` to `src/plugins/<new-id>`
-2. **Update manifest** - Set `id`, `title`, `version`, `backend`/`frontend` flags in `src/manifest.ts`
-3. **Install dependencies** - Run `npm install` from repo root
-4. **Implement backend** - Create observers, API routes, database setup in `src/backend/`
-5. **Implement frontend** - Create pages, components, WebSocket handlers in `src/frontend/`
-6. **Build plugin** - Run `cd src/plugins/<new-id> && npm run build`
-7. **Generate registry** - Run `npm run generate:plugins`
-8. **Install and enable** - Use `/system/plugins` admin interface to activate the plugin
+1. **Study the canonical reference** - Read `src/plugins/trp-ai-assistant/` end-to-end. It demonstrates every pattern in this guide: manifest shape, lifecycle hooks, scheduler registration, service registry publication, admin routes, and SSR-first pages.
+2. **Scaffold** - Create `src/plugins/<new-id>/` matching the [Plugin Package Structure](#plugin-package-structure). Copy `package.json`, `tsconfig.json`, `tsconfig.frontend.json`, `scripts/copy-frontend-assets.mjs`, and `src/global.d.ts` from `trp-ai-assistant` as baselines.
+3. **Update manifest** - Set `id`, `title`, `version`, `backend`/`frontend` flags in `src/manifest.ts`
+4. **Install dependencies** - Run `npm install` from repo root
+5. **Implement backend** - Create observers, API routes, database setup in `src/backend/`
+6. **Implement frontend** - Create pages, components, WebSocket handlers in `src/frontend/`
+7. **Build plugin** - Run `cd src/plugins/<new-id> && npm run build`
+8. **Generate registry** - Run `npm run generate:plugins`
+9. **Install and enable** - Use `/system/plugins` admin interface to activate the plugin
 
 ### Plugin Package Structure
 
