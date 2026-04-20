@@ -1,47 +1,89 @@
 # TronRelic Multi-Stage Docker Build
-# Single-package architecture with backend and frontend images
+#
+# Stages:
+#   deps          Install root + per-plugin dependencies (needs GH Packages auth).
+#   registry      Build plugins and generate plugin registries (prerequisite for typecheck/test).
+#   test          Run typecheck + unit tests for core and plugins. Build target for CI validation.
+#   builder       Compile backend and frontend artifacts.
+#   backend       Production backend runtime image.
+#   frontend-dev  Development frontend image (npm run dev).
+#   frontend-prod Production frontend runtime image.
+#
+# GH Packages auth is provided via BuildKit secret:
+#   docker build --secret id=npmrc,src=/path/to/.npmrc ...
 
 # ============================================
-# Stage 1: Install Dependencies and Build
+# Stage 1: Install Dependencies
 # ============================================
-FROM node:20-alpine AS builder
+FROM node:20-alpine AS deps
 WORKDIR /app
 
-# Install necessary build tools
 RUN apk add --no-cache libc6-compat
 
-# Copy package files and workspace manifests so npm ci can create the
-# @delphian/* workspace symlinks during install.
+# Plugin dirs are copied before root npm ci because root workspaces include
+# src/plugins/*/packages/*; missing workspace directories can break install.
 COPY package.json package-lock.json ./
 COPY packages ./packages
+COPY src/plugins ./src/plugins
 
-# Install all dependencies (needed for building)
-RUN npm ci
+RUN --mount=type=secret,id=npmrc,target=/root/.npmrc npm ci
 
-# Copy all source code
+# Plugins are NOT root workspaces; each has its own package.json and deps
+# (notably private @delphian/* types packages pulled from GitHub Packages).
+RUN --mount=type=secret,id=npmrc,target=/root/.npmrc \
+    for dir in src/plugins/*/; do \
+      [ -f "${dir}package.json" ] || continue; \
+      if [ -f "${dir}package-lock.json" ]; then \
+        (cd "$dir" && npm ci --no-audit --no-fund) || exit 1; \
+      else \
+        (cd "$dir" && npm install --no-audit --no-fund) || exit 1; \
+      fi; \
+    done
+
+# ============================================
+# Stage 2: Build Plugins + Generate Registries
+# ============================================
+FROM deps AS registry
+WORKDIR /app
+
 COPY . .
 
-# Build plugins (each plugin compiles its own dist/ used by generate:plugins)
 RUN npm run build:plugins
+RUN npm run generate:plugins
 
-# Build backend
+# ============================================
+# Stage 3: Test (CI validation target)
+# ============================================
+# Build with: docker build --target test .
+# No artifact shipped from this stage; failure halts CI before building prod images.
+FROM registry AS test
+WORKDIR /app
+
+RUN npm run typecheck
+RUN npm test
+RUN npm run typecheck:plugins
+RUN npm run test:plugins
+
+# ============================================
+# Stage 4: Build Backend + Frontend Artifacts
+# ============================================
+FROM registry AS builder
+WORKDIR /app
+
 RUN npm run build:backend
 
-# Accept SITE_BACKEND as build argument for Next.js rewrites
 ARG SITE_BACKEND=http://backend:4000
 ENV SITE_BACKEND=${SITE_BACKEND}
 
-# Build frontend with plugin registry generation
 RUN npm run build:frontend
 
 # ============================================
-# Stage 2: Backend Production Image
+# Stage 5: Backend Production Image
 # ============================================
-# Use Debian-slim instead of Alpine for Playwright browser support
+# Debian-slim for Playwright browser support
 FROM node:20-slim AS backend
 WORKDIR /app
 
-# Install system dependencies for Playwright browsers (from npx playwright install-deps)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     libasound2 \
@@ -68,124 +110,90 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     fonts-liberation \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy package files and the prebuilt workspace outputs so npm ci can
-# create the @delphian/* symlinks in node_modules without rebuilding.
-# We only copy the manifest + dist/ (no src/ or tsconfig) to keep the
-# runtime image lean, and strip the "prepare" script so npm does not
-# re-run tsc (devDependency) during the production install.
+# Copy package files and prebuilt workspace outputs so npm ci can create
+# @delphian/* symlinks without rebuilding. Strip prepare script so tsc
+# (devDependency) does not run during production install.
 COPY --from=builder /app/package*.json ./
 COPY --from=builder /app/packages/types/package.json ./packages/types/package.json
 COPY --from=builder /app/packages/types/dist ./packages/types/dist
 RUN node -e "const f='packages/types/package.json';const p=require('./'+f);if(p.scripts){delete p.scripts.prepare;delete p.scripts.prepublishOnly;}require('fs').writeFileSync(f, JSON.stringify(p,null,4)+'\n');"
 
-# Install production dependencies only
 RUN npm ci --only=production
 
-# Install Playwright browsers (required for market fetchers using Playwright)
 RUN npx playwright install chromium
 
-# Copy built backend from builder
 COPY --from=builder /app/dist/backend ./dist/backend
 
-# Copy source files needed at runtime (plugins for runtime discovery).
-# packages/types is already on disk from the workspace install above.
+# Plugin directories carry their installed node_modules from the builder stage,
+# which is how plugin runtime imports (e.g. @delphian/trp-ai-assistant-types)
+# resolve in production.
 COPY --from=builder /app/src/shared ./src/shared
 COPY --from=builder /app/src/plugins ./src/plugins
 
-# Copy compiled migration .js files to src/ paths for runtime discovery.
-# MigrationScanner uses readdir() + dynamic import() at runtime, so individual
-# files must exist on disk at the paths the scanner expects (src/backend/...).
-# The build script compiles .ts migrations to .js under dist/, and we copy them
-# here to match the scanner's src/backend/ base path.
+# Strip dev dependencies from each plugin's node_modules to reduce image size.
+# npm prune is local (no network/auth), so no BuildKit secret needed here.
+RUN for dir in src/plugins/*/; do \
+      [ -f "${dir}package.json" ] || continue; \
+      [ -d "${dir}node_modules" ] || continue; \
+      (cd "$dir" && npm prune --omit=dev) || exit 1; \
+    done
+
+# MigrationScanner walks src/backend/... at runtime; mirror compiled .js files
+# from dist/ to the paths the scanner expects.
 COPY --from=builder /app/dist/backend/services/database/migrations ./src/backend/services/database/migrations
 COPY --from=builder /app/dist/backend/modules ./src/backend/modules
 
-# Expose backend port
 EXPOSE 4000
-
-# Set production environment
 ENV NODE_ENV=production
 
-# Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
     CMD node -e "require('http').get('http://localhost:4000/api/health', (r) => { process.exit(r.statusCode === 200 ? 0 : 1); });"
 
-# Start backend server
 CMD ["node", "dist/backend/index.js"]
 
 # ============================================
-# Stage 3: Frontend Development Image
+# Stage 6: Frontend Development Image
 # ============================================
-FROM node:20-alpine AS frontend-dev
+FROM deps AS frontend-dev
 WORKDIR /app
 
-# Install necessary build tools
-RUN apk add --no-cache libc6-compat
-
-# Copy package files
-COPY package.json package-lock.json ./
-
-# Install all dependencies (dev mode needs devDependencies)
-RUN npm ci
-
-# Copy source
 COPY . .
 
-# Build plugins (compiled dist/ required by generate:plugins for compiled exports)
 RUN npm run build:plugins
-
-# Generate plugin registry
 RUN npm run generate:plugins
 
-# Expose frontend dev port
 EXPOSE 3000
-
-# Set development environment
 ENV NODE_ENV=development
 
-# Start Next.js in dev mode with Turbopack
 CMD ["npm", "run", "dev:frontend"]
 
 # ============================================
-# Stage 4: Frontend Production Image
+# Stage 7: Frontend Production Image
 # ============================================
 FROM node:20-alpine AS frontend-prod
 WORKDIR /app
 
-# Install necessary build tools
 RUN apk add --no-cache libc6-compat
 
-# Copy package files and the prebuilt workspace outputs so npm ci can
-# create the @delphian/* symlinks in node_modules without rebuilding.
-# We only copy the manifest + dist/ (no src/ or tsconfig) to keep the
-# runtime image lean, and strip the "prepare" script so npm does not
-# re-run tsc (devDependency) during the production install.
 COPY --from=builder /app/package*.json ./
 COPY --from=builder /app/packages/types/package.json ./packages/types/package.json
 COPY --from=builder /app/packages/types/dist ./packages/types/dist
 RUN node -e "const f='packages/types/package.json';const p=require('./'+f);if(p.scripts){delete p.scripts.prepare;delete p.scripts.prepublishOnly;}require('fs').writeFileSync(f, JSON.stringify(p,null,4)+'\n');"
 
-# Install production dependencies only
 RUN npm ci --only=production
 
-# Copy built Next.js standalone output from builder
 COPY --from=builder /app/src/frontend/.next/standalone ./
 COPY --from=builder /app/src/frontend/.next/static ./src/frontend/.next/static
 COPY --from=builder /app/src/frontend/public ./src/frontend/public
 
-# Remove "type": "module" from package.json for CommonJS standalone server
-# Next.js standalone generates CommonJS; project source remains ESM
+# Next.js standalone generates CommonJS; strip type:module from root package.json
+# for the standalone server. Project source remains ESM.
 RUN node -e "const fs=require('fs'); const p=JSON.parse(fs.readFileSync('package.json')); delete p.type; fs.writeFileSync('package.json', JSON.stringify(p,null,2));"
 
-# Expose frontend port
 EXPOSE 3000
-
-# Set production environment
 ENV NODE_ENV=production
 
-# Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
     CMD node -e "require('http').get('http://localhost:3000/api/health', (r) => { process.exit(r.statusCode === 200 ? 0 : 1); });"
 
-# Start Next.js production server
 CMD ["node", "src/frontend/server.js"]

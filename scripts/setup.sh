@@ -8,6 +8,7 @@
 #   --dev         Clone all plugins in developer mode (full history, push enabled)
 #   --consumer    Clone all plugins in consumer mode (shallow, read-only)
 #   --force, -f   Remove existing plugins before cloning
+#   --no-install  Skip per-plugin npm install (useful when Docker build handles deps)
 #
 # Without --dev or --consumer, uses the "mode" field from plugins.json (defaults to consumer)
 #
@@ -22,12 +23,14 @@ PLUGINS_DIR="$PROJECT_ROOT/src/plugins"
 CONFIG_FILE="$PROJECT_ROOT/plugins.json"
 FORCE=false
 MODE_OVERRIDE=""
+SKIP_INSTALL=false
 
 while [[ $# -gt 0 ]]; do
     case $1 in
         --force|-f) FORCE=true; shift ;;
         --dev) MODE_OVERRIDE="developer"; shift ;;
         --consumer) MODE_OVERRIDE="consumer"; shift ;;
+        --no-install) SKIP_INSTALL=true; shift ;;
         *) echo "Unknown option: $1"; exit 1 ;;
     esac
 done
@@ -187,6 +190,12 @@ echo ""
 if [[ ${#FAILED[@]} -gt 0 ]]; then
     log_error "Failed to clone: ${FAILED[*]}"
     exit 1
+fi
+
+if [[ "$SKIP_INSTALL" == true ]]; then
+    log_info "Skipping per-plugin npm install (--no-install)"
+    log_info "All plugins cloned successfully"
+    exit 0
 fi
 
 # Install dependencies for each cloned plugin
