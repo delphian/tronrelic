@@ -404,7 +404,7 @@ Frontend plugins follow TronRelic's foundational SSR + Live Updates pattern: com
 
 ### Build-time Discovery
 
-1. `src/frontend/scripts/generate-frontend-plugin-registry.mjs` runs before `next dev` or `next build`. It scans `src/plugins/**/src/frontend/` directories for plugin components.
+1. `scripts/generate-frontend-plugin-registry.mjs` runs before `next dev` or `next build`. It scans `src/plugins/**/src/frontend/` directories for plugin components.
 2. The generator creates registry files with static imports, enabling components to be available during server-side rendering.
 3. Static imports (not lazy/dynamic) are required for SSR—lazy-loaded components aren't available when the server renders HTML.
 
@@ -567,7 +567,7 @@ Plugins often need secure settings screens without touching core admin code. Giv
 
 ### Frontend infrastructure
 - `src/frontend/app/(core)/system/plugins/page.tsx` – admin UI for plugin management.
-- `src/frontend/scripts/generate-frontend-plugin-registry.mjs` – generator that keeps the lazy import map in sync with the filesystem.
+- `scripts/generate-frontend-plugin-registry.mjs` – generator that keeps the lazy import map in sync with the filesystem.
 - `src/frontend/components/plugins/PluginLoader.tsx` – React component that fetches manifests and mounts frontend plugins.
 
 ### Type definitions

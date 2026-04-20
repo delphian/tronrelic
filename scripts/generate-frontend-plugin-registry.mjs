@@ -53,15 +53,15 @@ async function discoverPluginDirectories() {
  * Matches the two shapes the generator supports: a legacy raw TS entry at
  * `src/frontend/frontend.ts`, or a `package.json` that declares a frontend
  * export via the `exports` map.
+ *
+ * Errors from `resolveFrontendEntry` (e.g., declared compiled export missing
+ * its built artifact) propagate intentionally so the operator sees the real
+ * failure instead of silently falling back to a legacy TS entry.
  */
 async function hasFrontendEntry(directory) {
-    try {
-        const entry = await resolveFrontendEntry(directory);
-        if (entry) {
-            return true;
-        }
-    } catch {
-        // fall through to legacy check
+    const entry = await resolveFrontendEntry(directory);
+    if (entry) {
+        return true;
     }
     try {
         await fs.access(join(directory, 'src', 'frontend', 'frontend.ts'));
@@ -78,14 +78,25 @@ async function hasFrontendEntry(directory) {
  * `import` condition (falls through to `default` and `require` for tolerance).
  * Returns null when the subpath isn't declared or the pointed-at file doesn't
  * exist — callers decide whether to fall back to a legacy source path.
+ *
+ * Callers may pass an already-parsed `packageJson` to avoid a redundant read
+ * when the outer loop has already loaded it.
+ *
+ * Fails fast when the declared path has a compiled extension (.js/.mjs/.cjs)
+ * but the file is missing. Silently falling back to a legacy TS entry in that
+ * case is dangerous: `next.config.mjs` classifies compiled-mode purely on the
+ * declared extension, so the generator and Next would disagree and webpack
+ * would choke importing un-transpiled TS. Throwing here surfaces "you forgot
+ * to run the plugin's build" as a clear error instead.
  */
-async function resolveExportEntry(directory, subpath) {
-    const packageJsonPath = join(directory, 'package.json');
-    let packageJson;
-    try {
-        packageJson = await readJson(packageJsonPath);
-    } catch {
-        return null;
+async function resolveExportEntry(directory, subpath, packageJson) {
+    if (!packageJson) {
+        const packageJsonPath = join(directory, 'package.json');
+        try {
+            packageJson = await readJson(packageJsonPath);
+        } catch {
+            return null;
+        }
     }
 
     const exportsField = packageJson.exports;
@@ -107,9 +118,17 @@ async function resolveExportEntry(directory, subpath) {
     }
 
     const absolutePath = join(directory, relativePath);
+    const isCompiled = /\.(js|mjs|cjs)$/.test(relativePath);
     try {
         await fs.access(absolutePath);
     } catch {
+        if (isCompiled) {
+            throw new Error(
+                `Plugin at ${directory} declares compiled export "${subpath}" -> "${relativePath}" ` +
+                `but the file does not exist. Run \`npm run build\` inside the plugin before ` +
+                `\`npm run generate:plugins\`.`
+            );
+        }
         return null;
     }
     return absolutePath;
@@ -122,8 +141,8 @@ async function resolveExportEntry(directory, subpath) {
  * plugins can point at compiled output. Returns null when no exports-based
  * entry is declared; callers fall back to `src/frontend/frontend.ts`.
  */
-async function resolveFrontendEntry(directory) {
-    return resolveExportEntry(directory, './frontend');
+async function resolveFrontendEntry(directory, packageJson) {
+    return resolveExportEntry(directory, './frontend', packageJson);
 }
 
 /**
@@ -133,8 +152,8 @@ async function resolveFrontendEntry(directory) {
  * widget registry via `exports."./frontend/widgets"`; legacy plugins keep
  * shipping raw TS at `src/frontend/widgets/index.ts`.
  */
-async function resolveWidgetsEntry(directory) {
-    return resolveExportEntry(directory, './frontend/widgets');
+async function resolveWidgetsEntry(directory, packageJson) {
+    return resolveExportEntry(directory, './frontend/widgets', packageJson);
 }
 
 /**
@@ -181,10 +200,11 @@ async function collectPluginMetadata() {
     for (const directory of directories) {
         const packageJsonPath = join(directory, 'package.json');
         const manifestPath = join(directory, 'src', 'manifest.ts');
-        const resolvedEntry = await resolveFrontendEntry(directory);
-        const frontendEntry = resolvedEntry || join(directory, 'src', 'frontend', 'frontend.ts');
         const packageJson = await readJson(packageJsonPath);
-        const pluginId = await readPluginId(manifestPath, packageJson.name.split('/').at(-1));
+        const resolvedEntry = await resolveFrontendEntry(directory, packageJson);
+        const frontendEntry = resolvedEntry || join(directory, 'src', 'frontend', 'frontend.ts');
+        const fallbackId = packageJson.name?.split('/').at(-1) || directory.split(/[\\/]/).at(-1);
+        const pluginId = await readPluginId(manifestPath, fallbackId);
         const relativeImportPath = relative(outputDir, frontendEntry).replace(/\\/g, '/');
         const sanitizedImportPath = relativeImportPath.startsWith('.')
             ? relativeImportPath
@@ -371,10 +391,11 @@ async function collectWidgetMetadata() {
     for (const directory of directories) {
         const packageJsonPath = join(directory, 'package.json');
         const manifestPath = join(directory, 'src', 'manifest.ts');
-        const resolvedEntry = await resolveWidgetsEntry(directory);
-        const widgetsEntry = resolvedEntry || join(directory, 'src', 'frontend', 'widgets', 'index.ts');
         const packageJson = await readJson(packageJsonPath);
-        const pluginId = await readPluginId(manifestPath, packageJson.name.split('/').at(-1));
+        const resolvedEntry = await resolveWidgetsEntry(directory, packageJson);
+        const widgetsEntry = resolvedEntry || join(directory, 'src', 'frontend', 'widgets', 'index.ts');
+        const fallbackId = packageJson.name?.split('/').at(-1) || directory.split(/[\\/]/).at(-1);
+        const pluginId = await readPluginId(manifestPath, fallbackId);
         const relativeImportPath = relative(widgetsOutputDir, widgetsEntry).replace(/\\/g, '/');
         const sanitizedImportPath = relativeImportPath.startsWith('.')
             ? relativeImportPath
@@ -382,14 +403,43 @@ async function collectWidgetMetadata() {
         // Strip TS-only extensions. Compiled entries keep their .js/.mjs
         // extension so Node/webpack resolve the artifact as-is.
         const importPathWithoutExtension = sanitizedImportPath.replace(/\.(ts|tsx)$/, '');
+        const isCompiled = /\.(js|mjs|cjs)$/.test(widgetsEntry);
 
         metadata.push({
             id: pluginId,
-            importPath: importPathWithoutExtension
+            importPath: importPathWithoutExtension,
+            absoluteEntry: widgetsEntry,
+            isCompiled
         });
     }
 
     return metadata;
+}
+
+/**
+ * Writes a .d.ts sidecar next to each compiled widget artifact.
+ *
+ * Mirrors `writeCompiledPluginTypes`: the root tsconfig uses
+ * `moduleResolution: "Node"` (legacy) without `allowJs`, so importing a `.js`
+ * widget registry without a sibling `.d.ts` triggers TS2307. Each compiled
+ * widget entry needs a declaration stating that it exports
+ * `widgetComponents: Record<string, WidgetComponent>` — the exact shape
+ * `widgets.generated.ts` imports.
+ *
+ * The plugin's own build intentionally does not emit .d.ts — core's registry
+ * generator owns the declarations because that's the only consumer that needs
+ * them. The sidecar is reproducible from plugin source, so the plugin's
+ * `dist/` stays a build artifact.
+ */
+async function writeCompiledWidgetTypes(metadata) {
+    for (const entry of metadata) {
+        if (!entry.isCompiled) {
+            continue;
+        }
+        const sidecarPath = entry.absoluteEntry.replace(/\.(js|mjs|cjs)$/, '.d.ts');
+        const contents = `/**\n * AUTO-GENERATED FILE. DO NOT EDIT.\n *\n * This declaration file is produced by\n * scripts/generate-frontend-plugin-registry.mjs and gives core's\n * widgets.generated.ts a typed named import for this compiled widget\n * registry. The plugin's own build intentionally skips .d.ts emission —\n * core owns this sidecar because core is the only consumer.\n */\nimport type { WidgetComponent } from '@delphian/tronrelic-types';\n\nexport declare const widgetComponents: Record<string, WidgetComponent>;\n`;
+        await writeIfChanged(sidecarPath, contents);
+    }
 }
 
 /**
@@ -618,6 +668,11 @@ async function run() {
     const widgetMetadata = await collectWidgetMetadata();
     const widgetModuleSource = renderWidgetsModule(widgetMetadata);
     await writeIfChanged(widgetsOutputPath, widgetModuleSource);
+
+    // Emit a typed .d.ts sidecar next to each compiled widget artifact for the
+    // same reason as plugin frontends — the root tsconfig cannot resolve bare
+    // .js imports without allowJs under strict mode.
+    await writeCompiledWidgetTypes(widgetMetadata);
 
     // Mirror plugin-owned static assets into the frontend public folder
     await copyPluginPublicAssets();
