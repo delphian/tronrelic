@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1.7-labs
 # TronRelic Multi-Stage Docker Build
 #
 # Stages:
@@ -15,29 +16,33 @@
 # ============================================
 # Stage 1: Install Dependencies
 # ============================================
-FROM node:20-alpine AS deps
+# node:20-slim (Debian/glibc) is used across all stages so native addons
+# compiled during install stay compatible with the backend/frontend runtimes.
+# Mixing Alpine (musl) builds with Debian runtimes silently breaks any plugin
+# that adds a native dependency.
+FROM node:20-slim AS deps
 WORKDIR /app
 
-RUN apk add --no-cache libc6-compat
-
-# Plugin dirs are copied before root npm ci because root workspaces include
-# src/plugins/*/packages/*; missing workspace directories can break install.
+# Copy only manifests first so a change to plugin source doesn't invalidate
+# the install layers. COPY --parents preserves each plugin's directory
+# structure (requires dockerfile:1.7-labs syntax).
 COPY package.json package-lock.json ./
 COPY packages ./packages
-COPY src/plugins ./src/plugins
+COPY --parents src/plugins/*/package.json src/plugins/*/package-lock.json ./
 
 RUN --mount=type=secret,id=npmrc,target=/root/.npmrc npm ci
 
-# Plugins are NOT root workspaces; each has its own package.json and deps
-# (notably private @delphian/* types packages pulled from GitHub Packages).
+# Plugins are installed independently — they declare their own manifests
+# (including private @delphian/* types from GitHub Packages) and are not
+# top-level entries in the root workspaces array.
 RUN --mount=type=secret,id=npmrc,target=/root/.npmrc \
     for dir in src/plugins/*/; do \
       [ -f "${dir}package.json" ] || continue; \
-      if [ -f "${dir}package-lock.json" ]; then \
-        (cd "$dir" && npm ci --no-audit --no-fund) || exit 1; \
-      else \
-        (cd "$dir" && npm install --no-audit --no-fund) || exit 1; \
+      if [ ! -f "${dir}package-lock.json" ]; then \
+        echo "ERROR: ${dir} has no package-lock.json. Commit a lockfile to keep Docker builds deterministic."; \
+        exit 1; \
       fi; \
+      (cd "$dir" && npm ci --no-audit --no-fund) || exit 1; \
     done
 
 # ============================================
@@ -77,10 +82,19 @@ ENV SITE_BACKEND=${SITE_BACKEND}
 
 RUN npm run build:frontend
 
+# Prune plugin dev dependencies here (not in the backend stage) so the
+# COPY --from=builder into the runtime image only captures the pruned
+# filesystem state — avoiding dev deps lingering in a prior layer.
+RUN for dir in src/plugins/*/; do \
+      [ -f "${dir}package.json" ] || continue; \
+      [ -d "${dir}node_modules" ] || continue; \
+      (cd "$dir" && npm prune --omit=dev) || exit 1; \
+    done
+
 # ============================================
 # Stage 5: Backend Production Image
 # ============================================
-# Debian-slim for Playwright browser support
+# Debian-slim for Playwright browser support and glibc consistency with deps.
 FROM node:20-slim AS backend
 WORKDIR /app
 
@@ -124,19 +138,11 @@ RUN npx playwright install chromium
 
 COPY --from=builder /app/dist/backend ./dist/backend
 
-# Plugin directories carry their installed node_modules from the builder stage,
-# which is how plugin runtime imports (e.g. @delphian/trp-ai-assistant-types)
-# resolve in production.
+# Plugin directories carry their installed (and dev-dep-pruned) node_modules
+# from the builder stage, which is how plugin runtime imports
+# (e.g. @delphian/trp-ai-assistant-types) resolve in production.
 COPY --from=builder /app/src/shared ./src/shared
 COPY --from=builder /app/src/plugins ./src/plugins
-
-# Strip dev dependencies from each plugin's node_modules to reduce image size.
-# npm prune is local (no network/auth), so no BuildKit secret needed here.
-RUN for dir in src/plugins/*/; do \
-      [ -f "${dir}package.json" ] || continue; \
-      [ -d "${dir}node_modules" ] || continue; \
-      (cd "$dir" && npm prune --omit=dev) || exit 1; \
-    done
 
 # MigrationScanner walks src/backend/... at runtime; mirror compiled .js files
 # from dist/ to the paths the scanner expects.
@@ -170,10 +176,8 @@ CMD ["npm", "run", "dev:frontend"]
 # ============================================
 # Stage 7: Frontend Production Image
 # ============================================
-FROM node:20-alpine AS frontend-prod
+FROM node:20-slim AS frontend-prod
 WORKDIR /app
-
-RUN apk add --no-cache libc6-compat
 
 COPY --from=builder /app/package*.json ./
 COPY --from=builder /app/packages/types/package.json ./packages/types/package.json

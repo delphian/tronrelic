@@ -194,7 +194,7 @@ fi
 
 if [[ "$SKIP_INSTALL" == true ]]; then
     log_info "Skipping per-plugin npm install (--no-install)"
-    log_info "All plugins cloned successfully"
+    log_info "All plugins synced successfully"
     exit 0
 fi
 
