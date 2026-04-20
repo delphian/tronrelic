@@ -153,7 +153,6 @@ src/plugins/*/dist/
 # Cloned external plugins (setup.sh downloads these)
 src/plugins/*
 !src/plugins/.gitkeep
-!src/plugins/example-dashboard/
 
 # Plugin configuration (user-specific)
 plugins.json

@@ -495,14 +495,15 @@ Common icons: `LayoutDashboard`, `BarChart3`, `Settings`, `Bell`, `Activity`, `T
 
 ## Example: Full Plugin
 
-See `src/plugins/example-dashboard` for a complete working example that demonstrates:
+> If `src/plugins/trp-ai-assistant/` is not present in your checkout, populate `src/plugins/` by running `./scripts/setup.sh` (driven by `plugins.json`) before following along.
 
-- Menu item registration
-- Page routing
-- Component structure
-- Documentation
+See `src/plugins/trp-ai-assistant` for the canonical reference implementation demonstrating:
 
-The example plugin adds an "Example" menu item and renders a dashboard page explaining the system.
+- Menu item registration in the backend `init()` hook via `context.menuService.create()`
+- Admin page registration with the `adminPages` array (auto-guarded by admin auth)
+- Global side-effect component via the plugin's top-level `component` property
+- Stale menu cleanup during init to handle version upgrades
+- Lifecycle-aware teardown (`disable` removes the menu entry and unregisters the service)
 
 ## Migration from AdminUI and Declarative MenuItems
 
@@ -739,8 +740,8 @@ Core implementation files:
   - `src/frontend/components/PluginPageWithZones.tsx` - Server wrapper with widget zones
 
 - **Example plugins**:
+  - `src/plugins/trp-ai-assistant/` - Canonical reference: admin page registration, menu registration via `context.menuService.create()`, global side-effect component
   - `src/plugins/resource-tracking/` - Uses IMenuService with hierarchical menus
-  - `src/plugins/example-dashboard/` - Basic example
 
 ## Best Practices
 
@@ -872,11 +873,11 @@ For developers working on the plugin system itself, here are the key files:
 - `src/frontend/components/plugins/plugins.generated.ts` - Auto-generated static-import registry of all plugin frontends
 
 ### Example Plugins
-- `src/plugins/resource-tracking/` - Complete example with IMenuService
-  - `src/backend/backend.ts` - Menu registration in init() hook
-  - `src/frontend/frontend.ts` - Page registration
-  - Demonstrates hierarchical menus with container nodes
-- `src/plugins/example-dashboard/` - Basic example
+- `src/plugins/trp-ai-assistant/` - Canonical reference
+  - `src/backend/backend.ts` - Menu registration in init() hook, lifecycle-aware teardown
+  - `src/frontend/frontend.ts` - `adminPages` registration plus global side-effect component
+  - Demonstrates admin-only menus, stale menu cleanup, and service registry publication
+- `src/plugins/resource-tracking/` - Hierarchical menus with container nodes
 
 ## Related Documentation
 

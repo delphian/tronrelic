@@ -129,17 +129,21 @@ Run `npm run build` inside the plugin before `npm run generate:plugins` at the r
 
 #### Scaffold Templates
 
-Cutting a new plugin should feel mechanical. Copy these baseline files, replace `example-dashboard` with your plugin id, and adjust metadata so the loaders can reason about the new package without guesswork.
+> **Prerequisite:** `src/plugins/trp-ai-assistant/` is not present on a fresh clone. Populate it via `./scripts/setup.sh` with `trp-ai-assistant` enabled in `plugins.json` before using the paths below.
 
-Reference the living templates instead of copying long snippets into this guide:
+Cutting a new plugin should feel mechanical. Use `trp-ai-assistant` as the baseline — it is the canonical reference that exercises every pattern (lifecycle hooks, scheduler jobs, service registry, admin routes, SSR-first pages). Copy its build scaffolding, replace the id with yours, and adjust metadata so the loaders can reason about the new package without guesswork.
 
-- `src/plugins/example-dashboard/package.json` – Workspace metadata, exports, and build scripts that every plugin needs.
-- `src/plugins/example-dashboard/tsconfig.json` – Backend-focused TypeScript configuration that omits React files.
-- `src/plugins/example-dashboard/src/manifest.ts` – Canonical manifest establishing id, version, and surface flags.
-- `src/plugins/example-dashboard/src/backend/backend.ts` – Minimal backend entry showing lifecycle hooks and dependency injection.
-- `src/plugins/example-dashboard/src/frontend/` – Frontend bootstrap (`frontend.ts`), scoped CSS, and example page/components.
+Reference these files in `src/plugins/trp-ai-assistant/` instead of copying long snippets into this guide:
 
-Copy the directory with `cp -R src/plugins/example-dashboard src/plugins/<new-id>` and update the manifest fields, workspace name, and any scaffolded components before implementing feature-specific logic. Each file is documented inline so new authors can see the “why” next to the code they are editing.
+- `package.json` – Workspace metadata, exports map pointing at `dist/`, and backend+frontend build scripts that every plugin needs.
+- `tsconfig.json` – Backend-focused TypeScript configuration that omits React files.
+- `tsconfig.frontend.json` – Standalone frontend config emitting `dist/frontend/`.
+- `scripts/copy-frontend-assets.mjs` – Mirrors SCSS into `dist/frontend/` after tsc emits.
+- `src/manifest.ts` – Canonical manifest establishing id, version, and surface flags.
+- `src/backend/backend.ts` – Complete backend entry demonstrating `install`, `init`, `disable`, `uninstall`, scheduler registration, service registry publication, and menu registration.
+- `src/frontend/frontend.ts` – Frontend bootstrap with `adminPages`, lazy component imports, and a global `component` for WebSocket-driven side effects.
+
+Copy the directory with `cp -R src/plugins/trp-ai-assistant src/plugins/<new-id>` and update the manifest fields, workspace name, and scaffolded components before implementing feature-specific logic. Strip the parts you do not need — most plugins will not register scheduler jobs or publish a service on the registry.
 
 **Important**: Frontend plugin components and pages receive `IFrontendPluginContext` as a prop. This provides access to:
 - `context.ui` - UI components (Card, Badge, Skeleton, Button, Input)
@@ -221,7 +225,7 @@ For complete CSS architecture guidance, see [SCSS Modules and Component Styling]
 
 ## Quick Checklist / Reference
 
-- Copy `src/plugins/example-dashboard` to `src/plugins/<new-id>` so backend and frontend scaffolding stay aligned.
+- Copy `src/plugins/trp-ai-assistant` to `src/plugins/<new-id>` so backend and frontend scaffolding stay aligned.
 - Update the manifest id, title, version, and the workspace name in `package.json` before wiring feature code.
 - Run `npm install` at the repo root to link the new workspace.
 - Restart `npm run dev` — the startup script regenerates plugin registries automatically.
@@ -304,7 +308,7 @@ Every backend plugin should follow the same structural playbook:
 
 The simplest useful backend plugin wires one observer into the transaction stream. This example pairs the blockchain observer pattern with the plugin context so you can see the entire flow end-to-end.
 
-`src/plugins/example-dashboard/src/backend/hello-world.observer.ts`
+`src/plugins/<new-id>/src/backend/hello-world.observer.ts`
 
 ```typescript
 import type {
@@ -370,18 +374,18 @@ export function createHelloWorldObserver(
 
 Replace the placeholder `init` from the scaffolded backend entry with logic that instantiates the observer factory:
 
-`src/plugins/example-dashboard/src/backend/backend.ts`
+`src/plugins/<new-id>/src/backend/backend.ts`
 
 ```typescript
 import { definePlugin, type IPluginContext } from "@/types";
-import { exampleAlertsManifest } from "../manifest";
+import { helloWorldManifest } from "../manifest";
 import { createHelloWorldObserver } from "./hello-world.observer";
 
 /** Activates the Hello World observer. The init hook proves how to use dependency injection, subscribe to a transaction type, and stay decoupled from backend internals. */
-export const exampleAlertsBackendPlugin = definePlugin({
-    manifest: exampleAlertsManifest,
+export const helloWorldBackendPlugin = definePlugin({
+    manifest: helloWorldManifest,
     init: async ({ BaseObserver, observerRegistry, websocketService, logger }: IPluginContext) => {
-        const observerLogger = logger.child({ feature: "example-dashboard" });
+        const observerLogger = logger.child({ feature: "hello-world" });
         createHelloWorldObserver(BaseObserver, observerRegistry, websocketService, observerLogger);
     }
 });
