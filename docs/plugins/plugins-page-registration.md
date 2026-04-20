@@ -495,6 +495,8 @@ Common icons: `LayoutDashboard`, `BarChart3`, `Settings`, `Bell`, `Activity`, `T
 
 ## Example: Full Plugin
 
+> If `src/plugins/trp-ai-assistant/` is not present in your checkout, populate `src/plugins/` by running `./scripts/setup.sh` (driven by `plugins.json`) before following along.
+
 See `src/plugins/trp-ai-assistant` for the canonical reference implementation demonstrating:
 
 - Menu item registration in the backend `init()` hook via `context.menuService.create()`

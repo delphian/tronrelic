@@ -129,6 +129,8 @@ Run `npm run build` inside the plugin before `npm run generate:plugins` at the r
 
 #### Scaffold Templates
 
+> **Prerequisite:** `src/plugins/trp-ai-assistant/` is not present on a fresh clone. Populate it via `./scripts/setup.sh` with `trp-ai-assistant` enabled in `plugins.json` before using the paths below.
+
 Cutting a new plugin should feel mechanical. Use `trp-ai-assistant` as the baseline — it is the canonical reference that exercises every pattern (lifecycle hooks, scheduler jobs, service registry, admin routes, SSR-first pages). Copy its build scaffolding, replace the id with yours, and adjust metadata so the loaders can reason about the new package without guesswork.
 
 Reference these files in `src/plugins/trp-ai-assistant/` instead of copying long snippets into this guide:
