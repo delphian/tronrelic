@@ -74,18 +74,10 @@ docker-compose*.yml
 # Shell scripts (not needed in container)
 **/*.sh
 
-# Test files
-*.test.ts
-*.test.tsx
-*.test.js
-*.spec.ts
-*.spec.tsx
-*.spec.js
-__tests__/
-**/__tests__/
-tests/
-**/tests/
-**/*.test.json
+# Test files are intentionally NOT excluded — the Dockerfile `test` stage
+# runs vitest against `src/**/__tests__/**/*.test.ts` and plugin test suites,
+# so the build context must include them. Runtime images copy only compiled
+# artifacts (dist/) plus src/plugins (a few KB of extra .ts test sources).
 
 # Playwright
 playwright-report/
