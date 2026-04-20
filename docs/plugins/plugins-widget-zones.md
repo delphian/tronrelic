@@ -516,7 +516,7 @@ export const widgetComponents: Record<string, ComponentType<{ data: unknown }>> 
 };
 ```
 
-**Convention:** Export a `widgetComponents` object from `src/frontend/widgets/index.ts`. The generator scans this file at build time.
+**Convention:** Export a `widgetComponents` object from `src/frontend/widgets/index.ts`. The plugin's `build:frontend` pass compiles it to `dist/frontend/widgets/index.js`, and the plugin's `package.json` advertises that path via `exports."./frontend/widgets"`. The registry generator reads the exports map to emit the right static import. See [plugins-system-architecture.md](./plugins-system-architecture.md#frontend-build) for the full build setup.
 
 ### Creating Widget Components
 

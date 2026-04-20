@@ -172,22 +172,30 @@ Plugins manage custom real-time subscriptions through a namespaced WebSocket man
 src/plugins/{plugin-id}/
 ├── src/
 │   ├── manifest.ts              # Shared metadata (backend + frontend)
+│   ├── global.d.ts              # Ambient *.module.scss / *.module.css types
 │   ├── backend/
-│   │   ├── backend.ts          # Entry point with lifecycle hooks
-│   │   └── *.observer.ts       # Transaction observers
+│   │   ├── backend.ts           # Entry point with lifecycle hooks
+│   │   └── *.observer.ts        # Transaction observers
 │   ├── frontend/
-│   │   ├── frontend.ts         # Entry point with pages/menu items
-│   │   ├── *.tsx               # React components
-│   │   ├── *.module.css        # CSS Modules for scoped styles
-│   │   └── public/             # Stable-URL static assets (OG images, icons) — optional
+│   │   ├── frontend.ts          # Entry point with pages/menu items
+│   │   ├── *.tsx                # React components
+│   │   ├── *.module.scss        # SCSS Modules for scoped styles
+│   │   ├── widgets/             # Widget component registry — optional
+│   │   └── public/              # Stable-URL static assets — optional
 │   └── shared/                  # Types shared between backend/frontend
 │       ├── types/
 │       └── constants.ts
-├── dist/                        # Compiled backend output
+├── scripts/
+│   └── copy-frontend-assets.mjs # Mirrors SCSS into dist/frontend after tsc
+├── dist/                        # Compiled artifacts (both loaders consume)
 │   ├── manifest.js
-│   └── backend/backend.js
-├── package.json                 # Workspace config
-└── tsconfig.json               # TypeScript config
+│   ├── backend/backend.js
+│   └── frontend/                # Compiled TSX + mirrored SCSS
+│       ├── frontend.js
+│       └── widgets/index.js     # If the plugin ships widgets
+├── package.json                 # Workspace config (exports map points at dist/)
+├── tsconfig.json                # Backend TS config
+└── tsconfig.frontend.json       # Frontend TS config (emits dist/frontend/)
 ```
 
 ### Common Plugin Patterns
