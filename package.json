@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "workspaces": ["packages/*"],
+  "workspaces": ["packages/*", "src/plugins/*/packages/*"],
   "description": "TRON blockchain analytics platform with real-time monitoring, whale tracking, and extensible plugins.",
   "repository": {
     "type": "git",

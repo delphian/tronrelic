@@ -139,7 +139,7 @@ export const myFrontendPlugin = definePlugin({
 ```
 
 2. **Generator script picks up the new plugin** at build time:
-   - `generate:plugins` discovers every plugin with a `src/frontend/frontend.ts` entry
+   - `generate:plugins` reads each plugin's `package.json` `exports."./frontend"` field. New plugins ship a compiled entry (`dist/frontend/frontend.js`); legacy plugins still on source mode fall back to `src/frontend/frontend.ts`. See [plugins-system-architecture.md](./plugins-system-architecture.md#frontend-build) for the build pipeline.
    - Emits a static-import line into `src/frontend/components/plugins/plugins.generated.ts`
    - The registry is populated at module load via `pluginRegistry.bootstrap()`
 

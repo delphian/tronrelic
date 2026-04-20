@@ -11,7 +11,11 @@ const pluginsRoot = join(repoRoot, 'src', 'plugins');
 /**
  * Discovers plugin package names for Next.js transpilation.
  *
- * It inspects each plugin directory and reads its package manifest to capture the published package name. This lets Next compile workspace plugins without manually updating the config.
+ * Returns only plugins that still ship raw TS/TSX for their frontend. Plugins
+ * whose `exports."./frontend"` points at a compiled artifact (.js/.mjs) are
+ * omitted so Next doesn't re-transpile them — their build tooling already
+ * produced the bundle core will import. New plugins migrate one at a time by
+ * adding a compiled frontend export.
  */
 function discoverPluginPackages() {
     try {
@@ -27,7 +31,13 @@ function discoverPluginPackages() {
 
                 try {
                     const manifest = JSON.parse(readFileSync(packageJsonPath, 'utf8'));
-                    return manifest.name ? [manifest.name] : [];
+                    if (!manifest.name) {
+                        return [];
+                    }
+                    if (hasCompiledFrontendExport(manifest)) {
+                        return [];
+                    }
+                    return [manifest.name];
                 } catch {
                     return [];
                 }
@@ -36,6 +46,31 @@ function discoverPluginPackages() {
         console.warn('Failed to read plugin packages for Next.js transpilation.', error);
         return [];
     }
+}
+
+/**
+ * Returns true when the plugin's frontend export resolves to a compiled file.
+ *
+ * Checking the extension (not just presence of exports) lets legacy plugins
+ * keep their existing `exports."./frontend"` pointing at `src/frontend/frontend.ts`
+ * without accidentally opting them out of transpilePackages.
+ */
+function hasCompiledFrontendExport(manifest) {
+    const exportsField = manifest.exports;
+    if (!exportsField || typeof exportsField !== 'object') {
+        return false;
+    }
+    const frontend = exportsField['./frontend'];
+    if (!frontend) {
+        return false;
+    }
+    const resolved = typeof frontend === 'string'
+        ? frontend
+        : (frontend.import || frontend.default || frontend.require || null);
+    if (!resolved) {
+        return false;
+    }
+    return /\.(js|mjs|cjs)$/.test(resolved);
 }
 
 const pluginPackages = discoverPluginPackages();

@@ -40,8 +40,8 @@ We organize every plugin under `src/plugins/<plugin-id>` so backend and frontend
 
 #### Directory Essentials
 
-- `package.json` declares the workspace package, exposes `dist/backend/backend.js` as the Node entry point, and leaves `./src/frontend/frontend.ts` as the ESM export consumed by Next.js.
-- `tsconfig.json` compiles only backend-facing TypeScript (manifest + backend files) into `dist/` and intentionally excludes React code.
+- `package.json` declares the workspace package and exposes entry points via the `exports` map. Backend ships compiled at `dist/backend/backend.js`. Frontend ships compiled at `dist/frontend/frontend.js` — all new plugins must use this mode, and existing source-mode plugins (raw TSX at `src/frontend/frontend.ts`, transpiled by core's webpack via `transpilePackages`) are being migrated. See [Frontend build](#frontend-build).
+- `tsconfig.json` compiles backend TypeScript into `dist/`. A second `tsconfig.frontend.json` emits frontend output into `dist/frontend/`.
 - `src/manifest.ts` centralizes metadata shared by both runtimes. The manifest sets `backend: true` and/or `frontend: true` so loaders know which surfaces exist.
 - `src/backend/backend.ts` exports the `definePlugin` wrapper that wires `manifest` and `init` together.
 - `src/backend/*.ts` files house the actual observers, queues, and service integration the plugin needs.
@@ -50,8 +50,7 @@ We organize every plugin under `src/plugins/<plugin-id>` so backend and frontend
 - `src/frontend/styles.css` contains plugin-specific styles with scoped class names (e.g., `.whale-dashboard`, `.whale-stat-card`).
 - `src/frontend/public/` (optional) holds plugin-owned static assets that need stable, unfingerprinted public URLs — Open Graph images, manifest icons, favicons. Files are mirrored to `src/frontend/public/plugins/<plugin-id>/` by the registry generator before `next build` runs and are served by Next.js at `/plugins/<plugin-id>/<file>`. See [plugins-seo-and-ssr.md](./plugins-seo-and-ssr.md#plugin-owned-og-images) for the convention and bazi-fortune as the canonical example. Distinct from `src/frontend/assets/`, which holds webpack-imported assets that get hashed bundle URLs.
 - `src/shared/` (optional) contains types, constants, and utilities shared between backend and frontend to eliminate duplication and maintain a single source of truth.
-- `dist/` contains everything the backend loader consumes: `manifest.js`, `manifest.d.ts`, `backend/backend.js`, and type maps.
-- `dist/frontend.bundle.js` is produced by the shared esbuild task so we have a browser-friendly artifact for CDN or static hosting scenarios, even though Next currently imports the source file directly.
+- `dist/` contains compiled artifacts both loaders consume: `manifest.js`, `manifest.d.ts`, `backend/backend.js` for the backend loader, and `frontend/*.js` plus mirrored SCSS for the frontend registry. See [Frontend build](#frontend-build) for how the frontend output is produced.
 
 #### Plugin Shared Code Organization
 
@@ -107,6 +106,26 @@ import type { IWhaleTransaction, IWhaleConfig } from '../shared/types';
 - **Portability** – Plugins remain self-contained; extracting a feature to a separate project requires no type reorganization
 - **Clear ownership** – The plugin team owns both the interface and its implementation without coordinating cross-workspace changes
 - **Simple builds** – No cross-workspace TypeScript project references needed; relative imports work immediately
+
+#### Frontend build
+
+New plugins compile their own frontend and ship `dist/frontend/` as the artifact core consumes. The reference implementation is `src/plugins/trp-ai-assistant/`. Source-mode (raw TSX imported by core's webpack via `transpilePackages`) is a legacy state that existing plugins are migrating away from.
+
+**Why this is the direction.** Compiling plugin TSX inside core's Next.js build couples every plugin to core's webpack and blocks per-plugin build isolation. Letting the plugin emit its own `dist/frontend/` makes the plugin a self-contained artifact — backend and frontend both compiled — removes `transpilePackages` as a lever core has to toggle, and makes the plugin typecheckable and buildable standalone. It is also prerequisite to later moves toward runtime-loadable plugins.
+
+**How core selects the mode.** The registry generator (`scripts/generate-frontend-plugin-registry.mjs`) reads each plugin's `package.json` `exports` map. When `exports."./frontend"` points at a `.js`/`.mjs`/`.cjs` artifact, the generator emits a static import at that path and `next.config.mjs` omits the plugin from `transpilePackages`. When the entry still points at `.ts`, core falls back to transpiling the source via `transpilePackages`. The two modes coexist so plugins can be migrated one at a time.
+
+**What stays core-owned even in compiled mode.** Externals (`react`, `next/*`, `lucide-react`, `@delphian/tronrelic-types`, etc.) resolve through core's hoisted `node_modules` so there is one React instance at runtime. SCSS Modules are still compiled by core's webpack via the `/src/plugins/` include extension in `next.config.mjs:113-151` — only the TypeScript compile moves into the plugin. A new plugin version still requires rebuilding the core Docker image because `plugins.generated.ts` imports the plugin entry statically at build time. Compiled mode is a step toward full isolation, not a destination.
+
+**Required plugin files.** Every plugin should include:
+
+1. `tsconfig.frontend.json` as a standalone config (no `extends`) that includes `src/frontend/**/*`, `src/shared/**/*`, `src/manifest.ts`, and `src/global.d.ts`, with `rootDir: ./src` and `outDir: ./dist` so `src/frontend/frontend.ts` compiles to `dist/frontend/frontend.js`. Set `moduleResolution: Bundler` and `declaration: false`. Extending the backend `tsconfig.json` inherits `declarationDir` and triggers TS5069 once declarations are disabled — keep the two configs independent.
+2. `src/global.d.ts` declaring ambient `*.module.scss` and `*.module.css` imports. The declaration is identical across plugins (a two-line module declaration) — copy it from any plugin that already ships one.
+3. `scripts/copy-frontend-assets.mjs` that mirrors `*.scss` and `*.css` files from `src/frontend/` into `dist/frontend/` after tsc emits. Compiled JS references those assets via relative imports, so they must exist next to the JS.
+4. A `build:frontend` script in `package.json`: `tsc -p tsconfig.frontend.json && node scripts/copy-frontend-assets.mjs`. The default `build` script must chain it (`tsc && npm run build:frontend`); otherwise `npm run build` alone does not emit the artifact `exports."./frontend".import` points at, since the backend `tsconfig.json` excludes `src/frontend/**/*`.
+5. `exports."./frontend".import` set to `./dist/frontend/frontend.js` in `package.json`. If the plugin ships widgets, also set `exports."./frontend/widgets"` to `./dist/frontend/widgets/index.js`.
+
+Run `npm run build` inside the plugin before `npm run generate:plugins` at the repo root so the generator finds the compiled artifact.
 
 #### Scaffold Templates
 
@@ -198,7 +217,7 @@ For complete CSS architecture guidance, see [SCSS Modules and Component Styling]
 
 **Development mode**: No manual plugin build required. When you run `npm run dev`, the startup script generates plugin registries that import directly from TypeScript source files. tsx and Next.js compile plugins on-the-fly alongside the rest of the application.
 
-**Production builds**: Running `npm run build` compiles plugins to `dist/`. The `tsc -p tsconfig.json` command produces the backend bundle plus a compiled manifest. The shared `src/plugins/build-frontends.mjs` script emits `dist/frontend.bundle.js` for every plugin whose manifest sets `frontend: true`. Docker images use these pre-compiled artifacts.
+**Production builds**: Running `npm run build` compiles plugins to `dist/`. Each plugin runs `tsc -p tsconfig.json` for the backend (produces `dist/backend/backend.js` plus a compiled manifest) and `npm run build:frontend` for the frontend (produces `dist/frontend/*.js` plus mirrored SCSS, per [Frontend build](#frontend-build)). Docker images bundle these pre-compiled artifacts; `plugins.generated.ts` and `widgets.generated.ts` resolve to the compiled outputs at `next build` time.
 
 ## Quick Checklist / Reference
 
@@ -422,17 +441,17 @@ Frontend plugins should mirror the same discipline:
 `npm run dev` handles everything automatically:
 
 1. The startup script runs `scripts/generate-backend-plugin-registry.mjs` to create static imports for all backend plugins.
-2. The startup script runs `src/frontend/scripts/generate-frontend-plugin-registry.mjs` for frontend plugins.
-3. tsx and Next.js compile plugin TypeScript on-the-fly alongside the rest of the application.
-4. No separate plugin build step is required — just restart `npm run dev` after adding new plugins.
+2. The startup script runs `scripts/generate-frontend-plugin-registry.mjs` for frontend plugins.
+3. For plugins whose frontend is still in source mode, tsx and Next.js compile the TSX on-the-fly via `transpilePackages`. For plugins on compiled mode, run `npm run build:frontend` inside the plugin before the registry generator runs so the compiled artifact exists — core will not transpile the source tree for compiled-mode plugins.
+4. Restart `npm run dev` after adding a new plugin so registries regenerate.
 
 ### Production
 
 Root-level `npm run build` compiles everything for Docker images:
 
-1. Plugin registries are regenerated to ensure all plugins are included.
-2. Each plugin's `tsc -p tsconfig.json` compiles backend code to `dist/`.
-3. `src/plugins/build-frontends.mjs` bundles frontend entries into `dist/frontend.bundle.js`.
+1. Each plugin's `tsc -p tsconfig.json` compiles backend code to `dist/backend/`.
+2. Each plugin's `npm run build:frontend` compiles frontend code to `dist/frontend/` (see [Frontend build](#frontend-build)).
+3. Plugin registries are regenerated so `plugins.generated.ts` and `widgets.generated.ts` import the compiled outputs.
 4. Docker images use pre-compiled artifacts for faster startup.
 
 ## Adding or updating a plugin
@@ -558,4 +577,6 @@ Plugins often need secure settings screens without touching core admin code. Giv
 - `packages/types/src/plugin/definePlugin.ts` – helper for defining plugins.
 
 ### Build tools
-- `src/plugins/build-frontends.mjs` – esbuild task that emits `dist/frontend.bundle.js` for every frontend-enabled plugin.
+- `scripts/generate-frontend-plugin-registry.mjs` – reads each plugin's `package.json` exports map, emits static imports into `src/frontend/components/plugins/plugins.generated.ts` and `src/frontend/components/widgets/widgets.generated.ts`, and mirrors plugin-owned static assets into `src/frontend/public/plugins/`.
+- `src/plugins/trp-ai-assistant/tsconfig.frontend.json` – reference example of the per-plugin frontend tsconfig.
+- `src/plugins/trp-ai-assistant/scripts/copy-frontend-assets.mjs` – reference example of the non-TS asset mirror step.
