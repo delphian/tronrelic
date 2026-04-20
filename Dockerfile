@@ -21,6 +21,9 @@ RUN npm ci
 # Copy all source code
 COPY . .
 
+# Build plugins (each plugin compiles its own dist/ used by generate:plugins)
+RUN npm run build:plugins
+
 # Build backend
 RUN npm run build:backend
 
@@ -127,6 +130,9 @@ RUN npm ci
 
 # Copy source
 COPY . .
+
+# Build plugins (compiled dist/ required by generate:plugins for compiled exports)
+RUN npm run build:plugins
 
 # Generate plugin registry
 RUN npm run generate:plugins
