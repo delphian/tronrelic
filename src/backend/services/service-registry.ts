@@ -5,18 +5,36 @@
  * register named services for cross-component discovery. Created once during
  * bootstrap and injected into plugin contexts via dependency injection.
  *
+ * The registry is modeled as state, not as an event stream: each named slot
+ * is either filled or empty, and the `watch()` API lets consumers stay
+ * aligned with that truth over time. See the JSDoc on
+ * `IServiceRegistry.watch` for the rationale behind state-oriented rather
+ * than event-oriented subscription semantics.
+ *
  * @module services/service-registry
  */
 
-import type { IServiceRegistry } from '@/types';
-import type { ISystemLogService } from '@/types';
+import type {
+    IServiceRegistry,
+    IServiceWatchHandlers,
+    ServiceWatchDisposer,
+    ISystemLogService
+} from '@/types';
+
+/**
+ * Internal handler storage type. The registry holds watcher records for
+ * arbitrary service shapes; typed views are reconstructed at the call
+ * sites via the generic parameter on `watch<T>()`.
+ */
+type AnyWatchHandlers = IServiceWatchHandlers<unknown>;
 
 /**
  * Map-based service registry for runtime service discovery.
  *
- * Wraps a simple Map with type-safe generics, duplicate detection, and
- * lifecycle logging. A single instance is created during bootstrap and
- * shared across all plugin contexts.
+ * Wraps a simple Map with type-safe generics, duplicate detection,
+ * lifecycle logging, and state-oriented subscriptions via `watch()`.
+ * A single instance is created during bootstrap and shared across all
+ * plugin contexts.
  *
  * @example
  * ```typescript
@@ -28,6 +46,9 @@ import type { ISystemLogService } from '@/types';
 export class ServiceRegistry implements IServiceRegistry {
     /** Internal storage for registered services */
     private readonly services: Map<string, unknown> = new Map();
+
+    /** Active watcher handlers, keyed by service name */
+    private readonly watchers: Map<string, Set<AnyWatchHandlers>> = new Map();
 
     /**
      * Create a new ServiceRegistry.
@@ -52,6 +73,8 @@ export class ServiceRegistry implements IServiceRegistry {
         }
         this.services.set(name, service);
         this.logger.info({ serviceName: name }, `Service registered: ${name}`);
+
+        this.dispatchAvailable(name, service);
     }
 
     /**
@@ -84,6 +107,7 @@ export class ServiceRegistry implements IServiceRegistry {
         const removed = this.services.delete(name);
         if (removed) {
             this.logger.info({ serviceName: name }, `Service unregistered: ${name}`);
+            this.dispatchUnavailable(name);
         }
 
         return removed;
@@ -96,5 +120,101 @@ export class ServiceRegistry implements IServiceRegistry {
      */
     getNames(): string[] {
         return Array.from(this.services.keys());
+    }
+
+    /**
+     * Subscribe to the presence of a named service over time.
+     *
+     * If the service is already registered, `onAvailable` fires
+     * synchronously before this method returns. Subsequent `register()` /
+     * `unregister()` calls against this name re-fire the appropriate
+     * handler. The returned disposer removes both handlers.
+     *
+     * See `IServiceRegistry.watch` for the state-vs-event rationale.
+     *
+     * @param name - Service identifier to watch
+     * @param handlers - `onAvailable` and/or `onUnavailable` callbacks
+     * @returns Disposer function that removes the subscription when called
+     */
+    watch<T>(name: string, handlers: IServiceWatchHandlers<T>): ServiceWatchDisposer {
+        const erased = handlers as AnyWatchHandlers;
+
+        let set = this.watchers.get(name);
+        if (!set) {
+            set = new Set();
+            this.watchers.set(name, set);
+        }
+        set.add(erased);
+
+        const existing = this.services.get(name);
+        if (existing !== undefined && handlers.onAvailable) {
+            this.safeInvoke(name, 'onAvailable', () => handlers.onAvailable!(existing as T));
+        }
+
+        return () => {
+            const current = this.watchers.get(name);
+            if (!current) return;
+            current.delete(erased);
+            if (current.size === 0) {
+                this.watchers.delete(name);
+            }
+        };
+    }
+
+    /**
+     * Fire `onAvailable` for every watcher bound to this name.
+     *
+     * Iterates over a snapshot so a watcher that calls `watch()` or the
+     * returned disposer from within its own callback can't mutate the
+     * iteration order mid-loop.
+     */
+    private dispatchAvailable(name: string, service: unknown): void {
+        const set = this.watchers.get(name);
+        if (!set || set.size === 0) return;
+
+        for (const handlers of Array.from(set)) {
+            if (!handlers.onAvailable) continue;
+            this.safeInvoke(name, 'onAvailable', () => handlers.onAvailable!(service));
+        }
+    }
+
+    /**
+     * Fire `onUnavailable` for every watcher bound to this name.
+     */
+    private dispatchUnavailable(name: string): void {
+        const set = this.watchers.get(name);
+        if (!set || set.size === 0) return;
+
+        for (const handlers of Array.from(set)) {
+            if (!handlers.onUnavailable) continue;
+            this.safeInvoke(name, 'onUnavailable', () => handlers.onUnavailable!());
+        }
+    }
+
+    /**
+     * Invoke a watcher callback with error isolation.
+     *
+     * A throwing watcher must not break `register` / `unregister` for the
+     * calling plugin or prevent other watchers on the same name from
+     * running. Async callbacks that reject are handled via the returned
+     * promise's rejection handler.
+     */
+    private safeInvoke(name: string, kind: 'onAvailable' | 'onUnavailable', fn: () => void | Promise<void>): void {
+        try {
+            const result = fn();
+            if (result && typeof (result as Promise<void>).then === 'function') {
+                (result as Promise<void>).catch((err: unknown) => {
+                    this.logger.warn(
+                        { err, serviceName: name, handler: kind },
+                        'Service registry watcher rejected'
+                    );
+                });
+            }
+        } catch (err) {
+            this.logger.warn(
+                { err, serviceName: name, handler: kind },
+                'Service registry watcher threw'
+            );
+        }
     }
 }
