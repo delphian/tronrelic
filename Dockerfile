@@ -35,6 +35,13 @@ RUN --mount=type=secret,id=npmrc,target=/root/.npmrc npm ci
 # Plugins are installed independently — they declare their own manifests
 # (including private @delphian/* types from GitHub Packages) and are not
 # top-level entries in the root workspaces array.
+#
+# `--omit=dev` skips each plugin's own devDependencies (typescript, vitest,
+# @types/*, and peer libs like react/next/mongodb that plugins list in both
+# peer and dev). Plugin builds rely on walk-up resolution to the root's
+# node_modules, which `npm ci` at line 33 already populated with typescript,
+# vitest, and every shared peer library. This avoids installing duplicate
+# copies of those packages once per plugin tree.
 RUN --mount=type=secret,id=npmrc,target=/root/.npmrc \
     for dir in src/plugins/*/; do \
       [ -f "${dir}package.json" ] || continue; \
@@ -42,7 +49,7 @@ RUN --mount=type=secret,id=npmrc,target=/root/.npmrc \
         echo "ERROR: ${dir} has no package-lock.json. Commit a lockfile to keep Docker builds deterministic."; \
         exit 1; \
       fi; \
-      (cd "$dir" && npm ci --no-audit --no-fund) || exit 1; \
+      (cd "$dir" && npm ci --omit=dev --no-audit --no-fund) || exit 1; \
     done
 
 # ============================================
