@@ -203,6 +203,7 @@ export interface IUIComponents {
         children?: React.ReactNode;
         variant?: 'default' | 'compact';
         className?: string;
+        style?: React.CSSProperties;
     }>;
 
     /** Table header section. */
@@ -228,6 +229,7 @@ export interface IUIComponents {
         children?: React.ReactNode;
         hasError?: boolean;
         isExpanded?: boolean;
+        onClick?: () => void;
         className?: string;
     }>;
 
@@ -241,6 +243,8 @@ export interface IUIComponents {
     Th: ComponentType<{
         children?: React.ReactNode;
         width?: 'auto' | 'shrink' | 'expand';
+        colSpan?: number;
+        rowSpan?: number;
         className?: string;
     }>;
 
@@ -253,6 +257,7 @@ export interface IUIComponents {
         children?: React.ReactNode;
         muted?: boolean;
         colSpan?: number;
+        rowSpan?: number;
         className?: string;
     }>;
 }
