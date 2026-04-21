@@ -20,6 +20,7 @@ import { Input } from '../components/ui/Input';
 import { ClientTime } from '../components/ui/ClientTime';
 import { Tooltip } from '../components/ui/Tooltip';
 import { LazyIconPickerModal as IconPickerModal } from '../components/ui/IconPickerModal';
+import { Table, Thead, Tbody, Tr, Th, Td } from '../components/ui/Table';
 import { useModal as useModalHook } from '../components/ui/ModalProvider';
 import { useToast as useToastHook } from '../components/ui/ToastProvider';
 import { LineChart } from '../features/charts/components/LineChart';
@@ -425,7 +426,13 @@ export function FrontendPluginContextProvider({ children }: { children: React.Re
             Input,
             ClientTime,
             Tooltip,
-            IconPickerModal
+            IconPickerModal,
+            Table,
+            Thead,
+            Tbody,
+            Tr,
+            Th,
+            Td
         };
 
         const layout: ILayoutComponents = {
@@ -513,7 +520,13 @@ export function createPluginContext(pluginId: string): IFrontendPluginContext {
         Input,
         ClientTime,
         Tooltip,
-        IconPickerModal
+        IconPickerModal,
+        Table,
+        Thead,
+        Tbody,
+        Tr,
+        Th,
+        Td
     };
 
     const layout: ILayoutComponents = {
