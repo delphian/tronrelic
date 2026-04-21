@@ -196,20 +196,20 @@ export class ServiceRegistry implements IServiceRegistry {
      *
      * A throwing watcher must not break `register` / `unregister` for the
      * calling plugin or prevent other watchers on the same name from
-     * running. Async callbacks that reject are handled via the returned
-     * promise's rejection handler.
+     * running. Async callbacks that reject are normalized through
+     * `Promise.resolve` so the rejection handler attaches to a real
+     * Promise regardless of whether the watcher returned a native Promise,
+     * a custom thenable, or a plain synchronous value.
      */
     private safeInvoke(name: string, kind: 'onAvailable' | 'onUnavailable', fn: () => void | Promise<void>): void {
         try {
             const result = fn();
-            if (result && typeof (result as Promise<void>).then === 'function') {
-                (result as Promise<void>).catch((err: unknown) => {
-                    this.logger.warn(
-                        { err, serviceName: name, handler: kind },
-                        'Service registry watcher rejected'
-                    );
-                });
-            }
+            Promise.resolve(result).catch((err: unknown) => {
+                this.logger.warn(
+                    { err, serviceName: name, handler: kind },
+                    'Service registry watcher rejected'
+                );
+            });
         } catch (err) {
             this.logger.warn(
                 { err, serviceName: name, handler: kind },
