@@ -124,16 +124,34 @@ disable: async (context: IPluginContext) => {
 }
 ```
 
-**Consuming a service** — always handle the undefined case, because the providing plugin may be disabled:
+**Consuming a service — one-shot read with `get()`.** Use `get()` when the caller needs the service at a single moment and doesn't care whether it appears or disappears later (an admin route, a one-off migration, diagnostics). Always handle the undefined case:
 
 ```typescript
-init: async (context: IPluginContext) => {
-    const ai = context.services.get<IAiAssistantService>('ai-assistant');
-    if (ai) {
-        await ai.submitPrompt('Analyze recent transactions');
-    }
+const ai = context.services.get<IAiAssistantService>('ai-assistant');
+if (ai) {
+    await ai.submitPrompt('Analyze recent transactions');
 }
 ```
+
+**Consuming a service — continuous presence with `watch()`.** Use `watch()` when the caller's behavior depends on the service being present over time — registering peer-facing hooks the moment a provider appears, or dropping cached references when it goes away. `watch()` fires `onAvailable` synchronously if the service is already registered at subscription time, re-fires on every subsequent re-registration, and fires `onUnavailable` whenever the provider unregisters. This closes two gaps `get()` cannot: the boot-order race where the consumer's `init()` runs before the provider's, and runtime churn where a provider is disabled and re-enabled by an operator.
+
+```typescript
+let unwatchAi: (() => void) | null = null;
+
+init: async (context: IPluginContext) => {
+    unwatchAi = context.services.watch<IAiAssistantService>('ai-assistant', {
+        onAvailable: (ai) => ai.registerTool(myToolDefinition),
+        onUnavailable: () => context.logger.info('ai-assistant gone — tool unregistered')
+    });
+},
+
+disable: async (context: IPluginContext) => {
+    unwatchAi?.();
+    unwatchAi = null;
+}
+```
+
+`watch()` is state-oriented, not event-oriented: the registry models "does this capability exist right now?" as a continuous truth, and `watch()` subscribes the caller to that truth. Three rules for handlers: **keep `onAvailable` idempotent** (the registry fires it again on every re-registration), **treat `onUnavailable` as past tense** (the provider's instance is already gone — don't call into it), and **always dispose in `disable()`** (the disposer returned from `watch()` prevents the registry from retaining closures that point at torn-down plugin state).
 
 **Architectural direction:** The registry exists so that features providing shared capabilities — AI analysis, notification dispatch, data enrichment — can remain plugins rather than requiring promotion to modules. A plugin that exposes a shared service is still a plugin if the application functions without it. Consumers must handle the service being unavailable, which enforces graceful degradation by design. See [modules.md](../system/modules/modules.md#module-vs-plugin-decision-matrix) for how this changes the module vs plugin decision.
 

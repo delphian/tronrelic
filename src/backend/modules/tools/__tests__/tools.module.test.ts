@@ -167,7 +167,8 @@ function createMockServiceRegistry(chainParams?: IChainParametersService): IServ
         get: vi.fn((name: string) => services.get(name)) as IServiceRegistry['get'],
         has: vi.fn((name: string) => services.has(name)),
         unregister: vi.fn((name: string) => services.delete(name)),
-        getNames: vi.fn(() => Array.from(services.keys()))
+        getNames: vi.fn(() => Array.from(services.keys())),
+        watch: vi.fn(() => () => { /* no-op disposer; tools module does not exercise watch in these tests */ }) as IServiceRegistry['watch']
     };
 }
 
