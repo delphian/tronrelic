@@ -38,10 +38,19 @@ RUN --mount=type=secret,id=npmrc,target=/root/.npmrc npm ci
 #
 # `--omit=dev` skips each plugin's own devDependencies (typescript, vitest,
 # @types/*, and peer libs like react/next/mongodb that plugins list in both
-# peer and dev). Plugin builds rely on walk-up resolution to the root's
-# node_modules, which `npm ci` at line 33 already populated with typescript,
-# vitest, and every shared peer library. This avoids installing duplicate
-# copies of those packages once per plugin tree.
+# peer and dev). The root `npm ci` step above already populated those in
+# /app/node_modules. Plugin builds find them via two distinct mechanisms:
+#
+#   1. Library imports (`import ... from 'react'`) resolve through Node's
+#      module walk-up: the plugin directory has no local copy, so Node
+#      walks ancestor `node_modules/` entries until it hits /app/node_modules.
+#   2. Script executables (`tsc`, `vitest`) resolve through npm's PATH
+#      construction: `npm run <script>` prepends every `node_modules/.bin`
+#      from the package dir up to the filesystem root, so /app/node_modules/.bin
+#      is on PATH inside `cd src/plugins/<name> && npm run build`.
+#
+# Both paths lead to the same root install, eliminating per-plugin duplicate
+# copies of those packages.
 RUN --mount=type=secret,id=npmrc,target=/root/.npmrc \
     for dir in src/plugins/*/; do \
       [ -f "${dir}package.json" ] || continue; \
@@ -88,15 +97,6 @@ ARG SITE_BACKEND=http://backend:4000
 ENV SITE_BACKEND=${SITE_BACKEND}
 
 RUN npm run build:frontend
-
-# Prune plugin dev dependencies here (not in the backend stage) so the
-# COPY --from=builder into the runtime image only captures the pruned
-# filesystem state — avoiding dev deps lingering in a prior layer.
-RUN for dir in src/plugins/*/; do \
-      [ -f "${dir}package.json" ] || continue; \
-      [ -d "${dir}node_modules" ] || continue; \
-      (cd "$dir" && npm prune --omit=dev) || exit 1; \
-    done
 
 # ============================================
 # Stage 5: Backend Production Image
