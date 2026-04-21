@@ -34,15 +34,52 @@ jobs:
         working-directory: packages/types
         run: npm run build
 
-      - name: Set version from commit SHA
+      - name: Bump patch version from registry
         working-directory: packages/types
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
-          npm version "0.0.0-${SHORT_SHA}" --no-git-tag-version
-          echo "Publishing version 0.0.0-${SHORT_SHA}"
+          set -euo pipefail
+          PACKAGE_NAME=$(node -p "require('./package.json').name")
+          BASE_VERSION=$(node -p "require('./package.json').version")
+          LATEST=$(npm view "${PACKAGE_NAME}" version 2>/dev/null || true)
+
+          if [ -z "${LATEST}" ]; then
+            NEXT="${BASE_VERSION}"
+            echo "No published version found; using package.json version ${NEXT}"
+          else
+            echo "Latest published: ${LATEST}"
+            IFS='.' read -r MAJOR MINOR PATCH <<< "${LATEST%%-*}"
+            NEXT="${MAJOR}.${MINOR}.$((PATCH + 1))"
+            # If package.json base version is ahead of registry (manual minor/major
+            # bump), respect it instead of bumping the registry patch.
+            HIGHER=$(node -e '
+              const cmp = (a, b) => {
+                  const pa = a.split(".").map(Number);
+                  const pb = b.split(".").map(Number);
+                  for (let i = 0; i < 3; i++) {
+                      if ((pa[i] || 0) > (pb[i] || 0)) return 1;
+                      if ((pa[i] || 0) < (pb[i] || 0)) return -1;
+                  }
+                  return 0;
+              };
+              process.stdout.write(cmp(process.argv[1], process.argv[2]) > 0 ? "1" : "0");
+            ' "${BASE_VERSION}" "${NEXT}")
+            if [ "${HIGHER}" = "1" ]; then
+              NEXT="${BASE_VERSION}"
+              echo "package.json version ${BASE_VERSION} is ahead of registry; using it"
+            fi
+          fi
+
+          echo "Publishing version ${NEXT}"
+          npm version "${NEXT}" --no-git-tag-version --allow-same-version
+          echo "NEXT_VERSION=${NEXT}" >> "$GITHUB_ENV"
 
       - name: Publish to GitHub Packages
         working-directory: packages/types
         run: npm publish
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Summary
+        run: echo "Published @delphian/tronrelic-types@${NEXT_VERSION}" >> "$GITHUB_STEP_SUMMARY"
