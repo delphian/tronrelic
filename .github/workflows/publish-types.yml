@@ -34,7 +34,7 @@ jobs:
         working-directory: packages/types
         run: npm run build
 
-      - name: Bump patch version from registry
+      - name: Compute next version from registry
         working-directory: packages/types
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -42,36 +42,50 @@ jobs:
           set -euo pipefail
           PACKAGE_NAME=$(node -p "require('./package.json').name")
           BASE_VERSION=$(node -p "require('./package.json').version")
-          LATEST=$(npm view "${PACKAGE_NAME}" version 2>/dev/null || true)
+          # `npm view <pkg> versions --json` returns the full list of published
+          # versions. Using the list (not the `latest` dist-tag) keeps the bump
+          # safe even when `latest` points at a pre-release like `0.0.0-<sha>`
+          # while a real semver like `1.0.0` already exists in the registry.
+          VERSIONS_JSON=$(npm view "${PACKAGE_NAME}" versions --json 2>/dev/null || echo "[]")
 
-          if [ -z "${LATEST}" ]; then
-            NEXT="${BASE_VERSION}"
-            echo "No published version found; using package.json version ${NEXT}"
-          else
-            echo "Latest published: ${LATEST}"
-            IFS='.' read -r MAJOR MINOR PATCH <<< "${LATEST%%-*}"
-            NEXT="${MAJOR}.${MINOR}.$((PATCH + 1))"
-            # If package.json base version is ahead of registry (manual minor/major
-            # bump), respect it instead of bumping the registry patch.
-            HIGHER=$(node -e '
-              const cmp = (a, b) => {
-                  const pa = a.split(".").map(Number);
-                  const pb = b.split(".").map(Number);
-                  for (let i = 0; i < 3; i++) {
-                      if ((pa[i] || 0) > (pb[i] || 0)) return 1;
-                      if ((pa[i] || 0) < (pb[i] || 0)) return -1;
-                  }
-                  return 0;
-              };
-              process.stdout.write(cmp(process.argv[1], process.argv[2]) > 0 ? "1" : "0");
-            ' "${BASE_VERSION}" "${NEXT}")
-            if [ "${HIGHER}" = "1" ]; then
-              NEXT="${BASE_VERSION}"
-              echo "package.json version ${BASE_VERSION} is ahead of registry; using it"
-            fi
-          fi
+          NEXT=$(node -e '
+            const raw = JSON.parse(process.argv[1]);
+            const versions = Array.isArray(raw) ? raw : (raw ? [raw] : []);
+            const base = process.argv[2];
 
-          echo "Publishing version ${NEXT}"
+            const cmp = (a, b) => {
+                const pa = a.split(".").map(Number);
+                const pb = b.split(".").map(Number);
+                for (let i = 0; i < 3; i++) {
+                    if ((pa[i] || 0) > (pb[i] || 0)) return 1;
+                    if ((pa[i] || 0) < (pb[i] || 0)) return -1;
+                }
+                return 0;
+            };
+
+            const published = new Set(versions);
+            const stable = versions
+                .filter(v => /^\d+\.\d+\.\d+$/.test(v))
+                .sort(cmp);
+            const highest = stable.length ? stable[stable.length - 1] : "0.0.0";
+
+            const [hM, hm, hp] = highest.split(".").map(Number);
+            let candidate = hM + "." + hm + "." + (hp + 1);
+
+            // Respect a manual major/minor bump in package.json.
+            if (cmp(base, candidate) > 0) candidate = base;
+
+            // Defensive: skip any already-published version (handles manual
+            // bumps that collide with an older release).
+            while (published.has(candidate)) {
+                const [cM, cm, cp] = candidate.split(".").map(Number);
+                candidate = cM + "." + cm + "." + (cp + 1);
+            }
+
+            process.stdout.write(candidate);
+          ' "${VERSIONS_JSON}" "${BASE_VERSION}")
+
+          echo "Computed next version: ${NEXT}"
           npm version "${NEXT}" --no-git-tag-version --allow-same-version
           echo "NEXT_VERSION=${NEXT}" >> "$GITHUB_ENV"
 
