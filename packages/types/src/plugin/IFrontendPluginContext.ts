@@ -192,6 +192,74 @@ export interface IUIComponents {
         onSelect: (iconName: string) => void;
         onClose: () => void;
     }>;
+
+    /**
+     * Table wrapper matching the core `/system/*` admin tables.
+     *
+     * Compose with `Thead`, `Tbody`, `Tr`, `Th`, `Td` to get the same
+     * visual treatment plugins see on the plugins admin page.
+     */
+    Table: ComponentType<{
+        children?: React.ReactNode;
+        variant?: 'default' | 'compact';
+        className?: string;
+        style?: React.CSSProperties;
+    }>;
+
+    /** Table header section. */
+    Thead: ComponentType<{
+        children?: React.ReactNode;
+        className?: string;
+    }>;
+
+    /** Table body section. */
+    Tbody: ComponentType<{
+        children?: React.ReactNode;
+        className?: string;
+    }>;
+
+    /**
+     * Table row.
+     *
+     * `hasError` applies the error surface tone; `isExpanded` renders the
+     * row with the muted "details drawer" background used by the plugins
+     * admin table for its expanded rows.
+     */
+    Tr: ComponentType<{
+        children?: React.ReactNode;
+        hasError?: boolean;
+        isExpanded?: boolean;
+        onClick?: () => void;
+        className?: string;
+    }>;
+
+    /**
+     * Table header cell.
+     *
+     * `width="shrink"` sizes the column to content (for fixed-width
+     * columns like status badges and action buttons); `width="expand"`
+     * forces the column to fill remaining space.
+     */
+    Th: ComponentType<{
+        children?: React.ReactNode;
+        width?: 'auto' | 'shrink' | 'expand';
+        colSpan?: number;
+        rowSpan?: number;
+        className?: string;
+    }>;
+
+    /**
+     * Table data cell. `muted` dims the text for secondary metadata;
+     * `colSpan` spans the cell across multiple columns (used by the
+     * expanded details drawer).
+     */
+    Td: ComponentType<{
+        children?: React.ReactNode;
+        muted?: boolean;
+        colSpan?: number;
+        rowSpan?: number;
+        className?: string;
+    }>;
 }
 
 /**
