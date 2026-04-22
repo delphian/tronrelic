@@ -74,14 +74,12 @@ WORKDIR /app
 
 COPY . .
 
-# Build each plugin's nested workspace packages (e.g. packages/types/) before
-# the consumer plugin builds that depend on them. These packages expose their
-# compiled `dist/*.d.ts` via the package.json "types" field, so consumer tsc
-# runs fail with TS2307 unless the dist exists at `build:plugins` time.
-RUN for dir in src/plugins/*/packages/*/; do \
-      [ -f "${dir}package.json" ] || continue; \
-      (cd "$dir" && npm run build --if-present) || exit 1; \
-    done
+# Build every workspace package (core `packages/*` and each plugin's nested
+# `packages/*`) before `build:plugins`. Consumer plugins resolve cross-plugin
+# types via each nested package's compiled `dist/*.d.ts`; without this,
+# consumer tsc runs fail with TS2307. `--if-present` skips members without a
+# build script.
+RUN npm run build --workspaces --if-present
 
 RUN npm run build:plugins
 RUN npm run generate:plugins
@@ -186,10 +184,7 @@ WORKDIR /app
 
 COPY . .
 
-RUN for dir in src/plugins/*/packages/*/; do \
-      [ -f "${dir}package.json" ] || continue; \
-      (cd "$dir" && npm run build --if-present) || exit 1; \
-    done
+RUN npm run build --workspaces --if-present
 
 RUN npm run build:plugins
 RUN npm run generate:plugins
