@@ -29,6 +29,11 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 COPY packages ./packages
 COPY --parents src/plugins/*/package.json src/plugins/*/package-lock.json ./
+# Nested per-plugin workspace manifests (e.g. src/plugins/trp-ai-assistant/packages/types/).
+# The root package.json declares `src/plugins/*/packages/*` as a workspace glob; without
+# these manifests present at install time, npm silently skips them and consumer plugins
+# cannot resolve imports like `@delphian/trp-ai-assistant-types`.
+COPY --parents src/plugins/*/packages/*/package.json src/plugins/*/packages/*/package-lock.json ./
 
 RUN --mount=type=secret,id=npmrc,target=/root/.npmrc npm ci
 
@@ -68,6 +73,13 @@ FROM deps AS registry
 WORKDIR /app
 
 COPY . .
+
+# Build every workspace package (core `packages/*` and each plugin's nested
+# `packages/*`) before `build:plugins`. Consumer plugins resolve cross-plugin
+# types via each nested package's compiled `dist/*.d.ts`; without this,
+# consumer tsc runs fail with TS2307. `--if-present` skips members without a
+# build script.
+RUN npm run build --workspaces --if-present
 
 RUN npm run build:plugins
 RUN npm run generate:plugins
@@ -171,6 +183,8 @@ FROM deps AS frontend-dev
 WORKDIR /app
 
 COPY . .
+
+RUN npm run build --workspaces --if-present
 
 RUN npm run build:plugins
 RUN npm run generate:plugins
