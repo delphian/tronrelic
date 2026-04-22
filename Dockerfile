@@ -29,6 +29,11 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 COPY packages ./packages
 COPY --parents src/plugins/*/package.json src/plugins/*/package-lock.json ./
+# Nested per-plugin workspace manifests (e.g. src/plugins/trp-ai-assistant/packages/types/).
+# The root package.json declares `src/plugins/*/packages/*` as a workspace glob; without
+# these manifests present at install time, npm silently skips them and consumer plugins
+# cannot resolve imports like `@delphian/trp-ai-assistant-types`.
+COPY --parents src/plugins/*/packages/*/package.json src/plugins/*/packages/*/package-lock.json ./
 
 RUN --mount=type=secret,id=npmrc,target=/root/.npmrc npm ci
 
@@ -68,6 +73,15 @@ FROM deps AS registry
 WORKDIR /app
 
 COPY . .
+
+# Build each plugin's nested workspace packages (e.g. packages/types/) before
+# the consumer plugin builds that depend on them. These packages expose their
+# compiled `dist/*.d.ts` via the package.json "types" field, so consumer tsc
+# runs fail with TS2307 unless the dist exists at `build:plugins` time.
+RUN for dir in src/plugins/*/packages/*/; do \
+      [ -f "${dir}package.json" ] || continue; \
+      (cd "$dir" && npm run build --if-present) || exit 1; \
+    done
 
 RUN npm run build:plugins
 RUN npm run generate:plugins
@@ -171,6 +185,11 @@ FROM deps AS frontend-dev
 WORKDIR /app
 
 COPY . .
+
+RUN for dir in src/plugins/*/packages/*/; do \
+      [ -f "${dir}package.json" ] || continue; \
+      (cd "$dir" && npm run build --if-present) || exit 1; \
+    done
 
 RUN npm run build:plugins
 RUN npm run generate:plugins

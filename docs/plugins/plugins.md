@@ -124,12 +124,31 @@ disable: async (context: IPluginContext) => {
 }
 ```
 
+**Sharing the service contract as a types-only package.** Provider plugins publish their service interface (e.g. `IAiAssistantService`, `IAiTool`) as a small types-only sibling package at `packages/types/` inside the provider's repo, published under a name like `@delphian/trp-<plugin>-types`. TronRelic treats these as workspaces of the root `tronrelic` package (see `package.json` `"workspaces": ["src/plugins/*/packages/*"]`), so the root `npm ci` links the types package into `/app/node_modules` once and every plugin resolves the import via Node's module walk-up. Consumer plugins declare the types package in *both* `peerDependencies` and `devDependencies` — matching how core types like `@delphian/tronrelic-types` are handled — and import the real interface:
+
+```typescript
+import type { IAiAssistantService, IAiTool } from '@delphian/trp-ai-assistant-types';
+
+const ai = context.services.get<IAiAssistantService>('ai-assistant');
+if (ai) {
+    const tool: IAiTool = { name: 'my-tool', description: '…', inputSchema: { /* … */ }, handler };
+    ai.registerTool(tool);
+}
+```
+
+Listing the types package does **not** create a runtime dependency on the provider plugin itself. `import type` erases at compile time; value imports (tool name regexes, constants) resolve against the workspace-linked copy in `/app/node_modules`, which exists whether or not the provider plugin is *enabled*. The runtime lookup still flows through `context.services.get('ai-assistant')` and returns `undefined` when the provider is disabled or uninstalled — graceful degradation is preserved. The declaration exists so the TypeScript compiler sees the real contract, so a signature change in the provider surfaces as a build error in the consumer instead of a silent runtime break. Canonical provider: `trp-ai-assistant/packages/types/`. Canonical consumer: `trp-bazi-fortune/src/backend/backend.ts`.
+
+**Anti-pattern: do not redeclare the service's interface locally.** It is tempting to write a "minimal structural adapter" describing only the methods the consumer calls, and to type registered payloads as `unknown` — the reasoning being that it avoids a dependency on the provider's types package. It does not. It reproduces the contract *by guessing*, and when the provider changes a method signature, adds a required field to its payload type, or renames an identifier, the consumer compiles green and fails at runtime. The types-only package exists to close that gap. If a consumer needs to call into a provider-registered service, it must import the real interface from the provider's types package — never redeclare it locally.
+
 **Consuming a service — one-shot read with `get()`.** Use `get()` when the caller needs the service at a single moment and doesn't care whether it appears or disappears later (an admin route, a one-off migration, diagnostics). Always handle the undefined case:
 
 ```typescript
+import type { IAiAssistantService } from '@delphian/trp-ai-assistant-types';
+
 const ai = context.services.get<IAiAssistantService>('ai-assistant');
 if (ai) {
-    await ai.submitPrompt('Analyze recent transactions');
+    const result = await ai.ask('Analyze recent transactions');
+    context.logger.info({ text: result.text }, 'ai response');
 }
 ```
 
