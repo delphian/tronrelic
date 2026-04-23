@@ -12,11 +12,15 @@
  * - Document viewing enables quick debugging and data verification
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, Fragment } from 'react';
 import { Card } from '../../../../../components/ui/Card';
 import { Button } from '../../../../../components/ui/Button';
 import { Badge } from '../../../../../components/ui/Badge';
-import { Database, ChevronDown, ChevronRight, FileText } from 'lucide-react';
+import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../../components/ui/Table';
+import { ClientTime } from '../../../../../components/ui/ClientTime';
+import { CopyButton } from '../../../../../components/ui/CopyButton';
+import { useToast } from '../../../../../components/ui/ToastProvider/ToastProvider';
+import { Database, ChevronDown, ChevronRight, FileText, Trash2, Pencil, Save, X } from 'lucide-react';
 import styles from './CollectionBrowser.module.css';
 
 interface ICollectionStat {
@@ -54,6 +58,12 @@ export function CollectionBrowser({ token }: CollectionBrowserProps) {
     const [expandedCollection, setExpandedCollection] = useState<string | null>(null);
     const [documents, setDocuments] = useState<IPaginatedDocuments | null>(null);
     const [loadingDocuments, setLoadingDocuments] = useState(false);
+    const [expandedDocumentId, setExpandedDocumentId] = useState<string | null>(null);
+    const [deletingDocumentId, setDeletingDocumentId] = useState<string | null>(null);
+    const [editingDocumentId, setEditingDocumentId] = useState<string | null>(null);
+    const [editDraft, setEditDraft] = useState<string>('');
+    const [savingDocument, setSavingDocument] = useState(false);
+    const { push: pushToast } = useToast();
 
     const fetchStats = useCallback(async () => {
         if (!token) return;
@@ -114,6 +124,9 @@ export function CollectionBrowser({ token }: CollectionBrowserProps) {
     }, [fetchStats]);
 
     const toggleCollection = (collectionName: string) => {
+        setExpandedDocumentId(null);
+        setEditingDocumentId(null);
+        setEditDraft('');
         if (expandedCollection === collectionName) {
             setExpandedCollection(null);
             setDocuments(null);
@@ -122,6 +135,152 @@ export function CollectionBrowser({ token }: CollectionBrowserProps) {
             void fetchDocuments(collectionName);
         }
     };
+
+    const toggleDocument = (documentId: string) => {
+        setExpandedDocumentId(prev => {
+            if (prev === documentId) {
+                // Collapsing: drop any in-progress edit for this row.
+                if (editingDocumentId === documentId) {
+                    setEditingDocumentId(null);
+                    setEditDraft('');
+                }
+                return null;
+            }
+            return documentId;
+        });
+    };
+
+    const startEditingDocument = useCallback((doc: any, documentId: string) => {
+        setEditingDocumentId(documentId);
+        setEditDraft(JSON.stringify(doc, null, 2));
+        setExpandedDocumentId(documentId);
+    }, []);
+
+    const cancelEditingDocument = useCallback(() => {
+        setEditingDocumentId(null);
+        setEditDraft('');
+    }, []);
+
+    const saveDocumentEdit = useCallback(async (collectionName: string, documentId: string) => {
+        if (!token) return;
+
+        let parsed: any;
+        try {
+            parsed = JSON.parse(editDraft);
+        } catch (err) {
+            pushToast({
+                tone: 'danger',
+                title: 'Invalid JSON',
+                description: err instanceof Error ? err.message : 'Document must be valid JSON'
+            });
+            return;
+        }
+
+        if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+            pushToast({
+                tone: 'danger',
+                title: 'Invalid JSON',
+                description: 'Document must be a JSON object'
+            });
+            return;
+        }
+
+        setSavingDocument(true);
+        try {
+            const response = await fetch(
+                `/api/admin/database/collections/${collectionName}/documents/${encodeURIComponent(documentId)}`,
+                {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'x-admin-token': token
+                    },
+                    body: JSON.stringify({ document: parsed })
+                }
+            );
+
+            if (!response.ok) {
+                const body = await response.json().catch(() => ({}));
+                throw new Error(body?.message || body?.error || `Save failed: ${response.statusText}`);
+            }
+
+            pushToast({
+                tone: 'success',
+                title: 'Document saved',
+                description: `Updated ${documentId} in ${collectionName}`
+            });
+
+            setEditingDocumentId(null);
+            setEditDraft('');
+
+            const currentPage = documents?.page ?? 1;
+            await Promise.all([
+                fetchDocuments(collectionName, currentPage),
+                fetchStats()
+            ]);
+        } catch (err) {
+            pushToast({
+                tone: 'danger',
+                title: 'Save failed',
+                description: err instanceof Error ? err.message : 'Unknown error'
+            });
+        } finally {
+            setSavingDocument(false);
+        }
+    }, [token, editDraft, pushToast, documents?.page, fetchDocuments, fetchStats]);
+
+    const deleteDocument = useCallback(async (collectionName: string, documentId: string) => {
+        if (!token) return;
+
+        const confirmed = typeof window !== 'undefined'
+            ? window.confirm(
+                `Delete document ${documentId} from "${collectionName}"?\n\nThis cannot be undone.`
+            )
+            : false;
+        if (!confirmed) return;
+
+        setDeletingDocumentId(documentId);
+        try {
+            const response = await fetch(
+                `/api/admin/database/collections/${collectionName}/documents/${encodeURIComponent(documentId)}`,
+                {
+                    method: 'DELETE',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'x-admin-token': token
+                    }
+                }
+            );
+
+            if (!response.ok) {
+                const body = await response.json().catch(() => ({}));
+                throw new Error(body?.message || body?.error || `Delete failed: ${response.statusText}`);
+            }
+
+            pushToast({
+                tone: 'success',
+                title: 'Document deleted',
+                description: `Removed ${documentId} from ${collectionName}`
+            });
+
+            if (expandedDocumentId === documentId) setExpandedDocumentId(null);
+
+            // Refresh the current page of documents and the top-level counts.
+            const currentPage = documents?.page ?? 1;
+            await Promise.all([
+                fetchDocuments(collectionName, currentPage),
+                fetchStats()
+            ]);
+        } catch (err) {
+            pushToast({
+                tone: 'danger',
+                title: 'Delete failed',
+                description: err instanceof Error ? err.message : 'Unknown error'
+            });
+        } finally {
+            setDeletingDocumentId(null);
+        }
+    }, [token, pushToast, expandedDocumentId, documents?.page, fetchDocuments, fetchStats]);
 
     const formatBytes = (bytes: number): string => {
         if (bytes === 0) return '0 B';
@@ -174,7 +333,7 @@ export function CollectionBrowser({ token }: CollectionBrowserProps) {
             <Card padding="lg">
                 <h3 className={styles.section_title}>Collections</h3>
                 <div className={styles.collections}>
-                    {stats.collections.map(collection => (
+                    {[...stats.collections].sort((a, b) => a.name.localeCompare(b.name)).map(collection => (
                         <div key={collection.name} className={styles.collection_item}>
                             <button
                                 className={styles.collection_header}
@@ -228,16 +387,117 @@ export function CollectionBrowser({ token }: CollectionBrowserProps) {
                                                 </div>
                                             </div>
                                             <div className={styles.documents_list}>
-                                                {documents.documents.map((doc, index) => (
-                                                    <details key={doc._id || index} className={styles.document}>
-                                                        <summary className={styles.document_summary}>
-                                                            <code>_id: {String(doc._id)}</code>
-                                                        </summary>
-                                                        <pre className={styles.document_json}>
-                                                            {JSON.stringify(doc, null, 2)}
-                                                        </pre>
-                                                    </details>
-                                                ))}
+                                                <Table variant="compact">
+                                                    <Thead>
+                                                        <Tr>
+                                                            <Th width="shrink" aria-label="Expand" />
+                                                            <Th>_id</Th>
+                                                            <Th>createdAt</Th>
+                                                            <Th>updatedAt</Th>
+                                                            <Th width="shrink" aria-label="Actions" />
+                                                        </Tr>
+                                                    </Thead>
+                                                    <Tbody>
+                                                        {documents.documents.map((doc, index) => {
+                                                            const docId = String(doc._id ?? index);
+                                                            const isOpen = expandedDocumentId === docId;
+                                                            return (
+                                                                <Fragment key={docId}>
+                                                                    <Tr
+                                                                        isExpanded={isOpen}
+                                                                        onClick={() => toggleDocument(docId)}
+                                                                        className={styles.document_row}
+                                                                    >
+                                                                        <Td muted>
+                                                                            {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                                                                        </Td>
+                                                                        <Td>
+                                                                            <code className={styles.document_id}>{String(doc._id)}</code>
+                                                                        </Td>
+                                                                        <Td muted>
+                                                                            {doc.createdAt
+                                                                                ? <ClientTime date={doc.createdAt} format="short" />
+                                                                                : '—'}
+                                                                        </Td>
+                                                                        <Td muted>
+                                                                            {doc.updatedAt
+                                                                                ? <ClientTime date={doc.updatedAt} format="short" />
+                                                                                : '—'}
+                                                                        </Td>
+                                                                        <Td>
+                                                                            <div className={styles.row_actions} onClick={(e) => e.stopPropagation()}>
+                                                                                <CopyButton
+                                                                                    value={JSON.stringify(doc, null, 2)}
+                                                                                    ariaLabel="Copy document JSON"
+                                                                                />
+                                                                                <Button
+                                                                                    variant="ghost"
+                                                                                    size="sm"
+                                                                                    icon={<Pencil size={16} />}
+                                                                                    aria-label="Edit document"
+                                                                                    onClick={() => startEditingDocument(doc, docId)}
+                                                                                />
+                                                                                <Button
+                                                                                    variant="ghost"
+                                                                                    size="sm"
+                                                                                    icon={<Trash2 size={16} />}
+                                                                                    aria-label="Delete document"
+                                                                                    loading={deletingDocumentId === docId}
+                                                                                    onClick={() => void deleteDocument(collection.name, docId)}
+                                                                                />
+                                                                            </div>
+                                                                        </Td>
+                                                                    </Tr>
+                                                                    {isOpen && (
+                                                                        <Tr className={styles.document_detail_row}>
+                                                                            <Td colSpan={5}>
+                                                                                {editingDocumentId === docId ? (
+                                                                                    <div
+                                                                                        className={styles.document_editor}
+                                                                                        onClick={(e) => e.stopPropagation()}
+                                                                                    >
+                                                                                        <textarea
+                                                                                            className={styles.document_textarea}
+                                                                                            value={editDraft}
+                                                                                            onChange={(e) => setEditDraft(e.target.value)}
+                                                                                            spellCheck={false}
+                                                                                            aria-label="Edit document JSON"
+                                                                                            rows={16}
+                                                                                        />
+                                                                                        <div className={styles.document_editor_toolbar}>
+                                                                                            <Button
+                                                                                                variant="ghost"
+                                                                                                size="sm"
+                                                                                                icon={<X size={16} />}
+                                                                                                onClick={cancelEditingDocument}
+                                                                                                disabled={savingDocument}
+                                                                                            >
+                                                                                                Cancel
+                                                                                            </Button>
+                                                                                            <Button
+                                                                                                variant="primary"
+                                                                                                size="sm"
+                                                                                                icon={<Save size={16} />}
+                                                                                                loading={savingDocument}
+                                                                                                onClick={() => void saveDocumentEdit(collection.name, docId)}
+                                                                                            >
+                                                                                                Save
+                                                                                            </Button>
+                                                                                        </div>
+                                                                                    </div>
+                                                                                ) : (
+                                                                                    <pre className={styles.document_json}>
+                                                                                        {JSON.stringify(doc, null, 2)}
+                                                                                    </pre>
+                                                                                )}
+                                                                            </Td>
+                                                                        </Tr>
+                                                                    )}
+                                                                </Fragment>
+                                                            );
+                                                        })}
+                                                    </Tbody>
+                                                </Table>
                                             </div>
                                         </>
                                     ) : (

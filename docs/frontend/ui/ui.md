@@ -80,6 +80,7 @@ All icons from `lucide-react`. Sizes: 14px (inline), 16px (headings), 18px (butt
 ## Further Reading
 
 **Detail documents:**
+- [ui-components.md](./ui-components.md) - Complete catalog of layout primitives, UI primitives, and context providers with prop summaries and source links
 - [ui-scss-modules.md](./ui-scss-modules.md) - SCSS architecture, naming conventions, and component styling workflow
 - [ui-responsive-design.md](./ui-responsive-design.md) - Container queries, breakpoints, and SCSS interpolation
 - [ui-icons-and-feedback.md](./ui-icons-and-feedback.md) - Lucide icons, animations, and state feedback

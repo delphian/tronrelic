@@ -337,6 +337,16 @@ export class DatabaseModule implements IModule<IDatabaseModuleDependencies> {
             this.browserController.queryDocuments(req, res)
         );
 
+        // DELETE /api/admin/database/collections/:name/documents/:id
+        router.delete('/collections/:name/documents/:id', (req, res) =>
+            this.browserController.deleteDocument(req, res)
+        );
+
+        // PUT /api/admin/database/collections/:name/documents/:id
+        router.put('/collections/:name/documents/:id', (req, res) =>
+            this.browserController.replaceDocument(req, res)
+        );
+
         return router;
     }
 }

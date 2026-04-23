@@ -230,6 +230,116 @@ export class DatabaseBrowserController {
     }
 
     /**
+     * DELETE /api/admin/database/collections/:name/documents/:id
+     *
+     * Removes a single document from the collection by _id.
+     *
+     * Why this endpoint:
+     * - Admins need to remove bad/stale records without dropping into a shell
+     * - Scoped to a single document — never bulk delete — to keep blast radius small
+     * - Admin-authenticated via the parent router's requireAdmin middleware
+     *
+     * Responses:
+     * - 200 with `{ deletedCount: 1 }` on success
+     * - 404 with `{ deletedCount: 0 }` if the document does not exist
+     * - 500 on unexpected errors
+     *
+     * @param req - Express request with collection name and document id
+     * @param res - Express response
+     */
+    async deleteDocument(req: Request, res: Response): Promise<void> {
+        const { name, id } = req.params;
+
+        try {
+            const deletedCount = await this.repository.deleteDocument(name, id);
+
+            if (deletedCount === 0) {
+                res.status(404).json({
+                    success: false,
+                    error: 'Document not found',
+                    data: { deletedCount: 0 }
+                });
+                return;
+            }
+
+            this.logger.info({ collection: name, id, deletedCount }, 'Deleted document');
+            res.status(200).json({
+                success: true,
+                data: { deletedCount }
+            });
+        } catch (error) {
+            this.logger.error({ error, params: req.params }, 'Failed to delete document');
+
+            res.status(500).json({
+                success: false,
+                error: 'Failed to delete document',
+                message: error instanceof Error ? error.message : 'Unknown error'
+            });
+        }
+    }
+
+    /**
+     * PUT /api/admin/database/collections/:name/documents/:id
+     *
+     * Replaces a single document's contents by _id.
+     *
+     * Request body:
+     * - `document`: object with the new contents (any _id field is ignored; original is preserved)
+     *
+     * Responses:
+     * - 200 on successful replacement
+     * - 400 when the body is missing or `document` is not a plain object
+     * - 404 when no document matches the given _id
+     * - 500 on unexpected errors
+     *
+     * Why full replacement:
+     * - Admin JSON editor works on the raw document blob — "save what I see"
+     * - Avoids ambiguous merge semantics for nested fields and arrays
+     *
+     * @param req - Express request with collection name, document id, and body
+     * @param res - Express response
+     */
+    async replaceDocument(req: Request, res: Response): Promise<void> {
+        const { name, id } = req.params;
+        const { document } = req.body ?? {};
+
+        if (document === null || typeof document !== 'object' || Array.isArray(document)) {
+            res.status(400).json({
+                success: false,
+                error: 'Invalid document',
+                message: 'Request body must include a `document` object'
+            });
+            return;
+        }
+
+        try {
+            const matched = await this.repository.replaceDocument(name, id, document);
+
+            if (!matched) {
+                res.status(404).json({
+                    success: false,
+                    error: 'Document not found'
+                });
+                return;
+            }
+
+            this.logger.info({ collection: name, id }, 'Replaced document');
+            res.status(200).json({
+                success: true,
+                data: { matched: true }
+            });
+        } catch (error) {
+            this.logger.error({ error, params: req.params }, 'Failed to replace document');
+
+            res.status(500).json({
+                success: false,
+                error: 'Failed to replace document',
+                message: error instanceof Error ? error.message : 'Unknown error'
+            });
+        }
+    }
+
+    /**
      * Parses sort parameter string into MongoDB sort object.
      *
      * Supports prefixed notation for direction:
