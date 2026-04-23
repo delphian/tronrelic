@@ -1,3 +1,4 @@
+import { EventEmitter } from 'node:events';
 import type { IPlugin, IPluginContext, IPluginManifest } from '@/types';
 import { PluginMetadataService } from './plugin-metadata.service.js';
 import { PluginDatabaseService } from '../modules/database/index.js';
@@ -6,6 +7,23 @@ import { BlockchainObserverService } from './blockchain-observer/index.js';
 import { BaseObserver } from '../modules/blockchain/observers/BaseObserver.js';
 import { WebSocketService } from './websocket.service.js';
 import { logger } from '../lib/logger.js';
+
+/**
+ * Lifecycle event payloads emitted by PluginManagerService.
+ */
+export interface IPluginEnabledEvent {
+    pluginId: string;
+    manifest: IPluginManifest;
+}
+
+export interface IPluginDisabledEvent {
+    pluginId: string;
+}
+
+type PluginLifecycleEvents = {
+    'plugin:enabled': [IPluginEnabledEvent];
+    'plugin:disabled': [IPluginDisabledEvent];
+};
 
 /**
  * Loaded plugin instance with its context.
@@ -30,9 +48,58 @@ export class PluginManagerService {
     private static instance: PluginManagerService;
     private loadedPlugins: Map<string, ILoadedPlugin> = new Map();
     private metadataService: PluginMetadataService;
+    private events: EventEmitter = new EventEmitter();
 
     private constructor() {
         this.metadataService = PluginMetadataService.getInstance();
+    }
+
+    /**
+     * Subscribe to a plugin lifecycle event.
+     *
+     * `plugin:enabled` fires after a plugin transitions to the enabled state
+     * (via loadPlugin during bootstrap or enablePlugin at runtime). `plugin:disabled`
+     * fires after unloadPlugin or disablePlugin. Events let long-lived consumers
+     * (e.g. the admin menu dropdown) stay in sync with plugin state without polling.
+     *
+     * @param event - Lifecycle event name
+     * @param handler - Handler invoked with the event payload
+     */
+    public on<K extends keyof PluginLifecycleEvents>(
+        event: K,
+        handler: (...payload: PluginLifecycleEvents[K]) => void
+    ): void {
+        this.events.on(event, handler as (...args: unknown[]) => void);
+    }
+
+    /**
+     * Unsubscribe a previously registered lifecycle handler.
+     *
+     * @param event - Lifecycle event name
+     * @param handler - Same handler reference passed to on()
+     */
+    public off<K extends keyof PluginLifecycleEvents>(
+        event: K,
+        handler: (...payload: PluginLifecycleEvents[K]) => void
+    ): void {
+        this.events.off(event, handler as (...args: unknown[]) => void);
+    }
+
+    /**
+     * Get manifests for plugins that are currently installed AND enabled.
+     *
+     * Cross-references persistent metadata (`enabled: true` in the database) with
+     * the in-memory loaded plugin map so callers receive only manifests whose
+     * runtime context is active.
+     *
+     * @returns Manifests of every enabled plugin, in arbitrary order
+     */
+    public async getEnabledManifests(): Promise<IPluginManifest[]> {
+        const activeMetadata = await this.metadataService.getActivePlugins();
+        const activeIds = new Set(activeMetadata.map(m => m.id));
+        return Array.from(this.loadedPlugins.values())
+            .filter(p => activeIds.has(p.manifest.id))
+            .map(p => p.manifest);
     }
 
     /**
@@ -136,6 +203,8 @@ export class PluginManagerService {
             const apiService = PluginApiService.getInstance();
             apiService.registerPluginRoutes(plugin);
 
+            this.events.emit('plugin:enabled', { pluginId, manifest: loaded.manifest });
+
             pluginLogger.info('Plugin loaded and enabled successfully');
             return { success: true, message: 'Plugin loaded successfully' };
         } catch (error) {
@@ -177,6 +246,8 @@ export class PluginManagerService {
             // Unregister API routes
             const apiService = PluginApiService.getInstance();
             apiService.unregisterPluginRoutes(pluginId);
+
+            this.events.emit('plugin:disabled', { pluginId });
 
             pluginLogger.info('Plugin unloaded and disabled successfully');
             return { success: true, message: 'Plugin unloaded successfully' };
@@ -361,6 +432,8 @@ export class PluginManagerService {
             const apiService = PluginApiService.getInstance();
             apiService.registerPluginRoutes(plugin);
 
+            this.events.emit('plugin:enabled', { pluginId, manifest: loaded.manifest });
+
             pluginLogger.info('Plugin enabled successfully');
             return { success: true, message: 'Plugin enabled successfully' };
         } catch (error) {
@@ -411,6 +484,8 @@ export class PluginManagerService {
             // Unregister API routes
             const apiService = PluginApiService.getInstance();
             apiService.unregisterPluginRoutes(pluginId);
+
+            this.events.emit('plugin:disabled', { pluginId });
 
             pluginLogger.info('Plugin disabled successfully');
             return { success: true, message: 'Plugin disabled successfully' };
