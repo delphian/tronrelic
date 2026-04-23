@@ -8,6 +8,8 @@
  */
 
 .section {
+    container-type: inline-size;
+    container-name: db-health-section;
     background: var(--color-surface);
     border: var(--border-width-thin) solid var(--color-border);
     border-radius: var(--radius-lg);
@@ -135,5 +137,32 @@
 @container health-cards (min-width: 501px) and (max-width: 800px) {
     .cards {
         grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+/* Tighten section spacing below mobile breakpoint (768px) */
+@container db-health-section (max-width: 768px) {
+    .section {
+        padding: var(--spacing-5);
+        margin-bottom: var(--spacing-5);
+        border-radius: var(--radius-md);
+    }
+
+    .section_header {
+        margin-bottom: var(--spacing-5);
+        gap: var(--spacing-3);
+    }
+
+    .cards {
+        gap: var(--spacing-3);
+    }
+
+    .card {
+        padding: var(--spacing-5);
+        gap: var(--spacing-4);
+    }
+
+    .loading {
+        padding: var(--spacing-5);
     }
 }

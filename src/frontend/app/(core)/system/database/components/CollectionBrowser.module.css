@@ -185,19 +185,66 @@
 }
 
 /* Responsive adjustments */
-@container browser (max-width: 600px) {
+@container browser (max-width: 768px) {
+    .browser {
+        gap: var(--spacing-5);
+    }
+
+    .overview {
+        gap: var(--spacing-4);
+        padding: var(--spacing-3) 0;
+    }
+
+    .overview_subtitle {
+        margin: var(--spacing-1) 0 0;
+    }
+
+    .section_title {
+        margin: 0 0 var(--spacing-5);
+    }
+
     .collection_header {
         flex-wrap: wrap;
+        padding: var(--spacing-4);
+        gap: var(--spacing-3);
     }
 
     .collection_stats {
         width: 100%;
         justify-content: flex-start;
         margin-top: var(--spacing-3);
+        gap: var(--spacing-2);
+    }
+
+    .documents_panel {
+        padding: var(--spacing-4);
     }
 
     .documents_header {
         flex-direction: column;
         align-items: flex-start;
+        margin-bottom: var(--spacing-5);
+        padding-bottom: var(--spacing-3);
+        gap: var(--spacing-3);
+    }
+
+    .pagination {
+        gap: var(--spacing-3);
+    }
+
+    .page_info {
+        padding: 0 var(--spacing-3);
+    }
+
+    .row_actions {
+        gap: var(--spacing-2);
+    }
+
+    .document_json {
+        padding: var(--spacing-3) var(--spacing-4);
+    }
+
+    .loading {
+        padding: var(--spacing-5);
     }
 }
