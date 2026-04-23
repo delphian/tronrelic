@@ -54,7 +54,7 @@ Mounted once in [app/providers.tsx](../../../src/frontend/app/providers.tsx); co
 | Provider | Purpose | Hook | Source |
 |----------|---------|------|--------|
 | `ModalProvider` | Portal-based modal stack with size variants, dismissibility, Redux tracking | `useModal()` → `{ open, close }` | [ModalProvider](../../../src/frontend/components/ui/ModalProvider/) |
-| `ToastProvider` | Viewport toast queue with variants, auto-dismiss, actions | `useToast()` → `{ showToast }` | [ToastProvider](../../../src/frontend/components/ui/ToastProvider/) |
+| `ToastProvider` | Viewport toast queue with variants, auto-dismiss, actions | `useToast()` → `{ push, dismiss }` | [ToastProvider](../../../src/frontend/components/ui/ToastProvider/) |
 | `FrontendPluginContextProvider` | Injects `ui`, `layout`, `api`, `charts`, `websocket` into plugin components | via `IFrontendPluginContext` prop | [lib/frontendPluginContext.tsx](../../../src/frontend/lib/frontendPluginContext.tsx) |
 
 See [react.md](../react/react.md#context-provider-system) for composition order and [plugins-frontend-context.md](../../plugins/plugins-frontend-context.md) for plugin consumption.

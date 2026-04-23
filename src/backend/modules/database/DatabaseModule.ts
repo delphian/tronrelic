@@ -342,11 +342,6 @@ export class DatabaseModule implements IModule<IDatabaseModuleDependencies> {
             this.browserController.deleteDocument(req, res)
         );
 
-        // PUT /api/admin/database/collections/:name/documents/:id
-        router.put('/collections/:name/documents/:id', (req, res) =>
-            this.browserController.replaceDocument(req, res)
-        );
-
         return router;
     }
 }

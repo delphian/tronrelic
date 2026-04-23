@@ -163,38 +163,6 @@
     background: var(--color-surface-muted);
 }
 
-.document_editor {
-    display: flex;
-    flex-direction: column;
-    gap: var(--spacing-4);
-}
-
-.document_textarea {
-    width: 100%;
-    min-height: 240px;
-    padding: var(--spacing-5) var(--spacing-6);
-    background: var(--color-surface);
-    color: var(--color-text);
-    border: var(--border-width-thin) solid var(--color-border);
-    border-radius: var(--radius-sm);
-    font-family: var(--font-mono);
-    font-size: var(--font-size-xs);
-    line-height: var(--line-height-relaxed);
-    resize: vertical;
-}
-
-.document_textarea:focus {
-    outline: none;
-    border-color: var(--input-border-focus);
-    box-shadow: var(--input-shadow-focus);
-}
-
-.document_editor_toolbar {
-    display: flex;
-    justify-content: flex-end;
-    gap: var(--spacing-4);
-}
-
 .document_json {
     margin: 0;
     padding: var(--spacing-5) var(--spacing-6);

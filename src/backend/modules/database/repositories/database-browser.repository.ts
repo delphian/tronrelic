@@ -258,11 +258,17 @@ export class DatabaseBrowserRepository {
      * Why _id-based deletion:
      * - Stable, unambiguous identifier for any document shape
      * - Matches the admin UI's expand-on-row model where each row owns a document
-     * - Parses ObjectId when possible; falls back to raw string _id for non-ObjectId keys
+     *
+     * Why try ObjectId then string fallback:
+     * - The URL parameter is always a string; the actual _id may be an ObjectId or a
+     *   plain string (slug/UUID). A 24-char hex string is ambiguous — it parses as
+     *   ObjectId, but the collection may store it as a literal string. Trying ObjectId
+     *   first matches the common case; falling back to string covers collections that
+     *   use 24-hex strings as keys.
      *
      * Security posture:
      * - Admin-gated via requireAdmin on the parent router
-     * - express-mongo-sanitize already strips $ and . from the :id path parameter
+     * - express-mongo-sanitize replaces $ and . with _ in the :id path parameter
      * - Only acts on the single document; never a blanket deleteMany
      *
      * @param collectionName - Name of the collection
@@ -278,61 +284,23 @@ export class DatabaseBrowserRepository {
         }
 
         const collection = db.collection(collectionName);
+        const looksLikeObjectId = ObjectId.isValid(id) && /^[a-f0-9]{24}$/i.test(id);
 
-        // Parse as ObjectId when the string matches the ObjectId hex shape;
-        // otherwise treat _id as a plain string (some collections use slugs or UUIDs).
-        const filterId: ObjectId | string = ObjectId.isValid(id) && /^[a-f0-9]{24}$/i.test(id)
-            ? new ObjectId(id)
-            : id;
-
-        const result = await collection.deleteOne({ _id: filterId } as Record<string, unknown>);
-        return result.deletedCount ?? 0;
-    }
-
-    /**
-     * Replaces a single document's contents by _id.
-     *
-     * Why full replacement instead of PATCH/$set:
-     * - Admin editor works on the raw JSON blob, so "save what I see" is the expected semantic
-     * - Avoids per-field merge ambiguity for nested objects and arrays
-     * - The document's _id is preserved by stripping it from the replacement payload
-     *
-     * Security posture:
-     * - Admin-gated via requireAdmin on the parent router
-     * - express-mongo-sanitize already strips $ and . from body keys at the router level,
-     *   preventing operator injection at the cost of mangling legitimate keys containing those
-     *   characters (acceptable tradeoff for an admin JSON editor)
-     * - Only acts on the single matching document; never bulk
-     *
-     * @param collectionName - Name of the collection
-     * @param id - Document _id as a string (ObjectId hex or plain string key)
-     * @param replacement - New document contents; any _id field is ignored
-     * @returns True if the document was found and replaced, false if no match
-     */
-    async replaceDocument(
-        collectionName: string,
-        id: string,
-        replacement: Record<string, unknown>
-    ): Promise<boolean> {
-        this.logger.debug({ collectionName, id }, 'Replacing document');
-
-        const db = this.connection.db;
-        if (!db) {
-            throw new Error('Database not connected');
+        // Try ObjectId first when the shape matches; fall back to string _id if no match.
+        // Collections that store 24-hex strings as _id would otherwise return false 404s.
+        if (looksLikeObjectId) {
+            const objectIdResult = await collection.deleteOne(
+                { _id: new ObjectId(id) } as Record<string, unknown>
+            );
+            if ((objectIdResult.deletedCount ?? 0) > 0) {
+                return objectIdResult.deletedCount ?? 0;
+            }
         }
 
-        const collection = db.collection(collectionName);
-
-        const filterId: ObjectId | string = ObjectId.isValid(id) && /^[a-f0-9]{24}$/i.test(id)
-            ? new ObjectId(id)
-            : id;
-
-        // _id is immutable; drop any value the caller sent for it.
-        const { _id: _discardedId, ...body } = replacement;
-        void _discardedId;
-
-        const result = await collection.replaceOne({ _id: filterId } as Record<string, unknown>, body);
-        return (result.matchedCount ?? 0) > 0;
+        const stringResult = await collection.deleteOne(
+            { _id: id } as Record<string, unknown>
+        );
+        return stringResult.deletedCount ?? 0;
     }
 
     /**

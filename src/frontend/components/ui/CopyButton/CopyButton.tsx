@@ -1,8 +1,8 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react';
 import { Check, Copy } from 'lucide-react';
-import { Button, type ButtonProps } from '../Button/Button';
+import { Button, type ButtonProps } from '../Button';
 
 interface CopyButtonProps extends Omit<ButtonProps, 'icon' | 'onClick' | 'children' | 'loading'> {
     /**
@@ -53,7 +53,7 @@ export function CopyButton({
         if (timeoutRef.current) clearTimeout(timeoutRef.current);
     }, []);
 
-    const handleCopy = useCallback(async (event: React.MouseEvent<HTMLButtonElement>) => {
+    const handleCopy = useCallback(async (event: MouseEvent<HTMLButtonElement>) => {
         event.stopPropagation();
         try {
             if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
