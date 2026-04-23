@@ -154,8 +154,8 @@ export class DatabaseBrowserRepository {
             .limit(limit)
             .toArray();
 
-        // Get total count
-        const total = await collection.countDocuments({});
+        // Get total count (estimated — uses collection metadata, avoids full scan on large collections)
+        const total = await collection.estimatedDocumentCount();
 
         // Calculate pagination metadata
         const totalPages = Math.ceil(total / limit);
