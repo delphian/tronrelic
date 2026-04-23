@@ -41,8 +41,9 @@ import { ChainParametersService } from './modules/chain-parameters/chain-paramet
 import { UsdtParametersFetcher } from './modules/usdt-parameters/usdt-parameters-fetcher.js';
 import { UsdtParametersService } from './modules/usdt-parameters/usdt-parameters.service.js';
 import { createApiRouter } from './api/routes/index.js';
+import { PluginManagerService } from './services/plugin-manager.service.js';
 import type { Express } from 'express';
-import type { IDatabaseService, IMenuService, IServiceRegistry } from '@/types';
+import type { IDatabaseService, IMenuService, IMenuNode, IPluginManifest, IServiceRegistry } from '@/types';
 import axios from 'axios';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -143,6 +144,19 @@ async function bootstrap(): Promise<void> {
             await loadPlugins(ctx.coreDatabase, scheduler, ctx.serviceRegistry);
         } catch (pluginError) {
             logger.error({ pluginError, stack: pluginError instanceof Error ? pluginError.stack : undefined }, 'Plugin initialization failed');
+        }
+
+        // Register the admin Plugins dropdown AFTER loadPlugins so PluginMetadataService
+        // has its dependencies injected and the initial reconciliation can observe the
+        // plugins that were just activated. Bootstrap-time plugin activation bypasses
+        // PluginManagerService.loadPlugin(), so no plugin:enabled events fire during
+        // loadPlugins — a single post-load sync fills the dropdown, and the event
+        // subscriptions set up here handle subsequent runtime enable/disable via
+        // the admin UI (which does go through PluginManagerService).
+        try {
+            await registerPluginsAdminMenu(ctx.menuService);
+        } catch (menuError) {
+            logger.error({ menuError, stack: menuError instanceof Error ? menuError.stack : undefined }, 'Failed to register plugins admin menu');
         }
 
         ctx.server.on('error', (err: NodeJS.ErrnoException) => {
@@ -401,7 +415,7 @@ async function registerTemporaryMenuItems(menuService: IMenuService): Promise<vo
         // Pages (40) registered by PagesModule
         { label: 'Blockchain', url: '/system/blockchain', icon: 'Blocks', order: 45 },
         // Markets (50) registered by resource-markets plugin
-        { label: 'Plugins', url: '/system/plugins', icon: 'Puzzle', order: 65 },
+        // Plugins (65) registered by registerPluginsAdminMenu — dropdown of enabled plugin settings
         { label: 'WebSockets', url: '/system/websockets', icon: 'Radio', order: 70 },
     ];
 
@@ -416,4 +430,118 @@ async function registerTemporaryMenuItems(menuService: IMenuService): Promise<vo
             enabled: true
         });
     }
+}
+
+/**
+ * Register the admin "Plugins" dropdown and keep its children synced to enabled plugins.
+ *
+ * Creates a parent menu node whose top link points at /system/plugins and whose children
+ * are generated from each enabled plugin's `manifest.adminUrl` — the same value the cog
+ * icon uses on the plugin management page. The dropdown stays current with plugin state
+ * by subscribing to PluginManagerService lifecycle events; any enable or disable triggers
+ * a diff-based reconciliation of the child list that creates missing nodes, updates
+ * existing nodes whose label/icon/order have drifted, and removes nodes for disabled
+ * plugins.
+ *
+ * Must run after loadPlugins so PluginMetadataService.setDependencies() has been called
+ * and the initial reconciliation can enumerate plugins activated during bootstrap.
+ * Bootstrap-time activation bypasses PluginManagerService and therefore emits no
+ * plugin:enabled events — the initial sync compensates. Event subscriptions here only
+ * handle runtime toggles via the admin UI, which go through PluginManagerService.
+ *
+ * @param menuService - Menu service for creating/updating/deleting menu nodes
+ */
+async function registerPluginsAdminMenu(menuService: IMenuService): Promise<void> {
+    const container = await menuService.create({
+        namespace: 'system',
+        label: 'Plugins',
+        url: '/system/plugins',
+        icon: 'Puzzle',
+        order: 65,
+        parent: null,
+        enabled: true
+    });
+
+    const parentId = container._id?.toString();
+    if (!parentId) {
+        throw new Error('Plugins admin menu container created without an _id');
+    }
+
+    const pluginManager = PluginManagerService.getInstance();
+
+    // Serialize reconciliation so bursts of lifecycle events (e.g. multiple plugins
+    // enabling during bootstrap) never race on create/delete against the same parent.
+    let queue: Promise<void> = Promise.resolve();
+
+    const reconcile = async (): Promise<void> => {
+        const manifests = await pluginManager.getEnabledManifests();
+        const eligible = manifests
+            .filter((m): m is IPluginManifest & { adminUrl: string } => typeof m.adminUrl === 'string' && m.adminUrl.length > 0)
+            .sort((a, b) => a.title.localeCompare(b.title));
+
+        // Compute the desired order for every eligible plugin up front so inserting a
+        // new plugin that sorts before an existing child rewrites that child's order
+        // instead of colliding with it.
+        const desiredChildren = eligible.map((manifest, index) => ({
+            namespace: 'system' as const,
+            label: manifest.title,
+            url: manifest.adminUrl,
+            icon: 'Settings',
+            order: (index + 1) * 10,
+            parent: parentId,
+            enabled: true
+        }));
+        const desiredByUrl = new Map(desiredChildren.map(child => [child.url, child]));
+
+        const existing: IMenuNode[] = menuService.getChildren(parentId, 'system');
+        const existingByUrl = new Map<string, IMenuNode>();
+        for (const child of existing) {
+            if (!child.url || !desiredByUrl.has(child.url)) {
+                if (child._id) {
+                    await menuService.delete(child._id.toString());
+                }
+                continue;
+            }
+            existingByUrl.set(child.url, child);
+        }
+
+        for (const desiredChild of desiredChildren) {
+            const existingChild = existingByUrl.get(desiredChild.url);
+            if (!existingChild) {
+                await menuService.create(desiredChild);
+                continue;
+            }
+            if (
+                existingChild._id && (
+                    existingChild.label !== desiredChild.label
+                    || existingChild.icon !== desiredChild.icon
+                    || existingChild.order !== desiredChild.order
+                    || existingChild.enabled !== desiredChild.enabled
+                )
+            ) {
+                await menuService.update(existingChild._id.toString(), {
+                    label: desiredChild.label,
+                    icon: desiredChild.icon,
+                    order: desiredChild.order,
+                    enabled: desiredChild.enabled
+                });
+            }
+        }
+    };
+
+    const syncChildren = (): Promise<void> => {
+        queue = queue
+            .then(reconcile)
+            .catch(error => {
+                logger.error({ error }, 'Failed to sync plugins admin dropdown');
+            });
+        return queue;
+    };
+
+    pluginManager.on('plugin:enabled', () => { void syncChildren(); });
+    pluginManager.on('plugin:disabled', () => { void syncChildren(); });
+
+    // Initial sync. Typically a no-op during bootstrap (plugins load after this point),
+    // but covers the case where a plugin is already enabled when this runs.
+    await syncChildren();
 }
