@@ -14,6 +14,7 @@
  */
 
 import type { Connection } from 'mongoose';
+import { ObjectId } from 'mongodb';
 import type { ISystemLogService } from '@/types';
 import type {
     ICollectionStat,
@@ -249,6 +250,57 @@ export class DatabaseBrowserRepository {
             hasNextPage,
             hasPrevPage
         };
+    }
+
+    /**
+     * Deletes a single document from a collection by its _id.
+     *
+     * Why _id-based deletion:
+     * - Stable, unambiguous identifier for any document shape
+     * - Matches the admin UI's expand-on-row model where each row owns a document
+     *
+     * Why try ObjectId then string fallback:
+     * - The URL parameter is always a string; the actual _id may be an ObjectId or a
+     *   plain string (slug/UUID). A 24-char hex string is ambiguous — it parses as
+     *   ObjectId, but the collection may store it as a literal string. Trying ObjectId
+     *   first matches the common case; falling back to string covers collections that
+     *   use 24-hex strings as keys.
+     *
+     * Security posture:
+     * - Admin-gated via requireAdmin on the parent router
+     * - express-mongo-sanitize replaces $ and . with _ in the :id path parameter
+     * - Only acts on the single document; never a blanket deleteMany
+     *
+     * @param collectionName - Name of the collection
+     * @param id - Document _id as a string (ObjectId hex or plain string key)
+     * @returns Number of documents actually removed (0 or 1)
+     */
+    async deleteDocument(collectionName: string, id: string): Promise<number> {
+        this.logger.debug({ collectionName, id }, 'Deleting document');
+
+        const db = this.connection.db;
+        if (!db) {
+            throw new Error('Database not connected');
+        }
+
+        const collection = db.collection(collectionName);
+        const looksLikeObjectId = ObjectId.isValid(id) && /^[a-f0-9]{24}$/i.test(id);
+
+        // Try ObjectId first when the shape matches; fall back to string _id if no match.
+        // Collections that store 24-hex strings as _id would otherwise return false 404s.
+        if (looksLikeObjectId) {
+            const objectIdResult = await collection.deleteOne(
+                { _id: new ObjectId(id) } as Record<string, unknown>
+            );
+            if ((objectIdResult.deletedCount ?? 0) > 0) {
+                return objectIdResult.deletedCount ?? 0;
+            }
+        }
+
+        const stringResult = await collection.deleteOne(
+            { _id: id } as Record<string, unknown>
+        );
+        return stringResult.deletedCount ?? 0;
     }
 
     /**

@@ -16,6 +16,7 @@ class MockDatabaseBrowserRepository {
     getDatabaseStats = vi.fn();
     getDocuments = vi.fn();
     queryDocuments = vi.fn();
+    deleteDocument = vi.fn();
 }
 
 /**
@@ -709,6 +710,79 @@ describe('DatabaseBrowserController', () => {
                 page: 5,      // Parsed to number
                 limit: 30,    // Parsed to number
                 sort: { _id: -1 }
+            });
+        });
+    });
+
+    describe('deleteDocument', () => {
+        /**
+         * Test: deleteDocument returns 200 with deletedCount when removed.
+         */
+        it('should return 200 when a document is deleted', async () => {
+            mockRepository.deleteDocument.mockResolvedValue(1);
+
+            const req = createMockRequest({
+                params: { name: 'transactions', id: '507f1f77bcf86cd799439011' }
+            });
+            const res = createMockResponse();
+
+            await controller.deleteDocument(req as Request, res as Response);
+
+            expect(mockRepository.deleteDocument).toHaveBeenCalledWith(
+                'transactions',
+                '507f1f77bcf86cd799439011'
+            );
+            expect(res.status).toHaveBeenCalledWith(200);
+            expect(res.json).toHaveBeenCalledWith({
+                success: true,
+                data: { deletedCount: 1 }
+            });
+        });
+
+        /**
+         * Test: deleteDocument returns 404 when no document matches.
+         */
+        it('should return 404 when no document matches', async () => {
+            mockRepository.deleteDocument.mockResolvedValue(0);
+
+            const req = createMockRequest({
+                params: { name: 'transactions', id: 'missing-id' }
+            });
+            const res = createMockResponse();
+
+            await controller.deleteDocument(req as Request, res as Response);
+
+            expect(res.status).toHaveBeenCalledWith(404);
+            expect(res.json).toHaveBeenCalledWith({
+                success: false,
+                error: 'Document not found',
+                data: { deletedCount: 0 }
+            });
+        });
+
+        /**
+         * Test: deleteDocument returns 500 on repository failure.
+         */
+        it('should return 500 when the repository throws', async () => {
+            const error = new Error('Mongo unreachable');
+            mockRepository.deleteDocument.mockRejectedValue(error);
+
+            const req = createMockRequest({
+                params: { name: 'transactions', id: 'abc' }
+            });
+            const res = createMockResponse();
+
+            await controller.deleteDocument(req as Request, res as Response);
+
+            expect(mockLogger.error).toHaveBeenCalledWith(
+                { error, params: req.params },
+                'Failed to delete document'
+            );
+            expect(res.status).toHaveBeenCalledWith(500);
+            expect(res.json).toHaveBeenCalledWith({
+                success: false,
+                error: 'Failed to delete document',
+                message: 'Mongo unreachable'
             });
         });
     });

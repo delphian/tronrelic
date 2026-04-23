@@ -12,11 +12,15 @@
  * - Document viewing enables quick debugging and data verification
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo, Fragment } from 'react';
 import { Card } from '../../../../../components/ui/Card';
 import { Button } from '../../../../../components/ui/Button';
 import { Badge } from '../../../../../components/ui/Badge';
-import { Database, ChevronDown, ChevronRight, FileText } from 'lucide-react';
+import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../../components/ui/Table';
+import { ClientTime } from '../../../../../components/ui/ClientTime';
+import { CopyButton } from '../../../../../components/ui/CopyButton';
+import { useToast } from '../../../../../components/ui/ToastProvider/ToastProvider';
+import { Database, ChevronDown, ChevronRight, FileText, Trash2 } from 'lucide-react';
 import styles from './CollectionBrowser.module.css';
 
 interface ICollectionStat {
@@ -54,6 +58,9 @@ export function CollectionBrowser({ token }: CollectionBrowserProps) {
     const [expandedCollection, setExpandedCollection] = useState<string | null>(null);
     const [documents, setDocuments] = useState<IPaginatedDocuments | null>(null);
     const [loadingDocuments, setLoadingDocuments] = useState(false);
+    const [expandedDocumentId, setExpandedDocumentId] = useState<string | null>(null);
+    const [deletingDocumentId, setDeletingDocumentId] = useState<string | null>(null);
+    const { push: pushToast } = useToast();
 
     const fetchStats = useCallback(async () => {
         if (!token) return;
@@ -114,6 +121,7 @@ export function CollectionBrowser({ token }: CollectionBrowserProps) {
     }, [fetchStats]);
 
     const toggleCollection = (collectionName: string) => {
+        setExpandedDocumentId(null);
         if (expandedCollection === collectionName) {
             setExpandedCollection(null);
             setDocuments(null);
@@ -123,6 +131,63 @@ export function CollectionBrowser({ token }: CollectionBrowserProps) {
         }
     };
 
+    const toggleDocument = (documentId: string) => {
+        setExpandedDocumentId(prev => (prev === documentId ? null : documentId));
+    };
+
+    const deleteDocument = useCallback(async (collectionName: string, documentId: string) => {
+        if (!token) return;
+
+        const confirmed = typeof window !== 'undefined'
+            ? window.confirm(
+                `Delete document ${documentId} from "${collectionName}"?\n\nThis cannot be undone.`
+            )
+            : false;
+        if (!confirmed) return;
+
+        setDeletingDocumentId(documentId);
+        try {
+            const response = await fetch(
+                `/api/admin/database/collections/${collectionName}/documents/${encodeURIComponent(documentId)}`,
+                {
+                    method: 'DELETE',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'x-admin-token': token
+                    }
+                }
+            );
+
+            if (!response.ok) {
+                const body = await response.json().catch(() => ({}));
+                throw new Error(body?.message || body?.error || `Delete failed: ${response.statusText}`);
+            }
+
+            pushToast({
+                tone: 'success',
+                title: 'Document deleted',
+                description: `Removed ${documentId} from ${collectionName}`
+            });
+
+            if (expandedDocumentId === documentId) setExpandedDocumentId(null);
+
+            // Refresh the current page of documents and the top-level counts.
+            const currentPage = documents?.page ?? 1;
+            await Promise.all([
+                fetchDocuments(collectionName, currentPage),
+                fetchStats()
+            ]);
+        } catch (err) {
+            pushToast({
+                tone: 'danger',
+                title: 'Delete failed',
+                description: err instanceof Error ? err.message : 'Unknown error'
+            });
+        } finally {
+            setDeletingDocumentId(null);
+        }
+    }, [token, pushToast, expandedDocumentId, documents?.page, fetchDocuments, fetchStats]);
+
     const formatBytes = (bytes: number): string => {
         if (bytes === 0) return '0 B';
         const k = 1024;
@@ -130,6 +195,11 @@ export function CollectionBrowser({ token }: CollectionBrowserProps) {
         const i = Math.floor(Math.log(bytes) / Math.log(k));
         return `${(bytes / Math.pow(k, i)).toFixed(2)} ${sizes[i]}`;
     };
+
+    const sortedCollections = useMemo(
+        () => [...(stats?.collections ?? [])].sort((a, b) => a.name.localeCompare(b.name)),
+        [stats?.collections]
+    );
 
     if (loading) {
         return (
@@ -174,7 +244,7 @@ export function CollectionBrowser({ token }: CollectionBrowserProps) {
             <Card padding="lg">
                 <h3 className={styles.section_title}>Collections</h3>
                 <div className={styles.collections}>
-                    {stats.collections.map(collection => (
+                    {sortedCollections.map(collection => (
                         <div key={collection.name} className={styles.collection_item}>
                             <button
                                 className={styles.collection_header}
@@ -228,16 +298,78 @@ export function CollectionBrowser({ token }: CollectionBrowserProps) {
                                                 </div>
                                             </div>
                                             <div className={styles.documents_list}>
-                                                {documents.documents.map((doc, index) => (
-                                                    <details key={doc._id || index} className={styles.document}>
-                                                        <summary className={styles.document_summary}>
-                                                            <code>_id: {String(doc._id)}</code>
-                                                        </summary>
-                                                        <pre className={styles.document_json}>
-                                                            {JSON.stringify(doc, null, 2)}
-                                                        </pre>
-                                                    </details>
-                                                ))}
+                                                <Table variant="compact">
+                                                    <Thead>
+                                                        <Tr>
+                                                            <Th width="shrink" aria-label="Expand" />
+                                                            <Th>_id</Th>
+                                                            <Th>createdAt</Th>
+                                                            <Th>updatedAt</Th>
+                                                            <Th width="shrink" aria-label="Actions" />
+                                                        </Tr>
+                                                    </Thead>
+                                                    <Tbody>
+                                                        {documents.documents.map((doc, index) => {
+                                                            // Only documents with a real _id can be addressed by the API.
+                                                            // Rows without _id render view-only with delete disabled.
+                                                            const docId = doc._id != null ? String(doc._id) : null;
+                                                            const rowKey = docId ?? `__row_${index}`;
+                                                            const isOpen = expandedDocumentId === rowKey;
+                                                            return (
+                                                                <Fragment key={rowKey}>
+                                                                    <Tr
+                                                                        isExpanded={isOpen}
+                                                                        onClick={() => toggleDocument(rowKey)}
+                                                                        className={styles.document_row}
+                                                                    >
+                                                                        <Td muted>
+                                                                            {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                                                                        </Td>
+                                                                        <Td>
+                                                                            <code className={styles.document_id}>{docId ?? '—'}</code>
+                                                                        </Td>
+                                                                        <Td muted>
+                                                                            {doc.createdAt
+                                                                                ? <ClientTime date={doc.createdAt} format="short" />
+                                                                                : '—'}
+                                                                        </Td>
+                                                                        <Td muted>
+                                                                            {doc.updatedAt
+                                                                                ? <ClientTime date={doc.updatedAt} format="short" />
+                                                                                : '—'}
+                                                                        </Td>
+                                                                        <Td>
+                                                                            <div className={styles.row_actions} onClick={(e) => e.stopPropagation()}>
+                                                                                <CopyButton
+                                                                                    value={JSON.stringify(doc, null, 2)}
+                                                                                    ariaLabel="Copy document JSON"
+                                                                                />
+                                                                                <Button
+                                                                                    variant="ghost"
+                                                                                    size="sm"
+                                                                                    icon={<Trash2 size={16} />}
+                                                                                    aria-label={docId ? 'Delete document' : 'Delete unavailable: document has no _id'}
+                                                                                    disabled={!docId}
+                                                                                    loading={docId !== null && deletingDocumentId === docId}
+                                                                                    onClick={() => docId && void deleteDocument(collection.name, docId)}
+                                                                                />
+                                                                            </div>
+                                                                        </Td>
+                                                                    </Tr>
+                                                                    {isOpen && (
+                                                                        <Tr className={styles.document_detail_row}>
+                                                                            <Td colSpan={5}>
+                                                                                <pre className={styles.document_json}>
+                                                                                    {JSON.stringify(doc, null, 2)}
+                                                                                </pre>
+                                                                            </Td>
+                                                                        </Tr>
+                                                                    )}
+                                                                </Fragment>
+                                                            );
+                                                        })}
+                                                    </Tbody>
+                                                </Table>
                                             </div>
                                         </>
                                     ) : (

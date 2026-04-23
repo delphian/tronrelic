@@ -230,6 +230,56 @@ export class DatabaseBrowserController {
     }
 
     /**
+     * DELETE /api/admin/database/collections/:name/documents/:id
+     *
+     * Removes a single document from the collection by _id.
+     *
+     * Why this endpoint:
+     * - Admins need to remove bad/stale records without dropping into a shell
+     * - Scoped to a single document — never bulk delete — to keep blast radius small
+     * - Admin-authenticated via the parent router's requireAdmin middleware
+     *
+     * Responses:
+     * - 200 with `{ success: true, data: { deletedCount: 1 } }` on success
+     * - 404 with `{ success: false, error: 'Document not found', data: { deletedCount: 0 } }`
+     *   if the document does not exist
+     * - 500 with `{ success: false, error, message }` on unexpected errors
+     *
+     * @param req - Express request with collection name and document id
+     * @param res - Express response
+     */
+    async deleteDocument(req: Request, res: Response): Promise<void> {
+        const { name, id } = req.params;
+
+        try {
+            const deletedCount = await this.repository.deleteDocument(name, id);
+
+            if (deletedCount === 0) {
+                res.status(404).json({
+                    success: false,
+                    error: 'Document not found',
+                    data: { deletedCount: 0 }
+                });
+                return;
+            }
+
+            this.logger.info({ collection: name, id, deletedCount }, 'Deleted document');
+            res.status(200).json({
+                success: true,
+                data: { deletedCount }
+            });
+        } catch (error) {
+            this.logger.error({ error, params: req.params }, 'Failed to delete document');
+
+            res.status(500).json({
+                success: false,
+                error: 'Failed to delete document',
+                message: error instanceof Error ? error.message : 'Unknown error'
+            });
+        }
+    }
+
+    /**
      * Parses sort parameter string into MongoDB sort object.
      *
      * Supports prefixed notation for direction:
