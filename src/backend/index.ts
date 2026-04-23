@@ -146,6 +146,19 @@ async function bootstrap(): Promise<void> {
             logger.error({ pluginError, stack: pluginError instanceof Error ? pluginError.stack : undefined }, 'Plugin initialization failed');
         }
 
+        // Register the admin Plugins dropdown AFTER loadPlugins so PluginMetadataService
+        // has its dependencies injected and the initial reconciliation can observe the
+        // plugins that were just activated. Bootstrap-time plugin activation bypasses
+        // PluginManagerService.loadPlugin(), so no plugin:enabled events fire during
+        // loadPlugins — a single post-load sync fills the dropdown, and the event
+        // subscriptions set up here handle subsequent runtime enable/disable via
+        // the admin UI (which does go through PluginManagerService).
+        try {
+            await registerPluginsAdminMenu(ctx.menuService);
+        } catch (menuError) {
+            logger.error({ menuError, stack: menuError instanceof Error ? menuError.stack : undefined }, 'Failed to register plugins admin menu');
+        }
+
         ctx.server.on('error', (err: NodeJS.ErrnoException) => {
             if (err.code === 'EADDRINUSE') {
                 writeSync(2, `[FATAL] Port ${env.PORT} is already in use\n`);
@@ -345,7 +358,6 @@ async function bootstrapRun(ctx: BootstrapContext): Promise<void> {
     await modules.scheduler.run();
 
     await registerTemporaryMenuItems(menuService);
-    await registerPluginsAdminMenu(menuService);
     logger.info({}, 'All modules initialized');
 }
 
@@ -427,13 +439,17 @@ async function registerTemporaryMenuItems(menuService: IMenuService): Promise<vo
  * are generated from each enabled plugin's `manifest.adminUrl` — the same value the cog
  * icon uses on the plugin management page. The dropdown stays current with plugin state
  * by subscribing to PluginManagerService lifecycle events; any enable or disable triggers
- * a diff-based reconciliation of the child list.
+ * a diff-based reconciliation of the child list that creates missing nodes, updates
+ * existing nodes whose label/icon/order have drifted, and removes nodes for disabled
+ * plugins.
  *
- * Must run after registerTemporaryMenuItems (menu service ready) and before
- * loadPlugins (so the listener is registered in time to catch initial enable events
- * emitted as each enabled plugin is loaded during bootstrap).
+ * Must run after loadPlugins so PluginMetadataService.setDependencies() has been called
+ * and the initial reconciliation can enumerate plugins activated during bootstrap.
+ * Bootstrap-time activation bypasses PluginManagerService and therefore emits no
+ * plugin:enabled events — the initial sync compensates. Event subscriptions here only
+ * handle runtime toggles via the admin UI, which go through PluginManagerService.
  *
- * @param menuService - Menu service for creating/deleting menu nodes
+ * @param menuService - Menu service for creating/updating/deleting menu nodes
  */
 async function registerPluginsAdminMenu(menuService: IMenuService): Promise<void> {
     const container = await menuService.create({
@@ -463,35 +479,53 @@ async function registerPluginsAdminMenu(menuService: IMenuService): Promise<void
             .filter((m): m is IPluginManifest & { adminUrl: string } => typeof m.adminUrl === 'string' && m.adminUrl.length > 0)
             .sort((a, b) => a.title.localeCompare(b.title));
 
-        const desiredByUrl = new Map(eligible.map(m => [m.adminUrl, m]));
-        const existing: IMenuNode[] = menuService.getChildren(parentId, 'system');
+        // Compute the desired order for every eligible plugin up front so inserting a
+        // new plugin that sorts before an existing child rewrites that child's order
+        // instead of colliding with it.
+        const desiredChildren = eligible.map((manifest, index) => ({
+            namespace: 'system' as const,
+            label: manifest.title,
+            url: manifest.adminUrl,
+            icon: 'Settings',
+            order: (index + 1) * 10,
+            parent: parentId,
+            enabled: true
+        }));
+        const desiredByUrl = new Map(desiredChildren.map(child => [child.url, child]));
 
+        const existing: IMenuNode[] = menuService.getChildren(parentId, 'system');
+        const existingByUrl = new Map<string, IMenuNode>();
         for (const child of existing) {
             if (!child.url || !desiredByUrl.has(child.url)) {
                 if (child._id) {
                     await menuService.delete(child._id.toString());
                 }
-            } else {
-                desiredByUrl.delete(child.url);
-            }
-        }
-
-        let order = 10;
-        for (const manifest of eligible) {
-            if (!desiredByUrl.has(manifest.adminUrl)) {
-                order += 10;
                 continue;
             }
-            await menuService.create({
-                namespace: 'system',
-                label: manifest.title,
-                url: manifest.adminUrl,
-                icon: 'Settings',
-                order,
-                parent: parentId,
-                enabled: true
-            });
-            order += 10;
+            existingByUrl.set(child.url, child);
+        }
+
+        for (const desiredChild of desiredChildren) {
+            const existingChild = existingByUrl.get(desiredChild.url);
+            if (!existingChild) {
+                await menuService.create(desiredChild);
+                continue;
+            }
+            if (
+                existingChild._id && (
+                    existingChild.label !== desiredChild.label
+                    || existingChild.icon !== desiredChild.icon
+                    || existingChild.order !== desiredChild.order
+                    || existingChild.enabled !== desiredChild.enabled
+                )
+            ) {
+                await menuService.update(existingChild._id.toString(), {
+                    label: desiredChild.label,
+                    icon: desiredChild.icon,
+                    order: desiredChild.order,
+                    enabled: desiredChild.enabled
+                });
+            }
         }
     };
 
