@@ -409,7 +409,6 @@ async function initializeCoreServices(coreDatabase: IDatabaseService): Promise<v
  */
 async function registerTemporaryMenuItems(menuService: IMenuService): Promise<void> {
     const items = [
-        { label: 'Overview', url: '/system/overview', icon: 'LayoutDashboard', order: 10 },
         { label: 'Config', url: '/system/config', icon: 'Settings', order: 15 },
         // Database (20), Logs (30), Scheduler (35) registered by their modules
         // Pages (40) registered by PagesModule

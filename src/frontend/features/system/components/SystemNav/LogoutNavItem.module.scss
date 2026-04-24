@@ -1,0 +1,33 @@
+/**
+ * LogoutNavItem styles.
+ *
+ * Mirrors the MenuNav tab appearance so the logout button blends with
+ * database-sourced nav entries and participates in Priority+ overflow
+ * collapsing. No active state since logout is a one-shot action.
+ */
+
+.tab {
+    padding: var(--spacing-4) var(--spacing-7);
+    background: transparent;
+    border: var(--border-width-thin) solid transparent;
+    border-radius: var(--radius-sm);
+    text-transform: capitalize;
+    text-decoration: none;
+    color: inherit;
+    transition: all var(--transition-base);
+    cursor: pointer;
+    font-size: var(--font-size-sm);
+    line-height: var(--line-height-normal);
+    font-family: inherit;
+    white-space: nowrap;
+}
+
+.tab:hover {
+    background: var(--color-surface-elevated);
+    border-color: var(--color-border);
+}
+
+.tab:focus-visible {
+    outline: var(--focus-outline-width) solid var(--color-focus);
+    outline-offset: var(--focus-outline-offset);
+}

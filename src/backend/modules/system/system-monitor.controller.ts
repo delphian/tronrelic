@@ -142,36 +142,6 @@ export class SystemMonitorController {
     res.json({ success: true, config });
   };
 
-  getSystemOverview = async (_req: Request, res: Response) => {
-    const [
-      blockchainStatus,
-      transactionStats,
-      schedulerHealth,
-      databaseStatus,
-      redisStatus,
-      serverMetrics
-    ] = await Promise.all([
-      this.service.getBlockchainSyncStatus(),
-      this.service.getTransactionStats(),
-      this.service.getSchedulerHealth(),
-      this.service.getDatabaseStatus(),
-      this.service.getRedisStatus(),
-      this.service.getServerMetrics()
-    ]);
-
-    res.json({
-      success: true,
-      overview: {
-        blockchain: blockchainStatus,
-        transactions: transactionStats,
-        scheduler: schedulerHealth,
-        database: databaseStatus,
-        redis: redisStatus,
-        server: serverMetrics
-      }
-    });
-  };
-
   getObserverStats = async (_req: Request, res: Response) => {
     const service = BlockchainObserverService.getInstance();
     const observers = service.getAllObserverStats();

@@ -24,7 +24,7 @@
  */
 'use client';
 
-import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -97,6 +97,12 @@ interface IMenuNavClientProps {
      * Defaults to "{namespace} navigation".
      */
     ariaLabel?: string;
+
+    /**
+     * Optional trailing items appended after database-sourced items so they
+     * participate in Priority+ overflow collapsing alongside normal entries.
+     */
+    trailingItems?: Array<{ id: string; node: ReactNode }>;
 }
 
 /**
@@ -118,7 +124,7 @@ interface IMenuNavClientProps {
  * @param props.items - Menu items from server
  * @param props.ariaLabel - Optional accessible label
  */
-export function MenuNavClient({ namespace, items, ariaLabel }: IMenuNavClientProps) {
+export function MenuNavClient({ namespace, items, ariaLabel, trailingItems }: IMenuNavClientProps) {
     const pathname = usePathname();
     const menuConfig = useMenuConfig(namespace);
     const [expandedCategoryId, setExpandedCategoryId] = useState<string | null>(null);
@@ -344,12 +350,16 @@ export function MenuNavClient({ namespace, items, ariaLabel }: IMenuNavClientPro
     };
 
     /**
-     * Converts menu items to PriorityNav format.
+     * Converts menu items to PriorityNav format, appending any trailing items
+     * so namespace-specific controls (e.g. logout) participate in overflow.
      */
-    const priorityNavItems = visibleItems.map(item => ({
-        id: item._id,
-        node: renderMenuItem(item)
-    }));
+    const priorityNavItems = [
+        ...visibleItems.map(item => ({
+            id: item._id,
+            node: renderMenuItem(item)
+        })),
+        ...(trailingItems ?? [])
+    ];
 
     const navAriaLabel = ariaLabel || `${namespace} navigation`;
 
@@ -434,6 +444,9 @@ export function MenuNavClient({ namespace, items, ariaLabel }: IMenuNavClientPro
         <>
             <nav className={`${navClassName} ${styles['nav--wrap']}`} aria-label={navAriaLabel}>
                 {visibleItems.map(item => renderMenuItem(item))}
+                {trailingItems?.map(trailing => (
+                    <span key={trailing.id}>{trailing.node}</span>
+                ))}
             </nav>
             {renderCategoryDropdown()}
         </>
