@@ -400,7 +400,7 @@ async function initializeCoreServices(coreDatabase: IDatabaseService): Promise<v
 /**
  * Register system monitoring menu items not yet migrated to modules.
  *
- * Temporary registrations for system pages (Overview, Config, Scheduler, etc.)
+ * Temporary registrations for system pages (Config, Blockchain, WebSockets)
  * that will eventually move to dedicated modules. Each module should register
  * its own menu items in its run() phase.
  *
@@ -409,7 +409,6 @@ async function initializeCoreServices(coreDatabase: IDatabaseService): Promise<v
  */
 async function registerTemporaryMenuItems(menuService: IMenuService): Promise<void> {
     const items = [
-        { label: 'Overview', url: '/system/overview', icon: 'LayoutDashboard', order: 10 },
         { label: 'Config', url: '/system/config', icon: 'Settings', order: 15 },
         // Database (20), Logs (30), Scheduler (35) registered by their modules
         // Pages (40) registered by PagesModule

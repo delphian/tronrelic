@@ -23,6 +23,7 @@
  * ```
  */
 
+import type { ReactNode } from 'react';
 import { MenuNavClient } from './MenuNavClient';
 import { getServerSideApiUrl } from '../../../lib/api-url';
 
@@ -71,6 +72,13 @@ interface IMenuNavSSRProps {
      * Defaults to "{namespace} navigation".
      */
     ariaLabel?: string;
+
+    /**
+     * Optional trailing items appended after database-sourced items inside the
+     * same Priority+ nav flow. Use for namespace-specific controls (e.g. logout)
+     * so they participate in overflow collapsing alongside normal menu entries.
+     */
+    trailingItems?: Array<{ id: string; node: ReactNode }>;
 }
 
 /**
@@ -91,7 +99,7 @@ interface IMenuNavSSRProps {
  * @param props.namespace - Menu namespace to load
  * @param props.ariaLabel - Optional accessible label for navigation
  */
-export async function MenuNavSSR({ namespace, ariaLabel }: IMenuNavSSRProps) {
+export async function MenuNavSSR({ namespace, ariaLabel, trailingItems }: IMenuNavSSRProps) {
     try {
         // Fetch menu items from backend API (public endpoint, no auth required)
         // Use internal Docker network when available (avoids SSL cert issues)
@@ -103,7 +111,7 @@ export async function MenuNavSSR({ namespace, ariaLabel }: IMenuNavSSRProps) {
         if (!response.ok) {
             console.error('Failed to fetch menu items:', response.status, response.statusText);
             // Return empty navigation on error (graceful degradation)
-            return <MenuNavClient namespace={namespace} items={[]} ariaLabel={ariaLabel} />;
+            return <MenuNavClient namespace={namespace} items={[]} ariaLabel={ariaLabel} trailingItems={trailingItems} />;
         }
 
         const data: IMenuApiResponse = await response.json();
@@ -133,10 +141,10 @@ export async function MenuNavSSR({ namespace, ariaLabel }: IMenuNavSSRProps) {
         const items = data.tree.roots.map(convertNode);
 
         // Pass hierarchical structure to client component
-        return <MenuNavClient namespace={namespace} items={items} ariaLabel={ariaLabel} />;
+        return <MenuNavClient namespace={namespace} items={items} ariaLabel={ariaLabel} trailingItems={trailingItems} />;
     } catch (error) {
         console.error('Error fetching menu items:', error);
         // Return empty navigation on error (graceful degradation)
-        return <MenuNavClient namespace={namespace} items={[]} ariaLabel={ariaLabel} />;
+        return <MenuNavClient namespace={namespace} items={[]} ariaLabel={ariaLabel} trailingItems={trailingItems} />;
     }
 }

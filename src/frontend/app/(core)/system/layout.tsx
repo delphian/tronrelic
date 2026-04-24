@@ -1,6 +1,6 @@
 import { type ReactNode } from 'react';
 import type { Metadata } from 'next';
-import { SystemAuthProvider, SystemAuthGate } from '../../../features/system';
+import { SystemAuthProvider, SystemAuthGate, LogoutNavItem } from '../../../features/system';
 import { MenuNavSSR } from '../../../components/layout/MenuNav';
 
 /**
@@ -68,7 +68,15 @@ export const metadata: Metadata = {
 export default function SystemLayout({ children }: { children: ReactNode }) {
     return (
         <SystemAuthProvider>
-            <SystemAuthGate navigation={<MenuNavSSR namespace="system" ariaLabel="System monitoring navigation" />}>
+            <SystemAuthGate
+                navigation={
+                    <MenuNavSSR
+                        namespace="system"
+                        ariaLabel="System monitoring navigation"
+                        trailingItems={[{ id: 'system-logout', node: <LogoutNavItem /> }]}
+                    />
+                }
+            >
                 {children}
             </SystemAuthGate>
         </SystemAuthProvider>

@@ -13,9 +13,6 @@ export function systemRouter(database: IDatabaseService) {
 
   router.use(requireAdmin);
 
-  // Overview endpoint
-  router.get('/overview', controller.getSystemOverview);
-
   // Blockchain endpoints
   router.get('/blockchain/status', controller.getBlockchainStatus);
   router.get('/blockchain/transactions', controller.getTransactionStats);

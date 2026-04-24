@@ -91,27 +91,22 @@ function LoginForm() {
 }
 
 /**
- * Authenticated layout with logout functionality.
+ * Authenticated layout containing navigation and child page content.
  *
- * Shows the logout button in header, navigation below header, and wraps child page content.
- * Only rendered when user is authenticated. Uses design system Button component for consistent
- * styling.
+ * Logout control is rendered as a trailing nav item by the system layout so it
+ * participates in Priority+ overflow collapsing rather than living outside the
+ * nav flow.
  *
  * @param props - Component props
  * @param props.navigation - Navigation component to render below header
  * @param props.children - Page content to render
  */
 function AuthenticatedLayout({ navigation, children }: { navigation?: ReactNode; children: ReactNode }) {
-    const { logout } = useSystemAuth();
-
     return (
         <div className={styles.layout_container}>
             <div className={styles.layout_content}>
                 <div className={styles.layout_nav_row}>
                     {navigation}
-                    <Button onClick={logout} variant="secondary" size="sm" aria-label="Logout from system dashboard">
-                        Logout
-                    </Button>
                 </div>
 
                 <section className={styles.layout_section}>

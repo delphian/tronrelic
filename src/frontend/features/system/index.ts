@@ -15,7 +15,7 @@ export { MarketMonitor } from './components/MarketMonitor';
 // SchedulerMonitor moved to modules/scheduler
 // SystemLogsMonitor and LogSettings moved to modules/logs
 export { SystemAuthGate } from './components/SystemNav/SystemAuthGate';
-export { SystemOverview } from './components/SystemOverview';
+export { LogoutNavItem } from './components/SystemNav/LogoutNavItem';
 
 // Contexts
 export { SystemAuthProvider, useSystemAuth } from './contexts/SystemAuthContext';
