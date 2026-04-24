@@ -67,7 +67,6 @@
     align-items: center;
     justify-content: space-between;
     gap: var(--spacing-5);
-    flex-wrap: wrap;
 }
 
 .layout_section {
