@@ -61,6 +61,16 @@
     background: var(--button-danger-background-hover);
 }
 
+.btn--warning {
+    background: var(--button-warning-background);
+    color: var(--button-warning-color);
+    border-color: var(--button-warning-border);
+}
+
+.btn--warning:hover {
+    background: var(--button-warning-background-hover);
+}
+
 /* Focus State */
 .btn:focus-visible {
     outline: var(--focus-outline-width) solid var(--focus-outline-color);
@@ -69,6 +79,12 @@
 }
 
 /* Size Variants */
+.btn--xs {
+    min-height: var(--button-height-xs);
+    padding: var(--button-padding-xs);
+    font-size: var(--button-font-size-xs);
+}
+
 .btn--sm {
     min-height: var(--button-height-sm);
     padding: var(--button-padding-sm);

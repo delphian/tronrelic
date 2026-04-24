@@ -32,6 +32,10 @@
                          border-color var(--transition-base);
 
     /* Button - Size Variants */
+    --button-height-xs: 26px;
+    --button-padding-xs: var(--spacing-1) var(--spacing-3);  /* 0.25rem 0.4rem */
+    --button-font-size-xs: var(--font-size-xs);              /* 0.72rem */
+
     --button-height-sm: 34px;
     --button-padding-sm: var(--spacing-3) var(--spacing-6);  /* 0.4rem 0.85rem */
     --button-font-size-sm: var(--font-size-sm);              /* 0.85rem */
@@ -69,6 +73,12 @@
     --button-danger-color: #ffb3bb;
     --button-danger-border: rgba(255, 111, 125, 0.5);
 
+    /* Button - Warning Variant (caution actions short of destructive) */
+    --button-warning-background: rgba(255, 200, 87, 0.12);
+    --button-warning-background-hover: rgba(255, 200, 87, 0.2);
+    --button-warning-color: #ffe2a6;
+    --button-warning-border: rgba(255, 200, 87, 0.5);
+
     /* Button - State Modifiers */
     --button-loading-opacity: var(--opacity-75);
     --button-disabled-opacity: var(--opacity-55);
@@ -94,6 +104,36 @@
     --icon-button-border-radius: var(--radius-md);
     --icon-button-color: var(--color-text-muted);
     --icon-button-color-hover: var(--color-text);
+
+    /*
+     * Icon Button Bare — borderless, transparent icon-only button used for
+     * inline row actions (edit, delete, copy) where an outlined icon button
+     * would visually dominate. Color of the icon flips on hover based on the
+     * semantic tone of the action (primary / danger / success / text).
+     */
+    --icon-button-bare-padding-sm: calc(var(--spacing-1) * 0.5);
+    --icon-button-bare-padding-md: var(--spacing-1);
+    --icon-button-bare-padding-lg: var(--spacing-2);
+    --icon-button-bare-border-radius: var(--radius-sm);
+    --icon-button-bare-color: var(--color-text-muted);
+    --icon-button-bare-color-ghost-hover: var(--color-text);
+    --icon-button-bare-color-primary-hover: var(--color-primary);
+    --icon-button-bare-color-danger-hover: var(--color-danger);
+    --icon-button-bare-color-success-hover: var(--color-success);
+
+    /* ========================================================================
+     * SWITCH COMPONENT TOKENS
+     * Icon-rendered toggle for on/off state (tool enable, flag flip, etc.).
+     * Base color is state-driven (on = success, off = muted); the component
+     * deliberately has no hover-color change because the click flips state.
+     * ======================================================================== */
+
+    --switch-padding-sm: calc(var(--spacing-1) * 0.5);
+    --switch-padding-md: var(--spacing-1);
+    --switch-padding-lg: var(--spacing-2);
+    --switch-border-radius: var(--radius-sm);
+    --switch-on-color: var(--color-success);
+    --switch-off-color: var(--color-text-muted);
 
     /* ========================================================================
      * CARD COMPONENT TOKENS
@@ -162,6 +202,11 @@
     --badge-danger-color: #ffc1c8;
     --badge-danger-border: rgba(255, 111, 125, 0.45);
 
+    /* Badge - Info Variant (primary-tinted for active/in-progress status) */
+    --badge-info-background: rgba(79, 140, 255, 0.15);
+    --badge-info-color: #bcd7ff;
+    --badge-info-border: rgba(79, 140, 255, 0.4);
+
     /* ========================================================================
      * INPUT COMPONENT TOKENS
      * ======================================================================== */
@@ -171,6 +216,7 @@
     --input-border: var(--border-width-thin) solid rgba(110, 160, 255, 0.18);
     --input-border-radius: var(--radius-sm);
     --input-padding: var(--spacing-5) var(--spacing-7); /* 0.75rem 1rem */
+    --input-padding-sm: var(--spacing-1) var(--spacing-2); /* 0.25rem 0.35rem — dense filter/search/inline inputs */
     --input-font-size: 0.98rem;
     --input-transition: border-color var(--transition-base),
                         box-shadow var(--transition-base);

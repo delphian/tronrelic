@@ -1,0 +1,61 @@
+/**
+ * IconButton Component CSS Module
+ *
+ * Bare icon-only button styling. Consumes semantic tokens so theme overrides
+ * cascade automatically.
+ */
+
+.icon-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: var(--icon-button-bare-padding-md);
+    background: none;
+    border: none;
+    border-radius: var(--icon-button-bare-border-radius);
+    color: var(--icon-button-bare-color);
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: color var(--transition-base);
+}
+
+.icon-btn:disabled {
+    opacity: var(--opacity-50);
+    cursor: not-allowed;
+}
+
+.icon-btn:focus-visible {
+    outline: var(--focus-outline-width) solid var(--focus-outline-color);
+    outline-offset: var(--focus-outline-offset);
+    box-shadow: var(--focus-shadow);
+}
+
+/* Size Variants (padding only; caller controls icon size) */
+.icon-btn--sm {
+    padding: var(--icon-button-bare-padding-sm);
+}
+
+.icon-btn--md {
+    padding: var(--icon-button-bare-padding-md);
+}
+
+.icon-btn--lg {
+    padding: var(--icon-button-bare-padding-lg);
+}
+
+/* Hover color variants */
+.icon-btn--ghost:hover:not(:disabled) {
+    color: var(--icon-button-bare-color-ghost-hover);
+}
+
+.icon-btn--primary:hover:not(:disabled) {
+    color: var(--icon-button-bare-color-primary-hover);
+}
+
+.icon-btn--danger:hover:not(:disabled) {
+    color: var(--icon-button-bare-color-danger-hover);
+}
+
+.icon-btn--success:hover:not(:disabled) {
+    color: var(--icon-button-bare-color-success-hover);
+}
