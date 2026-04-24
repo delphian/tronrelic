@@ -400,7 +400,7 @@ async function initializeCoreServices(coreDatabase: IDatabaseService): Promise<v
 /**
  * Register system monitoring menu items not yet migrated to modules.
  *
- * Temporary registrations for system pages (Overview, Config, Scheduler, etc.)
+ * Temporary registrations for system pages (Config, Blockchain, WebSockets)
  * that will eventually move to dedicated modules. Each module should register
  * its own menu items in its run() phase.
  *

@@ -24,7 +24,7 @@
  */
 'use client';
 
-import { useState, useRef, useEffect, useCallback, useMemo, type ReactNode } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo, Fragment, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -445,7 +445,7 @@ export function MenuNavClient({ namespace, items, ariaLabel, trailingItems }: IM
             <nav className={`${navClassName} ${styles['nav--wrap']}`} aria-label={navAriaLabel}>
                 {visibleItems.map(item => renderMenuItem(item))}
                 {trailingItems?.map(trailing => (
-                    <span key={trailing.id}>{trailing.node}</span>
+                    <Fragment key={trailing.id}>{trailing.node}</Fragment>
                 ))}
             </nav>
             {renderCategoryDropdown()}
