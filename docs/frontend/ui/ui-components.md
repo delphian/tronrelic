@@ -33,14 +33,16 @@ Source: [components/ui/](../../../src/frontend/components/ui/). Each folder expo
 
 | Component | Purpose | Key Props | Source |
 |-----------|---------|-----------|--------|
-| `<Badge>` | Inline status/label pill | `tone="neutral\|success\|warning\|danger"`, `showLiveIndicator` | [Badge](../../../src/frontend/components/ui/Badge/) |
-| `<Button>` | Primary interactive button | `variant="primary\|secondary\|ghost\|danger"`, `size`, `icon`, `loading` | [Button](../../../src/frontend/components/ui/Button/) |
+| `<Badge>` | Inline status/label pill | `tone="neutral\|info\|success\|warning\|danger"`, `showLiveIndicator` | [Badge](../../../src/frontend/components/ui/Badge/) |
+| `<Button>` | Primary interactive button with text label | `variant="primary\|secondary\|ghost\|danger\|warning"`, `size="xs\|sm\|md\|lg"`, `icon`, `loading` | [Button](../../../src/frontend/components/ui/Button/) |
 | `<Card>` | Content surface with padding, elevation, and tone | `padding="sm\|md\|lg"`, `elevated`, `tone`, `noBackgroundImage` | [Card](../../../src/frontend/components/ui/Card/) |
 | `<ClientTime>` | Timezone-safe timestamp renderer; SSR-safe placeholder until hydration | `date`, `format="time\|datetime\|date\|relative\|short"`, `fallback` | [ClientTime](../../../src/frontend/components/ui/ClientTime.tsx) |
 | `<CopyButton>` | Copy-to-clipboard button with `Copy → Check` confirmation and non-secure-context fallback | `value`, `label`, `copiedLabel`, `resetMs`, `ariaLabel` + `ButtonProps` | [CopyButton](../../../src/frontend/components/ui/CopyButton/) |
+| `<IconButton>` | Borderless icon-only button for inline row actions (edit, delete, copy in dense tables/headers). Use when `<Button>` chrome would dominate. | `variant="ghost\|primary\|danger\|success"`, `size="sm\|md\|lg"`, required `aria-label` | [IconButton](../../../src/frontend/components/ui/IconButton/) |
 | `<Input>` | Text input with focus ring | `variant="default\|ghost"` + all `InputHTMLAttributes` | [Input](../../../src/frontend/components/ui/Input/) |
 | `<Pagination>` | Page navigation with sibling-count windowing | `total`, `pageSize`, `currentPage`, `siblingCount`, `onPageChange` | [Pagination](../../../src/frontend/components/ui/Pagination/) |
 | `<Skeleton>` | Shimmer placeholder for loading content | All `HTMLDivAttributes` (style for size) | [Skeleton](../../../src/frontend/components/ui/Skeleton/) |
+| `<Switch>` | Icon-rendered on/off toggle for row-level boolean controls (enable flag, tool on/off). Color + icon are state-driven; `role="switch"` + `aria-checked` set automatically. | `on`, `onChange`, `size="sm\|md\|lg"`, required `aria-label` | [Switch](../../../src/frontend/components/ui/Switch/) |
 | `<Table>` + `Thead` / `Tbody` / `Tr` / `Th` / `Td` | Styled table primitives with `variant="default\|compact"`, `isExpanded`, `hasError` row states, and `width="auto\|shrink\|expand"` cells | | [Table](../../../src/frontend/components/ui/Table/) |
 | `<Tooltip>` | Hover tooltip with `placement="top\|bottom"` | `content`, `placement` | [Tooltip](../../../src/frontend/components/ui/Tooltip/) |
 | `<IconPickerModal>` | Searchable Lucide icon picker rendered inside the ModalProvider | `onSelect`, `onClose`, `initialIcon` | [IconPickerModal](../../../src/frontend/components/ui/IconPickerModal/) |

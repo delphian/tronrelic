@@ -39,6 +39,7 @@ Hardcoded values fragment the interface and prevent theming. Global CSS classes 
 | Typography | `--font-size-xs` through `--font-size-3xl`, `--font-weight-normal/medium/semibold/bold` |
 | Borders | `--border-width-thin`, `--radius-sm/md/lg/full` |
 | Shadows | `--shadow-sm/md/lg` |
+| Max Widths | `--max-width-xs` (320px) through `--max-width-xl` (1080px), plus `--max-width-prose` (64ch) |
 | Breakpoints | `$breakpoint-mobile-sm` (360px), `$breakpoint-mobile-md` (480px), `$breakpoint-mobile-lg` (768px), `$breakpoint-tablet` (1024px), `$breakpoint-desktop` (1200px) |
 
 ### SCSS Module Naming
@@ -57,8 +58,8 @@ Use underscores for multi-word identifiers to enable TypeScript dot notation:
 | Pattern | Class |
 |---------|-------|
 | Surface | `.surface`, `.surface--padding-sm/md/lg` |
-| Button | `.btn .btn--primary/secondary/ghost/danger .btn--sm/md/lg` |
-| Badge | `.badge .badge--neutral/success/warning/danger` |
+| Button | `.btn .btn--primary/secondary/ghost/danger/warning .btn--xs/sm/md/lg` |
+| Badge | `.badge .badge--neutral/info/success/warning/danger` |
 | Muted text | `.text-muted` |
 
 ### Icons

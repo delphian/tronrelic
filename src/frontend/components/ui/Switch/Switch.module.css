@@ -1,0 +1,51 @@
+/**
+ * Switch Component CSS Module
+ *
+ * State-colored icon toggle. No hover color change by design — the click
+ * action flips state, so the color already reflects the upcoming state.
+ */
+
+.switch {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: none;
+    border: none;
+    border-radius: var(--switch-border-radius);
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: color var(--transition-base);
+}
+
+.switch:disabled {
+    opacity: var(--opacity-50);
+    cursor: not-allowed;
+}
+
+.switch:focus-visible {
+    outline: var(--focus-outline-width) solid var(--focus-outline-color);
+    outline-offset: var(--focus-outline-offset);
+    box-shadow: var(--focus-shadow);
+}
+
+/* Size Variants (padding scales with size; icon sizing is handled by the component's `size` prop) */
+.switch--sm {
+    padding: var(--switch-padding-sm);
+}
+
+.switch--md {
+    padding: var(--switch-padding-md);
+}
+
+.switch--lg {
+    padding: var(--switch-padding-lg);
+}
+
+/* State Variants (color only — no hover change) */
+.switch--on {
+    color: var(--switch-on-color);
+}
+
+.switch--off {
+    color: var(--switch-off-color);
+}

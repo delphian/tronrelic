@@ -153,6 +153,7 @@
 
     /* Max Width Tokens (for layout containers) */
     --max-width-prose: 64ch;     /* Readable text width */
+    --max-width-xs: 320px;       /* Narrow hint copy, empty-state labels */
     --max-width-sm: 420px;       /* Small modal */
     --max-width-md: 640px;       /* Medium modal */
     --max-width-lg: 820px;       /* Large modal */

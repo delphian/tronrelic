@@ -127,7 +127,7 @@ export interface IUIComponents {
     /** Badge component for labels and status indicators */
     Badge: ComponentType<{
         children?: React.ReactNode;
-        tone?: 'neutral' | 'success' | 'warning' | 'danger';
+        tone?: 'neutral' | 'info' | 'success' | 'warning' | 'danger';
         title?: string;
         className?: string;
     }>;
@@ -146,11 +146,64 @@ export interface IUIComponents {
         onClick?: () => void;
         disabled?: boolean;
         loading?: boolean;
-        variant?: 'primary' | 'secondary' | 'ghost' | 'danger';
-        size?: 'sm' | 'md' | 'lg';
+        variant?: 'primary' | 'secondary' | 'ghost' | 'danger' | 'warning';
+        size?: 'xs' | 'sm' | 'md' | 'lg';
         icon?: React.ReactNode;
         className?: string;
         type?: 'button' | 'submit' | 'reset';
+        'aria-label'?: string;
+    }>;
+
+    /**
+     * IconButton — borderless icon-only button for inline row actions.
+     *
+     * Use when a bordered `<Button>` with an icon would visually dominate
+     * a dense row (table actions, response header copy, etc.). The hover
+     * color follows `variant`. `aria-label` is required because no visible
+     * text describes the action.
+     */
+    IconButton: ComponentType<{
+        children?: React.ReactNode;
+        /**
+         * Click handler with full event access. The event parameter is
+         * preserved (rather than narrowed to `() => void`) because this
+         * primitive is designed for inline row actions where plugin code
+         * commonly needs `event.stopPropagation()` to avoid firing an
+         * enclosing row's click handler.
+         */
+        onClick?: (event: React.MouseEvent<HTMLButtonElement>) => void;
+        disabled?: boolean;
+        variant?: 'ghost' | 'primary' | 'danger' | 'success';
+        size?: 'sm' | 'md' | 'lg';
+        className?: string;
+        title?: string;
+        type?: 'button' | 'submit' | 'reset';
+        'aria-label': string;
+    }>;
+
+    /**
+     * Switch — icon-rendered on/off toggle. Flips `on` state on click; the
+     * color + icon reflect current state (right+success when on, left+muted
+     * when off). Use for row-level boolean controls (tool enable/disable,
+     * feature flag, notification on/off). Carries `role="switch"` +
+     * `aria-checked` so assistive tech reads it as a toggle.
+     */
+    Switch: ComponentType<{
+        on: boolean;
+        onChange: (next: boolean) => void;
+        /**
+         * Optional raw click handler. Runs before `onChange`; calling
+         * `event.preventDefault()` vetoes the toggle, and
+         * `event.stopPropagation()` keeps the click from reaching an
+         * enclosing row handler.
+         */
+        onClick?: (event: React.MouseEvent<HTMLButtonElement>) => void;
+        disabled?: boolean;
+        size?: 'sm' | 'md' | 'lg';
+        className?: string;
+        title?: string;
+        type?: 'button' | 'submit' | 'reset';
+        'aria-label': string;
     }>;
 
     /** Input component for form fields */

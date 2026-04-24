@@ -52,6 +52,12 @@
     border-color: var(--badge-neutral-border);
 }
 
+.badge--info {
+    background: var(--badge-info-background);
+    color: var(--badge-info-color);
+    border-color: var(--badge-info-border);
+}
+
 .badge--success {
     background: var(--badge-success-background);
     color: var(--badge-success-color);

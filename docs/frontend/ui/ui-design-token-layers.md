@@ -86,6 +86,9 @@ Semantic tokens compose foundation tokens into meaningful, context-aware variabl
 **Usage:**
 Provide consistent theming for specific UI components. When you need dark mode, you remap semantic tokens (e.g., `--card-bg: var(--color-gray-900)`) without touching foundation tokens.
 
+**Size-variant convention:**
+Component-scoped semantic tokens that vary by density follow the `xs | sm | md | lg` suffix convention across the design system. Buttons expose `--button-padding-xs/sm/md/lg`, `--button-font-size-xs/sm/md/lg`, and `--button-height-xs/sm/md/lg`; cards expose `--card-padding-xs/sm/md/lg`; inputs expose `--input-padding` and `--input-padding-sm` (dense inline variant). When adding a new component-scoped density, extend the same four-step ladder rather than inventing a parallel scale — callers then pick the step that matches the visual weight they need, and responsive rules swap tokens instead of redefining them.
+
 ### Layer 3: Utility Classes (Application Layer)
 
 **File:** `globals.scss`

@@ -4,8 +4,8 @@ import type { ButtonHTMLAttributes, PropsWithChildren, ReactNode } from 'react';
 import { cn } from '../../../lib/cn';
 import styles from './Button.module.css';
 
-type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger';
-type ButtonSize = 'sm' | 'md' | 'lg';
+type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'warning';
+type ButtonSize = 'xs' | 'sm' | 'md' | 'lg';
 
 /**
  * ButtonProps interface defines the properties available for the Button component.
@@ -43,7 +43,8 @@ const variantClass: Record<ButtonVariant, string> = {
     primary: `${styles.btn} ${styles['btn--primary']}`,
     secondary: `${styles.btn} ${styles['btn--secondary']}`,
     ghost: `${styles.btn} ${styles['btn--ghost']}`,
-    danger: `${styles.btn} ${styles['btn--danger']}`
+    danger: `${styles.btn} ${styles['btn--danger']}`,
+    warning: `${styles.btn} ${styles['btn--warning']}`
 };
 
 /**
@@ -51,6 +52,7 @@ const variantClass: Record<ButtonVariant, string> = {
  * Controls the padding, height, and font size of the button.
  */
 const sizeClass: Record<ButtonSize, string> = {
+    xs: styles['btn--xs'],
     sm: styles['btn--sm'],
     md: styles['btn--md'],
     lg: styles['btn--lg']

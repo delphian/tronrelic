@@ -13,7 +13,7 @@ interface BadgeProps extends HTMLAttributes<HTMLSpanElement> {
      * Visual tone variant for status indication
      * @default 'neutral'
      */
-    tone?: 'neutral' | 'success' | 'warning' | 'danger';
+    tone?: 'neutral' | 'info' | 'success' | 'warning' | 'danger';
 
     /**
      * Whether to display a pulsing red recording indicator dot before the badge content.
@@ -29,6 +29,7 @@ interface BadgeProps extends HTMLAttributes<HTMLSpanElement> {
  */
 const toneClass: Record<NonNullable<BadgeProps['tone']>, string> = {
     neutral: `${styles.badge} ${styles['badge--neutral']}`,
+    info: `${styles.badge} ${styles['badge--info']}`,
     success: `${styles.badge} ${styles['badge--success']}`,
     warning: `${styles.badge} ${styles['badge--warning']}`,
     danger: `${styles.badge} ${styles['badge--danger']}`
