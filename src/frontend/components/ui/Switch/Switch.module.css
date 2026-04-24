@@ -28,7 +28,7 @@
     box-shadow: var(--focus-shadow);
 }
 
-/* Size Variants (padding scales with size; icon size is the caller's responsibility) */
+/* Size Variants (padding scales with size; icon sizing is handled by the component's `size` prop) */
 .switch--sm {
     padding: var(--switch-padding-sm);
 }

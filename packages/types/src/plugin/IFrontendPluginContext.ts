@@ -164,7 +164,14 @@ export interface IUIComponents {
      */
     IconButton: ComponentType<{
         children?: React.ReactNode;
-        onClick?: () => void;
+        /**
+         * Click handler with full event access. The event parameter is
+         * preserved (rather than narrowed to `() => void`) because this
+         * primitive is designed for inline row actions where plugin code
+         * commonly needs `event.stopPropagation()` to avoid firing an
+         * enclosing row's click handler.
+         */
+        onClick?: (event: React.MouseEvent<HTMLButtonElement>) => void;
         disabled?: boolean;
         variant?: 'ghost' | 'primary' | 'danger' | 'success';
         size?: 'sm' | 'md' | 'lg';
@@ -184,10 +191,18 @@ export interface IUIComponents {
     Switch: ComponentType<{
         on: boolean;
         onChange: (next: boolean) => void;
+        /**
+         * Optional raw click handler. Runs before `onChange`; calling
+         * `event.preventDefault()` vetoes the toggle, and
+         * `event.stopPropagation()` keeps the click from reaching an
+         * enclosing row handler.
+         */
+        onClick?: (event: React.MouseEvent<HTMLButtonElement>) => void;
         disabled?: boolean;
         size?: 'sm' | 'md' | 'lg';
         className?: string;
         title?: string;
+        type?: 'button' | 'submit' | 'reset';
         'aria-label': string;
     }>;
 

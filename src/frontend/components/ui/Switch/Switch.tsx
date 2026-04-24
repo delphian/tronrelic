@@ -35,10 +35,15 @@ const sizeClass: Record<SwitchSize, string> = {
     lg: styles['switch--lg']
 };
 
+/**
+ * Icon pixel sizes aligned to the design-system `--icon-size-*` ladder in
+ * primitives.scss (sm=18, md=20, lg=24). Hardcoded here because CSS custom
+ * properties can't be read synchronously by the lucide-react `size` prop.
+ */
 const iconSize: Record<SwitchSize, number> = {
-    sm: 20,
-    md: 24,
-    lg: 32
+    sm: 18,
+    md: 20,
+    lg: 24
 };
 
 /**
@@ -58,6 +63,7 @@ export function Switch({
     const Icon = on ? ToggleRight : ToggleLeft;
     return (
         <button
+            {...props}
             type={type}
             role="switch"
             aria-checked={on}
@@ -74,7 +80,6 @@ export function Switch({
                     onChange(!on);
                 }
             }}
-            {...props}
         >
             <Icon size={iconSize[size]} />
         </button>
