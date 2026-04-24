@@ -58,6 +58,7 @@
 
 .layout_content {
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
     gap: var(--spacing-12);
 }
 
@@ -66,7 +67,6 @@
     align-items: center;
     justify-content: space-between;
     gap: var(--spacing-5);
-    flex-wrap: wrap;
 }
 
 .layout_section {
