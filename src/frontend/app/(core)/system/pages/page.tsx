@@ -34,11 +34,6 @@ export default function PagesAdminPage() {
 
     return (
         <div className={styles.container}>
-            <div className={styles.header}>
-                <h1 className={styles.title}>Pages Management</h1>
-                <p className={styles.subtitle}>Create and manage custom content pages</p>
-            </div>
-
             <div className={styles.tabs}>
                 <button
                     className={activeTab === 'pages' ? styles.tabActive : styles.tab}
