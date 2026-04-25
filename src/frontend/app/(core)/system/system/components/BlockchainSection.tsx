@@ -151,11 +151,27 @@ export function BlockchainSection({ token }: Props) {
     const triggerSync = async () => {
         if (syncing) return;
         setSyncing(true);
+        setError(null);
         try {
-            await fetch(`${runtimeConfig.apiUrl}/admin/system/blockchain/sync`, {
+            const response = await fetch(`${runtimeConfig.apiUrl}/admin/system/blockchain/sync`, {
                 method: 'POST',
                 headers: { 'X-Admin-Token': token }
             });
+            // Best-effort JSON parse so structured backend error details
+            // survive non-2xx responses; fetch() only rejects on network errors.
+            let data: any = null;
+            try {
+                data = await response.json();
+            } catch {
+                data = null;
+            }
+            if (!response.ok) {
+                throw new Error(
+                    data?.error
+                        ?? data?.message
+                        ?? `Failed to trigger sync: ${response.statusText || response.status}`
+                );
+            }
             // Give the backend a moment to complete the sync cycle before
             // fetching fresh state, otherwise the next poll would still
             // show pre-trigger values.
@@ -210,7 +226,7 @@ interface SyncStatusBlockProps {
  */
 function SyncStatusBlock({ status, metrics, schedulerEnabled, syncing, onTriggerSync }: SyncStatusBlockProps) {
     const netCatchUpRate = status?.netCatchUpRate ?? null;
-    const fallingBehind = netCatchUpRate !== null && netCatchUpRate <= 0 && !status?.lastTimings?.throttle;
+    const fallingBehind = netCatchUpRate !== null && netCatchUpRate < 0 && !status?.lastTimings?.throttle;
 
     return (
         <section className={styles.subsection}>
