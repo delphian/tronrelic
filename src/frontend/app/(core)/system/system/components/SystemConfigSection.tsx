@@ -1,11 +1,11 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Save } from 'lucide-react';
+import { Save, AlertCircle } from 'lucide-react';
 import { Button } from '../../../../../components/ui/Button';
 import { Stack } from '../../../../../components/layout';
 import { useToast } from '../../../../../components/ui/ToastProvider/ToastProvider';
-import { config as runtimeConfig } from '../../../../../lib/config';
+import { getRuntimeConfig } from '../../../../../lib/runtimeConfig';
 import styles from './SystemConfigSection.module.scss';
 
 interface Props {
@@ -32,14 +32,17 @@ export function SystemConfigSection({ token }: Props) {
     const [originalSiteUrl, setOriginalSiteUrl] = useState('');
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
+    const [error, setError] = useState<string | null>(null);
     const { push: pushToast } = useToast();
+    const runtimeConfig = getRuntimeConfig();
 
     const fetchConfig = useCallback(async () => {
         // SystemAuthGate guarantees a non-empty token at this depth, so we
         // do not gate on token here — gating without resetting `loading`
         // would strand the form in a permanent disabled state.
         try {
-            const response = await fetch(`${runtimeConfig.apiBaseUrl}/admin/system/config/system`, {
+            setError(null);
+            const response = await fetch(`${runtimeConfig.apiUrl}/admin/system/config/system`, {
                 headers: { 'X-Admin-Token': token }
             });
             if (!response.ok) throw new Error(`Request failed: ${response.statusText}`);
@@ -47,16 +50,18 @@ export function SystemConfigSection({ token }: Props) {
             const value = data.config?.siteUrl ?? '';
             setSiteUrl(value);
             setOriginalSiteUrl(value);
-        } catch (error) {
+        } catch (err) {
+            const message = err instanceof Error ? err.message : 'Unknown error';
+            setError(message);
             pushToast({
                 tone: 'danger',
                 title: 'Failed to load site configuration',
-                description: error instanceof Error ? error.message : 'Unknown error'
+                description: message
             });
         } finally {
             setLoading(false);
         }
-    }, [token, pushToast]);
+    }, [token, pushToast, runtimeConfig.apiUrl]);
 
     useEffect(() => {
         void fetchConfig();
@@ -67,7 +72,7 @@ export function SystemConfigSection({ token }: Props) {
         setSaving(true);
         try {
             const payload: SystemConfigPayload = { siteUrl };
-            const response = await fetch(`${runtimeConfig.apiBaseUrl}/admin/system/config/system`, {
+            const response = await fetch(`${runtimeConfig.apiUrl}/admin/system/config/system`, {
                 method: 'PATCH',
                 headers: {
                     'X-Admin-Token': token,
@@ -101,6 +106,14 @@ export function SystemConfigSection({ token }: Props) {
 
     return (
         <Stack gap="md">
+            {error && (
+                <div className="alert alert--danger" role="alert">
+                    <span className={styles.error_inline}>
+                        <AlertCircle size={16} aria-hidden="true" />
+                        {error}
+                    </span>
+                </div>
+            )}
             <label className={styles.field}>
                 <span className={styles.field_label}>Site URL</span>
                 <input

@@ -15,9 +15,10 @@ import {
 } from 'lucide-react';
 import { Button } from '../../../../../components/ui/Button';
 import { Badge } from '../../../../../components/ui/Badge';
+import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../../components/ui/Table';
 import { Stack, Grid } from '../../../../../components/layout';
 import { ClientTime } from '../../../../../components/ui/ClientTime';
-import { config as runtimeConfig } from '../../../../../lib/config';
+import { getRuntimeConfig } from '../../../../../lib/runtimeConfig';
 import { HealthMetric } from './HealthMetric';
 import { CollectionBrowser } from './CollectionBrowser';
 import styles from './DatabaseSection.module.scss';
@@ -71,7 +72,7 @@ interface IMigrationExecution {
 
 interface IMigrationStatus {
     pending: IMigrationMetadata[];
-    completed: string[];
+    completed: IMigrationExecution[];
     isRunning: boolean;
     totalPending: number;
     totalCompleted: number;
@@ -104,14 +105,15 @@ function DatabaseHealth({ token }: { token: string }) {
     const [database, setDatabase] = useState<DatabaseStatus | null>(null);
     const [clickhouse, setClickhouse] = useState<ClickHouseStatus | null>(null);
     const [error, setError] = useState<string | null>(null);
+    const runtimeConfig = getRuntimeConfig();
 
     const fetchData = useCallback(async () => {
         try {
             const [mongoResponse, clickhouseResponse] = await Promise.all([
-                fetch(`${runtimeConfig.apiBaseUrl}/admin/system/health/database`, {
+                fetch(`${runtimeConfig.apiUrl}/admin/system/health/database`, {
                     headers: { 'X-Admin-Token': token }
                 }),
-                fetch(`${runtimeConfig.apiBaseUrl}/admin/system/health/clickhouse`, {
+                fetch(`${runtimeConfig.apiUrl}/admin/system/health/clickhouse`, {
                     headers: { 'X-Admin-Token': token }
                 })
             ]);
@@ -141,7 +143,7 @@ function DatabaseHealth({ token }: { token: string }) {
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Failed to fetch database health');
         }
-    }, [token]);
+    }, [token, runtimeConfig.apiUrl]);
 
     useEffect(() => {
         void fetchData();
@@ -237,14 +239,15 @@ function Migrations({ token }: { token: string }) {
     const [sourceFilter, setSourceFilter] = useState<string>('all');
     const [expandedErrors, setExpandedErrors] = useState<Set<string>>(new Set());
     const [error, setError] = useState<string | null>(null);
+    const runtimeConfig = getRuntimeConfig();
 
     // SystemAuthGate guarantees a non-empty token, so the helpers do not
     // gate on token. URLs and the auth header follow docs/system/system-api.md
-    // (X-Admin-Token, ${runtimeConfig.apiBaseUrl}/...).
+    // (X-Admin-Token, ${runtimeConfig.apiUrl}/...).
 
     const fetchStatus = useCallback(async () => {
         try {
-            const response = await fetch(`${runtimeConfig.apiBaseUrl}/admin/migrations/status`, {
+            const response = await fetch(`${runtimeConfig.apiUrl}/admin/migrations/status`, {
                 headers: {
                     'Content-Type': 'application/json',
                     'X-Admin-Token': token
@@ -257,12 +260,12 @@ function Migrations({ token }: { token: string }) {
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Failed to fetch migration status');
         }
-    }, [token]);
+    }, [token, runtimeConfig.apiUrl]);
 
     const fetchHistory = useCallback(async () => {
         try {
             const params = new URLSearchParams({ limit: '100', status: statusFilter });
-            const response = await fetch(`${runtimeConfig.apiBaseUrl}/admin/migrations/history?${params}`, {
+            const response = await fetch(`${runtimeConfig.apiUrl}/admin/migrations/history?${params}`, {
                 headers: {
                     'Content-Type': 'application/json',
                     'X-Admin-Token': token
@@ -271,17 +274,18 @@ function Migrations({ token }: { token: string }) {
             if (!response.ok) throw new Error(`Failed to fetch history: ${response.statusText}`);
             const data: IMigrationHistory = await response.json();
             setHistory(data);
+            setError(null);
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Failed to fetch migration history');
         }
-    }, [token, statusFilter]);
+    }, [token, statusFilter, runtimeConfig.apiUrl]);
 
     const executeMigration = async (migrationId?: string) => {
         if (executing) return;
         setExecuting(true);
         setError(null);
         try {
-            const response = await fetch(`${runtimeConfig.apiBaseUrl}/admin/migrations/execute`, {
+            const response = await fetch(`${runtimeConfig.apiUrl}/admin/migrations/execute`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -289,12 +293,31 @@ function Migrations({ token }: { token: string }) {
                 },
                 body: JSON.stringify(migrationId ? { migrationId } : {})
             });
+            // Best-effort JSON parse so structured backend error details
+            // (failed.error, error, message) survive non-2xx responses.
+            let data: any = null;
+            try {
+                data = await response.json();
+            } catch {
+                data = null;
+            }
             if (response.status === 409) {
-                setError('Migration is already running. Please wait for it to complete.');
+                setError(
+                    data?.failed?.error
+                        ?? data?.error
+                        ?? data?.message
+                        ?? 'Migration is already running. Please wait for it to complete.'
+                );
                 return;
             }
-            if (!response.ok) throw new Error(`Failed to execute migration: ${response.statusText}`);
-            const data = await response.json();
+            if (!response.ok) {
+                throw new Error(
+                    data?.failed?.error
+                        ?? data?.error
+                        ?? data?.message
+                        ?? `Failed to execute migration: ${response.statusText}`
+                );
+            }
             // Per docs/system/system-database-migrations.md, a 2xx response
             // always carries either `success` (on completion) or `failed` (on
             // a tracked failure). Anything else is an unexpected shape — fail
@@ -514,26 +537,26 @@ function Migrations({ token }: { token: string }) {
                             No migration history
                         </p>
                     ) : (
-                        <table className="table">
-                            <thead>
-                                <tr>
-                                    <th>Migration ID</th>
-                                    <th>Status</th>
-                                    <th>Executed At</th>
-                                    <th>Duration</th>
-                                    <th>Source</th>
-                                    <th>Error</th>
-                                </tr>
-                            </thead>
-                            <tbody>
+                        <Table variant="compact">
+                            <Thead>
+                                <Tr>
+                                    <Th>Migration ID</Th>
+                                    <Th>Status</Th>
+                                    <Th>Executed At</Th>
+                                    <Th>Duration</Th>
+                                    <Th>Source</Th>
+                                    <Th>Error</Th>
+                                </Tr>
+                            </Thead>
+                            <Tbody>
                                 {filteredHistory.map((migration) => {
                                     const isExpanded = expandedErrors.has(migration.migrationId);
                                     return (
-                                        <tr key={`${migration.migrationId}-${migration.executedAt}`}>
-                                            <td>
+                                        <Tr key={`${migration.migrationId}-${migration.executedAt}`}>
+                                            <Td>
                                                 <code className={styles.cell_id}>{migration.migrationId}</code>
-                                            </td>
-                                            <td>
+                                            </Td>
+                                            <Td>
                                                 {migration.status === 'completed' ? (
                                                     <Badge tone="success">
                                                         <CheckCircle size={12} />
@@ -545,15 +568,15 @@ function Migrations({ token }: { token: string }) {
                                                         Failed
                                                     </Badge>
                                                 )}
-                                            </td>
-                                            <td>
+                                            </Td>
+                                            <Td muted>
                                                 <ClientTime date={migration.executedAt} format="short" />
-                                            </td>
-                                            <td>{migration.executionDuration}ms</td>
-                                            <td>
+                                            </Td>
+                                            <Td muted>{migration.executionDuration}ms</Td>
+                                            <Td>
                                                 <Badge tone="neutral">{migration.source}</Badge>
-                                            </td>
-                                            <td>
+                                            </Td>
+                                            <Td>
                                                 {migration.error ? (
                                                     <div className={styles.error_cell}>
                                                         <Button
@@ -577,12 +600,12 @@ function Migrations({ token }: { token: string }) {
                                                 ) : (
                                                     <span className="text-subtle">—</span>
                                                 )}
-                                            </td>
-                                        </tr>
+                                            </Td>
+                                        </Tr>
                                     );
                                 })}
-                            </tbody>
-                        </table>
+                            </Tbody>
+                        </Table>
                     )}
                 </div>
             </div>
@@ -600,6 +623,9 @@ function Browser({ token }: { token: string }) {
 }
 
 function formatBytes(bytes: number): string {
-    const mb = bytes / 1024 / 1024;
-    return `${mb.toFixed(2)} MB`;
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return `${(bytes / Math.pow(k, i)).toFixed(2)} ${sizes[i]}`;
 }

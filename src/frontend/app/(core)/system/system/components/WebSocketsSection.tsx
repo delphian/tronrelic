@@ -6,7 +6,7 @@ import type { IPluginWebSocketStats, IAggregatePluginWebSocketStats } from '@/ty
 import { Badge } from '../../../../../components/ui/Badge';
 import { Stack, Grid } from '../../../../../components/layout';
 import { ClientTime } from '../../../../../components/ui/ClientTime';
-import { config as runtimeConfig } from '../../../../../lib/config';
+import { getRuntimeConfig } from '../../../../../lib/runtimeConfig';
 import { HealthMetric } from './HealthMetric';
 import styles from './WebSocketsSection.module.scss';
 
@@ -23,21 +23,22 @@ interface Props {
  * breakdowns expand inline to show their rooms without a separate route.
  *
  * Auth follows the canonical admin pattern from docs/system/system-api.md:
- * X-Admin-Token header against ${runtimeConfig.apiBaseUrl}/admin/...
+ * X-Admin-Token header against ${runtimeConfig.apiUrl}/admin/...
  * URLs. Token presence is guaranteed by SystemAuthGate higher in the tree.
  */
 export function WebSocketsSection({ token }: Props) {
     const [aggregate, setAggregate] = useState<IAggregatePluginWebSocketStats | null>(null);
     const [pluginStats, setPluginStats] = useState<IPluginWebSocketStats[]>([]);
     const [error, setError] = useState<string | null>(null);
+    const runtimeConfig = getRuntimeConfig();
 
     const fetchStats = useCallback(async () => {
         try {
             const [aggregateRes, statsRes] = await Promise.all([
-                fetch(`${runtimeConfig.apiBaseUrl}/admin/system/websockets/aggregate`, {
+                fetch(`${runtimeConfig.apiUrl}/admin/system/websockets/aggregate`, {
                     headers: { 'X-Admin-Token': token }
                 }),
-                fetch(`${runtimeConfig.apiBaseUrl}/admin/system/websockets/stats`, {
+                fetch(`${runtimeConfig.apiUrl}/admin/system/websockets/stats`, {
                     headers: { 'X-Admin-Token': token }
                 })
             ]);
@@ -55,7 +56,7 @@ export function WebSocketsSection({ token }: Props) {
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Unknown error');
         }
-    }, [token]);
+    }, [token, runtimeConfig.apiUrl]);
 
     useEffect(() => {
         void fetchStats();

@@ -54,3 +54,9 @@
     justify-content: flex-end;
     gap: var(--spacing-5);
 }
+
+.error_inline {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacing-3);
+}

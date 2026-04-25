@@ -1,10 +1,11 @@
 'use client';
 
-import { Settings, Radio, Database } from 'lucide-react';
+import { Settings, Radio, Database, Server } from 'lucide-react';
 import { Page, PageHeader, Stack } from '../../../../components/layout';
 import { useSystemAuth } from '../../../../features/system';
 import { CollapsibleSection } from './components/CollapsibleSection';
 import { SystemConfigSection } from './components/SystemConfigSection';
+import { ServerSection } from './components/ServerSection';
 import { WebSocketsSection } from './components/WebSocketsSection';
 import { DatabaseSection } from './components/DatabaseSection';
 
@@ -43,6 +44,14 @@ export default function SystemAdminPage() {
                     icon={<Settings size={20} aria-hidden="true" />}
                 >
                     <SystemConfigSection token={token} />
+                </CollapsibleSection>
+                <CollapsibleSection
+                    id="server"
+                    title="Server"
+                    subtitle="Redis cache liveness and Node.js process metrics."
+                    icon={<Server size={20} aria-hidden="true" />}
+                >
+                    <ServerSection token={token} />
                 </CollapsibleSection>
                 <CollapsibleSection
                     id="websockets"
