@@ -13,22 +13,6 @@
     padding: var(--spacing-12);
 }
 
-.header {
-    margin-bottom: var(--spacing-14);
-}
-
-.header h1 {
-    font-size: var(--font-size-2xl);
-    font-weight: var(--font-weight-semibold);
-    color: var(--color-text);
-    margin-bottom: var(--spacing-5);
-}
-
-.header p {
-    font-size: var(--font-size-md);
-    color: var(--color-text-muted);
-}
-
 /* Alert Styles */
 .error,
 .success {
@@ -406,14 +390,6 @@
 @container menu-admin (max-width: 640px) {
     .container {
         padding: var(--spacing-7);
-    }
-
-    .header {
-        margin-bottom: var(--spacing-10);
-    }
-
-    .header h1 {
-        font-size: var(--font-size-xl);
     }
 
     .section {

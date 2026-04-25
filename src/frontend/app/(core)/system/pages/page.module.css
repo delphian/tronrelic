@@ -6,25 +6,6 @@
     container-name: pages-admin;
 }
 
-.header {
-    display: flex;
-    flex-direction: column;
-    gap: var(--spacing-4);
-}
-
-.title {
-    font-size: var(--font-size-2xl);
-    font-weight: var(--font-weight-semibold);
-    color: var(--color-text);
-    margin: 0;
-}
-
-.subtitle {
-    font-size: var(--font-size-md);
-    color: var(--color-text-muted);
-    margin: 0;
-}
-
 .tabs {
     display: flex;
     gap: var(--spacing-4);

@@ -9,7 +9,7 @@
  */
 
 // Components
-export { BlockchainMonitor } from './components/BlockchainMonitor';
+// BlockchainMonitor folded into app/(core)/system/system/components/BlockchainSection
 export { MarketMonitor } from './components/MarketMonitor';
 // SchedulerMonitor moved to modules/scheduler
 // SystemLogsMonitor and LogSettings moved to modules/logs

@@ -1,7 +1,7 @@
 'use client';
 
 import { useSystemAuth } from '../../../../features/system';
-import { Page, PageHeader, Stack } from '../../../../components/layout';
+import { Page, Stack } from '../../../../components/layout';
 import { SystemLogsMonitor, LogSettings } from '../../../../modules/logs';
 
 /**
@@ -17,10 +17,6 @@ export default function SystemLogsPage() {
 
     return (
         <Page>
-            <PageHeader
-                title="System Logs"
-                subtitle="Monitor and manage backend log entries"
-            />
             <Stack gap="lg">
                 <SystemLogsMonitor token={token} />
                 <LogSettings token={token} />

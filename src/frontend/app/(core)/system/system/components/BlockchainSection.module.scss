@@ -1,0 +1,86 @@
+/**
+ * BlockchainSection styles.
+ *
+ * Mirrors the DatabaseSection sub-block ladder so the Sync Status,
+ * Pipeline Metrics, and Observer Performance sub-headings match the
+ * visual rhythm of the rest of the System admin page. The section
+ * header is provided by CollapsibleSection.
+ */
+
+@use '../../../../../app/breakpoints' as *;
+
+.subsection {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-7);
+    container-type: inline-size;
+    container-name: blockchain-subsection;
+}
+
+.subsection_header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-5);
+    flex-wrap: wrap;
+    border-bottom: var(--border-width-thin) solid var(--color-border);
+    padding-bottom: var(--spacing-4);
+}
+
+.subsection_title {
+    margin: 0;
+    font-size: var(--font-size-lg);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text);
+}
+
+.subsection_note {
+    margin: 0;
+    font-size: var(--font-size-sm);
+    color: var(--color-text-muted);
+}
+
+.error_inline {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacing-3);
+}
+
+.error_message {
+    margin: 0;
+    padding: var(--spacing-5);
+    background: var(--color-surface-muted);
+    border-radius: var(--radius-sm);
+    border: var(--border-width-thin) solid var(--color-danger-alpha-50);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-sm);
+    color: var(--color-danger-text);
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.error_timestamp {
+    font-size: var(--font-size-xs);
+    color: var(--color-text-subtle);
+}
+
+.observer_meta {
+    display: block;
+    font-size: var(--font-size-xs);
+    color: var(--color-text-subtle);
+    margin-top: var(--spacing-1);
+}
+
+.cell_inline {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacing-3);
+    flex-wrap: wrap;
+}
+
+@container blockchain-subsection (max-width: #{$breakpoint-mobile-md}) {
+    .subsection_header {
+        flex-direction: column;
+        align-items: stretch;
+    }
+}

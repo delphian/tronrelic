@@ -352,11 +352,6 @@ export default function MenuAdminPage() {
 
     return (
         <div className={styles.container}>
-            <header className={styles.header}>
-                <h1>Menu Administration</h1>
-                <p>Manage menu items and configure namespace rendering preferences</p>
-            </header>
-
             {error && (
                 <div className={styles.error}>
                     <strong>Error:</strong> {error}

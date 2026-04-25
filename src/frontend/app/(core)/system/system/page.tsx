@@ -1,21 +1,22 @@
 'use client';
 
-import { Settings, Radio, Database, Server } from 'lucide-react';
-import { Page, PageHeader, Stack } from '../../../../components/layout';
+import { Settings, Radio, Database, Server, Blocks } from 'lucide-react';
+import { Page, Stack } from '../../../../components/layout';
 import { useSystemAuth } from '../../../../features/system';
 import { CollapsibleSection } from './components/CollapsibleSection';
 import { SystemConfigSection } from './components/SystemConfigSection';
 import { ServerSection } from './components/ServerSection';
+import { BlockchainSection } from './components/BlockchainSection';
 import { WebSocketsSection } from './components/WebSocketsSection';
 import { DatabaseSection } from './components/DatabaseSection';
 
 /**
  * Consolidated System admin page.
  *
- * First entry in the admin nav. Replaces the separate Config, WebSockets,
- * and Database pages with three collapsible sections that share the same
- * layout primitives, semantic tokens, and HealthMetric component so the
- * page reads as a single uniform surface.
+ * First entry in the admin nav. Replaces the separate Config, Blockchain,
+ * WebSockets, and Database pages with collapsible sections that share the
+ * same layout primitives, semantic tokens, and HealthMetric component so
+ * the page reads as a single uniform surface.
  *
  * Sections start collapsed by default and only mount their inner
  * components when expanded. Each inner component owns its own data
@@ -32,10 +33,6 @@ export default function SystemAdminPage() {
 
     return (
         <Page>
-            <PageHeader
-                title="System"
-                subtitle="Site configuration, WebSocket activity, and database administration."
-            />
             <Stack gap="lg">
                 <CollapsibleSection
                     id="config"
@@ -52,6 +49,14 @@ export default function SystemAdminPage() {
                     icon={<Server size={20} aria-hidden="true" />}
                 >
                     <ServerSection token={token} />
+                </CollapsibleSection>
+                <CollapsibleSection
+                    id="blockchain"
+                    title="Blockchain"
+                    subtitle="Sync status, pipeline timings, and observer performance."
+                    icon={<Blocks size={20} aria-hidden="true" />}
+                >
+                    <BlockchainSection token={token} />
                 </CollapsibleSection>
                 <CollapsibleSection
                     id="websockets"
