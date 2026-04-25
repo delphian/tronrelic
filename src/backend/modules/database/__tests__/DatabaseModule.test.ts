@@ -206,12 +206,13 @@ describe('DatabaseModule', () => {
 
     describe('run()', () => {
         /**
-         * Test: run should register menu item in system namespace.
+         * Test: run should not register a top-level menu item.
          *
-         * Verifies that the module registers its navigation menu item
-         * during the run phase.
+         * The database admin UI is now surfaced inside the consolidated
+         * /system/system page, so the module no longer owns its own
+         * navigation entry.
          */
-        it('should register menu item in system namespace', async () => {
+        it('should not register a system menu item', async () => {
             await module.init({
                 logger: mockLogger as any,
                 app: mockApp as any
@@ -219,15 +220,7 @@ describe('DatabaseModule', () => {
 
             await module.run();
 
-            expect(mockMenuCreate).toHaveBeenCalledWith(
-                expect.objectContaining({
-                    namespace: 'system',
-                    label: 'Database',
-                    url: '/system/database',
-                    icon: 'Database',
-                    order: 20
-                })
-            );
+            expect(mockMenuCreate).not.toHaveBeenCalled();
         });
 
         /**
@@ -322,26 +315,6 @@ describe('DatabaseModule', () => {
             expect(browserCall?.[2]).toBeTypeOf('function'); // router
         });
 
-        /**
-         * Test: run should handle menu registration errors gracefully.
-         *
-         * Verifies that errors during menu registration are caught and
-         * thrown with a descriptive message.
-         */
-        it('should handle menu registration errors', async () => {
-            // Configure mock to throw error
-            mockMenuCreate.mockClear();
-            mockMenuCreate.mockRejectedValue(new Error('Menu error'));
-
-            await module.init({
-                logger: mockLogger as any,
-                app: mockApp as any
-            });
-
-            await expect(module.run()).rejects.toThrow(
-                'Failed to register database menu item'
-            );
-        });
     });
 
     describe('Lifecycle Integration', () => {
@@ -368,10 +341,7 @@ describe('DatabaseModule', () => {
             // Run phase
             await module.run();
 
-            // Verify menu registered
-            expect(mockMenuCreate).toHaveBeenCalled();
-
-            // Verify router mounted
+            // Verify router mounted (module no longer registers a menu item)
             expect(mockApp.use).toHaveBeenCalled();
         });
 

@@ -1,0 +1,247 @@
+/**
+ * DatabaseSection styles.
+ *
+ * Sub-block headings (Health, Migrations, Browser) reuse the same h3
+ * + h4 ladder so the section reads as one coherent block instead of
+ * three transplanted pages stitched together. The section header is
+ * now provided by CollapsibleSection.
+ */
+
+@use '../../../../../app/breakpoints' as *;
+
+.subsection {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-7);
+    container-type: inline-size;
+    container-name: db-subsection;
+}
+
+.subsection_header {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-7);
+}
+
+.subsection_title {
+    margin: 0;
+    font-size: var(--font-size-lg);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text);
+    border-bottom: var(--border-width-thin) solid var(--color-border);
+    padding-bottom: var(--spacing-4);
+}
+
+.subsection_subtitle {
+    margin: 0;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
+    text-transform: uppercase;
+    letter-spacing: var(--letter-spacing-wide);
+    color: var(--color-text-muted);
+}
+
+.actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--spacing-5);
+}
+
+.error_inline {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacing-3);
+}
+
+.empty {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacing-4);
+    margin: 0;
+    color: var(--color-text-muted);
+    font-size: var(--font-size-sm);
+}
+
+.pending_groups {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-5);
+}
+
+.group {
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-surface-muted);
+    overflow: hidden;
+}
+
+.group_summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-5);
+    padding: var(--spacing-6) var(--spacing-7);
+    cursor: pointer;
+    user-select: none;
+}
+
+.group_summary:hover {
+    background: var(--color-surface-elevated);
+}
+
+.group_source {
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text);
+}
+
+.migration_list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    border-top: var(--border-width-thin) solid var(--color-border);
+}
+
+.migration_row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-5);
+    padding: var(--spacing-6) var(--spacing-7);
+    border-bottom: var(--border-width-thin) solid var(--color-border);
+}
+
+.migration_row:last-child {
+    border-bottom: none;
+}
+
+.migration_info {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-3);
+    flex: 1;
+    min-width: 0;
+}
+
+.migration_id {
+    font-family: var(--font-mono);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text);
+    word-break: break-all;
+}
+
+.migration_description {
+    font-size: var(--font-size-sm);
+    color: var(--color-text-muted);
+}
+
+.migration_deps {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--spacing-3);
+}
+
+.deps_label {
+    font-size: var(--font-size-xs);
+    color: var(--color-text-subtle);
+}
+
+.history_header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-5);
+    flex-wrap: wrap;
+    margin-bottom: var(--spacing-5);
+}
+
+.filters {
+    display: flex;
+    gap: var(--spacing-4);
+    flex-wrap: wrap;
+}
+
+.select {
+    padding: var(--input-padding-sm);
+    background: var(--input-background);
+    border: var(--input-border);
+    border-radius: var(--input-border-radius);
+    color: var(--color-text);
+    font-size: var(--font-size-sm);
+    cursor: pointer;
+    transition: var(--input-transition);
+}
+
+.select:hover {
+    border-color: var(--input-border-focus);
+}
+
+.select:focus {
+    outline: none;
+    border-color: var(--input-border-focus);
+    box-shadow: var(--input-shadow-focus);
+}
+
+.history_table_wrap {
+    overflow-x: auto;
+}
+
+.cell_id {
+    font-family: var(--font-mono);
+    font-size: var(--font-size-xs);
+    color: var(--color-text-muted);
+    word-break: break-all;
+}
+
+.error_cell {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-3);
+}
+
+.error_details {
+    padding: var(--spacing-5);
+    background: var(--color-surface-muted);
+    border-radius: var(--radius-sm);
+    border-left: var(--border-width-medium) solid var(--color-danger);
+}
+
+.error_message {
+    margin: 0 0 var(--spacing-3);
+    font-size: var(--font-size-sm);
+    color: var(--color-danger-text);
+    font-weight: var(--font-weight-medium);
+}
+
+.error_stack {
+    margin: 0;
+    padding: var(--spacing-4);
+    background: var(--color-background);
+    border-radius: var(--radius-sm);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-xs);
+    color: var(--color-text-muted);
+    white-space: pre-wrap;
+    word-break: break-all;
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+@container db-subsection (max-width: #{$breakpoint-mobile-md}) {
+    .migration_row {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .history_header {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .filters,
+    .select {
+        width: 100%;
+    }
+}

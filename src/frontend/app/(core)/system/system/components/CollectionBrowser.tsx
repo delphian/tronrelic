@@ -20,8 +20,9 @@ import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../../components/ui/Ta
 import { ClientTime } from '../../../../../components/ui/ClientTime';
 import { CopyButton } from '../../../../../components/ui/CopyButton';
 import { useToast } from '../../../../../components/ui/ToastProvider/ToastProvider';
+import { getRuntimeConfig } from '../../../../../lib/runtimeConfig';
 import { Database, ChevronDown, ChevronRight, FileText, Trash2 } from 'lucide-react';
-import styles from './CollectionBrowser.module.css';
+import styles from './CollectionBrowser.module.scss';
 
 interface ICollectionStat {
     name: string;
@@ -48,7 +49,7 @@ interface IPaginatedDocuments {
 }
 
 interface CollectionBrowserProps {
-    token: string | null;
+    token: string;
 }
 
 export function CollectionBrowser({ token }: CollectionBrowserProps) {
@@ -61,16 +62,19 @@ export function CollectionBrowser({ token }: CollectionBrowserProps) {
     const [expandedDocumentId, setExpandedDocumentId] = useState<string | null>(null);
     const [deletingDocumentId, setDeletingDocumentId] = useState<string | null>(null);
     const { push: pushToast } = useToast();
+    const runtimeConfig = getRuntimeConfig();
+
+    // SystemAuthGate guarantees a non-empty token at this depth, so the
+    // fetch helpers do not gate on token. Gating without resetting the
+    // loading flags would strand the panel in a permanent loading state.
 
     const fetchStats = useCallback(async () => {
-        if (!token) return;
-
         try {
             setLoading(true);
-            const response = await fetch('/api/admin/database/stats', {
+            const response = await fetch(`${runtimeConfig.apiUrl}/admin/database/stats`, {
                 headers: {
                     'Content-Type': 'application/json',
-                    'x-admin-token': token
+                    'X-Admin-Token': token
                 }
             });
 
@@ -86,19 +90,17 @@ export function CollectionBrowser({ token }: CollectionBrowserProps) {
         } finally {
             setLoading(false);
         }
-    }, [token]);
+    }, [token, runtimeConfig.apiUrl]);
 
     const fetchDocuments = useCallback(async (collectionName: string, page: number = 1) => {
-        if (!token) return;
-
         try {
             setLoadingDocuments(true);
             const response = await fetch(
-                `/api/admin/database/collections/${collectionName}/documents?page=${page}&limit=10&sort=-_id`,
+                `${runtimeConfig.apiUrl}/admin/database/collections/${collectionName}/documents?page=${page}&limit=10&sort=-_id`,
                 {
                     headers: {
                         'Content-Type': 'application/json',
-                        'x-admin-token': token
+                        'X-Admin-Token': token
                     }
                 }
             );
@@ -114,7 +116,7 @@ export function CollectionBrowser({ token }: CollectionBrowserProps) {
         } finally {
             setLoadingDocuments(false);
         }
-    }, [token]);
+    }, [token, runtimeConfig.apiUrl]);
 
     useEffect(() => {
         void fetchStats();
@@ -136,8 +138,6 @@ export function CollectionBrowser({ token }: CollectionBrowserProps) {
     };
 
     const deleteDocument = useCallback(async (collectionName: string, documentId: string) => {
-        if (!token) return;
-
         const confirmed = typeof window !== 'undefined'
             ? window.confirm(
                 `Delete document ${documentId} from "${collectionName}"?\n\nThis cannot be undone.`
@@ -148,12 +148,12 @@ export function CollectionBrowser({ token }: CollectionBrowserProps) {
         setDeletingDocumentId(documentId);
         try {
             const response = await fetch(
-                `/api/admin/database/collections/${collectionName}/documents/${encodeURIComponent(documentId)}`,
+                `${runtimeConfig.apiUrl}/admin/database/collections/${collectionName}/documents/${encodeURIComponent(documentId)}`,
                 {
                     method: 'DELETE',
                     headers: {
                         'Content-Type': 'application/json',
-                        'x-admin-token': token
+                        'X-Admin-Token': token
                     }
                 }
             );
@@ -186,7 +186,7 @@ export function CollectionBrowser({ token }: CollectionBrowserProps) {
         } finally {
             setDeletingDocumentId(null);
         }
-    }, [token, pushToast, expandedDocumentId, documents?.page, fetchDocuments, fetchStats]);
+    }, [token, pushToast, expandedDocumentId, documents?.page, fetchDocuments, fetchStats, runtimeConfig.apiUrl]);
 
     const formatBytes = (bytes: number): string => {
         if (bytes === 0) return '0 B';

@@ -10,7 +10,7 @@
  * we enable universal Docker images that work on any domain without rebuilding.
  *
  * Architecture:
- * - Backend stores siteUrl in MongoDB (editable via /system/config admin UI)
+ * - Backend stores siteUrl in MongoDB (editable via /system/system admin UI)
  * - SSR fetches config from backend once at container startup (see lib/serverConfig.ts)
  * - SSR injects config into HTML as <script>window.__RUNTIME_CONFIG__ = {...}</script>
  * - Client code reads from window.__RUNTIME_CONFIG__ (this module)
