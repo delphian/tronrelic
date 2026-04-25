@@ -1,0 +1,56 @@
+/**
+ * SystemConfigSection styles.
+ *
+ * Field/input styles use the same semantic tokens as the rest of the
+ * admin surface (input-* tokens, color-text-muted) so the section reads
+ * identically to other forms on the system page. The section header is
+ * now provided by CollapsibleSection.
+ */
+
+.field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-4);
+}
+
+.field_label {
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+    color: var(--color-text-muted);
+    text-transform: uppercase;
+    letter-spacing: var(--letter-spacing-wide);
+}
+
+.field_hint {
+    font-size: var(--font-size-xs);
+    color: var(--color-text-subtle);
+}
+
+.input {
+    width: 100%;
+    padding: var(--input-padding);
+    background: var(--input-background);
+    border: var(--input-border);
+    border-radius: var(--input-border-radius);
+    color: var(--color-text);
+    font-size: var(--input-font-size);
+    font-family: var(--font-mono);
+    transition: var(--input-transition);
+}
+
+.input:focus {
+    outline: none;
+    border-color: var(--input-border-focus);
+    box-shadow: var(--input-shadow-focus);
+}
+
+.input:disabled {
+    opacity: var(--opacity-55);
+    cursor: not-allowed;
+}
+
+.actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--spacing-5);
+}

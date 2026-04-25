@@ -7,5 +7,5 @@ import { redirect } from 'next/navigation';
  * URLs. Runs server-side before any content is rendered.
  */
 export default function SystemPage() {
-    redirect('/system/config');
+    redirect('/system/system');
 }

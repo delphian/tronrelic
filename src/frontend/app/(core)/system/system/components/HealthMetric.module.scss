@@ -1,0 +1,75 @@
+/**
+ * HealthMetric component styles.
+ *
+ * Compact metric tile used to display a label + value with an optional icon
+ * and tone-driven coloring. Tones map to semantic alpha tokens so success
+ * (connected) and danger (disconnected) states pick up theme overrides
+ * automatically without redefining color values.
+ */
+
+@use '../../../../../app/breakpoints' as *;
+
+.metric {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-5);
+    padding: var(--card-padding-sm);
+    background: var(--color-surface-muted);
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-md);
+    transition: border-color var(--transition-base);
+}
+
+.metric_success {
+    border-color: var(--color-success-alpha-45);
+    background: var(--color-success-alpha-18);
+}
+
+.metric_danger {
+    border-color: var(--color-danger-alpha-50);
+    background: var(--color-danger-alpha-18);
+}
+
+.icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--icon-size-xl);
+    height: var(--icon-size-xl);
+    flex-shrink: 0;
+    color: var(--color-text-muted);
+}
+
+.metric_success .icon {
+    color: var(--color-success-text);
+}
+
+.metric_danger .icon {
+    color: var(--color-danger-text);
+}
+
+.body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-2);
+    min-width: 0;
+}
+
+.label {
+    font-size: var(--font-size-xs);
+    text-transform: uppercase;
+    letter-spacing: var(--letter-spacing-wide);
+    color: var(--color-text-muted);
+}
+
+.value {
+    font-size: var(--font-size-lg);
+    font-weight: var(--font-weight-bold);
+    color: var(--color-text);
+    word-break: break-word;
+}
+
+.detail {
+    font-size: var(--font-size-xs);
+    color: var(--color-text-subtle);
+}

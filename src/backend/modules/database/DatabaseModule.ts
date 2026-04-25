@@ -190,37 +190,15 @@ export class DatabaseModule implements IModule<IDatabaseModuleDependencies> {
     /**
      * Run the database module after all modules have initialized.
      *
-     * This phase activates the module by:
-     * - Registering menu item in 'system' namespace
-     * - Mounting the migrations admin router
+     * Mounts the migrations and collection-browser admin routers. The
+     * database admin UI is now surfaced inside the consolidated
+     * /system/system page rather than its own top-level admin tab, so
+     * this module no longer registers a menu item.
      *
      * By this point, all dependencies are guaranteed to be initialized and ready.
      */
     async run(): Promise<void> {
         this.logger.info('Running database module...');
-
-        // Register menu item in 'system' namespace
-        // Use dynamic import to avoid circular dependencies and ensure MenuService is initialized
-        try {
-            const { MenuService } = await import('../menu/index.js');
-            const menuService = MenuService.getInstance();
-
-            await menuService.create({
-                namespace: 'system',
-                label: 'Database',
-                url: '/system/database',
-                icon: 'Database',
-                order: 20,
-                parent: null,
-                enabled: true
-                // persist defaults to false (memory-only entry)
-            });
-
-            this.logger.info('Database menu item registered in system namespace');
-        } catch (error) {
-            this.logger.error({ error }, 'Failed to register database menu item');
-            throw new Error(`Failed to register database menu item: ${error instanceof Error ? error.message : 'Unknown error'}`);
-        }
 
         // Create and mount migrations router (IoC - module attaches itself to app)
         const migrationsRouter = this.createMigrationsRouter();

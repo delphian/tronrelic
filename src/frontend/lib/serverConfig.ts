@@ -11,7 +11,7 @@
  * we enable universal Docker images that work on any domain without rebuilding.
  *
  * Architecture:
- * - Backend stores siteUrl in MongoDB (editable via /system/config admin UI)
+ * - Backend stores siteUrl in MongoDB (editable via /system/system admin UI)
  * - This module fetches /api/config/public once when first called
  * - Result is cached in memory for container lifetime (no database overhead)
  * - SSR components and metadata generators use this cached config

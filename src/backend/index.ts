@@ -400,22 +400,25 @@ async function initializeCoreServices(coreDatabase: IDatabaseService): Promise<v
 /**
  * Register system monitoring menu items not yet migrated to modules.
  *
- * Temporary registrations for system pages (Config, Blockchain, WebSockets)
- * that will eventually move to dedicated modules. Each module should register
- * its own menu items in its run() phase.
+ * Temporary registrations for system pages (System, Blockchain) that will
+ * eventually move to dedicated modules. Each module should register its
+ * own menu items in its run() phase.
+ *
+ * The "System" entry sits at order 5 so it surfaces as the first admin
+ * tab; it consolidates the former Config, WebSockets, and Database pages
+ * into one /system/system route.
  *
  * @param menuService - Menu service instance for registering navigation items
  * @todo Remove entries as each feature becomes a proper module
  */
 async function registerTemporaryMenuItems(menuService: IMenuService): Promise<void> {
     const items = [
-        { label: 'Config', url: '/system/config', icon: 'Settings', order: 15 },
-        // Database (20), Logs (30), Scheduler (35) registered by their modules
+        { label: 'System', url: '/system/system', icon: 'SlidersHorizontal', order: 5 },
+        // Logs (30), Scheduler (35) registered by their modules
         // Pages (40) registered by PagesModule
         { label: 'Blockchain', url: '/system/blockchain', icon: 'Blocks', order: 45 },
         // Markets (50) registered by resource-markets plugin
         // Plugins (65) registered by registerPluginsAdminMenu — dropdown of enabled plugin settings
-        { label: 'WebSockets', url: '/system/websockets', icon: 'Radio', order: 70 },
     ];
 
     for (const item of items) {

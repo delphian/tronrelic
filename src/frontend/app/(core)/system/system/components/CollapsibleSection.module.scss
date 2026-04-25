@@ -1,0 +1,61 @@
+/**
+ * CollapsibleSection styles.
+ *
+ * Header is a full-width button so the entire row is a hit target. Visuals
+ * mirror the inline section headers the page used before — the chevron is
+ * the only added affordance — so the collapsed and expanded states read as
+ * the same component, just with the body shown or hidden.
+ */
+
+.header {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-5);
+    background: transparent;
+    border: none;
+    padding: 0;
+    text-align: left;
+    cursor: pointer;
+    color: var(--color-text);
+}
+
+.header_icon {
+    color: var(--color-primary);
+    display: flex;
+    flex-shrink: 0;
+}
+
+.header_text {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-2);
+    min-width: 0;
+}
+
+.title {
+    font-size: var(--font-size-xl);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text);
+}
+
+.subtitle {
+    font-size: var(--font-size-sm);
+    color: var(--color-text-muted);
+}
+
+.chevron {
+    color: var(--color-text-muted);
+    display: flex;
+    flex-shrink: 0;
+    transition: color var(--transition-base);
+}
+
+.header:hover .chevron {
+    color: var(--color-text);
+}
+
+.body {
+    margin-top: var(--spacing-7);
+}
