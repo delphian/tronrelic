@@ -17,6 +17,47 @@
 :root,
 [data-theme="default"] {
     /* ========================================================================
+     * GENERIC LAYOUT & TYPOGRAPHY TOKENS
+     *
+     * Use these in component code instead of reaching for primitives like
+     * --spacing-* or --font-size-xs/sm/lg/xl/2xl/3xl directly. Component-scoped
+     * tokens (e.g. --card-padding-md, --button-gap, --stack-gap-md) remain
+     * preferred where the component fits — these generic tiers cover the
+     * non-component cases (one-off blocks, plugin pages, ad-hoc layouts).
+     * ======================================================================== */
+
+    /* Generic Gaps — for flex/grid contexts that aren't a Stack, Grid, or Card */
+    --gap-2xs: var(--spacing-1);    /* 0.25rem - typographic stacks (label + helper) */
+    --gap-xs:  var(--spacing-2);    /* 0.35rem - dense inline (badge, chip) */
+    --gap-sm:  var(--spacing-4);    /* 0.5rem  - inline gaps, button-icon */
+    --gap-md:  var(--spacing-7);    /* 1rem    - default block gap */
+    --gap-lg:  var(--spacing-10);   /* 1.5rem  - section gap */
+    --gap-xl:  var(--spacing-14);   /* 2.5rem  - page-level gap */
+
+    /* Generic Padding — for any block that isn't a Card, Button, Alert, etc. */
+    --padding-2xs: var(--spacing-1);    /* 0.25rem */
+    --padding-xs:  var(--spacing-2);    /* 0.35rem */
+    --padding-sm:  var(--spacing-4);    /* 0.5rem  */
+    --padding-md:  var(--spacing-7);    /* 1rem    */
+    --padding-lg:  var(--spacing-10);   /* 1.5rem  */
+    --padding-xl:  var(--spacing-14);   /* 2.5rem  */
+
+    /* Typography — purpose-named font sizes */
+    --font-size-caption:    var(--font-size-xs);    /* 0.72rem - labels, table headers, footnotes */
+    --font-size-body-sm:    var(--font-size-sm);    /* 0.85rem - secondary body */
+    --font-size-body:       var(--font-size-base);  /* 0.95rem - default body, buttons */
+    --font-size-body-lg:    var(--font-size-md);    /* 1rem    - emphasized body */
+    --font-size-heading-sm: var(--font-size-lg);    /* 1.05rem - small headings */
+    --font-size-heading-md: var(--font-size-xl);    /* 1.6rem  - default heading, stat values */
+    --font-size-heading-lg: var(--font-size-2xl);   /* 1.8rem  - large heading, page title min */
+    --font-size-heading-xl: var(--font-size-3xl);   /* 2.6rem  - hero heading, page title max */
+
+    /* Avatar Sizes — user / account / profile imagery */
+    --avatar-size-sm: 32px;
+    --avatar-size-md: 48px;
+    --avatar-size-lg: 64px;
+
+    /* ========================================================================
      * BUTTON COMPONENT TOKENS
      * ======================================================================== */
 

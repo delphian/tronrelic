@@ -106,17 +106,21 @@ Always use semantic tokens from `semantic-tokens.scss`. Tokens are immutable —
 
 .title {
     color: var(--color-primary);
-    font-size: var(--font-size-lg);
+    font-size: var(--font-size-heading-sm);
     font-weight: var(--font-weight-semibold);
+}
+
+.price {
+    font-size: var(--font-size-heading-lg);
 }
 
 /* CORRECT - select smaller token at narrow width */
 @container market-card (max-width: 300px) {
-    .price { font-size: var(--font-size-xl); }
+    .price { font-size: var(--font-size-heading-md); }
 }
 ```
 
-Never hardcode colors, spacing, fonts, or sizes. Never redefine tokens across breakpoints — this makes names meaningless and debugging impossible.
+Reach for **semantic tokens** — `--font-size-heading-*`, `--gap-md`, `--padding-sm`, `--card-padding-md` — not foundation primitives like `--font-size-lg`, `--spacing-7`. Primitives are raw values; semantics describe purpose, which is what enables theming and global updates. If no semantic token fits, flag the gap so a new one can be added; don't silently fall back to a primitive. Never hardcode colors, spacing, fonts, or sizes. Never redefine tokens across breakpoints — that makes names meaningless and debugging impossible.
 
 ## Complete Example
 
@@ -150,12 +154,12 @@ export function MarketCard({ name, price, availability }: MarketCardProps) {
 
 .card { container-type: inline-size; container-name: market-card; }
 .header { display: flex; align-items: center; justify-content: space-between; }
-.title { font-size: var(--font-size-lg); font-weight: var(--font-weight-semibold); color: var(--color-primary); }
-.price { font-size: var(--font-size-2xl); font-weight: var(--font-weight-bold); color: var(--color-text); }
+.title { font-size: var(--font-size-heading-sm); font-weight: var(--font-weight-semibold); color: var(--color-primary); }
+.price { font-size: var(--font-size-heading-lg); font-weight: var(--font-weight-bold); color: var(--color-text); }
 
 @container market-card (max-width: 300px) {
-    .header { flex-direction: column; align-items: flex-start; gap: var(--spacing-4); }
-    .price { font-size: var(--font-size-xl); }
+    .header { flex-direction: column; align-items: flex-start; gap: var(--gap-sm); }
+    .price { font-size: var(--font-size-heading-md); }
 }
 ```
 

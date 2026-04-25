@@ -32,14 +32,18 @@ Hardcoded values fragment the interface and prevent theming. Global CSS classes 
 
 ### Common Design Tokens
 
-| Category | Tokens |
-|----------|--------|
-| Colors | `--color-text`, `--color-primary`, `--color-surface`, `--color-border`, `--color-success`, `--color-warning`, `--color-danger` |
-| Spacing | `--spacing-1` (0.25rem) through `--spacing-20` (5rem) |
-| Typography | `--font-size-xs` through `--font-size-3xl`, `--font-weight-normal/medium/semibold/bold` |
-| Borders | `--border-width-thin`, `--radius-sm/md/lg/full` |
+**Reach for semantic tokens in component code. Foundation primitives (`--spacing-*`, `--font-size-xs/sm/lg/xl/2xl/3xl`, raw color palette) belong in `primitives.scss` and should rarely appear in `.module.scss` files** — they describe values, not purpose, and so block theming. If no semantic token fits your case, flag the gap so a new one can be added rather than dropping back to a primitive silently.
+
+| Category | Semantic tokens (use these) |
+|----------|------------------------------|
+| Colors | `--color-text`, `--color-text-muted`, `--color-primary`, `--color-surface`, `--color-surface-muted`, `--color-border`, `--color-success`, `--color-warning`, `--color-danger` (plus `--color-*-alpha-*` and `--color-*-text` variants) |
+| Gaps | `--gap-2xs/xs/sm/md/lg/xl` (generic), plus component-scoped `--stack-gap-sm/md/lg`, `--grid-gap-sm/md/lg`, `--button-gap`, `--badge-gap`, `--chip-gap` |
+| Padding | `--padding-2xs/xs/sm/md/lg/xl` (generic), plus component-scoped `--card-padding-xs/sm/md/lg`, `--button-padding-xs/sm/md/lg`, `--alert-padding`, `--input-padding`, `--input-padding-sm` |
+| Typography | `--font-size-caption`, `--font-size-body-sm/body/body-lg`, `--font-size-heading-sm/md/lg/xl`; `--font-weight-normal/medium/semibold/bold`; `--line-height-tight/normal/relaxed` |
+| Borders | `--border-width-thin/medium/thick`, `--radius-xs/sm/md/lg/full` |
 | Shadows | `--shadow-sm/md/lg` |
-| Max Widths | `--max-width-xs` (320px) through `--max-width-xl` (1080px), plus `--max-width-prose` (64ch) |
+| Avatars | `--avatar-size-sm/md/lg` |
+| Max Widths | `--max-width-prose` (64ch), `--max-width-xs/sm/md/lg/xl` (320–1080px) |
 | Breakpoints | `$breakpoint-mobile-sm` (360px), `$breakpoint-mobile-md` (480px), `$breakpoint-mobile-lg` (768px), `$breakpoint-tablet` (1024px), `$breakpoint-desktop` (1200px) |
 
 ### SCSS Module Naming
