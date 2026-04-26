@@ -10,7 +10,7 @@
 .container {
     display: flex;
     flex-direction: column;
-    gap: var(--spacing-10);
+    gap: var(--gap-lg);
     container-type: inline-size;
     container-name: gsc-settings;
 }
@@ -18,14 +18,14 @@
 .status {
     display: flex;
     align-items: center;
-    gap: var(--spacing-4);
-    font-size: var(--font-size-sm);
+    gap: var(--gap-sm);
+    font-size: var(--font-size-body-sm);
     color: var(--color-text-muted);
 }
 
 .status_dot {
-    width: var(--spacing-4);
-    height: var(--spacing-4);
+    width: var(--gap-sm);
+    height: var(--gap-sm);
     border-radius: var(--radius-full);
     flex-shrink: 0;
 }
@@ -39,27 +39,27 @@
 }
 
 .setup_guide {
-    padding: var(--spacing-5) var(--spacing-7);
+    padding: var(--input-group-gap) var(--gap-md);
     background: color-mix(in srgb, var(--color-primary) 6%, transparent);
     border-radius: var(--radius-md);
     border-left: var(--border-width-medium) solid var(--color-primary);
 }
 
 .setup_guide__title {
-    font-size: var(--font-size-sm);
+    font-size: var(--font-size-body-sm);
     font-weight: var(--font-weight-semibold);
     color: var(--color-text);
-    margin: 0 0 var(--spacing-4) 0;
+    margin: 0 0 var(--gap-sm) 0;
 }
 
 .setup_guide__steps {
     margin: 0;
-    padding-left: var(--spacing-7);
-    font-size: var(--font-size-sm);
+    padding-left: var(--gap-md);
+    font-size: var(--font-size-body-sm);
     color: var(--color-text-muted);
     display: flex;
     flex-direction: column;
-    gap: var(--spacing-3);
+    gap: var(--gap-xs);
 }
 
 .setup_guide__steps a {
@@ -72,32 +72,32 @@
 }
 
 .setup_guide__steps code {
-    font-size: var(--font-size-xs);
+    font-size: var(--font-size-caption);
     background: color-mix(in srgb, var(--color-text) 8%, transparent);
-    padding: var(--spacing-1) var(--spacing-2);
+    padding: var(--gap-2xs) var(--gap-xs);
     border-radius: var(--radius-sm);
 }
 
 .form {
     display: flex;
     flex-direction: column;
-    gap: var(--spacing-7);
+    gap: var(--gap-md);
 }
 
 .field {
     display: flex;
     flex-direction: column;
-    gap: var(--spacing-3);
+    gap: var(--gap-xs);
 }
 
 .label {
-    font-size: var(--font-size-sm);
+    font-size: var(--font-size-body-sm);
     font-weight: var(--font-weight-semibold);
     color: var(--color-text);
 }
 
 .hint {
-    font-size: var(--font-size-xs);
+    font-size: var(--font-size-caption);
     color: var(--color-text-muted);
 }
 
@@ -115,7 +115,7 @@
     min-height: 120px;
     padding: var(--input-padding);
     font-family: var(--font-mono);
-    font-size: var(--font-size-sm);
+    font-size: var(--font-size-body-sm);
     color: var(--color-text);
     background: var(--color-surface);
     border: var(--border-width-thin) solid var(--color-border);
@@ -133,7 +133,7 @@
 .input {
     width: 100%;
     padding: var(--input-padding);
-    font-size: var(--font-size-sm);
+    font-size: var(--font-size-body-sm);
     color: var(--color-text);
     background: var(--color-surface);
     border: var(--border-width-thin) solid var(--color-border);
@@ -149,22 +149,22 @@
 
 .actions {
     display: flex;
-    gap: var(--spacing-5);
+    gap: var(--input-group-gap);
     flex-wrap: wrap;
 }
 
 .error {
-    font-size: var(--font-size-sm);
+    font-size: var(--font-size-body-sm);
     color: var(--color-danger);
-    padding: var(--spacing-4) var(--spacing-5);
+    padding: var(--gap-sm) var(--input-group-gap);
     background: color-mix(in srgb, var(--color-danger) 10%, transparent);
     border-radius: var(--radius-md);
 }
 
 .success {
-    font-size: var(--font-size-sm);
+    font-size: var(--font-size-body-sm);
     color: var(--color-success);
-    padding: var(--spacing-4) var(--spacing-5);
+    padding: var(--gap-sm) var(--input-group-gap);
     background: color-mix(in srgb, var(--color-success) 10%, transparent);
     border-radius: var(--radius-md);
 }
@@ -173,7 +173,7 @@
     display: flex;
     justify-content: space-between;
     align-items: baseline;
-    font-size: var(--font-size-sm);
+    font-size: var(--font-size-body-sm);
 }
 
 .info_label {
@@ -189,7 +189,7 @@
 @container gsc-settings (max-width: #{$breakpoint-mobile-md}) {
     .info_row {
         flex-direction: column;
-        gap: var(--spacing-2);
+        gap: var(--gap-xs);
     }
 
     .actions {

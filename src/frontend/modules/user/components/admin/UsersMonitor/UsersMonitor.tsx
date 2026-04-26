@@ -146,11 +146,13 @@ const FILTER_LABELS: Record<UserFilterType, string> = {
     'one-time': 'One-Time Visitors',
     'returning': 'Returning Users',
     'long-sessions': 'Long Sessions (30m+)',
-    // Wallet Status
-    'verified-wallet': 'Verified Wallet',
+    // Identity-state filters mirror UserIdentityState exactly
+    'anonymous': 'Anonymous (no wallet)',
+    'registered': 'Registered (wallet, no signature)',
+    'verified': 'Verified (signed wallet)',
+    // Wallet attribute filters (orthogonal to identity state)
     'multi-wallet': 'Multi-Wallet (2+)',
-    'no-wallet': 'No Wallet',
-    'recently-connected': 'Recently Connected',
+    'recently-registered': 'Recently Registered',
     // Temporal
     'active-today': 'Active Today',
     'active-week': 'Active This Week',
@@ -375,11 +377,14 @@ export function UsersMonitor({ token }: Props) {
                             <option value="returning">{FILTER_LABELS['returning']}</option>
                             <option value="long-sessions">{FILTER_LABELS['long-sessions']}</option>
                         </optgroup>
-                        <optgroup label="Wallet Status" aria-label="Wallet status filters">
-                            <option value="verified-wallet">{FILTER_LABELS['verified-wallet']}</option>
+                        <optgroup label="Identity State" aria-label="Identity state filters">
+                            <option value="anonymous">{FILTER_LABELS['anonymous']}</option>
+                            <option value="registered">{FILTER_LABELS['registered']}</option>
+                            <option value="verified">{FILTER_LABELS['verified']}</option>
+                        </optgroup>
+                        <optgroup label="Wallet Attributes" aria-label="Wallet attribute filters">
                             <option value="multi-wallet">{FILTER_LABELS['multi-wallet']}</option>
-                            <option value="no-wallet">{FILTER_LABELS['no-wallet']}</option>
-                            <option value="recently-connected">{FILTER_LABELS['recently-connected']}</option>
+                            <option value="recently-registered">{FILTER_LABELS['recently-registered']}</option>
                         </optgroup>
                         <optgroup label="Activity" aria-label="Activity filters">
                             <option value="active-today">{FILTER_LABELS['active-today']}</option>
@@ -520,7 +525,7 @@ export function UsersMonitor({ token }: Props) {
                                                                 {wallet.verified ? (
                                                                     <span className={styles.verified_badge}>Verified</span>
                                                                 ) : (
-                                                                    <span className={styles.unverified_badge}>Unverified</span>
+                                                                    <span className={styles.registered_badge}>Registered</span>
                                                                 )}
                                                             </div>
                                                             {wallet.label && (

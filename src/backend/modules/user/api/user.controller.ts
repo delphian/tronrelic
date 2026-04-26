@@ -3,9 +3,8 @@ import { USER_FILTERS } from '@/types';
 import type { ISystemLogService, UserFilterType } from '@/types';
 import type { UserService, IUserStats, IDateRange } from '../services/index.js';
 import type { GscService } from '../services/index.js';
-import type { IUser, IUserPreferences, IUtmParams } from '../database/index.js';
-import { getClientIP, isInternalReferrer } from '../services/index.js';
-import { SystemConfigService } from '../../../services/system-config/system-config.service.js';
+import type { IUser, IUserPreferences } from '../database/index.js';
+import { getClientIP } from '../services/index.js';
 
 /**
  * Cookie name for user identity.
@@ -137,14 +136,16 @@ export class UserController {
     /**
      * POST /api/user/:id/wallet/connect
      *
-     * Connect a wallet to user identity (without verification).
+     * Register a wallet to a user identity (no signature required).
      *
-     * This is the first step in the two-step wallet flow. Stores the
-     * wallet address as unverified. Use linkWallet to verify ownership.
+     * Stage 1 of the two-stage wallet flow: stores the address with
+     * `verified: false`, moving the user from *anonymous* to *registered*.
+     * Use `linkWallet` (stage 2) to upgrade the wallet to *verified*.
      *
-     * When wallet is already linked to another user, returns:
-     * { success: false, loginRequired: true, existingUserId: '...' }
-     * Frontend should then prompt for signature verification to login.
+     * When the wallet is already linked to another user, returns:
+     * `{ success: false, loginRequired: true, existingUserId: '...' }`.
+     * Frontend should then prompt for signature verification to log in
+     * as that existing owner.
      *
      * Requires: Cookie must match :id
      * Body: { address }
@@ -172,7 +173,7 @@ export class UserController {
                 return;
             }
 
-            this.logger.info({ userId: id, wallet: address }, 'Wallet connected via API');
+            this.logger.info({ userId: id, wallet: address }, 'Wallet registered via API');
             res.json(result);
         } catch (error) {
             this.logger.error({ error, userId: req.params.id }, 'Failed to connect wallet');
@@ -186,14 +187,17 @@ export class UserController {
     /**
      * POST /api/user/:id/wallet
      *
-     * Link a wallet to user identity (with signature verification).
+     * Verify a wallet on a user identity (cryptographic signature required).
      *
-     * Verifies wallet ownership via TronLink signature. If wallet was
-     * previously connected (unverified), updates it to verified.
+     * Stage 2 of the two-stage wallet flow: verifies wallet ownership via
+     * TronLink signature. If the wallet was previously registered
+     * (`verified: false`), upgrades it to `verified: true`. Either way the
+     * user transitions into the *verified* state.
      *
-     * If wallet belongs to another user, performs identity swap and returns:
-     * { user: IUser, identitySwapped: true, previousUserId: '...' }
-     * Frontend should update cookie/localStorage to the new user ID.
+     * If the wallet belongs to another user, performs identity swap and
+     * returns `{ user: IUser, identitySwapped: true, previousUserId: '...' }`.
+     * Frontend should update cookie/localStorage to the new user ID — this is
+     * the cross-browser login path for *verified* users.
      *
      * Requires: Cookie must match :id, wallet signature verification
      * Body: { address, message, signature, timestamp }
@@ -225,7 +229,7 @@ export class UserController {
                     'Identity swapped via wallet login'
                 );
             } else {
-                this.logger.info({ userId: id, wallet: address }, 'Wallet linked via API');
+                this.logger.info({ userId: id, wallet: address }, 'Wallet verified via API');
             }
 
             res.json(result);
@@ -277,7 +281,8 @@ export class UserController {
      * PATCH /api/user/:id/wallet/:address/primary
      *
      * Set a wallet as primary. Cookie must match :id.
-     * No signature required — wallet ownership was verified during linking.
+     * No signature required — primary selection picks among already-verified
+     * (or registered) wallets and does not change the user's identity state.
      *
      * Response: IUser
      */
@@ -371,66 +376,29 @@ export class UserController {
      */
     async startSession(req: Request, res: Response): Promise<void> {
         try {
-            const { id } = req.params;
-
-            // Extract request context (never stored raw)
-            const clientIP = getClientIP(req);
-            const userAgent = req.headers['user-agent'];
-            const screenWidth = typeof req.body.screenWidth === 'number' ? req.body.screenWidth : undefined;
-
-            // Extract and sanitize landing page path
-            const landingPage = sanitizePath(req.body.landingPage);
-
-            // Extract and sanitize UTM parameters (truncate each field, discard if empty)
-            const rawUtm = req.body.utm;
-            let utm: IUtmParams | undefined = undefined;
-            if (rawUtm && typeof rawUtm === 'object') {
-                const extracted: IUtmParams = {
-                    source: typeof rawUtm.source === 'string' ? rawUtm.source.slice(0, 200) : undefined,
-                    medium: typeof rawUtm.medium === 'string' ? rawUtm.medium.slice(0, 200) : undefined,
-                    campaign: typeof rawUtm.campaign === 'string' ? rawUtm.campaign.slice(0, 500) : undefined,
-                    term: typeof rawUtm.term === 'string' ? rawUtm.term.slice(0, 200) : undefined,
-                    content: typeof rawUtm.content === 'string' ? rawUtm.content.slice(0, 200) : undefined,
-                };
-                if (Object.values(extracted).some(v => v !== undefined)) {
-                    utm = extracted;
-                }
-            }
-
-            // Determine referrer with priority:
-            // 1. Body referrer (explicitly captured by frontend from cookie/document.referrer)
-            // 2. Header referer (fallback, but only if external)
-            // The header is always the current page URL making the API call, so we filter
-            // out internal referrers to avoid recording "tronrelic.com" as the source.
-            let referrer: string | undefined;
-            const bodyReferrer = req.body.referrer;
-            const headerReferrer = req.headers['referer'];
-
-            if (bodyReferrer && typeof bodyReferrer === 'string') {
-                // Frontend explicitly captured an external referrer
-                referrer = bodyReferrer;
-            } else if (headerReferrer && typeof headerReferrer === 'string') {
-                // Only use header referrer if it's from an external domain
-                try {
-                    const siteUrl = await SystemConfigService.getInstance().getSiteUrl();
-                    if (!isInternalReferrer(headerReferrer, siteUrl)) {
-                        referrer = headerReferrer;
-                    }
-                } catch (error) {
-                    // If we can't get site URL, skip header referrer to be safe
-                    this.logger.warn({ error, userId: id }, 'Failed to get site URL for referrer check; skipping header referrer');
-                }
-            }
-
-            const session = await this.userService.startSession(
-                id,
-                clientIP,
-                userAgent,
-                referrer,
-                screenWidth,
-                utm,
-                landingPage
-            );
+            // The controller's job is just HTTP shape: pull request fields,
+            // hand them to the service, return the result. UTM truncation,
+            // empty-UTM detection, and body-vs-header referrer priority
+            // (with internal-domain filtering) all live in `UserService`
+            // so any future caller gets identical behaviour.
+            const session = await this.userService.startSession({
+                userId: req.params.id,
+                clientIP: getClientIP(req),
+                userAgent: typeof req.headers['user-agent'] === 'string'
+                    ? req.headers['user-agent']
+                    : undefined,
+                screenWidth: typeof req.body.screenWidth === 'number'
+                    ? req.body.screenWidth
+                    : undefined,
+                landingPage: sanitizePath(req.body.landingPage),
+                rawUtm: req.body.utm,
+                bodyReferrer: typeof req.body.referrer === 'string'
+                    ? req.body.referrer
+                    : undefined,
+                headerReferrer: typeof req.headers['referer'] === 'string'
+                    ? req.headers['referer']
+                    : undefined
+            });
 
             res.json({ session });
         } catch (error) {
@@ -528,7 +496,9 @@ export class UserController {
      * GET /api/user/:id/referral
      *
      * Get referral code and stats for the authenticated user.
-     * Returns null if user has no referral code (no verified wallet yet).
+     * Returns `{ referral: null }` if the user has no referral code yet —
+     * codes are issued at the moment of transition into the *verified*
+     * identity state, so *anonymous* and *registered* users have none.
      *
      * Requires: Cookie must match :id
      * Response: { code, referredCount, convertedCount } or { referral: null }
@@ -621,11 +591,13 @@ export class UserController {
     /**
      * GET /api/profile/:address
      *
-     * Get public profile by verified wallet address.
+     * Get public profile by wallet address. Profiles only resolve when the
+     * address belongs to a user in the *verified* identity state — i.e. that
+     * specific wallet has `verified: true`.
      *
      * Returns 404 if:
-     * - No user has this wallet linked
-     * - Wallet exists but is not verified
+     * - No user has this wallet linked, OR
+     * - The wallet is registered (unsigned) — owner is *registered*, not *verified*.
      *
      * Response includes user UUID so frontend can determine if visitor is owner
      * by comparing with their cookie.
@@ -649,7 +621,7 @@ export class UserController {
             if (!profile) {
                 res.status(404).json({
                     error: 'Profile not found',
-                    message: 'No verified profile exists for this wallet address'
+                    message: 'This wallet address is not verified or is not linked to any user.'
                 });
                 return;
             }
@@ -677,7 +649,7 @@ export class UserController {
      * - limit: Maximum results (default: 50)
      * - skip: Skip results for pagination (default: 0)
      * - search: Search by UUID or wallet address
-     * - filter: Filter by predefined criteria (e.g., 'power-users', 'no-wallet')
+     * - filter: Filter by predefined criteria (e.g., 'power-users', 'anonymous', 'verified')
      *
      * Filter and search work additively (AND logic). Applying a filter
      * narrows the user set, then search refines within filtered results.
@@ -854,40 +826,23 @@ export class UserController {
     // ============================================================================
 
     /**
-     * Parse query parameters into a date range for analytics queries.
+     * Resolve an analytics date range from Express query params.
      *
-     * Supports two modes: preset periods ('24h', '7d', '30d', '90d') computed
-     * as a rolling window from now, or custom date ranges via startDate/endDate
-     * ISO strings aligned to localized midnight boundaries.
-     *
-     * @param query - Express query parameters
-     * @param defaultPeriod - Default period when none provided (default: '30d')
-     * @returns Date range with since and optional until
+     * Pure HTTP-layer adapter: narrows `req.query` (whose values are
+     * `string | string[] | undefined`) into the typed `IAnalyticsRangeQuery`
+     * shape and delegates to `UserService.resolveAnalyticsRange`. The period
+     * vocabulary, the `startDate >= endDate` validation, and the default
+     * window all live in the service.
      */
     private parseDateRange(query: Record<string, any>, defaultPeriod: string = '30d'): IDateRange {
-        const { startDate, endDate, period } = query;
-
-        if (startDate && endDate) {
-            const since = new Date(startDate as string);
-            const until = new Date(endDate as string);
-            if (!isNaN(since.getTime()) && !isNaN(until.getTime())) {
-                if (since.getTime() > until.getTime()) {
-                    throw new Error('startDate must be before or equal to endDate');
-                }
-                return { since, until };
-            }
-        }
-
-        const map: Record<string, number> = {
-            '24h': 24,
-            '7d': 7 * 24,
-            '30d': 30 * 24,
-            '90d': 90 * 24
-        };
-        const hours = map[(period as string) ?? defaultPeriod] ?? map[defaultPeriod] ?? 30 * 24;
-        const since = new Date();
-        since.setTime(since.getTime() - (hours * 60 * 60 * 1000));
-        return { since };
+        return this.userService.resolveAnalyticsRange(
+            {
+                period:    typeof query.period    === 'string' ? query.period    : undefined,
+                startDate: typeof query.startDate === 'string' ? query.startDate : undefined,
+                endDate:   typeof query.endDate   === 'string' ? query.endDate   : undefined
+            },
+            defaultPeriod
+        );
     }
 
     /**

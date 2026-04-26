@@ -1,26 +1,32 @@
 'use client';
 
 /**
- * TronLink wallet connection hook with two-step linking to User Module.
+ * TronLink wallet connection hook driving the two-stage wallet flow.
  *
- * Provides wallet connection functionality via TronLink browser extension.
- * Wallet linking is a two-step process requiring explicit user action:
+ * Provides wallet connection functionality via the TronLink browser extension.
+ * Wallets are added in two stages mapping to the canonical user states (see
+ * the User Module README for the anonymous / registered / verified taxonomy):
  *
- * 1. **Connect** - User clicks connect, TronLink prompts for account access,
- *    wallet is stored as unverified in backend.
- * 2. **Verify** - User clicks verify, TronLink prompts for signature,
- *    wallet is marked as verified in backend.
+ * 1. **Register** — User clicks connect, TronLink prompts for account access,
+ *    wallet is stored on the backend with `verified: false`. The user
+ *    transitions from *anonymous* to *registered*.
+ * 2. **Verify** — User clicks verify, TronLink prompts for signature,
+ *    wallet is upgraded to `verified: true`. The user becomes *verified*.
+ *
+ * The exposed `connect` and `verify` actions perform stages 1 and 2
+ * respectively. `isVerified` reflects the verified state of the currently
+ * connected wallet (true ⇒ user is at least *verified* via this wallet).
  *
  * @example
  * ```tsx
  * const { connectedAddress, connect, verify, disconnect, isConnected, isVerified } = useWallet();
  *
  * if (!isConnected) {
- *   return <button onClick={connect}>Connect Wallet</button>;
+ *   return <button onClick={connect}>Connect Wallet</button>;  // registers
  * }
  *
  * if (!isVerified) {
- *   return <button onClick={verify}>Verify Wallet</button>;
+ *   return <button onClick={verify}>Verify Wallet</button>;     // verifies
  * }
  *
  * return <button onClick={disconnect}>{connectedAddress}</button>;
@@ -129,17 +135,18 @@ export function useWallet() {
     }, [detectProvider, dispatch, connectedAddress, providerDetected]);
 
     /**
-     * Auto-link wallet to User Module when connected (step 1 only).
+     * Auto-register wallet to the User Module when connected (stage 1 only).
      *
-     * This only stores the wallet as unverified. Verification requires
-     * explicit user action via the verify() function.
+     * Stores the wallet on the backend with `verified: false`, which is what
+     * moves the user into the *registered* state. Upgrading to *verified*
+     * requires explicit user action via the `verify()` function.
      */
     useEffect(() => {
-        // Only attempt link when:
+        // Only attempt registration when:
         // 1. User is initialized (has userId)
-        // 2. Wallet is connected
-        // 3. We haven't already attempted to link this address
-        // 4. Wallet is not already linked (prevents SSR hydration triggering)
+        // 2. Wallet is connected in TronLink
+        // 3. We haven't already attempted this address
+        // 4. Wallet is not already linked (prevents SSR hydration retriggering)
         if (!userInitialized || !userId || !connectedAddress) {
             return;
         }
@@ -156,22 +163,22 @@ export function useWallet() {
 
         linkAttempted.current = connectedAddress;
 
-        // Step 1 only: Connect wallet (stores as unverified)
-        const connectWallet = async () => {
+        // Stage 1 only: register the wallet (stored with verified=false)
+        const registerWallet = async () => {
             try {
                 await dispatch(connectWalletThunk({
                     userId,
                     address: connectedAddress
                 })).unwrap();
                 dispatch(setWalletVerified(false));
-                console.log(`Wallet ${connectedAddress} connected to user ${userId} (unverified)`);
+                console.log(`Wallet ${connectedAddress} registered to user ${userId} (verified=false)`);
             } catch (error) {
-                console.warn('Failed to connect wallet:', error);
+                console.warn('Failed to register wallet:', error);
                 dispatch(setWalletVerified(false));
             }
         };
 
-        connectWallet();
+        registerWallet();
     }, [dispatch, userId, userInitialized, connectedAddress, linkedWallets]);
 
     /**
@@ -291,14 +298,16 @@ export function useWallet() {
     }, [dispatch]);
 
     /**
-     * Verify wallet ownership via TronLink signature (step 2).
+     * Verify wallet ownership via TronLink signature (stage 2).
      *
-     * Requires wallet to be connected first. Prompts user to sign
-     * a message in TronLink to prove wallet ownership.
+     * Requires the wallet to be connected (registered) first. Prompts the user
+     * to sign a message in TronLink, which moves the user into the *verified*
+     * state on the backend.
      *
-     * When walletLoginRequired is true, this performs a login (identity swap)
-     * instead of linking to current user. The signature proves wallet ownership
-     * and the backend will return the existing user's data.
+     * When `walletLoginRequired` is true, this performs a login (identity
+     * swap) instead of attaching the wallet to the current UUID. The signature
+     * proves wallet ownership and the backend returns the existing
+     * (already-verified) user's data, which the frontend then adopts.
      */
     const verify = useCallback(async (): Promise<boolean> => {
         if (!userId || !connectedAddress) {

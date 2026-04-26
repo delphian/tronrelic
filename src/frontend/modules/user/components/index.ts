@@ -17,3 +17,4 @@ export { VisitorAnalytics } from './admin';
 export { AnalyticsDashboard } from './admin';
 export { ReferralOverview } from './admin';
 export { GscSettings } from './admin';
+export { GroupsManager } from './admin';

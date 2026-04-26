@@ -7,6 +7,7 @@
  */
 
 import { createSlice, createAsyncThunk, type PayloadAction } from '@reduxjs/toolkit';
+import type { UserIdentityState } from '@/types';
 import type { IUserData, IWalletLink, IUserPreferences } from './types';
 import {
     fetchUser,
@@ -87,9 +88,10 @@ export interface UserState {
     connectionError: string | null;
 
     /**
-     * Whether the connected wallet has been cryptographically verified.
-     * True = signature verified (linked to backend)
-     * False = connected but no signature (display-only)
+     * Whether the currently connected wallet has been cryptographically signed.
+     * True  = wallet is verified on the backend; user is in the *verified* state.
+     * False = wallet is registered (connected, no signature); user is in the
+     *         *registered* state with respect to this wallet.
      */
     walletVerified: boolean;
 
@@ -159,11 +161,17 @@ export const initializeUser = createAsyncThunk(
 );
 
 /**
- * Connect a wallet to the current user (without verification).
- * This is step 1 of the two-step wallet flow.
+ * Register a wallet to the current user (no signature).
  *
- * When wallet is already linked to another user, returns loginRequired=true.
- * Frontend should then prompt for signature verification to login.
+ * Stage 1 of the two-stage wallet flow: stores the wallet on the backend
+ * with `verified: false` and moves the user from *anonymous* to
+ * *registered*. The thunk name `connectWalletThunk` matches the underlying
+ * HTTP route (`POST /api/user/:id/wallet/connect`); the *effect* is
+ * registration.
+ *
+ * When the wallet is already linked to another user, returns
+ * `loginRequired: true`. Frontend should then prompt for signature
+ * verification to log in as that existing owner.
  */
 export const connectWalletThunk = createAsyncThunk(
     'user/connectWallet',
@@ -183,11 +191,18 @@ export const connectWalletThunk = createAsyncThunk(
 );
 
 /**
- * Link a wallet to the current user (with signature verification).
- * This is step 2 of the two-step wallet flow.
+ * Verify a wallet on the current user (cryptographic signature required).
  *
- * If wallet belongs to another user, performs identity swap and returns
- * identitySwapped=true. Frontend will update cookie/localStorage to new ID.
+ * Stage 2 of the two-stage wallet flow: upgrades a registered wallet to
+ * `verified: true` (or adds it as already verified) and moves the user
+ * into the *verified* state. The thunk name `linkWalletThunk` matches the
+ * underlying HTTP route (`POST /api/user/:id/wallet`); the *effect* is
+ * verification.
+ *
+ * If the wallet belongs to another user, performs identity swap and returns
+ * `identitySwapped: true` with the existing owner's data. Frontend updates
+ * cookie/localStorage to the new ID — this is the cross-browser login path
+ * for *verified* users.
  */
 export const linkWalletThunk = createAsyncThunk(
     'user/linkWallet',
@@ -495,7 +510,7 @@ const userSlice = createSlice({
                 state.initialized = true; // Mark as initialized even on failure
             });
 
-        // Connect wallet (unverified)
+        // Register wallet (stage 1: backend stores wallet with verified=false)
         builder
             .addCase(connectWalletThunk.pending, (state) => {
                 state.status = 'loading';
@@ -523,7 +538,7 @@ const userSlice = createSlice({
                 state.error = action.payload as string;
             });
 
-        // Link wallet (verified)
+        // Verify wallet (stage 2: backend upgrades wallet to verified=true)
         builder
             .addCase(linkWalletThunk.pending, (state) => {
                 state.status = 'loading';
@@ -690,22 +705,62 @@ export const selectUserInitialized = (state: { user: UserState }): boolean =>
     state.user.initialized;
 
 /**
- * Select whether user has any linked wallets.
+ * Select the user's canonical identity state (anonymous / registered / verified).
+ *
+ * This reads the stored `identityState` field directly. Prefer this — and the
+ * `selectIsAnonymous` / `selectIsRegistered` / `selectIsVerified` shortcuts —
+ * over deriving the value from `wallets`. Falls back to `'anonymous'` when
+ * user data has not yet loaded (no userData), which lets components treat
+ * the pre-init state as the safest possible value.
  */
-export const selectHasWallets = (state: { user: UserState }): boolean =>
-    (state.user.userData?.wallets?.length ?? 0) > 0;
+export const selectIdentityState = (state: { user: UserState }): UserIdentityState =>
+    state.user.userData?.identityState ?? 'anonymous';
 
 /**
- * Select whether user has at least one cryptographically verified wallet.
+ * Select whether the user is in the *anonymous* identity state.
+ */
+export const selectIsAnonymous = (state: { user: UserState }): boolean =>
+    selectIdentityState(state) === 'anonymous';
+
+/**
+ * Select whether the user is in the *registered* identity state.
+ *
+ * Registered = at least one wallet linked, none cryptographically signed.
+ */
+export const selectIsRegistered = (state: { user: UserState }): boolean =>
+    selectIdentityState(state) === 'registered';
+
+/**
+ * Select whether the user is in the *verified* identity state.
+ *
+ * Verified = at least one cryptographically signed wallet.
+ */
+export const selectIsVerified = (state: { user: UserState }): boolean =>
+    selectIdentityState(state) === 'verified';
+
+/**
+ * Select whether the user has at least one linked wallet (registered or verified).
+ *
+ * Equivalent to `identityState !== 'anonymous'`.
+ */
+export const selectHasWallets = (state: { user: UserState }): boolean =>
+    selectIdentityState(state) !== 'anonymous';
+
+/**
+ * Select whether the user has at least one cryptographically signed wallet.
+ *
+ * Equivalent to `selectIsVerified`. Kept as an alias for callers reasoning
+ * about per-wallet verification status rather than per-user identity state.
  */
 export const selectHasVerifiedWallet = (state: { user: UserState }): boolean =>
-    state.user.userData?.wallets?.some(w => w.verified) ?? false;
+    selectIsVerified(state);
 
 /**
  * Select whether user is logged in (UI/feature gate).
  *
  * When false, frontend shows "Connect" button and hides logged-in features.
- * UUID tracking continues regardless of this flag.
+ * UUID tracking continues regardless of this flag, and this is independent
+ * of `identityState` — a user can be logged in or out at any state.
  */
 export const selectIsLoggedIn = (state: { user: UserState }): boolean =>
     state.user.userData?.isLoggedIn ?? false;

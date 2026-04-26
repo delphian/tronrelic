@@ -10,18 +10,18 @@
 .container {
     display: flex;
     flex-direction: column;
-    gap: var(--spacing-10);
+    gap: var(--gap-lg);
 }
 
 .controls {
     display: flex;
     align-items: center;
-    gap: var(--spacing-5);
+    gap: var(--input-group-gap);
     flex-wrap: wrap;
 }
 
 .controls__label {
-    font-size: var(--font-size-sm);
+    font-size: var(--font-size-body-sm);
     color: var(--color-text-muted);
     font-weight: var(--font-weight-medium);
 }
@@ -29,7 +29,7 @@
 .metrics_grid {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
-    gap: var(--spacing-5);
+    gap: var(--grid-gap-sm);
     container-type: inline-size;
     container-name: referral-metrics;
 }
@@ -42,31 +42,31 @@
 
 .metric_card {
     text-align: center;
-    padding: var(--spacing-7);
+    padding: var(--card-padding-sm);
 }
 
 .metric_card__value {
-    font-size: var(--font-size-xl);
+    font-size: var(--font-size-heading-md);
     font-weight: var(--font-weight-bold);
     color: var(--color-primary);
     line-height: var(--line-height-tight);
 }
 
 .metric_card__label {
-    font-size: var(--font-size-xs);
+    font-size: var(--font-size-caption);
     color: var(--color-text-muted);
-    margin-top: var(--spacing-3);
+    margin-top: var(--gap-xs);
 }
 
 .section_title {
-    font-size: var(--font-size-lg);
+    font-size: var(--font-size-heading-sm);
     font-weight: var(--font-weight-semibold);
     color: var(--color-text);
-    margin: 0 0 var(--spacing-5) 0;
+    margin: 0 0 var(--input-group-gap) 0;
 }
 
 .title_icon {
-    margin-right: var(--spacing-4);
+    margin-right: var(--gap-sm);
     vertical-align: middle;
 }
 
@@ -77,22 +77,22 @@
 .table {
     width: 100%;
     border-collapse: collapse;
-    font-size: var(--font-size-sm);
+    font-size: var(--font-size-body-sm);
 }
 
 .table th {
     text-align: left;
-    padding: var(--spacing-4) var(--spacing-5);
+    padding: var(--gap-sm) var(--input-group-gap);
     font-weight: var(--font-weight-semibold);
     color: var(--color-text-muted);
-    font-size: var(--font-size-xs);
+    font-size: var(--font-size-caption);
     text-transform: uppercase;
-    letter-spacing: 0.05em;
+    letter-spacing: var(--letter-spacing-wide);
     border-bottom: var(--border-width-thin) solid var(--color-border);
 }
 
 .table td {
-    padding: var(--spacing-4) var(--spacing-5);
+    padding: var(--gap-sm) var(--input-group-gap);
     color: var(--color-text);
     border-bottom: var(--border-width-thin) solid var(--color-border);
     vertical-align: middle;
@@ -108,20 +108,20 @@
 }
 
 .table__mono {
-    font-family: monospace;
-    font-size: var(--font-size-xs);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-caption);
 }
 
 .empty_state {
     text-align: center;
-    padding: var(--spacing-12);
+    padding: var(--card-padding-lg);
     color: var(--color-text-muted);
-    font-size: var(--font-size-sm);
+    font-size: var(--font-size-body-sm);
 }
 
 .loading {
     text-align: center;
-    padding: var(--spacing-12);
+    padding: var(--card-padding-lg);
     color: var(--color-text-muted);
-    font-size: var(--font-size-sm);
+    font-size: var(--font-size-body-sm);
 }

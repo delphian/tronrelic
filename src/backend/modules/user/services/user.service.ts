@@ -4,8 +4,10 @@ import type { Collection } from 'mongodb';
 import type {
     IDatabaseService,
     ICacheService,
+    ISystemConfigService,
     ISystemLogService,
     UserFilterType,
+    UserIdentityState,
     IUserActivitySummary,
     IUserWalletSummary,
     IUserRetentionSummary,
@@ -41,6 +43,7 @@ import type {
     IUser,
     ICreateUserInput,
     ILinkWalletInput,
+    IStartSessionInput,
     IUserPreferences,
     IUserSession,
     IPageVisit,
@@ -53,7 +56,8 @@ import {
     extractReferrerDomain,
     extractSearchKeyword,
     getDeviceCategory,
-    getScreenSizeCategory
+    getScreenSizeCategory,
+    isInternalReferrer
 } from './geo.service.js';
 import type TronWeb from 'tronweb';
 import { SignatureService } from '../../auth/signature.service.js';
@@ -71,6 +75,23 @@ export interface IDateRange {
     since: Date;
     /** End of the query window (inclusive). When omitted, queries run to now. */
     until?: Date;
+}
+
+/**
+ * Raw query input understood by `UserService.resolveAnalyticsRange`.
+ *
+ * The HTTP layer passes `req.query` straight in. The service owns the
+ * vocabulary of preset periods (`'24h'`, `'7d'`, `'30d'`, `'90d'`) and the
+ * default fallback so any caller — admin dashboard, scheduled job, future
+ * webhook — gets the same date math.
+ */
+export interface IAnalyticsRangeQuery {
+    /** Preset window name. Recognised: `'24h'`, `'7d'`, `'30d'`, `'90d'`. */
+    period?: string;
+    /** ISO start timestamp for a custom range. Both startDate and endDate must be valid. */
+    startDate?: string;
+    /** ISO end timestamp for a custom range. Both startDate and endDate must be valid. */
+    endDate?: string;
 }
 
 /**
@@ -120,6 +141,10 @@ export interface ILinkWalletResult {
 
 /**
  * Public profile data for a verified wallet address.
+ *
+ * Profiles only exist for users in the *verified* state — a registered
+ * (unsigned) wallet does not own a public profile because the claim is
+ * not cryptographically proven.
  */
 export interface IPublicProfile {
     /** UUID of the user who owns this profile */
@@ -128,7 +153,7 @@ export interface IPublicProfile {
     address: string;
     /** When the user account was created */
     createdAt: Date;
-    /** Always true (only verified profiles are returned) */
+    /** Always true (only verified wallets resolve to a public profile) */
     isVerified: true;
 }
 
@@ -161,11 +186,14 @@ export interface IVisitorOrigin {
  *
  * ## Design Decisions
  *
- * - **Anonymous-first identity**: Users start with client-generated UUIDs, no registration required
- * - **Multi-wallet support**: One UUID can link to multiple TRON addresses
+ * - **Anonymous-first identity**: Users start with client-generated UUIDs (the *anonymous* state),
+ *   no signup required
+ * - **Multi-wallet support**: One UUID can link to multiple TRON addresses; a user is *registered*
+ *   once any wallet is connected and *verified* once any wallet is signature-proven
  * - **Server-side validation**: UUIDs are validated on server to prevent tampering
  * - **Cache strategy**: Individual user cache with 1-hour TTL, invalidated on updates
- * - **Wallet-based login**: Users can recover identity by proving wallet ownership from new devices
+ * - **Wallet-based login**: *Verified* users can recover identity by proving wallet ownership from
+ *   new devices (the only state that survives cookie/localStorage loss)
  *
  * ## Future Extensibility
  *
@@ -199,11 +227,14 @@ export class UserService {
      * @param database - Database service for MongoDB operations
      * @param cacheService - Redis cache for user data
      * @param logger - System log service for operations tracking
+     * @param systemConfig - System config service for site URL lookups
+     *                      (used by `startSession` to filter internal referrers)
      */
     private constructor(
         private readonly database: IDatabaseService,
         private readonly cacheService: ICacheService,
         private readonly logger: ISystemLogService,
+        private readonly systemConfig: ISystemConfigService,
         tronWeb: TronWeb
     ) {
         this.collection = database.getCollection<IUserDocument>('users');
@@ -219,16 +250,18 @@ export class UserService {
      * @param database - Database service
      * @param cacheService - Cache service
      * @param logger - System log service
+     * @param systemConfig - System config service (for site URL lookups)
      * @param tronWeb - Configured TronWeb instance from the service registry
      */
     public static setDependencies(
         database: IDatabaseService,
         cacheService: ICacheService,
         logger: ISystemLogService,
+        systemConfig: ISystemConfigService,
         tronWeb: TronWeb
     ): void {
         if (!UserService.instance) {
-            UserService.instance = new UserService(database, cacheService, logger, tronWeb);
+            UserService.instance = new UserService(database, cacheService, logger, systemConfig, tronWeb);
         }
     }
 
@@ -312,11 +345,12 @@ export class UserService {
             return user;
         }
 
-        // Create new user
+        // Create new user — starts in the *anonymous* identity state
         const now = new Date();
         const newUser: Omit<IUserDocument, '_id'> = {
             id,
             isLoggedIn: false,
+            identityState: 'anonymous',
             wallets: [],
             preferences: {},
             activity: {
@@ -330,6 +364,7 @@ export class UserService {
                 countryCounts: {},
                 origin: null
             },
+            groups: [],
             referral: null,
             createdAt: now,
             updatedAt: now
@@ -427,11 +462,13 @@ export class UserService {
     /**
      * Get public profile by verified wallet address.
      *
-     * Returns profile data only if the wallet is verified. Unverified wallets
-     * or non-existent addresses return null.
+     * Returns profile data only if the wallet is verified. Wallets that are
+     * merely registered (claimed but not signed) and non-existent addresses
+     * both return null — public profiles only exist for users in the
+     * *verified* state.
      *
      * @param address - Base58 TRON address
-     * @returns Public profile or null if not found/not verified
+     * @returns Public profile or null if not found / not verified
      */
     async getPublicProfile(address: string): Promise<IPublicProfile | null> {
         // Normalize address using signature service (handles TRON address format)
@@ -448,8 +485,8 @@ export class UserService {
             return null;
         }
 
-        // Find the specific wallet and check if verified
-        // Use normalized address for comparison (addresses are stored normalized)
+        // Find the specific wallet and check whether it's verified.
+        // A registered (unsigned) wallet does not resolve to a public profile.
         const wallet = user.wallets.find(w => w.address === normalizedAddress);
         if (!wallet || !wallet.verified) {
             return null;
@@ -466,21 +503,28 @@ export class UserService {
     // ==================== Wallet Linking ====================
 
     /**
-     * Connect a wallet to a user identity (without verification).
+     * Register a wallet to a user identity (without verification).
      *
-     * Stores the wallet address as unverified. If wallet already exists,
-     * updates lastUsed timestamp. Automatically recalculates isPrimary.
+     * Stores the wallet address with `verified=false`. If the wallet already
+     * exists on this user, updates the `lastUsed` timestamp. Automatically
+     * recalculates `isPrimary`.
      *
-     * This is the first step in the two-step wallet flow:
-     * 1. Connect: Store address with verified=false (this method)
-     * 2. Verify: Update to verified=true via linkWallet()
+     * This is stage 1 of the two-stage wallet flow (see User Module README):
+     * 1. **Register** (this method): store address with `verified=false`. The
+     *    user transitions from *anonymous* to *registered*.
+     * 2. **Verify** (`linkWallet`): upgrade to `verified=true` after signature
+     *    verification. The user becomes *verified*.
      *
-     * When wallet is already linked to another user, returns `loginRequired: true`
-     * instead of throwing an error. Frontend should prompt for signature to login.
+     * The method name `connectWallet` is preserved for HTTP wire compatibility
+     * (`POST /api/user/:id/wallet/connect`); the *effect* is registration.
      *
-     * @param userId - UUID of user to connect wallet to
+     * When the wallet is already linked to another user, returns
+     * `loginRequired: true` instead of throwing. Frontend should then prompt
+     * for a signature to log in as the existing owner.
+     *
+     * @param userId - UUID of user to register the wallet to
      * @param address - Base58 TRON address
-     * @returns Connection result with success status or login requirement
+     * @returns Result with success status or login requirement
      * @throws Error if user not found or address invalid
      */
     async connectWallet(userId: string, address: string): Promise<IConnectWalletResult> {
@@ -524,7 +568,7 @@ export class UserService {
             // Wallet already exists - update lastUsed
             doc.wallets[existingWalletIndex].lastUsed = now;
         } else {
-            // Add new unverified wallet
+            // Add a new wallet in registered state (verified=false until signed)
             const walletLink: IWalletLink = {
                 address: normalizedAddress,
                 linkedAt: now,
@@ -535,8 +579,9 @@ export class UserService {
             doc.wallets.push(walletLink);
         }
 
-        // Recalculate primary wallet
+        // Recalculate primary wallet and identity state from the new wallets array
         this.recalculatePrimaryWallet(doc.wallets);
+        this.recomputeIdentityState(doc);
 
         // Update database
         await this.collection.updateOne(
@@ -544,12 +589,13 @@ export class UserService {
             {
                 $set: {
                     wallets: doc.wallets,
+                    identityState: doc.identityState,
                     updatedAt: now
                 }
             }
         );
 
-        this.logger.info({ userId, wallet: normalizedAddress, verified: false }, 'Wallet connected to user');
+        this.logger.info({ userId, wallet: normalizedAddress, identityState: doc.identityState }, 'Wallet registered to user');
 
         // Invalidate cache
         await this.invalidateUserCache(userId);
@@ -568,15 +614,23 @@ export class UserService {
     }
 
     /**
-     * Link a wallet to a user identity.
+     * Verify a wallet on a user identity (cryptographic signature required).
      *
-     * Verifies wallet ownership via TronLink signature before linking.
-     * If wallet belongs to another user, performs identity swap (returns
-     * existing user's data instead of current user).
+     * Verifies wallet ownership via TronLink signature, then either upgrades
+     * the existing wallet to `verified: true` or adds it as already verified
+     * if it wasn't previously registered. Either way, the user transitions
+     * into the *verified* state on success.
      *
-     * @param userId - UUID of user attempting to link wallet
+     * If the wallet belongs to another user, performs identity swap (returns
+     * the existing owner's data instead of the caller's). This is how a
+     * *verified* user logs back in from a fresh browser.
+     *
+     * The method name `linkWallet` is preserved for HTTP wire compatibility
+     * (`POST /api/user/:id/wallet`); the *effect* is verification.
+     *
+     * @param userId - UUID of the caller attempting to verify the wallet
      * @param input - Wallet address, signature message, and signature
-     * @returns Link result with user data and optional identity swap indicator
+     * @returns Result with user data and optional identity swap indicator
      * @throws Error if signature invalid or user not found
      */
     async linkWallet(userId: string, input: ILinkWalletInput): Promise<ILinkWalletResult> {
@@ -637,9 +691,17 @@ export class UserService {
             // Recalculate primary wallet across merged set
             this.recalculatePrimaryWallet(mergedWallets);
 
+            // Recompute the winner's identity state from the merged wallets.
+            // The disputed wallet was just marked verified, so the winner is
+            // guaranteed to be in the *verified* state — but we recompute
+            // from the array rather than hardcode, to keep this code path
+            // honest if `mergedWallets` changes shape later.
+            const winnerIdentityState = this.computeIdentityState(mergedWallets);
+
             // Generate referral code on winner if they don't have one yet
             const winnerUpdateFields: Record<string, unknown> = {
                 wallets: mergedWallets,
+                identityState: winnerIdentityState,
                 'activity.lastSeen': nowDate,
                 updatedAt: nowDate
             };
@@ -658,12 +720,15 @@ export class UserService {
                 { $set: winnerUpdateFields }
             );
 
-            // Create tombstone on loser — clear wallets, set merge pointer
+            // Create tombstone on loser — clear wallets, set merge pointer.
+            // A tombstone has no wallets, so its identityState is forced to
+            // 'anonymous' to keep the field honest with the empty array.
             await this.collection.updateOne(
                 { id: loserId },
                 {
                     $set: {
                         wallets: [],
+                        identityState: 'anonymous' as UserIdentityState,
                         mergedInto: winnerId,
                         updatedAt: nowDate
                     }
@@ -722,12 +787,14 @@ export class UserService {
             doc.wallets.push(walletLink);
         }
 
-        // Recalculate primary wallet
+        // Recalculate primary wallet and identity state from the updated wallets array
         this.recalculatePrimaryWallet(doc.wallets);
+        this.recomputeIdentityState(doc);
 
         // Generate referral code on first wallet verification if user doesn't have one
         const updateFields: Record<string, unknown> = {
             wallets: doc.wallets,
+            identityState: doc.identityState,
             updatedAt: nowDate
         };
         if (!doc.referral?.code) {
@@ -746,7 +813,7 @@ export class UserService {
             { $set: updateFields }
         );
 
-        this.logger.info({ userId, wallet: normalizedAddress, verified: true }, 'Wallet verified and linked to user');
+        this.logger.info({ userId, wallet: normalizedAddress, identityState: doc.identityState }, 'Wallet verified and linked to user');
 
         // Invalidate cache
         await this.invalidateUserCache(userId);
@@ -804,8 +871,11 @@ export class UserService {
         // Remove wallet
         doc.wallets.splice(walletIndex, 1);
 
-        // Recalculate primary wallet
+        // Recalculate primary wallet and identity state from the updated wallets array.
+        // Unlinking the last verified wallet may demote the user from
+        // 'verified' to 'registered' (if other wallets remain) or 'anonymous'.
         this.recalculatePrimaryWallet(doc.wallets);
+        this.recomputeIdentityState(doc);
 
         // Update database
         await this.collection.updateOne(
@@ -813,12 +883,13 @@ export class UserService {
             {
                 $set: {
                     wallets: doc.wallets,
+                    identityState: doc.identityState,
                     updatedAt: new Date()
                 }
             }
         );
 
-        this.logger.info({ userId, wallet: normalizedAddress }, 'Wallet unlinked from user');
+        this.logger.info({ userId, wallet: normalizedAddress, identityState: doc.identityState }, 'Wallet unlinked from user');
 
         // Invalidate caches
         await this.invalidateUserCache(userId);
@@ -837,9 +908,9 @@ export class UserService {
      * No signature required — wallet ownership was verified during linking.
      * Cookie validation ensures only the owning user can call this endpoint.
      *
-     * Note: If setting an unverified wallet but verified wallets exist, the
-     * most recent verified wallet will still be selected as primary.
-     * Verified wallets always take precedence.
+     * Note: If the requested wallet is registered (unsigned) but the user
+     * has at least one verified wallet, the most recent verified wallet
+     * is still selected as primary. Verified wallets always take precedence.
      *
      * @param userId - UUID of user
      * @param address - Wallet address to set as primary
@@ -1022,33 +1093,40 @@ export class UserService {
     /**
      * Start a new session for a user.
      *
-     * Creates a new session entry with device, referrer, country, and screen size info.
-     * If there's an active session within the timeout window, returns it instead.
+     * Creates a new session entry with device, referrer, country, and screen
+     * size info. If there's an active session within the timeout window,
+     * returns it instead.
      *
-     * @param userId - UUID of user
-     * @param clientIP - Client IP address (for country lookup, never stored)
-     * @param userAgent - User-agent header (for device detection, never stored raw)
-     * @param referrer - Referrer URL (domain extracted, full URL never stored)
-     * @param screenWidth - Viewport width in pixels (client-provided)
+     * Owns the domain rules around session inputs: UTM truncation/empty
+     * detection (`extractUtmParams`) and the body-vs-header referrer
+     * priority with internal-domain filtering (`resolveSessionReferrer`).
+     * The controller passes raw request fields via `IStartSessionInput` and
+     * does not interpret them.
+     *
+     * @param input - Raw session input fields (userId, clientIP, userAgent,
+     *                screenWidth, landingPage, rawUtm, bodyReferrer,
+     *                headerReferrer)
      * @returns The active session
      */
-    async startSession(
-        userId: string,
-        clientIP?: string,
-        userAgent?: string,
-        referrer?: string,
-        screenWidth?: number,
-        utm?: IUtmParams,
-        landingPage?: string
-    ): Promise<IUserSession> {
+    async startSession(input: IStartSessionInput): Promise<IUserSession> {
         try {
-            // Resolve to canonical UUID if this identity was merged
+            const { clientIP, userAgent, screenWidth, landingPage } = input;
+
+            // Apply the domain rules for UTM and referrer here, in the
+            // service, so any caller (HTTP, future webhook, backfill job)
+            // gets identical behaviour.
+            const utm = this.extractUtmParams(input.rawUtm);
+            const referrer = await this.resolveSessionReferrer(
+                input.bodyReferrer,
+                input.headerReferrer
+            );
+
             // Resolve to canonical document (single DB hit, follows merge pointer if needed)
-            const doc = await this.resolveDocument(userId);
+            const doc = await this.resolveDocument(input.userId);
             if (!doc) {
-                throw new Error(`User with id "${userId}" not found`);
+                throw new Error(`User with id "${input.userId}" not found`);
             }
-            userId = doc.id;
+            const userId = doc.id;
 
             // Initialize activity fields if missing (migration support)
             const activity = this.ensureActivityFields(doc.activity);
@@ -1188,7 +1266,11 @@ export class UserService {
 
             return newSession;
         } catch (error) {
-            this.logger.warn({ userId, error }, 'Failed to start session');
+            // Use input.userId here: the canonical `userId` is bound
+            // inside the try (`const userId = doc.id`) so it isn't visible
+            // in the catch — and may not be bound at all if resolveDocument
+            // threw before reaching that line.
+            this.logger.warn({ userId: input.userId, error }, 'Failed to start session');
             throw error;
         }
     }
@@ -1656,27 +1738,22 @@ export class UserService {
                 };
 
             // ==================== Wallet Status ====================
-            case 'verified-wallet':
-                return {
-                    'wallets.verified': true
-                };
+            // Identity-state filters read the stored `identityState` directly.
+            case 'anonymous':
+                return { identityState: 'anonymous' };
+
+            case 'registered':
+                return { identityState: 'registered' };
+
+            case 'verified':
+                return { identityState: 'verified' };
 
             case 'multi-wallet':
                 return {
                     'wallets.1': { $exists: true } // At least 2 wallets
                 };
 
-            case 'no-wallet':
-                // Note: This query is also used in 'conversion-candidates'.
-                // If wallet-related filters grow, extract to a shared constant.
-                return {
-                    $or: [
-                        { wallets: { $size: 0 } },
-                        { wallets: { $exists: false } }
-                    ]
-                };
-
-            case 'recently-connected':
+            case 'recently-registered':
                 return {
                     'wallets.linkedAt': { $gte: weekAgo }
                 };
@@ -1896,28 +1973,25 @@ export class UserService {
 
             // ==================== Quick Picks (Compound) ====================
             case 'high-value':
-                // Verified wallet + active this week + pageViews > 50
+                // Verified user + active this week + pageViews > 50
                 return {
-                    'wallets.verified': true,
+                    identityState: 'verified',
                     'activity.lastSeen': { $gte: weekAgo },
                     'activity.pageViews': { $gt: 50 }
                 };
 
             case 'at-risk':
-                // Churned + has wallet
+                // Churned but has at least one wallet (registered or verified)
                 return {
                     'activity.lastSeen': { $lt: thirtyDaysAgo },
-                    'wallets.0': { $exists: true }
+                    identityState: { $in: ['registered', 'verified'] }
                 };
 
             case 'conversion-candidates':
-                // High engagement but no wallet
+                // High engagement but still anonymous
                 return {
                     'activity.pageViews': { $gt: 50 },
-                    $or: [
-                        { wallets: { $size: 0 } },
-                        { wallets: { $exists: false } }
-                    ]
+                    identityState: 'anonymous'
                 };
 
             case 'all':
@@ -1945,7 +2019,8 @@ export class UserService {
             walletStats
         ] = await Promise.all([
             this.collection.countDocuments({}),
-            this.collection.countDocuments({ 'wallets.0': { $exists: true } }),
+            // "Users with wallets" = users in registered or verified state.
+            this.collection.countDocuments({ identityState: { $in: ['registered', 'verified'] } }),
             this.collection.countDocuments({ 'activity.lastSeen': { $gte: todayStart } }),
             this.collection.countDocuments({ 'activity.lastSeen': { $gte: weekStart } }),
             this.collection.aggregate([
@@ -2316,31 +2391,12 @@ export class UserService {
                                 avgSessions: { $avg: { $ifNull: ['$activity.sessionsCount', 0] } },
                                 avgPageViews: { $avg: { $ifNull: ['$activity.pageViews', 0] } },
                                 avgDuration: { $avg: { $ifNull: ['$activity.totalDurationSeconds', 0] } },
+                                // Read identity state directly from the stored field.
                                 walletsConnected: {
-                                    $sum: {
-                                        $cond: [
-                                            { $gt: [{ $size: { $ifNull: ['$wallets', []] } }, 0] },
-                                            1, 0
-                                        ]
-                                    }
+                                    $sum: { $cond: [{ $in: ['$identityState', ['registered', 'verified']] }, 1, 0] }
                                 },
                                 walletsVerified: {
-                                    $sum: {
-                                        $cond: [
-                                            {
-                                                $gt: [{
-                                                    $size: {
-                                                        $filter: {
-                                                            input: { $ifNull: ['$wallets', []] },
-                                                            as: 'w',
-                                                            cond: { $eq: ['$$w.verified', true] }
-                                                        }
-                                                    }
-                                                }, 0]
-                                            },
-                                            1, 0
-                                        ]
-                                    }
+                                    $sum: { $cond: [{ $eq: ['$identityState', 'verified'] }, 1, 0] }
                                 }
                             }
                         }
@@ -2696,18 +2752,12 @@ export class UserService {
             {
                 $project: {
                     utm: '$activity.origin.utm',
-                    hasWallet: { $gt: [{ $size: { $ifNull: ['$wallets', []] } }, 0] },
-                    hasVerifiedWallet: {
-                        $gt: [{
-                            $size: {
-                                $filter: {
-                                    input: { $ifNull: ['$wallets', []] },
-                                    as: 'w',
-                                    cond: { $eq: ['$$w.verified', true] }
-                                }
-                            }
-                        }, 0]
-                    }
+                    // Read identity state directly from the stored field rather
+                    // than re-deriving from `wallets`. `$in` against the
+                    // canonical UserIdentityState values keeps the projection
+                    // honest with the taxonomy.
+                    hasWallet: { $in: ['$identityState', ['registered', 'verified']] },
+                    hasVerifiedWallet: { $eq: ['$identityState', 'verified'] }
                 }
             },
             {
@@ -2841,23 +2891,12 @@ export class UserService {
                     returnVisitors: {
                         $sum: { $cond: [{ $gt: [{ $ifNull: ['$activity.sessionsCount', 0] }, 1] }, 1, 0] }
                     },
+                    // Funnel stages read identity state directly.
                     walletConnected: {
-                        $sum: { $cond: [{ $gt: [{ $size: { $ifNull: ['$wallets', []] } }, 0] }, 1, 0] }
+                        $sum: { $cond: [{ $in: ['$identityState', ['registered', 'verified']] }, 1, 0] }
                     },
                     walletVerified: {
-                        $sum: {
-                            $cond: [{
-                                $gt: [{
-                                    $size: {
-                                        $filter: {
-                                            input: { $ifNull: ['$wallets', []] },
-                                            as: 'w',
-                                            cond: { $eq: ['$$w.verified', true] }
-                                        }
-                                    }
-                                }, 0]
-                            }, 1, 0]
-                        }
+                        $sum: { $cond: [{ $eq: ['$identityState', 'verified'] }, 1, 0] }
                     }
                 }
             }
@@ -2983,9 +3022,10 @@ export class UserService {
 
         const [referredCount, convertedCount] = await Promise.all([
             this.collection.countDocuments({ 'referral.referredBy': referralCode }),
+            // Converted = referred user reached the *verified* state.
             this.collection.countDocuments({
                 'referral.referredBy': referralCode,
-                wallets: { $elemMatch: { verified: true } }
+                identityState: 'verified'
             })
         ]);
 
@@ -3035,20 +3075,9 @@ export class UserService {
                 $group: {
                     _id: null,
                     totalReferrals: { $sum: 1 },
+                    // "Converted" = referred user reached the *verified* state.
                     totalConverted: {
-                        $sum: {
-                            $cond: [{
-                                $gt: [{
-                                    $size: {
-                                        $filter: {
-                                            input: { $ifNull: ['$wallets', []] },
-                                            as: 'w',
-                                            cond: { $eq: ['$$w.verified', true] }
-                                        }
-                                    }
-                                }, 0]
-                            }, 1, 0]
-                        }
+                        $sum: { $cond: [{ $eq: ['$identityState', 'verified'] }, 1, 0] }
                     }
                 }
             }
@@ -3071,19 +3100,7 @@ export class UserService {
                     _id: '$referral.referredBy',
                     referredCount: { $sum: 1 },
                     convertedCount: {
-                        $sum: {
-                            $cond: [{
-                                $gt: [{
-                                    $size: {
-                                        $filter: {
-                                            input: { $ifNull: ['$wallets', []] },
-                                            as: 'w',
-                                            cond: { $eq: ['$$w.verified', true] }
-                                        }
-                                    }
-                                }, 0]
-                            }, 1, 0]
-                        }
+                        $sum: { $cond: [{ $eq: ['$identityState', 'verified'] }, 1, 0] }
                     }
                 }
             },
@@ -3128,7 +3145,7 @@ export class UserService {
         const recentResult = await this.collection
             .find(
                 { 'referral.referredBy': { $ne: null, $exists: true }, ...referredAtFilter },
-                { projection: { id: 1, referral: 1, wallets: 1 } }
+                { projection: { id: 1, referral: 1, identityState: 1 } }
             )
             .sort({ 'referral.referredAt': -1 })
             .limit(25)
@@ -3138,7 +3155,8 @@ export class UserService {
             userId: doc.id,
             referredBy: doc.referral?.referredBy ?? '',
             referredAt: doc.referral?.referredAt ? (doc.referral.referredAt as Date).toISOString() : '',
-            hasVerifiedWallet: (doc.wallets ?? []).some((w: { verified?: boolean }) => !!w.verified)
+            // Read directly from the canonical stored state.
+            hasVerifiedWallet: doc.identityState === 'verified'
         }));
 
         return {
@@ -3243,8 +3261,9 @@ export class UserService {
                             {
                                 $group: {
                                     _id: null,
+                                    // "Users without wallets" = anonymous users.
                                     usersWithoutWallets: {
-                                        $sum: { $cond: [{ $eq: [{ $size: { $ifNull: ['$wallets', []] } }, 0] }, 1, 0] }
+                                        $sum: { $cond: [{ $eq: ['$identityState', 'anonymous'] }, 1, 0] }
                                     },
                                     usersWithMultiple: {
                                         $sum: { $cond: [{ $gt: [{ $size: { $ifNull: ['$wallets', []] } }, 1] }, 1, 0] }
@@ -4200,21 +4219,14 @@ export class UserService {
                         date: this.buildBucketDateExpr('$activity.sessions.startedAt', bucketInterval),
                         userId: '$id'
                     },
+                    // Read identity state directly from the stored field.
+                    // hasWallet ⇔ identityState ∈ {'registered', 'verified'}.
+                    // hasVerified ⇔ identityState === 'verified'.
                     hasWallet: {
-                        $first: { $gt: [{ $size: { $ifNull: ['$wallets', []] } }, 0] }
+                        $first: { $in: ['$identityState', ['registered', 'verified']] }
                     },
                     hasVerified: {
-                        $first: {
-                            $gt: [{
-                                $size: {
-                                    $filter: {
-                                        input: { $ifNull: ['$wallets', []] },
-                                        as: 'w',
-                                        cond: { $eq: ['$$w.verified', true] }
-                                    }
-                                }
-                            }, 0]
-                        }
+                        $first: { $eq: ['$identityState', 'verified'] }
                     }
                 }
             },
@@ -4319,6 +4331,7 @@ export class UserService {
         await this.collection.createIndex({ 'activity.sessions.endedAt': 1 });
         await this.collection.createIndex({ 'activity.sessions.startedAt': 1 });
         await this.collection.createIndex({ 'referral.code': 1 }, { unique: true, sparse: true });
+        await this.collection.createIndex({ identityState: 1 });
 
         this.logger.info('User indexes created');
     }
@@ -4355,8 +4368,9 @@ export class UserService {
      * Recalculate which wallet should be primary.
      *
      * Primary selection logic:
-     * 1. Most recent lastUsed among verified wallets
-     * 2. Fallback: Most recent lastUsed among unverified wallets (if no verified)
+     * 1. Most recent `lastUsed` among verified wallets.
+     * 2. Fallback: Most recent `lastUsed` among registered (unsigned)
+     *    wallets, used only when the user has no verified wallets.
      *
      * Mutates the wallets array in place.
      *
@@ -4381,10 +4395,145 @@ export class UserService {
             return;
         }
 
-        // Fallback: most recent unverified wallet
+        // Fallback: most recent registered (unsigned) wallet
         const sortedByLastUsed = [...wallets]
             .sort((a, b) => new Date(b.lastUsed).getTime() - new Date(a.lastUsed).getTime());
         sortedByLastUsed[0].isPrimary = true;
+    }
+
+    /**
+     * Resolve an analytics date range from a raw query input.
+     *
+     * Owns the domain rules around analytics windows:
+     * - Preset period names map to fixed-hour rolling windows from now.
+     *   Recognised: `'24h'` (24h), `'7d'` (7d), `'30d'` (30d), `'90d'` (90d).
+     * - When `startDate` and `endDate` are both valid ISO strings, returns
+     *   that custom range and validates `since <= until`.
+     * - When neither preset nor valid custom range is provided, falls back
+     *   to the supplied `defaultPeriod` (default `'30d'`).
+     *
+     * The HTTP layer hands the raw `req.query` to this method; HTTP knows
+     * nothing about the period vocabulary or the default window.
+     *
+     * @throws Error when a custom range has `startDate > endDate`.
+     */
+    resolveAnalyticsRange(query: IAnalyticsRangeQuery, defaultPeriod: string = '30d'): IDateRange {
+        const { startDate, endDate, period } = query;
+
+        // Custom range takes priority when both ends are valid ISO strings.
+        if (startDate && endDate) {
+            const since = new Date(startDate);
+            const until = new Date(endDate);
+            if (!isNaN(since.getTime()) && !isNaN(until.getTime())) {
+                if (since.getTime() > until.getTime()) {
+                    throw new Error('startDate must be before or equal to endDate');
+                }
+                return { since, until };
+            }
+        }
+
+        // Preset period vocabulary lives here, in the service.
+        const HOURS_BY_PERIOD: Record<string, number> = {
+            '24h': 24,
+            '7d':  7 * 24,
+            '30d': 30 * 24,
+            '90d': 90 * 24
+        };
+        const hours = HOURS_BY_PERIOD[period ?? defaultPeriod] ?? HOURS_BY_PERIOD[defaultPeriod] ?? 30 * 24;
+        const since = new Date(Date.now() - (hours * 60 * 60 * 1000));
+        return { since };
+    }
+
+    /**
+     * Extract a sanitized `IUtmParams` from a raw object (typically from a
+     * request body) by applying per-field type checks and truncation limits.
+     *
+     * Returns `undefined` if the input is not an object or if every field
+     * ends up empty after sanitization — this matches the historical
+     * behaviour where an all-empty UTM object was treated as "no UTM".
+     *
+     * The truncation limits (200 chars for source/medium/term/content,
+     * 500 for campaign) protect the database from unbounded growth.
+     */
+    private extractUtmParams(raw: unknown): IUtmParams | undefined {
+        if (!raw || typeof raw !== 'object') {
+            return undefined;
+        }
+        const r = raw as Record<string, unknown>;
+        const extracted: IUtmParams = {
+            source:   typeof r.source   === 'string' ? r.source.slice(0, 200)   : undefined,
+            medium:   typeof r.medium   === 'string' ? r.medium.slice(0, 200)   : undefined,
+            campaign: typeof r.campaign === 'string' ? r.campaign.slice(0, 500) : undefined,
+            term:     typeof r.term     === 'string' ? r.term.slice(0, 200)     : undefined,
+            content:  typeof r.content  === 'string' ? r.content.slice(0, 200)  : undefined
+        };
+        return Object.values(extracted).some(v => v !== undefined) ? extracted : undefined;
+    }
+
+    /**
+     * Choose the referrer to attribute a session to.
+     *
+     * Priority (and rationale):
+     * 1. `bodyReferrer` — the frontend captured this from `document.referrer`
+     *    at landing and has already filtered out internal navigation. Trust it.
+     * 2. `headerReferrer` — the browser-supplied `Referer` of the API call,
+     *    which is normally just the current page URL on this site. Use it
+     *    only if it points to an external origin; otherwise we'd record
+     *    "tronrelic.com" as the traffic source.
+     *
+     * Returns `undefined` for sessions that should be recorded as direct
+     * traffic (no referrer attribution).
+     */
+    private async resolveSessionReferrer(
+        bodyReferrer: string | undefined,
+        headerReferrer: string | undefined
+    ): Promise<string | undefined> {
+        if (typeof bodyReferrer === 'string' && bodyReferrer.length > 0) {
+            return bodyReferrer;
+        }
+        if (typeof headerReferrer !== 'string' || headerReferrer.length === 0) {
+            return undefined;
+        }
+        try {
+            const siteUrl = await this.systemConfig.getSiteUrl();
+            return isInternalReferrer(headerReferrer, siteUrl) ? undefined : headerReferrer;
+        } catch (error) {
+            // If we can't resolve the site URL, prefer dropping the header
+            // referrer (so we never attribute a same-site URL as the source)
+            // over recording potentially noisy data.
+            this.logger.warn({ error }, 'Failed to get site URL for referrer check; skipping header referrer');
+            return undefined;
+        }
+    }
+
+    /**
+     * Compute the canonical `UserIdentityState` from a wallets array.
+     *
+     * This is the single source of truth for the anonymous → registered →
+     * verified taxonomy. All wallet-mutating code paths in this service must
+     * use the result of this function (typically via `recomputeIdentityState`)
+     * rather than recomputing the rules ad hoc.
+     */
+    private computeIdentityState(wallets: IWalletLink[]): UserIdentityState {
+        if (wallets.length === 0) {
+            return 'anonymous';
+        }
+        if (wallets.some(w => w.verified)) {
+            return 'verified';
+        }
+        return 'registered';
+    }
+
+    /**
+     * Recompute and assign the canonical `identityState` on a user document
+     * from its current `wallets` array.
+     *
+     * Mutates the document in place. Must be called by every wallet-mutation
+     * code path before persisting the document. The post-condition is that
+     * `doc.identityState` matches `computeIdentityState(doc.wallets)`.
+     */
+    private recomputeIdentityState(doc: IUserDocument): void {
+        doc.identityState = this.computeIdentityState(doc.wallets);
     }
 
     /**
@@ -4397,14 +4546,20 @@ export class UserService {
 
     /**
      * Convert MongoDB document to public user representation.
+     *
+     * `identityState` falls back to a fresh computation only as a defensive
+     * measure for legacy documents that pre-date migration 006. Documents
+     * written by the current `UserService` always have it set explicitly.
      */
     private toPublicUser(doc: IUserDocument | Omit<IUserDocument, '_id'>): IUser {
         return {
             id: doc.id,
             isLoggedIn: doc.isLoggedIn ?? false,
+            identityState: doc.identityState ?? this.computeIdentityState(doc.wallets ?? []),
             wallets: doc.wallets,
             preferences: doc.preferences,
             activity: doc.activity,
+            groups: doc.groups ?? [],
             referral: doc.referral ?? null,
             createdAt: doc.createdAt,
             updatedAt: doc.updatedAt

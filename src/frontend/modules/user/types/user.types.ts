@@ -5,6 +5,8 @@
  * preferences, and activity tracking.
  */
 
+import type { UserIdentityState } from '@/types';
+
 /**
  * User data returned from the API.
  */
@@ -16,9 +18,17 @@ export interface IUserData {
      * UUID tracking continues regardless of this flag.
      */
     isLoggedIn: boolean;
+    /**
+     * Canonical anonymous / registered / verified state. Stored on the
+     * backend document and surfaced as-is by the API. Read this field
+     * directly; do not derive from `wallets`.
+     */
+    identityState: UserIdentityState;
     wallets: IWalletLink[];
     preferences: IUserPreferences;
     activity: IUserActivity;
+    /** Admin-defined group memberships. Read-only on the client. */
+    groups: string[];
     createdAt: string;
     updatedAt: string;
 }
@@ -26,19 +36,29 @@ export interface IUserData {
 /**
  * Linked wallet information.
  *
- * Wallet connection follows a two-step flow:
- * 1. Connect: Store address with verified=false (no signature required)
- * 2. Verify: Update to verified=true after signature verification
+ * Wallets are added in two stages (see the User Module README for the
+ * canonical anonymous / registered / verified taxonomy):
+ *
+ * 1. **Register** — `connectWallet` stores the address with `verified=false`
+ *    (no signature required). The user transitions from *anonymous* to
+ *    *registered*.
+ * 2. **Verify** — `linkWallet` upgrades the address to `verified=true` after
+ *    signature verification. The user becomes *verified*.
  *
  * The `isPrimary` field is automatically maintained by the backend:
- * 1. Primary = most recent lastUsed among verified wallets
- * 2. Fallback = most recent lastUsed among unverified wallets (if no verified)
+ * 1. Primary = most recent `lastUsed` among verified wallets.
+ * 2. Fallback = most recent `lastUsed` among registered (unverified) wallets,
+ *    used only when the user has no verified wallets.
  */
 export interface IWalletLink {
     address: string;
+    /** Timestamp when wallet was first registered (ISO string) */
     linkedAt: string;
     isPrimary: boolean;
-    /** Whether wallet ownership has been cryptographically verified via signature */
+    /**
+     * True iff wallet ownership has been cryptographically proven via signature.
+     * `false` = registered claim only; `true` = verified.
+     */
     verified: boolean;
     /** Timestamp of last connection/use (ISO string) */
     lastUsed: string;

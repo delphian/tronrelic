@@ -4,8 +4,9 @@
  * Fetches profile data during SSR and determines whether to show
  * the owner view (control panel) or public view based on cookie comparison.
  *
- * The profile only exists for verified wallet addresses - returns 404 for
- * unverified or non-existent wallets.
+ * Public profiles only exist for wallet addresses whose owning user is in
+ * the *verified* identity state — i.e. the wallet has `verified: true`.
+ * Returns 404 for registered (unsigned) wallets and unknown addresses.
  *
  * Follows SSR + Live Updates pattern: data is fetched on server and passed
  * to client components as props. No loading spinners for initial content.
@@ -67,7 +68,7 @@ export async function ProfilePage({ address }: ProfilePageProps): Promise<JSX.El
     // Fetch profile data during SSR
     const profile = await fetchProfile(address);
 
-    // Return 404 if profile doesn't exist (no verified wallet)
+    // Return 404 if profile doesn't exist (wallet is registered or unknown)
     if (!profile) {
         notFound();
     }

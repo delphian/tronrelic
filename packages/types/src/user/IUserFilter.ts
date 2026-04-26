@@ -1,8 +1,16 @@
 /**
  * Available user filter types for admin dashboard.
  *
- * USER_FILTERS is the single source of truth - the type is derived from it.
+ * USER_FILTERS is the single source of truth — the type is derived from it.
  * Used by both backend (MongoDB query building) and frontend (filter dropdown).
+ *
+ * Wire format: enum string values are sent over the network and persisted in
+ * shared filter URLs.
+ *
+ * Identity-state filters mirror the canonical `UserIdentityState` values
+ * exactly (see `IUserIdentityState.ts` and the User Module README). The
+ * remaining wallet filters describe orthogonal wallet attributes
+ * (`multi-wallet`, `recently-registered`).
  */
 export const USER_FILTERS = [
     'all',
@@ -13,11 +21,13 @@ export const USER_FILTERS = [
     'one-time',
     'returning',
     'long-sessions',
-    // Wallet Status
-    'verified-wallet',
-    'multi-wallet',
-    'no-wallet',
-    'recently-connected',
+    // Identity state — values match `UserIdentityState` exactly
+    'anonymous',           // identityState === 'anonymous'
+    'registered',          // identityState === 'registered'
+    'verified',            // identityState === 'verified'
+    // Wallet attributes (orthogonal to identity state)
+    'multi-wallet',        // 2+ wallets
+    'recently-registered', // wallet linkedAt within the last 7 days
     // Temporal
     'active-today',
     'active-week',

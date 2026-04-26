@@ -1,8 +1,9 @@
 /**
  * WalletButton Component CSS Module
  *
- * Styles for the wallet connection button with verification status.
- * Includes connect button styling and unverified state indicators.
+ * Styles for the wallet connection button across the three wallet states
+ * (anonymous / registered / verified). Includes the connect button, the
+ * registered-state warning indicator, and the verified-state success indicator.
  * Uses container queries for responsive behavior - responds to parent container.
  */
 
@@ -72,18 +73,20 @@
 }
 
 /**
- * Unverified Wallet Indicator
+ * Registered-State Indicator
  *
- * Warning icon shown when wallet is connected but not cryptographically verified.
+ * Warning icon shown when the wallet is registered (connected) but not yet
+ * cryptographically verified. Click prompts the user to sign and become
+ * *verified*.
  */
-.unverified_icon {
+.registered_icon {
     color: var(--color-warning);
     flex-shrink: 0;
     margin-right: var(--spacing-2);
 }
 
 /**
- * Verified Wallet Indicator
+ * Verified-State Indicator
  *
  * Security icon shown when wallet ownership is cryptographically verified.
  */

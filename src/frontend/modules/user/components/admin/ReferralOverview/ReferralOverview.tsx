@@ -183,7 +183,7 @@ export function ReferralOverview({ token }: Props) {
                                         <th>Referred User</th>
                                         <th>Referred By</th>
                                         <th>When</th>
-                                        <th>Wallet Verified</th>
+                                        <th>Verified</th>
                                     </tr>
                                 </thead>
                                 <tbody>

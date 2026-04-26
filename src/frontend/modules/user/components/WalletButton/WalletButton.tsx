@@ -3,16 +3,21 @@
 /**
  * WalletButton Component
  *
- * Self-contained wallet connection button with two-step linking flow.
- * Shows different states based on connection and verification status:
+ * Self-contained wallet connection button driving the two-stage wallet flow
+ * (see User Module README for the canonical anonymous / registered / verified
+ * taxonomy). Shows different states based on the current connection:
  *
- * 1. **Logged out**: "Connect" button - triggers TronLink account access
- * 2. **Logged in, unverified**: Address with warning icon - click to verify via signature
- * 3. **Logged in, verified**: Address - click navigates to profile page
+ * 1. **Logged out** — "Connect" button. Triggers TronLink account access; on
+ *    success the wallet is registered (user becomes *registered*).
+ * 2. **Logged in, registered** — Address with warning icon. Click prompts
+ *    for signature to verify the wallet (user becomes *verified*).
+ * 3. **Logged in, verified** — Address. Click navigates to the user's
+ *    profile page.
  *
  * Logout is handled from the user's profile page, not from this button.
  *
- * Note: isLoggedIn is a UI/feature gate - UUID tracking always continues.
+ * Note: `isLoggedIn` is a UI/feature gate independent of the identity state —
+ * UUID tracking always continues.
  */
 
 import { useEffect, useCallback, useState } from 'react';
@@ -123,7 +128,7 @@ export function WalletButton() {
         }
     }, [address, router]);
 
-    // Logged in, unverified state - show address with verify on click
+    // Registered state (logged in, wallet not yet signed) — click to verify
     if (isLoggedIn && address && !walletVerified) {
         return (
             <Button
@@ -131,7 +136,7 @@ export function WalletButton() {
                 size="sm"
                 onClick={handleVerify}
                 disabled={isVerifying}
-                className={`${styles.connected_btn} ${styles.unverified}`}
+                className={`${styles.connected_btn} ${styles.registered}`}
                 title="Click to verify wallet ownership"
             >
                 {isVerifying ? (
@@ -139,7 +144,7 @@ export function WalletButton() {
                 ) : (
                     <AlertCircle
                         size={14}
-                        className={styles.unverified_icon}
+                        className={styles.registered_icon}
                         aria-label="Click to verify wallet"
                     />
                 )}
@@ -148,7 +153,7 @@ export function WalletButton() {
         );
     }
 
-    // Logged in, verified state - show address, click navigates to profile
+    // Verified state — click navigates to profile
     if (isLoggedIn && address) {
         return (
             <Button
