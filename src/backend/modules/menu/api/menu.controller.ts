@@ -1,6 +1,67 @@
 import type { Request, Response } from 'express';
 import { z } from 'zod';
 import { MenuService } from '../services/menu.service.js';
+import { ADMIN_NAMESPACES } from '../constants.js';
+import { isAdmin } from '../../../api/middleware/admin-auth.js';
+import type { IMenuNodeWithChildren, IMenuTree } from '@/types';
+
+/**
+ * Acceptable namespace identifiers. Lowercase ASCII, hyphens allowed,
+ * starts with a letter, capped at 64 characters. Bounds the surface for
+ * resource exhaustion (`menu_namespace_config`, `menu_node_overrides`)
+ * and prevents NUL/control bytes leaking into log lines and Mongo keys.
+ */
+const NAMESPACE_REGEX = /^[a-z][a-z0-9-]{0,63}$/;
+const namespaceField = z
+    .string()
+    .regex(NAMESPACE_REGEX, 'Namespace must be lowercase alphanumeric with hyphens, starting with a letter, max 64 chars');
+
+/**
+ * Strings that surface in user-visible navigation (label, description).
+ * Reject control bytes (\x00-\x1F\x7F) so a stolen-admin-token attacker
+ * can't plant log-injection payloads or invisible Unicode glitches in
+ * shared navigation. React escapes these at render time, but downstream
+ * SSR meta tags / log queries / email templates do not.
+ */
+const SAFE_TEXT_REGEX = /^[^\x00-\x1F\x7F]*$/;
+
+/**
+ * URLs are limited to relative paths (`/...`) or absolute http(s) URLs.
+ * Blocks `javascript:`, `data:`, `vbscript:`, `file:`, mailto:, and other
+ * URI schemes that would weaponise a planted menu item if a non-React
+ * consumer renders the href without further sanitisation.
+ */
+const URL_REGEX = /^(\/[^\s]*|https?:\/\/[^\s]+)$/;
+
+/**
+ * Icon identifiers are Lucide React component names: PascalCase
+ * alphanumerics. Anything else is silently unrenderable today, but
+ * permissive validation invites future bugs in consumers that look up
+ * the string by name.
+ */
+const ICON_REGEX = /^[A-Z][A-Za-z0-9]{0,49}$/;
+
+/**
+ * MongoDB ObjectId stringified — 24 hex chars. Used to gate `:id` path
+ * params and `parent` body fields so non-ObjectId input fails as 400
+ * (ZodError) rather than escaping into the service where `new ObjectId()`
+ * throws BSONError and surfaces as a 500.
+ */
+const OBJECT_ID_REGEX = /^[a-f0-9]{24}$/i;
+const objectIdField = z
+    .string()
+    .regex(OBJECT_ID_REGEX, 'Invalid ObjectId');
+
+/**
+ * Coerce empty strings to `undefined` before applying the inner schema.
+ * Frontend forms commonly submit `''` for cleared optional fields (the
+ * input element's value on a blank input). Treating that as "field
+ * omitted" lets the strict regexes below reject genuinely-malformed
+ * input without rejecting routine "no value" submissions.
+ */
+function emptyStringAsUndefined<T extends z.ZodTypeAny>(schema: T) {
+    return z.preprocess((val) => (typeof val === 'string' && val.length === 0 ? undefined : val), schema);
+}
 
 /**
  * Zod schema for creating a new menu node.
@@ -13,41 +74,60 @@ const createNodeSchema = z.object({
      * Menu namespace for isolating multiple independent menu trees.
      * Defaults to 'main'.
      */
-    namespace: z.string().optional(),
+    namespace: namespaceField.optional(),
 
     /**
      * Display label for the menu item (required).
      */
-    label: z.string().min(1).max(200),
+    label: z
+        .string()
+        .min(1)
+        .max(200)
+        .regex(SAFE_TEXT_REGEX, 'Label may not contain control characters'),
 
     /**
      * Optional short description of the menu item's purpose.
      * Used in auto-generated category landing pages.
      */
-    description: z.string().max(500).optional(),
+    description: z
+        .string()
+        .max(500)
+        .regex(SAFE_TEXT_REGEX, 'Description may not contain control characters')
+        .optional(),
 
     /**
      * Optional navigation URL or route path.
      * Omit for container/category nodes (URL will be auto-derived from label).
      */
-    url: z.string().optional(),
+    url: emptyStringAsUndefined(
+        z
+            .string()
+            .max(2048)
+            .regex(URL_REGEX, 'URL must be a relative path starting with / or an http(s):// URL')
+            .optional()
+    ),
 
     /**
      * Optional icon identifier for visual representation.
      */
-    icon: z.string().optional(),
+    icon: emptyStringAsUndefined(
+        z
+            .string()
+            .regex(ICON_REGEX, 'Icon must be a Lucide React PascalCase identifier')
+            .optional()
+    ),
 
     /**
      * Sort order within the same parent level.
      * Lower numbers appear first. Defaults to 0.
      */
-    order: z.number().int().min(0).optional(),
+    order: z.number().int().min(0).max(100_000).optional(),
 
     /**
      * Parent node ID for hierarchical organization.
      * Null or omitted for root-level nodes.
      */
-    parent: z.string().nullable().optional(),
+    parent: objectIdField.nullable().optional(),
 
     /**
      * Visibility flag controlling whether the node appears in navigation.
@@ -58,7 +138,13 @@ const createNodeSchema = z.object({
     /**
      * Optional access control role or permission requirement.
      */
-    requiredRole: z.string().optional()
+    requiredRole: emptyStringAsUndefined(
+        z
+            .string()
+            .max(64)
+            .regex(/^[a-zA-Z0-9_-]+$/, 'Required role must be alphanumeric')
+            .optional()
+    )
 });
 
 /**
@@ -68,15 +154,41 @@ const createNodeSchema = z.object({
  * optional, allowing partial updates.
  */
 const updateNodeSchema = z.object({
-    namespace: z.string().optional(),
-    label: z.string().min(1).max(200).optional(),
-    description: z.string().max(500).optional(),
-    url: z.string().optional(),
-    icon: z.string().optional(),
-    order: z.number().int().min(0).optional(),
-    parent: z.string().nullable().optional(),
+    namespace: namespaceField.optional(),
+    label: z
+        .string()
+        .min(1)
+        .max(200)
+        .regex(SAFE_TEXT_REGEX, 'Label may not contain control characters')
+        .optional(),
+    description: z
+        .string()
+        .max(500)
+        .regex(SAFE_TEXT_REGEX, 'Description may not contain control characters')
+        .optional(),
+    url: emptyStringAsUndefined(
+        z
+            .string()
+            .max(2048)
+            .regex(URL_REGEX, 'URL must be a relative path starting with / or an http(s):// URL')
+            .optional()
+    ),
+    icon: emptyStringAsUndefined(
+        z
+            .string()
+            .regex(ICON_REGEX, 'Icon must be a Lucide React PascalCase identifier')
+            .optional()
+    ),
+    order: z.number().int().min(0).max(100_000).optional(),
+    parent: objectIdField.nullable().optional(),
     enabled: z.boolean().optional(),
-    requiredRole: z.string().optional()
+    requiredRole: emptyStringAsUndefined(
+        z
+            .string()
+            .max(64)
+            .regex(/^[a-zA-Z0-9_-]+$/, 'Required role must be alphanumeric')
+            .optional()
+    )
 });
 
 /**
@@ -127,6 +239,52 @@ const namespaceConfigSchema = z.object({
  * { "success": false, "error": "Error message" }
  * ```
  */
+/**
+ * Recursively strip disabled nodes from a built tree. Mutates a copy
+ * (the input is not modified) so the public response sees only items
+ * the operator has explicitly enabled.
+ */
+function filterEnabledTree(roots: IMenuNodeWithChildren[]): IMenuNodeWithChildren[] {
+    return roots
+        .filter((node) => node.enabled)
+        .map((node) => ({
+            ...node,
+            children: filterEnabledTree(node.children)
+        }));
+}
+
+/**
+ * Build a public-safe view of a tree by removing disabled nodes from
+ * both the hierarchical `roots` and the flat `all` list.
+ */
+function publicTreeView(tree: IMenuTree): IMenuTree {
+    return {
+        roots: filterEnabledTree(tree.roots),
+        all: tree.all.filter((n) => n.enabled),
+        generatedAt: tree.generatedAt
+    };
+}
+
+/**
+ * Reject a request that targets an admin-only namespace from an
+ * anonymous caller. Returns true if the response was sent (caller
+ * should bail), false if the request may proceed.
+ *
+ * `MenuService` resolves an omitted namespace to `DEFAULT_NAMESPACE`
+ * (`'main'`), so the gate must mirror that resolution before checking
+ * the admin set — otherwise a hypothetical entry like `'main'` would
+ * be silently bypassed when the caller omits the query param.
+ */
+const DEFAULT_NAMESPACE = 'main';
+function denyIfAdminNamespace(req: Request, res: Response, namespace: string | undefined): boolean {
+    const effective = namespace || DEFAULT_NAMESPACE;
+    if (ADMIN_NAMESPACES.has(effective) && !isAdmin(req)) {
+        res.status(401).json({ success: false, error: 'Unauthorized' });
+        return true;
+    }
+    return false;
+}
+
 export class MenuController {
     /**
      * MenuService instance injected via constructor.
@@ -178,9 +336,23 @@ export class MenuController {
      */
     getTree = async (req: Request, res: Response) => {
         try {
-            const namespace = req.query.namespace as string | undefined;
+            const rawNamespace = req.query.namespace;
+            const namespace = typeof rawNamespace === 'string' && rawNamespace.length > 0
+                ? rawNamespace
+                : undefined;
+
+            if (namespace !== undefined && !NAMESPACE_REGEX.test(namespace)) {
+                res.status(400).json({ success: false, error: 'Invalid namespace' });
+                return;
+            }
+
+            if (denyIfAdminNamespace(req, res, namespace)) return;
+
             const tree = this.service.getTree(namespace);
-            res.json({ success: true, tree });
+            // Anonymous callers see only enabled nodes; admins see everything
+            // so the admin UI can render and toggle disabled items.
+            const view = isAdmin(req) ? tree : publicTreeView(tree);
+            res.json({ success: true, tree: view });
         } catch (error) {
             const message = error instanceof Error ? error.message : 'Failed to get menu tree';
             res.status(500).json({ success: false, error: message });
@@ -313,6 +485,10 @@ export class MenuController {
     update = async (req: Request, res: Response) => {
         try {
             const { id } = req.params;
+            if (!OBJECT_ID_REGEX.test(id)) {
+                res.status(400).json({ success: false, error: 'Invalid ObjectId' });
+                return;
+            }
             const updates = updateNodeSchema.parse(req.body);
             // Admin API operations persist to database (persist=true)
             const node = await this.service.update(id, updates, true);
@@ -374,6 +550,10 @@ export class MenuController {
     delete = async (req: Request, res: Response) => {
         try {
             const { id } = req.params;
+            if (!OBJECT_ID_REGEX.test(id)) {
+                res.status(400).json({ success: false, error: 'Invalid ObjectId' });
+                return;
+            }
             // Admin API operations persist to database (persist=true)
             await this.service.delete(id, true);
             res.json({ success: true });
@@ -407,7 +587,12 @@ export class MenuController {
      */
     getNamespaces = async (req: Request, res: Response) => {
         try {
-            const namespaces = this.service.getNamespaces();
+            const all = this.service.getNamespaces();
+            // Hide admin-only namespaces from anonymous callers so they
+            // can't enumerate the admin surface via this endpoint.
+            const namespaces = isAdmin(req)
+                ? all
+                : all.filter((ns) => !ADMIN_NAMESPACES.has(ns));
             res.json({ success: true, namespaces });
         } catch (error) {
             const message = error instanceof Error ? error.message : 'Failed to get namespaces';
@@ -461,6 +646,11 @@ export class MenuController {
     getNamespaceConfig = async (req: Request, res: Response) => {
         try {
             const { namespace } = req.params;
+            if (!NAMESPACE_REGEX.test(namespace)) {
+                res.status(400).json({ success: false, error: 'Invalid namespace' });
+                return;
+            }
+            if (denyIfAdminNamespace(req, res, namespace)) return;
             const config = await this.service.getNamespaceConfig(namespace);
             res.json({ success: true, config });
         } catch (error) {
@@ -532,6 +722,10 @@ export class MenuController {
     setNamespaceConfig = async (req: Request, res: Response) => {
         try {
             const { namespace } = req.params;
+            if (!NAMESPACE_REGEX.test(namespace)) {
+                res.status(400).json({ success: false, error: 'Invalid namespace' });
+                return;
+            }
             const configData = namespaceConfigSchema.parse(req.body);
             const config = await this.service.setNamespaceConfig(namespace, configData);
             res.json({ success: true, config });
@@ -581,6 +775,10 @@ export class MenuController {
     deleteNamespaceConfig = async (req: Request, res: Response) => {
         try {
             const { namespace } = req.params;
+            if (!NAMESPACE_REGEX.test(namespace)) {
+                res.status(400).json({ success: false, error: 'Invalid namespace' });
+                return;
+            }
             await this.service.deleteNamespaceConfig(namespace);
             res.json({ success: true });
         } catch (error) {
@@ -627,6 +825,11 @@ export class MenuController {
                 return;
             }
 
+            if (req.query.url.length > 2048) {
+                res.status(400).json({ success: false, error: 'URL too long' });
+                return;
+            }
+
             // Normalize: ensure leading slash and strip trailing slash
             let url = req.query.url;
             if (!url.startsWith('/')) url = '/' + url;
@@ -634,6 +837,13 @@ export class MenuController {
 
             const rawNamespace = req.query.namespace;
             const namespace = (typeof rawNamespace === 'string' && rawNamespace) ? rawNamespace : 'main';
+
+            if (!NAMESPACE_REGEX.test(namespace)) {
+                res.status(400).json({ success: false, error: 'Invalid namespace' });
+                return;
+            }
+            if (denyIfAdminNamespace(req, res, namespace)) return;
+
             const tree = this.service.getTree(namespace);
 
             // Find node matching the URL

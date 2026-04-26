@@ -98,6 +98,21 @@ Every container node with children automatically gets a landing page at its URL.
 
 Menu nodes support an optional `description` field for short text describing the item's purpose. Descriptions appear on auto-generated category landing pages as card subtitle text. Like `label` and `icon`, descriptions are overridable by admins and persist in the `menu_node_overrides` collection.
 
+## Service Discovery
+
+MenuService is reachable two ways. Modules and plugins receive it directly via constructor / context injection (`menuService` on shared module deps, `context.menuService` on plugins). It is also published on the service registry as `'menu'` during `MenuModule.run()`, so late-binding consumers can discover it without depending on bootstrap wiring.
+
+Use the registry path when consumption is optional or happens outside the init/run boot order — for example, a plugin route handler that wants to read the menu without taking a hard dependency on the module being initialized first. Use direct injection when the consumer always needs the service at boot.
+
+```typescript
+import type { IMenuService } from '@/types';
+
+const menu = context.services.get<IMenuService>('menu');
+if (menu) {
+    const tree = menu.getTree('main');
+}
+```
+
 ## Menu Node Lifecycle
 
 **Initialization:** Service loads persisted nodes from MongoDB, builds in-memory tree, creates default Home node if empty, then emits `init` → `ready` → `loaded` events.
@@ -110,16 +125,26 @@ Menu nodes support an optional `description` field for short text describing the
 
 ## REST API Reference
 
-All endpoints require admin authentication via `ADMIN_API_TOKEN` in `x-admin-token` or `Authorization: Bearer` header. See [system-api.md](./system-api.md) for complete authentication patterns.
+Read endpoints are public so the frontend can render navigation without an admin token; mutating endpoints require `ADMIN_API_TOKEN` via `x-admin-token` or `Authorization: Bearer`. See [system-api.md](../../../../docs/system/system-api.md) for complete authentication patterns.
+
+**Public (no auth):**
 
 | Endpoint | Method | Purpose | Key Fields |
 |----------|--------|---------|------------|
 | `/api/menu` | GET | Get menu tree for namespace | Query: `namespace` (optional, defaults to 'main') |
 | `/api/menu/resolve` | GET | Resolve URL to category node with children | Query: `url` (required), `namespace` (optional) |
 | `/api/menu/namespaces` | GET | Get all namespaces | Returns array of namespace strings |
+| `/api/menu/namespace/:namespace/config` | GET | Get namespace configuration | Returns `IMenuNamespaceConfig` (defaults if unset) |
+
+**Admin (requires `requireAdmin`):**
+
+| Endpoint | Method | Purpose | Key Fields |
+|----------|--------|---------|------------|
 | `/api/menu` | POST | Create persisted menu node | Body: `label` (required), `description`, `url`, `icon`, `order`, `parent`, `enabled`, `requiredRole` |
 | `/api/menu/:id` | PATCH | Update menu node | Body: any fields to update |
-| `/api/menu/:id` | DELETE | Delete menu node | Fails if node has children unless cascade logic implemented |
+| `/api/menu/:id` | DELETE | Delete menu node | Does **not** cascade — children become orphans unless a `before:delete` subscriber handles them |
+| `/api/menu/namespace/:namespace/config` | PUT | Replace namespace configuration | Body: `overflow`, `icons`, `layout`, `styling` |
+| `/api/menu/namespace/:namespace/config` | DELETE | Reset namespace configuration to defaults | — |
 
 **Example response structure:**
 ```json

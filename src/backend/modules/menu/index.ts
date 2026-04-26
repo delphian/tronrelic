@@ -16,7 +16,7 @@
  * import { MenuModule } from './modules/menu/index.js';
  *
  * const menuModule = new MenuModule();
- * await menuModule.init({ database, app });
+ * await menuModule.init({ database, serviceRegistry, app });
  * await menuModule.run();
  *
  * const menuService = menuModule.getMenuService();

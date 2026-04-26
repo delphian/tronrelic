@@ -12,7 +12,7 @@
  */
 
 import type { Express, Router } from 'express';
-import type { IDatabaseService, IModule, IModuleMetadata } from '@/types';
+import type { IDatabaseService, IModule, IModuleMetadata, IServiceRegistry } from '@/types';
 import { logger } from '../../lib/logger.js';
 import { MenuService } from './services/menu.service.js';
 import { MenuController } from './api/menu.controller.js';
@@ -30,6 +30,14 @@ export interface IMenuModuleDependencies {
      * Database service for MongoDB operations (menu node storage).
      */
     database: IDatabaseService;
+
+    /**
+     * Service registry for late-binding service discovery.
+     * Used to publish MenuService as `'menu'` so plugins and other modules
+     * can look it up via `context.services.get<IMenuService>('menu')` instead
+     * of relying solely on direct constructor injection.
+     */
+    serviceRegistry: IServiceRegistry;
 
     /**
      * Express application instance for mounting routers.
@@ -80,13 +88,17 @@ export interface IMenuModuleDependencies {
  *
  * await menuModule.init({
  *     database: coreDatabase,
+ *     serviceRegistry,
  *     app: app
  * });
  *
  * await menuModule.run();
  *
- * // Access MenuService for other modules
+ * // Access MenuService for other modules (direct injection path)
  * const menuService = menuModule.getMenuService();
+ *
+ * // Or look it up via the service registry (late-binding path)
+ * const menu = serviceRegistry.get<IMenuService>('menu');
  * ```
  */
 export class MenuModule implements IModule<IMenuModuleDependencies> {
@@ -104,6 +116,7 @@ export class MenuModule implements IModule<IMenuModuleDependencies> {
      * Stored dependencies from init() phase.
      */
     private database!: IDatabaseService;
+    private serviceRegistry!: IServiceRegistry;
     private app!: Express;
 
     /**
@@ -131,6 +144,7 @@ export class MenuModule implements IModule<IMenuModuleDependencies> {
 
         // Store dependencies for use in run() phase
         this.database = dependencies.database;
+        this.serviceRegistry = dependencies.serviceRegistry;
         this.app = dependencies.app;
 
         // Initialize MenuService singleton with database dependency
@@ -159,6 +173,12 @@ export class MenuModule implements IModule<IMenuModuleDependencies> {
      */
     async run(): Promise<void> {
         this.logger.info('Running menu module...');
+
+        // Publish MenuService on the service registry so plugins and other
+        // modules can discover it via late-binding DI (`services.get('menu')`)
+        // in addition to the direct injection bootstrap performs.
+        this.serviceRegistry.register('menu', this.menuService);
+        this.logger.info('MenuService registered as "menu" on service registry');
 
         // Register menu item in 'system' namespace
         try {
