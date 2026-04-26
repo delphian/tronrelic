@@ -1,19 +1,9 @@
 import type { Request, Response } from 'express';
 import { z } from 'zod';
 import { MenuService } from '../services/menu.service.js';
+import { ADMIN_NAMESPACES } from '../constants.js';
 import { isAdmin } from '../../../api/middleware/admin-auth.js';
 import type { IMenuNodeWithChildren, IMenuTree } from '@/types';
-
-/**
- * Namespaces whose contents (labels, URLs, icons) describe administrative
- * surface and must not be returned to anonymous callers.
- *
- * The list is intentionally narrow: only namespaces the operator treats as
- * private appear here. Public namespaces remain freely readable so that
- * frontend navigation works without authentication. Admin requests bypass
- * the gate entirely via `isAdmin(req)`.
- */
-const ADMIN_NAMESPACES = new Set<string>(['system']);
 
 /**
  * Acceptable namespace identifiers. Lowercase ASCII, hyphens allowed,
@@ -63,6 +53,17 @@ const objectIdField = z
     .regex(OBJECT_ID_REGEX, 'Invalid ObjectId');
 
 /**
+ * Coerce empty strings to `undefined` before applying the inner schema.
+ * Frontend forms commonly submit `''` for cleared optional fields (the
+ * input element's value on a blank input). Treating that as "field
+ * omitted" lets the strict regexes below reject genuinely-malformed
+ * input without rejecting routine "no value" submissions.
+ */
+function emptyStringAsUndefined<T extends z.ZodTypeAny>(schema: T) {
+    return z.preprocess((val) => (typeof val === 'string' && val.length === 0 ? undefined : val), schema);
+}
+
+/**
  * Zod schema for creating a new menu node.
  *
  * Validates request body for POST /api/menu endpoint. All fields except label
@@ -98,19 +99,23 @@ const createNodeSchema = z.object({
      * Optional navigation URL or route path.
      * Omit for container/category nodes (URL will be auto-derived from label).
      */
-    url: z
-        .string()
-        .max(2048)
-        .regex(URL_REGEX, 'URL must be a relative path starting with / or an http(s):// URL')
-        .optional(),
+    url: emptyStringAsUndefined(
+        z
+            .string()
+            .max(2048)
+            .regex(URL_REGEX, 'URL must be a relative path starting with / or an http(s):// URL')
+            .optional()
+    ),
 
     /**
      * Optional icon identifier for visual representation.
      */
-    icon: z
-        .string()
-        .regex(ICON_REGEX, 'Icon must be a Lucide React PascalCase identifier')
-        .optional(),
+    icon: emptyStringAsUndefined(
+        z
+            .string()
+            .regex(ICON_REGEX, 'Icon must be a Lucide React PascalCase identifier')
+            .optional()
+    ),
 
     /**
      * Sort order within the same parent level.
@@ -133,11 +138,13 @@ const createNodeSchema = z.object({
     /**
      * Optional access control role or permission requirement.
      */
-    requiredRole: z
-        .string()
-        .max(64)
-        .regex(/^[a-zA-Z0-9_-]+$/, 'Required role must be alphanumeric')
-        .optional()
+    requiredRole: emptyStringAsUndefined(
+        z
+            .string()
+            .max(64)
+            .regex(/^[a-zA-Z0-9_-]+$/, 'Required role must be alphanumeric')
+            .optional()
+    )
 });
 
 /**
@@ -159,23 +166,29 @@ const updateNodeSchema = z.object({
         .max(500)
         .regex(SAFE_TEXT_REGEX, 'Description may not contain control characters')
         .optional(),
-    url: z
-        .string()
-        .max(2048)
-        .regex(URL_REGEX, 'URL must be a relative path starting with / or an http(s):// URL')
-        .optional(),
-    icon: z
-        .string()
-        .regex(ICON_REGEX, 'Icon must be a Lucide React PascalCase identifier')
-        .optional(),
+    url: emptyStringAsUndefined(
+        z
+            .string()
+            .max(2048)
+            .regex(URL_REGEX, 'URL must be a relative path starting with / or an http(s):// URL')
+            .optional()
+    ),
+    icon: emptyStringAsUndefined(
+        z
+            .string()
+            .regex(ICON_REGEX, 'Icon must be a Lucide React PascalCase identifier')
+            .optional()
+    ),
     order: z.number().int().min(0).max(100_000).optional(),
     parent: objectIdField.nullable().optional(),
     enabled: z.boolean().optional(),
-    requiredRole: z
-        .string()
-        .max(64)
-        .regex(/^[a-zA-Z0-9_-]+$/, 'Required role must be alphanumeric')
-        .optional()
+    requiredRole: emptyStringAsUndefined(
+        z
+            .string()
+            .max(64)
+            .regex(/^[a-zA-Z0-9_-]+$/, 'Required role must be alphanumeric')
+            .optional()
+    )
 });
 
 /**
@@ -256,9 +269,16 @@ function publicTreeView(tree: IMenuTree): IMenuTree {
  * Reject a request that targets an admin-only namespace from an
  * anonymous caller. Returns true if the response was sent (caller
  * should bail), false if the request may proceed.
+ *
+ * `MenuService` resolves an omitted namespace to `DEFAULT_NAMESPACE`
+ * (`'main'`), so the gate must mirror that resolution before checking
+ * the admin set — otherwise a hypothetical entry like `'main'` would
+ * be silently bypassed when the caller omits the query param.
  */
+const DEFAULT_NAMESPACE = 'main';
 function denyIfAdminNamespace(req: Request, res: Response, namespace: string | undefined): boolean {
-    if (namespace !== undefined && ADMIN_NAMESPACES.has(namespace) && !isAdmin(req)) {
+    const effective = namespace || DEFAULT_NAMESPACE;
+    if (ADMIN_NAMESPACES.has(effective) && !isAdmin(req)) {
         res.status(401).json({ success: false, error: 'Unauthorized' });
         return true;
     }
