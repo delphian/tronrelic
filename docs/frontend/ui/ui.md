@@ -32,15 +32,19 @@ Hardcoded values fragment the interface and prevent theming. Global CSS classes 
 
 ### Common Design Tokens
 
-**The ideal:** every value in `.module.scss` is a semantic token — that's what enables theming. **The pragmatic split TronRelic enforces:**
+A token is **semantic** when its name encodes a use case (`--card-padding-md`, `--button-gap`, `--font-size-heading-md`, `--max-width-prose`). It is **primitive** when its name describes a value (`--spacing-7`, `--gap-md`, `--font-size-xs`, `--radius-md`). Industry consensus — Spectrum, Tailwind v4, Carbon, Atlassian — treats t-shirt-sized scales (`xs/sm/md/lg/xl`) as primitives regardless of category prefix. TronRelic follows that classification.
 
-- **Forbidden in component code** — `--spacing-*`, raw color palette, raw t-shirt font sizes (`--font-size-xs/sm/lg/xl/2xl/3xl`). They describe values that *should* vary by theme. Use the semantic equivalents (`--gap-*`, `--padding-*`, `--color-*`, `--font-size-body-*`, `--font-size-heading-*`).
-- **Allowed in component code** — primitives whose name already describes a purpose: `--border-width-thin/medium/thick`, `--radius-xs/sm/md/lg/full`, `--shadow-sm/md/lg`, `--font-weight-*`, `--line-height-*`, `--letter-spacing-*`, `--max-width-*`. These are design constants, not theme variables; aliasing them adds ceremony without value.
+**The rule for component code (`.module.scss`):**
 
-If no token fits, flag the gap so a new semantic can be added — don't silently drop to a forbidden primitive.
+1. **Prefer use-case-named semantic tokens** when one exists — `--color-text`, `--color-danger`, `--card-padding-md`, `--button-gap`, `--stack-gap-md`, `--font-size-heading-md`, `--font-size-body`, `--max-width-prose`.
+2. **Acceptable fallback — curated primitives in `semantic-tokens.scss`** when no use-case-named semantic fits: `--gap-2xs/xs/sm/md/lg/xl`, `--padding-2xs/xs/sm/md/lg/xl`, `--avatar-size-*`. These are primitives by industry definition, but the file curates them as the chokepoint component code may reach for.
+3. **Acceptable fallback — design-constant primitives in `primitives.scss`**: `--border-width-thin/medium/thick`, `--radius-xs/sm/md/lg/full`, `--shadow-sm/md/lg`, `--font-weight-*`, `--line-height-*`, `--letter-spacing-*`, `--max-width-*`. These don't shift between themes; aliasing them adds ceremony.
+4. **Forbidden in component code** — the foundation scales: `--spacing-1`...`--spacing-20`, raw color palette (`--color-blue-500`), raw t-shirt font sizes (`--font-size-xs/sm/md/lg/xl/2xl/3xl`).
 
-| Category | Token to use in component code |
-|----------|--------------------------------|
+If no token in tiers 1–3 fits, flag the gap so a use-case-named semantic can be added — don't silently drop to a forbidden foundation primitive.
+
+| Category | Tokens component code may reference |
+|----------|--------------------------------------|
 | Colors | `--color-text`, `--color-text-muted`, `--color-primary`, `--color-surface`, `--color-surface-muted`, `--color-border`, `--color-success`, `--color-warning`, `--color-danger` (plus `--color-*-alpha-*` and `--color-*-text` variants) |
 | Gaps | `--gap-2xs/xs/sm/md/lg/xl` (generic), plus component-scoped `--stack-gap-sm/md/lg`, `--grid-gap-sm/md/lg`, `--button-gap`, `--badge-gap`, `--chip-gap` |
 | Padding | `--padding-2xs/xs/sm/md/lg/xl` (generic), plus component-scoped `--card-padding-xs/sm/md/lg`, `--button-padding-xs/sm/md/lg`, `--alert-padding`, `--input-padding`, `--input-padding-sm` |

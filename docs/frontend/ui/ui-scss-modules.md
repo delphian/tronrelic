@@ -94,7 +94,7 @@ Use React components for cards, layout, buttons, and badges. Use SCSS Modules fo
 
 ### Step 3: Reference Design Tokens
 
-Always use semantic tokens from `semantic-tokens.scss`. Tokens are immutable — select different tokens at different breakpoints instead of redefining what tokens mean.
+Reach for tokens in `semantic-tokens.scss` first. Tokens are immutable — select different tokens at different breakpoints instead of redefining what tokens mean.
 
 ```scss
 @use '../../../app/breakpoints' as *;
@@ -120,7 +120,11 @@ Always use semantic tokens from `semantic-tokens.scss`. Tokens are immutable —
 }
 ```
 
-Reach for **semantic tokens** — `--font-size-heading-*`, `--gap-md`, `--padding-sm`, `--card-padding-md` — not foundation primitives like `--font-size-lg`, `--spacing-7`. Primitives are raw values; semantics describe purpose, which is what enables theming and global updates. If no semantic token fits, flag the gap so a new one can be added; don't silently fall back to a primitive. Never hardcode colors, spacing, fonts, or sizes. Never redefine tokens across breakpoints — that makes names meaningless and debugging impossible.
+**Token classification rule.** A token is *semantic* when its name describes a use case (`--card-padding-md`, `--button-gap`, `--font-size-heading-md`, `--max-width-prose`). It is *primitive* when its name describes a value — including category-prefixed t-shirt scales like `--gap-md`, `--padding-md`, `--font-size-xs`. This matches Spectrum, Tailwind v4, Carbon, and Atlassian convention.
+
+**Component code rule.** Prefer use-case-named semantics first (`--card-padding-*`, `--button-gap`, `--font-size-heading-*`, `--font-size-body`). Fall back to curated primitives that live in `semantic-tokens.scss` (`--gap-*`, `--padding-*`, `--avatar-size-*`) for one-off layouts where no use-case-named semantic fits. Design constants from `primitives.scss` (`--border-width-*`, `--radius-*`, `--shadow-*`, `--font-weight-*`, `--line-height-*`, `--max-width-*`) are also acceptable directly. **Never** reach into the foundation scales: `--spacing-*` and the raw t-shirt `--font-size-xs/sm/md/lg/xl/2xl/3xl` are forbidden in component code — those exist as the substrate the curated tokens alias.
+
+If no token in those tiers fits, flag the gap so a new semantic can be added; don't silently drop to a foundation scale. Never hardcode colors, spacing, fonts, or sizes. Never redefine tokens across breakpoints — that makes names meaningless and debugging impossible.
 
 ## Complete Example
 
