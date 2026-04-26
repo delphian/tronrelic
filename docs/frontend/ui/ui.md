@@ -32,10 +32,15 @@ Hardcoded values fragment the interface and prevent theming. Global CSS classes 
 
 ### Common Design Tokens
 
-**Reach for semantic tokens in component code. Foundation primitives (`--spacing-*`, `--font-size-xs/sm/lg/xl/2xl/3xl`, raw color palette) belong in `primitives.scss` and should rarely appear in `.module.scss` files** — they describe values, not purpose, and so block theming. If no semantic token fits your case, flag the gap so a new one can be added rather than dropping back to a primitive silently.
+**The ideal:** every value in `.module.scss` is a semantic token — that's what enables theming. **The pragmatic split TronRelic enforces:**
 
-| Category | Semantic tokens (use these) |
-|----------|------------------------------|
+- **Forbidden in component code** — `--spacing-*`, raw color palette, raw t-shirt font sizes (`--font-size-xs/sm/lg/xl/2xl/3xl`). They describe values that *should* vary by theme. Use the semantic equivalents (`--gap-*`, `--padding-*`, `--color-*`, `--font-size-body-*`, `--font-size-heading-*`).
+- **Allowed in component code** — primitives whose name already describes a purpose: `--border-width-thin/medium/thick`, `--radius-xs/sm/md/lg/full`, `--shadow-sm/md/lg`, `--font-weight-*`, `--line-height-*`, `--letter-spacing-*`, `--max-width-*`. These are design constants, not theme variables; aliasing them adds ceremony without value.
+
+If no token fits, flag the gap so a new semantic can be added — don't silently drop to a forbidden primitive.
+
+| Category | Token to use in component code |
+|----------|--------------------------------|
 | Colors | `--color-text`, `--color-text-muted`, `--color-primary`, `--color-surface`, `--color-surface-muted`, `--color-border`, `--color-success`, `--color-warning`, `--color-danger` (plus `--color-*-alpha-*` and `--color-*-text` variants) |
 | Gaps | `--gap-2xs/xs/sm/md/lg/xl` (generic), plus component-scoped `--stack-gap-sm/md/lg`, `--grid-gap-sm/md/lg`, `--button-gap`, `--badge-gap`, `--chip-gap` |
 | Padding | `--padding-2xs/xs/sm/md/lg/xl` (generic), plus component-scoped `--card-padding-xs/sm/md/lg`, `--button-padding-xs/sm/md/lg`, `--alert-padding`, `--input-padding`, `--input-padding-sm` |
