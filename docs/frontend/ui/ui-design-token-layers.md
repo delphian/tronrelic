@@ -47,7 +47,9 @@ Foundation tokens define primitive design values—the raw materials of the desi
 ```
 
 **Usage:**
-Referenced by semantic tokens (Layer 2) and occasionally by CSS Modules for one-off needs. Foundation tokens should rarely appear directly in component code.
+Referenced by semantic tokens (Layer 2). Foundation tokens whose name describes a *value* (`--spacing-*`, raw color palette `--color-blue-500`, raw t-shirt font sizes `--font-size-xs/sm/md/lg/xl/2xl/3xl`) are forbidden in component code — those tokens exist only as the substrate the curated tokens alias. Foundation tokens whose name already describes a *purpose* — design constants like `--border-width-thin`, `--radius-md`, `--shadow-sm`, `--font-weight-bold`, `--line-height-tight`, `--max-width-prose` — *are* acceptable directly in component code; they don't shift between themes, so aliasing them through Layer 2 adds ceremony without value.
+
+**Industry classification of t-shirt-sized tokens.** A category prefix like `gap-`, `space-`, `padding-`, `font-size-` does *not* promote a t-shirt-sized token to semantic status. Spectrum classifies `spacing-100/200` as global. Tailwind v4 classifies `--spacing-2` as primitive. Carbon's `spacing-01...spacing-13` is a raw scale. Atlassian's `space.100/200` is foundation. The W3C DTCG spec deliberately stays out of it — group prefixes "SHOULD NOT be used to infer purpose." Semantic status is earned only when the name encodes a use case (`--card-padding-md`, `--button-gap`). TronRelic follows this convention: t-shirt-sized scales are primitives regardless of where they live in the source files.
 
 ### Layer 2: Semantic Tokens (Alias Tokens)
 
@@ -66,22 +68,27 @@ Semantic tokens compose foundation tokens into meaningful, context-aware variabl
 - Enable theme switching by remapping semantic tokens to different primitives
 - Provide component-specific theming decisions built from Layer 1 primitives
 
-**Examples:**
+**Examples — truly semantic (use-case-named):**
 ```css
-/* Buttons - semantic composition */
+/* Color roles */
+--color-text: var(--color-gray-900);
+--color-danger: var(--color-red-600);
+
+/* Component-scoped semantics */
 --button-bg-primary: var(--color-blue-500);
 --button-padding-md: var(--spacing-3) var(--spacing-7);
---button-border-radius: var(--radius-md);
-
-/* Cards - semantic surface tokens */
 --card-bg: var(--color-white);
---card-border-radius: var(--radius-lg);
 --card-shadow: var(--shadow-md);
 
-/* Modals - semantic overlay tokens */
---modal-backdrop-blur: 8px;
---modal-content-bg: var(--color-white);
+/* Type roles */
+--font-size-heading-md: var(--font-size-xl);
+--font-size-body: var(--font-size-base);
+
+/* Layout roles */
+--max-width-prose: 64ch;
 ```
+
+**Note — `semantic-tokens.scss` also hosts curated primitives.** TronRelic places the t-shirt-sized scales `--gap-2xs/xs/sm/md/lg/xl`, `--padding-2xs/xs/sm/md/lg/xl`, and `--avatar-size-*` in `semantic-tokens.scss` even though, by industry definition, they are primitives (the names describe values, not use cases). They live in this file because it serves as the curated chokepoint of *tokens component code may reference* — not as a strict semantic-only collection. Truly semantic spacing tokens would be use-case-named (e.g. `--gap-list-item`, `--gap-page-section`); those don't yet exist as a complete set, so the curated t-shirt tier is the practical fallback. Treat them as primitives when reasoning about classification, even though they share a file with semantics.
 
 **Usage:**
 Provide consistent theming for specific UI components. When you need dark mode, you remap semantic tokens (e.g., `--card-bg: var(--color-gray-900)`) without touching foundation tokens.

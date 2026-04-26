@@ -94,7 +94,7 @@ Use React components for cards, layout, buttons, and badges. Use SCSS Modules fo
 
 ### Step 3: Reference Design Tokens
 
-Always use semantic tokens from `semantic-tokens.scss`. Tokens are immutable — select different tokens at different breakpoints instead of redefining what tokens mean.
+Reach for tokens in `semantic-tokens.scss` first. Tokens are immutable — select different tokens at different breakpoints instead of redefining what tokens mean.
 
 ```scss
 @use '../../../app/breakpoints' as *;
@@ -106,17 +106,25 @@ Always use semantic tokens from `semantic-tokens.scss`. Tokens are immutable —
 
 .title {
     color: var(--color-primary);
-    font-size: var(--font-size-lg);
+    font-size: var(--font-size-heading-sm);
     font-weight: var(--font-weight-semibold);
+}
+
+.price {
+    font-size: var(--font-size-heading-lg);
 }
 
 /* CORRECT - select smaller token at narrow width */
 @container market-card (max-width: 300px) {
-    .price { font-size: var(--font-size-xl); }
+    .price { font-size: var(--font-size-heading-md); }
 }
 ```
 
-Never hardcode colors, spacing, fonts, or sizes. Never redefine tokens across breakpoints — this makes names meaningless and debugging impossible.
+**Token classification rule.** A token is *semantic* when its name describes a use case (`--card-padding-md`, `--button-gap`, `--font-size-heading-md`, `--max-width-prose`). It is *primitive* when its name describes a value — including category-prefixed t-shirt scales like `--gap-md`, `--padding-md`, `--font-size-xs`. This matches Spectrum, Tailwind v4, Carbon, and Atlassian convention.
+
+**Component code rule.** Prefer use-case-named semantics first (`--card-padding-*`, `--button-gap`, `--font-size-heading-*`, `--font-size-body`). Fall back to curated primitives that live in `semantic-tokens.scss` (`--gap-*`, `--padding-*`, `--avatar-size-*`) for one-off layouts where no use-case-named semantic fits. Design constants from `primitives.scss` (`--border-width-*`, `--radius-*`, `--shadow-*`, `--font-weight-*`, `--line-height-*`, `--max-width-*`) are also acceptable directly. **Never** reach into the foundation scales: `--spacing-*` and the raw t-shirt `--font-size-xs/sm/md/lg/xl/2xl/3xl` are forbidden in component code — those exist as the substrate the curated tokens alias.
+
+If no token in those tiers fits, flag the gap so a new semantic can be added; don't silently drop to a foundation scale. Never hardcode colors, spacing, fonts, or sizes. Never redefine tokens across breakpoints — that makes names meaningless and debugging impossible.
 
 ## Complete Example
 
@@ -150,12 +158,12 @@ export function MarketCard({ name, price, availability }: MarketCardProps) {
 
 .card { container-type: inline-size; container-name: market-card; }
 .header { display: flex; align-items: center; justify-content: space-between; }
-.title { font-size: var(--font-size-lg); font-weight: var(--font-weight-semibold); color: var(--color-primary); }
-.price { font-size: var(--font-size-2xl); font-weight: var(--font-weight-bold); color: var(--color-text); }
+.title { font-size: var(--font-size-heading-sm); font-weight: var(--font-weight-semibold); color: var(--color-primary); }
+.price { font-size: var(--font-size-heading-lg); font-weight: var(--font-weight-bold); color: var(--color-text); }
 
 @container market-card (max-width: 300px) {
-    .header { flex-direction: column; align-items: flex-start; gap: var(--spacing-4); }
-    .price { font-size: var(--font-size-xl); }
+    .header { flex-direction: column; align-items: flex-start; gap: var(--gap-sm); }
+    .price { font-size: var(--font-size-heading-md); }
 }
 ```
 

@@ -32,14 +32,27 @@ Hardcoded values fragment the interface and prevent theming. Global CSS classes 
 
 ### Common Design Tokens
 
-| Category | Tokens |
-|----------|--------|
-| Colors | `--color-text`, `--color-primary`, `--color-surface`, `--color-border`, `--color-success`, `--color-warning`, `--color-danger` |
-| Spacing | `--spacing-1` (0.25rem) through `--spacing-20` (5rem) |
-| Typography | `--font-size-xs` through `--font-size-3xl`, `--font-weight-normal/medium/semibold/bold` |
-| Borders | `--border-width-thin`, `--radius-sm/md/lg/full` |
+A token is **semantic** when its name encodes a use case (`--card-padding-md`, `--button-gap`, `--font-size-heading-md`, `--max-width-prose`). It is **primitive** when its name describes a value (`--spacing-7`, `--gap-md`, `--font-size-xs`, `--radius-md`). Industry consensus — Spectrum, Tailwind v4, Carbon, Atlassian — treats t-shirt-sized scales (`xs/sm/md/lg/xl`) as primitives regardless of category prefix. TronRelic follows that classification.
+
+**The rule for component code (`.module.scss`):**
+
+1. **Prefer use-case-named semantic tokens** when one exists — `--color-text`, `--color-danger`, `--card-padding-md`, `--button-gap`, `--stack-gap-md`, `--font-size-heading-md`, `--font-size-body`, `--max-width-prose`.
+2. **Acceptable fallback — curated primitives in `semantic-tokens.scss`** when no use-case-named semantic fits: `--gap-2xs/xs/sm/md/lg/xl`, `--padding-2xs/xs/sm/md/lg/xl`, `--avatar-size-*`. These are primitives by industry definition, but the file curates them as the chokepoint component code may reach for.
+3. **Acceptable fallback — design-constant primitives in `primitives.scss`**: `--border-width-thin/medium/thick`, `--radius-xs/sm/md/lg/full`, `--shadow-sm/md/lg`, `--font-weight-*`, `--line-height-*`, `--letter-spacing-*`, `--max-width-*`. These don't shift between themes; aliasing them adds ceremony.
+4. **Forbidden in component code** — the foundation scales: `--spacing-1`...`--spacing-20`, raw color palette (`--color-blue-500`), raw t-shirt font sizes (`--font-size-xs/sm/md/lg/xl/2xl/3xl`).
+
+If no token in tiers 1–3 fits, flag the gap so a use-case-named semantic can be added — don't silently drop to a forbidden foundation primitive.
+
+| Category | Tokens component code may reference |
+|----------|--------------------------------------|
+| Colors | `--color-text`, `--color-text-muted`, `--color-primary`, `--color-surface`, `--color-surface-muted`, `--color-border`, `--color-success`, `--color-warning`, `--color-danger` (plus `--color-*-alpha-*` and `--color-*-text` variants) |
+| Gaps | `--gap-2xs/xs/sm/md/lg/xl` (generic), plus component-scoped `--stack-gap-sm/md/lg`, `--grid-gap-sm/md/lg`, `--button-gap`, `--badge-gap`, `--chip-gap` |
+| Padding | `--padding-2xs/xs/sm/md/lg/xl` (generic), plus component-scoped `--card-padding-xs/sm/md/lg`, `--button-padding-xs/sm/md/lg`, `--alert-padding`, `--input-padding`, `--input-padding-sm` |
+| Typography | `--font-size-caption`, `--font-size-body-sm/body/body-lg`, `--font-size-heading-sm/md/lg/xl`; `--font-weight-normal/medium/semibold/bold`; `--line-height-tight/normal/relaxed` |
+| Borders | `--border-width-thin/medium/thick`, `--radius-xs/sm/md/lg/full` |
 | Shadows | `--shadow-sm/md/lg` |
-| Max Widths | `--max-width-xs` (320px) through `--max-width-xl` (1080px), plus `--max-width-prose` (64ch) |
+| Avatars | `--avatar-size-sm/md/lg` |
+| Max Widths | `--max-width-prose` (64ch), `--max-width-xs/sm/md/lg/xl` (320–1080px) |
 | Breakpoints | `$breakpoint-mobile-sm` (360px), `$breakpoint-mobile-md` (480px), `$breakpoint-mobile-lg` (768px), `$breakpoint-tablet` (1024px), `$breakpoint-desktop` (1200px) |
 
 ### SCSS Module Naming
