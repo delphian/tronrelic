@@ -1,0 +1,300 @@
+@use '../../../../app/breakpoints' as *;
+
+/**
+ * Menu administration page styles.
+ *
+ * Compact, table-driven layout for managing menu items and namespace
+ * configuration. Component-specific helpers only — design tokens,
+ * Card/Button/Input/Switch/Table styling come from the shared layer.
+ */
+
+.container {
+    container-type: inline-size;
+    container-name: menu-admin;
+}
+
+/* Top toolbar: namespace selector on the left, tab switcher on the right. */
+.toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--gap-md);
+}
+
+.toolbar_group {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-sm);
+}
+
+.toolbar_label {
+    font-size: var(--font-size-caption);
+    font-weight: var(--font-weight-semibold);
+    letter-spacing: var(--letter-spacing-wide);
+    text-transform: uppercase;
+    color: var(--color-text-muted);
+}
+
+/* Native select styled to match Input. */
+.select {
+    padding: var(--input-padding-sm);
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text);
+    background: var(--input-background);
+    border: var(--input-border);
+    border-radius: var(--input-border-radius);
+    transition: var(--input-transition);
+    cursor: pointer;
+    min-width: 12rem;
+}
+
+.select_full {
+    width: 100%;
+    padding: var(--input-padding);
+    font-size: var(--font-size-body);
+}
+
+.select:focus {
+    outline: none;
+    border-color: var(--input-border-focus);
+    box-shadow: var(--input-shadow-focus);
+}
+
+.select:disabled {
+    opacity: var(--opacity-60);
+    cursor: not-allowed;
+}
+
+/* Items section header — count + create button. */
+.items_header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--gap-md);
+}
+
+.items_count {
+    font-size: var(--font-size-caption);
+    letter-spacing: var(--letter-spacing-wide);
+    text-transform: uppercase;
+    color: var(--color-text-muted);
+}
+
+.empty_state {
+    padding: var(--card-padding-md);
+    text-align: center;
+    color: var(--color-text-muted);
+    background: var(--color-surface);
+    border: var(--border-width-thin) dashed var(--color-border);
+    border-radius: var(--radius-md);
+}
+
+/* Label cell: chevron + icon-name pill + label. */
+.label_cell {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--gap-sm);
+    min-width: 0;
+}
+
+.depth_chevron {
+    color: var(--color-text-subtle);
+    flex-shrink: 0;
+}
+
+.icon_pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 0 var(--gap-xs);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-caption);
+    color: var(--color-text-muted);
+    background: var(--color-surface-elevated);
+    border-radius: var(--radius-xs);
+}
+
+.label_text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* URL cell — monospace and clipped on narrow widths. */
+.url_cell {
+    font-family: var(--font-mono);
+    font-size: var(--font-size-caption);
+    max-width: 18rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.row_actions {
+    display: inline-flex;
+    gap: var(--gap-2xs);
+    justify-content: flex-end;
+}
+
+/* Forms used inside modals (create / edit / namespace). */
+.form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-md);
+}
+
+.field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-2xs);
+    min-width: 0;
+}
+
+.field label,
+.field_label {
+    font-size: var(--font-size-caption);
+    font-weight: var(--font-weight-semibold);
+    letter-spacing: var(--letter-spacing-wide);
+    text-transform: uppercase;
+    color: var(--color-text-muted);
+}
+
+.field_hint {
+    font-size: var(--font-size-caption);
+    color: var(--color-text-subtle);
+}
+
+.field_required {
+    color: var(--color-danger);
+}
+
+.field_row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--gap-md);
+}
+
+.icon_field {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-sm);
+}
+
+.icon_field_input {
+    flex: 1;
+    min-width: 0;
+}
+
+.inline_toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--gap-sm);
+    font-size: var(--font-size-body);
+    color: var(--color-text);
+}
+
+.form_footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--gap-sm);
+    padding-top: var(--gap-sm);
+    border-top: var(--border-width-thin) solid var(--color-border);
+}
+
+/* Confirm-delete dialog body. */
+.confirm {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-md);
+}
+
+.confirm_message {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--gap-sm);
+    font-size: var(--font-size-body);
+    color: var(--color-text);
+    line-height: var(--line-height-relaxed);
+}
+
+.confirm_actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--gap-sm);
+}
+
+/* Configuration tab — compact field groups. */
+.config_group {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-sm);
+    padding: var(--card-padding-sm);
+    background: var(--color-surface);
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-md);
+}
+
+.config_group_header {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-2xs);
+}
+
+.config_group_title {
+    margin: 0;
+    font-size: var(--font-size-heading-sm);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text);
+}
+
+.config_group_subtitle {
+    margin: 0;
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text-muted);
+    line-height: var(--line-height-normal);
+}
+
+.config_actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--gap-sm);
+    padding-top: var(--gap-sm);
+    border-top: var(--border-width-thin) solid var(--color-border);
+}
+
+/* Loading shim. */
+.loading {
+    padding: var(--card-padding-md);
+    text-align: center;
+    color: var(--color-text-muted);
+    font-size: var(--font-size-body);
+}
+
+@container menu-admin (max-width: #{$breakpoint-mobile-lg}) {
+    .toolbar {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .toolbar_group {
+        flex-wrap: wrap;
+    }
+
+    .field_row {
+        grid-template-columns: 1fr;
+    }
+
+    .url_cell {
+        max-width: 12rem;
+    }
+
+    .form_footer,
+    .config_actions,
+    .confirm_actions {
+        flex-direction: column-reverse;
+
+        > * {
+            width: 100%;
+        }
+    }
+}

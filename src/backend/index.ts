@@ -275,18 +275,21 @@ async function bootstrapInit(): Promise<BootstrapContext> {
 
     await initializeCoreServices(coreDatabase);
 
-    // Menu module next (others need menuService)
-    const menuModule = new MenuModule();
-    await menuModule.init({ database: coreDatabase, app });
-    const menuService = menuModule.getMenuService();
-
-    const cacheService = new CacheService(getRedisClient(), coreDatabase);
+    // Service registry must exist before the menu module so MenuService can
+    // publish itself as `'menu'` for late-binding consumers during run().
     const serviceRegistry = new ServiceRegistry(logger);
 
     // Register shared infrastructure on the service registry so modules and
     // plugins can discover them via late-binding DI instead of importing
     // concrete classes.
     serviceRegistry.register('chain-parameters', ChainParametersService.getInstance());
+
+    // Menu module next (others need menuService)
+    const menuModule = new MenuModule();
+    await menuModule.init({ database: coreDatabase, serviceRegistry, app });
+    const menuService = menuModule.getMenuService();
+
+    const cacheService = new CacheService(getRedisClient(), coreDatabase);
 
     const sharedDeps = { database: coreDatabase, cacheService, menuService, serviceRegistry, app };
 

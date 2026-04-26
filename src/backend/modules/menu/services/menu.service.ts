@@ -72,6 +72,17 @@ export class MenuService implements IMenuService {
     private persistedNodeIds = new Set<string>();
 
     /**
+     * Namespaces whose mutations must NOT be broadcast over the global
+     * WebSocket channel — they describe the admin surface and would leak
+     * URLs/labels/icons to every connected anonymous visitor. Admin UIs
+     * refresh state via authenticated fetch after each mutation, so the
+     * broadcast suppression has no UX cost.
+     *
+     * Kept in lock-step with `ADMIN_NAMESPACES` in `menu.controller.ts`.
+     */
+    private static readonly ADMIN_NAMESPACES = new Set<string>(['system']);
+
+    /**
      * Private constructor enforcing singleton pattern with dependency injection.
      *
      * Accepts database dependency to decouple from Mongoose and enable testability.
@@ -312,6 +323,22 @@ export class MenuService implements IMenuService {
             requiredRole: nodeData.requiredRole
         };
 
+        // Reject duplicate URLs within the same namespace. Without this,
+        // multiple plugins (or a stolen-token attacker) can shadow a
+        // legitimate menu item by registering one with a colliding URL —
+        // `resolve()` returns the first match, so the winner is order-
+        // dependent and unstable across deploys.
+        if (derivedUrl) {
+            const namespaceMap = this.menuTree.get(namespace);
+            if (namespaceMap) {
+                for (const existing of namespaceMap.values()) {
+                    if (existing.url === derivedUrl) {
+                        throw new Error(`URL "${derivedUrl}" already exists in namespace "${namespace}"`);
+                    }
+                }
+            }
+        }
+
         // Emit before:create event
         const validation = await this.emitEvent('before:create', node);
         if (!validation.continue) {
@@ -435,6 +462,23 @@ export class MenuService implements IMenuService {
 
         const updated: IMenuNode = { ...existing, ...updates, _id: id };
         const newNamespace = updated.namespace || existingNamespace;
+
+        // If the URL or namespace is changing, refuse to clobber an existing
+        // node at the new (namespace, url) coordinate. Same rationale as the
+        // collision check in create() — silent shadowing breaks `resolve()`
+        // determinism.
+        const urlChanged = updates.url !== undefined && updates.url !== existing.url;
+        const namespaceChanged = newNamespace !== existingNamespace;
+        if (updated.url && (urlChanged || namespaceChanged)) {
+            const targetMap = this.menuTree.get(newNamespace);
+            if (targetMap) {
+                for (const candidate of targetMap.values()) {
+                    if (candidate._id !== id && candidate.url === updated.url) {
+                        throw new Error(`URL "${updated.url}" already exists in namespace "${newNamespace}"`);
+                    }
+                }
+            }
+        }
 
         // Emit before:update event with previous state
         const validation = await this.emitEvent('before:update', updated, existing);
@@ -904,9 +948,33 @@ export class MenuService implements IMenuService {
      */
     private async broadcastTreeUpdate(eventType: MenuEventType, node: IMenuNode): Promise<void> {
         try {
-            const wsService = WebSocketService.getInstance();
-            const tree = this.getTree(node.namespace);
+            const ns = node.namespace || this.DEFAULT_NAMESPACE;
 
+            // Admin namespaces never broadcast publicly. WebSocketService.emit
+            // sends `menu:update` to every connected socket via `io.emit`, so
+            // any system-namespace mutation would otherwise leak admin URLs to
+            // anonymous visitors. Admin UIs reload via authenticated fetch
+            // after each mutation, so the suppression is invisible to them.
+            if (MenuService.ADMIN_NAMESPACES.has(ns)) {
+                logger.debug({ eventType, nodeId: node._id, namespace: ns }, 'Suppressed admin-namespace WebSocket broadcast');
+                return;
+            }
+
+            // The broadcast goes to every client, so strip disabled nodes —
+            // an admin toggling `enabled: false` should remove the item from
+            // public view immediately rather than push it disabled-but-visible.
+            const fullTree = this.getTree(ns);
+            const tree: IMenuTree = {
+                roots: this.filterEnabledTree(fullTree.roots),
+                all: fullTree.all.filter((n) => n.enabled),
+                generatedAt: fullTree.generatedAt
+            };
+
+            // If the node itself is disabled, the public payload still needs
+            // to identify which node changed so clients can drop it from
+            // their cached view; send the node metadata but omit it from the
+            // tree (already filtered above).
+            const wsService = WebSocketService.getInstance();
             wsService.emit({
                 event: 'menu:update',
                 payload: {
@@ -917,11 +985,24 @@ export class MenuService implements IMenuService {
                 }
             });
 
-            logger.debug({ eventType, nodeId: node._id }, 'Menu tree update broadcast via WebSocket');
+            logger.debug({ eventType, nodeId: node._id, namespace: ns }, 'Menu tree update broadcast via WebSocket');
         } catch (error) {
             logger.error({ error }, 'Failed to broadcast menu tree update');
             // Don't throw - WebSocket failure shouldn't break menu operations
         }
+    }
+
+    /**
+     * Recursively strip disabled nodes from a hierarchical tree view.
+     * Returns fresh objects so the in-memory tree is not mutated.
+     */
+    private filterEnabledTree(roots: IMenuNodeWithChildren[]): IMenuNodeWithChildren[] {
+        return roots
+            .filter((node) => node.enabled)
+            .map((node) => ({
+                ...node,
+                children: this.filterEnabledTree(node.children)
+            }));
     }
 
     /**

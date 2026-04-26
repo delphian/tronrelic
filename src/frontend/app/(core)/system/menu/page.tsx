@@ -1,922 +1,688 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
+import { AlertTriangle, ChevronRight, Pencil, Plus, Trash2 } from 'lucide-react';
 import type { IMenuNamespaceConfig, IMenuNode, IMenuTree } from '@/types';
-import styles from './menu.module.css';
+
+import { Page, PageHeader, Stack } from '../../../../components/layout';
+import { Badge } from '../../../../components/ui/Badge';
+import { Button } from '../../../../components/ui/Button';
+import { IconButton } from '../../../../components/ui/IconButton';
+import { Input } from '../../../../components/ui/Input';
+import { Switch } from '../../../../components/ui/Switch';
+import { Tbody, Td, Th, Thead, Tr, Table } from '../../../../components/ui/Table';
+import { useModal } from '../../../../components/ui/ModalProvider';
+import { useToast } from '../../../../components/ui/ToastProvider';
+import { LazyIconPickerModal } from '../../../../components/ui/IconPickerModal';
+import { useSystemAuth } from '../../../../features/system';
+import { cn } from '../../../../lib/cn';
+
+import styles from './menu.module.scss';
 
 type Tab = 'items' | 'config';
 
+interface FlatNode {
+    node: IMenuNode;
+    depth: number;
+    parentLabel: string | null;
+}
+
 /**
- * Menu system administration page.
+ * Flatten a parent-child node list into a depth-aware sequence so a single
+ * <Table> can render the whole hierarchy. Roots first, then a depth-first
+ * descent ordered by `order` at each level.
+ */
+function flattenTree(nodes: IMenuNode[]): FlatNode[] {
+    const byParent = new Map<string | null, IMenuNode[]>();
+    for (const node of nodes) {
+        const key = node.parent ?? null;
+        const bucket = byParent.get(key) ?? [];
+        bucket.push(node);
+        byParent.set(key, bucket);
+    }
+    for (const bucket of byParent.values()) {
+        bucket.sort((a, b) => a.order - b.order || a.label.localeCompare(b.label));
+    }
+
+    const labelById = new Map<string, string>();
+    for (const node of nodes) {
+        if (node._id) labelById.set(node._id, node.label);
+    }
+
+    const out: FlatNode[] = [];
+    const walk = (parentId: string | null, depth: number) => {
+        const bucket = byParent.get(parentId) ?? [];
+        for (const node of bucket) {
+            out.push({
+                node,
+                depth,
+                parentLabel: node.parent ? labelById.get(node.parent) ?? null : null
+            });
+            if (node._id) walk(node._id, depth + 1);
+        }
+    };
+    walk(null, 0);
+    return out;
+}
+
+/**
+ * Menu administration page.
  *
- * Provides centralized management interface for:
- * - Creating, editing, and deleting menu items
- * - Reordering menu items and managing hierarchy
- * - Configuring namespace-level UI settings (hamburger menu, icons, layout)
- * - Managing responsive behavior and display preferences
+ * Compact, table-driven view for managing menu nodes and namespace
+ * configuration. Items render as a single flat <Table> with depth chevrons;
+ * create/edit happens in modals, deletes confirm via modal, success/error
+ * surface via toasts.
  *
- * Configuration changes update immediately via WebSocket to all connected clients.
+ * Lives behind /system, which is admin-token-gated by SystemAuthGate. Token
+ * only exists in localStorage on the client, so the page fetches after mount
+ * (same convention as /system/plugins, /system/theme, /system/users).
  */
 export default function MenuAdminPage() {
+    const { token } = useSystemAuth();
+    const { open: openModal, close: closeModal } = useModal();
+    const { push: pushToast } = useToast();
+
     const [activeTab, setActiveTab] = useState<Tab>('items');
     const [namespaces, setNamespaces] = useState<string[]>([]);
-    const [selectedNamespace, setSelectedNamespace] = useState<string>('main');
-    const [customNamespace, setCustomNamespace] = useState<string>('');
-    const [useCustom, setUseCustom] = useState<boolean>(false);
+    const [activeNamespace, setActiveNamespace] = useState<string>('main');
 
-    // Menu items state
     const [menuTree, setMenuTree] = useState<IMenuTree | null>(null);
-    const [editingNode, setEditingNode] = useState<IMenuNode | null>(null);
-    const [showCreateForm, setShowCreateForm] = useState<boolean>(false);
-
-    // Namespace config state
     const [config, setConfig] = useState<IMenuNamespaceConfig | null>(null);
-
-    // UI state
     const [loading, setLoading] = useState(false);
-    const [saving, setSaving] = useState(false);
-    const [error, setError] = useState<string | null>(null);
-    const [success, setSuccess] = useState<string | null>(null);
+    const [savingConfig, setSavingConfig] = useState(false);
+    const [busyNodeId, setBusyNodeId] = useState<string | null>(null);
 
-    // Get the active namespace (custom or selected)
-    const activeNamespace = useCustom ? customNamespace.trim() : selectedNamespace;
+    const authHeaders = useMemo<HeadersInit>(
+        () => ({ 'X-Admin-Token': token || '' }),
+        [token]
+    );
 
-    // Fetch available namespaces on mount
+    const notifyError = useCallback(
+        (title: string, err: unknown) => {
+            pushToast({
+                tone: 'danger',
+                title,
+                description: err instanceof Error ? err.message : String(err)
+            });
+        },
+        [pushToast]
+    );
+
+    const notifySuccess = useCallback(
+        (title: string) => pushToast({ tone: 'success', title }),
+        [pushToast]
+    );
+
+    const fetchTree = useCallback(
+        async (namespace: string) => {
+            const res = await fetch(`/api/menu?namespace=${encodeURIComponent(namespace)}`, {
+                headers: authHeaders
+            });
+            if (!res.ok) throw new Error('Failed to load menu tree');
+            const data = await res.json();
+            return data.tree as IMenuTree;
+        },
+        [authHeaders]
+    );
+
+    const fetchConfig = useCallback(
+        async (namespace: string) => {
+            const res = await fetch(
+                `/api/menu/namespace/${encodeURIComponent(namespace)}/config`,
+                { headers: authHeaders }
+            );
+            if (!res.ok) throw new Error('Failed to load namespace configuration');
+            const data = await res.json();
+            return data.config as IMenuNamespaceConfig;
+        },
+        [authHeaders]
+    );
+
+    /* Initial namespace list. */
     useEffect(() => {
-        async function loadNamespaces() {
+        let cancelled = false;
+        (async () => {
             try {
-                const adminToken = localStorage.getItem('admin_token');
-                const res = await fetch('/api/menu/namespaces', {
-                    headers: {
-                        'X-Admin-Token': adminToken || ''
-                    }
-                });
-
-                if (!res.ok) {
-                    throw new Error('Failed to load namespaces');
-                }
-
+                const res = await fetch('/api/menu/namespaces', { headers: authHeaders });
+                if (!res.ok) throw new Error('Failed to load namespaces');
                 const data = await res.json();
-                setNamespaces(data.namespaces || []);
-
-                // Select first namespace if none selected
-                if (data.namespaces.length > 0 && !selectedNamespace) {
-                    setSelectedNamespace(data.namespaces[0]);
+                const list: string[] = data.namespaces ?? [];
+                if (cancelled) return;
+                setNamespaces(list);
+                if (list.length > 0 && !list.includes(activeNamespace)) {
+                    setActiveNamespace(list[0]);
                 }
             } catch (err) {
-                setError(err instanceof Error ? err.message : 'Failed to load namespaces');
+                if (!cancelled) notifyError('Could not load namespaces', err);
             }
-        }
+        })();
+        return () => {
+            cancelled = true;
+        };
+    }, [authHeaders, notifyError]); // intentionally omits activeNamespace
 
-        void loadNamespaces();
-    }, []);
-
-    // Load menu tree and config when namespace changes
+    /* Tree + config for the active namespace. */
     useEffect(() => {
         if (!activeNamespace) return;
-
-        async function loadData() {
-            setLoading(true);
-            setError(null);
-
+        let cancelled = false;
+        setLoading(true);
+        (async () => {
             try {
-                const adminToken = localStorage.getItem('admin_token');
-
-                // Load menu tree
-                const treeRes = await fetch(`/api/menu?namespace=${activeNamespace}`, {
-                    headers: {
-                        'X-Admin-Token': adminToken || ''
-                    }
-                });
-
-                if (!treeRes.ok) {
-                    throw new Error('Failed to load menu tree');
-                }
-
-                const treeData = await treeRes.json();
-                setMenuTree(treeData.tree);
-
-                // Load namespace config
-                const configRes = await fetch(`/api/menu/namespace/${activeNamespace}/config`, {
-                    headers: {
-                        'X-Admin-Token': adminToken || ''
-                    }
-                });
-
-                if (!configRes.ok) {
-                    throw new Error('Failed to load configuration');
-                }
-
-                const configData = await configRes.json();
-                setConfig(configData.config);
+                const [tree, cfg] = await Promise.all([
+                    fetchTree(activeNamespace),
+                    fetchConfig(activeNamespace)
+                ]);
+                if (cancelled) return;
+                setMenuTree(tree);
+                setConfig(cfg);
             } catch (err) {
-                setError(err instanceof Error ? err.message : 'Failed to load data');
+                if (!cancelled) notifyError('Could not load namespace data', err);
             } finally {
-                setLoading(false);
+                if (!cancelled) setLoading(false);
             }
-        }
+        })();
+        return () => {
+            cancelled = true;
+        };
+    }, [activeNamespace, fetchTree, fetchConfig, notifyError]);
 
-        void loadData();
-    }, [activeNamespace]);
-
-    /**
-     * Create a new menu item.
-     */
-    async function handleCreateNode(nodeData: Partial<IMenuNode>) {
-        setSaving(true);
-        setError(null);
-        setSuccess(null);
-
+    const reloadTree = useCallback(async () => {
         try {
-            const adminToken = localStorage.getItem('admin_token');
+            const tree = await fetchTree(activeNamespace);
+            setMenuTree(tree);
+        } catch (err) {
+            notifyError('Could not refresh menu tree', err);
+        }
+    }, [activeNamespace, fetchTree, notifyError]);
+
+    const handleCreate = useCallback(
+        async (data: Partial<IMenuNode>) => {
             const res = await fetch('/api/menu', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-Admin-Token': adminToken || ''
-                },
-                body: JSON.stringify({
-                    ...nodeData,
-                    namespace: activeNamespace
-                })
+                headers: { ...authHeaders, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ...data, namespace: activeNamespace })
             });
-
             if (!res.ok) {
-                const data = await res.json();
-                throw new Error(data.error || 'Failed to create menu item');
+                const body = await res.json().catch(() => ({}));
+                throw new Error(body.error || 'Failed to create menu item');
             }
+        },
+        [activeNamespace, authHeaders]
+    );
 
-            setSuccess('Menu item created successfully');
-            setShowCreateForm(false);
-
-            // Reload menu tree
-            await reloadMenuTree();
-
-            setTimeout(() => setSuccess(null), 3000);
-        } catch (err) {
-            setError(err instanceof Error ? err.message : 'Failed to create menu item');
-        } finally {
-            setSaving(false);
-        }
-    }
-
-    /**
-     * Update an existing menu item.
-     */
-    async function handleUpdateNode(id: string, updates: Partial<IMenuNode>) {
-        setSaving(true);
-        setError(null);
-        setSuccess(null);
-
-        try {
-            const adminToken = localStorage.getItem('admin_token');
+    const handleUpdate = useCallback(
+        async (id: string, updates: Partial<IMenuNode>) => {
             const res = await fetch(`/api/menu/${id}`, {
                 method: 'PATCH',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-Admin-Token': adminToken || ''
-                },
+                headers: { ...authHeaders, 'Content-Type': 'application/json' },
                 body: JSON.stringify(updates)
             });
-
             if (!res.ok) {
-                const data = await res.json();
-                throw new Error(data.error || 'Failed to update menu item');
+                const body = await res.json().catch(() => ({}));
+                throw new Error(body.error || 'Failed to update menu item');
             }
+        },
+        [authHeaders]
+    );
 
-            setSuccess('Menu item updated successfully');
-            setEditingNode(null);
-
-            // Reload menu tree
-            await reloadMenuTree();
-
-            setTimeout(() => setSuccess(null), 3000);
-        } catch (err) {
-            setError(err instanceof Error ? err.message : 'Failed to update menu item');
-        } finally {
-            setSaving(false);
-        }
-    }
-
-    /**
-     * Delete a menu item.
-     */
-    async function handleDeleteNode(id: string, label: string) {
-        if (!confirm(`Delete menu item "${label}"? This action cannot be undone.`)) {
-            return;
-        }
-
-        setSaving(true);
-        setError(null);
-        setSuccess(null);
-
-        try {
-            const adminToken = localStorage.getItem('admin_token');
+    const handleDelete = useCallback(
+        async (id: string) => {
             const res = await fetch(`/api/menu/${id}`, {
                 method: 'DELETE',
-                headers: {
-                    'X-Admin-Token': adminToken || ''
-                }
+                headers: authHeaders
             });
-
             if (!res.ok) {
-                const data = await res.json();
-                throw new Error(data.error || 'Failed to delete menu item');
+                const body = await res.json().catch(() => ({}));
+                throw new Error(body.error || 'Failed to delete menu item');
             }
+        },
+        [authHeaders]
+    );
 
-            setSuccess('Menu item deleted successfully');
+    const toggleEnabled = useCallback(
+        async (node: IMenuNode, next: boolean) => {
+            if (!node._id) return;
+            setBusyNodeId(node._id);
+            try {
+                await handleUpdate(node._id, { enabled: next });
+                await reloadTree();
+                notifySuccess(next ? 'Menu item enabled' : 'Menu item disabled');
+            } catch (err) {
+                notifyError('Could not update menu item', err);
+            } finally {
+                setBusyNodeId(null);
+            }
+        },
+        [handleUpdate, notifyError, notifySuccess, reloadTree]
+    );
 
-            // Reload menu tree
-            await reloadMenuTree();
-
-            setTimeout(() => setSuccess(null), 3000);
-        } catch (err) {
-            setError(err instanceof Error ? err.message : 'Failed to delete menu item');
-        } finally {
-            setSaving(false);
-        }
-    }
-
-    /**
-     * Reload the menu tree from the server.
-     */
-    async function reloadMenuTree() {
-        try {
-            const adminToken = localStorage.getItem('admin_token');
-            const res = await fetch(`/api/menu?namespace=${activeNamespace}`, {
-                headers: {
-                    'X-Admin-Token': adminToken || ''
-                }
+    const openItemModal = useCallback(
+        (mode: 'create' | 'edit', node?: IMenuNode) => {
+            const id = openModal({
+                title: mode === 'create' ? 'Create menu item' : `Edit "${node?.label ?? ''}"`,
+                size: 'md',
+                content: (
+                    <MenuNodeForm
+                        mode={mode}
+                        initial={node}
+                        availableParents={(menuTree?.all ?? []).filter((n) => n._id !== node?._id)}
+                        onCancel={() => closeModal(id)}
+                        onSubmit={async (data) => {
+                            try {
+                                if (mode === 'create') {
+                                    await handleCreate(data);
+                                    notifySuccess('Menu item created');
+                                } else if (node?._id) {
+                                    await handleUpdate(node._id, data);
+                                    notifySuccess('Menu item updated');
+                                }
+                                closeModal(id);
+                                await reloadTree();
+                            } catch (err) {
+                                notifyError(
+                                    mode === 'create' ? 'Could not create item' : 'Could not update item',
+                                    err
+                                );
+                            }
+                        }}
+                    />
+                )
             });
+        },
+        [closeModal, handleCreate, handleUpdate, menuTree?.all, notifyError, notifySuccess, openModal, reloadTree]
+    );
 
-            if (!res.ok) {
-                throw new Error('Failed to reload menu tree');
-            }
+    const openDeleteModal = useCallback(
+        (node: IMenuNode) => {
+            if (!node._id) return;
+            const id = openModal({
+                title: 'Delete menu item',
+                size: 'sm',
+                content: (
+                    <ConfirmDialog
+                        label={node.label}
+                        onCancel={() => closeModal(id)}
+                        onConfirm={async () => {
+                            try {
+                                await handleDelete(node._id!);
+                                notifySuccess('Menu item deleted');
+                                closeModal(id);
+                                await reloadTree();
+                            } catch (err) {
+                                notifyError('Could not delete item', err);
+                            }
+                        }}
+                    />
+                )
+            });
+        },
+        [closeModal, handleDelete, notifyError, notifySuccess, openModal, reloadTree]
+    );
 
-            const data = await res.json();
-            setMenuTree(data.tree);
-        } catch (err) {
-            console.error('Failed to reload menu tree:', err);
-        }
-    }
+    const openNamespaceModal = useCallback(() => {
+        const id = openModal({
+            title: 'Create namespace',
+            size: 'sm',
+            content: (
+                <NamespaceForm
+                    existing={namespaces}
+                    onCancel={() => closeModal(id)}
+                    onSubmit={(name) => {
+                        setNamespaces((prev) =>
+                            prev.includes(name) ? prev : [...prev, name].sort()
+                        );
+                        setActiveNamespace(name);
+                        notifySuccess(`Switched to "${name}"`);
+                        closeModal(id);
+                    }}
+                />
+            )
+        });
+    }, [closeModal, namespaces, notifySuccess, openModal]);
 
-    /**
-     * Save namespace configuration changes.
-     */
-    async function handleSaveConfig() {
+    const handleSaveConfig = useCallback(async () => {
         if (!config || !activeNamespace) return;
-
-        setSaving(true);
-        setError(null);
-        setSuccess(null);
-
+        setSavingConfig(true);
         try {
-            const adminToken = localStorage.getItem('admin_token');
-            const res = await fetch(`/api/menu/namespace/${activeNamespace}/config`, {
-                method: 'PUT',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-Admin-Token': adminToken || ''
-                },
-                body: JSON.stringify({
-                    overflow: config.overflow,
-                    icons: config.icons,
-                    layout: config.layout,
-                    styling: config.styling
-                })
-            });
-
+            const res = await fetch(
+                `/api/menu/namespace/${encodeURIComponent(activeNamespace)}/config`,
+                {
+                    method: 'PUT',
+                    headers: { ...authHeaders, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        overflow: config.overflow,
+                        icons: config.icons,
+                        layout: config.layout,
+                        styling: config.styling
+                    })
+                }
+            );
             if (!res.ok) {
-                const data = await res.json();
-                throw new Error(data.error || 'Failed to save configuration');
+                const body = await res.json().catch(() => ({}));
+                throw new Error(body.error || 'Failed to save configuration');
             }
-
             const data = await res.json();
             setConfig(data.config);
-            setSuccess(`Configuration saved successfully for '${activeNamespace}' namespace`);
-
-            setTimeout(() => setSuccess(null), 3000);
+            notifySuccess(`Configuration saved for "${activeNamespace}"`);
         } catch (err) {
-            setError(err instanceof Error ? err.message : 'Failed to save configuration');
+            notifyError('Could not save configuration', err);
         } finally {
-            setSaving(false);
+            setSavingConfig(false);
         }
-    }
+    }, [activeNamespace, authHeaders, config, notifyError, notifySuccess]);
 
-    /**
-     * Reset namespace configuration to defaults.
-     */
-    async function handleResetConfig() {
-        if (!activeNamespace) return;
+    const handleResetConfig = useCallback(() => {
+        const id = openModal({
+            title: 'Reset configuration',
+            size: 'sm',
+            content: (
+                <ConfirmDialog
+                    label={`${activeNamespace} configuration`}
+                    confirmLabel="Reset"
+                    message={`Reset "${activeNamespace}" namespace configuration to defaults?`}
+                    onCancel={() => closeModal(id)}
+                    onConfirm={async () => {
+                        try {
+                            const res = await fetch(
+                                `/api/menu/namespace/${encodeURIComponent(activeNamespace)}/config`,
+                                { method: 'DELETE', headers: authHeaders }
+                            );
+                            if (!res.ok) {
+                                const body = await res.json().catch(() => ({}));
+                                throw new Error(body.error || 'Failed to reset configuration');
+                            }
+                            const cfg = await fetchConfig(activeNamespace);
+                            setConfig(cfg);
+                            notifySuccess(`Configuration reset for "${activeNamespace}"`);
+                            closeModal(id);
+                        } catch (err) {
+                            notifyError('Could not reset configuration', err);
+                        }
+                    }}
+                />
+            )
+        });
+    }, [activeNamespace, authHeaders, closeModal, fetchConfig, notifyError, notifySuccess, openModal]);
 
-        if (!confirm(`Reset '${activeNamespace}' configuration to defaults?`)) {
-            return;
-        }
-
-        setLoading(true);
-        setError(null);
-        setSuccess(null);
-
-        try {
-            const adminToken = localStorage.getItem('admin_token');
-            const res = await fetch(`/api/menu/namespace/${activeNamespace}/config`, {
-                method: 'DELETE',
-                headers: {
-                    'X-Admin-Token': adminToken || ''
-                }
-            });
-
-            if (!res.ok) {
-                const data = await res.json();
-                throw new Error(data.error || 'Failed to reset configuration');
-            }
-
-            // Reload config (will return defaults)
-            const getRes = await fetch(`/api/menu/namespace/${activeNamespace}/config`, {
-                headers: {
-                    'X-Admin-Token': adminToken || ''
-                }
-            });
-
-            const data = await getRes.json();
-            setConfig(data.config);
-            setSuccess(`Configuration reset to defaults for '${activeNamespace}' namespace`);
-
-            setTimeout(() => setSuccess(null), 3000);
-        } catch (err) {
-            setError(err instanceof Error ? err.message : 'Failed to reset configuration');
-        } finally {
-            setLoading(false);
-        }
-    }
+    const flatNodes = useMemo(
+        () => (menuTree ? flattenTree(menuTree.all) : []),
+        [menuTree]
+    );
 
     return (
-        <div className={styles.container}>
-            {error && (
-                <div className={styles.error}>
-                    <strong>Error:</strong> {error}
-                </div>
-            )}
+        <Page>
+            <PageHeader title="Menu" subtitle="Manage navigation items and namespace configuration" />
 
-            {success && (
-                <div className={styles.success}>
-                    <strong>Success:</strong> {success}
-                </div>
-            )}
-
-            {/* Namespace Selector */}
-            <section className={styles.section}>
-                <h2>Select or Create Namespace</h2>
-                <p className={styles.sectionDesc}>
-                    Choose an existing namespace or create a new one by entering a custom name.
-                </p>
-
-                <div className={styles.namespaceSelector}>
-                    <label className={styles.radioLabel}>
-                        <input
-                            type="radio"
-                            checked={!useCustom}
-                            onChange={() => setUseCustom(false)}
-                            disabled={loading}
-                        />
-                        <span>Select existing namespace</span>
-                    </label>
-
-                    {!useCustom && (
-                        <select
-                            value={selectedNamespace}
-                            onChange={(e) => setSelectedNamespace(e.target.value)}
-                            className={styles.select}
-                            disabled={loading}
-                        >
-                            {namespaces.map((ns) => (
-                                <option key={ns} value={ns}>
-                                    {ns}
-                                </option>
-                            ))}
-                        </select>
-                    )}
-
-                    <label className={styles.radioLabel}>
-                        <input
-                            type="radio"
-                            checked={useCustom}
-                            onChange={() => setUseCustom(true)}
-                            disabled={loading}
-                        />
-                        <span>Create new namespace</span>
-                    </label>
-
-                    {useCustom && (
-                        <div className={styles.field}>
-                            <input
-                                type="text"
-                                value={customNamespace}
-                                onChange={(e) => setCustomNamespace(e.target.value)}
-                                placeholder="Enter namespace name (e.g., footer, mobile)"
-                                className={styles.input}
+            <div className={styles.container}>
+                <Stack gap="md">
+                    <div className={styles.toolbar}>
+                        <div className={styles.toolbar_group}>
+                            <span className={styles.toolbar_label}>Namespace</span>
+                            <select
+                                className={styles.select}
+                                value={activeNamespace}
+                                onChange={(e) => setActiveNamespace(e.target.value)}
                                 disabled={loading}
-                            />
-                            <span className={styles.hint}>
-                                Use lowercase, hyphens allowed (e.g., 'footer', 'admin-sidebar', 'mobile-nav')
-                            </span>
+                                aria-label="Active namespace"
+                            >
+                                {namespaces.length === 0 && (
+                                    <option value={activeNamespace}>{activeNamespace}</option>
+                                )}
+                                {namespaces.map((ns) => (
+                                    <option key={ns} value={ns}>
+                                        {ns}
+                                    </option>
+                                ))}
+                            </select>
+                            <IconButton
+                                size="sm"
+                                variant="primary"
+                                aria-label="Create namespace"
+                                onClick={openNamespaceModal}
+                            >
+                                <Plus size={16} />
+                            </IconButton>
                         </div>
-                    )}
-                </div>
 
-                {activeNamespace && (
-                    <div className={styles.activeNamespace}>
-                        <strong>Active Namespace:</strong> {activeNamespace}
+                        <div className="segmented-control" role="tablist">
+                            <button
+                                type="button"
+                                role="tab"
+                                aria-selected={activeTab === 'items'}
+                                className={activeTab === 'items' ? 'is-active' : undefined}
+                                onClick={() => setActiveTab('items')}
+                            >
+                                Items
+                            </button>
+                            <button
+                                type="button"
+                                role="tab"
+                                aria-selected={activeTab === 'config'}
+                                className={activeTab === 'config' ? 'is-active' : undefined}
+                                onClick={() => setActiveTab('config')}
+                            >
+                                Configuration
+                            </button>
+                        </div>
                     </div>
-                )}
-            </section>
 
-            {/* Tabs */}
-            <div className={styles.tabs}>
-                <button
-                    className={`${styles.tab} ${activeTab === 'items' ? styles.tabActive : ''}`}
-                    onClick={() => setActiveTab('items')}
-                    disabled={loading}
-                >
-                    Menu Items
-                </button>
-                <button
-                    className={`${styles.tab} ${activeTab === 'config' ? styles.tabActive : ''}`}
-                    onClick={() => setActiveTab('config')}
-                    disabled={loading}
-                >
-                    Namespace Configuration
-                </button>
-            </div>
+                    {loading && <div className={styles.loading}>Loading…</div>}
 
-            {loading && <div className={styles.loading}>Loading...</div>}
-
-            {!loading && activeTab === 'items' && (
-                <MenuItemsTab
-                    menuTree={menuTree}
-                    editingNode={editingNode}
-                    showCreateForm={showCreateForm}
-                    saving={saving}
-                    onSetEditingNode={setEditingNode}
-                    onSetShowCreateForm={setShowCreateForm}
-                    onCreateNode={handleCreateNode}
-                    onUpdateNode={handleUpdateNode}
-                    onDeleteNode={handleDeleteNode}
-                />
-            )}
-
-            {!loading && activeTab === 'config' && config && (
-                <NamespaceConfigTab
-                    config={config}
-                    saving={saving}
-                    onConfigChange={setConfig}
-                    onSave={handleSaveConfig}
-                    onReset={handleResetConfig}
-                />
-            )}
-        </div>
-    );
-}
-
-/**
- * Menu Items tab component.
- */
-function MenuItemsTab({
-    menuTree,
-    editingNode,
-    showCreateForm,
-    saving,
-    onSetEditingNode,
-    onSetShowCreateForm,
-    onCreateNode,
-    onUpdateNode,
-    onDeleteNode
-}: {
-    menuTree: IMenuTree | null;
-    editingNode: IMenuNode | null;
-    showCreateForm: boolean;
-    saving: boolean;
-    onSetEditingNode: (node: IMenuNode | null) => void;
-    onSetShowCreateForm: (show: boolean) => void;
-    onCreateNode: (nodeData: Partial<IMenuNode>) => Promise<void>;
-    onUpdateNode: (id: string, updates: Partial<IMenuNode>) => Promise<void>;
-    onDeleteNode: (id: string, label: string) => Promise<void>;
-}) {
-    return (
-        <div className={styles.content}>
-            <section className={styles.section}>
-                <div className={styles.sectionHeader}>
-                    <h2>Menu Items</h2>
-                    {!showCreateForm && !editingNode && (
-                        <button
-                            className={`${styles.button} ${styles.buttonPrimary}`}
-                            onClick={() => onSetShowCreateForm(true)}
-                        >
-                            + Create Menu Item
-                        </button>
-                    )}
-                </div>
-
-                {showCreateForm && (
-                    <MenuNodeForm
-                        mode="create"
-                        availableParents={menuTree?.all || []}
-                        saving={saving}
-                        onSubmit={onCreateNode}
-                        onCancel={() => onSetShowCreateForm(false)}
-                    />
-                )}
-
-                {editingNode && (
-                    <MenuNodeForm
-                        mode="edit"
-                        node={editingNode}
-                        availableParents={menuTree?.all.filter(n => n._id !== editingNode._id) || []}
-                        saving={saving}
-                        onSubmit={(updates) => onUpdateNode(editingNode._id!, updates)}
-                        onCancel={() => onSetEditingNode(null)}
-                    />
-                )}
-
-                {!showCreateForm && !editingNode && (
-                    <>
-                        <p className={styles.sectionDesc}>
-                            {menuTree?.all.length === 0
-                                ? 'No menu items yet. Create your first menu item to get started.'
-                                : `${menuTree?.all.length} menu item(s) in this namespace.`}
-                        </p>
-
-                        {menuTree && menuTree.all.length > 0 && (
-                            <MenuTreeView
-                                tree={menuTree}
-                                onEdit={onSetEditingNode}
-                                onDelete={onDeleteNode}
-                            />
-                        )}
-                    </>
-                )}
-            </section>
-        </div>
-    );
-}
-
-/**
- * Menu tree view component showing hierarchical menu structure.
- */
-function MenuTreeView({
-    tree,
-    onEdit,
-    onDelete
-}: {
-    tree: IMenuTree;
-    onEdit: (node: IMenuNode) => void;
-    onDelete: (id: string, label: string) => void;
-}) {
-    return (
-        <div className={styles.menuTree}>
-            {tree.all
-                .filter(node => !node.parent)
-                .sort((a, b) => a.order - b.order)
-                .map(node => (
-                    <MenuNodeItem
-                        key={node._id}
-                        node={node}
-                        allNodes={tree.all}
-                        level={0}
-                        onEdit={onEdit}
-                        onDelete={onDelete}
-                    />
-                ))}
-        </div>
-    );
-}
-
-/**
- * Individual menu node item with children.
- */
-function MenuNodeItem({
-    node,
-    allNodes,
-    level,
-    onEdit,
-    onDelete
-}: {
-    node: IMenuNode;
-    allNodes: IMenuNode[];
-    level: number;
-    onEdit: (node: IMenuNode) => void;
-    onDelete: (id: string, label: string) => void;
-}) {
-    const children = allNodes
-        .filter(n => n.parent === node._id)
-        .sort((a, b) => a.order - b.order);
-
-    return (
-        <div className={styles.menuNodeItem} style={{ paddingLeft: `${level * 24}px` }}>
-            <div className={styles.menuNodeContent}>
-                <div className={styles.menuNodeInfo}>
-                    <span className={styles.menuNodeLabel}>
-                        {node.icon && <span className={styles.menuNodeIcon}>[{node.icon}]</span>}
-                        {node.label}
-                    </span>
-                    {node.url && <span className={styles.menuNodeUrl}>{node.url}</span>}
-                    <span className={styles.menuNodeOrder}>Order: {node.order}</span>
-                    {!node.enabled && <span className={styles.menuNodeDisabled}>Disabled</span>}
-                </div>
-                <div className={styles.menuNodeActions}>
-                    <button
-                        className={`${styles.button} ${styles.buttonSmall}`}
-                        onClick={() => onEdit(node)}
-                    >
-                        Edit
-                    </button>
-                    <button
-                        className={`${styles.button} ${styles.buttonSmall} ${styles.buttonDanger}`}
-                        onClick={() => onDelete(node._id!, node.label)}
-                    >
-                        Delete
-                    </button>
-                </div>
-            </div>
-
-            {children.length > 0 && (
-                <div className={styles.menuNodeChildren}>
-                    {children.map(child => (
-                        <MenuNodeItem
-                            key={child._id}
-                            node={child}
-                            allNodes={allNodes}
-                            level={level + 1}
-                            onEdit={onEdit}
-                            onDelete={onDelete}
+                    {!loading && activeTab === 'items' && (
+                        <ItemsTab
+                            flatNodes={flatNodes}
+                            busyNodeId={busyNodeId}
+                            onCreate={() => openItemModal('create')}
+                            onEdit={(node) => openItemModal('edit', node)}
+                            onDelete={openDeleteModal}
+                            onToggleEnabled={toggleEnabled}
                         />
-                    ))}
-                </div>
-            )}
-        </div>
+                    )}
+
+                    {!loading && activeTab === 'config' && config && (
+                        <ConfigTab
+                            config={config}
+                            saving={savingConfig}
+                            onChange={setConfig}
+                            onSave={handleSaveConfig}
+                            onReset={handleResetConfig}
+                        />
+                    )}
+                </Stack>
+            </div>
+        </Page>
     );
 }
 
-/**
- * Form for creating or editing a menu node.
- */
-function MenuNodeForm({
-    mode,
-    node,
-    availableParents,
-    saving,
-    onSubmit,
-    onCancel
-}: {
-    mode: 'create' | 'edit';
-    node?: IMenuNode;
-    availableParents: IMenuNode[];
-    saving: boolean;
-    onSubmit: (data: Partial<IMenuNode>) => Promise<void>;
-    onCancel: () => void;
-}) {
-    const [formData, setFormData] = useState<Partial<IMenuNode>>({
-        label: node?.label || '',
-        url: node?.url || '',
-        icon: node?.icon || '',
-        order: node?.order ?? 0,
-        parent: node?.parent || null,
-        enabled: node?.enabled ?? true,
-        requiredRole: node?.requiredRole || ''
-    });
+/* ------------------------------------------------------------------ */
+/* Items tab                                                          */
+/* ------------------------------------------------------------------ */
 
-    function handleSubmit(e: React.FormEvent) {
-        e.preventDefault();
-        void onSubmit(formData);
-    }
+interface ItemsTabProps {
+    flatNodes: FlatNode[];
+    busyNodeId: string | null;
+    onCreate: () => void;
+    onEdit: (node: IMenuNode) => void;
+    onDelete: (node: IMenuNode) => void;
+    onToggleEnabled: (node: IMenuNode, next: boolean) => void;
+}
 
+function ItemsTab({ flatNodes, busyNodeId, onCreate, onEdit, onDelete, onToggleEnabled }: ItemsTabProps) {
     return (
-        <form onSubmit={handleSubmit} className={styles.menuNodeForm}>
-            <h3>{mode === 'create' ? 'Create Menu Item' : 'Edit Menu Item'}</h3>
-
-            <div className={styles.field}>
-                <label htmlFor="label">
-                    Label <span className={styles.required}>*</span>
-                </label>
-                <input
-                    id="label"
-                    type="text"
-                    value={formData.label}
-                    onChange={(e) => setFormData({ ...formData, label: e.target.value })}
-                    className={styles.input}
-                    required
-                    disabled={saving}
-                />
+        <Stack gap="sm">
+            <div className={styles.items_header}>
+                <span className={styles.items_count}>
+                    {flatNodes.length} {flatNodes.length === 1 ? 'item' : 'items'}
+                </span>
+                <Button size="sm" icon={<Plus size={14} />} onClick={onCreate}>
+                    Create item
+                </Button>
             </div>
 
-            <div className={styles.field}>
-                <label htmlFor="url">
-                    URL
-                    <span className={styles.hint}>Navigation path (e.g., /about)</span>
-                </label>
-                <input
-                    id="url"
-                    type="text"
-                    value={formData.url || ''}
-                    onChange={(e) => setFormData({ ...formData, url: e.target.value })}
-                    className={styles.input}
-                    disabled={saving}
-                />
-            </div>
-
-            <div className={styles.field}>
-                <label htmlFor="icon">
-                    Icon
-                    <span className={styles.hint}>Lucide React icon name (e.g., Home, Menu)</span>
-                </label>
-                <input
-                    id="icon"
-                    type="text"
-                    value={formData.icon || ''}
-                    onChange={(e) => setFormData({ ...formData, icon: e.target.value })}
-                    className={styles.input}
-                    disabled={saving}
-                />
-            </div>
-
-            <div className={styles.field}>
-                <label htmlFor="order">Order</label>
-                <input
-                    id="order"
-                    type="number"
-                    value={formData.order}
-                    onChange={(e) => setFormData({ ...formData, order: parseInt(e.target.value, 10) })}
-                    className={styles.input}
-                    disabled={saving}
-                />
-            </div>
-
-            <div className={styles.field}>
-                <label htmlFor="parent">Parent Item</label>
-                <select
-                    id="parent"
-                    value={formData.parent || ''}
-                    onChange={(e) => setFormData({ ...formData, parent: e.target.value || null })}
-                    className={styles.select}
-                    disabled={saving}
-                >
-                    <option value="">None (root level)</option>
-                    {availableParents.map(p => (
-                        <option key={p._id} value={p._id}>
-                            {p.label}
-                        </option>
-                    ))}
-                </select>
-            </div>
-
-            <div className={styles.field}>
-                <label htmlFor="requiredRole">Required Role</label>
-                <input
-                    id="requiredRole"
-                    type="text"
-                    value={formData.requiredRole || ''}
-                    onChange={(e) => setFormData({ ...formData, requiredRole: e.target.value })}
-                    className={styles.input}
-                    disabled={saving}
-                />
-            </div>
-
-            <label className={styles.checkboxLabel}>
-                <input
-                    type="checkbox"
-                    checked={formData.enabled ?? true}
-                    onChange={(e) => setFormData({ ...formData, enabled: e.target.checked })}
-                    disabled={saving}
-                />
-                <span>Enabled</span>
-            </label>
-
-            <div className={styles.formActions}>
-                <button
-                    type="submit"
-                    className={`${styles.button} ${styles.buttonPrimary}`}
-                    disabled={saving || !formData.label}
-                >
-                    {saving ? 'Saving...' : mode === 'create' ? 'Create' : 'Update'}
-                </button>
-                <button
-                    type="button"
-                    className={styles.button}
-                    onClick={onCancel}
-                    disabled={saving}
-                >
-                    Cancel
-                </button>
-            </div>
-        </form>
+            {flatNodes.length === 0 ? (
+                <div className={styles.empty_state}>
+                    No menu items yet. Create the first item to get started.
+                </div>
+            ) : (
+                <Table variant="compact">
+                    <Thead>
+                        <Tr>
+                            <Th>Label</Th>
+                            <Th>URL</Th>
+                            <Th width="shrink">Order</Th>
+                            <Th width="shrink">Parent</Th>
+                            <Th width="shrink">Enabled</Th>
+                            <Th width="shrink">Actions</Th>
+                        </Tr>
+                    </Thead>
+                    <Tbody>
+                        {flatNodes.map(({ node, depth, parentLabel }) => (
+                            <Tr key={node._id ?? `${node.label}-${node.order}`}>
+                                <Td>
+                                    <span
+                                        className={styles.label_cell}
+                                        style={{ paddingLeft: `${depth * 16}px` }}
+                                    >
+                                        {depth > 0 && <ChevronRight size={14} className={styles.depth_chevron} />}
+                                        {node.icon && <span className={styles.icon_pill}>{node.icon}</span>}
+                                        <span className={styles.label_text}>{node.label}</span>
+                                    </span>
+                                </Td>
+                                <Td muted className={styles.url_cell}>
+                                    {node.url || '—'}
+                                </Td>
+                                <Td>{node.order}</Td>
+                                <Td muted>{parentLabel ?? '—'}</Td>
+                                <Td>
+                                    <Switch
+                                        size="sm"
+                                        on={node.enabled}
+                                        onChange={(next) => onToggleEnabled(node, next)}
+                                        disabled={busyNodeId === node._id}
+                                        aria-label={`${node.enabled ? 'Disable' : 'Enable'} ${node.label}`}
+                                    />
+                                </Td>
+                                <Td>
+                                    <div className={styles.row_actions}>
+                                        <IconButton
+                                            size="sm"
+                                            variant="primary"
+                                            aria-label={`Edit ${node.label}`}
+                                            onClick={() => onEdit(node)}
+                                        >
+                                            <Pencil size={14} />
+                                        </IconButton>
+                                        <IconButton
+                                            size="sm"
+                                            variant="danger"
+                                            aria-label={`Delete ${node.label}`}
+                                            onClick={() => onDelete(node)}
+                                        >
+                                            <Trash2 size={14} />
+                                        </IconButton>
+                                    </div>
+                                </Td>
+                            </Tr>
+                        ))}
+                    </Tbody>
+                </Table>
+            )}
+        </Stack>
     );
 }
 
-/**
- * Namespace Configuration tab component (existing functionality).
- */
-function NamespaceConfigTab({
-    config,
-    saving,
-    onConfigChange,
-    onSave,
-    onReset
-}: {
+/* ------------------------------------------------------------------ */
+/* Configuration tab                                                  */
+/* ------------------------------------------------------------------ */
+
+interface ConfigTabProps {
     config: IMenuNamespaceConfig;
     saving: boolean;
-    onConfigChange: (config: IMenuNamespaceConfig) => void;
-    onSave: () => Promise<void>;
-    onReset: () => Promise<void>;
-}) {
-    return (
-        <div className={styles.content}>
-            {/* Overflow (Priority+) Configuration */}
-            <section className={styles.section}>
-                <h2>Overflow Handling</h2>
-                <p className={styles.sectionDesc}>
-                    Control how menu items overflow into a "More" dropdown when they don't fit.
-                    Uses Priority+ navigation pattern with automatic detection.
-                </p>
+    onChange: (next: IMenuNamespaceConfig) => void;
+    onSave: () => void;
+    onReset: () => void;
+}
 
-                <label className={styles.checkboxLabel}>
-                    <input
-                        type="checkbox"
-                        checked={config.overflow?.enabled ?? true}
-                        onChange={(e) =>
-                            onConfigChange({
+function ConfigTab({ config, saving, onChange, onSave, onReset }: ConfigTabProps) {
+    return (
+        <Stack gap="md">
+            <ConfigGroup
+                title="Overflow"
+                subtitle="Move items past the visible width into a “More” dropdown using the Priority+ pattern."
+            >
+                <label className={styles.inline_toggle}>
+                    <Switch
+                        size="sm"
+                        on={config.overflow?.enabled ?? true}
+                        onChange={(next) =>
+                            onChange({
                                 ...config,
-                                overflow: {
-                                    ...(config.overflow || {}),
-                                    enabled: e.target.checked
-                                }
+                                overflow: { ...(config.overflow ?? {}), enabled: next }
                             })
                         }
+                        aria-label="Enable overflow handling"
                     />
-                    <span>Enable overflow handling (Priority+ navigation)</span>
+                    <span>Enable overflow handling</span>
                 </label>
 
-                {config.overflow?.enabled && (
+                {(config.overflow?.enabled ?? true) && (
                     <div className={styles.field}>
-                        <label htmlFor="collapseAtCount">
-                            Collapse At Count
-                            <span className={styles.hint}>
-                                Collapse all items to "More" when visible count falls below this (prevents orphan items)
-                            </span>
-                        </label>
-                        <input
+                        <label htmlFor="collapseAtCount">Collapse at count</label>
+                        <Input
                             id="collapseAtCount"
                             type="number"
                             min={1}
                             max={20}
                             value={config.overflow?.collapseAtCount ?? ''}
+                            placeholder="No minimum"
                             onChange={(e) =>
-                                onConfigChange({
+                                onChange({
                                     ...config,
                                     overflow: {
                                         enabled: config.overflow?.enabled ?? true,
-                                        collapseAtCount: e.target.value ? parseInt(e.target.value, 10) : undefined
+                                        collapseAtCount: e.target.value
+                                            ? parseInt(e.target.value, 10)
+                                            : undefined
                                     }
                                 })
                             }
-                            className={styles.input}
-                            placeholder="No minimum"
                         />
+                        <span className={styles.field_hint}>
+                            Collapse all items into “More” once visible count drops below this
+                            threshold (avoids orphaned items).
+                        </span>
                     </div>
                 )}
-            </section>
+            </ConfigGroup>
 
-            {/* Icon Configuration */}
-            <section className={styles.section}>
-                <h2>Icons</h2>
-                <p className={styles.sectionDesc}>
-                    Configure icon display settings for menu items.
-                </p>
-
-                <label className={styles.checkboxLabel}>
-                    <input
-                        type="checkbox"
-                        checked={config.icons?.enabled ?? true}
-                        onChange={(e) =>
-                            onConfigChange({
+            <ConfigGroup title="Icons" subtitle="Show or hide icons next to labels.">
+                <label className={styles.inline_toggle}>
+                    <Switch
+                        size="sm"
+                        on={config.icons?.enabled ?? true}
+                        onChange={(next) =>
+                            onChange({
                                 ...config,
                                 icons: {
-                                    ...(config.icons || { position: 'left' }),
-                                    enabled: e.target.checked
+                                    position: config.icons?.position ?? 'left',
+                                    enabled: next
                                 }
                             })
                         }
+                        aria-label="Display icons"
                     />
                     <span>Display icons</span>
                 </label>
 
-                {config.icons?.enabled && (
+                {(config.icons?.enabled ?? true) && (
                     <div className={styles.field}>
-                        <label htmlFor="iconPosition">Icon Position</label>
+                        <label htmlFor="iconPosition">Position</label>
                         <select
                             id="iconPosition"
-                            value={config.icons?.position || 'left'}
+                            className={cn(styles.select, styles.select_full)}
+                            value={config.icons?.position ?? 'left'}
                             onChange={(e) =>
-                                onConfigChange({
+                                onChange({
                                     ...config,
                                     icons: {
                                         enabled: config.icons?.enabled ?? true,
@@ -924,7 +690,6 @@ function NamespaceConfigTab({
                                     }
                                 })
                             }
-                            className={styles.select}
                         >
                             <option value="left">Left</option>
                             <option value="right">Right</option>
@@ -932,122 +697,365 @@ function NamespaceConfigTab({
                         </select>
                     </div>
                 )}
-            </section>
+            </ConfigGroup>
 
-            {/* Layout Configuration */}
-            <section className={styles.section}>
-                <h2>Layout</h2>
-                <p className={styles.sectionDesc}>
-                    Control menu orientation and structural settings.
-                </p>
-
-                <div className={styles.field}>
-                    <label htmlFor="orientation">Orientation</label>
-                    <select
-                        id="orientation"
-                        value={config.layout?.orientation || 'horizontal'}
-                        onChange={(e) =>
-                            onConfigChange({
-                                ...config,
-                                layout: {
-                                    ...(config.layout || {}),
-                                    orientation: e.target.value as 'horizontal' | 'vertical'
-                                }
-                            })
-                        }
-                        className={styles.select}
-                    >
-                        <option value="horizontal">Horizontal</option>
-                        <option value="vertical">Vertical</option>
-                    </select>
+            <ConfigGroup title="Layout" subtitle="Orientation and item-count limits.">
+                <div className={styles.field_row}>
+                    <div className={styles.field}>
+                        <label htmlFor="orientation">Orientation</label>
+                        <select
+                            id="orientation"
+                            className={cn(styles.select, styles.select_full)}
+                            value={config.layout?.orientation ?? 'horizontal'}
+                            onChange={(e) =>
+                                onChange({
+                                    ...config,
+                                    layout: {
+                                        ...(config.layout ?? {}),
+                                        orientation: e.target.value as 'horizontal' | 'vertical'
+                                    }
+                                })
+                            }
+                        >
+                            <option value="horizontal">Horizontal</option>
+                            <option value="vertical">Vertical</option>
+                        </select>
+                    </div>
+                    <div className={styles.field}>
+                        <label htmlFor="maxItems">Max items</label>
+                        <Input
+                            id="maxItems"
+                            type="number"
+                            min={1}
+                            value={config.layout?.maxItems ?? ''}
+                            placeholder="No limit"
+                            onChange={(e) =>
+                                onChange({
+                                    ...config,
+                                    layout: {
+                                        orientation: config.layout?.orientation ?? 'horizontal',
+                                        maxItems: e.target.value ? parseInt(e.target.value, 10) : undefined
+                                    }
+                                })
+                            }
+                        />
+                    </div>
                 </div>
+            </ConfigGroup>
 
-                <div className={styles.field}>
-                    <label htmlFor="maxItems">
-                        Max Items
-                        <span className={styles.hint}>
-                            Maximum items before overflow (leave empty for no limit)
-                        </span>
-                    </label>
-                    <input
-                        id="maxItems"
-                        type="number"
-                        min={1}
-                        value={config.layout?.maxItems ?? ''}
-                        onChange={(e) =>
-                            onConfigChange({
+            <ConfigGroup title="Styling" subtitle="Visual rendering hints.">
+                <label className={styles.inline_toggle}>
+                    <Switch
+                        size="sm"
+                        on={config.styling?.compact ?? false}
+                        onChange={(next) =>
+                            onChange({
                                 ...config,
-                                layout: {
-                                    orientation: config.layout?.orientation || 'horizontal',
-                                    maxItems: e.target.value ? parseInt(e.target.value, 10) : undefined
-                                }
+                                styling: { ...(config.styling ?? {}), compact: next }
                             })
                         }
-                        className={styles.input}
-                        placeholder="No limit"
-                    />
-                </div>
-            </section>
-
-            {/* Styling Configuration */}
-            <section className={styles.section}>
-                <h2>Styling</h2>
-                <p className={styles.sectionDesc}>
-                    Visual styling hints for menu rendering.
-                </p>
-
-                <label className={styles.checkboxLabel}>
-                    <input
-                        type="checkbox"
-                        checked={config.styling?.compact ?? false}
-                        onChange={(e) =>
-                            onConfigChange({
-                                ...config,
-                                styling: {
-                                    ...(config.styling || {}),
-                                    compact: e.target.checked
-                                }
-                            })
-                        }
+                        aria-label="Compact mode"
                     />
                     <span>Compact mode (tighter spacing, smaller text)</span>
                 </label>
-
-                <label className={styles.checkboxLabel}>
-                    <input
-                        type="checkbox"
-                        checked={config.styling?.showLabels ?? true}
-                        onChange={(e) =>
-                            onConfigChange({
+                <label className={styles.inline_toggle}>
+                    <Switch
+                        size="sm"
+                        on={config.styling?.showLabels ?? true}
+                        onChange={(next) =>
+                            onChange({
                                 ...config,
-                                styling: {
-                                    ...(config.styling || {}),
-                                    showLabels: e.target.checked
-                                }
+                                styling: { ...(config.styling ?? {}), showLabels: next }
                             })
                         }
+                        aria-label="Show text labels"
                     />
                     <span>Show text labels</span>
                 </label>
-            </section>
+            </ConfigGroup>
 
-            {/* Action Buttons */}
-            <div className={styles.actions}>
-                <button
-                    onClick={onSave}
-                    disabled={saving}
-                    className={`${styles.button} ${styles.buttonPrimary}`}
-                >
-                    {saving ? 'Saving...' : 'Save Configuration'}
-                </button>
+            <div className={styles.config_actions}>
+                <Button variant="ghost" onClick={onReset} disabled={saving}>
+                    Reset to defaults
+                </Button>
+                <Button variant="primary" onClick={onSave} loading={saving}>
+                    Save configuration
+                </Button>
+            </div>
+        </Stack>
+    );
+}
 
-                <button
-                    onClick={onReset}
+interface ConfigGroupProps {
+    title: string;
+    subtitle?: string;
+    children: ReactNode;
+}
+
+function ConfigGroup({ title, subtitle, children }: ConfigGroupProps) {
+    return (
+        <section className={styles.config_group}>
+            <header className={styles.config_group_header}>
+                <h3 className={styles.config_group_title}>{title}</h3>
+                {subtitle && <p className={styles.config_group_subtitle}>{subtitle}</p>}
+            </header>
+            {children}
+        </section>
+    );
+}
+
+/* ------------------------------------------------------------------ */
+/* Modal forms                                                        */
+/* ------------------------------------------------------------------ */
+
+interface MenuNodeFormProps {
+    mode: 'create' | 'edit';
+    initial?: IMenuNode;
+    availableParents: IMenuNode[];
+    onSubmit: (data: Partial<IMenuNode>) => Promise<void>;
+    onCancel: () => void;
+}
+
+function MenuNodeForm({ mode, initial, availableParents, onSubmit, onCancel }: MenuNodeFormProps) {
+    const { open: openInnerModal, close: closeInnerModal } = useModal();
+    const [data, setData] = useState<Partial<IMenuNode>>({
+        label: initial?.label ?? '',
+        url: initial?.url ?? '',
+        icon: initial?.icon ?? '',
+        order: initial?.order ?? 0,
+        parent: initial?.parent ?? null,
+        enabled: initial?.enabled ?? true,
+        requiredRole: initial?.requiredRole ?? ''
+    });
+    const [saving, setSaving] = useState(false);
+
+    const handleSubmit = async (e: FormEvent) => {
+        e.preventDefault();
+        setSaving(true);
+        try {
+            await onSubmit(data);
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const openIconPicker = () => {
+        const id = openInnerModal({
+            title: 'Select icon',
+            size: 'lg',
+            content: (
+                <LazyIconPickerModal
+                    selectedIcon={data.icon || undefined}
+                    onSelect={(name) => {
+                        setData((prev) => ({ ...prev, icon: name }));
+                        closeInnerModal(id);
+                    }}
+                    onClose={() => closeInnerModal(id)}
+                />
+            )
+        });
+    };
+
+    return (
+        <form className={styles.form} onSubmit={handleSubmit}>
+            <div className={styles.field}>
+                <label htmlFor="mn-label">
+                    Label <span className={styles.field_required}>*</span>
+                </label>
+                <Input
+                    id="mn-label"
+                    value={data.label ?? ''}
+                    onChange={(e) => setData({ ...data, label: e.target.value })}
+                    required
                     disabled={saving}
-                    className={`${styles.button} ${styles.buttonDanger}`}
+                />
+            </div>
+
+            <div className={styles.field_row}>
+                <div className={styles.field}>
+                    <label htmlFor="mn-url">URL</label>
+                    <Input
+                        id="mn-url"
+                        value={data.url ?? ''}
+                        onChange={(e) => setData({ ...data, url: e.target.value })}
+                        placeholder="/path"
+                        disabled={saving}
+                    />
+                </div>
+                <div className={styles.field}>
+                    <label htmlFor="mn-order">Order</label>
+                    <Input
+                        id="mn-order"
+                        type="number"
+                        value={data.order ?? 0}
+                        onChange={(e) =>
+                            setData({ ...data, order: parseInt(e.target.value, 10) || 0 })
+                        }
+                        disabled={saving}
+                    />
+                </div>
+            </div>
+
+            <div className={styles.field}>
+                <span className={styles.field_label}>Icon</span>
+                <div className={styles.icon_field}>
+                    <Input
+                        className={styles.icon_field_input}
+                        value={data.icon ?? ''}
+                        onChange={(e) => setData({ ...data, icon: e.target.value })}
+                        placeholder="Lucide icon name (e.g., Home)"
+                        disabled={saving}
+                    />
+                    <Button type="button" variant="ghost" size="sm" onClick={openIconPicker} disabled={saving}>
+                        Browse
+                    </Button>
+                </div>
+            </div>
+
+            <div className={styles.field}>
+                <label htmlFor="mn-parent">Parent</label>
+                <select
+                    id="mn-parent"
+                    className={cn(styles.select, styles.select_full)}
+                    value={data.parent ?? ''}
+                    onChange={(e) => setData({ ...data, parent: e.target.value || null })}
+                    disabled={saving}
                 >
-                    Reset to Defaults
-                </button>
+                    <option value="">None (root level)</option>
+                    {availableParents.map((p) => (
+                        <option key={p._id} value={p._id ?? ''}>
+                            {p.label}
+                        </option>
+                    ))}
+                </select>
+            </div>
+
+            <div className={styles.field}>
+                <label htmlFor="mn-role">Required role</label>
+                <Input
+                    id="mn-role"
+                    value={data.requiredRole ?? ''}
+                    onChange={(e) => setData({ ...data, requiredRole: e.target.value })}
+                    placeholder="(none)"
+                    disabled={saving}
+                />
+            </div>
+
+            <label className={styles.inline_toggle}>
+                <Switch
+                    size="sm"
+                    on={data.enabled ?? true}
+                    onChange={(next) => setData({ ...data, enabled: next })}
+                    disabled={saving}
+                    aria-label="Enabled"
+                />
+                <span>Enabled</span>
+            </label>
+
+            <div className={styles.form_footer}>
+                <Button type="button" variant="ghost" onClick={onCancel} disabled={saving}>
+                    Cancel
+                </Button>
+                <Button type="submit" variant="primary" loading={saving} disabled={!data.label}>
+                    {mode === 'create' ? 'Create' : 'Save changes'}
+                </Button>
+            </div>
+        </form>
+    );
+}
+
+interface NamespaceFormProps {
+    existing: string[];
+    onSubmit: (name: string) => void;
+    onCancel: () => void;
+}
+
+function NamespaceForm({ existing, onSubmit, onCancel }: NamespaceFormProps) {
+    const [name, setName] = useState('');
+    const trimmed = name.trim();
+    const invalid = trimmed.length === 0 || existing.includes(trimmed);
+
+    const handleSubmit = (e: FormEvent) => {
+        e.preventDefault();
+        if (invalid) return;
+        onSubmit(trimmed);
+    };
+
+    return (
+        <form className={styles.form} onSubmit={handleSubmit}>
+            <div className={styles.field}>
+                <label htmlFor="ns-name">Namespace name</label>
+                <Input
+                    id="ns-name"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder="e.g., footer, mobile, admin-sidebar"
+                    autoFocus
+                    required
+                />
+                <span className={styles.field_hint}>
+                    Lowercase identifier; hyphens allowed.
+                </span>
+                {existing.includes(trimmed) && (
+                    <Badge tone="warning">Namespace already exists</Badge>
+                )}
+            </div>
+            <div className={styles.form_footer}>
+                <Button type="button" variant="ghost" onClick={onCancel}>
+                    Cancel
+                </Button>
+                <Button type="submit" variant="primary" disabled={invalid}>
+                    Create
+                </Button>
+            </div>
+        </form>
+    );
+}
+
+interface ConfirmDialogProps {
+    label: string;
+    message?: string;
+    confirmLabel?: string;
+    onConfirm: () => Promise<void> | void;
+    onCancel: () => void;
+}
+
+function ConfirmDialog({
+    label,
+    message,
+    confirmLabel = 'Delete',
+    onConfirm,
+    onCancel
+}: ConfirmDialogProps) {
+    const [working, setWorking] = useState(false);
+    const handleConfirm = async () => {
+        setWorking(true);
+        try {
+            await onConfirm();
+        } finally {
+            setWorking(false);
+        }
+    };
+
+    return (
+        <div className={styles.confirm}>
+            <div className={styles.confirm_message}>
+                <AlertTriangle size={20} style={{ color: 'var(--color-warning)', flexShrink: 0 }} />
+                <span>
+                    {message ?? (
+                        <>
+                            Delete <strong>{label}</strong>? This action cannot be undone.
+                        </>
+                    )}
+                </span>
+            </div>
+            <div className={styles.confirm_actions}>
+                <Button variant="ghost" onClick={onCancel} disabled={working}>
+                    Cancel
+                </Button>
+                <Button variant="danger" onClick={handleConfirm} loading={working}>
+                    {confirmLabel}
+                </Button>
             </div>
         </div>
     );
