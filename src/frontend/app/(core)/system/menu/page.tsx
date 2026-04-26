@@ -31,11 +31,22 @@ interface FlatNode {
  * Flatten a parent-child node list into a depth-aware sequence so a single
  * <Table> can render the whole hierarchy. Roots first, then a depth-first
  * descent ordered by `order` at each level.
+ *
+ * Orphans — nodes whose `parent` id is not present in the input — are
+ * bucketed under `null` so they appear as roots. This mirrors the backend
+ * `buildTree`, which also treats unknown parents as roots, and keeps the
+ * admin table a complete view of state so operators can see (and fix or
+ * delete) orphans instead of having them silently disappear.
  */
 function flattenTree(nodes: IMenuNode[]): FlatNode[] {
+    const knownIds = new Set<string>();
+    for (const node of nodes) {
+        if (node._id) knownIds.add(node._id);
+    }
+
     const byParent = new Map<string | null, IMenuNode[]>();
     for (const node of nodes) {
-        const key = node.parent ?? null;
+        const key = node.parent && knownIds.has(node.parent) ? node.parent : null;
         const bucket = byParent.get(key) ?? [];
         bucket.push(node);
         byParent.set(key, bucket);
@@ -833,7 +844,20 @@ function MenuNodeForm({ mode, initial, availableParents, onSubmit, onCancel }: M
         e.preventDefault();
         setSaving(true);
         try {
-            await onSubmit(data);
+            // Inputs return '' when empty, but the backend's optional-string
+            // schemas reject empty strings (their regexes require >= 1 char).
+            // Trim and coerce blank optionals to undefined so unset fields
+            // serialize as omitted rather than failing validation.
+            const blankToUndefined = (v: unknown) =>
+                typeof v === 'string' ? (v.trim() || undefined) : v;
+            const normalized: Partial<IMenuNode> = {
+                ...data,
+                label: typeof data.label === 'string' ? data.label.trim() : data.label,
+                url: blankToUndefined(data.url) as string | undefined,
+                icon: blankToUndefined(data.icon) as string | undefined,
+                requiredRole: blankToUndefined(data.requiredRole) as string | undefined
+            };
+            await onSubmit(normalized);
         } finally {
             setSaving(false);
         }
@@ -970,10 +994,20 @@ interface NamespaceFormProps {
     onCancel: () => void;
 }
 
+// Mirrors the backend's NAMESPACE_REGEX in menu.controller.ts. Catching
+// malformed identifiers here turns "create namespace, switch to it, every
+// fetch returns 400" into an inline form error before the user commits.
+const NAMESPACE_PATTERN = /^[a-z][a-z0-9-]{0,63}$/;
+
 function NamespaceForm({ existing, onSubmit, onCancel }: NamespaceFormProps) {
     const [name, setName] = useState('');
-    const trimmed = name.trim();
-    const invalid = trimmed.length === 0 || existing.includes(trimmed);
+    // Auto-lowercase so the common typo (uppercase first letter) doesn't
+    // produce a confusing format error — the backend rejects uppercase.
+    const trimmed = name.trim().toLowerCase();
+    const isEmpty = trimmed.length === 0;
+    const isDuplicate = existing.includes(trimmed);
+    const isMalformed = !isEmpty && !NAMESPACE_PATTERN.test(trimmed);
+    const invalid = isEmpty || isDuplicate || isMalformed;
 
     const handleSubmit = (e: FormEvent) => {
         e.preventDefault();
@@ -994,10 +1028,15 @@ function NamespaceForm({ existing, onSubmit, onCancel }: NamespaceFormProps) {
                     required
                 />
                 <span className={styles.field_hint}>
-                    Lowercase identifier; hyphens allowed.
+                    Lowercase letters, digits, hyphens; must start with a letter; max 64 chars.
                 </span>
-                {existing.includes(trimmed) && (
+                {isDuplicate && (
                     <Badge tone="warning">Namespace already exists</Badge>
+                )}
+                {isMalformed && (
+                    <Badge tone="warning">
+                        Must start with a letter and contain only lowercase letters, digits, or hyphens
+                    </Badge>
                 )}
             </div>
             <div className={styles.form_footer}>
