@@ -23,33 +23,36 @@ The user module solves these problems by providing:
 
 ## User States — Canonical Taxonomy
 
-Every visitor is in exactly one of three states represented by the **`UserIdentityState`** type. Use this type — and never bare string literals — in all type signatures, function parameters, return types, database fields, and API responses. Use the matching vocabulary (anonymous / registered / verified) in all documentation, comments, log messages, and admin labels.
+Every visitor is in exactly one of three states represented by the **`UserIdentityState`** string-valued enum. Use the enum — never bare string literals — in all type signatures, function parameters, return types, database fields, API responses, and comparisons. Use the matching vocabulary (anonymous / registered / verified) in all documentation, comments, log messages, and admin labels.
 
 ```typescript
 // packages/types/src/user/IUserIdentityState.ts
-export const USER_IDENTITY_STATES = ['anonymous', 'registered', 'verified'] as const;
-export type UserIdentityState = (typeof USER_IDENTITY_STATES)[number];
+export enum UserIdentityState {
+    Anonymous = 'anonymous',
+    Registered = 'registered',
+    Verified = 'verified'
+}
 ```
 
-The pattern follows the same const-as-const idiom already used for `UserFilterType`: the literal values are the wire format (readable in MongoDB, HTTP responses, logs, and admin URLs), and the array order encodes the progression so claim-strength comparisons are an index lookup.
+The string values are the wire format — they appear in MongoDB documents, HTTP responses, logs, and admin URLs unchanged. Member names give consumer code typo-safe references; renames and refactors are compiler-checked.
 
-| `UserIdentityState` value | Definition | Detection from `IUser.wallets` |
-|---------------------------|------------|--------------------------------|
-| `'anonymous'` | UUID only. No wallets linked. | `wallets.length === 0` |
-| `'registered'` | One or more linked wallets, none cryptographically signed. The wallet claim is unverified. | `wallets.length > 0 && wallets.every(w => !w.verified)` |
-| `'verified'` | At least one linked wallet has been cryptographically signed, proving control of the private key. | `wallets.some(w => w.verified)` |
+| Member | Wire value | Definition | Detection from `IUser.wallets` |
+|--------|-----------|------------|--------------------------------|
+| `UserIdentityState.Anonymous` | `'anonymous'` | UUID only. No wallets linked. | `wallets.length === 0` |
+| `UserIdentityState.Registered` | `'registered'` | One or more linked wallets, none cryptographically signed. The wallet claim is unverified. | `wallets.length > 0 && wallets.every(w => !w.verified)` |
+| `UserIdentityState.Verified` | `'verified'` | At least one linked wallet has been cryptographically signed, proving control of the private key. | `wallets.some(w => w.verified)` |
 
-The states are ordered by claim strength (`anonymous` → `registered` → `verified`). A user transitions forward as they connect and then sign for wallets, and only transitions back if wallets are explicitly unlinked.
+The members are ordered by claim strength (Anonymous → Registered → Verified). A user transitions forward as they connect and then sign for wallets, and only transitions back if wallets are explicitly unlinked. The exported `USER_IDENTITY_STATES` array preserves this order for index-based comparisons or iteration.
 
-**Security implication.** `'registered'` is an unverified claim — the cookie holder asserts the wallet is theirs, but the backend has no cryptographic proof. Only `'verified'` proves private-key control. Sensitive operations (publishing a public profile, claiming referral rewards, destructive wallet actions) must compare against `'verified'` (or use a `hasVerifiedWallet` helper), not the mere presence of a linked wallet.
+**Security implication.** `Registered` is an unverified claim — the cookie holder asserts the wallet is theirs, but the backend has no cryptographic proof. Only `Verified` proves private-key control. Sensitive operations (publishing a public profile, claiming referral rewards, destructive wallet actions) must compare against `UserIdentityState.Verified` (or use a `hasVerifiedWallet` helper), not the mere presence of a linked wallet.
 
-**Forbidden pattern — bare string literals.** Do not write `if (state === 'verified')` against an arbitrary string column. The `UserIdentityState` type is the only sanctioned source of these values. Likewise, do not introduce a parallel enum (`UserState`, `IdentityTier`, etc.) — `UserIdentityState` is canonical. The name was chosen to distinguish this concept from `isLoggedIn` (a separate UI/feature gate) and from any future session/connection state.
+**Forbidden pattern — bare string literals.** Do not write `if (state === 'verified')`. Use `if (state === UserIdentityState.Verified)`. Likewise, do not introduce a parallel enum (`UserState`, `IdentityTier`, etc.) — `UserIdentityState` is canonical. The name was chosen to distinguish this concept from `isLoggedIn` (a separate UI/feature gate) and from any future session/connection state.
 
 **Vocabulary mapping to existing API surface.** The HTTP routes and service method names predate this taxonomy and remain unchanged for wire compatibility. The mapping is:
 
-- **"Register a wallet"** is the action that moves a user from `'anonymous'` to `'registered'`. It is performed by `connectWallet` on the service / `POST /api/user/:id/wallet/connect` on the route.
-- **"Verify a wallet"** is the action that moves a user (or a single wallet) into `'verified'`. It is performed by `linkWallet` on the service / `POST /api/user/:id/wallet` on the route.
-- The `IWalletLink.verified` boolean is the wire-format flag for an individual wallet. `verified: false` contributes to `'registered'`; `verified: true` makes the owning user `'verified'`.
+- **"Register a wallet"** is the action that moves a user from `Anonymous` to `Registered`. It is performed by `connectWallet` on the service / `POST /api/user/:id/wallet/connect` on the route.
+- **"Verify a wallet"** is the action that moves a user (or a single wallet) into `Verified`. It is performed by `linkWallet` on the service / `POST /api/user/:id/wallet` on the route.
+- The `IWalletLink.verified` boolean is the wire-format flag for an individual wallet. `verified: false` contributes to `Registered`; `verified: true` makes the owning user `Verified`.
 
 ## Plugin Access to User Data
 

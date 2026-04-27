@@ -1,13 +1,13 @@
 import { v4 as uuidv4 } from 'uuid';
 import { randomBytes } from 'crypto';
 import type { Collection } from 'mongodb';
+import { UserIdentityState } from '@/types';
 import type {
     IDatabaseService,
     ICacheService,
     ISystemConfigService,
     ISystemLogService,
     UserFilterType,
-    UserIdentityState,
     IUserActivitySummary,
     IUserWalletSummary,
     IUserRetentionSummary,
@@ -62,6 +62,7 @@ import {
 import type TronWeb from 'tronweb';
 import { SignatureService } from '../../auth/signature.service.js';
 import { GscService } from './gsc.service.js';
+import { AnalyticsRangeValidationError } from './user.errors.js';
 
 /**
  * Date range for analytics queries.
@@ -350,7 +351,7 @@ export class UserService {
         const newUser: Omit<IUserDocument, '_id'> = {
             id,
             isLoggedIn: false,
-            identityState: 'anonymous',
+            identityState: UserIdentityState.Anonymous,
             wallets: [],
             preferences: {},
             activity: {
@@ -722,13 +723,13 @@ export class UserService {
 
             // Create tombstone on loser — clear wallets, set merge pointer.
             // A tombstone has no wallets, so its identityState is forced to
-            // 'anonymous' to keep the field honest with the empty array.
+            // Anonymous to keep the field honest with the empty array.
             await this.collection.updateOne(
                 { id: loserId },
                 {
                     $set: {
                         wallets: [],
-                        identityState: 'anonymous' as UserIdentityState,
+                        identityState: UserIdentityState.Anonymous,
                         mergedInto: winnerId,
                         updatedAt: nowDate
                     }
@@ -1740,13 +1741,13 @@ export class UserService {
             // ==================== Wallet Status ====================
             // Identity-state filters read the stored `identityState` directly.
             case 'anonymous':
-                return { identityState: 'anonymous' };
+                return { identityState: UserIdentityState.Anonymous };
 
             case 'registered':
-                return { identityState: 'registered' };
+                return { identityState: UserIdentityState.Registered };
 
             case 'verified':
-                return { identityState: 'verified' };
+                return { identityState: UserIdentityState.Verified };
 
             case 'multi-wallet':
                 return {
@@ -1975,7 +1976,7 @@ export class UserService {
             case 'high-value':
                 // Verified user + active this week + pageViews > 50
                 return {
-                    identityState: 'verified',
+                    identityState: UserIdentityState.Verified,
                     'activity.lastSeen': { $gte: weekAgo },
                     'activity.pageViews': { $gt: 50 }
                 };
@@ -1984,14 +1985,14 @@ export class UserService {
                 // Churned but has at least one wallet (registered or verified)
                 return {
                     'activity.lastSeen': { $lt: thirtyDaysAgo },
-                    identityState: { $in: ['registered', 'verified'] }
+                    identityState: { $in: [UserIdentityState.Registered, UserIdentityState.Verified] }
                 };
 
             case 'conversion-candidates':
                 // High engagement but still anonymous
                 return {
                     'activity.pageViews': { $gt: 50 },
-                    identityState: 'anonymous'
+                    identityState: UserIdentityState.Anonymous
                 };
 
             case 'all':
@@ -2020,7 +2021,7 @@ export class UserService {
         ] = await Promise.all([
             this.collection.countDocuments({}),
             // "Users with wallets" = users in registered or verified state.
-            this.collection.countDocuments({ identityState: { $in: ['registered', 'verified'] } }),
+            this.collection.countDocuments({ identityState: { $in: [UserIdentityState.Registered, UserIdentityState.Verified] } }),
             this.collection.countDocuments({ 'activity.lastSeen': { $gte: todayStart } }),
             this.collection.countDocuments({ 'activity.lastSeen': { $gte: weekStart } }),
             this.collection.aggregate([
@@ -2393,10 +2394,10 @@ export class UserService {
                                 avgDuration: { $avg: { $ifNull: ['$activity.totalDurationSeconds', 0] } },
                                 // Read identity state directly from the stored field.
                                 walletsConnected: {
-                                    $sum: { $cond: [{ $in: ['$identityState', ['registered', 'verified']] }, 1, 0] }
+                                    $sum: { $cond: [{ $in: ['$identityState', [UserIdentityState.Registered, UserIdentityState.Verified]] }, 1, 0] }
                                 },
                                 walletsVerified: {
-                                    $sum: { $cond: [{ $eq: ['$identityState', 'verified'] }, 1, 0] }
+                                    $sum: { $cond: [{ $eq: ['$identityState', UserIdentityState.Verified] }, 1, 0] }
                                 }
                             }
                         }
@@ -2756,8 +2757,8 @@ export class UserService {
                     // than re-deriving from `wallets`. `$in` against the
                     // canonical UserIdentityState values keeps the projection
                     // honest with the taxonomy.
-                    hasWallet: { $in: ['$identityState', ['registered', 'verified']] },
-                    hasVerifiedWallet: { $eq: ['$identityState', 'verified'] }
+                    hasWallet: { $in: ['$identityState', [UserIdentityState.Registered, UserIdentityState.Verified]] },
+                    hasVerifiedWallet: { $eq: ['$identityState', UserIdentityState.Verified] }
                 }
             },
             {
@@ -2893,10 +2894,10 @@ export class UserService {
                     },
                     // Funnel stages read identity state directly.
                     walletConnected: {
-                        $sum: { $cond: [{ $in: ['$identityState', ['registered', 'verified']] }, 1, 0] }
+                        $sum: { $cond: [{ $in: ['$identityState', [UserIdentityState.Registered, UserIdentityState.Verified]] }, 1, 0] }
                     },
                     walletVerified: {
-                        $sum: { $cond: [{ $eq: ['$identityState', 'verified'] }, 1, 0] }
+                        $sum: { $cond: [{ $eq: ['$identityState', UserIdentityState.Verified] }, 1, 0] }
                     }
                 }
             }
@@ -3025,7 +3026,7 @@ export class UserService {
             // Converted = referred user reached the *verified* state.
             this.collection.countDocuments({
                 'referral.referredBy': referralCode,
-                identityState: 'verified'
+                identityState: UserIdentityState.Verified
             })
         ]);
 
@@ -3077,7 +3078,7 @@ export class UserService {
                     totalReferrals: { $sum: 1 },
                     // "Converted" = referred user reached the *verified* state.
                     totalConverted: {
-                        $sum: { $cond: [{ $eq: ['$identityState', 'verified'] }, 1, 0] }
+                        $sum: { $cond: [{ $eq: ['$identityState', UserIdentityState.Verified] }, 1, 0] }
                     }
                 }
             }
@@ -3100,7 +3101,7 @@ export class UserService {
                     _id: '$referral.referredBy',
                     referredCount: { $sum: 1 },
                     convertedCount: {
-                        $sum: { $cond: [{ $eq: ['$identityState', 'verified'] }, 1, 0] }
+                        $sum: { $cond: [{ $eq: ['$identityState', UserIdentityState.Verified] }, 1, 0] }
                     }
                 }
             },
@@ -3156,7 +3157,7 @@ export class UserService {
             referredBy: doc.referral?.referredBy ?? '',
             referredAt: doc.referral?.referredAt ? (doc.referral.referredAt as Date).toISOString() : '',
             // Read directly from the canonical stored state.
-            hasVerifiedWallet: doc.identityState === 'verified'
+            hasVerifiedWallet: doc.identityState === UserIdentityState.Verified
         }));
 
         return {
@@ -3263,7 +3264,7 @@ export class UserService {
                                     _id: null,
                                     // "Users without wallets" = anonymous users.
                                     usersWithoutWallets: {
-                                        $sum: { $cond: [{ $eq: ['$identityState', 'anonymous'] }, 1, 0] }
+                                        $sum: { $cond: [{ $eq: ['$identityState', UserIdentityState.Anonymous] }, 1, 0] }
                                     },
                                     usersWithMultiple: {
                                         $sum: { $cond: [{ $gt: [{ $size: { $ifNull: ['$wallets', []] } }, 1] }, 1, 0] }
@@ -4220,13 +4221,13 @@ export class UserService {
                         userId: '$id'
                     },
                     // Read identity state directly from the stored field.
-                    // hasWallet ⇔ identityState ∈ {'registered', 'verified'}.
-                    // hasVerified ⇔ identityState === 'verified'.
+                    // hasWallet ⇔ identityState ∈ {Registered, Verified}.
+                    // hasVerified ⇔ identityState === Verified.
                     hasWallet: {
-                        $first: { $in: ['$identityState', ['registered', 'verified']] }
+                        $first: { $in: ['$identityState', [UserIdentityState.Registered, UserIdentityState.Verified]] }
                     },
                     hasVerified: {
-                        $first: { $eq: ['$identityState', 'verified'] }
+                        $first: { $eq: ['$identityState', UserIdentityState.Verified] }
                     }
                 }
             },
@@ -4426,7 +4427,7 @@ export class UserService {
             const until = new Date(endDate);
             if (!isNaN(since.getTime()) && !isNaN(until.getTime())) {
                 if (since.getTime() > until.getTime()) {
-                    throw new Error('startDate must be before or equal to endDate');
+                    throw new AnalyticsRangeValidationError('startDate must be before or equal to endDate');
                 }
                 return { since, until };
             }
@@ -4516,12 +4517,12 @@ export class UserService {
      */
     private computeIdentityState(wallets: IWalletLink[]): UserIdentityState {
         if (wallets.length === 0) {
-            return 'anonymous';
+            return UserIdentityState.Anonymous;
         }
         if (wallets.some(w => w.verified)) {
-            return 'verified';
+            return UserIdentityState.Verified;
         }
-        return 'registered';
+        return UserIdentityState.Registered;
     }
 
     /**

@@ -29,6 +29,7 @@
 import type { Collection } from 'mongodb';
 import type {
     IDatabaseService,
+    ICacheService,
     ISystemLogService,
     IUserGroup,
     IUserGroupService,
@@ -37,6 +38,13 @@ import type {
 } from '@/types';
 import type { IUserGroupDocument } from '../database/IUserGroupDocument.js';
 import type { IUserDocument } from '../database/IUserDocument.js';
+import {
+    UserGroupValidationError,
+    UserGroupNotFoundError,
+    UserGroupConflictError,
+    UserGroupSystemProtectedError,
+    UserGroupMemberNotFoundError
+} from './user-group.errors.js';
 
 /**
  * Reserved-admin slug pattern. See module JSDoc for matched cases.
@@ -64,15 +72,16 @@ export class UserGroupService implements IUserGroupService {
 
     private constructor(
         database: IDatabaseService,
+        private readonly cacheService: ICacheService,
         private readonly logger: ISystemLogService
     ) {
         this.groupsCollection = database.getCollection<IUserGroupDocument>('module_user_groups');
         this.usersCollection = database.getCollection<IUserDocument>('users');
     }
 
-    public static setDependencies(database: IDatabaseService, logger: ISystemLogService): void {
+    public static setDependencies(database: IDatabaseService, cacheService: ICacheService, logger: ISystemLogService): void {
         if (!UserGroupService.instance) {
-            UserGroupService.instance = new UserGroupService(database, logger);
+            UserGroupService.instance = new UserGroupService(database, cacheService, logger);
         }
     }
 
@@ -103,7 +112,7 @@ export class UserGroupService implements IUserGroupService {
      */
     async seedSystemGroups(): Promise<void> {
         const now = new Date();
-        await this.groupsCollection.updateOne(
+        const result = await this.groupsCollection.updateOne(
             { id: SYSTEM_ADMIN_GROUP_ID },
             {
                 $setOnInsert: {
@@ -117,7 +126,11 @@ export class UserGroupService implements IUserGroupService {
             },
             { upsert: true }
         );
-        this.logger.info({ groupId: SYSTEM_ADMIN_GROUP_ID }, 'System admin group seeded');
+        if (result.upsertedCount > 0) {
+            this.logger.info({ groupId: SYSTEM_ADMIN_GROUP_ID }, 'System admin group seeded');
+        } else {
+            this.logger.debug({ groupId: SYSTEM_ADMIN_GROUP_ID }, 'System admin group already present');
+        }
     }
 
     // ==================== Definition CRUD ====================
@@ -136,26 +149,32 @@ export class UserGroupService implements IUserGroupService {
     }
 
     async createGroup(input: ICreateUserGroupInput): Promise<IUserGroup> {
-        const id = (input.id ?? '').trim().toLowerCase();
-        const name = (input.name ?? '').trim();
-        const description = (input.description ?? '').trim();
+        // Defensively coerce. The controller hands `req.body` fields straight
+        // through, so non-string values (arrays, numbers, null) reach here
+        // unfiltered — guard before calling string methods.
+        const id = typeof input.id === 'string' ? input.id.trim().toLowerCase() : '';
+        const name = typeof input.name === 'string' ? input.name.trim() : '';
+        const description = typeof input.description === 'string' ? input.description.trim() : '';
 
-        if (!id) throw new Error('Group id is required');
-        if (!name) throw new Error('Group name is required');
+        if (!id) throw new UserGroupValidationError('Group id is required');
+        if (!name) throw new UserGroupValidationError('Group name is required');
         if (!SLUG_PATTERN.test(id)) {
-            throw new Error(
+            throw new UserGroupValidationError(
                 `Invalid group id "${id}": must be lowercase letters, digits, and hyphens, starting with a letter`
             );
         }
         if (RESERVED_ADMIN_PATTERN.test(id)) {
-            throw new Error(
+            throw new UserGroupValidationError(
                 `Group id "${id}" is reserved for platform-defined admin groups; choose a context-scoped name (e.g. "market-admin")`
             );
         }
 
+        // Pre-check gives fast feedback in the uncontended case. The unique
+        // index on `id` is the actual correctness anchor — see the catch
+        // below for the concurrent-insert race.
         const existing = await this.groupsCollection.findOne({ id });
         if (existing) {
-            throw new Error(`Group "${id}" already exists`);
+            throw new UserGroupConflictError(id);
         }
 
         const now = new Date();
@@ -167,7 +186,17 @@ export class UserGroupService implements IUserGroupService {
             createdAt: now,
             updatedAt: now
         };
-        await this.groupsCollection.insertOne(doc as any);
+        try {
+            await this.groupsCollection.insertOne(doc as any);
+        } catch (error) {
+            // MongoDB duplicate-key — concurrent insert won the race after
+            // our findOne returned null. Translate to the same conflict
+            // error the controller maps to HTTP 409.
+            if (error && typeof error === 'object' && (error as { code?: number }).code === 11000) {
+                throw new UserGroupConflictError(id);
+            }
+            throw error;
+        }
         this.logger.info({ groupId: id }, 'User group created');
         return this.toPublicGroup(doc as IUserGroupDocument);
     }
@@ -175,19 +204,26 @@ export class UserGroupService implements IUserGroupService {
     async updateGroup(id: string, input: IUpdateUserGroupInput): Promise<IUserGroup> {
         const existing = await this.groupsCollection.findOne({ id });
         if (!existing) {
-            throw new Error(`Group "${id}" does not exist`);
+            throw new UserGroupNotFoundError(id);
         }
         if (existing.system) {
-            throw new Error(`Group "${id}" is a system group and cannot be modified`);
+            throw new UserGroupSystemProtectedError(id, 'modify');
         }
 
         const updates: Partial<IUserGroupDocument> = { updatedAt: new Date() };
         if (input.name !== undefined) {
+            // Defensively coerce — same reasoning as `createGroup` above.
+            if (typeof input.name !== 'string') {
+                throw new UserGroupValidationError('Group name must be a string');
+            }
             const name = input.name.trim();
-            if (!name) throw new Error('Group name cannot be empty');
+            if (!name) throw new UserGroupValidationError('Group name cannot be empty');
             updates.name = name;
         }
         if (input.description !== undefined) {
+            if (typeof input.description !== 'string') {
+                throw new UserGroupValidationError('Group description must be a string');
+            }
             updates.description = input.description.trim();
         }
 
@@ -199,35 +235,50 @@ export class UserGroupService implements IUserGroupService {
     async deleteGroup(id: string): Promise<void> {
         const existing = await this.groupsCollection.findOne({ id });
         if (!existing) {
-            throw new Error(`Group "${id}" does not exist`);
+            throw new UserGroupNotFoundError(id);
         }
         if (existing.system) {
-            throw new Error(`Group "${id}" is a system group and cannot be deleted`);
+            throw new UserGroupSystemProtectedError(id, 'delete');
         }
 
-        await this.groupsCollection.deleteOne({ id });
-        // Cascade: pull this id from every user's groups array so we don't
-        // leak references to a group that no longer exists.
+        // Cascade first so that a partial failure leaves a recoverable
+        // state. If the definition delete below fails, the operator can
+        // retry — the definition is still present, $pull on already-clean
+        // arrays is a no-op, and no orphaned references are stranded in
+        // user.groups[]. The reverse order would strand references that
+        // removeMember (which validates the definition exists) cannot clear.
+        //
+        // Enumerate affected user ids before the cascade so we can invalidate
+        // their UserService caches after the write. Otherwise consumers
+        // reading via UserService would see stale `groups[]` until the
+        // 1-hour TTL expires.
+        const affectedUsers = await this.usersCollection
+            .find({ groups: id }, { projection: { id: 1 } })
+            .toArray();
         await this.usersCollection.updateMany(
             { groups: id },
             { $pull: { groups: id } as any, $set: { updatedAt: new Date() } }
         );
-        this.logger.info({ groupId: id }, 'User group deleted');
+        await this.groupsCollection.deleteOne({ id });
+        await Promise.all(affectedUsers.map(u => this.invalidateUserCache(u.id)));
+        this.logger.info({ groupId: id, affectedUsers: affectedUsers.length }, 'User group deleted');
     }
 
     // ==================== Membership ====================
 
     async getUserGroups(userId: string): Promise<string[]> {
+        const canonicalId = await this.resolveCanonicalUserId(userId);
         const doc = await this.usersCollection.findOne(
-            { id: userId },
+            { id: canonicalId },
             { projection: { groups: 1 } }
         );
         return doc?.groups ?? [];
     }
 
     async isMember(userId: string, groupId: string): Promise<boolean> {
+        const canonicalId = await this.resolveCanonicalUserId(userId);
         const count = await this.usersCollection.countDocuments(
-            { id: userId, groups: groupId },
+            { id: canonicalId, groups: groupId },
             { limit: 1 }
         );
         return count > 0;
@@ -236,26 +287,30 @@ export class UserGroupService implements IUserGroupService {
     async addMember(userId: string, groupId: string): Promise<void> {
         const group = await this.groupsCollection.findOne({ id: groupId });
         if (!group) {
-            throw new Error(`Group "${groupId}" does not exist`);
+            throw new UserGroupNotFoundError(groupId);
         }
+        const canonicalId = await this.resolveCanonicalUserId(userId);
         const result = await this.usersCollection.updateOne(
-            { id: userId },
+            { id: canonicalId },
             { $addToSet: { groups: groupId } as any, $set: { updatedAt: new Date() } }
         );
         if (result.matchedCount === 0) {
-            throw new Error(`User "${userId}" does not exist`);
+            throw new UserGroupMemberNotFoundError(userId);
         }
+        await this.invalidateUserCache(canonicalId);
     }
 
     async removeMember(userId: string, groupId: string): Promise<void> {
         const group = await this.groupsCollection.findOne({ id: groupId });
         if (!group) {
-            throw new Error(`Group "${groupId}" does not exist`);
+            throw new UserGroupNotFoundError(groupId);
         }
+        const canonicalId = await this.resolveCanonicalUserId(userId);
         await this.usersCollection.updateOne(
-            { id: userId },
+            { id: canonicalId },
             { $pull: { groups: groupId } as any, $set: { updatedAt: new Date() } }
         );
+        await this.invalidateUserCache(canonicalId);
     }
 
     // ==================== Special: admin ====================
@@ -265,8 +320,9 @@ export class UserGroupService implements IUserGroupService {
         // against the reserved-admin pattern with system: true on the
         // group definition. This handles future system-seeded admin
         // variants without code changes.
+        const canonicalId = await this.resolveCanonicalUserId(userId);
         const user = await this.usersCollection.findOne(
-            { id: userId },
+            { id: canonicalId },
             { projection: { groups: 1 } }
         );
         const groupIds = user?.groups ?? [];
@@ -283,6 +339,40 @@ export class UserGroupService implements IUserGroupService {
     }
 
     // ==================== Helpers ====================
+
+    /**
+     * Follow a single `mergedInto` hop to the canonical user id.
+     *
+     * Identity reconciliation in `UserService` flattens pointer chains during
+     * the merge (every UUID already pointing at the loser is rewritten to
+     * point at the winner), so a single hop is always sufficient — no loop
+     * required.
+     *
+     * Plugins commonly retain a pre-merge UUID (cookie, persisted reference,
+     * cached value). Resolving the pointer here keeps membership reads and
+     * writes accurate after a wallet-driven identity swap, instead of
+     * silently operating on the loser tombstone — whose `groups[]` array
+     * is whatever the loser had at merge time and is never updated again.
+     */
+    private async resolveCanonicalUserId(userId: string): Promise<string> {
+        const doc = await this.usersCollection.findOne(
+            { id: userId },
+            { projection: { mergedInto: 1 } }
+        );
+        return doc?.mergedInto ?? userId;
+    }
+
+    /**
+     * Drop the affected user's `UserService` cache entry so consumers
+     * reading via `/api/user/:id` and other UserService paths see the
+     * updated `groups[]` array immediately. UserService caches users
+     * with the tag `user:${userId}` and a 1-hour TTL — without this
+     * call, membership changes lag behind by up to an hour.
+     */
+    private async invalidateUserCache(userId: string): Promise<void> {
+        await this.cacheService.invalidate(`user:${userId}`);
+    }
+
 
     private toPublicGroup(doc: IUserGroupDocument | Omit<IUserGroupDocument, '_id'>): IUserGroup {
         return {

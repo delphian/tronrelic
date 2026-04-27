@@ -7,7 +7,7 @@
  */
 
 import { createSlice, createAsyncThunk, type PayloadAction } from '@reduxjs/toolkit';
-import type { UserIdentityState } from '@/types';
+import { UserIdentityState } from '@/types';
 import type { IUserData, IWalletLink, IUserPreferences } from './types';
 import {
     fetchUser,
@@ -714,13 +714,13 @@ export const selectUserInitialized = (state: { user: UserState }): boolean =>
  * the pre-init state as the safest possible value.
  */
 export const selectIdentityState = (state: { user: UserState }): UserIdentityState =>
-    state.user.userData?.identityState ?? 'anonymous';
+    state.user.userData?.identityState ?? UserIdentityState.Anonymous;
 
 /**
  * Select whether the user is in the *anonymous* identity state.
  */
 export const selectIsAnonymous = (state: { user: UserState }): boolean =>
-    selectIdentityState(state) === 'anonymous';
+    selectIdentityState(state) === UserIdentityState.Anonymous;
 
 /**
  * Select whether the user is in the *registered* identity state.
@@ -728,7 +728,7 @@ export const selectIsAnonymous = (state: { user: UserState }): boolean =>
  * Registered = at least one wallet linked, none cryptographically signed.
  */
 export const selectIsRegistered = (state: { user: UserState }): boolean =>
-    selectIdentityState(state) === 'registered';
+    selectIdentityState(state) === UserIdentityState.Registered;
 
 /**
  * Select whether the user is in the *verified* identity state.
@@ -736,15 +736,15 @@ export const selectIsRegistered = (state: { user: UserState }): boolean =>
  * Verified = at least one cryptographically signed wallet.
  */
 export const selectIsVerified = (state: { user: UserState }): boolean =>
-    selectIdentityState(state) === 'verified';
+    selectIdentityState(state) === UserIdentityState.Verified;
 
 /**
  * Select whether the user has at least one linked wallet (registered or verified).
  *
- * Equivalent to `identityState !== 'anonymous'`.
+ * Equivalent to `identityState !== UserIdentityState.Anonymous`.
  */
 export const selectHasWallets = (state: { user: UserState }): boolean =>
-    selectIdentityState(state) !== 'anonymous';
+    selectIdentityState(state) !== UserIdentityState.Anonymous;
 
 /**
  * Select whether the user has at least one cryptographically signed wallet.

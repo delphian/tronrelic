@@ -5,19 +5,19 @@
  * user data, enabling hydration without UI flash.
  */
 
-import type { UserIdentityState } from '@/types';
+import { UserIdentityState } from '@/types';
 import type { UserState } from '../slice';
 import type { IWalletLink } from '../types';
 
 /**
  * Derive `UserIdentityState` from the wallets array. Mirrors the
  * backend's canonical rule (see user module README): no wallets →
- * anonymous, at least one verified → verified, otherwise registered.
+ * Anonymous, at least one verified → Verified, otherwise Registered.
  */
 function deriveIdentityState(wallets: IWalletLink[]): UserIdentityState {
-    if (wallets.length === 0) return 'anonymous';
-    if (wallets.some(w => w.verified)) return 'verified';
-    return 'registered';
+    if (wallets.length === 0) return UserIdentityState.Anonymous;
+    if (wallets.some(w => w.verified)) return UserIdentityState.Verified;
+    return UserIdentityState.Registered;
 }
 
 /**

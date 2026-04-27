@@ -1,3 +1,4 @@
+import { UserIdentityState } from '@/types';
 import type { IMigration, IMigrationContext } from '@/types';
 
 /**
@@ -15,12 +16,12 @@ import type { IMigration, IMigrationContext } from '@/types';
  * For every document in the `users` collection it derives `identityState`
  * from the existing `wallets` array using the same rule the service uses:
  *
- *   - `wallets.length === 0`           → `'anonymous'`
- *   - `wallets.some(w => w.verified)`  → `'verified'`
- *   - otherwise                         → `'registered'`
+ *   - `wallets.length === 0`           → `UserIdentityState.Anonymous`
+ *   - `wallets.some(w => w.verified)`  → `UserIdentityState.Verified`
+ *   - otherwise                         → `UserIdentityState.Registered`
  *
  * Tombstone documents (those with a `mergedInto` pointer) always have an
- * empty `wallets` array, so they correctly back-fill to `'anonymous'`.
+ * empty `wallets` array, so they correctly back-fill to `Anonymous`.
  *
  * The migration is idempotent: re-running it overwrites `identityState` with
  * the same value derived from the (unchanged) `wallets` array.
@@ -61,13 +62,13 @@ export const migration: IMigration = {
                     { wallets: { $size: 0 } }
                 ]
             },
-            { $set: { identityState: 'anonymous' } }
+            { $set: { identityState: UserIdentityState.Anonymous } }
         );
 
         // Any wallet with verified=true → user is verified.
         const verifiedResult = await usersCollection.updateMany(
             { wallets: { $elemMatch: { verified: true } } },
-            { $set: { identityState: 'verified' } }
+            { $set: { identityState: UserIdentityState.Verified } }
         );
 
         // Has wallets but none verified → registered. We compute the
@@ -78,7 +79,7 @@ export const migration: IMigration = {
                 'wallets.0': { $exists: true },
                 wallets: { $not: { $elemMatch: { verified: true } } }
             },
-            { $set: { identityState: 'registered' } }
+            { $set: { identityState: UserIdentityState.Registered } }
         );
 
         console.log(

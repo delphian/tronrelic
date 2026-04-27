@@ -1,19 +1,21 @@
 /**
  * Canonical identity-state taxonomy for TronRelic users.
  *
- * Every user is in exactly one of three states. The states are ordered by
- * claim strength: anonymous → registered → verified. The array order encodes
- * this progression so claim-strength comparisons are an index lookup.
+ * Every user is in exactly one of three states ordered by claim strength:
+ * `Anonymous` → `Registered` → `Verified`. The string values are the wire and
+ * database format. They appear in MongoDB documents
+ * (`IUserDocument.identityState`), HTTP responses (`IUser.identityState`),
+ * filter queries, log messages, and admin URLs.
  *
- * The literal string values are the wire and database format. They appear in
- * MongoDB documents (`IUserDocument.identityState`), HTTP responses
- * (`IUser.identityState`), filter queries, log messages, and admin URLs.
+ * Defined as a string-valued enum so consumer code references members by name
+ * (`UserIdentityState.Verified`) instead of bare string literals — the
+ * compiler catches typos and refactors are safe.
  *
- * | Value          | Meaning                                                              |
- * |----------------|----------------------------------------------------------------------|
- * | `'anonymous'`  | UUID only. No wallets linked.                                        |
- * | `'registered'` | One or more linked wallets, none cryptographically signed.           |
- * | `'verified'`   | At least one linked wallet has been cryptographically signed.        |
+ * | Member       | Value          | Meaning                                                    |
+ * |--------------|----------------|------------------------------------------------------------|
+ * | `Anonymous`  | `'anonymous'`  | UUID only. No wallets linked.                              |
+ * | `Registered` | `'registered'` | One or more linked wallets, none cryptographically signed. |
+ * | `Verified`   | `'verified'`   | At least one linked wallet has been cryptographically signed. |
  *
  * The state is **stored**, not derived at read time. `UserService` recomputes
  * and persists it on every wallet mutation. Consumers must read
@@ -23,10 +25,18 @@
  * including security implications and the mapping to existing API surface
  * (`connectWallet`/`linkWallet` and the `verified: boolean` per-wallet flag).
  */
-export const USER_IDENTITY_STATES = ['anonymous', 'registered', 'verified'] as const;
+export enum UserIdentityState {
+    Anonymous = 'anonymous',
+    Registered = 'registered',
+    Verified = 'verified'
+}
 
 /**
- * The user's canonical identity state. See `USER_IDENTITY_STATES` for the
- * full taxonomy and storage rules.
+ * Ordered list of identity states by claim strength (Anonymous → Registered →
+ * Verified). Useful for index-based comparisons or iteration.
  */
-export type UserIdentityState = (typeof USER_IDENTITY_STATES)[number];
+export const USER_IDENTITY_STATES = [
+    UserIdentityState.Anonymous,
+    UserIdentityState.Registered,
+    UserIdentityState.Verified
+] as const;

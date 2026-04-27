@@ -222,7 +222,7 @@ export class UserModule implements IModule<IUserModuleDependencies> {
         this.controller = new UserController(this.userService, this.gscService, this.logger);
 
         // Initialize UserGroupService singleton, build indexes, seed system groups
-        UserGroupService.setDependencies(this.database, this.logger);
+        UserGroupService.setDependencies(this.database, this.cacheService, this.logger);
         this.userGroupService = UserGroupService.getInstance();
         await this.userGroupService.createIndexes();
         await this.userGroupService.seedSystemGroups();

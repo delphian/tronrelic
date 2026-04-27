@@ -1,8 +1,7 @@
 export { USER_FILTERS } from './IUserFilter.js';
 export type { UserFilterType } from './IUserFilter.js';
 
-export { USER_IDENTITY_STATES } from './IUserIdentityState.js';
-export type { UserIdentityState } from './IUserIdentityState.js';
+export { USER_IDENTITY_STATES, UserIdentityState } from './IUserIdentityState.js';
 
 export type {
     IUser,

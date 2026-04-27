@@ -1,15 +1,23 @@
 import type { Request, Response } from 'express';
 import type { ISystemLogService } from '@/types';
 import type { UserGroupService } from '../services/user-group.service.js';
+import {
+    UserGroupValidationError,
+    UserGroupNotFoundError,
+    UserGroupConflictError,
+    UserGroupSystemProtectedError,
+    UserGroupMemberNotFoundError
+} from '../services/user-group.errors.js';
 
 /**
  * Controller for admin user-group endpoints.
  *
  * All routes mounted under `/api/admin/users/groups` are protected by the
- * `requireAdmin` middleware applied at the parent router. Validation lives
- * in the service; the controller's only job is to translate service errors
- * into HTTP status codes (400 for client validation, 404 for missing rows,
- * 409 for conflicts) and forward unknown errors as 500s.
+ * `requireAdmin` middleware applied at the parent router. The controller
+ * translates typed service errors (see `user-group.errors.ts`) into HTTP
+ * status codes via `instanceof` checks — error messages are not load-bearing
+ * for status selection, so service messages can be reworded without
+ * breaking the API contract.
  */
 export class UserGroupController {
     constructor(
@@ -50,9 +58,7 @@ export class UserGroupController {
             const group = await this.groupService.createGroup({ id, name, description });
             res.status(201).json({ group });
         } catch (error) {
-            const message = error instanceof Error ? error.message : 'Failed to create group';
-            const status = /already exists/i.test(message) ? 409 : 400;
-            res.status(status).json({ error: status === 409 ? 'Conflict' : 'BadRequest', message });
+            this.respondWithError(res, error, { id: req.params.id }, 'Failed to create group');
         }
     }
 
@@ -63,14 +69,7 @@ export class UserGroupController {
             const group = await this.groupService.updateGroup(req.params.id, { name, description });
             res.json({ group });
         } catch (error) {
-            const message = error instanceof Error ? error.message : 'Failed to update group';
-            let status = 400;
-            if (/does not exist/i.test(message)) status = 404;
-            else if (/system group/i.test(message)) status = 403;
-            res.status(status).json({
-                error: status === 404 ? 'NotFound' : status === 403 ? 'Forbidden' : 'BadRequest',
-                message
-            });
+            this.respondWithError(res, error, { id: req.params.id }, 'Failed to update group');
         }
     }
 
@@ -80,14 +79,37 @@ export class UserGroupController {
             await this.groupService.deleteGroup(req.params.id);
             res.status(204).end();
         } catch (error) {
-            const message = error instanceof Error ? error.message : 'Failed to delete group';
-            let status = 400;
-            if (/does not exist/i.test(message)) status = 404;
-            else if (/system group/i.test(message)) status = 403;
-            res.status(status).json({
-                error: status === 404 ? 'NotFound' : status === 403 ? 'Forbidden' : 'BadRequest',
-                message
-            });
+            this.respondWithError(res, error, { id: req.params.id }, 'Failed to delete group');
         }
+    }
+
+    /**
+     * Map typed service errors to HTTP status codes. Unknown errors are
+     * logged and surfaced as 500s so callers don't see internal details.
+     */
+    private respondWithError(
+        res: Response,
+        error: unknown,
+        logContext: Record<string, unknown>,
+        fallbackMessage: string
+    ): void {
+        if (error instanceof UserGroupValidationError) {
+            res.status(400).json({ error: 'BadRequest', message: error.message });
+            return;
+        }
+        if (error instanceof UserGroupNotFoundError || error instanceof UserGroupMemberNotFoundError) {
+            res.status(404).json({ error: 'NotFound', message: error.message });
+            return;
+        }
+        if (error instanceof UserGroupConflictError) {
+            res.status(409).json({ error: 'Conflict', message: error.message });
+            return;
+        }
+        if (error instanceof UserGroupSystemProtectedError) {
+            res.status(403).json({ error: 'Forbidden', message: error.message });
+            return;
+        }
+        this.logger.error({ err: error, ...logContext }, fallbackMessage);
+        res.status(500).json({ error: 'InternalError', message: fallbackMessage });
     }
 }

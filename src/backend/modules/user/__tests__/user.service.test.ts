@@ -2,6 +2,7 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { UserService } from '../services/user.service.js';
+import { UserIdentityState } from '@/types';
 import type { ICacheService, ISystemLogService } from '@/types';
 import { createMockDatabaseService } from '../../../tests/vitest/mocks/database-service.js';
 
@@ -1455,14 +1456,14 @@ describe('UserService', () => {
 
         it('initializes a brand-new user as anonymous', async () => {
             const user = await userService.getOrCreate(validUUID);
-            expect(user.identityState).toBe('anonymous');
+            expect(user.identityState).toBe(UserIdentityState.Anonymous);
         });
 
         it('persists anonymous on the underlying document', async () => {
             await userService.getOrCreate(validUUID);
             const collection = mockDatabase.getCollection('users');
             const doc = await collection.findOne({ id: validUUID });
-            expect(doc!.identityState).toBe('anonymous');
+            expect(doc!.identityState).toBe(UserIdentityState.Anonymous);
         });
 
         it('transitions anonymous → registered after connectWallet', async () => {
@@ -1470,11 +1471,11 @@ describe('UserService', () => {
             const result = await userService.connectWallet(validUUID, walletAddress);
 
             expect(result.success).toBe(true);
-            expect(result.user!.identityState).toBe('registered');
+            expect(result.user!.identityState).toBe(UserIdentityState.Registered);
 
             const collection = mockDatabase.getCollection('users');
             const doc = await collection.findOne({ id: validUUID });
-            expect(doc!.identityState).toBe('registered');
+            expect(doc!.identityState).toBe(UserIdentityState.Registered);
         });
 
         it('transitions registered → verified after linkWallet (signature)', async () => {
@@ -1488,11 +1489,11 @@ describe('UserService', () => {
                 timestamp: Date.now()
             });
 
-            expect(result.user.identityState).toBe('verified');
+            expect(result.user.identityState).toBe(UserIdentityState.Verified);
 
             const collection = mockDatabase.getCollection('users');
             const doc = await collection.findOne({ id: validUUID });
-            expect(doc!.identityState).toBe('verified');
+            expect(doc!.identityState).toBe(UserIdentityState.Verified);
         });
 
         it('transitions anonymous → verified directly when linkWallet adds a new wallet', async () => {
@@ -1505,7 +1506,7 @@ describe('UserService', () => {
                 timestamp: Date.now()
             });
 
-            expect(result.user.identityState).toBe('verified');
+            expect(result.user.identityState).toBe(UserIdentityState.Verified);
         });
 
         it('stays verified when an additional unverified wallet is connected', async () => {
@@ -1520,7 +1521,7 @@ describe('UserService', () => {
 
             const collection = mockDatabase.getCollection('users');
             const doc = await collection.findOne({ id: validUUID });
-            expect(doc!.identityState).toBe('verified');
+            expect(doc!.identityState).toBe(UserIdentityState.Verified);
         });
 
         it('demotes verified → registered when the only verified wallet is unlinked but another remains', async () => {
@@ -1533,9 +1534,10 @@ describe('UserService', () => {
             });
             await userService.connectWallet(validUUID, otherWallet);
 
-            // Mock signature service returns 'mocked-address' from verifyMessage,
-            // so we point it at the wallet we want to unlink by stubbing the
-            // wallets array directly to use that address.
+            // The signature mock returns whatever address is passed to
+            // verifyMessage, so we stub the stored wallets to use the same
+            // address we will pass to unlinkWallet — that way the recovered
+            // address matches and the unlink lookup succeeds.
             const collection = mockDatabase.getCollection('users');
             await collection.updateOne(
                 { id: validUUID },
@@ -1550,7 +1552,7 @@ describe('UserService', () => {
             await userService.unlinkWallet(validUUID, 'mocked-address', 'msg', 'sig');
 
             const doc = await collection.findOne({ id: validUUID });
-            expect(doc!.identityState).toBe('registered');
+            expect(doc!.identityState).toBe(UserIdentityState.Registered);
         });
 
         it('demotes registered → anonymous when the last wallet is unlinked', async () => {
@@ -1571,7 +1573,7 @@ describe('UserService', () => {
             await userService.unlinkWallet(validUUID, 'mocked-address', 'msg', 'sig');
 
             const doc = await collection.findOne({ id: validUUID });
-            expect(doc!.identityState).toBe('anonymous');
+            expect(doc!.identityState).toBe(UserIdentityState.Anonymous);
             expect(doc!.wallets).toEqual([]);
         });
 
@@ -1590,11 +1592,11 @@ describe('UserService', () => {
             });
 
             expect(result.identitySwapped).toBe(true);
-            expect(result.user.identityState).toBe('verified');
+            expect(result.user.identityState).toBe(UserIdentityState.Verified);
 
             const collection = mockDatabase.getCollection('users');
             const winnerDoc = await collection.findOne({ id: validUUID });
-            expect(winnerDoc!.identityState).toBe('verified');
+            expect(winnerDoc!.identityState).toBe(UserIdentityState.Verified);
         });
 
         it('forces loser tombstone to anonymous after identity reconciliation', async () => {
@@ -1613,7 +1615,7 @@ describe('UserService', () => {
 
             const collection = mockDatabase.getCollection('users');
             const loserDoc = await collection.findOne({ id: validUUID2 });
-            expect(loserDoc!.identityState).toBe('anonymous');
+            expect(loserDoc!.identityState).toBe(UserIdentityState.Anonymous);
             expect(loserDoc!.wallets).toEqual([]);
             expect(loserDoc!.mergedInto).toBe(validUUID);
         });

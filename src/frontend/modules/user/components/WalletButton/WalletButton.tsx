@@ -136,7 +136,7 @@ export function WalletButton() {
                 size="sm"
                 onClick={handleVerify}
                 disabled={isVerifying}
-                className={`${styles.connected_btn} ${styles.registered}`}
+                className={styles.connected_btn}
                 title="Click to verify wallet ownership"
             >
                 {isVerifying ? (

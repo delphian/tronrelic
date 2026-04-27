@@ -1,7 +1,7 @@
 /// <reference types="vitest" />
 
-import { describe, it, expect, beforeEach } from 'vitest';
-import type { ISystemLogService } from '@/types';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import type { ICacheService, ISystemLogService } from '@/types';
 import { UserGroupService } from '../services/user-group.service.js';
 import { createMockDatabaseService } from '../../../tests/vitest/mocks/database-service.js';
 
@@ -75,14 +75,30 @@ function seedUser(
     });
 }
 
+/**
+ * Minimal in-memory mock of `ICacheService`. The user-group service only
+ * calls `invalidate()` so the rest of the surface area is no-op stubs.
+ */
+function createMockCache(): ICacheService {
+    return {
+        get: vi.fn(async () => null),
+        set: vi.fn(async () => {}),
+        invalidate: vi.fn(async () => {}),
+        del: vi.fn(async () => 0),
+        keys: vi.fn(async () => [])
+    } as unknown as ICacheService;
+}
+
 describe('UserGroupService', () => {
     let mockDatabase: ReturnType<typeof createMockDatabaseService>;
+    let mockCache: ICacheService;
     let service: UserGroupService;
 
     beforeEach(async () => {
         mockDatabase = createMockDatabaseService();
+        mockCache = createMockCache();
         UserGroupService.resetInstance();
-        UserGroupService.setDependencies(mockDatabase, new StubLogger());
+        UserGroupService.setDependencies(mockDatabase, mockCache, new StubLogger());
         service = UserGroupService.getInstance();
         // Seed the admin system row directly. The service's
         // `seedSystemGroups()` upserts via $setOnInsert which the shared

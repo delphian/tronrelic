@@ -5,6 +5,7 @@ import type { UserService, IUserStats, IDateRange } from '../services/index.js';
 import type { GscService } from '../services/index.js';
 import type { IUser, IUserPreferences } from '../database/index.js';
 import { getClientIP } from '../services/index.js';
+import { AnalyticsRangeValidationError } from '../services/user.errors.js';
 
 /**
  * Cookie name for user identity.
@@ -864,6 +865,11 @@ export class UserController {
             const result = await logic();
             res.json(result);
         } catch (error) {
+            // Client supplied an invalid date range — surface as 400, not 500.
+            if (error instanceof AnalyticsRangeValidationError) {
+                res.status(400).json({ error: 'BadRequest', message: error.message });
+                return;
+            }
             this.logger.error({ error }, errorMessage);
             res.status(500).json({
                 error: errorMessage,
