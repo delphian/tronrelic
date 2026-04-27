@@ -80,6 +80,11 @@ export {
     selectHasWallets,
     selectHasVerifiedWallet,
     selectIsLoggedIn,
+    // Identity-state selectors (read the canonical UserIdentityState)
+    selectIdentityState,
+    selectIsAnonymous,
+    selectIsRegistered,
+    selectIsVerified,
     // Wallet connection selectors
     selectConnectedAddress,
     selectConnectionStatus,
@@ -170,3 +175,4 @@ export { VisitorAnalytics } from './components';
 export { AnalyticsDashboard } from './components';
 export { ReferralOverview } from './components';
 export { GscSettings } from './components';
+export { GroupsManager } from './components';

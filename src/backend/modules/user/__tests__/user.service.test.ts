@@ -2,6 +2,7 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { UserService } from '../services/user.service.js';
+import { UserIdentityState } from '@/types';
 import type { ICacheService, ISystemLogService } from '@/types';
 import { createMockDatabaseService } from '../../../tests/vitest/mocks/database-service.js';
 
@@ -12,8 +13,14 @@ vi.mock('../../auth/signature.service.js', () => {
             normalizeAddress(address: string): string {
                 return address;
             }
-            async verifyMessage(): Promise<string> {
-                return 'mocked-address';
+            async verifyMessage(address: string): Promise<string> {
+                // Mirror real signature recovery: the recovered address is
+                // whatever was passed in (signature is mock-trusted). Older
+                // tests pass `walletAddress = 'mocked-address'`, so the
+                // historical literal still applies in those cases. New
+                // tests can pass any wallet address and have the format
+                // check + reconciliation lookup behave consistently.
+                return address;
             }
         }
     };
@@ -157,7 +164,16 @@ describe('UserService', () => {
         UserService.resetInstance();
 
         // Initialize service
-        UserService.setDependencies(mockDatabase, mockCache, mockLogger, {} as any);
+        // Mock systemConfig stub: returns a known site URL so the
+        // body-vs-header referrer logic in startSession behaves predictably
+        // under tests without needing the real SystemConfigService.
+        const mockSystemConfig = {
+            getSiteUrl: async () => 'http://localhost:3000',
+            getConfig: async () => ({ siteUrl: 'http://localhost:3000' } as any),
+            updateConfig: async (u: any) => ({ siteUrl: 'http://localhost:3000', ...u } as any),
+            clearCache: () => { /* no-op */ }
+        };
+        UserService.setDependencies(mockDatabase, mockCache, mockLogger, mockSystemConfig as any, {} as any);
         userService = UserService.getInstance();
     });
 
@@ -1135,15 +1151,14 @@ describe('UserService', () => {
                 // Create new user arriving via referral link
                 await userService.getOrCreate(validUUID2);
 
-                await userService.startSession(
-                    validUUID2,
-                    '127.0.0.1',
-                    'Mozilla/5.0 Desktop',
-                    undefined,
-                    1200,
-                    { source: 'referral', medium: 'link', content: 'aef12345' },
-                    '/'
-                );
+                await userService.startSession({
+                    userId: validUUID2,
+                    clientIP: '127.0.0.1',
+                    userAgent: 'Mozilla/5.0 Desktop',
+                    screenWidth: 1200,
+                    rawUtm: { source: 'referral', medium: 'link', content: 'aef12345' },
+                    landingPage: '/'
+                });
 
                 // Verify attribution was recorded
                 const referred = await collection.findOne({ id: validUUID2 });
@@ -1165,15 +1180,14 @@ describe('UserService', () => {
                 );
 
                 // Same user arrives with their own referral code
-                await userService.startSession(
-                    validUUID,
-                    '127.0.0.1',
-                    'Mozilla/5.0 Desktop',
-                    undefined,
-                    1200,
-                    { source: 'referral', medium: 'link', content: 'aabb0011' },
-                    '/'
-                );
+                await userService.startSession({
+                    userId: validUUID,
+                    clientIP: '127.0.0.1',
+                    userAgent: 'Mozilla/5.0 Desktop',
+                    screenWidth: 1200,
+                    rawUtm: { source: 'referral', medium: 'link', content: 'aabb0011' },
+                    landingPage: '/'
+                });
 
                 // Should NOT record self-referral
                 const user = await collection.findOne({ id: validUUID });
@@ -1205,15 +1219,14 @@ describe('UserService', () => {
                 );
 
                 // Start session with new referral — should be ignored
-                await userService.startSession(
-                    validUUID2,
-                    '127.0.0.1',
-                    'Mozilla/5.0 Desktop',
-                    undefined,
-                    1200,
-                    { source: 'referral', medium: 'link', content: 'ccdd2233' },
-                    '/'
-                );
+                await userService.startSession({
+                    userId: validUUID2,
+                    clientIP: '127.0.0.1',
+                    userAgent: 'Mozilla/5.0 Desktop',
+                    screenWidth: 1200,
+                    rawUtm: { source: 'referral', medium: 'link', content: 'ccdd2233' },
+                    landingPage: '/'
+                });
 
                 const user = await collection.findOne({ id: validUUID2 });
                 expect(user?.referral?.referredBy).toBe('original');
@@ -1223,15 +1236,14 @@ describe('UserService', () => {
                 await userService.getOrCreate(validUUID2);
 
                 // Start session with invalid code (too short, not hex)
-                await userService.startSession(
-                    validUUID2,
-                    '127.0.0.1',
-                    'Mozilla/5.0 Desktop',
-                    undefined,
-                    1200,
-                    { source: 'referral', medium: 'link', content: 'bad!' },
-                    '/'
-                );
+                await userService.startSession({
+                    userId: validUUID2,
+                    clientIP: '127.0.0.1',
+                    userAgent: 'Mozilla/5.0 Desktop',
+                    screenWidth: 1200,
+                    rawUtm: { source: 'referral', medium: 'link', content: 'bad!' },
+                    landingPage: '/'
+                });
 
                 const collection = mockDatabase.getCollection('users');
                 const user = await collection.findOne({ id: validUUID2 });
@@ -1435,6 +1447,177 @@ describe('UserService', () => {
                 // countDocuments with $ne + $exists is handled by mock
                 expect(overview.usersWithCodes).toBeGreaterThanOrEqual(1);
             });
+        });
+    });
+
+    describe('identityState (canonical anonymous/registered/verified taxonomy)', () => {
+        const walletAddress = 'TXyz123456789';
+        const otherWallet = 'TWallet111111111';
+
+        it('initializes a brand-new user as anonymous', async () => {
+            const user = await userService.getOrCreate(validUUID);
+            expect(user.identityState).toBe(UserIdentityState.Anonymous);
+        });
+
+        it('persists anonymous on the underlying document', async () => {
+            await userService.getOrCreate(validUUID);
+            const collection = mockDatabase.getCollection('users');
+            const doc = await collection.findOne({ id: validUUID });
+            expect(doc!.identityState).toBe(UserIdentityState.Anonymous);
+        });
+
+        it('transitions anonymous → registered after connectWallet', async () => {
+            await userService.getOrCreate(validUUID);
+            const result = await userService.connectWallet(validUUID, walletAddress);
+
+            expect(result.success).toBe(true);
+            expect(result.user!.identityState).toBe(UserIdentityState.Registered);
+
+            const collection = mockDatabase.getCollection('users');
+            const doc = await collection.findOne({ id: validUUID });
+            expect(doc!.identityState).toBe(UserIdentityState.Registered);
+        });
+
+        it('transitions registered → verified after linkWallet (signature)', async () => {
+            await userService.getOrCreate(validUUID);
+            await userService.connectWallet(validUUID, walletAddress);
+
+            const result = await userService.linkWallet(validUUID, {
+                address: walletAddress,
+                message: `Link wallet ${walletAddress}`,
+                signature: 'mock-sig',
+                timestamp: Date.now()
+            });
+
+            expect(result.user.identityState).toBe(UserIdentityState.Verified);
+
+            const collection = mockDatabase.getCollection('users');
+            const doc = await collection.findOne({ id: validUUID });
+            expect(doc!.identityState).toBe(UserIdentityState.Verified);
+        });
+
+        it('transitions anonymous → verified directly when linkWallet adds a new wallet', async () => {
+            await userService.getOrCreate(validUUID);
+
+            const result = await userService.linkWallet(validUUID, {
+                address: walletAddress,
+                message: `Link wallet ${walletAddress}`,
+                signature: 'mock-sig',
+                timestamp: Date.now()
+            });
+
+            expect(result.user.identityState).toBe(UserIdentityState.Verified);
+        });
+
+        it('stays verified when an additional unverified wallet is connected', async () => {
+            await userService.getOrCreate(validUUID);
+            await userService.linkWallet(validUUID, {
+                address: walletAddress,
+                message: `Link wallet ${walletAddress}`,
+                signature: 'mock-sig',
+                timestamp: Date.now()
+            });
+            await userService.connectWallet(validUUID, otherWallet);
+
+            const collection = mockDatabase.getCollection('users');
+            const doc = await collection.findOne({ id: validUUID });
+            expect(doc!.identityState).toBe(UserIdentityState.Verified);
+        });
+
+        it('demotes verified → registered when the only verified wallet is unlinked but another remains', async () => {
+            await userService.getOrCreate(validUUID);
+            await userService.linkWallet(validUUID, {
+                address: walletAddress,
+                message: `Link wallet ${walletAddress}`,
+                signature: 'mock-sig',
+                timestamp: Date.now()
+            });
+            await userService.connectWallet(validUUID, otherWallet);
+
+            // The signature mock returns whatever address is passed to
+            // verifyMessage, so we stub the stored wallets to use the same
+            // address we will pass to unlinkWallet — that way the recovered
+            // address matches and the unlink lookup succeeds.
+            const collection = mockDatabase.getCollection('users');
+            await collection.updateOne(
+                { id: validUUID },
+                { $set: {
+                    wallets: [
+                        { address: 'mocked-address', linkedAt: new Date(), isPrimary: false, verified: true, lastUsed: new Date() },
+                        { address: otherWallet, linkedAt: new Date(), isPrimary: false, verified: false, lastUsed: new Date() }
+                    ]
+                } }
+            );
+
+            await userService.unlinkWallet(validUUID, 'mocked-address', 'msg', 'sig');
+
+            const doc = await collection.findOne({ id: validUUID });
+            expect(doc!.identityState).toBe(UserIdentityState.Registered);
+        });
+
+        it('demotes registered → anonymous when the last wallet is unlinked', async () => {
+            await userService.getOrCreate(validUUID);
+            await userService.connectWallet(validUUID, walletAddress);
+
+            // Same trick: align stored wallet with what verifyMessage returns.
+            const collection = mockDatabase.getCollection('users');
+            await collection.updateOne(
+                { id: validUUID },
+                { $set: {
+                    wallets: [
+                        { address: 'mocked-address', linkedAt: new Date(), isPrimary: true, verified: false, lastUsed: new Date() }
+                    ]
+                } }
+            );
+
+            await userService.unlinkWallet(validUUID, 'mocked-address', 'msg', 'sig');
+
+            const doc = await collection.findOne({ id: validUUID });
+            expect(doc!.identityState).toBe(UserIdentityState.Anonymous);
+            expect(doc!.wallets).toEqual([]);
+        });
+
+        it('sets winner to verified after identity reconciliation', async () => {
+            await userService.getOrCreate(validUUID);
+            await userService.connectWallet(validUUID, walletAddress);
+
+            await userService.getOrCreate(validUUID2);
+            await userService.connectWallet(validUUID2, otherWallet);
+
+            const result = await userService.linkWallet(validUUID2, {
+                address: walletAddress,
+                message: `Link wallet ${walletAddress}`,
+                signature: 'mock-sig',
+                timestamp: Date.now()
+            });
+
+            expect(result.identitySwapped).toBe(true);
+            expect(result.user.identityState).toBe(UserIdentityState.Verified);
+
+            const collection = mockDatabase.getCollection('users');
+            const winnerDoc = await collection.findOne({ id: validUUID });
+            expect(winnerDoc!.identityState).toBe(UserIdentityState.Verified);
+        });
+
+        it('forces loser tombstone to anonymous after identity reconciliation', async () => {
+            await userService.getOrCreate(validUUID);
+            await userService.connectWallet(validUUID, walletAddress);
+
+            await userService.getOrCreate(validUUID2);
+            await userService.connectWallet(validUUID2, otherWallet);
+
+            await userService.linkWallet(validUUID2, {
+                address: walletAddress,
+                message: `Link wallet ${walletAddress}`,
+                signature: 'mock-sig',
+                timestamp: Date.now()
+            });
+
+            const collection = mockDatabase.getCollection('users');
+            const loserDoc = await collection.findOne({ id: validUUID2 });
+            expect(loserDoc!.identityState).toBe(UserIdentityState.Anonymous);
+            expect(loserDoc!.wallets).toEqual([]);
+            expect(loserDoc!.mergedInto).toBe(validUUID);
         });
     });
 });

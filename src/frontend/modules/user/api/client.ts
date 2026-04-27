@@ -13,14 +13,16 @@ import type { IUserData, IUserPreferences, IUserStats } from '../types';
 // ============================================================================
 
 /**
- * Result of wallet connection attempt.
+ * Result of wallet registration attempt (stage 1 of the two-stage wallet flow).
  *
- * When a wallet is already linked to another user, returns `loginRequired: true`
- * with the existing user ID. The frontend should prompt for signature verification
- * to prove wallet ownership before swapping identity.
+ * On success, the wallet is stored on the backend with `verified: false`,
+ * moving the user from *anonymous* to *registered*. When the wallet is
+ * already linked to another user, returns `loginRequired: true` with the
+ * existing user ID — the frontend should then prompt for signature
+ * verification to swap identity into the existing (verified) owner.
  */
 export interface IConnectWalletResult {
-    /** Whether connection succeeded (wallet now linked to this user) */
+    /** Whether registration succeeded (wallet now linked to this user) */
     success: boolean;
     /** Updated user data (when success=true) */
     user?: IUserData;
@@ -31,10 +33,12 @@ export interface IConnectWalletResult {
 }
 
 /**
- * Result of wallet link/verification attempt.
+ * Result of wallet verification attempt (stage 2 of the two-stage wallet flow).
  *
- * When identity swap occurs (wallet belonged to another user), returns
- * `identitySwapped: true` with the existing user's data.
+ * On success the wallet is upgraded to `verified: true` and the user
+ * transitions into the *verified* state. When identity swap occurs (wallet
+ * belonged to another user), returns `identitySwapped: true` with the
+ * existing owner's data — the calling UUID becomes a tombstone.
  */
 export interface ILinkWalletResult {
     /** The user data (either updated current user or swapped-to user) */
@@ -63,17 +67,23 @@ export async function fetchUser(userId: string): Promise<IUserData> {
 }
 
 /**
- * Connect a wallet to user identity (without verification).
+ * Register a wallet to a user identity (no signature required).
  *
- * This is the first step in the two-step wallet flow. Stores the
- * wallet address as unverified. Use linkWallet to verify ownership.
+ * Stage 1 of the two-stage wallet flow. Stores the wallet on the backend
+ * with `verified: false`, moving the user from *anonymous* to *registered*.
+ * Use `linkWallet` (stage 2) to upgrade the wallet to *verified*.
  *
- * When wallet is already linked to another user, returns loginRequired=true.
- * Frontend should then prompt for signature verification to login.
+ * The function name `connectWallet` matches the HTTP route
+ * (`POST /api/user/:id/wallet/connect`) for wire consistency; the *effect*
+ * is registration.
+ *
+ * When the wallet is already linked to another user, returns
+ * `loginRequired: true`. Frontend should then prompt for signature
+ * verification to log in as that existing owner.
  *
  * @param userId - User UUID
  * @param address - TRON wallet address
- * @returns Connection result with success status or login requirement
+ * @returns Result with success status or login requirement
  */
 export async function connectWallet(
     userId: string,
@@ -88,18 +98,27 @@ export async function connectWallet(
 }
 
 /**
- * Link a wallet to user identity (with signature verification).
+ * Verify a wallet on a user identity (cryptographic signature required).
  *
- * If wallet belongs to another user, performs identity swap and returns
- * identitySwapped=true with the existing user's data. Frontend should
- * update cookie/localStorage to the new user ID.
+ * Stage 2 of the two-stage wallet flow. Upgrades a registered wallet to
+ * `verified: true` (or adds it as already verified), moving the user into
+ * the *verified* state.
+ *
+ * The function name `linkWallet` matches the HTTP route
+ * (`POST /api/user/:id/wallet`) for wire consistency; the *effect* is
+ * verification.
+ *
+ * If the wallet belongs to another user, performs identity swap and returns
+ * `identitySwapped: true` with the existing owner's data. Frontend should
+ * update cookie/localStorage to the new user ID — this is the cross-browser
+ * login path for *verified* users.
  *
  * @param userId - User UUID
  * @param address - TRON wallet address
  * @param message - Message that was signed
  * @param signature - TronLink signature
  * @param timestamp - Timestamp when signature was created
- * @returns Link result with user data and optional identity swap indicator
+ * @returns Result with user data and optional identity swap indicator
  */
 export async function linkWallet(
     userId: string,
@@ -353,15 +372,18 @@ export interface IPublicProfile {
     address: string;
     /** When the user account was created */
     createdAt: string;
-    /** Always true (only verified profiles are returned) */
+    /** Always true — public profiles only resolve for *verified* users. */
     isVerified: true;
 }
 
 /**
  * Fetch public profile by wallet address.
  *
- * This endpoint is publicly accessible - no authentication required.
- * Returns null if no verified profile exists for the given address.
+ * This endpoint is publicly accessible — no authentication required.
+ * Returns null if no profile exists for the given address. A profile only
+ * exists when the address belongs to a user in the *verified* identity
+ * state (i.e. the wallet has `verified: true`); registered (unsigned)
+ * wallet addresses resolve to null.
  *
  * @param address - TRON wallet address
  * @returns Profile data or null if not found
@@ -395,9 +417,11 @@ export interface IReferralStats {
 /**
  * Get referral code and stats for the authenticated user.
  *
- * Returns null if the user has no referral code yet (no verified wallet).
- * Throws on auth errors or server failures so the UI can show an
- * appropriate error state instead of the misleading "verify wallet" message.
+ * Returns null if the user has no referral code yet (i.e. they are still
+ * *anonymous* or *registered* — codes are issued only on transition into
+ * the *verified* state). Throws on auth errors or server failures so the
+ * UI can show an appropriate error state instead of the misleading
+ * "verify wallet" message.
  *
  * @param userId - User UUID
  * @returns Referral stats or null (no code yet)

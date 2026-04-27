@@ -1,29 +1,41 @@
 import { ObjectId } from 'mongodb';
+import type { UserIdentityState } from '@/types';
 
 /**
  * Represents a linked TRON wallet address associated with a user identity.
  *
- * Users can link multiple wallets to their anonymous UUID, enabling
- * cross-wallet preferences and unified activity tracking.
+ * Users can link multiple wallets to their UUID, enabling cross-wallet
+ * preferences and unified activity tracking.
  *
- * Wallet connection follows a two-step flow:
- * 1. Connect: Store address with verified=false (no signature required)
- * 2. Verify: Update to verified=true after signature verification
+ * Wallets are added in two stages (see the User Module README for the canonical
+ * anonymous / registered / verified taxonomy):
+ *
+ * 1. **Register** — `connectWallet` stores the address with `verified=false`
+ *    (no signature required). The user transitions from *anonymous* to
+ *    *registered*.
+ * 2. **Verify** — `linkWallet` upgrades the address to `verified=true` after
+ *    signature verification. The user becomes *verified* (any single
+ *    `verified: true` wallet is sufficient).
  *
  * The `isPrimary` field is automatically maintained by UserService:
- * 1. Primary = most recent lastUsed among verified wallets
- * 2. Fallback = most recent lastUsed among unverified wallets (if no verified)
+ * 1. Primary = most recent `lastUsed` among verified wallets.
+ * 2. Fallback = most recent `lastUsed` among registered (unverified) wallets,
+ *    used only when the user has no verified wallets.
  *
- * External code should simply query for isPrimary=true.
+ * External code should simply query for `isPrimary=true`.
  */
 export interface IWalletLink {
     /** Base58 TRON address (e.g., TRX7NJa...) */
     address: string;
-    /** Timestamp when wallet was first connected */
+    /** Timestamp when wallet was first registered */
     linkedAt: Date;
     /** Whether this is the default wallet for display (auto-maintained by UserService) */
     isPrimary: boolean;
-    /** Whether wallet ownership has been cryptographically verified via signature */
+    /**
+     * True iff wallet ownership has been cryptographically proven via signature.
+     * `false` = wallet is registered (claim only); `true` = wallet is verified
+     * (and the owning user is in the *verified* state).
+     */
     verified: boolean;
     /** Timestamp of last connection/use (for primary wallet selection) */
     lastUsed: Date;
@@ -219,12 +231,31 @@ export interface IUserDocument {
      * UUID tracking continues regardless of this flag.
      */
     isLoggedIn: boolean;
+    /**
+     * Canonical identity state (anonymous / registered / verified).
+     *
+     * Stored, not derived. `UserService` recomputes this whenever `wallets`
+     * is mutated (`connectWallet`, `linkWallet`, `unlinkWallet`, identity
+     * reconciliation, and tombstone creation). All consumers must read this
+     * field directly rather than recompute from `wallets`.
+     *
+     * Indexed for fast filter queries (see migration 006).
+     */
+    identityState: UserIdentityState;
     /** Linked TRON wallet addresses */
     wallets: IWalletLink[];
     /** User preferences (theme, notifications, plugin-specific) */
     preferences: IUserPreferences;
     /** Activity tracking metrics */
     activity: IUserActivity;
+    /**
+     * Admin-defined group memberships. Each entry is a group id from the
+     * `module_user_groups` collection. Mutated via `IUserGroupService`;
+     * indexed for fast membership queries.
+     *
+     * Backfilled to `[]` on legacy documents by migration 007.
+     */
+    groups: string[];
     /** Referral tracking (null until first wallet verification or referral attribution) */
     referral: IReferral | null;
     /** Document creation timestamp */
@@ -236,12 +267,13 @@ export interface IUserDocument {
 /**
  * Referral tracking data for user-driven growth.
  *
- * referralCode is generated once when a user first verifies a wallet.
- * referredBy is set once during the first session if the visitor arrived
- * via a referral link (utm_source=referral, utm_content=CODE).
+ * `code` is generated once when the user first transitions into the *verified*
+ * state (i.e. signs a message for any wallet). `referredBy` is set once during
+ * the first session if the visitor arrived via a referral link
+ * (`utm_source=referral`, `utm_content=CODE`).
  */
 export interface IReferral {
-    /** Short unique referral code for sharing (e.g., 'a1b2c3d4'). Null until first wallet verify. */
+    /** Short unique referral code for sharing (e.g., 'a1b2c3d4'). Null until the user becomes *verified*. */
     code: string | null;
     /** Referral code of the user who referred this visitor (null if organic). Set once, never overwritten. */
     referredBy: string | null;
@@ -276,20 +308,49 @@ export interface ILinkWalletInput {
 }
 
 /**
- * Input for starting a new session.
- * Device category and country are derived server-side from request headers.
+ * Canonical input for `UserService.startSession`.
+ *
+ * The controller forwards raw request fields here (cookie-validated user id,
+ * client IP, user-agent, body/header referrer, raw UTM object, etc.) and the
+ * service applies all domain rules: UTM truncation, empty-UTM detection,
+ * body-referrer-vs-header-referrer priority, internal-domain filtering,
+ * device/country/screen-size derivation.
+ *
+ * The raw shape (`bodyReferrer`/`headerReferrer`/`rawUtm: unknown`) keeps
+ * HTTP parsing concerns in the controller while leaving the *interpretation*
+ * of those fields in one auditable place.
  */
 export interface IStartSessionInput {
-    /** Referrer URL (server extracts domain only) */
-    referrer?: string;
-    /** User-agent string (server derives device category, never stored raw) */
+    /** UUID of the user starting the session. */
+    userId: string;
+    /** Client IP for country lookup. Never persisted raw. */
+    clientIP?: string;
+    /** User-agent header for device-category derivation. Never persisted raw. */
     userAgent?: string;
-    /** Viewport width in pixels (client-provided for accurate screen size tracking) */
+    /** Viewport width in pixels (client-provided). */
     screenWidth?: number;
-    /** UTM campaign parameters from landing page URL */
-    utm?: IUtmParams;
-    /** URL path the visitor first landed on */
+    /**
+     * Sanitized landing-page path (no query string, no hash).
+     * Provided by the controller's URL-shape sanitizer.
+     */
     landingPage?: string;
+    /**
+     * Raw UTM object (e.g. parsed from request body). The service applies
+     * per-field truncation rules and discards if all fields end up empty.
+     */
+    rawUtm?: unknown;
+    /**
+     * Frontend-supplied referrer (e.g. captured from `document.referrer` at
+     * landing). Takes priority over `headerReferrer` because the frontend has
+     * already filtered out internal navigation.
+     */
+    bodyReferrer?: string;
+    /**
+     * Browser-supplied `Referer` header for the API request. Used only when
+     * `bodyReferrer` is absent and the value is not internal to the site —
+     * the header is otherwise just the current page URL making the call.
+     */
+    headerReferrer?: string;
 }
 
 /**
@@ -321,12 +382,18 @@ export interface IUser {
      * UUID tracking continues regardless of this flag.
      */
     isLoggedIn: boolean;
+    /**
+     * Canonical identity state. Stored, not derived. See `IUserDocument.identityState`.
+     */
+    identityState: UserIdentityState;
     /** Linked wallet addresses */
     wallets: IWalletLink[];
     /** User preferences */
     preferences: IUserPreferences;
     /** Activity metrics */
     activity: IUserActivity;
+    /** Admin-defined group memberships. Group ids resolve via `IUserGroupService`. */
+    groups: string[];
     /** Referral tracking (null until first wallet verification or referral attribution) */
     referral: IReferral | null;
     /** Document creation timestamp */

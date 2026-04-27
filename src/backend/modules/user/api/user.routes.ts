@@ -58,13 +58,16 @@ export function createUserRouter(controller: UserController): Router {
 
     /**
      * POST /api/user/:id/wallet/connect
-     * Connect wallet to user without verification (step 1 of 2-step flow)
+     * Stage 1: register the wallet (no signature). Moves the user from
+     * *anonymous* to *registered*. See `connectWallet` controller for details.
      */
     router.post('/:id/wallet/connect', walletRateLimiter, controller.connectWallet.bind(controller));
 
     /**
      * POST /api/user/:id/wallet
-     * Link wallet to user with signature verification (step 2 of 2-step flow)
+     * Stage 2: verify the wallet via signature. Moves the user (or the
+     * specific wallet) into the *verified* state. See `linkWallet`
+     * controller for details.
      */
     router.post('/:id/wallet', walletRateLimiter, controller.linkWallet.bind(controller));
 

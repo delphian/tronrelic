@@ -4,19 +4,21 @@ import { useState } from 'react';
 import { useSystemAuth } from '../../../../features/system';
 import { Page } from '../../../../components/layout';
 import { Card } from '../../../../components/ui/Card';
-import { UsersMonitor, AnalyticsDashboard, ReferralOverview, GscSettings } from '../../../../modules/user';
+import { UsersMonitor, AnalyticsDashboard, ReferralOverview, GscSettings, GroupsManager } from '../../../../modules/user';
 import styles from './page.module.scss';
 
 /** Tab identifiers for the users admin page. */
-type UsersTab = 'users' | 'analytics' | 'referrals' | 'settings';
+type UsersTab = 'users' | 'analytics' | 'referrals' | 'groups' | 'settings';
 
 /**
  * System users administration page with tabbed interface.
  *
- * Three tabs consolidate all user-related admin functionality:
+ * Tabs consolidate user-related admin functionality:
  * - Users: Per-user identity management, wallet links, activity
  * - Analytics: Aggregate traffic sources, engagement, conversion funnel
  * - Referrals: Referral program metrics, top referrers, recent activity
+ * - Groups: Admin-defined user groups consumed by plugins for permission gating
+ * - Settings: GSC integration and other admin settings
  *
  * Follows the simpler button-tab pattern from /system/pages (no ARIA
  * tablist/tab/tabpanel roles to avoid incomplete implementation).
@@ -61,6 +63,13 @@ export default function SystemUsersPage() {
                 </button>
                 <button
                     type="button"
+                    className={activeTab === 'groups' ? styles.tab__active : styles.tab}
+                    onClick={() => setActiveTab('groups')}
+                >
+                    Groups
+                </button>
+                <button
+                    type="button"
                     className={activeTab === 'settings' ? styles.tab__active : styles.tab}
                     onClick={() => setActiveTab('settings')}
                 >
@@ -72,6 +81,7 @@ export default function SystemUsersPage() {
                 {activeTab === 'users' && <UsersMonitor token={token} />}
                 {activeTab === 'analytics' && <AnalyticsDashboard token={token} />}
                 {activeTab === 'referrals' && <ReferralOverview token={token} />}
+                {activeTab === 'groups' && <GroupsManager token={token} />}
                 {activeTab === 'settings' && <GscSettings token={token} />}
             </div>
         </div>

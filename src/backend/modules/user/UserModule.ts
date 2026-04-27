@@ -23,14 +23,17 @@
  */
 
 import type { Express, Router } from 'express';
-import type { ICacheService, IDatabaseService, IMenuService, IModule, IModuleMetadata, ISchedulerService, IServiceRegistry } from '@/types';
+import type { ICacheService, IDatabaseService, IMenuService, IModule, IModuleMetadata, ISchedulerService, IServiceRegistry, ISystemConfigService } from '@/types';
 import { logger } from '../../lib/logger.js';
 import { TronGridClient } from '../blockchain/tron-grid.client.js';
 import { UserService } from './services/user.service.js';
 import { GscService } from './services/gsc.service.js';
+import { UserGroupService } from './services/user-group.service.js';
 import { initGeoIP } from './services/geo.service.js';
 import { UserController } from './api/user.controller.js';
+import { UserGroupController } from './api/user-group.controller.js';
 import { createUserRouter, createAdminUserRouter, createProfileRouter } from './api/user.routes.js';
+import { createAdminUserGroupRouter } from './api/user-group.routes.js';
 import { requireAdmin } from '../../api/middleware/admin-auth.js';
 
 /**
@@ -72,6 +75,13 @@ export interface IUserModuleDependencies {
      * Plugins discover the user service with context.services.get('user').
      */
     serviceRegistry: IServiceRegistry;
+
+    /**
+     * System config service. UserService consults this when starting a
+     * session to decide whether the browser-supplied `Referer` header points
+     * to an external origin or to our own site.
+     */
+    systemConfig: ISystemConfigService;
 }
 
 /**
@@ -145,7 +155,9 @@ export class UserModule implements IModule<IUserModuleDependencies> {
      */
     private userService!: UserService;
     private gscService!: GscService;
+    private userGroupService!: UserGroupService;
     private controller!: UserController;
+    private groupController!: UserGroupController;
 
     /**
      * Logger instance for this module.
@@ -184,6 +196,7 @@ export class UserModule implements IModule<IUserModuleDependencies> {
             this.database,
             this.cacheService,
             this.logger,
+            dependencies.systemConfig,
             tronWeb
         );
 
@@ -207,6 +220,15 @@ export class UserModule implements IModule<IUserModuleDependencies> {
 
         // Create controller with singleton service
         this.controller = new UserController(this.userService, this.gscService, this.logger);
+
+        // Initialize UserGroupService singleton, build indexes, seed system groups
+        UserGroupService.setDependencies(this.database, this.cacheService, this.logger);
+        this.userGroupService = UserGroupService.getInstance();
+        await this.userGroupService.createIndexes();
+        await this.userGroupService.seedSystemGroups();
+
+        // Create group controller with singleton service
+        this.groupController = new UserGroupController(this.userGroupService, this.logger);
 
         this.logger.info('User module initialized');
     }
@@ -251,6 +273,11 @@ export class UserModule implements IModule<IUserModuleDependencies> {
         this.serviceRegistry.register('user', this.userService);
         this.logger.info('UserService registered on service registry as "user"');
 
+        // Register UserGroupService for plugin permission gating. Plugins
+        // discover it via context.services.get<IUserGroupService>('user-groups').
+        this.serviceRegistry.register('user-groups', this.userGroupService);
+        this.logger.info('UserGroupService registered on service registry as "user-groups"');
+
         // Create and mount public router (IoC - module attaches itself to app)
         const publicRouter = this.createPublicRouter();
         this.app.use('/api/user', publicRouter);
@@ -262,7 +289,14 @@ export class UserModule implements IModule<IUserModuleDependencies> {
         this.logger.info('Profile router mounted at /api/profile');
 
         // Create and mount admin router (IoC - module attaches itself to app)
-        // Apply requireAdmin middleware to all admin routes
+        // Apply requireAdmin middleware to all admin routes.
+        // Note: the user-groups router is mounted FIRST under the same prefix
+        // so its specific paths (/groups, /groups/:id) win over /:id, which
+        // would otherwise treat 'groups' as a user UUID.
+        const adminGroupRouter = createAdminUserGroupRouter(this.groupController);
+        this.app.use('/api/admin/users/groups', requireAdmin, adminGroupRouter);
+        this.logger.info('Admin user-groups router mounted at /api/admin/users/groups');
+
         const adminRouter = this.createAdminRouter();
         this.app.use('/api/admin/users', requireAdmin, adminRouter);
         this.logger.info('Admin users router mounted at /api/admin/users');

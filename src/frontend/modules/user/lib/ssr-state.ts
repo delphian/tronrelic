@@ -5,8 +5,20 @@
  * user data, enabling hydration without UI flash.
  */
 
+import { UserIdentityState } from '@/types';
 import type { UserState } from '../slice';
 import type { IWalletLink } from '../types';
+
+/**
+ * Derive `UserIdentityState` from the wallets array. Mirrors the
+ * backend's canonical rule (see user module README): no wallets →
+ * Anonymous, at least one verified → Verified, otherwise Registered.
+ */
+function deriveIdentityState(wallets: IWalletLink[]): UserIdentityState {
+    if (wallets.length === 0) return UserIdentityState.Anonymous;
+    if (wallets.some(w => w.verified)) return UserIdentityState.Verified;
+    return UserIdentityState.Registered;
+}
 
 /**
  * SSR user data passed from server layout to client providers.
@@ -25,8 +37,9 @@ export interface SSRUserData {
  * shows their primary wallet as connected with its actual verification status.
  *
  * The isPrimary field is auto-maintained by the backend based on:
- * 1. Most recent lastUsed among verified wallets
- * 2. Fallback: Most recent lastUsed among unverified wallets
+ * 1. Most recent `lastUsed` among verified wallets.
+ * 2. Fallback: Most recent `lastUsed` among registered (unsigned) wallets,
+ *    used only when the user has no verified wallets.
  *
  * @param ssrData - User data fetched during SSR
  * @returns Complete UserState for Redux preloading
@@ -40,6 +53,7 @@ export function buildSSRUserState(ssrData: SSRUserData): UserState {
         userData: {
             id: ssrData.userId,
             isLoggedIn: ssrData.isLoggedIn,
+            identityState: deriveIdentityState(ssrData.wallets),
             wallets: ssrData.wallets,
             preferences: {},
             activity: {
@@ -47,6 +61,7 @@ export function buildSSRUserState(ssrData: SSRUserData): UserState {
                 lastSeen: new Date().toISOString(),
                 pageViews: 0
             },
+            groups: [],
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString()
         },

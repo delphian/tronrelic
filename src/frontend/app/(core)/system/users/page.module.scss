@@ -8,25 +8,25 @@
 .container {
     display: flex;
     flex-direction: column;
-    gap: var(--spacing-10);
+    gap: var(--gap-lg);
     container-type: inline-size;
     container-name: users-admin;
 }
 
 .tabs {
     display: flex;
-    gap: var(--spacing-4);
+    gap: var(--gap-sm);
     border-bottom: var(--border-width-thin) solid var(--color-border);
 }
 
 .tab,
 .tab__active {
-    padding: var(--spacing-4) var(--spacing-7);
+    padding: var(--gap-sm) var(--gap-md);
     background: none;
     border: none;
     border-bottom: var(--border-width-medium) solid transparent;
     cursor: pointer;
-    font-size: var(--font-size-md);
+    font-size: var(--font-size-body-lg);
     font-weight: var(--font-weight-medium);
     color: var(--color-text-muted);
     transition: color var(--transition-base), border-color var(--transition-base);

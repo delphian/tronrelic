@@ -4,7 +4,7 @@ The user module provides visitor identity management, enabling anonymous trackin
 
 ## Why This Matters
 
-TronRelic needs to track visitor behavior and preferences without requiring registration. Without the user module:
+TronRelic needs to track visitor behavior and preferences without requiring an up-front signup flow. Without the user module:
 
 - **No session continuity** - Users lose preferences and bookmarks on every visit
 - **No wallet association** - Cannot link blockchain activity to returning visitors
@@ -14,12 +14,45 @@ TronRelic needs to track visitor behavior and preferences without requiring regi
 
 The user module solves these problems by providing:
 
-- **Anonymous-first identity** - UUID generated on first visit, no registration required
+- **Anonymous-first identity** - UUID generated on first visit, no signup required
 - **Dual storage** - Cookie for SSR access, localStorage for client-side persistence
 - **Multi-wallet support** - One UUID can link to multiple TRON addresses
 - **Cookie-based validation** - API endpoints validate cookie matches :id parameter
 - **Real-time sync** - WebSocket events push user updates to connected clients
 - **Admin dashboard** - View and search users at `/system/users`
+
+## User States — Canonical Taxonomy
+
+Every visitor is in exactly one of three states represented by the **`UserIdentityState`** string-valued enum. Use the enum — never bare string literals — in all type signatures, function parameters, return types, database fields, API responses, and comparisons. Use the matching vocabulary (anonymous / registered / verified) in all documentation, comments, log messages, and admin labels.
+
+```typescript
+// packages/types/src/user/IUserIdentityState.ts
+export enum UserIdentityState {
+    Anonymous = 'anonymous',
+    Registered = 'registered',
+    Verified = 'verified'
+}
+```
+
+The string values are the wire format — they appear in MongoDB documents, HTTP responses, logs, and admin URLs unchanged. Member names give consumer code typo-safe references; renames and refactors are compiler-checked.
+
+| Member | Wire value | Definition | Detection from `IUser.wallets` |
+|--------|-----------|------------|--------------------------------|
+| `UserIdentityState.Anonymous` | `'anonymous'` | UUID only. No wallets linked. | `wallets.length === 0` |
+| `UserIdentityState.Registered` | `'registered'` | One or more linked wallets, none cryptographically signed. The wallet claim is unverified. | `wallets.length > 0 && wallets.every(w => !w.verified)` |
+| `UserIdentityState.Verified` | `'verified'` | At least one linked wallet has been cryptographically signed, proving control of the private key. | `wallets.some(w => w.verified)` |
+
+The members are ordered by claim strength (Anonymous → Registered → Verified). A user transitions forward as they connect and then sign for wallets, and only transitions back if wallets are explicitly unlinked. The exported `USER_IDENTITY_STATES` array preserves this order for index-based comparisons or iteration.
+
+**Security implication.** `Registered` is an unverified claim — the cookie holder asserts the wallet is theirs, but the backend has no cryptographic proof. Only `Verified` proves private-key control. Sensitive operations (publishing a public profile, claiming referral rewards, destructive wallet actions) must compare against `UserIdentityState.Verified` (or use a `hasVerifiedWallet` helper), not the mere presence of a linked wallet.
+
+**Forbidden pattern — bare string literals.** Do not write `if (state === 'verified')`. Use `if (state === UserIdentityState.Verified)`. Likewise, do not introduce a parallel enum (`UserState`, `IdentityTier`, etc.) — `UserIdentityState` is canonical. The name was chosen to distinguish this concept from `isLoggedIn` (a separate UI/feature gate) and from any future session/connection state.
+
+**Vocabulary mapping to existing API surface.** The HTTP routes and service method names predate this taxonomy and remain unchanged for wire compatibility. The mapping is:
+
+- **"Register a wallet"** is the action that moves a user from `Anonymous` to `Registered`. It is performed by `connectWallet` on the service / `POST /api/user/:id/wallet/connect` on the route.
+- **"Verify a wallet"** is the action that moves a user (or a single wallet) into `Verified`. It is performed by `linkWallet` on the service / `POST /api/user/:id/wallet` on the route.
+- The `IWalletLink.verified` boolean is the wire-format flag for an individual wallet. `verified: false` contributes to `Registered`; `verified: true` makes the owning user `Verified`.
 
 ## Plugin Access to User Data
 
@@ -536,33 +569,33 @@ HTTP status code `429` is returned when rate limit is exceeded.
 
 ### Wallet Verification Trust Model
 
-Wallet linking follows a two-step flow where only the signature provides cryptographic proof of ownership:
+Wallets are added to a user in two stages. Only the signature stage provides cryptographic proof of ownership.
 
-| Step | Action | Trust Level | What It Proves |
-|------|--------|-------------|----------------|
-| **Connect** | `tron_requestAccounts` | Unverified claim | User claims this address (no cryptographic proof) |
-| **Verify** | `signMessageV2` | Verified ownership | User controls the private key (cryptographic proof) |
+| Stage | TronLink call | Resulting user state | What it proves |
+|-------|---------------|----------------------|-----------------|
+| **Register** | `tron_requestAccounts` | *registered* (`verified: false`) | User claims this address (no cryptographic proof) |
+| **Verify** | `signMessageV2` | *verified* (`verified: true`) | User controls the private key (cryptographic proof) |
 
-**Why unverified wallets are stored:**
+**Why registered (unsigned) wallets are stored.**
 
-An unverified wallet address is semantically equivalent to an address obtained from TronLink's `tron_requestAccounts`—both are unverified claims without cryptographic proof. The `tron_requestAccounts` call is a technical prerequisite to access TronLink's signing API, not a security step. The signature is the only trust boundary.
+A registered wallet address is semantically equivalent to an address obtained from TronLink's `tron_requestAccounts` — both are unverified claims without cryptographic proof. The `tron_requestAccounts` call is a technical prerequisite to access TronLink's signing API, not a security step. The signature is the only trust boundary.
 
 **UX principle: No popup before button click.**
 
 TronLink prompts only appear after explicit user action:
 
-1. User clicks "Connect" → TronLink prompts for account access → wallet stored as unverified
-2. User clicks to verify → TronLink prompts for signature → wallet marked verified
+1. User clicks "Connect" → TronLink prompts for account access → wallet stored as registered (`verified: false`).
+2. User clicks to verify → TronLink prompts for signature → wallet marked verified (`verified: true`).
 
 SSR hydrates linked wallet addresses for display, but no TronLink API calls occur on page load. When the user clicks to verify an SSR-hydrated wallet, `connect()` is called first to ensure TronLink's signing API is accessible, then `verify()` requests the signature. For whitelisted sites, `connect()` returns silently (no popup). For non-whitelisted browsers/devices, both prompts appear sequentially after the single button click.
 
 ## Cross-Browser Identity Reconciliation
 
-Users without a verified wallet should expect ephemeral settings — their preferences and data are tied to a browser-local UUID that can be lost if cookies or localStorage are cleared. A verified wallet signature is the only mechanism that bridges identity across browsers or devices.
+Anonymous and registered users should expect ephemeral settings — their preferences and data are tied to a browser-local UUID that can be lost if cookies or localStorage are cleared. Wallet signature verification is the only mechanism that bridges identity across browsers or devices, because only a *verified* wallet anchors the user to something portable.
 
 ### How It Works
 
-When a user attempts to connect a wallet address that is already claimed by another UUID (verified or unverified), the backend returns `loginRequired: true` and the frontend forces a signature verification. No two UUIDs may share the same wallet address without cryptographic proof of ownership.
+When a user attempts to connect a wallet address that is already claimed by another UUID (in either *registered* or *verified* state), the backend returns `loginRequired: true` and the frontend forces a signature verification. No two UUIDs may share the same wallet address without cryptographic proof of ownership.
 
 Once the signature is verified, identity reconciliation occurs. The UUID that already held the wallet is the "winner" (canonical identity). The calling UUID is the "loser" (merged identity). The reconciliation operation transfers all wallets from the loser to the winner (skipping duplicates), marks the disputed wallet as verified on the winner, creates a tombstone on the loser by setting `mergedInto` to the winner's UUID and clearing its wallets array, and flattens any existing pointer chains so that any UUID already pointing to the loser now points directly to the winner.
 
@@ -574,7 +607,7 @@ When `getById()` or `getOrCreate()` encounters a document with `mergedInto` set,
 
 ### Data Semantics
 
-The loser UUID's wallets are transferred to the winner. The loser's preferences, activity history, and referral data remain on the tombstone record (not merged). Users are warned through the UI that settings without a verified wallet are at risk. The tombstone record is retained as a pointer so that any existing references to the loser UUID (in plugin collections, activity logs, etc.) can still resolve to the canonical identity.
+The loser UUID's wallets are transferred to the winner. The loser's preferences, activity history, and referral data remain on the tombstone record (not merged). Users are warned through the UI that settings on an *anonymous* or *registered* identity are at risk — only the *verified* state survives a browser change. The tombstone record is retained as a pointer so that any existing references to the loser UUID (in plugin collections, activity logs, etc.) can still resolve to the canonical identity.
 
 ### Database Schema
 
@@ -593,7 +626,7 @@ GET /api/user/:id
 Response: IUser
 ```
 
-**Connect Wallet** *(10 req/min)* - Step 1: Store wallet address without verification:
+**Connect Wallet** *(10 req/min)* — Stage 1: register the wallet (no signature). Moves the user from *anonymous* to *registered*:
 ```
 POST /api/user/:id/wallet/connect
 Content-Type: application/json
@@ -605,7 +638,7 @@ Content-Type: application/json
 Response: IUser (wallet added with verified: false)
 ```
 
-**Link Wallet** *(10 req/min)* - Step 2: Verify wallet ownership via signature:
+**Link Wallet** *(10 req/min)* — Stage 2: verify the wallet via signature. Moves the user (or the specific wallet) into the *verified* state:
 ```
 POST /api/user/:id/wallet
 Content-Type: application/json

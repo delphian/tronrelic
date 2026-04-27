@@ -1,8 +1,9 @@
 export { UserModule } from './UserModule.js';
-export { UserService } from './services/index.js';
+export { UserService, UserGroupService, RESERVED_ADMIN_PATTERN, SYSTEM_ADMIN_GROUP_ID } from './services/index.js';
 export type { IUserStats } from './services/index.js';
 export type {
     IUserDocument,
+    IUserGroupDocument,
     IWalletLink,
     IUserPreferences,
     IUserActivity,

@@ -1,9 +1,11 @@
 /**
  * WalletCard Component
  *
- * Displays and manages linked wallets on the profile owner view.
- * Shows each wallet's address, verification status, and primary designation.
- * Supports setting a wallet as primary and unlinking wallets (with signature).
+ * Displays and manages linked wallets on the profile owner view. Each wallet
+ * is shown with its address, current state badge (Verified or Registered —
+ * see User Module README for the canonical taxonomy), and primary
+ * designation. Supports setting a wallet as primary, verifying a registered
+ * wallet via signature, and unlinking wallets (also signature-protected).
  *
  * Reads wallet data from Redux state populated by UserIdentityProvider,
  * so no additional SSR data fetch is needed.
@@ -107,7 +109,7 @@ export function WalletCard(): JSX.Element {
     }, [dispatch, userId, signMessage, push, connectedAddress]);
 
     /**
-     * Verify an unverified wallet via TronLink signature.
+     * Verify a registered (unsigned) wallet via TronLink signature.
      * Guards that the currently connected TronLink wallet matches the target address.
      */
     const handleVerify = useCallback(async (address: string) => {
@@ -156,7 +158,7 @@ export function WalletCard(): JSX.Element {
                         ) : (
                             <span className={`badge badge--neutral ${styles.badge}`}>
                                 <Shield size={12} />
-                                Unverified
+                                Registered
                             </span>
                         )}
                         {wallet.isPrimary && (

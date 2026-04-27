@@ -1,6 +1,8 @@
 export { USER_FILTERS } from './IUserFilter.js';
 export type { UserFilterType } from './IUserFilter.js';
 
+export { USER_IDENTITY_STATES, UserIdentityState } from './IUserIdentityState.js';
+
 export type {
     IUser,
     IWalletLink,
@@ -12,6 +14,14 @@ export type {
     DeviceCategory,
     ScreenSizeCategory
 } from './IUser.js';
+
+export type {
+    IUserGroup,
+    ICreateUserGroupInput,
+    IUpdateUserGroupInput
+} from './IUserGroup.js';
+
+export type { IUserGroupService } from './IUserGroupService.js';
 
 export type {
     BucketInterval,

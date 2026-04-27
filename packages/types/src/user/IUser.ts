@@ -9,20 +9,32 @@
  * @module @/types/user
  */
 
+import type { UserIdentityState } from './IUserIdentityState.js';
+
 /**
  * Represents a linked TRON wallet address associated with a user identity.
  *
- * Users can link multiple wallets to their anonymous UUID, enabling
- * cross-wallet preferences and unified activity tracking.
+ * Users can link multiple wallets to their UUID, enabling cross-wallet
+ * preferences and unified activity tracking.
+ *
+ * The `verified` flag is the wire-format indicator of which user state this
+ * wallet contributes to (see the User Module README for the canonical
+ * anonymous / registered / verified taxonomy):
+ *
+ * - `verified: false` — wallet was registered (claimed via TronLink connect)
+ *   but no signature has proven ownership. Holding only such wallets makes
+ *   the user *registered*.
+ * - `verified: true` — wallet ownership was proven by a signed message.
+ *   Any wallet with `verified: true` makes the user *verified*.
  */
 export interface IWalletLink {
     /** Base58 TRON address (e.g., TRX7NJa...) */
     address: string;
-    /** Timestamp when wallet was first connected */
+    /** Timestamp when wallet was first registered */
     linkedAt: Date;
     /** Whether this is the default wallet for display */
     isPrimary: boolean;
-    /** Whether wallet ownership has been cryptographically verified via signature */
+    /** True iff wallet ownership has been cryptographically proven via signature. */
     verified: boolean;
     /** Timestamp of last connection/use */
     lastUsed: Date;
@@ -151,6 +163,14 @@ export interface IUserActivity {
  *
  * Used in API responses, frontend state, and plugin consumption.
  * This is the safe-to-expose representation without internal MongoDB fields.
+ *
+ * The user's identity state is the canonical `identityState` field, which is
+ * **stored** (never derived at read time). `UserService` recomputes and
+ * persists it on every wallet mutation. Consumers must read
+ * `user.identityState` directly rather than reconstruct it from `wallets`.
+ *
+ * Note: `isLoggedIn` is a separate UI/feature gate, not the identity state.
+ * A user can be in any `identityState` regardless of `isLoggedIn`.
  */
 export interface IUser {
     /** UUID v4 identifier */
@@ -158,14 +178,29 @@ export interface IUser {
     /**
      * UI/feature gate controlling what is surfaced to the user.
      * When false, frontend shows "Connect" button and hides logged-in features.
+     * Independent of `identityState`.
      */
     isLoggedIn: boolean;
+    /**
+     * Canonical anonymous / registered / verified state. Stored on the
+     * document and recomputed by `UserService` on every wallet mutation.
+     * Read this field directly; do not derive from `wallets`.
+     */
+    identityState: UserIdentityState;
     /** Linked wallet addresses */
     wallets: IWalletLink[];
     /** User preferences */
     preferences: IUserPreferences;
     /** Activity metrics */
     activity: IUserActivity;
+    /**
+     * Admin-defined group memberships. Each entry is a group id from the
+     * `module_user_groups` collection (see `IUserGroup`). Plugins read this
+     * directly or via `IUserGroupService.getUserGroups()` for permission
+     * gating; the platform itself only interprets membership in the seeded
+     * `admin` system group via `IUserGroupService.isAdmin`.
+     */
+    groups: string[];
     /** Document creation timestamp */
     createdAt: Date;
     /** Document last update timestamp */

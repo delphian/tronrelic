@@ -3,8 +3,9 @@
  *
  * Displays the user's referral link with copy-to-clipboard, share buttons
  * for Twitter and Telegram, and referral statistics (visitors referred,
- * wallets converted). Only shown to verified wallet owners on their
- * own profile page.
+ * wallets converted). Only shown to users in the *verified* identity state
+ * on their own profile page — referral codes are issued at the moment of
+ * verification.
  */
 
 'use client';
@@ -42,9 +43,11 @@ function buildReferralUrl(siteUrl: string, code: string): string {
  * ReferralCard displays referral link, share options, and stats.
  *
  * Fetches referral data from the backend on mount. Shows an empty state
- * if the user has no referral code (no verified wallet). Once loaded,
- * displays the referral URL, copy button, Twitter/Telegram share buttons,
- * and counts of referred visitors and wallet conversions.
+ * if the user has no referral code (i.e. the user is still *anonymous* or
+ * *registered* — codes are issued only on transition into the *verified*
+ * state). Once loaded, displays the referral URL, copy button,
+ * Twitter/Telegram share buttons, and counts of referred visitors and
+ * wallet conversions.
  *
  * @param props - Component props
  * @param props.userId - User UUID for API calls

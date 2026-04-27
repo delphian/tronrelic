@@ -1,0 +1,179 @@
+/**
+ * GroupsManager styles.
+ *
+ * Admin tab listing user groups with create/edit/delete affordances and
+ * a colocated form rendered inside the shared ModalProvider. Container
+ * query lets the table collapse padding/columns on narrow shells
+ * (slideouts, mobile widths) without viewport media queries.
+ */
+
+@use '../../../../../app/breakpoints' as *;
+
+.container {
+    container-type: inline-size;
+    container-name: groups-manager;
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-lg);
+    padding: var(--card-padding-md);
+}
+
+.header {
+    display: flex;
+    flex-direction: row;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--gap-md);
+}
+
+.title {
+    font-size: var(--font-size-heading-lg);
+    font-weight: var(--font-weight-bold);
+    color: var(--color-text);
+    margin: 0;
+}
+
+.subtitle {
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text-muted);
+    margin: var(--gap-2xs) 0 0 0;
+    max-width: var(--max-width-prose);
+}
+
+.error_card {
+    border-color: var(--color-danger);
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-sm);
+}
+
+.table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--font-size-body-sm);
+
+    th,
+    td {
+        text-align: left;
+        padding: var(--padding-sm) var(--padding-md);
+        border-bottom: var(--border-width-thin) solid var(--color-border);
+        vertical-align: middle;
+    }
+
+    th {
+        font-weight: var(--font-weight-semibold);
+        color: var(--color-text-muted);
+        background: var(--color-surface-muted);
+    }
+
+    tbody tr:last-child td {
+        border-bottom: none;
+    }
+}
+
+.slug_cell {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-xs);
+    flex-wrap: wrap;
+}
+
+.slug {
+    font-family: var(--font-mono);
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text);
+}
+
+.description {
+    color: var(--color-text-muted);
+    max-width: 28rem;
+}
+
+.actions_col {
+    width: 1%;
+    white-space: nowrap;
+}
+
+.actions {
+    display: flex;
+    gap: var(--gap-xs);
+    justify-content: flex-end;
+    white-space: nowrap;
+}
+
+.form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-md);
+}
+
+.field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-2xs);
+}
+
+.field_label {
+    font-size: var(--font-size-body-sm);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text);
+}
+
+.field input,
+.field textarea {
+    width: 100%;
+    padding: var(--input-padding);
+    font-size: var(--font-size-body);
+    color: var(--color-text);
+    background: var(--color-surface);
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-sm);
+
+    &:focus {
+        outline: none;
+        border-color: var(--color-primary);
+    }
+
+    &:disabled {
+        background: var(--color-surface-muted);
+        color: var(--color-text-muted);
+        cursor: not-allowed;
+    }
+}
+
+.field textarea {
+    resize: vertical;
+    font-family: inherit;
+}
+
+.field_error {
+    font-size: var(--font-size-caption);
+    color: var(--color-danger);
+}
+
+.field_hint {
+    font-size: var(--font-size-caption);
+    color: var(--color-text-muted);
+}
+
+.form_actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--gap-sm);
+}
+
+@container groups-manager (max-width: #{$breakpoint-mobile-lg}) {
+    .header {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .description {
+        display: none;
+    }
+
+    .table th,
+    .table td {
+        padding: var(--padding-xs) var(--padding-sm);
+    }
+}

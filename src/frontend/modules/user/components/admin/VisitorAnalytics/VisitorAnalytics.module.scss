@@ -12,29 +12,29 @@
     container-name: visitor-analytics;
     display: flex;
     flex-direction: column;
-    gap: var(--spacing-10);
+    gap: var(--gap-lg);
 }
 
 .section {
     display: flex;
     flex-direction: column;
-    gap: var(--spacing-7);
+    gap: var(--gap-md);
     background: var(--color-surface-muted);
     border: var(--border-width-thin) solid var(--color-border);
     border-radius: var(--radius-md);
-    padding: var(--spacing-7);
+    padding: var(--card-padding-sm);
 }
 
 .section_header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    gap: var(--spacing-5);
+    gap: var(--input-group-gap);
     flex-wrap: wrap;
 }
 
 .section_title {
-    font-size: var(--font-size-lg);
+    font-size: var(--font-size-heading-sm);
     font-weight: var(--font-weight-semibold);
     color: var(--color-text);
     margin: 0;
@@ -49,8 +49,8 @@
 }
 
 .toggle_btn {
-    padding: var(--spacing-3) var(--spacing-7);
-    font-size: var(--font-size-xs);
+    padding: var(--padding-xs) var(--gap-md);
+    font-size: var(--font-size-caption);
     font-weight: var(--font-weight-medium);
     color: var(--color-text-muted);
     background: var(--color-surface);
@@ -65,7 +65,7 @@
 
 .toggle_btn__active {
     background: var(--color-primary);
-    color: var(--color-text-on-primary);
+    color: var(--button-primary-color);
 }
 
 .toggle_btn:focus-visible {
@@ -86,23 +86,23 @@
 .table {
     width: 100%;
     border-collapse: collapse;
-    font-size: var(--font-size-sm);
+    font-size: var(--font-size-body-sm);
 }
 
 .table th {
     text-align: left;
-    padding: var(--spacing-3) var(--spacing-5);
-    font-size: var(--font-size-xs);
+    padding: var(--padding-xs) var(--input-group-gap);
+    font-size: var(--font-size-caption);
     font-weight: var(--font-weight-semibold);
     color: var(--color-text-muted);
     text-transform: uppercase;
-    letter-spacing: 0.05em;
+    letter-spacing: var(--letter-spacing-wide);
     border-bottom: var(--border-width-thin) solid var(--color-border);
     white-space: nowrap;
 }
 
 .table td {
-    padding: var(--spacing-3) var(--spacing-5);
+    padding: var(--padding-xs) var(--input-group-gap);
     color: var(--color-text);
     border-bottom: var(--border-width-thin) solid var(--color-border);
     vertical-align: middle;
@@ -119,11 +119,11 @@
 .country_cell {
     font-family: var(--font-mono);
     font-weight: var(--font-weight-medium);
-    font-size: var(--font-size-xs);
+    font-size: var(--font-size-caption);
 }
 
 .referrer_cell {
-    font-size: var(--font-size-xs);
+    font-size: var(--font-size-caption);
     color: var(--color-text-muted);
     max-width: 200px;
     overflow: hidden;
@@ -133,7 +133,7 @@
 
 .landing_cell {
     font-family: var(--font-mono);
-    font-size: var(--font-size-xs);
+    font-size: var(--font-size-caption);
     color: var(--color-text-muted);
     max-width: 250px;
     overflow: hidden;
@@ -142,7 +142,7 @@
 }
 
 .utm_cell {
-    font-size: var(--font-size-xs);
+    font-size: var(--font-size-caption);
     color: var(--color-text-muted);
     max-width: 200px;
     overflow: hidden;
@@ -151,7 +151,7 @@
 }
 
 .device_cell {
-    font-size: var(--font-size-xs);
+    font-size: var(--font-size-caption);
     color: var(--color-text-subtle);
 }
 
@@ -163,18 +163,18 @@
     display: flex;
     justify-content: center;
     align-items: center;
-    gap: var(--spacing-7);
-    padding-top: var(--spacing-5);
+    gap: var(--gap-md);
+    padding-top: var(--input-group-gap);
 }
 
 .page_info {
-    font-size: var(--font-size-sm);
+    font-size: var(--font-size-body-sm);
     color: var(--color-text-muted);
 }
 
 .loading,
 .empty {
-    padding: var(--spacing-10);
+    padding: var(--card-padding-md);
     text-align: center;
     color: var(--color-text-muted);
 }
@@ -189,10 +189,10 @@
 
 @container visitor-analytics (max-width: #{$breakpoint-mobile-md}) {
     .container {
-        gap: var(--spacing-7);
+        gap: var(--gap-md);
     }
 
     .section {
-        padding: var(--spacing-5);
+        padding: var(--input-group-gap);
     }
 }
