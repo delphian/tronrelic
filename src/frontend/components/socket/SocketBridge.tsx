@@ -7,7 +7,7 @@ import { useAppDispatch, useAppSelector } from '../../store/hooks';
 import { prependMemo } from '../../store/slices/memoSlice';
 import { blockReceived } from '../../features/blockchain/slice';
 import { setUserData, selectUserId } from '../../modules/user';
-import { menuTreeUpdated } from '../../modules/menu/slice';
+import { refetchMenuTree } from '../../modules/menu/slice';
 import {
   connectionDeferred,
   deferredCountdownTick,
@@ -204,7 +204,11 @@ export function SocketBridge() {
     };
 
     const handleMenuUpdate = (payload: MenuUpdatePayload['payload']) => {
-      dispatch(menuTreeUpdated(payload));
+      // Per-user gating means the server can't broadcast a single tree
+      // shape. The signal carries `{ namespace, nodeId, event, timestamp }`;
+      // each client refetches `GET /api/menu` with its own cookie to get
+      // its filtered view.
+      dispatch(refetchMenuTree({ namespace: payload.namespace, timestamp: payload.timestamp }));
     };
 
     const handleVisibility = () => {

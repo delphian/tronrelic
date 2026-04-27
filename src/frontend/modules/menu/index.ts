@@ -36,7 +36,7 @@ export { CategoryLandingPage } from './components';
 export { useMenuConfig, useBodyScrollLock } from './hooks';
 
 // Redux slice
-export { default as menuReducer, menuTreeUpdated } from './slice';
+export { default as menuReducer, menuTreeSeeded, refetchMenuTree } from './slice';
 export type { MenuState } from './slice';
 
 // Types

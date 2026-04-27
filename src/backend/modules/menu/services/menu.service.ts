@@ -8,8 +8,13 @@ import type {
     MenuEventType,
     MenuEventSubscriber,
     IDatabaseService,
-    IMenuNamespaceConfig
+    IMenuNamespaceConfig,
+    IServiceRegistry,
+    IUserGroupService,
+    IUser,
+    UserIdentityState as UserIdentityStateType
 } from '@/types';
+import { UserIdentityState } from '@/types';
 import { logger } from '../../../lib/logger.js';
 import { WebSocketService } from '../../../services/websocket.service.js';
 import { ObjectId } from 'mongodb';
@@ -68,6 +73,7 @@ export class MenuService implements IMenuService {
     private subscribers: Map<MenuEventType, MenuEventSubscriber[]> = new Map();
     private initialized = false;
     private database: IDatabaseService;
+    private serviceRegistry: IServiceRegistry;
     private readonly DEFAULT_NAMESPACE = 'main';
     private readonly OVERRIDES_COLLECTION = 'menu_node_overrides';
     private persistedNodeIds = new Set<string>();
@@ -81,26 +87,52 @@ export class MenuService implements IMenuService {
     /**
      * Private constructor enforcing singleton pattern with dependency injection.
      *
-     * Accepts database dependency to decouple from Mongoose and enable testability.
-     * Use getInstance() to access the service after calling setDatabase().
-     *
      * @param database - Database service for menu node storage
+     * @param serviceRegistry - Service registry for late-binding lookup of
+     *                          `IUserGroupService` (used by the gating filter to
+     *                          evaluate `requiresAdmin`)
      */
-    private constructor(database: IDatabaseService) {
+    private constructor(database: IDatabaseService, serviceRegistry: IServiceRegistry) {
         this.database = database;
+        this.serviceRegistry = serviceRegistry;
     }
 
     /**
-     * Set the database instance for the singleton.
+     * Configure the singleton with its dependencies.
      *
      * Must be called once during application bootstrap before getInstance().
-     * This enables dependency injection while maintaining the singleton pattern.
+     * The service registry is held for lazy `IUserGroupService` lookup at read
+     * time — by the time anyone calls `getTree()` with a user, the user module
+     * has registered `'user-groups'`.
      *
      * @param database - Database service for menu node storage
+     * @param serviceRegistry - Service registry for late-binding service lookup
+     */
+    public static setDependencies(database: IDatabaseService, serviceRegistry: IServiceRegistry): void {
+        if (!MenuService.instance) {
+            MenuService.instance = new MenuService(database, serviceRegistry);
+        }
+    }
+
+    /**
+     * @deprecated Use `setDependencies(database, serviceRegistry)` instead. Retained for
+     * tests and external callers that haven't migrated. Without a real registry the stub
+     * returns no service for `'user-groups'`, so `requiresAdmin: true` nodes are simply
+     * hidden from any cookie-identified caller — there is no shared-token bypass at the
+     * gating layer (admins still see everything because the controller short-circuits
+     * filtering for admin-token requests, not because the gate trusts them).
      */
     public static setDatabase(database: IDatabaseService): void {
         if (!MenuService.instance) {
-            MenuService.instance = new MenuService(database);
+            const stub: IServiceRegistry = {
+                register: () => { /* no-op stub */ },
+                unregister: () => false,
+                get: () => undefined,
+                has: () => false,
+                getNames: () => [],
+                watch: () => () => { /* no-op disposer */ }
+            };
+            MenuService.instance = new MenuService(database, stub);
         }
     }
 
@@ -111,13 +143,23 @@ export class MenuService implements IMenuService {
      * subsequent calls, ensuring a single source of truth for menu state.
      *
      * @returns The singleton MenuService instance
-     * @throws Error if setDatabase() was not called first
+     * @throws Error if setDependencies() was not called first
      */
     public static getInstance(): MenuService {
         if (!MenuService.instance) {
-            throw new Error('MenuService.setDatabase() must be called before getInstance()');
+            throw new Error('MenuService.setDependencies() must be called before getInstance()');
         }
         return MenuService.instance;
+    }
+
+    /**
+     * Reset the singleton (test-only).
+     *
+     * @internal
+     */
+    public static __resetForTests(): void {
+        // Used by Vitest suites to swap in a fresh instance with mock deps.
+        MenuService.instance = undefined as unknown as MenuService;
     }
 
     /**
@@ -316,7 +358,9 @@ export class MenuService implements IMenuService {
             order: nodeData.order ?? 0,
             parent: nodeData.parent ?? null,
             enabled: nodeData.enabled ?? true,
-            requiredRole: nodeData.requiredRole
+            allowedIdentityStates: nodeData.allowedIdentityStates,
+            requiresGroups: nodeData.requiresGroups,
+            requiresAdmin: nodeData.requiresAdmin
         };
 
         // Reject duplicate URLs within the same namespace. Without this,
@@ -356,7 +400,9 @@ export class MenuService implements IMenuService {
                 order: node.order,
                 parent: node.parent ? new ObjectId(node.parent) : null,
                 enabled: node.enabled,
-                requiredRole: node.requiredRole,
+                allowedIdentityStates: node.allowedIdentityStates,
+                requiresGroups: node.requiresGroups,
+                requiresAdmin: node.requiresAdmin,
                 createdAt: now,
                 updatedAt: now
             };
@@ -385,7 +431,9 @@ export class MenuService implements IMenuService {
                 order: override?.order ?? node.order,
                 parent: node.parent,
                 enabled: override?.enabled ?? node.enabled,
-                requiredRole: node.requiredRole,
+                allowedIdentityStates: node.allowedIdentityStates,
+                requiresGroups: node.requiresGroups,
+                requiresAdmin: node.requiresAdmin,
                 createdAt: new Date(),
                 updatedAt: new Date()
             };
@@ -456,7 +504,22 @@ export class MenuService implements IMenuService {
             throw new Error(`Menu node not found: ${id}`);
         }
 
-        const updated: IMenuNode = { ...existing, ...updates, _id: id };
+        // Empty gating arrays and `requiresAdmin: false` are treated as
+        // "clear this gate" — the only way to remove a previously-set gate
+        // through PATCH is to send the cleared value explicitly. Normalize
+        // here so the in-memory tree carries `undefined`, not `[]` / `false`.
+        const normalizedUpdates: Partial<IMenuNode> = { ...updates };
+        if (Array.isArray(normalizedUpdates.allowedIdentityStates) && normalizedUpdates.allowedIdentityStates.length === 0) {
+            normalizedUpdates.allowedIdentityStates = undefined;
+        }
+        if (Array.isArray(normalizedUpdates.requiresGroups) && normalizedUpdates.requiresGroups.length === 0) {
+            normalizedUpdates.requiresGroups = undefined;
+        }
+        if (normalizedUpdates.requiresAdmin === false) {
+            normalizedUpdates.requiresAdmin = undefined;
+        }
+
+        const updated: IMenuNode = { ...existing, ...normalizedUpdates, _id: id };
         const newNamespace = updated.namespace || existingNamespace;
 
         // If the URL or namespace is changing, refuse to clobber an existing
@@ -507,20 +570,38 @@ export class MenuService implements IMenuService {
             if (this.persistedNodeIds.has(id)) {
                 // Node exists in menu_nodes — update it directly
                 const collection = this.database.getCollection<IMenuNodeDocument>('menu_nodes');
-                const updateDoc: Partial<IMenuNodeDocument> = {
-                    ...(updates.namespace !== undefined && { namespace: updates.namespace }),
-                    ...(updates.label !== undefined && { label: updates.label }),
-                    ...(updates.description !== undefined && { description: updates.description }),
-                    ...(updates.url !== undefined && { url: updates.url }),
-                    ...(updates.icon !== undefined && { icon: updates.icon }),
-                    ...(updates.order !== undefined && { order: updates.order }),
-                    ...(updates.parent !== undefined && { parent: updates.parent ? new ObjectId(updates.parent) : null }),
-                    ...(updates.enabled !== undefined && { enabled: updates.enabled }),
-                    ...(updates.requiredRole !== undefined && { requiredRole: updates.requiredRole }),
+                const setDoc: Partial<IMenuNodeDocument> = {
+                    ...(normalizedUpdates.namespace !== undefined && { namespace: normalizedUpdates.namespace }),
+                    ...(normalizedUpdates.label !== undefined && { label: normalizedUpdates.label }),
+                    ...(normalizedUpdates.description !== undefined && { description: normalizedUpdates.description }),
+                    ...(normalizedUpdates.url !== undefined && { url: normalizedUpdates.url }),
+                    ...(normalizedUpdates.icon !== undefined && { icon: normalizedUpdates.icon }),
+                    ...(normalizedUpdates.order !== undefined && { order: normalizedUpdates.order }),
+                    ...(normalizedUpdates.parent !== undefined && { parent: normalizedUpdates.parent ? new ObjectId(normalizedUpdates.parent) : null }),
+                    ...(normalizedUpdates.enabled !== undefined && { enabled: normalizedUpdates.enabled }),
+                    ...(normalizedUpdates.allowedIdentityStates !== undefined && { allowedIdentityStates: normalizedUpdates.allowedIdentityStates }),
+                    ...(normalizedUpdates.requiresGroups !== undefined && { requiresGroups: normalizedUpdates.requiresGroups }),
+                    ...(normalizedUpdates.requiresAdmin !== undefined && { requiresAdmin: normalizedUpdates.requiresAdmin }),
                     updatedAt: new Date()
                 };
 
-                await collection.updateOne({ _id: new ObjectId(id) }, { $set: updateDoc });
+                // A field present in `updates` but normalized away is an
+                // explicit clear-the-gate signal — use $unset so the doc
+                // doesn't carry stale empty arrays / `false` flags.
+                const unsetDoc: Record<string, ''> = {};
+                if (updates.allowedIdentityStates !== undefined && normalizedUpdates.allowedIdentityStates === undefined) {
+                    unsetDoc.allowedIdentityStates = '';
+                }
+                if (updates.requiresGroups !== undefined && normalizedUpdates.requiresGroups === undefined) {
+                    unsetDoc.requiresGroups = '';
+                }
+                if (updates.requiresAdmin !== undefined && normalizedUpdates.requiresAdmin === undefined) {
+                    unsetDoc.requiresAdmin = '';
+                }
+
+                const op: { $set: typeof setDoc; $unset?: typeof unsetDoc } = { $set: setDoc };
+                if (Object.keys(unsetDoc).length > 0) op.$unset = unsetDoc;
+                await collection.updateOne({ _id: new ObjectId(id) }, op);
             } else if (existing.url) {
                 // Memory-only node with a URL — save overrides so changes survive restarts
                 await this.saveOverride(existing.namespace || this.DEFAULT_NAMESPACE, existing.url, updates);
@@ -670,6 +751,139 @@ export class MenuService implements IMenuService {
             all,
             generatedAt: new Date()
         };
+    }
+
+    /**
+     * Get the menu tree filtered to nodes the given user is permitted to see.
+     *
+     * Applies the gating rules declared on each node (`allowedIdentityStates`,
+     * `requiresGroups`, `requiresAdmin`) using the cookie-resolved user. An
+     * `undefined` user is treated as an anonymous visitor with no group
+     * memberships, so only nodes with no gates (or with `'anonymous'` in their
+     * `allowedIdentityStates`) appear.
+     *
+     * The admin predicate (`requiresAdmin: true`) resolves through
+     * `IUserGroupService.isAdmin`, looked up lazily from the service registry.
+     * If the user-groups service is not registered, admin-gated nodes are
+     * hidden from non-admin token holders by default.
+     *
+     * @param namespace - Menu namespace (defaults to 'main')
+     * @param user - Cookie-resolved user, or undefined for anonymous
+     * @returns Filtered tree containing only nodes the user may see
+     */
+    public async getTreeForUser(namespace: string | undefined, user: IUser | undefined): Promise<IMenuTree> {
+        const tree = this.getTree(namespace);
+        const groupsService = this.serviceRegistry.get<IUserGroupService>('user-groups');
+        const isUserAdmin = user && groupsService ? await groupsService.isAdmin(user.id) : false;
+
+        const visible = this.filterVisibleSubtree(tree.all, user, isUserAdmin);
+        return {
+            roots: this.buildTree(visible),
+            all: visible,
+            generatedAt: tree.generatedAt
+        };
+    }
+
+    /**
+     * Get a single child of the named parent that the given user may see.
+     *
+     * Same gating rules as {@link getTreeForUser}; returns the user-filtered
+     * children sorted by order. If the parent itself (or any ancestor of the
+     * parent) fails its gate, returns empty — there is no way to surface a
+     * child whose parent the caller cannot see.
+     */
+    public async getChildrenForUser(
+        parentId: string | null,
+        namespace: string | undefined,
+        user: IUser | undefined
+    ): Promise<IMenuNode[]> {
+        const groupsService = this.serviceRegistry.get<IUserGroupService>('user-groups');
+        const isUserAdmin = user && groupsService ? await groupsService.isAdmin(user.id) : false;
+
+        if (parentId) {
+            // Walk the parent chain through the namespace's flat node list and
+            // refuse to surface descendants of a hidden ancestor.
+            const all = this.getTree(namespace).all;
+            const byId = new Map<string, IMenuNode>(all.map((n) => [n._id!, n]));
+            let cursor: IMenuNode | undefined = byId.get(parentId);
+            while (cursor) {
+                if (!this.passesGate(cursor, user, isUserAdmin)) return [];
+                cursor = cursor.parent ? byId.get(cursor.parent) : undefined;
+            }
+        }
+
+        return this.getChildren(parentId, namespace).filter((node) => this.passesGate(node, user, isUserAdmin));
+    }
+
+    /**
+     * Filter a flat node list down to nodes whose entire ancestor chain passes
+     * the gate. Without this, `buildTree` treats children of a filtered-out
+     * parent as orphans and promotes them to roots — silently exposing nested
+     * items the operator just hid by gating their parent.
+     */
+    private filterVisibleSubtree(nodes: IMenuNode[], user: IUser | undefined, isUserAdmin: boolean): IMenuNode[] {
+        const byId = new Map(nodes.map((n) => [n._id!, n]));
+        const cache = new Map<string, boolean>();
+
+        const isVisible = (node: IMenuNode): boolean => {
+            const id = node._id!;
+            const cached = cache.get(id);
+            if (cached !== undefined) return cached;
+
+            if (!this.passesGate(node, user, isUserAdmin)) {
+                cache.set(id, false);
+                return false;
+            }
+            if (node.parent) {
+                const parent = byId.get(node.parent);
+                // Parent missing from the namespace is treated as visible —
+                // matches `buildTree`'s orphan-as-root fallback so we don't
+                // hide otherwise-valid nodes because of a stale parent ref.
+                if (parent && !isVisible(parent)) {
+                    cache.set(id, false);
+                    return false;
+                }
+            }
+            cache.set(id, true);
+            return true;
+        };
+
+        return nodes.filter(isVisible);
+    }
+
+    /**
+     * Decide whether a single node is visible to the given user.
+     *
+     * The three gating fields are ANDed together — a missing field is
+     * tautologically true. The order of checks is intentional: cheap
+     * in-memory predicates first, then the precomputed admin flag.
+     *
+     * @param node - The node under consideration
+     * @param user - Cookie-resolved user, or undefined for anonymous
+     * @param isUserAdmin - Result of `groups.isAdmin(user.id)`, precomputed
+     *                      so a tree filter can amortize one DB round-trip
+     *                      across hundreds of nodes
+     */
+    private passesGate(node: IMenuNode, user: IUser | undefined, isUserAdmin: boolean): boolean {
+        const identityState: UserIdentityStateType = user?.identityState ?? UserIdentityState.Anonymous;
+        const userGroups: string[] = user?.groups ?? [];
+
+        // Identity-state allow-list: if set, the user's state must be in it.
+        if (node.allowedIdentityStates && node.allowedIdentityStates.length > 0) {
+            if (!node.allowedIdentityStates.includes(identityState)) return false;
+        }
+
+        // Required groups: if set, the user must be in at least one.
+        if (node.requiresGroups && node.requiresGroups.length > 0) {
+            const hasAny = node.requiresGroups.some((gid) => userGroups.includes(gid));
+            if (!hasAny) return false;
+        }
+
+        // Admin predicate: routes through IUserGroupService.isAdmin so future
+        // seeded admin tiers (e.g. super-admin) automatically qualify.
+        if (node.requiresAdmin && !isUserAdmin) return false;
+
+        return true;
     }
 
     /**
@@ -967,9 +1181,9 @@ export class MenuService implements IMenuService {
         try {
             const ns = node.namespace || this.DEFAULT_NAMESPACE;
 
-            // Admin namespaces never broadcast publicly. WebSocketService.emit
-            // sends `menu:update` to every connected socket via `io.emit`, so
-            // any system-namespace mutation would otherwise leak admin URLs to
+            // Admin namespaces never broadcast publicly. The signal goes to
+            // every connected socket via `io.emit`, so any system-namespace
+            // mutation would otherwise leak the existence of admin URLs to
             // anonymous visitors. Admin UIs reload via authenticated fetch
             // after each mutation, so the suppression is invisible to them.
             if (ADMIN_NAMESPACES.has(ns)) {
@@ -977,56 +1191,29 @@ export class MenuService implements IMenuService {
                 return;
             }
 
-            // The broadcast goes to every client, so strip disabled nodes —
-            // an admin toggling `enabled: false` should remove the item from
-            // public view immediately rather than push it disabled-but-visible.
-            const fullTree = this.getTree(ns);
-            const tree: IMenuTree = {
-                roots: this.filterEnabledTree(fullTree.roots),
-                all: fullTree.all.filter((n) => n.enabled),
-                generatedAt: fullTree.generatedAt
-            };
-
-            // The broadcast reaches every connected socket. Sending the full
-            // node would leak label/url/icon/requiredRole at the moment a node
-            // is disabled or deleted — even though the redacted tree above
-            // already removes those fields from public view. Emit only the
-            // identifiers clients need to invalidate cached entries; the tree
-            // is the authoritative public surface.
-            const redactedNode = {
-                _id: node._id,
-                namespace: ns,
-                enabled: node.enabled
-            };
+            // Per-user gating (allowedIdentityStates / requiresGroups /
+            // requiresAdmin) means there is no single tree shape that fits
+            // every connected client. Send a refetch signal instead — each
+            // client re-requests `GET /api/menu` with its own cookie and the
+            // server returns the filtered view. Identifiers are kept in the
+            // payload so clients can scope cache invalidation to one
+            // namespace, but no node body is shipped.
             const wsService = WebSocketService.getInstance();
             wsService.emit({
                 event: 'menu:update',
                 payload: {
                     event: eventType,
-                    node: redactedNode,
-                    tree,
+                    namespace: ns,
+                    nodeId: node._id,
                     timestamp: new Date()
                 }
             });
 
-            logger.debug({ eventType, nodeId: node._id, namespace: ns }, 'Menu tree update broadcast via WebSocket');
+            logger.debug({ eventType, nodeId: node._id, namespace: ns }, 'Menu refetch signal broadcast via WebSocket');
         } catch (error) {
-            logger.error({ error }, 'Failed to broadcast menu tree update');
+            logger.error({ error }, 'Failed to broadcast menu refetch signal');
             // Don't throw - WebSocket failure shouldn't break menu operations
         }
-    }
-
-    /**
-     * Recursively strip disabled nodes from a hierarchical tree view.
-     * Returns fresh objects so the in-memory tree is not mutated.
-     */
-    private filterEnabledTree(roots: IMenuNodeWithChildren[]): IMenuNodeWithChildren[] {
-        return roots
-            .filter((node) => node.enabled)
-            .map((node) => ({
-                ...node,
-                children: this.filterEnabledTree(node.children)
-            }));
     }
 
     /**
@@ -1164,7 +1351,9 @@ export class MenuService implements IMenuService {
             order: doc.order ?? 0,
             parent: doc.parent ? doc.parent.toString() : null,
             enabled: doc.enabled ?? true,
-            requiredRole: doc.requiredRole,
+            allowedIdentityStates: doc.allowedIdentityStates,
+            requiresGroups: doc.requiresGroups,
+            requiresAdmin: doc.requiresAdmin,
             createdAt: doc.createdAt,
             updatedAt: doc.updatedAt
         };

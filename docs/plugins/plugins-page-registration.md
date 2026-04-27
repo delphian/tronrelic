@@ -676,6 +676,21 @@ Planned improvements to the menu/page system:
 - **Dynamic metadata** - Automatic Next.js metadata generation from `IPageConfig` SEO fields, including OpenGraph tags, Twitter cards, JSON-LD structured data, and per-page `noindex`. See [plugins-seo-and-ssr.md](./plugins-seo-and-ssr.md).
 - **Server-side data fetching** - `IPageConfig.serverDataFetcher` for pre-fetching plugin page data during SSR, eliminating the loading flash on plugin pages. See [plugins-seo-and-ssr.md](./plugins-seo-and-ssr.md).
 
+### ✅ Implemented (cont.)
+
+**Per-user menu visibility gating** — Menu nodes carry three optional
+gating fields that the backend evaluates against the cookie-resolved
+visitor at read time: `allowedIdentityStates: UserIdentityState[]` (allow-list
+of `'anonymous' | 'registered' | 'verified'`), `requiresGroups: string[]`
+(OR-of-membership across admin-defined groups), and `requiresAdmin: boolean`
+(routes through `IUserGroupService.isAdmin`). The filter is in
+`MenuService.getTreeForUser`; the admin UI surfaces the fields as a
+checkbox/multi-select fieldset on `/system/menu`. See the
+[Menu Module README → Visibility Gating](../../src/backend/modules/menu/README.md#visibility-gating)
+for the full contract and the distinction between `requiresAdmin` (per-user,
+cookie identity) and the `requireAdmin` middleware (shared-token gate, see
+[plugins-api-registration.md](./plugins-api-registration.md)).
+
 ### 🚧 Planned
 
 **Route Guards** - Automatic enforcement of `requiresAuth` and `requiresAdmin`:
@@ -690,18 +705,34 @@ pages: [
 ]
 ```
 
-**Permission-Based Visibility** - Hide menu items based on user permissions:
+Plugin-registered menu nodes can use the same gating fields documented in
+the [Menu Module README → Visibility Gating](../../src/backend/modules/menu/README.md#visibility-gating).
+Pass `allowedIdentityStates`, `requiresGroups`, and/or `requiresAdmin`
+directly to `context.menuService.create()`:
 
 ```typescript
+// Hidden from anonymous and registered visitors
 await context.menuService.create({
     namespace: 'main',
-    label: 'Admin Panel',
-    url: '/admin',
-    icon: 'Shield',
+    label: 'Premium Tools',
+    url: '/plugins/my-plugin/premium',
+    icon: 'Sparkles',
     order: 200,
     parent: null,
     enabled: true,
-    requiresAdmin: true  // Completely hidden if not admin
+    allowedIdentityStates: [UserIdentityState.Verified]
+});
+
+// Visible only to admins (per-user check via IUserGroupService.isAdmin)
+await context.menuService.create({
+    namespace: 'main',
+    label: 'Plugin Admin',
+    url: '/plugins/my-plugin/admin',
+    icon: 'Shield',
+    order: 250,
+    parent: null,
+    enabled: true,
+    requiresAdmin: true
 });
 ```
 

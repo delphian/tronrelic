@@ -1,3 +1,5 @@
+import type { UserIdentityState } from '../user/IUserIdentityState.js';
+
 /**
  * Menu node interface representing a single item in the menu tree.
  *
@@ -89,11 +91,45 @@ export interface IMenuNode {
     enabled: boolean;
 
     /**
-     * Optional access control role or permission requirement.
-     * Frontend can check this before rendering or enabling navigation.
-     * Examples: 'admin', 'user', 'premium'
+     * Allow-list of identity states that may see the node.
+     *
+     * Backend filters menu reads by checking that the cookie-resolved user's
+     * `identityState` is in this set. `undefined` means the node has no
+     * identity-state gate (visible to anonymous, registered, and verified
+     * visitors alike). An empty array is rejected at write time — that would
+     * hide the node from every visitor, which is what `enabled: false`
+     * already expresses cleanly.
+     *
+     * Examples:
+     * - `['anonymous']` — visible only to UUID-only visitors (e.g. signup CTA)
+     * - `['registered', 'verified']` — visible only after a wallet is linked
+     * - `['anonymous', 'verified']` — visible to UUID-only and signed visitors,
+     *   hidden from the unsigned-wallet middle state
      */
-    requiredRole?: string;
+    allowedIdentityStates?: UserIdentityState[];
+
+    /**
+     * Required group memberships for visibility (OR-of-membership).
+     *
+     * The user must be a member of at least one listed group for the node to
+     * be visible. Group ids reference rows in the `module_user_groups`
+     * collection managed by the user module. `undefined` or `[]` means no
+     * group requirement. The set of available groups is admin-defined and
+     * fetched via `GET /api/admin/users/groups`.
+     */
+    requiresGroups?: string[];
+
+    /**
+     * Restrict the node to admin users.
+     *
+     * When true, the node is only visible to users for whom
+     * `IUserGroupService.isAdmin(userId)` returns true — i.e. members of any
+     * system-flagged group whose id matches the reserved-admin pattern. This
+     * is a separate flag from `requiresGroups` so that future seeded admin
+     * tiers (e.g. `super-admin`) automatically grant access without rewriting
+     * gated nodes.
+     */
+    requiresAdmin?: boolean;
 
     /**
      * Timestamp when the node was created.

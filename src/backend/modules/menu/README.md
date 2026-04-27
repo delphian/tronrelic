@@ -123,6 +123,50 @@ if (menu) {
 
 **Delete:** Emits `before:delete` (can halt), removes from MongoDB if `persist=true`, removes from in-memory tree, emits `after:delete`, broadcasts WebSocket event. **Delete does NOT cascade by default** - subscribers must implement cascade logic.
 
+## Visibility Gating
+
+Menu nodes can be gated on three independent fields, ANDed together. The
+backend filters menu reads at request time using the cookie-resolved
+`req.user`; admin token holders bypass the filter so the admin UI can render
+and edit gated nodes.
+
+| Field | Shape | Semantics |
+|-------|-------|-----------|
+| `allowedIdentityStates` | `UserIdentityState[]?` | Visible only to users whose `identityState` is in the set. `undefined` means no gate. Empty array is rejected at write time. |
+| `requiresGroups` | `string[]?` | Visible if the user is a member of *any* listed group id (OR-of-membership). Group ids reference `module_user_groups` rows managed by the user module. |
+| `requiresAdmin` | `boolean?` | Visible only when `IUserGroupService.isAdmin(req.userId)` returns true. Routes through the user-groups service registry entry so future seeded admin tiers (e.g. `super-admin`) automatically qualify. |
+
+The filter lives in `MenuService.getTreeForUser(namespace, user?)` and
+`getChildrenForUser(parentId, namespace, user?)`. Both are called by the
+public read endpoints (`GET /api/menu`, `GET /api/menu/resolve`) after
+`userContextMiddleware` has populated `req.user`. Anonymous visitors pass
+`undefined` and only see nodes with no gates (or with `'anonymous'` in the
+allow-list).
+
+The admin predicate looks up `'user-groups'` from the service registry
+lazily — the user module registers the service in its `run()` phase, so by
+the time anyone calls `GET /api/menu` it's available. If the registry entry
+is missing (tests, or a deployment where the user module hasn't initialized
+yet), `requiresAdmin: true` nodes are hidden from everyone except the
+shared-admin-token holder.
+
+`requiresAdmin` is **not** the same as the `requireAdmin` middleware. The
+middleware is a shared-token gate (`x-admin-token` against
+`ADMIN_API_TOKEN`) for operators and CI tooling. `requiresAdmin` is a
+per-user check keyed off cookie identity. They coexist: operators creating
+admin-only menu items typically want both — `requiresAdmin: true` on the
+node so cookie-identified visitors are filtered out, and admin-namespace
+isolation (`system`, `admin-sidebar`) for the shared-token gate around
+mutating endpoints.
+
+### Real-time updates
+
+`menu:update` WebSocket events no longer ship the full tree — per-user
+gating means there is no single shape that fits every connected client.
+The event is now a refetch signal carrying `{ event, namespace, nodeId,
+timestamp }`; clients re-request `GET /api/menu` with their own cookie and
+the server returns the filtered view.
+
 ## REST API Reference
 
 Read endpoints are public so the frontend can render navigation without an admin token; mutating endpoints require `ADMIN_API_TOKEN` via `x-admin-token` or `Authorization: Bearer`. See [system-api.md](../../../../docs/system/system-api.md) for complete authentication patterns.
@@ -140,7 +184,7 @@ Read endpoints are public so the frontend can render navigation without an admin
 
 | Endpoint | Method | Purpose | Key Fields |
 |----------|--------|---------|------------|
-| `/api/menu` | POST | Create persisted menu node | Body: `label` (required), `description`, `url`, `icon`, `order`, `parent`, `enabled`, `requiredRole` |
+| `/api/menu` | POST | Create persisted menu node | Body: `label` (required), `description`, `url`, `icon`, `order`, `parent`, `enabled`, `allowedIdentityStates`, `requiresGroups`, `requiresAdmin` |
 | `/api/menu/:id` | PATCH | Update menu node | Body: any fields to update |
 | `/api/menu/:id` | DELETE | Delete menu node | Does **not** cascade — children become orphans unless a `before:delete` subscriber handles them |
 | `/api/menu/namespace/:namespace/config` | PUT | Replace namespace configuration | Body: `overflow`, `icons`, `layout`, `styling` |
@@ -159,7 +203,11 @@ Read endpoints are public so the frontend can render navigation without an admin
 
 ## WebSocket Real-Time Updates
 
-The menu service broadcasts `menu:update` events whenever nodes are created, updated, or deleted.
+The menu service broadcasts `menu:update` refetch signals whenever nodes are
+created, updated, or deleted. Per-user gating means the server cannot ship a
+single tree shape that fits every connected client — receivers re-request
+`GET /api/menu?namespace=...` with their own cookie and the gating filter
+returns their personalized view.
 
 **Event payload:**
 ```typescript
@@ -167,9 +215,9 @@ The menu service broadcasts `menu:update` events whenever nodes are created, upd
     type: 'menu:update',
     payload: {
         event: 'after:create' | 'after:update' | 'after:delete',
-        node: IMenuNode,
-        tree: IMenuTree,
-        timestamp: Date
+        namespace: string,
+        nodeId: string,
+        timestamp: string
     }
 }
 ```
@@ -177,10 +225,14 @@ The menu service broadcasts `menu:update` events whenever nodes are created, upd
 **Frontend subscription:**
 ```typescript
 socket.on('menu:update', (payload) => {
-    console.log(`Menu ${payload.event}:`, payload.node.label);
-    setMenuTree(payload.tree);
+    // Refetch via the user's cookie context; the signal carries no tree body
+    fetch(`/api/menu?namespace=${payload.namespace}`, { credentials: 'include' })
+        .then(r => r.json())
+        .then(({ tree }) => setMenuTree(tree));
 });
 ```
+
+**Admin namespaces are suppressed.** Mutations to `system` / `admin-sidebar` skip the broadcast entirely so the existence of admin-only URLs doesn't leak to anonymous visitors. Admin UIs reload via authenticated fetch after each mutation, so the suppression is invisible to operators.
 
 **Note:** Lifecycle events (init, ready, loaded) are NOT broadcast via WebSocket because clients are not connected during backend startup.
 

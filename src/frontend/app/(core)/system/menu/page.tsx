@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import { AlertTriangle, ChevronRight, Pencil, Plus, Trash2 } from 'lucide-react';
-import type { IMenuNamespaceConfig, IMenuNode, IMenuTree } from '@/types';
+import type { IMenuNamespaceConfig, IMenuNode, IMenuTree, IUserGroup } from '@/types';
+import { UserIdentityState } from '@/types';
 
 import { Page, PageHeader, Stack } from '../../../../components/layout';
 import { Badge } from '../../../../components/ui/Badge';
@@ -102,6 +103,10 @@ export default function MenuAdminPage() {
     const [loading, setLoading] = useState(false);
     const [savingConfig, setSavingConfig] = useState(false);
     const [busyNodeId, setBusyNodeId] = useState<string | null>(null);
+    // Admin-defined groups for the gating fieldset multi-select. Populated
+    // once on mount; group definition changes are infrequent enough that we
+    // don't subscribe to live updates here.
+    const [availableGroups, setAvailableGroups] = useState<IUserGroup[]>([]);
 
     const authHeaders = useMemo<HeadersInit>(
         () => ({ 'X-Admin-Token': token || '' }),
@@ -171,6 +176,28 @@ export default function MenuAdminPage() {
             cancelled = true;
         };
     }, [authHeaders, notifyError]); // intentionally omits activeNamespace
+
+    /* Available groups for the gating multi-select. Fetched once; group
+     * definition changes are operator-driven and infrequent. Errors are
+     * surfaced as a toast but don't block the page — operators can still
+     * edit nodes whose gating fields don't depend on group selection. */
+    useEffect(() => {
+        let cancelled = false;
+        (async () => {
+            try {
+                const res = await fetch('/api/admin/users/groups', { headers: authHeaders });
+                if (!res.ok) throw new Error('Failed to load user groups');
+                const data = await res.json();
+                if (cancelled) return;
+                setAvailableGroups((data.groups ?? []) as IUserGroup[]);
+            } catch (err) {
+                if (!cancelled) notifyError('Could not load user groups', err);
+            }
+        })();
+        return () => {
+            cancelled = true;
+        };
+    }, [authHeaders, notifyError]);
 
     /* Tree + config for the active namespace. */
     useEffect(() => {
@@ -277,6 +304,7 @@ export default function MenuAdminPage() {
                         mode={mode}
                         initial={node}
                         availableParents={(menuTree?.all ?? []).filter((n) => n._id !== node?._id)}
+                        availableGroups={availableGroups}
                         onCancel={() => closeModal(id)}
                         onSubmit={async (data) => {
                             try {
@@ -300,7 +328,7 @@ export default function MenuAdminPage() {
                 )
             });
         },
-        [closeModal, handleCreate, handleUpdate, menuTree?.all, notifyError, notifySuccess, openModal, reloadTree]
+        [availableGroups, closeModal, handleCreate, handleUpdate, menuTree?.all, notifyError, notifySuccess, openModal, reloadTree]
     );
 
     const openDeleteModal = useCallback(
@@ -823,11 +851,24 @@ interface MenuNodeFormProps {
     mode: 'create' | 'edit';
     initial?: IMenuNode;
     availableParents: IMenuNode[];
+    availableGroups: IUserGroup[];
     onSubmit: (data: Partial<IMenuNode>) => Promise<void>;
     onCancel: () => void;
 }
 
-function MenuNodeForm({ mode, initial, availableParents, onSubmit, onCancel }: MenuNodeFormProps) {
+const ALL_IDENTITY_STATES: UserIdentityState[] = [
+    UserIdentityState.Anonymous,
+    UserIdentityState.Registered,
+    UserIdentityState.Verified
+];
+
+const IDENTITY_STATE_LABELS: Record<UserIdentityState, string> = {
+    [UserIdentityState.Anonymous]: 'Anonymous',
+    [UserIdentityState.Registered]: 'Registered',
+    [UserIdentityState.Verified]: 'Verified'
+};
+
+function MenuNodeForm({ mode, initial, availableParents, availableGroups, onSubmit, onCancel }: MenuNodeFormProps) {
     const { open: openInnerModal, close: closeInnerModal } = useModal();
     const [data, setData] = useState<Partial<IMenuNode>>({
         label: initial?.label ?? '',
@@ -836,7 +877,9 @@ function MenuNodeForm({ mode, initial, availableParents, onSubmit, onCancel }: M
         order: initial?.order ?? 0,
         parent: initial?.parent ?? null,
         enabled: initial?.enabled ?? true,
-        requiredRole: initial?.requiredRole ?? ''
+        allowedIdentityStates: initial?.allowedIdentityStates,
+        requiresGroups: initial?.requiresGroups,
+        requiresAdmin: initial?.requiresAdmin ?? false
     });
     const [saving, setSaving] = useState(false);
 
@@ -850,17 +893,55 @@ function MenuNodeForm({ mode, initial, availableParents, onSubmit, onCancel }: M
             // serialize as omitted rather than failing validation.
             const blankToUndefined = (v: unknown) =>
                 typeof v === 'string' ? (v.trim() || undefined) : v;
+
+            // Gating fields are sent through as-is (including `[]` and
+            // `false`) so a PATCH that clears a previously-set gate carries
+            // an explicit clear signal. The backend treats empty arrays and
+            // `requiresAdmin: false` as "remove this gate" and persists them
+            // via `$unset`. Sending `undefined` would drop the key from the
+            // JSON payload, which the partial-update path interprets as
+            // "leave this field unchanged" — preventing operators from ever
+            // clearing a gate from the UI.
+            const states = data.allowedIdentityStates ?? [];
+            // All three states checked is semantically identical to no gate;
+            // collapse to an empty array so the persist path unsets the
+            // field rather than storing a tautological full set.
+            const normalizedStates =
+                states.length === ALL_IDENTITY_STATES.length ? [] : states;
+
             const normalized: Partial<IMenuNode> = {
                 ...data,
                 label: typeof data.label === 'string' ? data.label.trim() : data.label,
                 url: blankToUndefined(data.url) as string | undefined,
                 icon: blankToUndefined(data.icon) as string | undefined,
-                requiredRole: blankToUndefined(data.requiredRole) as string | undefined
+                allowedIdentityStates: normalizedStates,
+                requiresGroups: data.requiresGroups ?? [],
+                requiresAdmin: Boolean(data.requiresAdmin)
             };
             await onSubmit(normalized);
         } finally {
             setSaving(false);
         }
+    };
+
+    const toggleIdentityState = (state: UserIdentityState) => {
+        setData((prev) => {
+            const current = prev.allowedIdentityStates ?? [];
+            const next = current.includes(state)
+                ? current.filter((s) => s !== state)
+                : [...current, state];
+            return { ...prev, allowedIdentityStates: next };
+        });
+    };
+
+    const toggleGroup = (groupId: string) => {
+        setData((prev) => {
+            const current = prev.requiresGroups ?? [];
+            const next = current.includes(groupId)
+                ? current.filter((g) => g !== groupId)
+                : [...current, groupId];
+            return { ...prev, requiresGroups: next };
+        });
     };
 
     const openIconPicker = () => {
@@ -954,16 +1035,69 @@ function MenuNodeForm({ mode, initial, availableParents, onSubmit, onCancel }: M
                 </select>
             </div>
 
-            <div className={styles.field}>
-                <label htmlFor="mn-role">Required role</label>
-                <Input
-                    id="mn-role"
-                    value={data.requiredRole ?? ''}
-                    onChange={(e) => setData({ ...data, requiredRole: e.target.value })}
-                    placeholder="(none)"
-                    disabled={saving}
-                />
-            </div>
+            <fieldset className={styles.field} disabled={saving}>
+                <legend className={styles.field_label}>Visibility</legend>
+
+                <div className={styles.field}>
+                    <span className={styles.field_label}>Identity states</span>
+                    {ALL_IDENTITY_STATES.map((state) => {
+                        const checked = (data.allowedIdentityStates ?? []).includes(state);
+                        const inputId = `mn-state-${state}`;
+                        return (
+                            <label key={state} htmlFor={inputId} className={styles.inline_toggle}>
+                                <input
+                                    id={inputId}
+                                    type="checkbox"
+                                    checked={checked}
+                                    onChange={() => toggleIdentityState(state)}
+                                />
+                                <span>{IDENTITY_STATE_LABELS[state]}</span>
+                            </label>
+                        );
+                    })}
+                    <p className={styles.field_hint}>
+                        Leave all unchecked or all checked for "no restriction" — both
+                        normalize to no gate at save time.
+                    </p>
+                </div>
+
+                <div className={styles.field}>
+                    <span className={styles.field_label}>Required groups</span>
+                    {availableGroups.length === 0 ? (
+                        <p className={styles.field_hint}>No groups defined yet.</p>
+                    ) : (
+                        availableGroups.map((group) => {
+                            const checked = (data.requiresGroups ?? []).includes(group.id);
+                            const inputId = `mn-group-${group.id}`;
+                            return (
+                                <label key={group.id} htmlFor={inputId} className={styles.inline_toggle}>
+                                    <input
+                                        id={inputId}
+                                        type="checkbox"
+                                        checked={checked}
+                                        onChange={() => toggleGroup(group.id)}
+                                    />
+                                    <span>{group.name}</span>
+                                </label>
+                            );
+                        })
+                    )}
+                    <p className={styles.field_hint}>
+                        Visible to users in <em>any</em> selected group (OR-of-membership).
+                    </p>
+                </div>
+
+                <label className={styles.inline_toggle}>
+                    <Switch
+                        size="sm"
+                        on={data.requiresAdmin ?? false}
+                        onChange={(next) => setData({ ...data, requiresAdmin: next })}
+                        disabled={saving}
+                        aria-label="Require admin"
+                    />
+                    <span>Require admin</span>
+                </label>
+            </fieldset>
 
             <label className={styles.inline_toggle}>
                 <Switch
