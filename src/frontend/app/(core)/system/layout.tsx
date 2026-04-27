@@ -37,10 +37,11 @@ export const metadata: Metadata = {
  *
  * This server component wraps every /system/* route with the
  * authentication provider and gate. Admin navigation is no longer
- * rendered here — the items live in the main navigation under the System
- * container (`main:system`) and are gated per-user via `requiresAdmin`.
- * The layout's job is now solely the auth shell and the cross-route
- * directives below (`dynamic`, `metadata`).
+ * rendered here — the items live in the main navigation under the
+ * System container (`MAIN_SYSTEM_CONTAINER_ID`, defined by the menu
+ * module) and are gated per-user via `requiresAdmin`. The layout's job
+ * is now solely the auth shell and the cross-route directives below
+ * (`dynamic`, `metadata`).
  *
  * Architecture:
  * - Layout (server) - Auth shell, dynamic rendering directive, robots metadata

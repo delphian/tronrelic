@@ -27,12 +27,10 @@
  * ```
  */
 
-import type { ReactNode } from 'react';
 import { cookies } from 'next/headers';
 import type { MenuNodeSerialized, MenuTreeSerialized } from '@/shared';
 import { MenuNavClient } from './MenuNavClient';
 import { getServerSideApiUrl } from '../../../lib/api-url';
-import { USER_ID_COOKIE_NAME } from '../../../modules/user';
 
 /**
  * API response structure from GET /api/menu.
@@ -62,13 +60,6 @@ interface IMenuNavSSRProps {
      * Defaults to "{namespace} navigation".
      */
     ariaLabel?: string;
-
-    /**
-     * Optional trailing items appended after database-sourced items inside the
-     * same Priority+ nav flow. Use for namespace-specific controls (e.g. logout)
-     * so they participate in overflow collapsing alongside normal menu entries.
-     */
-    trailingItems?: Array<{ id: string; node: ReactNode }>;
 }
 
 /**
@@ -91,24 +82,24 @@ interface IMenuNavSSRProps {
  * @param props.namespace - Menu namespace to load
  * @param props.ariaLabel - Optional accessible label for navigation
  */
-export async function MenuNavSSR({ namespace, ariaLabel, trailingItems }: IMenuNavSSRProps) {
+export async function MenuNavSSR({ namespace, ariaLabel }: IMenuNavSSRProps) {
     try {
-        // Forward the visitor's identity cookie so backend gating sees the
-        // real user. Without this, the SSR fetch is anonymous and admin /
-        // group-gated items never appear in the initial HTML.
+        // Forward all incoming cookies so backend gating sees the real
+        // visitor. The identity cookie (tronrelic_uid) is the load-bearing
+        // one today, but forwarding the whole header future-proofs the
+        // SSR fetch against any new server-side cookie (session affinity,
+        // CSRF, signed-identity upgrade) without revisiting this site.
         const cookieStore = await cookies();
-        const uidCookie = cookieStore.get(USER_ID_COOKIE_NAME);
+        const cookieHeader = cookieStore.toString();
 
         // Fetch menu items from backend API. Use internal Docker network when
         // available (avoids SSL cert issues). cache: 'no-store' is required
         // because the response is per-user — caching would leak one visitor's
         // tree to another.
         const apiUrl = getServerSideApiUrl();
-        const response = await fetch(`${apiUrl}/api/menu?namespace=${namespace}`, {
+        const response = await fetch(`${apiUrl}/api/menu?namespace=${encodeURIComponent(namespace)}`, {
             cache: 'no-store',
-            headers: uidCookie?.value
-                ? { Cookie: `${USER_ID_COOKIE_NAME}=${uidCookie.value}` }
-                : undefined
+            headers: cookieHeader ? { Cookie: cookieHeader } : undefined
         });
 
         if (!response.ok) {
@@ -119,7 +110,6 @@ export async function MenuNavSSR({ namespace, ariaLabel, trailingItems }: IMenuN
                     items={[]}
                     generatedAt={new Date().toISOString()}
                     ariaLabel={ariaLabel}
-                    trailingItems={trailingItems}
                 />
             );
         }
@@ -138,7 +128,6 @@ export async function MenuNavSSR({ namespace, ariaLabel, trailingItems }: IMenuN
                 items={roots}
                 generatedAt={generatedAt}
                 ariaLabel={ariaLabel}
-                trailingItems={trailingItems}
             />
         );
     } catch (error) {
@@ -149,7 +138,6 @@ export async function MenuNavSSR({ namespace, ariaLabel, trailingItems }: IMenuN
                 items={[]}
                 generatedAt={new Date().toISOString()}
                 ariaLabel={ariaLabel}
-                trailingItems={trailingItems}
             />
         );
     }

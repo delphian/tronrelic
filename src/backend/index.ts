@@ -24,7 +24,7 @@ import { WebSocketService } from './services/websocket.service.js';
 import { loadPlugins } from './loaders/plugins.js';
 import { ServiceRegistry } from './services/service-registry.js';
 import { SchedulerModule } from './modules/scheduler/index.js';
-import { MenuModule } from './modules/menu/index.js';
+import { MenuModule, MAIN_SYSTEM_CONTAINER_ID } from './modules/menu/index.js';
 import { LogsModule } from './modules/logs/index.js';
 import { DatabaseModule } from './modules/database/index.js';
 import { ClickHouseModule } from './modules/clickhouse/index.js';
@@ -421,7 +421,7 @@ async function registerTemporaryMenuItems(menuService: IMenuService): Promise<vo
         // Pages (40) registered by PagesModule
         // Markets (50) registered by resource-markets plugin
         // Plugins (65) registered by registerPluginsAdminMenu — dropdown of enabled plugin settings
-        // All admin items live under main:system; requiresAdmin is auto-applied
+        // All admin items live under the System container; requiresAdmin is auto-applied
     ];
 
     for (const item of items) {
@@ -431,7 +431,7 @@ async function registerTemporaryMenuItems(menuService: IMenuService): Promise<vo
             url: item.url,
             icon: item.icon,
             order: item.order,
-            parent: 'main:system',
+            parent: MAIN_SYSTEM_CONTAINER_ID,
             enabled: true
         });
     }
@@ -463,7 +463,7 @@ async function registerPluginsAdminMenu(menuService: IMenuService): Promise<void
         url: '/system/plugins',
         icon: 'Puzzle',
         order: 65,
-        parent: 'main:system',
+        parent: MAIN_SYSTEM_CONTAINER_ID,
         enabled: true
     });
 

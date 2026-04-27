@@ -30,6 +30,7 @@ export { MenuModule } from './MenuModule.js';
 export type { IMenuModuleDependencies } from './MenuModule.js';
 export { MenuService } from './services/menu.service.js';
 export { MenuController } from './api/menu.controller.js';
+export { MAIN_SYSTEM_CONTAINER_ID } from './constants.js';
 
 // Re-export types from @/types for convenience
 export type {

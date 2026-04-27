@@ -13,18 +13,24 @@
  * to automatically show as many items as fit, moving overflow items to a "More"
  * dropdown based on the namespace configuration from the backend.
  *
+ * Admin items live as a subtree of `main` rooted at the System
+ * container; there is no separate `system` namespace, so all callers
+ * pass `namespace="main"` and rely on per-user `requiresAdmin` gating
+ * to filter the rendered tree.
+ *
  * @example
  * ```tsx
- * // Main navigation
- * <MenuNavClient namespace="main" items={menuItems} ariaLabel="Main navigation" />
- *
- * // System navigation
- * <MenuNavClient namespace="system" items={menuItems} ariaLabel="System monitoring navigation" />
+ * <MenuNavClient
+ *     namespace="main"
+ *     items={menuItems}
+ *     generatedAt={generatedAt}
+ *     ariaLabel="Main navigation"
+ * />
  * ```
  */
 'use client';
 
-import { useState, useRef, useEffect, useCallback, useMemo, Fragment, type ReactNode } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -40,8 +46,9 @@ import styles from './MenuNav.module.scss';
  */
 interface IMenuNavClientProps {
     /**
-     * Menu namespace (e.g., 'main', 'system', 'footer').
-     * Used to fetch namespace-specific configuration.
+     * Menu namespace (e.g., 'main', 'footer'). Used to fetch
+     * namespace-specific configuration. Admin items live in `main` under
+     * the System container — there is no `system` namespace.
      */
     namespace: string;
 
@@ -66,12 +73,6 @@ interface IMenuNavClientProps {
      * Defaults to "{namespace} navigation".
      */
     ariaLabel?: string;
-
-    /**
-     * Optional trailing items appended after database-sourced items so they
-     * participate in Priority+ overflow collapsing alongside normal entries.
-     */
-    trailingItems?: Array<{ id: string; node: ReactNode }>;
 }
 
 /**
@@ -91,9 +92,10 @@ interface IMenuNavClientProps {
  * @param props - Component props
  * @param props.namespace - Menu namespace for config lookup
  * @param props.items - Menu items from server
+ * @param props.generatedAt - SSR snapshot timestamp seeded onto Redux
  * @param props.ariaLabel - Optional accessible label
  */
-export function MenuNavClient({ namespace, items, generatedAt, ariaLabel, trailingItems }: IMenuNavClientProps) {
+export function MenuNavClient({ namespace, items, generatedAt, ariaLabel }: IMenuNavClientProps) {
     const pathname = usePathname();
     const dispatch = useAppDispatch();
     const menuConfig = useMenuConfig(namespace);
@@ -336,16 +338,12 @@ export function MenuNavClient({ namespace, items, generatedAt, ariaLabel, traili
     };
 
     /**
-     * Converts menu items to PriorityNav format, appending any trailing items
-     * so namespace-specific controls (e.g. logout) participate in overflow.
+     * Converts menu items to PriorityNav format.
      */
-    const priorityNavItems = [
-        ...visibleItems.map(item => ({
-            id: item._id,
-            node: renderMenuItem(item)
-        })),
-        ...(trailingItems ?? [])
-    ];
+    const priorityNavItems = visibleItems.map(item => ({
+        id: item._id,
+        node: renderMenuItem(item)
+    }));
 
     const navAriaLabel = ariaLabel || `${namespace} navigation`;
 
@@ -430,9 +428,6 @@ export function MenuNavClient({ namespace, items, generatedAt, ariaLabel, traili
         <>
             <nav className={`${navClassName} ${styles['nav--wrap']}`} aria-label={navAriaLabel}>
                 {visibleItems.map(item => renderMenuItem(item))}
-                {trailingItems?.map(trailing => (
-                    <Fragment key={trailing.id}>{trailing.node}</Fragment>
-                ))}
             </nav>
             {renderCategoryDropdown()}
         </>

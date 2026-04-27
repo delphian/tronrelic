@@ -2,6 +2,7 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { LogsModule } from '../LogsModule.js';
+import { MAIN_SYSTEM_CONTAINER_ID } from '../../menu/index.js';
 import type { Express } from 'express';
 import { createMockDatabaseService } from '../../../tests/vitest/mocks/database-service.js';
 
@@ -64,13 +65,16 @@ vi.mock('../services/system-log.service.js', () => ({
 // Create a shared mock for MenuService
 const mockMenuCreate = vi.fn().mockResolvedValue(undefined);
 
-// Mock MenuService to avoid circular dependencies
+// Mock MenuService to avoid circular dependencies. Re-export the
+// container id constant alongside the mocked service so LogsModule's
+// dynamic import resolves both names.
 vi.mock('../../menu/index.js', () => ({
     MenuService: {
         getInstance: vi.fn(() => ({
             create: mockMenuCreate
         }))
-    }
+    },
+    MAIN_SYSTEM_CONTAINER_ID: '000000000000000000000001'
 }));
 
 describe('LogsModule', () => {
@@ -182,7 +186,7 @@ describe('LogsModule', () => {
             expect(mockMenuCreate).toHaveBeenCalledWith(
                 expect.objectContaining({
                     namespace: 'main',
-                    parent: 'main:system',
+                    parent: MAIN_SYSTEM_CONTAINER_ID,
                     label: 'Logs',
                     url: '/system/logs',
                     icon: 'ScrollText',

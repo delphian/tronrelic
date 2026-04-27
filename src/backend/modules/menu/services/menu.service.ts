@@ -368,10 +368,10 @@ export class MenuService implements IMenuService {
         // anything descending from it. The walk-up makes the gate impossible
         // to bypass through a misconfigured registration: a plugin that
         // forgets the flag, or sets it to `false`, still ends up gated as
-        // long as its parent chain reaches `main:system`. Modules and
-        // plugins therefore don't need to set the flag explicitly when
-        // parenting under the System container — registration alone
-        // expresses the intent.
+        // long as its parent chain reaches the System container. Modules
+        // and plugins therefore don't need to set the flag explicitly when
+        // parenting under the container — registration alone expresses
+        // the intent.
         if (explicitId === MAIN_SYSTEM_CONTAINER_ID || this.isUnderSystemContainer(node.parent, namespace)) {
             node.requiresAdmin = true;
         }
@@ -434,10 +434,13 @@ export class MenuService implements IMenuService {
             // Apply any saved overrides so user customizations survive restarts
             const override = node.url ? await this.loadOverride(namespace, node.url) : null;
 
-            // Honor an explicit string `_id` from the caller — used by the
-            // System container seed so its id can be referenced as a stable
-            // parent value (`MAIN_SYSTEM_CONTAINER_ID`) without a lookup.
-            // ObjectIds remain the default for everything else.
+            // Honor an explicit `_id` from the caller — used by the System
+            // container seed so its id matches the `MAIN_SYSTEM_CONTAINER_ID`
+            // sentinel and other code can reference it without a lookup. The
+            // sentinel is a 24-hex string that satisfies the controller's
+            // `OBJECT_ID_REGEX` and the persistence path's `new ObjectId(...)`
+            // conversion, so callers don't need to special-case it. Auto-
+            // generated ObjectIds remain the default for everything else.
             created = {
                 _id: explicitId ?? new ObjectId().toString(),
                 namespace,
@@ -541,13 +544,14 @@ export class MenuService implements IMenuService {
 
         // Re-apply the System-subtree gate after any reparent or namespace
         // move. Without this, an admin item could be moved out from under
-        // `main:system` and silently lose its gate, or — more dangerously —
-        // a non-admin item could be reparented INTO the System subtree
-        // while keeping `requiresAdmin: undefined`. The walk-up runs
-        // against the post-update tree shape, so the in-memory parent must
-        // already exist; this matches `create()`'s ordering requirement.
-        // Note: we never strip `requiresAdmin` when moving OUT of the
-        // System subtree — that's an explicit operator decision.
+        // the System container and silently lose its gate, or — more
+        // dangerously — a non-admin item could be reparented INTO the
+        // System subtree while keeping `requiresAdmin: undefined`. The
+        // walk-up runs against the post-update tree shape, so the
+        // in-memory parent must already exist; this matches `create()`'s
+        // ordering requirement. Note: we never strip `requiresAdmin` when
+        // moving OUT of the System subtree — that's an explicit operator
+        // decision.
         if (id === MAIN_SYSTEM_CONTAINER_ID || this.isUnderSystemContainer(updated.parent, newNamespace)) {
             updated.requiresAdmin = true;
         }
@@ -883,7 +887,7 @@ export class MenuService implements IMenuService {
 
     /**
      * Walk the parent chain of a node and return true if the System
-     * container (`main:system`) appears anywhere above it.
+     * container (id `MAIN_SYSTEM_CONTAINER_ID`) appears anywhere above it.
      *
      * Used by `create` and `update` to auto-apply `requiresAdmin: true` to
      * everything in the System subtree regardless of what the caller

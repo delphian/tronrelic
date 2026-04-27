@@ -25,6 +25,7 @@
 import type { Express, Router } from 'express';
 import type { ICacheService, IDatabaseService, IMenuService, IModule, IModuleMetadata, ISchedulerService, IServiceRegistry, ISystemConfigService } from '@/types';
 import { logger } from '../../lib/logger.js';
+import { MAIN_SYSTEM_CONTAINER_ID } from '../menu/index.js';
 import { TronGridClient } from '../blockchain/tron-grid.client.js';
 import { UserService } from './services/user.service.js';
 import { GscService } from './services/gsc.service.js';
@@ -237,7 +238,7 @@ export class UserModule implements IModule<IUserModuleDependencies> {
      * Run the user module after all modules have initialized.
      *
      * This phase activates the module by:
-     * - Registering menu item under main:system (admin subtree of `main`)
+     * - Registering menu item under the System container (admin subtree of `main`)
      * - Creating and mounting public router
      * - Creating and mounting admin router
      *
@@ -257,12 +258,12 @@ export class UserModule implements IModule<IUserModuleDependencies> {
                 url: '/system/users',
                 icon: 'Users',
                 order: 75,
-                parent: 'main:system',
+                parent: MAIN_SYSTEM_CONTAINER_ID,
                 enabled: true
                 // persist defaults to false (memory-only entry)
             });
 
-            this.logger.info('Users menu item registered under main:system');
+            this.logger.info('Users menu item registered under the System container');
         } catch (error) {
             this.logger.error({ error }, 'Failed to register users menu item');
             throw new Error(`Failed to register users menu item: ${error instanceof Error ? error.message : 'Unknown error'}`);

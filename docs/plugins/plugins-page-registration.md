@@ -200,16 +200,16 @@ export const myBackendPlugin = definePlugin({
 
         // Register admin settings menu item under the System container.
         // The menu service walks the parent chain on create and forces
-        // requiresAdmin: true on anything below 'main:system'. Don't set
-        // the flag yourself — the engine handles it, and that's what
-        // makes the gate non-bypassable.
+        // requiresAdmin: true on anything below the container. Don't
+        // set the flag yourself — the engine handles it, and that's
+        // what makes the gate non-bypassable.
         await context.menuService.create({
             namespace: 'main',
             label: 'My Settings',
             url: '/my-settings',
             icon: 'Settings',
             order: 150,
-            parent: 'main:system',
+            parent: MAIN_SYSTEM_CONTAINER_ID,
             enabled: true
         });
 
@@ -223,17 +223,20 @@ export const myBackendPlugin = definePlugin({
 Plugins that ship admin surfaces (settings pages, internal dashboards,
 moderation tools) parent their menu entries under the System container
 in `main` rather than registering into a separate namespace. The System
-container's id is the hard-coded string `'main:system'` — exported as
-`MAIN_SYSTEM_CONTAINER_ID` from
-`src/backend/modules/menu/constants.ts` for callers who prefer the
-typed reference. The menu service seeds the container during
+container's id is the fixed sentinel `MAIN_SYSTEM_CONTAINER_ID`
+(a 24-hex ObjectId string), exported from the menu module — import it
+from `'../menu/index.js'` (relative path varies by plugin location)
+and use the constant rather than hardcoding the value. The id is hex
+so it satisfies the menu controller's `OBJECT_ID_REGEX` validation and
+the persistence layer's `new ObjectId(parent)` conversion without
+special-casing. The menu service seeds the container during
 `MenuModule.run()`, so it is always present by the time plugin `init`
 hooks run.
 
 The admin gate (`requiresAdmin: true`) is auto-applied by the menu
 service: `MenuService.create` and `MenuService.update` walk the parent
 chain on every write and force the flag on any node whose ancestor
-chain reaches `main:system`. Plugin code should not set the flag
+chain reaches the container. Plugin code should not set the flag
 explicitly, and should not try to bypass it by setting
 `requiresAdmin: false` — the engine overrides caller input either way.
 This keeps gating impossible to misconfigure: a forgotten flag, a typo,

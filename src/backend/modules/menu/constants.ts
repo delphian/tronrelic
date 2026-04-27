@@ -12,13 +12,27 @@
  *
  * The System container is the top-level menu node under which every admin
  * surface lives — module admin entries, the dynamic Plugins dropdown, the
- * Logout link. Its id is a hard-coded string (rather than a generated
- * ObjectId) so the seed in `MenuModule.run()` and the auto-`requiresAdmin`
- * walk-up in `MenuService.create`/`update` can reference the same
- * identifier without a lookup. Modules and plugins that want to register
- * an admin item set `parent: 'main:system'` directly.
+ * Logout link. The id is a fixed sentinel chosen at design time (rather
+ * than a generated ObjectId) so the seed in `MenuModule.run()` and the
+ * auto-`requiresAdmin` walk-up in `MenuService.create`/`update` reference
+ * the same identifier without a runtime lookup.
+ *
+ * The sentinel is the 24-hex string `'000000000000000000000001'` because
+ * the menu controller validates `parent` and `:id` path params with
+ * `OBJECT_ID_REGEX` (`^[a-f0-9]{24}$`), and the persistence layer wraps
+ * `parent` in `new ObjectId(...)` for `menu_nodes` writes. Using a
+ * non-hex format (e.g. `'main:system'`) would force every admin CRUD
+ * endpoint, the persistence path, and `IMenuNodeDocument.parent`'s type
+ * to special-case the container id — that special-casing is exactly the
+ * kind of cross-layer invariant that drifts and breaks silently. A real
+ * generated ObjectId for the same value is astronomically unlikely
+ * (would need a node clock at the Unix epoch with leading machine and
+ * counter bytes also zero), so collision risk is nil.
+ *
+ * Modules and plugins parenting under System write
+ * `parent: MAIN_SYSTEM_CONTAINER_ID`.
  */
-export const MAIN_SYSTEM_CONTAINER_ID = 'main:system';
+export const MAIN_SYSTEM_CONTAINER_ID = '000000000000000000000001';
 
 /**
  * Reserved admin namespaces — currently empty.

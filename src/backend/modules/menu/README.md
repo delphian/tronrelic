@@ -161,26 +161,40 @@ ordinary visitors.
 ### The System Container
 
 All admin menu items live as a subtree of `main` rooted at a
-hard-coded container with id `MAIN_SYSTEM_CONTAINER_ID = 'main:system'`
-(exported from `src/backend/modules/menu/constants.ts`). The container
-is seeded by `MenuModule.run()` and every module or plugin that wants
-to register an admin item parents directly under it:
+hard-coded container whose id is the fixed sentinel
+`MAIN_SYSTEM_CONTAINER_ID` (a 24-hex ObjectId string exported from the
+menu module — `src/backend/modules/menu/index.ts`). The container is
+seeded by `MenuModule.run()` and every module or plugin that wants to
+register an admin item imports the constant and parents directly under
+it:
 
 ```typescript
+import { MAIN_SYSTEM_CONTAINER_ID } from '../menu/index.js';
+
 await menuService.create({
     namespace: 'main',
     label: 'Logs',
     url: '/system/logs',
     icon: 'ScrollText',
     order: 30,
-    parent: 'main:system',
+    parent: MAIN_SYSTEM_CONTAINER_ID,
     enabled: true
 });
 ```
 
+The id is hex (not a colon-string like `'main:system'`) because the
+controller validates `parent` and `:id` path params with
+`OBJECT_ID_REGEX` and the persistence layer wraps `parent` in
+`new ObjectId(...)` for `menu_nodes` writes. A non-hex id would force
+every admin CRUD endpoint, the persistence path, and
+`IMenuNodeDocument.parent`'s type to special-case the container —
+exactly the kind of cross-layer invariant that drifts and breaks
+silently. Constants stay symbolic in code; the wire/storage shape is
+plain ObjectId.
+
 Callers do not set `requiresAdmin` themselves. `MenuService.create` and
-`MenuService.update` walk the parent chain on every write; if
-`main:system` appears anywhere above the node (or the node itself has
+`MenuService.update` walk the parent chain on every write; if the
+container id appears anywhere above the node (or the node itself has
 that id), `requiresAdmin: true` is forced regardless of caller input.
 This makes the admin gate non-bypassable: a misconfigured registration,
 a forgotten flag, or an explicit `requiresAdmin: false` all still end

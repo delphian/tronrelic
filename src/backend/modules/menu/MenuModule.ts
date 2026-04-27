@@ -169,8 +169,9 @@ export class MenuModule implements IModule<IMenuModuleDependencies> {
      * Run the menu module after all modules have initialized.
      *
      * This phase activates the module by:
-     * - Seeding the System container at `main:system` so admin items have
-     *   a stable parent to register against
+     * - Seeding the System container with the sentinel id from
+     *   `MAIN_SYSTEM_CONTAINER_ID` so admin items have a stable parent
+     *   to register against
      * - Registering the Menu management entry and the Logout link under
      *   the System container
      * - Creating and mounting the admin router
@@ -190,12 +191,14 @@ export class MenuModule implements IModule<IMenuModuleDependencies> {
 
         // Seed the System container at the top of `main`. Every admin
         // surface — module entries, the dynamic Plugins dropdown, the
-        // Logout link — parents into this node. The hard-coded `_id` lets
-        // callers reference it directly via `MAIN_SYSTEM_CONTAINER_ID`
-        // without a lookup, and the create() walk-up forces
-        // `requiresAdmin: true` on the container itself plus everything
-        // that ends up below it. Order 9999 keeps it at the end of the
-        // main bar regardless of plugin registration order.
+        // Logout link — parents into this node. The fixed sentinel `_id`
+        // (a 24-hex ObjectId) lets callers reference the container via
+        // `MAIN_SYSTEM_CONTAINER_ID` without a lookup while still
+        // satisfying the controller's `OBJECT_ID_REGEX` validation and
+        // the persistence path's `new ObjectId(parent)` conversion. The
+        // create() walk-up forces `requiresAdmin: true` on the container
+        // and everything below it. Order 9999 keeps it at the end of
+        // the main bar regardless of plugin registration order.
         try {
             await this.menuService.create({
                 _id: MAIN_SYSTEM_CONTAINER_ID,
@@ -208,7 +211,7 @@ export class MenuModule implements IModule<IMenuModuleDependencies> {
                 enabled: true
                 // persist defaults to false (memory-only entry)
             });
-            this.logger.info('System container seeded under main:system');
+            this.logger.info({ containerId: MAIN_SYSTEM_CONTAINER_ID }, 'System container seeded');
         } catch (error) {
             this.logger.error({ error }, 'Failed to seed System container');
             throw new Error(`Failed to seed System container: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -229,7 +232,7 @@ export class MenuModule implements IModule<IMenuModuleDependencies> {
                 // persist defaults to false (memory-only entry)
             });
 
-            this.logger.info('Menu management item registered under main:system');
+            this.logger.info('Menu management item registered under the System container');
         } catch (error) {
             this.logger.error({ error }, 'Failed to register menu management item');
             throw new Error(`Failed to register menu management item: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -249,7 +252,7 @@ export class MenuModule implements IModule<IMenuModuleDependencies> {
                 parent: MAIN_SYSTEM_CONTAINER_ID,
                 enabled: true
             });
-            this.logger.info('Logout item registered under main:system');
+            this.logger.info('Logout item registered under the System container');
         } catch (error) {
             this.logger.error({ error }, 'Failed to register logout item');
             throw new Error(`Failed to register logout item: ${error instanceof Error ? error.message : 'Unknown error'}`);

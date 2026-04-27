@@ -1,3 +1,4 @@
+import { ObjectId } from 'mongodb';
 import type { IMigration, IMigrationContext } from '@/types';
 import { MAIN_SYSTEM_CONTAINER_ID } from '../constants.js';
 
@@ -27,7 +28,8 @@ import { MAIN_SYSTEM_CONTAINER_ID } from '../constants.js';
  * **Idempotency:**
  * Both passes filter on `namespace: 'system'`, so re-running after a
  * successful pass is a no-op. The container parent assignment uses the
- * stable string id `'main:system'` directly — no lookup, no race.
+ * fixed sentinel ObjectId `MAIN_SYSTEM_CONTAINER_ID` directly — no
+ * lookup, no race.
  *
  * **Rollback:**
  * Not provided. The reverse mapping is unambiguous (flip namespace back,
@@ -36,7 +38,7 @@ import { MAIN_SYSTEM_CONTAINER_ID } from '../constants.js';
  */
 export const migration: IMigration = {
     id: '004_merge_system_namespace_into_main',
-    description: 'Move legacy system-namespace menu nodes and their overrides into main, parented under main:system.',
+    description: 'Move legacy system-namespace menu nodes and their overrides into main, parented under the System container.',
     dependencies: ['module:menu:003_replace_required_role_with_gating_fields'],
 
     async up(context: IMigrationContext): Promise<void> {
@@ -44,20 +46,23 @@ export const migration: IMigration = {
         const overrides = context.database.getCollection('menu_node_overrides');
 
         // Pass 1: persisted admin entries. Set parent to the System
-        // container id (string) and flip namespace. Top-level entries
-        // (parent: null) become children of `main:system`; entries that
-        // were nested under another system-namespace parent keep their
-        // existing parent reference because that parent moves in the
-        // same pass.
+        // container's sentinel ObjectId and flip namespace. Top-level
+        // entries (parent: null) become children of the container;
+        // nested entries keep their existing parent reference because
+        // that parent moves in the same pass. We wrap the sentinel in
+        // `new ObjectId(...)` so the on-disk shape matches the
+        // `IMenuNodeDocument.parent: ObjectId | null` contract that the
+        // service's persistence path expects on subsequent reads/writes.
+        const systemContainerOid = new ObjectId(MAIN_SYSTEM_CONTAINER_ID);
         const nodeResult = await nodes.updateMany(
             { namespace: 'system', parent: null },
-            { $set: { namespace: 'main', parent: MAIN_SYSTEM_CONTAINER_ID } }
+            { $set: { namespace: 'main', parent: systemContainerOid } }
         );
         const nestedResult = await nodes.updateMany(
             { namespace: 'system', parent: { $ne: null } },
             { $set: { namespace: 'main' } }
         );
-        console.log(`[Migration] Reparented ${nodeResult.modifiedCount} top-level system menu nodes under main:system`);
+        console.log(`[Migration] Reparented ${nodeResult.modifiedCount} top-level system menu nodes under the System container`);
         console.log(`[Migration] Renamespaced ${nestedResult.modifiedCount} nested system menu nodes to main`);
 
         // Pass 2: overrides. Keyed by (namespace, url); URLs don't

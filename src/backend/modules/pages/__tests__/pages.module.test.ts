@@ -2,6 +2,7 @@
 
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { PagesModule } from '../index.js';
+import { MAIN_SYSTEM_CONTAINER_ID } from '../../menu/index.js';
 import { PageService } from '../services/page.service.js';
 import type { ICacheService, IMenuService } from '@/types';
 import { ObjectId } from 'mongodb';
@@ -203,7 +204,7 @@ describe('PagesModule', () => {
                 url: '/system/pages',
                 icon: 'FileText',
                 order: 40,
-                parent: 'main:system',
+                parent: MAIN_SYSTEM_CONTAINER_ID,
                 enabled: true
             });
         });

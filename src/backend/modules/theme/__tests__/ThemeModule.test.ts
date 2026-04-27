@@ -2,6 +2,7 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { ThemeModule } from '../ThemeModule.js';
+import { MAIN_SYSTEM_CONTAINER_ID } from '../../menu/index.js';
 import type { ICacheService, IMenuService } from '@/types';
 import type { Express } from 'express';
 import { createMockDatabaseService } from '../../../tests/vitest/mocks/database-service.js';
@@ -229,7 +230,7 @@ describe('ThemeModule', () => {
             expect(mockMenuService.create).toHaveBeenCalledWith(
                 expect.objectContaining({
                     namespace: 'main',
-                    parent: 'main:system',
+                    parent: MAIN_SYSTEM_CONTAINER_ID,
                     label: 'Themes',
                     url: '/system/theme',
                     icon: 'Palette',
