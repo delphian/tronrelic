@@ -120,6 +120,37 @@ const user = await context.userService.getByWallet('TXyz...');
 
 The `IUser` interface includes `id`, `wallets`, `preferences`, `activity`, and timestamps. The summary return types (`IUserActivitySummary`, `IUserWalletSummary`, `IUserRetentionSummary`, `IUserPreferencesSummary`) are defined in `@/types`. The internal `IUserDocument` (with MongoDB-specific fields) stays in the module.
 
+## User Groups and Admin Status
+
+User groups are lightweight named tags admins attach to users so plugins can gate features on group membership without inventing their own permission models. The user module owns the namespace; plugins own the policy. Group definitions live in MongoDB, are managed through the Groups tab on `/system/users`, and are read by plugins through `IUserGroupService`. A reserved-admin slug pattern (`admin`, `admins`, `administrator(s)`, `super-admin(s)`, `sub-admin(s)`, `superadmin(s)`, `root(s)`) is platform-only — operators cannot create or rename rows matching it, and the seeded `admin` row is flagged `system: true` so the admin UI treats it as read-only.
+
+`UserGroupService` is registered on the service registry as `'user-groups'`. Plugins discover it via `context.services.get<IUserGroupService>('user-groups')` for one-shot reads, or `context.services.watch(...)` when their behavior depends on the service being present over time. The service is platform-provided and always available once the user module has run, so the `undefined` branch of `get()` is a defensive nicety rather than a real degradation path.
+
+```typescript
+import type { IUserGroupService } from '@/types';
+
+const groups = context.services.get<IUserGroupService>('user-groups');
+if (groups && req.userId && await groups.isAdmin(req.userId)) {
+    // Render admin-only UI for the cookie-identified visitor
+}
+```
+
+**Membership API for plugins:**
+
+| Method | Purpose |
+|--------|---------|
+| `getUserGroups(userId)` | Return the array of group ids the user belongs to. Empty array for unknown users. |
+| `isMember(userId, groupId)` | Test membership. Never throws on missing user or group — returns `false`. |
+| `addMember(userId, groupId)` | Idempotent. Throws when the group does not exist (treat as deployment mistake). |
+| `removeMember(userId, groupId)` | Idempotent. Removing a non-member is a no-op. |
+| `isAdmin(userId)` | True when the user belongs to any system-flagged group whose id matches the reserved-admin pattern. Use this — never compare group ids directly. |
+
+Definition CRUD (`listGroups`, `getGroup`, `createGroup`, `updateGroup`, `deleteGroup`) is operator-facing and exposed via `/api/admin/users/groups`. Membership is read by plugins and mutated programmatically — there is no public HTTP endpoint for `addMember` or `removeMember`. Plugins that need to grant or revoke groups call the service directly from request handlers.
+
+**Two distinct admin checks coexist — do not conflate them.** `IUserGroupService.isAdmin(userId)` is a per-user predicate keyed off the visitor's UUID. Use it from plugin code that runs in a request context (cookie identity is present) when the question is "should this person see admin UI?" The `requireAdmin` middleware in `src/backend/api/middleware/admin-auth.ts` (and the `requiresAdmin: true` flag on `IApiRouteConfig`) is a shared-token gate — the caller must present `x-admin-token` matching `ADMIN_API_TOKEN`. It is for operators, scripts, and CI tooling; there is no user identity involved. A typical admin SPA page combines both: the route handler is protected by `requireAdmin` (token), and the page component uses `groups.isAdmin(req.userId)` to decide which controls to render to a cookie-identified human. Plugins that want per-user admin gating must use `IUserGroupService.isAdmin` — rolling a parallel scheme is the path the JSDoc on the interface explicitly warns against.
+
+**Cache and identity-merge semantics.** Membership writes invalidate the `user:${userId}` cache tag, so `/api/user/:id` reflects group changes immediately rather than waiting on the 1-hour TTL. Every membership method (`isAdmin`, `isMember`, `getUserGroups`, `addMember`, `removeMember`) resolves `mergedInto` pointers, so post-merge lookups hit the canonical user instead of the loser tombstone.
+
 ## Architecture Overview
 
 The module follows TronRelic's layered architecture with cookie-based authentication for public endpoints and admin token authentication for admin endpoints.
@@ -443,38 +474,26 @@ The module stores data in a single MongoDB collection with indexes for efficient
 interface IUserDocument {
     _id: ObjectId;
     id: string;                          // UUID v4 primary identifier
+    identityState: UserIdentityState;    // Stored taxonomy: anonymous | registered | verified
     wallets: IWalletLink[];              // Linked TRON wallets
-    preferences: IUserPreferences;        // User settings
-    activity: IUserActivity;              // Tracking data
+    preferences: IUserPreferences;       // User settings
+    activity: IUserActivity;             // Tracking data
+    groups: string[];                    // Admin-defined group memberships (group ids)
+    mergedInto?: string;                 // Tombstone pointer to canonical UUID after reconciliation
     createdAt: Date;
     updatedAt: Date;
 }
-
-interface IWalletLink {
-    address: string;                     // TRON address (T...)
-    linkedAt: Date;                      // When wallet was linked
-    isPrimary: boolean;                  // Whether this is primary wallet
-    label?: string;                      // Optional user-assigned label
-}
-
-interface IUserPreferences {
-    theme?: 'light' | 'dark' | 'system';
-    notifications?: boolean;
-    timezone?: string;
-    language?: string;
-}
-
-interface IUserActivity {
-    lastSeen: Date;
-    pageViews: number;
-    firstSeen: Date;
-}
 ```
+
+`identityState` is stored, not derived — UserService recomputes it on every wallet mutation so all consumers read the field directly. `groups` holds group ids from the `module_user_groups` collection and is mutated only via `IUserGroupService`. Migrations 006 and 007 backfill `identityState` and `groups` on legacy documents.
 
 **Indexes:**
 - `id` (unique) - Fast lookup by UUID, prevents duplicates
 - `wallets.address` - Find users by linked wallet address
 - `activity.lastSeen` - Sort by recency for admin queries
+- `identityState` - Filter users by canonical taxonomy in admin queries
+- `groups` - Fast membership lookups for `isMember` / `isAdmin`
+- `mergedInto` (sparse) - Pointer-chain flattening during identity reconciliation
 
 **Validation rules:**
 - UUID must be valid v4 format (enforced in service layer)
@@ -482,20 +501,44 @@ interface IUserActivity {
 - Wallet signature must verify against address (using SignatureService)
 - Only one wallet can be primary per user
 
+### module_user_groups Collection
+
+Stores admin-defined group definitions. Managed by `UserGroupService`; consumed by plugins via the `'user-groups'` service registry entry. See [User Groups and Admin Status](#user-groups-and-admin-status) for the full API.
+
+**Schema:**
+```typescript
+interface IUserGroupDocument {
+    _id: ObjectId;
+    id: string;          // Stable kebab-case slug used by plugins
+    name: string;        // Human-readable label
+    description: string; // Optional admin description
+    system: boolean;     // True for platform-seeded rows (read-only in admin UI)
+    createdAt: Date;
+    updatedAt: Date;
+}
+```
+
+**Indexes:**
+- `id` (unique) - Slug-based lookup; enforces uniqueness across admin-defined and seeded groups
+
+**Seeded rows:** the user module seeds the `admin` row (with `system: true`) on every boot. The reserved-admin slug pattern (`admin`, `admins`, `super-admin(s)`, `administrator(s)`, `sub-admin(s)`, `superadmin(s)`, `root(s)`) blocks operators from creating or renaming rows matching it — only the platform may seed them.
+
 ## Module Lifecycle
 
 The user module implements the `IModule` interface with two-phase initialization:
 
 **Phase 1: init()** - Prepare module without activation
-- Store injected dependencies (database, cache, menu service, app)
-- Initialize UserService singleton with `setDependencies()`
-- Create database indexes
-- Create controller with service reference
+- Store injected dependencies (database, cache, menu service, app, scheduler, service registry, system config)
+- Initialize UserService singleton with `setDependencies()` and create its indexes
+- Initialize UserGroupService singleton, create its indexes, and seed system groups (the reserved `admin` row)
+- Create user and user-group controllers with their service references
 
 **Phase 2: run()** - Activate and integrate with application
-- Register UserService on the service registry as `'user'` for late-binding plugin discovery
 - Register menu item in `system` namespace at `/system/users`
+- Register UserService on the service registry as `'user'` for late-binding plugin discovery
+- Register UserGroupService on the service registry as `'user-groups'` for plugin permission gating
 - Mount public router at `/api/user` (cookie validation on `:id` routes)
+- Mount admin user-groups router at `/api/admin/users/groups` with `requireAdmin` middleware (mounted before the user admin router so its specific paths win over `/:id`)
 - Mount admin router at `/api/admin/users` with `requireAdmin` middleware
 
 **Module metadata:**

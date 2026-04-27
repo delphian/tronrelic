@@ -18,6 +18,7 @@ import { MenuService } from './services/menu.service.js';
 import { MenuController } from './api/menu.controller.js';
 import { Router as ExpressRouter } from 'express';
 import { requireAdmin } from '../../api/middleware/admin-auth.js';
+import { userContextMiddleware } from '../../api/middleware/user-context.js';
 
 /**
  * Menu module dependencies for initialization.
@@ -147,8 +148,10 @@ export class MenuModule implements IModule<IMenuModuleDependencies> {
         this.serviceRegistry = dependencies.serviceRegistry;
         this.app = dependencies.app;
 
-        // Initialize MenuService singleton with database dependency
-        MenuService.setDatabase(this.database);
+        // Initialize MenuService singleton with database + registry dependencies.
+        // The registry is used at read time to look up `'user-groups'` for the
+        // admin-predicate gating filter (see MenuService.applyGatingFilter).
+        MenuService.setDependencies(this.database, this.serviceRegistry);
         this.menuService = MenuService.getInstance();
 
         // Initialize MenuService (loads menu tree from database)
@@ -229,11 +232,15 @@ export class MenuModule implements IModule<IMenuModuleDependencies> {
     private createRouter(): Router {
         const router = ExpressRouter();
 
-        // Public routes (no auth required for reading navigation structure)
-        router.get('/resolve', this.controller.resolve);
+        // Public routes (no auth required for reading navigation structure).
+        // userContextMiddleware resolves the tronrelic_uid cookie to req.user
+        // so the controller can apply per-user gating on `getTree` and
+        // `resolve`. The middleware is identity-only; it does not enforce
+        // authentication and is safe to apply to public reads.
+        router.get('/resolve', userContextMiddleware, this.controller.resolve);
         router.get('/namespaces', this.controller.getNamespaces);
         router.get('/namespace/:namespace/config', this.controller.getNamespaceConfig);
-        router.get('/', this.controller.getTree);
+        router.get('/', userContextMiddleware, this.controller.getTree);
 
         // Admin-only routes (mutating operations require authentication)
         router.post('/', requireAdmin, this.controller.create);

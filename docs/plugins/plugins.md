@@ -172,6 +172,19 @@ disable: async (context: IPluginContext) => {
 
 `watch()` is state-oriented, not event-oriented: the registry models "does this capability exist right now?" as a continuous truth, and `watch()` subscribes the caller to that truth. Three rules for handlers: **keep `onAvailable` idempotent** (the registry fires it again on every re-registration), **treat `onUnavailable` as past tense** (the provider's instance is already gone — don't call into it), and **always dispose in `disable()`** (the disposer returned from `watch()` prevents the registry from retaining closures that point at torn-down plugin state).
 
+**Platform-provided services on the registry — the `user-groups` example.** Modules also publish on the registry, and `IUserGroupService` (registered as `'user-groups'` by the user module) is the canonical entry point for plugin permission gating. It exposes membership reads and writes (`isMember`, `getUserGroups`, `addMember`, `removeMember`) plus a special `isAdmin(userId)` predicate that resolves through any system-flagged group whose id matches the reserved-admin pattern. The service contract ships with the platform via `@/types`, so consumers don't need a sibling types package — the import below resolves like any other framework type:
+
+```typescript
+import type { IUserGroupService } from '@/types';
+
+const groups = context.services.get<IUserGroupService>('user-groups');
+if (groups && req.userId && await groups.isAdmin(req.userId)) {
+    // Render admin-only UI for the cookie-identified visitor
+}
+```
+
+`isAdmin(userId)` is a per-user predicate keyed off the visitor's UUID — use it whenever a request handler runs in cookie-identified context and the question is "should this person see admin UI?" Do not conflate it with the `requiresAdmin: true` flag on `IApiRouteConfig` or with the `requireAdmin` middleware: those are *shared-token* gates that match the request's `x-admin-token` header against `ADMIN_API_TOKEN` and exist for operators, scripts, and CI tooling — they don't know who the user is. A typical admin SPA combines both: the route is protected by `requireAdmin` (token), and the page logic uses `groups.isAdmin(req.userId)` to decide what to render to the human behind the request. Plugins that want per-user admin gating must call `IUserGroupService.isAdmin` rather than rolling their own scheme — the JSDoc on the interface explicitly warns against parallel permission models. See the [User Module README](../../src/backend/modules/user/README.md#user-groups-and-admin-status) for the full method table, reserved-admin slug rules, and cache-invalidation semantics.
+
 **Architectural direction:** The registry exists so that features providing shared capabilities — AI analysis, notification dispatch, data enrichment — can remain plugins rather than requiring promotion to modules. A plugin that exposes a shared service is still a plugin if the application functions without it. Consumers must handle the service being unavailable, which enforces graceful degradation by design. See [modules.md](../system/modules/modules.md#module-vs-plugin-decision-matrix) for how this changes the module vs plugin decision.
 
 ### WebSocket Real-Time Events

@@ -27,6 +27,8 @@ Every route entry uses the `IApiRouteConfig` contract. Focus on these fields:
 
 Remember: `req.params`, `req.query`, `req.body`, and `req.ip` are plain objects; `res.status()`, `res.json()`, `res.send()`, and `res.setHeader()` mirror familiar Express methods but stay framework-agnostic.
 
+**`requiresAdmin` is a shared-token gate, not a per-user check.** When set, the platform applies the `requireAdmin` middleware which compares the request's `x-admin-token` header against `ADMIN_API_TOKEN`. It is for operators, scripts, and CI tooling — there is no user identity involved. To gate a route on whether the cookie-identified *visitor* is an admin (a human-facing admin SPA, for example), look up `IUserGroupService` from the service registry and call `isAdmin(req.userId)` inside the handler. The two checks coexist and often combine: protect the route with `requiresAdmin: true` so only token-bearing callers reach it, then use `isAdmin(req.userId)` inside the handler to vary the response shape per user. See [plugins.md → Cross-Component Service Sharing](./plugins.md#cross-component-service-sharing) and the [User Module README](../../src/backend/modules/user/README.md#user-groups-and-admin-status) for the canonical pattern.
+
 **User context is automatically available.** Middleware populates `req.userId` (from the `tronrelic_uid` cookie) and `req.user` (the resolved user record) before your handler runs. For feature gating, check wallet states:
 - `req.user?.wallets?.length > 0` — user has linked a wallet (may be unverified)
 - `req.user?.wallets?.some(w => w.verified)` — user has a verified wallet (recommended for feature gating)

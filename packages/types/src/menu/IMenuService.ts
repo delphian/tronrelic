@@ -2,6 +2,7 @@ import type { IMenuNode } from './IMenuNode.js';
 import type { IMenuTree } from './IMenuTree.js';
 import type { MenuEventType, MenuEventSubscriber } from './IMenuEvent.js';
 import type { IMenuNamespaceConfig } from './IMenuNamespaceConfig.js';
+import type { IUser } from '../user/IUser.js';
 
 /**
  * Service interface for managing the hierarchical menu system.
@@ -230,6 +231,32 @@ export interface IMenuService {
      * ```
      */
     getTree(namespace?: string): IMenuTree;
+
+    /**
+     * Get the menu tree filtered to nodes the given user is permitted to see.
+     *
+     * Applies the gating rules declared on each node (`allowedIdentityStates`,
+     * `requiresGroups`, `requiresAdmin`) using the cookie-resolved user. An
+     * `undefined` user is treated as an anonymous visitor with no group
+     * memberships, so only nodes with no gates (or with `'anonymous'` in their
+     * `allowedIdentityStates`) appear.
+     *
+     * The admin predicate (`requiresAdmin: true`) resolves through
+     * `IUserGroupService.isAdmin`, looked up lazily from the service registry.
+     *
+     * @param namespace - Menu namespace (defaults to 'main')
+     * @param user - Cookie-resolved user, or undefined for anonymous
+     * @returns Filtered tree containing only nodes the user may see
+     */
+    getTreeForUser(namespace: string | undefined, user: IUser | undefined): Promise<IMenuTree>;
+
+    /**
+     * Get the children of `parentId` filtered to those the given user may see.
+     *
+     * Same gating rules as {@link getTreeForUser}; returns user-filtered
+     * children sorted by order.
+     */
+    getChildrenForUser(parentId: string | null, namespace: string | undefined, user: IUser | undefined): Promise<IMenuNode[]>;
 
     /**
      * Get child nodes of a specific parent within a namespace.

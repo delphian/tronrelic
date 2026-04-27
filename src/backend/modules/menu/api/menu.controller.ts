@@ -3,7 +3,8 @@ import { z } from 'zod';
 import { MenuService } from '../services/menu.service.js';
 import { ADMIN_NAMESPACES } from '../constants.js';
 import { isAdmin } from '../../../api/middleware/admin-auth.js';
-import type { IMenuNodeWithChildren, IMenuTree } from '@/types';
+import type { IMenuNodeWithChildren, IMenuTree, IUser } from '@/types';
+import { UserIdentityState } from '@/types';
 
 /**
  * Acceptable namespace identifiers. Lowercase ASCII, hyphens allowed,
@@ -62,6 +63,29 @@ const objectIdField = z
 function emptyStringAsUndefined<T extends z.ZodTypeAny>(schema: T) {
     return z.preprocess((val) => (typeof val === 'string' && val.length === 0 ? undefined : val), schema);
 }
+
+/**
+ * Group ids written to `requiresGroups` must match the slug shape enforced by
+ * `IUserGroupService.createGroup`. Validating client-side prevents bad input
+ * from being persisted and propagating to filter checks at read time.
+ */
+const GROUP_ID_REGEX = /^[a-z0-9][a-z0-9-]{0,63}$/;
+
+/**
+ * Allow-list of identity states. Must be non-empty when present — an empty
+ * array would hide the node from every visitor, which is what `enabled: false`
+ * already expresses cleanly.
+ */
+const allowedIdentityStatesField = z
+    .array(z.nativeEnum(UserIdentityState))
+    .min(1, 'allowedIdentityStates must contain at least one state, or be omitted entirely')
+    .max(3)
+    .optional();
+
+const requiresGroupsField = z
+    .array(z.string().regex(GROUP_ID_REGEX, 'Group ids must be lowercase kebab-case slugs'))
+    .max(64)
+    .optional();
 
 /**
  * Zod schema for creating a new menu node.
@@ -136,15 +160,19 @@ const createNodeSchema = z.object({
     enabled: z.boolean().optional(),
 
     /**
-     * Optional access control role or permission requirement.
+     * Allow-list of identity states that may see the node.
      */
-    requiredRole: emptyStringAsUndefined(
-        z
-            .string()
-            .max(64)
-            .regex(/^[a-zA-Z0-9_-]+$/, 'Required role must be alphanumeric')
-            .optional()
-    )
+    allowedIdentityStates: allowedIdentityStatesField,
+
+    /**
+     * Required group memberships (OR-of-membership).
+     */
+    requiresGroups: requiresGroupsField,
+
+    /**
+     * Restrict the node to admin users — see IMenuNode.requiresAdmin.
+     */
+    requiresAdmin: z.boolean().optional()
 });
 
 /**
@@ -182,13 +210,9 @@ const updateNodeSchema = z.object({
     order: z.number().int().min(0).max(100_000).optional(),
     parent: objectIdField.nullable().optional(),
     enabled: z.boolean().optional(),
-    requiredRole: emptyStringAsUndefined(
-        z
-            .string()
-            .max(64)
-            .regex(/^[a-zA-Z0-9_-]+$/, 'Required role must be alphanumeric')
-            .optional()
-    )
+    allowedIdentityStates: allowedIdentityStatesField,
+    requiresGroups: requiresGroupsField,
+    requiresAdmin: z.boolean().optional()
 });
 
 /**
@@ -348,11 +372,18 @@ export class MenuController {
 
             if (denyIfAdminNamespace(req, res, namespace)) return;
 
-            const tree = this.service.getTree(namespace);
-            // Anonymous callers see only enabled nodes; admins see everything
-            // so the admin UI can render and toggle disabled items.
-            const view = isAdmin(req) ? tree : publicTreeView(tree);
-            res.json({ success: true, tree: view });
+            // Admin token holders see the full unfiltered tree (including
+            // disabled nodes and gated entries) so the admin UI can render
+            // and edit them. Regular visitors get the per-user filtered
+            // view: enabled-only AND gating-aware.
+            if (isAdmin(req)) {
+                res.json({ success: true, tree: this.service.getTree(namespace) });
+                return;
+            }
+
+            const user = (req as Request & { user?: IUser }).user;
+            const filtered = await this.service.getTreeForUser(namespace, user);
+            res.json({ success: true, tree: publicTreeView(filtered) });
         } catch (error) {
             const message = error instanceof Error ? error.message : 'Failed to get menu tree';
             res.status(500).json({ success: false, error: message });
@@ -844,7 +875,14 @@ export class MenuController {
             }
             if (denyIfAdminNamespace(req, res, namespace)) return;
 
-            const tree = this.service.getTree(namespace);
+            // Admin token holders bypass the per-user filter so they can
+            // resolve any URL regardless of gating; regular visitors see only
+            // the URLs (and children) their identity qualifies for.
+            const callerIsAdmin = isAdmin(req);
+            const user = (req as Request & { user?: IUser }).user;
+            const tree = callerIsAdmin
+                ? this.service.getTree(namespace)
+                : await this.service.getTreeForUser(namespace, user);
 
             // Find node matching the URL
             const node = tree.all.find(n => n.url === url && n.enabled);
@@ -853,9 +891,12 @@ export class MenuController {
                 return;
             }
 
-            // Get enabled children with URLs sorted by order
-            const children = this.service.getChildren(node._id!, namespace)
-                .filter(c => c.enabled && c.url);
+            // Get enabled children with URLs sorted by order, gated to the
+            // calling visitor unless the caller is admin.
+            const children = (callerIsAdmin
+                ? this.service.getChildren(node._id!, namespace)
+                : await this.service.getChildrenForUser(node._id!, namespace, user)
+            ).filter(c => c.enabled && c.url);
 
             if (children.length === 0) {
                 res.status(404).json({ success: false, error: 'No children found for category node' });
