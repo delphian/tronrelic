@@ -779,7 +779,7 @@ Content-Type: application/json
 Response: { "groups": ["admin", "vip-traders"] }
 ```
 
-Set semantics — the body's `groups` array becomes the user's complete membership. Unknown group ids return 400 (mapped from `UserGroupNotFoundError`); unknown users return 404. Audit-logged at info level with target user, requester IP, and before/after arrays.
+Set semantics — the body's `groups` array becomes the user's complete membership. Unknown group ids and unknown users both return 404 (mapped from `UserGroupNotFoundError`); a malformed payload returns 400. Audit-logged at info level with target user, requester IP, and before/after arrays.
 
 **List Group Members:**
 ```

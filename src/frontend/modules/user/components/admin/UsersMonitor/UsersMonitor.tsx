@@ -3,7 +3,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import type { UserFilterType } from '@/types';
 import { Smartphone, Tablet, Monitor, HelpCircle, Users as UsersIcon } from 'lucide-react';
-import { config as runtimeConfig } from '../../../../../lib/config';
+import { getRuntimeConfig } from '../../../../../lib/runtimeConfig';
 import { Button } from '../../../../../components/ui/Button';
 import { ClientTime } from '../../../../../components/ui/ClientTime';
 import { useModal } from '../../../../../components/ui/ModalProvider';
@@ -272,7 +272,7 @@ export function UsersMonitor({ token }: Props) {
             }
 
             const response = await fetch(
-                `${runtimeConfig.apiBaseUrl}/admin/users?${params.toString()}`,
+                `${getRuntimeConfig().apiUrl}/admin/users?${params.toString()}`,
                 {
                     headers: {
                         'X-Admin-Token': token
@@ -318,7 +318,7 @@ export function UsersMonitor({ token }: Props) {
                     onSubmit={async (selectedIds) => {
                         try {
                             const response = await fetch(
-                                `${runtimeConfig.apiBaseUrl}/admin/users/${encodeURIComponent(user.id)}/groups`,
+                                `${getRuntimeConfig().apiUrl}/admin/users/${encodeURIComponent(user.id)}/groups`,
                                 {
                                     method: 'PUT',
                                     headers: {

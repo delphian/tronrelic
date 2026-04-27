@@ -12,7 +12,7 @@
  */
 
 import { useEffect, useMemo, useState } from 'react';
-import { config as runtimeConfig } from '../../../../../lib/config';
+import { getRuntimeConfig } from '../../../../../lib/runtimeConfig';
 import { Button } from '../../../../../components/ui/Button';
 import styles from './GroupMembersList.module.scss';
 
@@ -39,7 +39,7 @@ export function GroupMembersList({ token, groupId, groupName, onClose }: Props) 
 
     const baseUrl = useMemo(
         () =>
-            `${runtimeConfig.apiBaseUrl}/admin/users/groups/${encodeURIComponent(groupId)}/members`,
+            `${getRuntimeConfig().apiUrl}/admin/users/groups/${encodeURIComponent(groupId)}/members`,
         [groupId]
     );
 

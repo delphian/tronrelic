@@ -16,7 +16,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Lock } from 'lucide-react';
-import { config as runtimeConfig } from '../../../../../lib/config';
+import { getRuntimeConfig } from '../../../../../lib/runtimeConfig';
 import { Button } from '../../../../../components/ui/Button';
 import styles from './UserGroupsForm.module.scss';
 
@@ -47,7 +47,7 @@ export function UserGroupsForm({ token, userId, initialGroups, onCancel, onSubmi
     const [submitting, setSubmitting] = useState(false);
 
     const baseUrl = useMemo(
-        () => `${runtimeConfig.apiBaseUrl}/admin/users/groups`,
+        () => `${getRuntimeConfig().apiUrl}/admin/users/groups`,
         []
     );
 
@@ -64,7 +64,20 @@ export function UserGroupsForm({ token, userId, initialGroups, onCancel, onSubmi
                     throw new Error(`Failed to load groups (${response.status})`);
                 }
                 const data: ListResponse = await response.json();
-                if (!cancelled) setGroups(data.groups);
+                if (!cancelled) {
+                    setGroups(data.groups);
+                    // Drop selected ids that no longer exist in the catalog.
+                    // Without this, a group deleted between the users-table
+                    // fetch and this load stays in `selected` but renders no
+                    // checkbox, so the admin can't untick it and save fails
+                    // with UserGroupNotFoundError.
+                    const known = new Set(data.groups.map(g => g.id));
+                    setSelected(prev => {
+                        const next = new Set<string>();
+                        for (const id of prev) if (known.has(id)) next.add(id);
+                        return next;
+                    });
+                }
             } catch (err) {
                 if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to load groups');
             } finally {
