@@ -119,7 +119,9 @@ export interface MenuNodeSerialized {
   parent?: string | null;
   enabled: boolean;
   namespace?: string;
-  requiredRole?: string;
+  allowedIdentityStates?: string[];
+  requiresGroups?: string[];
+  requiresAdmin?: boolean;
   children?: MenuNodeSerialized[];
 }
 
@@ -132,12 +134,20 @@ export interface MenuTreeSerialized {
   generatedAt: string;
 }
 
+/**
+ * Refetch signal emitted when a menu node is created, updated, or deleted.
+ *
+ * Per-user gating means there is no single tree shape that fits every
+ * connected client, so the server no longer ships a tree on the wire.
+ * Receivers re-request `GET /api/menu?namespace=...` with their own
+ * credentials and the server returns their filtered view.
+ */
 export interface MenuUpdatePayload {
   event: 'menu:update';
   payload: {
     event: string;
-    node: MenuNodeSerialized;
-    tree: MenuTreeSerialized;
+    namespace: string;
+    nodeId: string;
     timestamp: string;
   };
 }

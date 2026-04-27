@@ -66,19 +66,22 @@ function emptyStringAsUndefined<T extends z.ZodTypeAny>(schema: T) {
 
 /**
  * Group ids written to `requiresGroups` must match the slug shape enforced by
- * `IUserGroupService.createGroup`. Validating client-side prevents bad input
- * from being persisted and propagating to filter checks at read time.
+ * `UserGroupService.createGroup` (see `services/user-group.service.ts`).
+ * The canonical pattern requires a letter start, allows internal hyphens,
+ * and rejects trailing hyphens — letting the menu API persist a slug the
+ * user-groups service would never accept guarantees an unfindable group at
+ * read time.
  */
-const GROUP_ID_REGEX = /^[a-z0-9][a-z0-9-]{0,63}$/;
+const GROUP_ID_REGEX = /^[a-z][a-z0-9-]*[a-z0-9]$|^[a-z]$/;
 
 /**
- * Allow-list of identity states. Must be non-empty when present — an empty
- * array would hide the node from every visitor, which is what `enabled: false`
- * already expresses cleanly.
+ * Allow-list of identity states. An empty array is accepted and treated as
+ * "no gate" — the service persists empty arrays via `$unset` so the database
+ * stays clean. Sending `[]` from a PATCH is the only way to clear a gate
+ * that was previously set, since omitting the field means "leave unchanged".
  */
 const allowedIdentityStatesField = z
     .array(z.nativeEnum(UserIdentityState))
-    .min(1, 'allowedIdentityStates must contain at least one state, or be omitted entirely')
     .max(3)
     .optional();
 

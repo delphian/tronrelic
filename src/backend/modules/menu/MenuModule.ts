@@ -150,7 +150,8 @@ export class MenuModule implements IModule<IMenuModuleDependencies> {
 
         // Initialize MenuService singleton with database + registry dependencies.
         // The registry is used at read time to look up `'user-groups'` for the
-        // admin-predicate gating filter (see MenuService.applyGatingFilter).
+        // admin-predicate gating filter (see MenuService.passesGate, called
+        // from getTreeForUser / getChildrenForUser).
         MenuService.setDependencies(this.database, this.serviceRegistry);
         this.menuService = MenuService.getInstance();
 

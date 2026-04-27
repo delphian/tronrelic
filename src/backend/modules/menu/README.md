@@ -203,7 +203,11 @@ Read endpoints are public so the frontend can render navigation without an admin
 
 ## WebSocket Real-Time Updates
 
-The menu service broadcasts `menu:update` events whenever nodes are created, updated, or deleted.
+The menu service broadcasts `menu:update` refetch signals whenever nodes are
+created, updated, or deleted. Per-user gating means the server cannot ship a
+single tree shape that fits every connected client — receivers re-request
+`GET /api/menu?namespace=...` with their own cookie and the gating filter
+returns their personalized view.
 
 **Event payload:**
 ```typescript
@@ -211,9 +215,9 @@ The menu service broadcasts `menu:update` events whenever nodes are created, upd
     type: 'menu:update',
     payload: {
         event: 'after:create' | 'after:update' | 'after:delete',
-        node: IMenuNode,
-        tree: IMenuTree,
-        timestamp: Date
+        namespace: string,
+        nodeId: string,
+        timestamp: string
     }
 }
 ```
@@ -221,10 +225,14 @@ The menu service broadcasts `menu:update` events whenever nodes are created, upd
 **Frontend subscription:**
 ```typescript
 socket.on('menu:update', (payload) => {
-    console.log(`Menu ${payload.event}:`, payload.node.label);
-    setMenuTree(payload.tree);
+    // Refetch via the user's cookie context; the signal carries no tree body
+    fetch(`/api/menu?namespace=${payload.namespace}`, { credentials: 'include' })
+        .then(r => r.json())
+        .then(({ tree }) => setMenuTree(tree));
 });
 ```
+
+**Admin namespaces are suppressed.** Mutations to `system` / `admin-sidebar` skip the broadcast entirely so the existence of admin-only URLs doesn't leak to anonymous visitors. Admin UIs reload via authenticated fetch after each mutation, so the suppression is invisible to operators.
 
 **Note:** Lifecycle events (init, ready, loaded) are NOT broadcast via WebSocket because clients are not connected during backend startup.
 

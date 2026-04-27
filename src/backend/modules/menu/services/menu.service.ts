@@ -116,8 +116,11 @@ export class MenuService implements IMenuService {
 
     /**
      * @deprecated Use `setDependencies(database, serviceRegistry)` instead. Retained for
-     * tests and external callers that haven't migrated; throws at read time if a node
-     * uses `requiresAdmin` because the registry is unavailable.
+     * tests and external callers that haven't migrated. Without a real registry the stub
+     * returns no service for `'user-groups'`, so `requiresAdmin: true` nodes are simply
+     * hidden from any cookie-identified caller — there is no shared-token bypass at the
+     * gating layer (admins still see everything because the controller short-circuits
+     * filtering for admin-token requests, not because the gate trusts them).
      */
     public static setDatabase(database: IDatabaseService): void {
         if (!MenuService.instance) {
@@ -501,7 +504,22 @@ export class MenuService implements IMenuService {
             throw new Error(`Menu node not found: ${id}`);
         }
 
-        const updated: IMenuNode = { ...existing, ...updates, _id: id };
+        // Empty gating arrays and `requiresAdmin: false` are treated as
+        // "clear this gate" — the only way to remove a previously-set gate
+        // through PATCH is to send the cleared value explicitly. Normalize
+        // here so the in-memory tree carries `undefined`, not `[]` / `false`.
+        const normalizedUpdates: Partial<IMenuNode> = { ...updates };
+        if (Array.isArray(normalizedUpdates.allowedIdentityStates) && normalizedUpdates.allowedIdentityStates.length === 0) {
+            normalizedUpdates.allowedIdentityStates = undefined;
+        }
+        if (Array.isArray(normalizedUpdates.requiresGroups) && normalizedUpdates.requiresGroups.length === 0) {
+            normalizedUpdates.requiresGroups = undefined;
+        }
+        if (normalizedUpdates.requiresAdmin === false) {
+            normalizedUpdates.requiresAdmin = undefined;
+        }
+
+        const updated: IMenuNode = { ...existing, ...normalizedUpdates, _id: id };
         const newNamespace = updated.namespace || existingNamespace;
 
         // If the URL or namespace is changing, refuse to clobber an existing
@@ -552,22 +570,38 @@ export class MenuService implements IMenuService {
             if (this.persistedNodeIds.has(id)) {
                 // Node exists in menu_nodes — update it directly
                 const collection = this.database.getCollection<IMenuNodeDocument>('menu_nodes');
-                const updateDoc: Partial<IMenuNodeDocument> = {
-                    ...(updates.namespace !== undefined && { namespace: updates.namespace }),
-                    ...(updates.label !== undefined && { label: updates.label }),
-                    ...(updates.description !== undefined && { description: updates.description }),
-                    ...(updates.url !== undefined && { url: updates.url }),
-                    ...(updates.icon !== undefined && { icon: updates.icon }),
-                    ...(updates.order !== undefined && { order: updates.order }),
-                    ...(updates.parent !== undefined && { parent: updates.parent ? new ObjectId(updates.parent) : null }),
-                    ...(updates.enabled !== undefined && { enabled: updates.enabled }),
-                    ...(updates.allowedIdentityStates !== undefined && { allowedIdentityStates: updates.allowedIdentityStates }),
-                    ...(updates.requiresGroups !== undefined && { requiresGroups: updates.requiresGroups }),
-                    ...(updates.requiresAdmin !== undefined && { requiresAdmin: updates.requiresAdmin }),
+                const setDoc: Partial<IMenuNodeDocument> = {
+                    ...(normalizedUpdates.namespace !== undefined && { namespace: normalizedUpdates.namespace }),
+                    ...(normalizedUpdates.label !== undefined && { label: normalizedUpdates.label }),
+                    ...(normalizedUpdates.description !== undefined && { description: normalizedUpdates.description }),
+                    ...(normalizedUpdates.url !== undefined && { url: normalizedUpdates.url }),
+                    ...(normalizedUpdates.icon !== undefined && { icon: normalizedUpdates.icon }),
+                    ...(normalizedUpdates.order !== undefined && { order: normalizedUpdates.order }),
+                    ...(normalizedUpdates.parent !== undefined && { parent: normalizedUpdates.parent ? new ObjectId(normalizedUpdates.parent) : null }),
+                    ...(normalizedUpdates.enabled !== undefined && { enabled: normalizedUpdates.enabled }),
+                    ...(normalizedUpdates.allowedIdentityStates !== undefined && { allowedIdentityStates: normalizedUpdates.allowedIdentityStates }),
+                    ...(normalizedUpdates.requiresGroups !== undefined && { requiresGroups: normalizedUpdates.requiresGroups }),
+                    ...(normalizedUpdates.requiresAdmin !== undefined && { requiresAdmin: normalizedUpdates.requiresAdmin }),
                     updatedAt: new Date()
                 };
 
-                await collection.updateOne({ _id: new ObjectId(id) }, { $set: updateDoc });
+                // A field present in `updates` but normalized away is an
+                // explicit clear-the-gate signal — use $unset so the doc
+                // doesn't carry stale empty arrays / `false` flags.
+                const unsetDoc: Record<string, ''> = {};
+                if (updates.allowedIdentityStates !== undefined && normalizedUpdates.allowedIdentityStates === undefined) {
+                    unsetDoc.allowedIdentityStates = '';
+                }
+                if (updates.requiresGroups !== undefined && normalizedUpdates.requiresGroups === undefined) {
+                    unsetDoc.requiresGroups = '';
+                }
+                if (updates.requiresAdmin !== undefined && normalizedUpdates.requiresAdmin === undefined) {
+                    unsetDoc.requiresAdmin = '';
+                }
+
+                const op: { $set: typeof setDoc; $unset?: typeof unsetDoc } = { $set: setDoc };
+                if (Object.keys(unsetDoc).length > 0) op.$unset = unsetDoc;
+                await collection.updateOne({ _id: new ObjectId(id) }, op);
             } else if (existing.url) {
                 // Memory-only node with a URL — save overrides so changes survive restarts
                 await this.saveOverride(existing.namespace || this.DEFAULT_NAMESPACE, existing.url, updates);
@@ -742,7 +776,7 @@ export class MenuService implements IMenuService {
         const groupsService = this.serviceRegistry.get<IUserGroupService>('user-groups');
         const isUserAdmin = user && groupsService ? await groupsService.isAdmin(user.id) : false;
 
-        const visible = tree.all.filter((node) => this.passesGate(node, user, isUserAdmin));
+        const visible = this.filterVisibleSubtree(tree.all, user, isUserAdmin);
         return {
             roots: this.buildTree(visible),
             all: visible,
@@ -754,7 +788,9 @@ export class MenuService implements IMenuService {
      * Get a single child of the named parent that the given user may see.
      *
      * Same gating rules as {@link getTreeForUser}; returns the user-filtered
-     * children sorted by order.
+     * children sorted by order. If the parent itself (or any ancestor of the
+     * parent) fails its gate, returns empty — there is no way to surface a
+     * child whose parent the caller cannot see.
      */
     public async getChildrenForUser(
         parentId: string | null,
@@ -763,7 +799,56 @@ export class MenuService implements IMenuService {
     ): Promise<IMenuNode[]> {
         const groupsService = this.serviceRegistry.get<IUserGroupService>('user-groups');
         const isUserAdmin = user && groupsService ? await groupsService.isAdmin(user.id) : false;
+
+        if (parentId) {
+            // Walk the parent chain through the namespace's flat node list and
+            // refuse to surface descendants of a hidden ancestor.
+            const all = this.getTree(namespace).all;
+            const byId = new Map<string, IMenuNode>(all.map((n) => [n._id!, n]));
+            let cursor: IMenuNode | undefined = byId.get(parentId);
+            while (cursor) {
+                if (!this.passesGate(cursor, user, isUserAdmin)) return [];
+                cursor = cursor.parent ? byId.get(cursor.parent) : undefined;
+            }
+        }
+
         return this.getChildren(parentId, namespace).filter((node) => this.passesGate(node, user, isUserAdmin));
+    }
+
+    /**
+     * Filter a flat node list down to nodes whose entire ancestor chain passes
+     * the gate. Without this, `buildTree` treats children of a filtered-out
+     * parent as orphans and promotes them to roots — silently exposing nested
+     * items the operator just hid by gating their parent.
+     */
+    private filterVisibleSubtree(nodes: IMenuNode[], user: IUser | undefined, isUserAdmin: boolean): IMenuNode[] {
+        const byId = new Map(nodes.map((n) => [n._id!, n]));
+        const cache = new Map<string, boolean>();
+
+        const isVisible = (node: IMenuNode): boolean => {
+            const id = node._id!;
+            const cached = cache.get(id);
+            if (cached !== undefined) return cached;
+
+            if (!this.passesGate(node, user, isUserAdmin)) {
+                cache.set(id, false);
+                return false;
+            }
+            if (node.parent) {
+                const parent = byId.get(node.parent);
+                // Parent missing from the namespace is treated as visible —
+                // matches `buildTree`'s orphan-as-root fallback so we don't
+                // hide otherwise-valid nodes because of a stale parent ref.
+                if (parent && !isVisible(parent)) {
+                    cache.set(id, false);
+                    return false;
+                }
+            }
+            cache.set(id, true);
+            return true;
+        };
+
+        return nodes.filter(isVisible);
     }
 
     /**

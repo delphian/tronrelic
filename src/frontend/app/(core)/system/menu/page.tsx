@@ -894,21 +894,20 @@ function MenuNodeForm({ mode, initial, availableParents, availableGroups, onSubm
             const blankToUndefined = (v: unknown) =>
                 typeof v === 'string' ? (v.trim() || undefined) : v;
 
-            // Identity-state allow-list normalization: empty selection or all
-            // three checked both mean "no gate" — store as undefined so the
-            // database doesn't carry tautological arrays. Backend rejects an
-            // empty array explicitly, so we never send one.
+            // Gating fields are sent through as-is (including `[]` and
+            // `false`) so a PATCH that clears a previously-set gate carries
+            // an explicit clear signal. The backend treats empty arrays and
+            // `requiresAdmin: false` as "remove this gate" and persists them
+            // via `$unset`. Sending `undefined` would drop the key from the
+            // JSON payload, which the partial-update path interprets as
+            // "leave this field unchanged" — preventing operators from ever
+            // clearing a gate from the UI.
             const states = data.allowedIdentityStates ?? [];
+            // All three states checked is semantically identical to no gate;
+            // collapse to an empty array so the persist path unsets the
+            // field rather than storing a tautological full set.
             const normalizedStates =
-                states.length === 0 || states.length === ALL_IDENTITY_STATES.length
-                    ? undefined
-                    : states;
-
-            // Group selection normalization: empty array becomes undefined for
-            // the same "no gate" reason. The backend treats `undefined` and
-            // missing field identically.
-            const groups = data.requiresGroups ?? [];
-            const normalizedGroups = groups.length === 0 ? undefined : groups;
+                states.length === ALL_IDENTITY_STATES.length ? [] : states;
 
             const normalized: Partial<IMenuNode> = {
                 ...data,
@@ -916,8 +915,8 @@ function MenuNodeForm({ mode, initial, availableParents, availableGroups, onSubm
                 url: blankToUndefined(data.url) as string | undefined,
                 icon: blankToUndefined(data.icon) as string | undefined,
                 allowedIdentityStates: normalizedStates,
-                requiresGroups: normalizedGroups,
-                requiresAdmin: data.requiresAdmin || undefined
+                requiresGroups: data.requiresGroups ?? [],
+                requiresAdmin: Boolean(data.requiresAdmin)
             };
             await onSubmit(normalized);
         } finally {
