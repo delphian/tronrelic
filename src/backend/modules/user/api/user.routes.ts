@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import type { UserController } from './user.controller.js';
+import type { UserGroupController } from './user-group.controller.js';
 import { createRateLimiter } from '../../../api/middleware/rate-limit.js';
 
 /**
@@ -194,12 +195,19 @@ export function createProfileRouter(controller: UserController): Router {
  * Create Express router for admin user endpoints.
  *
  * All routes require admin authentication (handled by parent router middleware).
- * Routes are mounted at /api/admin/users.
+ * Routes are mounted at /api/admin/users. The user-group controller is
+ * injected so the per-user membership editor (`PUT /:id/groups`) can live
+ * inside the user admin tree without coupling UserController to group
+ * concerns.
  *
  * @param controller - User controller instance
+ * @param groupController - User-group controller for membership mutation
  * @returns Express router with admin endpoints
  */
-export function createAdminUserRouter(controller: UserController): Router {
+export function createAdminUserRouter(
+    controller: UserController,
+    groupController: UserGroupController
+): Router {
     const router = Router();
 
     /**
@@ -330,6 +338,13 @@ export function createAdminUserRouter(controller: UserController): Router {
      * Get any user by UUID (admin bypass)
      */
     router.get('/:id', controller.getAnyUser.bind(controller));
+
+    /**
+     * PUT /api/admin/users/:id/groups
+     * Replace the user's complete group membership. Body: { groups: string[] }.
+     * Audit-logged at info level by the controller.
+     */
+    router.put('/:id/groups', groupController.setUserGroups.bind(groupController));
 
     return router;
 }

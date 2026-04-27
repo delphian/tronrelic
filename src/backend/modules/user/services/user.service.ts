@@ -1666,9 +1666,19 @@ export class UserService {
             : {};
 
         // Combine filter and search with AND logic
-        const combinedQuery = Object.keys(filterQuery).length > 0 && Object.keys(searchQuery).length > 0
+        const userQuery = Object.keys(filterQuery).length > 0 && Object.keys(searchQuery).length > 0
             ? { $and: [filterQuery, searchQuery] }
             : { ...filterQuery, ...searchQuery };
+
+        // Exclude merge tombstones. They retain a stale groups[] snapshot
+        // from merge time and are never updated again, so surfacing them
+        // in admin tables lets operators write groups based on data that
+        // does not represent any live identity. Convention matches
+        // UserGroupService.getMembers.
+        const tombstoneFilter = { mergedInto: { $exists: false } };
+        const combinedQuery = Object.keys(userQuery).length > 0
+            ? { $and: [userQuery, tombstoneFilter] }
+            : tombstoneFilter;
 
         const [docs, filteredTotal] = await Promise.all([
             this.collection

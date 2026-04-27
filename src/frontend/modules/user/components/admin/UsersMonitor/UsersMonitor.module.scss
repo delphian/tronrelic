@@ -288,6 +288,13 @@
     border-bottom: var(--border-width-thin) solid var(--color-border);
 }
 
+/* Group chip list shown in the Groups detail section */
+.group_chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--gap-xs);
+}
+
 .section_header h4 {
     margin: 0;
     padding: 0;

@@ -101,6 +101,37 @@ export interface IUserGroupService {
      */
     removeMember(userId: string, groupId: string): Promise<void>;
 
+    /**
+     * Replace the user's complete set of group memberships with `groupIds`.
+     *
+     * Set-semantics. Implementations must validate that every id in
+     * `groupIds` refers to an existing group (throws on the first unknown
+     * id) and that the target user exists (throws otherwise). The new
+     * array is deduplicated and order is not preserved. Returns the
+     * resulting membership array so callers can write a before/after
+     * audit record without re-reading.
+     *
+     * Suitable for admin UIs that present a "tick which groups this user
+     * is in" view. Plugins managing single-group transitions should keep
+     * using `addMember` / `removeMember`.
+     */
+    setUserGroups(userId: string, groupIds: string[]): Promise<string[]>;
+
+    /**
+     * List users currently belonging to the group, paginated.
+     *
+     * Excludes merged tombstones — `mergedInto`-flagged user documents
+     * never appear in the result, so consumers don't need to follow
+     * pointer chains to display canonical identities.
+     *
+     * Throws when the group does not exist so admin UIs can distinguish
+     * "no members" from "you typed the wrong slug".
+     */
+    getMembers(
+        groupId: string,
+        options?: { limit?: number; skip?: number }
+    ): Promise<{ userIds: string[]; total: number }>;
+
     // -------- Special: admin --------
 
     /**

@@ -2,11 +2,14 @@
 
 import React, { useEffect, useState, useCallback } from 'react';
 import type { UserFilterType } from '@/types';
-import { Smartphone, Tablet, Monitor, HelpCircle } from 'lucide-react';
-import { config as runtimeConfig } from '../../../../../lib/config';
+import { Smartphone, Tablet, Monitor, HelpCircle, Users as UsersIcon } from 'lucide-react';
+import { getRuntimeConfig } from '../../../../../lib/runtimeConfig';
 import { Button } from '../../../../../components/ui/Button';
 import { ClientTime } from '../../../../../components/ui/ClientTime';
+import { useModal } from '../../../../../components/ui/ModalProvider';
+import { useToast } from '../../../../../components/ui/ToastProvider';
 import { VisitorAnalytics } from '../VisitorAnalytics';
+import { UserGroupsForm } from './UserGroupsForm';
 import styles from './UsersMonitor.module.scss';
 
 /**
@@ -114,6 +117,7 @@ interface UserRecord {
     wallets: WalletLink[];
     preferences: UserPreferences;
     activity: UserActivity;
+    groups: string[];
     createdAt: string;
     updatedAt: string;
 }
@@ -221,6 +225,9 @@ export function UsersMonitor({ token }: Props) {
     const [expandedUserId, setExpandedUserId] = useState<string | null>(null);
     const [sessionPages, setSessionPages] = useState<Record<string, number>>({});
 
+    const { open: openModal, close: closeModal } = useModal();
+    const { push: pushToast } = useToast();
+
     /** Sessions per page in the Recent Sessions section */
     const SESSIONS_PER_PAGE = 5;
 
@@ -265,7 +272,7 @@ export function UsersMonitor({ token }: Props) {
             }
 
             const response = await fetch(
-                `${runtimeConfig.apiBaseUrl}/admin/users?${params.toString()}`,
+                `${getRuntimeConfig().apiUrl}/admin/users?${params.toString()}`,
                 {
                     headers: {
                         'X-Admin-Token': token
@@ -292,6 +299,53 @@ export function UsersMonitor({ token }: Props) {
     useEffect(() => {
         fetchUsers();
     }, [fetchUsers]);
+
+    /**
+     * Open the membership editor modal for a user. The save handler PUTs
+     * the new id list and refreshes the table on success so admins see the
+     * authoritative server state, not just the optimistic value.
+     */
+    const openGroupsModal = useCallback((user: UserRecord) => {
+        const modalId = openModal({
+            title: 'Manage Groups',
+            size: 'sm',
+            content: (
+                <UserGroupsForm
+                    token={token}
+                    userId={user.id}
+                    initialGroups={user.groups ?? []}
+                    onCancel={() => closeModal(modalId)}
+                    onSubmit={async (selectedIds) => {
+                        try {
+                            const response = await fetch(
+                                `${getRuntimeConfig().apiUrl}/admin/users/${encodeURIComponent(user.id)}/groups`,
+                                {
+                                    method: 'PUT',
+                                    headers: {
+                                        'X-Admin-Token': token,
+                                        'Content-Type': 'application/json'
+                                    },
+                                    body: JSON.stringify({ groups: selectedIds })
+                                }
+                            );
+                            if (!response.ok) {
+                                const payload = await response.json().catch(() => null);
+                                throw new Error(payload?.message ?? `Update failed (${response.status})`);
+                            }
+                            pushToast({ tone: 'success', title: 'Group membership updated' });
+                            closeModal(modalId);
+                            await fetchUsers();
+                        } catch (error) {
+                            pushToast({
+                                tone: 'danger',
+                                title: error instanceof Error ? error.message : 'Update failed'
+                            });
+                        }
+                    }}
+                />
+            )
+        });
+    }, [openModal, closeModal, pushToast, fetchUsers, token]);
 
     const handleSearch = () => {
         setPage(1);
@@ -570,6 +624,37 @@ export function UsersMonitor({ token }: Props) {
                                                 <dt>Total Time</dt>
                                                 <dd>{formatDuration(user.activity.totalDurationSeconds)}</dd>
                                             </dl>
+                                        </div>
+
+                                        <div className={styles.detail_section}>
+                                            <div className={styles.section_header}>
+                                                <h4>Groups</h4>
+                                                <Button
+                                                    size="sm"
+                                                    variant="secondary"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        openGroupsModal(user);
+                                                    }}
+                                                    aria-label={`Manage groups for ${user.id}`}
+                                                >
+                                                    <UsersIcon size={14} aria-hidden="true" /> Manage
+                                                </Button>
+                                            </div>
+                                            {(user.groups ?? []).length === 0 ? (
+                                                <p className={styles.no_data}>No groups assigned</p>
+                                            ) : (
+                                                <div className={styles.group_chips}>
+                                                    {user.groups.map(groupId => (
+                                                        <span
+                                                            key={groupId}
+                                                            className="badge badge--info"
+                                                        >
+                                                            <code>{groupId}</code>
+                                                        </span>
+                                                    ))}
+                                                </div>
+                                            )}
                                         </div>
 
                                         {/* Country Distribution */}

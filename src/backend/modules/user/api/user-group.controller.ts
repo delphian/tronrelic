@@ -1,6 +1,7 @@
 import type { Request, Response } from 'express';
 import type { ISystemLogService } from '@/types';
 import type { UserGroupService } from '../services/user-group.service.js';
+import { getClientIP } from '../services/geo.service.js';
 import {
     UserGroupValidationError,
     UserGroupNotFoundError,
@@ -8,6 +9,29 @@ import {
     UserGroupSystemProtectedError,
     UserGroupMemberNotFoundError
 } from '../services/user-group.errors.js';
+
+/**
+ * Parse a positive integer query param with a default and ceiling. Returns
+ * the default for missing or unparseable values; otherwise clamps to
+ * `[1, max]`. Used by the members listing endpoint to bound page size.
+ */
+function parsePositiveInt(raw: unknown, defaultVal: number, max: number): number {
+    if (typeof raw !== 'string') return defaultVal;
+    const n = Number.parseInt(raw, 10);
+    if (Number.isNaN(n)) return defaultVal;
+    return Math.min(Math.max(1, n), max);
+}
+
+/**
+ * Parse a non-negative integer query param. Used for pagination offsets
+ * where 0 is valid but negatives must be clamped.
+ */
+function parseNonNegativeInt(raw: unknown, defaultVal: number): number {
+    if (typeof raw !== 'string') return defaultVal;
+    const n = Number.parseInt(raw, 10);
+    if (Number.isNaN(n)) return defaultVal;
+    return Math.max(0, n);
+}
 
 /**
  * Controller for admin user-group endpoints.
@@ -80,6 +104,65 @@ export class UserGroupController {
             res.status(204).end();
         } catch (error) {
             this.respondWithError(res, error, { id: req.params.id }, 'Failed to delete group');
+        }
+    }
+
+    /**
+     * GET /api/admin/users/groups/:id/members
+     *
+     * Paginated user-id list for a single group. Supports `limit` (default
+     * 100, max 500) and `skip` query params. Returns `{ userIds: string[],
+     * total: number }`. Excludes merged tombstones at the service layer.
+     */
+    async listGroupMembers(req: Request, res: Response): Promise<void> {
+        try {
+            const limit = parsePositiveInt(req.query.limit, 100, 500);
+            const skip = parseNonNegativeInt(req.query.skip, 0);
+            const result = await this.groupService.getMembers(req.params.id, { limit, skip });
+            res.json(result);
+        } catch (error) {
+            this.respondWithError(res, error, { id: req.params.id }, 'Failed to list group members');
+        }
+    }
+
+    /**
+     * PUT /api/admin/users/:id/groups
+     *
+     * Replace the user's complete group membership. Audit-logs a single
+     * info entry with target user id, requester IP, and before/after
+     * arrays — the shared-token admin model has no per-human attribution,
+     * so this is the only forensic record if the token leaks. Service
+     * layer is the source of truth: validation (unknown groups, missing
+     * user) and cache invalidation happen there.
+     */
+    async setUserGroups(req: Request, res: Response): Promise<void> {
+        const userId = req.params.id;
+        try {
+            const body = req.body ?? {};
+            if (!Array.isArray(body.groups)) {
+                res.status(400).json({
+                    error: 'BadRequest',
+                    message: 'Body must include "groups" as an array of group ids'
+                });
+                return;
+            }
+
+            const before = await this.groupService.getUserGroups(userId);
+            const after = await this.groupService.setUserGroups(userId, body.groups);
+
+            this.logger.info(
+                {
+                    ip: getClientIP(req),
+                    userId,
+                    before,
+                    after
+                },
+                'Admin replaced user group membership'
+            );
+
+            res.json({ groups: after });
+        } catch (error) {
+            this.respondWithError(res, error, { userId }, 'Failed to update user group membership');
         }
     }
 

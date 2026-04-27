@@ -16,7 +16,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Plus, Pencil, Trash2, Lock } from 'lucide-react';
+import { Plus, Pencil, Trash2, Lock, Users as UsersIcon } from 'lucide-react';
 import { config as runtimeConfig } from '../../../../../lib/config';
 import { Button } from '../../../../../components/ui/Button';
 import { Card } from '../../../../../components/ui/Card';
@@ -24,6 +24,7 @@ import { ClientTime } from '../../../../../components/ui/ClientTime';
 import { useModal } from '../../../../../components/ui/ModalProvider';
 import { useToast } from '../../../../../components/ui/ToastProvider';
 import { GroupForm, type GroupFormValues } from './GroupForm';
+import { GroupMembersList } from './GroupMembersList';
 import styles from './GroupsManager.module.scss';
 
 interface UserGroup {
@@ -134,6 +135,21 @@ export function GroupsManager({ token }: Props) {
             )
         });
     }, [openModal, closeModal, submitCreate, fetchGroups, pushToast]);
+
+    const openMembersModal = useCallback((group: UserGroup) => {
+        const id = openModal({
+            title: `Members of "${group.id}"`,
+            size: 'sm',
+            content: (
+                <GroupMembersList
+                    token={token}
+                    groupId={group.id}
+                    groupName={group.name}
+                    onClose={() => closeModal(id)}
+                />
+            )
+        });
+    }, [openModal, closeModal, token]);
 
     const openEditModal = useCallback((group: UserGroup) => {
         const id = openModal({
@@ -261,6 +277,15 @@ export function GroupsManager({ token }: Props) {
                                         <ClientTime date={group.updatedAt} format="date" />
                                     </td>
                                     <td className={styles.actions}>
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={() => openMembersModal(group)}
+                                            aria-label={`View members of ${group.name}`}
+                                            title="View members"
+                                        >
+                                            <UsersIcon size={14} aria-hidden="true" />
+                                        </Button>
                                         {group.system ? (
                                             <span className="text-muted">Read-only</span>
                                         ) : (
