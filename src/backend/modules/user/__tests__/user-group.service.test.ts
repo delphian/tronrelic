@@ -283,6 +283,86 @@ describe('UserGroupService', () => {
         });
     });
 
+    // -------- setUserGroups --------
+
+    describe('setUserGroups', () => {
+        const userId = 'user-1';
+
+        beforeEach(() => {
+            seedUser(mockDatabase, userId, ['vip']);
+            seedGroup(mockDatabase, { id: 'vip', name: 'VIP' });
+            seedGroup(mockDatabase, { id: 'whales', name: 'Whales' });
+        });
+
+        it('throws when groupIds is not an array', async () => {
+            await expect(
+                service.setUserGroups(userId, 'admin' as unknown as string[])
+            ).rejects.toThrow(/must be an array/i);
+        });
+
+        it('throws on unknown group id (validates before write)', async () => {
+            await expect(
+                service.setUserGroups(userId, ['vip', 'ghost-group'])
+            ).rejects.toThrow(/does not exist/i);
+        });
+
+        it('throws on unknown user', async () => {
+            await expect(
+                service.setUserGroups('ghost-user', ['vip'])
+            ).rejects.toThrow(/does not exist/i);
+        });
+
+        it('replaces user.groups atomically with dedup and lowercase', async () => {
+            const result = await service.setUserGroups(userId, ['VIP', 'whales', 'vip']);
+            expect(result).toEqual(['vip', 'whales']);
+            // Confirm the persisted document reflects the new array, not the
+            // originally-seeded ['vip']. The mock supports $set on top-level
+            // fields, which is what the service uses for the atomic replace.
+            const doc = mockDatabase.getCollectionData('users').find(u => u.id === userId);
+            expect(doc?.groups).toEqual(['vip', 'whales']);
+        });
+
+        it('accepts an empty array to clear all memberships', async () => {
+            const result = await service.setUserGroups(userId, []);
+            expect(result).toEqual([]);
+            const doc = mockDatabase.getCollectionData('users').find(u => u.id === userId);
+            expect(doc?.groups).toEqual([]);
+        });
+
+        it('invalidates the user cache after a successful write', async () => {
+            await service.setUserGroups(userId, ['whales']);
+            expect(mockCache.invalidate).toHaveBeenCalledWith(`user:${userId}`);
+        });
+    });
+
+    // -------- getMembers --------
+
+    describe('getMembers', () => {
+        beforeEach(() => {
+            seedGroup(mockDatabase, { id: 'vip', name: 'VIP' });
+            seedUser(mockDatabase, 'alice', ['vip']);
+            seedUser(mockDatabase, 'bob', ['vip']);
+            seedUser(mockDatabase, 'carol', []);
+        });
+
+        it('throws on unknown group so admin UIs can distinguish "no members" from "wrong slug"', async () => {
+            await expect(service.getMembers('not-real')).rejects.toThrow(/does not exist/i);
+        });
+
+        it('returns the user ids that belong to the group with total count', async () => {
+            const result = await service.getMembers('vip');
+            expect(new Set(result.userIds)).toEqual(new Set(['alice', 'bob']));
+            expect(result.total).toBe(2);
+        });
+
+        it('returns empty list with zero total when the group has no members', async () => {
+            seedGroup(mockDatabase, { id: 'empty-group', name: 'Empty' });
+            const result = await service.getMembers('empty-group');
+            expect(result.userIds).toEqual([]);
+            expect(result.total).toBe(0);
+        });
+    });
+
     // -------- isAdmin --------
 
     describe('isAdmin', () => {

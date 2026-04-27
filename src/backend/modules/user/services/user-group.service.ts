@@ -313,6 +313,99 @@ export class UserGroupService implements IUserGroupService {
         await this.invalidateUserCache(canonicalId);
     }
 
+    /**
+     * Replace the user's full membership array. See contract JSDoc in
+     * `IUserGroupService` for semantics.
+     *
+     * The intentional difference from looping `addMember`/`removeMember`:
+     * one atomic `$set` of the deduplicated target array. This collapses
+     * N existence-checks and N updateOne calls into a single round trip,
+     * and matches the admin UX — operator sees a snapshot, ticks boxes,
+     * saves their explicit intent. Concurrent plugin writes between the
+     * admin's read and save are deliberately overwritten because that is
+     * what "set the membership to exactly this" means.
+     */
+    async setUserGroups(userId: string, groupIds: string[]): Promise<string[]> {
+        if (!Array.isArray(groupIds)) {
+            throw new UserGroupValidationError('groups must be an array of group ids');
+        }
+
+        // Coerce, trim, lowercase, dedupe. Drops empty strings introduced
+        // by clients that pass blank inputs.
+        const desired = Array.from(new Set(
+            groupIds
+                .filter((id): id is string => typeof id === 'string')
+                .map(id => id.trim().toLowerCase())
+                .filter(id => id.length > 0)
+        ));
+
+        // Validate every id resolves to a real group definition. A single
+        // $in query is cheaper than N findOnes and surfaces all unknown
+        // ids in the same trip if needed (we throw on the first one).
+        if (desired.length > 0) {
+            const existing = await this.groupsCollection
+                .find({ id: { $in: desired } }, { projection: { id: 1 } })
+                .toArray();
+            const existingIds = new Set(existing.map(g => g.id));
+            const unknown = desired.find(id => !existingIds.has(id));
+            if (unknown) {
+                throw new UserGroupNotFoundError(unknown);
+            }
+        }
+
+        const canonicalId = await this.resolveCanonicalUserId(userId);
+        const result = await this.usersCollection.updateOne(
+            { id: canonicalId },
+            { $set: { groups: desired, updatedAt: new Date() } }
+        );
+        if (result.matchedCount === 0) {
+            throw new UserGroupMemberNotFoundError(userId);
+        }
+        await this.invalidateUserCache(canonicalId);
+        this.logger.info(
+            { userId: canonicalId, groupCount: desired.length },
+            'User group membership replaced'
+        );
+        return desired;
+    }
+
+    /**
+     * Paginated member list for a single group. See contract JSDoc in
+     * `IUserGroupService` for semantics.
+     *
+     * Filters out `mergedInto`-flagged tombstones so the admin UI never
+     * shows duplicate identities for a single human after a wallet-driven
+     * identity merge.
+     */
+    async getMembers(
+        groupId: string,
+        options: { limit?: number; skip?: number } = {}
+    ): Promise<{ userIds: string[]; total: number }> {
+        const group = await this.groupsCollection.findOne({ id: groupId });
+        if (!group) {
+            throw new UserGroupNotFoundError(groupId);
+        }
+
+        const limit = Math.min(Math.max(1, options.limit ?? 100), 500);
+        const skip = Math.max(0, options.skip ?? 0);
+
+        const filter = { groups: groupId, mergedInto: { $exists: false } };
+        const [docs, total] = await Promise.all([
+            this.usersCollection
+                .find(filter, { projection: { id: 1 } })
+                .sort({ id: 1 })
+                .skip(skip)
+                .limit(limit)
+                .toArray(),
+            this.usersCollection.countDocuments(filter)
+        ]);
+
+        return {
+            userIds: docs.map(d => d.id),
+            total
+        };
+    }
+
     // ==================== Special: admin ====================
 
     async isAdmin(userId: string): Promise<boolean> {

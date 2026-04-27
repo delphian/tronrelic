@@ -356,7 +356,7 @@ export class UserModule implements IModule<IUserModuleDependencies> {
      * @internal
      */
     private createAdminRouter(): Router {
-        return createAdminUserRouter(this.controller);
+        return createAdminUserRouter(this.controller, this.groupController);
     }
 
     /**

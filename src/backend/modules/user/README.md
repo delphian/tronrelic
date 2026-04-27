@@ -143,9 +143,11 @@ if (groups && req.userId && await groups.isAdmin(req.userId)) {
 | `isMember(userId, groupId)` | Test membership. Never throws on missing user or group — returns `false`. |
 | `addMember(userId, groupId)` | Idempotent. Throws when the group does not exist (treat as deployment mistake). |
 | `removeMember(userId, groupId)` | Idempotent. Removing a non-member is a no-op. |
+| `setUserGroups(userId, groupIds)` | Replace the user's complete membership atomically. Throws on unknown groups or missing user. Used by the admin editor; plugins should prefer `addMember` / `removeMember` for single-group transitions. |
+| `getMembers(groupId, options?)` | Paginated user-id list for a group. Excludes merged tombstones. |
 | `isAdmin(userId)` | True when the user belongs to any system-flagged group whose id matches the reserved-admin pattern. Use this — never compare group ids directly. |
 
-Definition CRUD (`listGroups`, `getGroup`, `createGroup`, `updateGroup`, `deleteGroup`) is operator-facing and exposed via `/api/admin/users/groups`. Membership is read by plugins and mutated programmatically — there is no public HTTP endpoint for `addMember` or `removeMember`. Plugins that need to grant or revoke groups call the service directly from request handlers.
+Definition CRUD (`listGroups`, `getGroup`, `createGroup`, `updateGroup`, `deleteGroup`) and group-member listing (`GET /api/admin/users/groups/:id/members`) live under `/api/admin/users/groups`. The admin set-membership endpoint (`PUT /api/admin/users/:id/groups`) is the operator path for promoting users into any group, including the reserved `admin` group. Both routes are `requireAdmin`-gated; the set-membership write audit-logs the before/after id arrays plus the requester IP, since the shared-token model has no per-human attribution. Plugins still mutate membership by calling the service directly from request handlers.
 
 **Two distinct admin checks coexist — do not conflate them.** `IUserGroupService.isAdmin(userId)` is a per-user predicate keyed off the visitor's UUID. Use it from plugin code that runs in a request context (cookie identity is present) when the question is "should this person see admin UI?" The `requireAdmin` middleware in `src/backend/api/middleware/admin-auth.ts` (and the `requiresAdmin: true` flag on `IApiRouteConfig`) is a shared-token gate — the caller must present `x-admin-token` matching `ADMIN_API_TOKEN`. It is for operators, scripts, and CI tooling; there is no user identity involved. A typical admin SPA page combines both: the route handler is protected by `requireAdmin` (token), and the page component uses `groups.isAdmin(req.userId)` to decide which controls to render to a cookie-identified human. Plugins that want per-user admin gating must use `IUserGroupService.isAdmin` — rolling a parallel scheme is the path the JSDoc on the interface explicitly warns against.
 
@@ -765,6 +767,29 @@ GET /api/admin/users/:id
 Response: IUser (or 404 if not found)
 ```
 
+**Replace User Group Membership:**
+```
+PUT /api/admin/users/:id/groups
+Content-Type: application/json
+
+{
+    "groups": ["admin", "vip-traders"]
+}
+
+Response: { "groups": ["admin", "vip-traders"] }
+```
+
+Set semantics — the body's `groups` array becomes the user's complete membership. Unknown group ids return 400 (mapped from `UserGroupNotFoundError`); unknown users return 404. Audit-logged at info level with target user, requester IP, and before/after arrays.
+
+**List Group Members:**
+```
+GET /api/admin/users/groups/:id/members?limit=100&skip=0
+
+Response: { "userIds": ["uuid1", "uuid2", ...], "total": number }
+```
+
+Paginated user-id list. `limit` defaults to 100, ceiling 500. Excludes merged tombstones.
+
 ## Admin UI
 
 The admin dashboard at `/system/users` provides:
@@ -772,7 +797,9 @@ The admin dashboard at `/system/users` provides:
 - **Statistics overview** - Total users, active today, active this week, users with wallets, total wallet links, average wallets per user
 - **User list** - Paginated view with expandable details
 - **Search** - Find users by UUID or wallet address
-- **User details** - View linked wallets (with primary indicator), preferences, and activity history
+- **User details** - View linked wallets (with primary indicator), preferences, activity history, and current group memberships
+- **Group membership editor** - "Manage Groups" action on the expanded user row opens a checkbox list of all defined groups; ticking and saving calls `PUT /api/admin/users/:id/groups`. This is the operator path for promoting a user into the reserved `admin` group
+- **Group members audit view** - The Groups tab exposes a per-row "Members" action that lists every user currently in a group, backed by `GET /api/admin/users/groups/:id/members`. Available for system groups too (the `admin` row is the canonical use case)
 
 ## Usage Examples
 

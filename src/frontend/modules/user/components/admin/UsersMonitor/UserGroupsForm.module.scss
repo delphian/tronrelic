@@ -1,0 +1,94 @@
+/**
+ * Group-membership editor modal styles.
+ *
+ * Compact checkbox list for the admin "tick which groups this user is in"
+ * UX. Sized to fit the small modal width without forcing scrolls until
+ * the catalog grows past ~10 groups.
+ */
+
+.form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-md);
+}
+
+.user_id {
+    margin: 0;
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text-muted);
+
+    code {
+        font-family: var(--font-mono);
+        background: var(--color-surface-muted);
+        padding: var(--padding-2xs) var(--padding-xs);
+        border-radius: var(--radius-sm);
+    }
+}
+
+.error {
+    margin: 0;
+    color: var(--color-danger);
+    font-size: var(--font-size-body-sm);
+}
+
+.empty {
+    margin: 0;
+    color: var(--color-text-muted);
+    font-style: italic;
+}
+
+.group_list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-2xs);
+    max-height: 18rem;
+    overflow-y: auto;
+}
+
+.group_item {
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-sm);
+    padding: var(--padding-xs) var(--padding-sm);
+
+    &:hover {
+        background: var(--color-surface-muted);
+    }
+}
+
+.group_label {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--gap-sm);
+    cursor: pointer;
+}
+
+.group_text {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-2xs);
+}
+
+.group_name {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-xs);
+}
+
+.group_slug {
+    font-family: var(--font-mono);
+    font-size: var(--font-size-body-sm);
+}
+
+.group_description {
+    font-size: var(--font-size-caption);
+    color: var(--color-text-muted);
+}
+
+.actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--gap-sm);
+}

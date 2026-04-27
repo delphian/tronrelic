@@ -1,0 +1,69 @@
+/**
+ * Group members modal — read-only audit view of who currently belongs to
+ * a specific group. Sized to fit the small modal width with an internal
+ * scroll for groups exceeding ~10 visible rows.
+ */
+
+.container {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-md);
+}
+
+.summary {
+    margin: 0;
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text-muted);
+}
+
+.error {
+    margin: 0;
+    color: var(--color-danger);
+    font-size: var(--font-size-body-sm);
+}
+
+.empty {
+    margin: 0;
+    color: var(--color-text-muted);
+    font-style: italic;
+}
+
+.list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-2xs);
+    max-height: 18rem;
+    overflow-y: auto;
+}
+
+.item {
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-sm);
+    padding: var(--padding-xs) var(--padding-sm);
+}
+
+.user_id {
+    font-family: var(--font-mono);
+    font-size: var(--font-size-body-sm);
+}
+
+.pagination {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--gap-sm);
+}
+
+.page_info {
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text-muted);
+}
+
+.actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--gap-sm);
+}

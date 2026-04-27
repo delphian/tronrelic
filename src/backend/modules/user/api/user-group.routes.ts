@@ -16,6 +16,10 @@ export function createAdminUserGroupRouter(controller: UserGroupController): Rou
     router.get('/:id', controller.getGroup.bind(controller));
     router.patch('/:id', controller.updateGroup.bind(controller));
     router.delete('/:id', controller.deleteGroup.bind(controller));
+    // Read-only paginated member list. Mounted last (after ":id" CRUD) so
+    // the more specific path matches before any future "/:id/anything"
+    // additions.
+    router.get('/:id/members', controller.listGroupMembers.bind(controller));
 
     return router;
 }

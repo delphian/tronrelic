@@ -114,6 +114,8 @@ function createGroupsService(adminUserIds: Set<string>): IUserGroupService {
         isMember: async (userId: string, groupId: string) => false,
         addMember: async () => undefined,
         removeMember: async () => undefined,
+        setUserGroups: async () => [],
+        getMembers: async () => ({ userIds: [], total: 0 }),
         isAdmin: async (userId: string) => adminUserIds.has(userId)
     } as IUserGroupService;
 }
