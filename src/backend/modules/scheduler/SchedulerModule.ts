@@ -11,6 +11,7 @@ import type { Express } from 'express';
 import type { IDatabaseService, IMenuService, IModule, IModuleMetadata } from '@/types';
 import { logger } from '../../lib/logger.js';
 import { env } from '../../config/env.js';
+import { MAIN_SYSTEM_CONTAINER_ID } from '../menu/index.js';
 import { SchedulerService } from './services/scheduler.service.js';
 import { SchedulerController } from './api/scheduler.controller.js';
 import { createSchedulerRouter } from './api/scheduler.routes.js';
@@ -91,14 +92,15 @@ export class SchedulerModule implements IModule<ISchedulerModuleDependencies> {
     async run(): Promise<void> {
         this.moduleLogger.info('Running scheduler module...');
 
-        // Register menu item in system namespace
+        // Register menu item under the System container. `requiresAdmin:
+        // true` is auto-applied by MenuService.
         await this.menuService.create({
-            namespace: 'system',
+            namespace: 'main',
             label: 'Scheduler',
             url: '/system/scheduler',
             icon: 'Clock',
             order: 35,
-            parent: null,
+            parent: MAIN_SYSTEM_CONTAINER_ID,
             enabled: true
         });
 

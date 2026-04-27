@@ -25,6 +25,7 @@
 import type { Express, Router } from 'express';
 import type { ICacheService, IDatabaseService, IMenuService, IModule, IModuleMetadata, ISchedulerService, IServiceRegistry, ISystemConfigService } from '@/types';
 import { logger } from '../../lib/logger.js';
+import { MAIN_SYSTEM_CONTAINER_ID } from '../menu/index.js';
 import { TronGridClient } from '../blockchain/tron-grid.client.js';
 import { UserService } from './services/user.service.js';
 import { GscService } from './services/gsc.service.js';
@@ -237,7 +238,7 @@ export class UserModule implements IModule<IUserModuleDependencies> {
      * Run the user module after all modules have initialized.
      *
      * This phase activates the module by:
-     * - Registering menu item in 'system' namespace
+     * - Registering menu item under the System container (admin subtree of `main`)
      * - Creating and mounting public router
      * - Creating and mounting admin router
      *
@@ -248,20 +249,21 @@ export class UserModule implements IModule<IUserModuleDependencies> {
     async run(): Promise<void> {
         this.logger.info('Running user module...');
 
-        // Register menu item in 'system' namespace
+        // Register menu item under the System container in `main`.
+        // `requiresAdmin: true` is auto-applied by MenuService.
         try {
             await this.menuService.create({
-                namespace: 'system',
+                namespace: 'main',
                 label: 'Users',
                 url: '/system/users',
                 icon: 'Users',
                 order: 75,
-                parent: null,
+                parent: MAIN_SYSTEM_CONTAINER_ID,
                 enabled: true
                 // persist defaults to false (memory-only entry)
             });
 
-            this.logger.info('Users menu item registered in system namespace');
+            this.logger.info('Users menu item registered under the System container');
         } catch (error) {
             this.logger.error({ error }, 'Failed to register users menu item');
             throw new Error(`Failed to register users menu item: ${error instanceof Error ? error.message : 'Unknown error'}`);

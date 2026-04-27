@@ -11,6 +11,7 @@ import type { ICacheService, IDatabaseService, IMenuService, IModule, IModuleMet
 import path from 'path';
 import fs from 'fs/promises';
 import { logger } from '../../lib/logger.js';
+import { MAIN_SYSTEM_CONTAINER_ID } from '../menu/index.js';
 import { PageService } from './services/page.service.js';
 import { LocalStorageProvider } from './services/storage/LocalStorageProvider.js';
 import { PagesController } from './api/pages.controller.js';
@@ -206,20 +207,22 @@ export class PagesModule implements IModule<IPagesModuleDependencies> {
     async run(): Promise<void> {
         this.logger.info('Running pages module...');
 
-        // Register menu item in 'system' namespace
+        // Register menu item under the System container in `main`.
+        // `requiresAdmin: true` is auto-applied by MenuService because the
+        // parent chain reaches the container.
         try {
             await this.menuService.create({
-                namespace: 'system',
+                namespace: 'main',
                 label: 'Pages',
                 url: '/system/pages',
                 icon: 'FileText',
                 order: 40,
-                parent: null,
+                parent: MAIN_SYSTEM_CONTAINER_ID,
                 enabled: true
                 // persist defaults to false (memory-only entry)
             });
 
-            this.logger.info('Pages menu item registered in system namespace');
+            this.logger.info('Pages menu item registered under the System container');
         } catch (error) {
             this.logger.error({ error }, 'Failed to register pages menu item');
             throw new Error(`Failed to register pages menu item: ${error instanceof Error ? error.message : 'Unknown error'}`);

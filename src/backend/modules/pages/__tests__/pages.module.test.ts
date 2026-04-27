@@ -2,6 +2,7 @@
 
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { PagesModule } from '../index.js';
+import { MAIN_SYSTEM_CONTAINER_ID } from '../../menu/index.js';
 import { PageService } from '../services/page.service.js';
 import type { ICacheService, IMenuService } from '@/types';
 import { ObjectId } from 'mongodb';
@@ -194,14 +195,16 @@ describe('PagesModule', () => {
 
             await module.run();
 
-            // Verify menu item creation was called
+            // Verify menu item creation was called against the new
+            // System container in main; requiresAdmin is auto-applied by
+            // the menu service so it is not part of the registration.
             expect(mockMenu.create).toHaveBeenCalledWith({
-                namespace: 'system',
+                namespace: 'main',
                 label: 'Pages',
                 url: '/system/pages',
                 icon: 'FileText',
                 order: 40,
-                parent: null,
+                parent: MAIN_SYSTEM_CONTAINER_ID,
                 enabled: true
             });
         });

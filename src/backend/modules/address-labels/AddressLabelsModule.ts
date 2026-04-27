@@ -31,6 +31,7 @@ import type {
     IModuleMetadata
 } from '@/types';
 import { logger } from '../../lib/logger.js';
+import { MAIN_SYSTEM_CONTAINER_ID } from '../menu/index.js';
 import { AddressLabelService } from './services/address-label.service.js';
 import { AddressLabelController } from './api/address-label.controller.js';
 import { createPublicRouter, createAdminRouter } from './api/address-label.routes.js';
@@ -191,19 +192,20 @@ export class AddressLabelsModule implements IModule<IAddressLabelsModuleDependen
     async run(): Promise<void> {
         this.logger.info('Running address labels module...');
 
-        // Register menu item in 'system' namespace
+        // Register menu item under the System container. `requiresAdmin:
+        // true` is auto-applied by MenuService.
         try {
             await this.menuService.create({
-                namespace: 'system',
+                namespace: 'main',
                 label: 'Address Labels',
                 url: '/system/address-labels',
                 icon: 'Tags',
                 order: 80,
-                parent: null,
+                parent: MAIN_SYSTEM_CONTAINER_ID,
                 enabled: true
             });
 
-            this.logger.info('Address Labels menu item registered in system namespace');
+            this.logger.info('Address Labels menu item registered under the System container');
         } catch (error) {
             this.logger.error({ error }, 'Failed to register address labels menu item');
             throw new Error(`Failed to register address labels menu item: ${error instanceof Error ? error.message : 'Unknown error'}`);

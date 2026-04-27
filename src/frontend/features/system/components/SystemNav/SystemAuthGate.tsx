@@ -91,23 +91,27 @@ function LoginForm() {
 }
 
 /**
- * Authenticated layout containing navigation and child page content.
+ * Authenticated layout containing optional sub-navigation and child page
+ * content.
  *
- * Logout control is rendered as a trailing nav item by the system layout so it
- * participates in Priority+ overflow collapsing rather than living outside the
- * nav flow.
+ * The system surface no longer renders its own sub-nav — admin items
+ * live in the main navigation under the System container — but the prop
+ * is retained for future per-section sub-navs and only rendered when
+ * supplied so an absent prop doesn't introduce a blank row.
  *
  * @param props - Component props
- * @param props.navigation - Navigation component to render below header
+ * @param props.navigation - Optional sub-navigation rendered above content
  * @param props.children - Page content to render
  */
 function AuthenticatedLayout({ navigation, children }: { navigation?: ReactNode; children: ReactNode }) {
     return (
         <div className={styles.layout_container}>
             <div className={styles.layout_content}>
-                <div className={styles.layout_nav_row}>
-                    {navigation}
-                </div>
+                {navigation && (
+                    <div className={styles.layout_nav_row}>
+                        {navigation}
+                    </div>
+                )}
 
                 <section className={styles.layout_section}>
                     {children}

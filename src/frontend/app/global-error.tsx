@@ -2,7 +2,7 @@
 
 import { useEffect } from 'react';
 import Link from 'next/link';
-import { Page } from '../components/layout';
+import { Page } from '../components/layout/Page';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 

@@ -13,96 +13,66 @@
  * to automatically show as many items as fit, moving overflow items to a "More"
  * dropdown based on the namespace configuration from the backend.
  *
+ * Admin items live as a subtree of `main` rooted at the System
+ * container; there is no separate `system` namespace, so all callers
+ * pass `namespace="main"` and rely on per-user `requiresAdmin` gating
+ * to filter the rendered tree.
+ *
  * @example
  * ```tsx
- * // Main navigation
- * <MenuNavClient namespace="main" items={menuItems} ariaLabel="Main navigation" />
- *
- * // System navigation
- * <MenuNavClient namespace="system" items={menuItems} ariaLabel="System monitoring navigation" />
+ * <MenuNavClient
+ *     namespace="main"
+ *     items={menuItems}
+ *     generatedAt={generatedAt}
+ *     ariaLabel="Main navigation"
+ * />
  * ```
  */
 'use client';
 
-import { useState, useRef, useEffect, useCallback, useMemo, Fragment, type ReactNode } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import type { MenuNodeSerialized } from '@/shared';
 import { PriorityNav, useMenuConfig, useBodyScrollLock } from '../../../modules/menu';
-import { useAppSelector } from '../../../store/hooks';
+import { menuTreeSeeded } from '../../../modules/menu/slice';
+import { useAppDispatch, useAppSelector } from '../../../store/hooks';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import styles from './MenuNav.module.scss';
-
-/**
- * Menu item structure passed from server component.
- *
- * Matches the IMenuNode structure from the backend but includes only
- * the fields needed for navigation rendering. Supports hierarchical
- * menus with expandable categories.
- */
-interface IMenuItem {
-    /**
-     * Unique identifier for the menu item.
-     */
-    _id: string;
-
-    /**
-     * Display label shown in the navigation tab.
-     */
-    label: string;
-
-    /**
-     * Navigation URL or route path.
-     * Optional for container/category nodes that don't navigate.
-     */
-    url?: string;
-
-    /**
-     * Sort order within the navigation.
-     * Lower numbers appear first.
-     */
-    order: number;
-
-    /**
-     * Visibility flag.
-     * Only enabled items are rendered.
-     */
-    enabled: boolean;
-
-    /**
-     * Child menu items for hierarchical navigation.
-     * Container nodes can have children that appear in expandable sections.
-     */
-    children?: IMenuItem[];
-}
 
 /**
  * Props for MenuNavClient component.
  */
 interface IMenuNavClientProps {
     /**
-     * Menu namespace (e.g., 'main', 'system', 'footer').
-     * Used to fetch namespace-specific configuration.
+     * Menu namespace (e.g., 'main', 'footer'). Used to fetch
+     * namespace-specific configuration. Admin items live in `main` under
+     * the System container — there is no `system` namespace.
      */
     namespace: string;
 
     /**
      * Menu items fetched by the server component.
-     * Will be sorted by order before rendering.
+     *
+     * Shape matches the Redux slice's storage type so the SSR baseline can
+     * be dispatched into Redux verbatim. Once seeded, Redux drives every
+     * render and this prop becomes a one-shot bootstrap input rather than
+     * a competing source of truth.
      */
-    items: IMenuItem[];
+    items: MenuNodeSerialized[];
+
+    /**
+     * Timestamp of the SSR tree snapshot, recorded on the namespace state
+     * as `lastUpdated` when seeding Redux on mount.
+     */
+    generatedAt: string;
 
     /**
      * Optional aria-label for the nav element.
      * Defaults to "{namespace} navigation".
      */
     ariaLabel?: string;
-
-    /**
-     * Optional trailing items appended after database-sourced items so they
-     * participate in Priority+ overflow collapsing alongside normal entries.
-     */
-    trailingItems?: Array<{ id: string; node: ReactNode }>;
 }
 
 /**
@@ -122,10 +92,12 @@ interface IMenuNavClientProps {
  * @param props - Component props
  * @param props.namespace - Menu namespace for config lookup
  * @param props.items - Menu items from server
+ * @param props.generatedAt - SSR snapshot timestamp seeded onto Redux
  * @param props.ariaLabel - Optional accessible label
  */
-export function MenuNavClient({ namespace, items, ariaLabel, trailingItems }: IMenuNavClientProps) {
+export function MenuNavClient({ namespace, items, generatedAt, ariaLabel }: IMenuNavClientProps) {
     const pathname = usePathname();
+    const dispatch = useAppDispatch();
     const menuConfig = useMenuConfig(namespace);
     const [expandedCategoryId, setExpandedCategoryId] = useState<string | null>(null);
     const [isMounted, setIsMounted] = useState(false);
@@ -134,9 +106,25 @@ export function MenuNavClient({ namespace, items, ariaLabel, trailingItems }: IM
     const categoryButtonRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
     const dropdownRef = useRef<HTMLDivElement>(null);
 
-    // Live menu state from WebSocket updates (SSR + Live Updates pattern)
+    // Redux is the single source of truth for the rendered tree. The `items`
+    // prop seeds it on first mount; thereafter SocketBridge dispatches
+    // refetchMenuTree on `menu:update` and Redux drives every subsequent
+    // render. The `?? items` fallback only matters during the first paint,
+    // before the seed effect runs.
     const liveMenuState = useAppSelector(state => state.menu.namespaces[namespace]);
-    const activeItems = liveMenuState ? liveMenuState.roots as IMenuItem[] : items;
+    const activeItems = liveMenuState?.roots ?? items;
+
+    // Seed Redux from the SSR tree on mount when the namespace is empty.
+    // Subsequent navigations that reuse a populated namespace skip the seed
+    // so live state from earlier mutations isn't clobbered by stale SSR.
+    useEffect(() => {
+        if (!liveMenuState) {
+            dispatch(menuTreeSeeded({ namespace, roots: items, timestamp: generatedAt }));
+        }
+        // We intentionally only seed once per mount when Redux is empty;
+        // re-running on items/generatedAt churn would race with live updates.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [namespace, dispatch]);
 
     // Sort by order and filter enabled items
     const visibleItems = useMemo(() => activeItems
@@ -238,7 +226,7 @@ export function MenuNavClient({ namespace, items, ariaLabel, trailingItems }: IM
      * the "More" dropdown also closes when selecting a child link from a category
      * that overflowed into the "More" menu.
      */
-    const renderLinkItem = (item: IMenuItem, isNested = false): JSX.Element => {
+    const renderLinkItem = (item: MenuNodeSerialized, isNested = false): JSX.Element => {
         const isActive = item.url === '/'
             ? pathname === '/'
             : pathname.startsWith(item.url!);
@@ -271,7 +259,7 @@ export function MenuNavClient({ namespace, items, ariaLabel, trailingItems }: IM
      * by its children. Uses stopPropagation to prevent PriorityNav's "More"
      * dropdown from closing when the category is clicked.
      */
-    const renderCategoryToggle = (item: IMenuItem): JSX.Element => {
+    const renderCategoryToggle = (item: MenuNodeSerialized): JSX.Element => {
         const isExpanded = expandedCategoryId === item._id;
         const isActive = item.url
             ? (item.url === '/' ? pathname === '/' : pathname === item.url || pathname.startsWith(`${item.url}/`))
@@ -311,7 +299,7 @@ export function MenuNavClient({ namespace, items, ariaLabel, trailingItems }: IM
     /**
      * Renders menu items - categories get link + chevron, leaves get links.
      */
-    const renderMenuItem = (item: IMenuItem): JSX.Element => {
+    const renderMenuItem = (item: MenuNodeSerialized): JSX.Element => {
         const hasChildren = item.children && item.children.length > 0;
 
         // Category node with children - render link + dropdown chevron
@@ -350,16 +338,12 @@ export function MenuNavClient({ namespace, items, ariaLabel, trailingItems }: IM
     };
 
     /**
-     * Converts menu items to PriorityNav format, appending any trailing items
-     * so namespace-specific controls (e.g. logout) participate in overflow.
+     * Converts menu items to PriorityNav format.
      */
-    const priorityNavItems = [
-        ...visibleItems.map(item => ({
-            id: item._id,
-            node: renderMenuItem(item)
-        })),
-        ...(trailingItems ?? [])
-    ];
+    const priorityNavItems = visibleItems.map(item => ({
+        id: item._id,
+        node: renderMenuItem(item)
+    }));
 
     const navAriaLabel = ariaLabel || `${namespace} navigation`;
 
@@ -444,9 +428,6 @@ export function MenuNavClient({ namespace, items, ariaLabel, trailingItems }: IM
         <>
             <nav className={`${navClassName} ${styles['nav--wrap']}`} aria-label={navAriaLabel}>
                 {visibleItems.map(item => renderMenuItem(item))}
-                {trailingItems?.map(trailing => (
-                    <Fragment key={trailing.id}>{trailing.node}</Fragment>
-                ))}
             </nav>
             {renderCategoryDropdown()}
         </>

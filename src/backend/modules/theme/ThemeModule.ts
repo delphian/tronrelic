@@ -1,6 +1,7 @@
 import type { Express } from 'express';
 import type { IDatabaseService, ICacheService, IModule, IModuleMetadata, IMenuService } from '@/types';
 import { logger } from '../../lib/logger.js';
+import { MAIN_SYSTEM_CONTAINER_ID } from '../menu/index.js';
 import { requireAdmin } from '../../api/middleware/admin-auth.js';
 import { ThemeService } from './services/theme.service.js';
 import { ThemeValidator } from './validators/theme.validator.js';
@@ -134,17 +135,18 @@ export class ThemeModule implements IModule<IThemeModuleDependencies> {
         this.app.use('/api/admin/system/themes', requireAdmin, adminRouter);
         this.logger.info('Admin theme router mounted at /api/admin/system/themes');
 
-        // Register menu item in system namespace
+        // Register menu item under the System container. `requiresAdmin:
+        // true` is auto-applied by MenuService.
         await this.menuService.create({
-            namespace: 'system',
+            namespace: 'main',
             label: 'Themes',
             url: '/system/theme',
             icon: 'Palette',
             order: 400,
-            parent: null,
+            parent: MAIN_SYSTEM_CONTAINER_ID,
             enabled: true
         });
-        this.logger.info('Theme menu item registered');
+        this.logger.info('Theme menu item registered under the System container');
 
         this.logger.info('Theme module running');
     }

@@ -2,6 +2,7 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { ThemeModule } from '../ThemeModule.js';
+import { MAIN_SYSTEM_CONTAINER_ID } from '../../menu/index.js';
 import type { ICacheService, IMenuService } from '@/types';
 import type { Express } from 'express';
 import { createMockDatabaseService } from '../../../tests/vitest/mocks/database-service.js';
@@ -223,12 +224,13 @@ describe('ThemeModule', () => {
          * Verifies that the module registers its navigation menu item
          * during the run phase.
          */
-        it('should register menu item in system namespace', async () => {
+        it('should register menu item under the System container in main', async () => {
             await module.run();
 
             expect(mockMenuService.create).toHaveBeenCalledWith(
                 expect.objectContaining({
-                    namespace: 'system',
+                    namespace: 'main',
+                    parent: MAIN_SYSTEM_CONTAINER_ID,
                     label: 'Themes',
                     url: '/system/theme',
                     icon: 'Palette',

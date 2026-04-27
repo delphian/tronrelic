@@ -205,24 +205,26 @@ export class LogsModule implements IModule<ILogsModuleDependencies> {
     async run(): Promise<void> {
         this.logger.info('Running logs module...');
 
-        // Register menu item in 'system' namespace
-        // Use dynamic import to avoid circular dependencies and ensure MenuService is initialized
+        // Register menu item under the System container. The dynamic
+        // import keeps logs decoupled from a hard module-load order;
+        // MenuService is already initialized by this point.
+        // `requiresAdmin: true` is auto-applied via the parent walk-up.
         try {
-            const { MenuService } = await import('../menu/index.js');
+            const { MenuService, MAIN_SYSTEM_CONTAINER_ID } = await import('../menu/index.js');
             const menuService = MenuService.getInstance();
 
             await menuService.create({
-                namespace: 'system',
+                namespace: 'main',
                 label: 'Logs',
                 url: '/system/logs',
                 icon: 'ScrollText',
                 order: 30,
-                parent: null,
+                parent: MAIN_SYSTEM_CONTAINER_ID,
                 enabled: true
                 // persist defaults to false (memory-only entry)
             });
 
-            this.logger.info('System logs menu item registered in system namespace');
+            this.logger.info('System logs menu item registered under the System container');
         } catch (error) {
             this.logger.error({ error }, 'Failed to register system logs menu item');
             throw new Error(`Failed to register system logs menu item: ${error instanceof Error ? error.message : 'Unknown error'}`);
