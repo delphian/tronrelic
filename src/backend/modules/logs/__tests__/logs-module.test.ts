@@ -170,7 +170,7 @@ describe('LogsModule', () => {
          * Verifies that the module registers its navigation menu item
          * during the run phase.
          */
-        it('should register menu item in system namespace', async () => {
+        it('should register menu item under the System container in main', async () => {
             await module.init({
                 pinoLogger: mockPino as any,
                 database: mockDatabase as any,
@@ -181,7 +181,8 @@ describe('LogsModule', () => {
 
             expect(mockMenuCreate).toHaveBeenCalledWith(
                 expect.objectContaining({
-                    namespace: 'system',
+                    namespace: 'main',
+                    parent: 'main:system',
                     label: 'Logs',
                     url: '/system/logs',
                     icon: 'ScrollText',

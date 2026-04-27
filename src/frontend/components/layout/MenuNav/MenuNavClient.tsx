@@ -28,53 +28,12 @@ import { useState, useRef, useEffect, useCallback, useMemo, Fragment, type React
 import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import type { MenuNodeSerialized } from '@/shared';
 import { PriorityNav, useMenuConfig, useBodyScrollLock } from '../../../modules/menu';
-import { useAppSelector } from '../../../store/hooks';
+import { menuTreeSeeded } from '../../../modules/menu/slice';
+import { useAppDispatch, useAppSelector } from '../../../store/hooks';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import styles from './MenuNav.module.scss';
-
-/**
- * Menu item structure passed from server component.
- *
- * Matches the IMenuNode structure from the backend but includes only
- * the fields needed for navigation rendering. Supports hierarchical
- * menus with expandable categories.
- */
-interface IMenuItem {
-    /**
-     * Unique identifier for the menu item.
-     */
-    _id: string;
-
-    /**
-     * Display label shown in the navigation tab.
-     */
-    label: string;
-
-    /**
-     * Navigation URL or route path.
-     * Optional for container/category nodes that don't navigate.
-     */
-    url?: string;
-
-    /**
-     * Sort order within the navigation.
-     * Lower numbers appear first.
-     */
-    order: number;
-
-    /**
-     * Visibility flag.
-     * Only enabled items are rendered.
-     */
-    enabled: boolean;
-
-    /**
-     * Child menu items for hierarchical navigation.
-     * Container nodes can have children that appear in expandable sections.
-     */
-    children?: IMenuItem[];
-}
 
 /**
  * Props for MenuNavClient component.
@@ -88,9 +47,19 @@ interface IMenuNavClientProps {
 
     /**
      * Menu items fetched by the server component.
-     * Will be sorted by order before rendering.
+     *
+     * Shape matches the Redux slice's storage type so the SSR baseline can
+     * be dispatched into Redux verbatim. Once seeded, Redux drives every
+     * render and this prop becomes a one-shot bootstrap input rather than
+     * a competing source of truth.
      */
-    items: IMenuItem[];
+    items: MenuNodeSerialized[];
+
+    /**
+     * Timestamp of the SSR tree snapshot, recorded on the namespace state
+     * as `lastUpdated` when seeding Redux on mount.
+     */
+    generatedAt: string;
 
     /**
      * Optional aria-label for the nav element.
@@ -124,8 +93,9 @@ interface IMenuNavClientProps {
  * @param props.items - Menu items from server
  * @param props.ariaLabel - Optional accessible label
  */
-export function MenuNavClient({ namespace, items, ariaLabel, trailingItems }: IMenuNavClientProps) {
+export function MenuNavClient({ namespace, items, generatedAt, ariaLabel, trailingItems }: IMenuNavClientProps) {
     const pathname = usePathname();
+    const dispatch = useAppDispatch();
     const menuConfig = useMenuConfig(namespace);
     const [expandedCategoryId, setExpandedCategoryId] = useState<string | null>(null);
     const [isMounted, setIsMounted] = useState(false);
@@ -134,9 +104,25 @@ export function MenuNavClient({ namespace, items, ariaLabel, trailingItems }: IM
     const categoryButtonRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
     const dropdownRef = useRef<HTMLDivElement>(null);
 
-    // Live menu state from WebSocket updates (SSR + Live Updates pattern)
+    // Redux is the single source of truth for the rendered tree. The `items`
+    // prop seeds it on first mount; thereafter SocketBridge dispatches
+    // refetchMenuTree on `menu:update` and Redux drives every subsequent
+    // render. The `?? items` fallback only matters during the first paint,
+    // before the seed effect runs.
     const liveMenuState = useAppSelector(state => state.menu.namespaces[namespace]);
-    const activeItems = liveMenuState ? liveMenuState.roots as IMenuItem[] : items;
+    const activeItems = liveMenuState?.roots ?? items;
+
+    // Seed Redux from the SSR tree on mount when the namespace is empty.
+    // Subsequent navigations that reuse a populated namespace skip the seed
+    // so live state from earlier mutations isn't clobbered by stale SSR.
+    useEffect(() => {
+        if (!liveMenuState) {
+            dispatch(menuTreeSeeded({ namespace, roots: items, timestamp: generatedAt }));
+        }
+        // We intentionally only seed once per mount when Redux is empty;
+        // re-running on items/generatedAt churn would race with live updates.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [namespace, dispatch]);
 
     // Sort by order and filter enabled items
     const visibleItems = useMemo(() => activeItems
@@ -238,7 +224,7 @@ export function MenuNavClient({ namespace, items, ariaLabel, trailingItems }: IM
      * the "More" dropdown also closes when selecting a child link from a category
      * that overflowed into the "More" menu.
      */
-    const renderLinkItem = (item: IMenuItem, isNested = false): JSX.Element => {
+    const renderLinkItem = (item: MenuNodeSerialized, isNested = false): JSX.Element => {
         const isActive = item.url === '/'
             ? pathname === '/'
             : pathname.startsWith(item.url!);
@@ -271,7 +257,7 @@ export function MenuNavClient({ namespace, items, ariaLabel, trailingItems }: IM
      * by its children. Uses stopPropagation to prevent PriorityNav's "More"
      * dropdown from closing when the category is clicked.
      */
-    const renderCategoryToggle = (item: IMenuItem): JSX.Element => {
+    const renderCategoryToggle = (item: MenuNodeSerialized): JSX.Element => {
         const isExpanded = expandedCategoryId === item._id;
         const isActive = item.url
             ? (item.url === '/' ? pathname === '/' : pathname === item.url || pathname.startsWith(`${item.url}/`))
@@ -311,7 +297,7 @@ export function MenuNavClient({ namespace, items, ariaLabel, trailingItems }: IM
     /**
      * Renders menu items - categories get link + chevron, leaves get links.
      */
-    const renderMenuItem = (item: IMenuItem): JSX.Element => {
+    const renderMenuItem = (item: MenuNodeSerialized): JSX.Element => {
         const hasChildren = item.children && item.children.length > 0;
 
         // Category node with children - render link + dropdown chevron

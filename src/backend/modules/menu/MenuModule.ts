@@ -16,6 +16,7 @@ import type { IDatabaseService, IModule, IModuleMetadata, IServiceRegistry } fro
 import { logger } from '../../lib/logger.js';
 import { MenuService } from './services/menu.service.js';
 import { MenuController } from './api/menu.controller.js';
+import { MAIN_SYSTEM_CONTAINER_ID } from './constants.js';
 import { Router as ExpressRouter } from 'express';
 import { requireAdmin } from '../../api/middleware/admin-auth.js';
 import { userContextMiddleware } from '../../api/middleware/user-context.js';
@@ -168,7 +169,10 @@ export class MenuModule implements IModule<IMenuModuleDependencies> {
      * Run the menu module after all modules have initialized.
      *
      * This phase activates the module by:
-     * - Registering menu item in 'system' namespace
+     * - Seeding the System container at `main:system` so admin items have
+     *   a stable parent to register against
+     * - Registering the Menu management entry and the Logout link under
+     *   the System container
      * - Creating and mounting the admin router
      *
      * By this point, all dependencies are guaranteed to be ready.
@@ -184,23 +188,71 @@ export class MenuModule implements IModule<IMenuModuleDependencies> {
         this.serviceRegistry.register('menu', this.menuService);
         this.logger.info('MenuService registered as "menu" on service registry');
 
-        // Register menu item in 'system' namespace
+        // Seed the System container at the top of `main`. Every admin
+        // surface — module entries, the dynamic Plugins dropdown, the
+        // Logout link — parents into this node. The hard-coded `_id` lets
+        // callers reference it directly via `MAIN_SYSTEM_CONTAINER_ID`
+        // without a lookup, and the create() walk-up forces
+        // `requiresAdmin: true` on the container itself plus everything
+        // that ends up below it. Order 9999 keeps it at the end of the
+        // main bar regardless of plugin registration order.
         try {
             await this.menuService.create({
-                namespace: 'system',
-                label: 'Menu',
-                url: '/system/menu',
-                icon: 'Menu',
-                order: 50,
+                _id: MAIN_SYSTEM_CONTAINER_ID,
+                namespace: 'main',
+                label: 'System',
+                url: '/system',
+                icon: 'Settings',
+                order: 9999,
                 parent: null,
                 enabled: true
                 // persist defaults to false (memory-only entry)
             });
+            this.logger.info('System container seeded under main:system');
+        } catch (error) {
+            this.logger.error({ error }, 'Failed to seed System container');
+            throw new Error(`Failed to seed System container: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        }
 
-            this.logger.info('Menu management item registered in system namespace');
+        // Register the Menu management admin item as a child of System.
+        // The walk-up auto-applies `requiresAdmin: true`, so the gate is
+        // implicit in the parent relationship.
+        try {
+            await this.menuService.create({
+                namespace: 'main',
+                label: 'Menu',
+                url: '/system/menu',
+                icon: 'Menu',
+                order: 50,
+                parent: MAIN_SYSTEM_CONTAINER_ID,
+                enabled: true
+                // persist defaults to false (memory-only entry)
+            });
+
+            this.logger.info('Menu management item registered under main:system');
         } catch (error) {
             this.logger.error({ error }, 'Failed to register menu management item');
             throw new Error(`Failed to register menu management item: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        }
+
+        // Register the Logout link as the last child of System. The route
+        // at `/system/logout` performs the auth-context logout and
+        // redirects home, replacing the previous trailing-nav-item pattern
+        // that lived inside `/system/layout.tsx`.
+        try {
+            await this.menuService.create({
+                namespace: 'main',
+                label: 'Logout',
+                url: '/system/logout',
+                icon: 'LogOut',
+                order: 9999,
+                parent: MAIN_SYSTEM_CONTAINER_ID,
+                enabled: true
+            });
+            this.logger.info('Logout item registered under main:system');
+        } catch (error) {
+            this.logger.error({ error }, 'Failed to register logout item');
+            throw new Error(`Failed to register logout item: ${error instanceof Error ? error.message : 'Unknown error'}`);
         }
 
         // Create and mount admin router (IoC - module attaches itself to app)

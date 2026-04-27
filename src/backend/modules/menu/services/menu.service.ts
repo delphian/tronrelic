@@ -19,7 +19,7 @@ import { logger } from '../../../lib/logger.js';
 import { WebSocketService } from '../../../services/websocket.service.js';
 import { ObjectId } from 'mongodb';
 import type { IMenuNodeDocument, IMenuNamespaceConfigDocument, IMenuNodeOverrideDocument } from '../database/index.js';
-import { ADMIN_NAMESPACES } from '../constants.js';
+import { ADMIN_NAMESPACES, MAIN_SYSTEM_CONTAINER_ID } from '../constants.js';
 
 /**
  * Singleton service managing the hierarchical menu system.
@@ -349,6 +349,7 @@ export class MenuService implements IMenuService {
             }
         }
 
+        const explicitId = typeof nodeData._id === 'string' ? nodeData._id : undefined;
         const node: IMenuNode = {
             namespace,
             label: nodeData.label || '',
@@ -362,6 +363,18 @@ export class MenuService implements IMenuService {
             requiresGroups: nodeData.requiresGroups,
             requiresAdmin: nodeData.requiresAdmin
         };
+
+        // Force `requiresAdmin: true` on the System container itself and on
+        // anything descending from it. The walk-up makes the gate impossible
+        // to bypass through a misconfigured registration: a plugin that
+        // forgets the flag, or sets it to `false`, still ends up gated as
+        // long as its parent chain reaches `main:system`. Modules and
+        // plugins therefore don't need to set the flag explicitly when
+        // parenting under the System container — registration alone
+        // expresses the intent.
+        if (explicitId === MAIN_SYSTEM_CONTAINER_ID || this.isUnderSystemContainer(node.parent, namespace)) {
+            node.requiresAdmin = true;
+        }
 
         // Reject duplicate URLs within the same namespace. Without this,
         // multiple plugins (or a stolen-token attacker) can shadow a
@@ -421,8 +434,12 @@ export class MenuService implements IMenuService {
             // Apply any saved overrides so user customizations survive restarts
             const override = node.url ? await this.loadOverride(namespace, node.url) : null;
 
+            // Honor an explicit string `_id` from the caller — used by the
+            // System container seed so its id can be referenced as a stable
+            // parent value (`MAIN_SYSTEM_CONTAINER_ID`) without a lookup.
+            // ObjectIds remain the default for everything else.
             created = {
-                _id: new ObjectId().toString(),
+                _id: explicitId ?? new ObjectId().toString(),
                 namespace,
                 label: override?.label ?? node.label,
                 description: override?.description ?? node.description,
@@ -521,6 +538,19 @@ export class MenuService implements IMenuService {
 
         const updated: IMenuNode = { ...existing, ...normalizedUpdates, _id: id };
         const newNamespace = updated.namespace || existingNamespace;
+
+        // Re-apply the System-subtree gate after any reparent or namespace
+        // move. Without this, an admin item could be moved out from under
+        // `main:system` and silently lose its gate, or — more dangerously —
+        // a non-admin item could be reparented INTO the System subtree
+        // while keeping `requiresAdmin: undefined`. The walk-up runs
+        // against the post-update tree shape, so the in-memory parent must
+        // already exist; this matches `create()`'s ordering requirement.
+        // Note: we never strip `requiresAdmin` when moving OUT of the
+        // System subtree — that's an explicit operator decision.
+        if (id === MAIN_SYSTEM_CONTAINER_ID || this.isUnderSystemContainer(updated.parent, newNamespace)) {
+            updated.requiresAdmin = true;
+        }
 
         // If the URL or namespace is changing, refuse to clobber an existing
         // node at the new (namespace, url) coordinate. Same rationale as the
@@ -849,6 +879,45 @@ export class MenuService implements IMenuService {
         };
 
         return nodes.filter(isVisible);
+    }
+
+    /**
+     * Walk the parent chain of a node and return true if the System
+     * container (`main:system`) appears anywhere above it.
+     *
+     * Used by `create` and `update` to auto-apply `requiresAdmin: true` to
+     * everything in the System subtree regardless of what the caller
+     * passed. The walk traverses only the in-memory tree, so a node whose
+     * parent has not been registered yet is treated as not-under-system —
+     * the System container must always be seeded before the children that
+     * parent into it.
+     *
+     * The `seen` set bounds the walk in case the existing tree is corrupt;
+     * the cycle check in `update` already prevents new cycles, but a stale
+     * tree loaded from the database could in theory contain one.
+     *
+     * @param parentId - The proposed parent id (null for root nodes)
+     * @param namespace - The namespace to walk in (parent ids are unique
+     *                    per namespace in practice but the service stores
+     *                    them in per-namespace maps)
+     */
+    private isUnderSystemContainer(parentId: string | null | undefined, namespace: string): boolean {
+        if (!parentId) return false;
+        if (parentId === MAIN_SYSTEM_CONTAINER_ID) return true;
+
+        const namespaceMap = this.menuTree.get(namespace);
+        if (!namespaceMap) return false;
+
+        const seen = new Set<string>();
+        let cursor: IMenuNode | undefined = namespaceMap.get(parentId);
+        while (cursor) {
+            if (cursor._id === MAIN_SYSTEM_CONTAINER_ID) return true;
+            if (!cursor.parent) return false;
+            if (seen.has(cursor._id!)) return false;
+            seen.add(cursor._id!);
+            cursor = namespaceMap.get(cursor.parent);
+        }
+        return false;
     }
 
     /**

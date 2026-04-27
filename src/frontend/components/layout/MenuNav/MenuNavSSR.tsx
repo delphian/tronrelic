@@ -6,9 +6,13 @@
  * ensures menu items are always fresh and managed through the centralized menu system
  * rather than hardcoded in the frontend.
  *
- * The component fetches from the public /api/menu endpoint with namespace filtering
+ * The component fetches from the /api/menu endpoint with namespace filtering
  * to retrieve menu items for a specific namespace (e.g., 'main', 'system', 'footer').
- * No authentication required since menu navigation is public information.
+ * The visitor's tronrelic_uid cookie is forwarded to the backend so that
+ * MenuService.getTreeForUser can apply per-user visibility gating
+ * (allowedIdentityStates / requiresGroups / requiresAdmin); without this the
+ * SSR pass would always render the anonymous-visible subset and admins would
+ * see admin items only after a post-hydration refetch.
  *
  * When running in Docker, uses the internal Docker network (http://backend:4000)
  * for SSR fetches to avoid SSL certificate validation issues and improve performance.
@@ -24,37 +28,23 @@
  */
 
 import type { ReactNode } from 'react';
+import { cookies } from 'next/headers';
+import type { MenuNodeSerialized, MenuTreeSerialized } from '@/shared';
 import { MenuNavClient } from './MenuNavClient';
 import { getServerSideApiUrl } from '../../../lib/api-url';
-
-/**
- * Menu item structure from backend API response.
- *
- * Matches the IMenuNode structure returned by MenuService.getTree().
- */
-interface IMenuNode {
-    _id: string;
-    namespace: string;
-    label: string;
-    url: string;
-    icon?: string;
-    order: number;
-    parent: string | null;
-    enabled: boolean;
-    requiredRole?: string;
-    children?: IMenuNode[];
-}
+import { USER_ID_COOKIE_NAME } from '../../../modules/user';
 
 /**
  * API response structure from GET /api/menu.
+ *
+ * The tree shape mirrors what MenuService emits — the same MenuNodeSerialized
+ * the Redux slice stores after WebSocket-driven refetches. Passing this shape
+ * straight through to the client keeps SSR and live-update data in one type
+ * so seeding Redux from SSR is a no-op cast.
  */
 interface IMenuApiResponse {
     success: boolean;
-    tree: {
-        roots: IMenuNode[];
-        all: IMenuNode[];
-        generatedAt: string;
-    };
+    tree: MenuTreeSerialized;
 }
 
 /**
@@ -89,11 +79,13 @@ interface IMenuNavSSRProps {
  * to retrieve only relevant navigation items.
  *
  * The component includes error handling and will render an empty navigation if the
- * API request fails (graceful degradation). No authentication required since the
- * menu endpoint is public.
+ * API request fails (graceful degradation). The visitor's identity cookie is
+ * forwarded so the backend's per-user gating filter resolves req.user; missing
+ * or invalid cookies degrade to the anonymous-visible subset.
  *
  * Menu items are fetched fresh on every request (no caching) to ensure navigation
- * always reflects the current menu structure from the database.
+ * always reflects the current menu structure from the database, and because the
+ * response is per-user — caching it would cross-contaminate visitors.
  *
  * @param props - Component props
  * @param props.namespace - Menu namespace to load
@@ -101,50 +93,64 @@ interface IMenuNavSSRProps {
  */
 export async function MenuNavSSR({ namespace, ariaLabel, trailingItems }: IMenuNavSSRProps) {
     try {
-        // Fetch menu items from backend API (public endpoint, no auth required)
-        // Use internal Docker network when available (avoids SSL cert issues)
+        // Forward the visitor's identity cookie so backend gating sees the
+        // real user. Without this, the SSR fetch is anonymous and admin /
+        // group-gated items never appear in the initial HTML.
+        const cookieStore = await cookies();
+        const uidCookie = cookieStore.get(USER_ID_COOKIE_NAME);
+
+        // Fetch menu items from backend API. Use internal Docker network when
+        // available (avoids SSL cert issues). cache: 'no-store' is required
+        // because the response is per-user — caching would leak one visitor's
+        // tree to another.
         const apiUrl = getServerSideApiUrl();
         const response = await fetch(`${apiUrl}/api/menu?namespace=${namespace}`, {
-            cache: 'no-store' // Always get fresh data
+            cache: 'no-store',
+            headers: uidCookie?.value
+                ? { Cookie: `${USER_ID_COOKIE_NAME}=${uidCookie.value}` }
+                : undefined
         });
 
         if (!response.ok) {
             console.error('Failed to fetch menu items:', response.status, response.statusText);
-            // Return empty navigation on error (graceful degradation)
-            return <MenuNavClient namespace={namespace} items={[]} ariaLabel={ariaLabel} trailingItems={trailingItems} />;
+            return (
+                <MenuNavClient
+                    namespace={namespace}
+                    items={[]}
+                    generatedAt={new Date().toISOString()}
+                    ariaLabel={ariaLabel}
+                    trailingItems={trailingItems}
+                />
+            );
         }
 
         const data: IMenuApiResponse = await response.json();
+        const roots: MenuNodeSerialized[] = data.tree.roots ?? [];
+        const generatedAt = data.tree.generatedAt ?? new Date().toISOString();
 
-        // Import IMenuItem type from MenuNavClient
-        type IMenuItem = {
-            _id: string;
-            label: string;
-            url?: string;
-            order: number;
-            enabled: boolean;
-            children?: IMenuItem[];
-        };
-
-        // Convert hierarchical menu nodes to client-side menu items
-        // Recursively processes the tree structure to preserve parent-child relationships
-        const convertNode = (node: IMenuNode): IMenuItem => ({
-            _id: node._id,
-            label: node.label,
-            url: node.url,
-            order: node.order,
-            enabled: node.enabled,
-            children: node.children ? node.children.map(convertNode) : undefined
-        });
-
-        // Use roots to preserve hierarchy (not flat 'all' array)
-        const items = data.tree.roots.map(convertNode);
-
-        // Pass hierarchical structure to client component
-        return <MenuNavClient namespace={namespace} items={items} ariaLabel={ariaLabel} trailingItems={trailingItems} />;
+        // Pass the raw serialized tree straight through. The client seeds it
+        // into Redux on mount so subsequent menu:update refetches replace a
+        // known baseline, and Redux becomes the single source of truth for
+        // every render after the first paint.
+        return (
+            <MenuNavClient
+                namespace={namespace}
+                items={roots}
+                generatedAt={generatedAt}
+                ariaLabel={ariaLabel}
+                trailingItems={trailingItems}
+            />
+        );
     } catch (error) {
         console.error('Error fetching menu items:', error);
-        // Return empty navigation on error (graceful degradation)
-        return <MenuNavClient namespace={namespace} items={[]} ariaLabel={ariaLabel} trailingItems={trailingItems} />;
+        return (
+            <MenuNavClient
+                namespace={namespace}
+                items={[]}
+                generatedAt={new Date().toISOString()}
+                ariaLabel={ariaLabel}
+                trailingItems={trailingItems}
+            />
+        );
     }
 }

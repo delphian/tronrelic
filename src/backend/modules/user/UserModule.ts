@@ -237,7 +237,7 @@ export class UserModule implements IModule<IUserModuleDependencies> {
      * Run the user module after all modules have initialized.
      *
      * This phase activates the module by:
-     * - Registering menu item in 'system' namespace
+     * - Registering menu item under main:system (admin subtree of `main`)
      * - Creating and mounting public router
      * - Creating and mounting admin router
      *
@@ -248,20 +248,21 @@ export class UserModule implements IModule<IUserModuleDependencies> {
     async run(): Promise<void> {
         this.logger.info('Running user module...');
 
-        // Register menu item in 'system' namespace
+        // Register menu item under the System container in `main`.
+        // `requiresAdmin: true` is auto-applied by MenuService.
         try {
             await this.menuService.create({
-                namespace: 'system',
+                namespace: 'main',
                 label: 'Users',
                 url: '/system/users',
                 icon: 'Users',
                 order: 75,
-                parent: null,
+                parent: 'main:system',
                 enabled: true
                 // persist defaults to false (memory-only entry)
             });
 
-            this.logger.info('Users menu item registered in system namespace');
+            this.logger.info('Users menu item registered under main:system');
         } catch (error) {
             this.logger.error({ error }, 'Failed to register users menu item');
             throw new Error(`Failed to register users menu item: ${error instanceof Error ? error.message : 'Unknown error'}`);

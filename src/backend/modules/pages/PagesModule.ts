@@ -206,20 +206,22 @@ export class PagesModule implements IModule<IPagesModuleDependencies> {
     async run(): Promise<void> {
         this.logger.info('Running pages module...');
 
-        // Register menu item in 'system' namespace
+        // Register menu item under the System container in `main`.
+        // `requiresAdmin: true` is auto-applied by MenuService because the
+        // parent chain reaches `main:system`.
         try {
             await this.menuService.create({
-                namespace: 'system',
+                namespace: 'main',
                 label: 'Pages',
                 url: '/system/pages',
                 icon: 'FileText',
                 order: 40,
-                parent: null,
+                parent: 'main:system',
                 enabled: true
                 // persist defaults to false (memory-only entry)
             });
 
-            this.logger.info('Pages menu item registered in system namespace');
+            this.logger.info('Pages menu item registered under main:system');
         } catch (error) {
             this.logger.error({ error }, 'Failed to register pages menu item');
             throw new Error(`Failed to register pages menu item: ${error instanceof Error ? error.message : 'Unknown error'}`);

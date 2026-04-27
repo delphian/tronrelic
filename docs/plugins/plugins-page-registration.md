@@ -198,22 +198,55 @@ export const myBackendPlugin = definePlugin({
             enabled: true
         });
 
-        // Register admin settings menu item
+        // Register admin settings menu item under the System container.
+        // The menu service walks the parent chain on create and forces
+        // requiresAdmin: true on anything below 'main:system'. Don't set
+        // the flag yourself — the engine handles it, and that's what
+        // makes the gate non-bypassable.
         await context.menuService.create({
             namespace: 'main',
             label: 'My Settings',
             url: '/my-settings',
             icon: 'Settings',
             order: 150,
-            parent: null,
+            parent: 'main:system',
             enabled: true
-            // Note: Access control is handled at page level, not menu level
         });
 
         context.logger.info('Menu items registered');
     }
 });
 ```
+
+### Admin Menu Items
+
+Plugins that ship admin surfaces (settings pages, internal dashboards,
+moderation tools) parent their menu entries under the System container
+in `main` rather than registering into a separate namespace. The System
+container's id is the hard-coded string `'main:system'` — exported as
+`MAIN_SYSTEM_CONTAINER_ID` from
+`src/backend/modules/menu/constants.ts` for callers who prefer the
+typed reference. The menu service seeds the container during
+`MenuModule.run()`, so it is always present by the time plugin `init`
+hooks run.
+
+The admin gate (`requiresAdmin: true`) is auto-applied by the menu
+service: `MenuService.create` and `MenuService.update` walk the parent
+chain on every write and force the flag on any node whose ancestor
+chain reaches `main:system`. Plugin code should not set the flag
+explicitly, and should not try to bypass it by setting
+`requiresAdmin: false` — the engine overrides caller input either way.
+This keeps gating impossible to misconfigure: a forgotten flag, a typo,
+or a copy-paste from a non-admin entry all still produce a properly
+gated node, as long as the parent relationship is correct.
+
+Reads are filtered per-user via `MenuService.getTreeForUser` against
+the cookie-resolved visitor. An anonymous visitor or a non-admin user
+never sees the System container or its descendants in the API
+response; an admin sees them inline with the rest of the main
+navigation. There is no separate admin namespace and no separate
+admin-only API endpoint — the existing public read path returns the
+right tree shape for whoever asked.
 
 ### Step 2: Declare Pages in Frontend
 

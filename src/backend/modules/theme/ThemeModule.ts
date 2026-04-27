@@ -134,17 +134,18 @@ export class ThemeModule implements IModule<IThemeModuleDependencies> {
         this.app.use('/api/admin/system/themes', requireAdmin, adminRouter);
         this.logger.info('Admin theme router mounted at /api/admin/system/themes');
 
-        // Register menu item in system namespace
+        // Register menu item under main:system. `requiresAdmin: true` is
+        // auto-applied by MenuService.
         await this.menuService.create({
-            namespace: 'system',
+            namespace: 'main',
             label: 'Themes',
             url: '/system/theme',
             icon: 'Palette',
             order: 400,
-            parent: null,
+            parent: 'main:system',
             enabled: true
         });
-        this.logger.info('Theme menu item registered');
+        this.logger.info('Theme menu item registered under main:system');
 
         this.logger.info('Theme module running');
     }

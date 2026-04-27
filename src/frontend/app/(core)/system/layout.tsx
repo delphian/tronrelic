@@ -1,14 +1,13 @@
 import { type ReactNode } from 'react';
 import type { Metadata } from 'next';
-import { SystemAuthProvider, SystemAuthGate, LogoutNavItem } from '../../../features/system';
-import { MenuNavSSR } from '../../../components/layout/MenuNav';
+import { SystemAuthProvider, SystemAuthGate } from '../../../features/system';
 
 /**
  * Force dynamic rendering for all system pages.
  *
- * Required because MenuNavSSR fetches menu data with cache: 'no-store' to ensure
- * navigation always reflects current menu structure. This prevents Next.js from
- * attempting static pre-rendering at build time when the backend isn't available.
+ * Required because admin sub-pages render dynamic content (live job
+ * status, current users, runtime config) that should never be cached at
+ * build time when the backend isn't available.
  */
 export const dynamic = 'force-dynamic';
 
@@ -34,33 +33,26 @@ export const metadata: Metadata = {
 };
 
 /**
- * System monitoring layout with server-side navigation and authentication.
+ * System monitoring layout with admin authentication shell.
  *
- * This server component renders the MenuNavSSR component to fetch and display
- * navigation items on the server, ensuring they appear immediately without client-side
- * placeholders. Authentication logic is handled by client components (SystemAuthProvider
- * and SystemAuthGate) which manage login state and conditional rendering.
+ * This server component wraps every /system/* route with the
+ * authentication provider and gate. Admin navigation is no longer
+ * rendered here — the items live in the main navigation under the System
+ * container (`main:system`) and are gated per-user via `requiresAdmin`.
+ * The layout's job is now solely the auth shell and the cross-route
+ * directives below (`dynamic`, `metadata`).
  *
  * Architecture:
- * - Layout (server) - Renders static structure and SSR navigation
- * - SystemAuthProvider (client) - Manages auth state via React Context
- * - MenuNavSSR (server) - Fetches menu items from backend API during SSR
+ * - Layout (server) - Auth shell, dynamic rendering directive, robots metadata
+ * - SystemAuthProvider (client) - Manages admin-token state via React Context
  * - SystemAuthGate (client) - Shows login form or authenticated content
- *
- * This pattern allows navigation to render on the server while authentication remains
- * client-side for localStorage access and interactive login flows.
  */
 
 /**
  * Root system layout component.
  *
- * Wraps all /system routes with authentication provider and authentication gate.
- * The navigation is passed to SystemAuthGate to render below the header, ensuring
- * proper visual hierarchy (header → navigation → content).
- *
- * All child routes automatically inherit this layout structure. The MenuNavSSR component
- * fetches menu items from the backend IMenuService during server rendering, ensuring
- * navigation is always up-to-date with the menu system.
+ * Wraps all /system routes with authentication provider and authentication
+ * gate. All child routes automatically inherit this layout structure.
  *
  * @param props - Component props
  * @param props.children - Page content from Next.js route segments
@@ -68,17 +60,7 @@ export const metadata: Metadata = {
 export default function SystemLayout({ children }: { children: ReactNode }) {
     return (
         <SystemAuthProvider>
-            <SystemAuthGate
-                navigation={
-                    <MenuNavSSR
-                        namespace="system"
-                        ariaLabel="System monitoring navigation"
-                        trailingItems={[{ id: 'system-logout', node: <LogoutNavItem /> }]}
-                    />
-                }
-            >
-                {children}
-            </SystemAuthGate>
+            <SystemAuthGate>{children}</SystemAuthGate>
         </SystemAuthProvider>
     );
 }

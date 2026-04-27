@@ -191,19 +191,20 @@ export class AddressLabelsModule implements IModule<IAddressLabelsModuleDependen
     async run(): Promise<void> {
         this.logger.info('Running address labels module...');
 
-        // Register menu item in 'system' namespace
+        // Register menu item under main:system. `requiresAdmin: true` is
+        // auto-applied by MenuService.
         try {
             await this.menuService.create({
-                namespace: 'system',
+                namespace: 'main',
                 label: 'Address Labels',
                 url: '/system/address-labels',
                 icon: 'Tags',
                 order: 80,
-                parent: null,
+                parent: 'main:system',
                 enabled: true
             });
 
-            this.logger.info('Address Labels menu item registered in system namespace');
+            this.logger.info('Address Labels menu item registered under main:system');
         } catch (error) {
             this.logger.error({ error }, 'Failed to register address labels menu item');
             throw new Error(`Failed to register address labels menu item: ${error instanceof Error ? error.message : 'Unknown error'}`);

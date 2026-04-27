@@ -38,5 +38,18 @@ export { Section } from './Section';
 
 // Existing layout components
 export { BlockTicker } from './BlockTicker';
-export { MainHeader, MainHeaderControls } from './MainHeader';
-export { MenuNavSSR, MenuNavClient } from './MenuNav';
+
+// MainHeader and MenuNav are intentionally NOT re-exported here.
+//
+// MenuNavSSR uses next/headers (server-only), and MainHeader transitively
+// imports MenuNavSSR. Re-exporting either from a barrel that Client Components
+// also consume (e.g. app/global-error.tsx, modules/user/.../GscSettings.tsx)
+// drags next/headers into the client bundle and breaks the webpack build —
+// even when the Client Component only imports an unrelated primitive like
+// <Page>, because tree-shaking can't statically prune through a side-effecting
+// barrel chain.
+//
+// Keep this barrel uniformly client-safe (only leaf layout primitives that
+// have no server-only dependencies). Import server-rendered chrome directly:
+//   import { MainHeader } from '@/components/layout/MainHeader';
+//   import { MenuNavSSR } from '@/components/layout/MenuNav';

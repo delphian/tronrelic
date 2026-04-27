@@ -5,7 +5,7 @@ import { AlertTriangle, ChevronRight, Pencil, Plus, Trash2 } from 'lucide-react'
 import type { IMenuNamespaceConfig, IMenuNode, IMenuTree, IUserGroup } from '@/types';
 import { UserIdentityState } from '@/types';
 
-import { Page, PageHeader, Stack } from '../../../../components/layout';
+import { Page, Stack } from '../../../../components/layout';
 import { Badge } from '../../../../components/ui/Badge';
 import { Button } from '../../../../components/ui/Button';
 import { IconButton } from '../../../../components/ui/IconButton';
@@ -450,8 +450,6 @@ export default function MenuAdminPage() {
 
     return (
         <Page>
-            <PageHeader title="Menu" subtitle="Manage navigation items and namespace configuration" />
-
             <div className={styles.container}>
                 <Stack gap="md">
                     <div className={styles.toolbar}>

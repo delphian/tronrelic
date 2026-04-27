@@ -407,30 +407,31 @@ async function initializeCoreServices(coreDatabase: IDatabaseService): Promise<v
  * not yet been promoted to a dedicated module. Each module should register
  * its own menu items in its run() phase.
  *
- * The "System" entry sits at order 5 so it surfaces as the first admin
- * tab; it consolidates the former Config, Blockchain, WebSockets, and
- * Database pages into one /system/system route.
+ * The "Overview" entry sits at order 5 so it surfaces as the first child of
+ * the System container; it consolidates the former Config, Blockchain,
+ * WebSockets, and Database pages into one /system/system route.
  *
  * @param menuService - Menu service instance for registering navigation items
  * @todo Remove this function once the consolidated page becomes a proper module
  */
 async function registerTemporaryMenuItems(menuService: IMenuService): Promise<void> {
     const items = [
-        { label: 'System', url: '/system/system', icon: 'SlidersHorizontal', order: 5 },
+        { label: 'Overview', url: '/system/system', icon: 'SlidersHorizontal', order: 5 },
         // Logs (30), Scheduler (35) registered by their modules
         // Pages (40) registered by PagesModule
         // Markets (50) registered by resource-markets plugin
         // Plugins (65) registered by registerPluginsAdminMenu — dropdown of enabled plugin settings
+        // All admin items live under main:system; requiresAdmin is auto-applied
     ];
 
     for (const item of items) {
         await menuService.create({
-            namespace: 'system',
+            namespace: 'main',
             label: item.label,
             url: item.url,
             icon: item.icon,
             order: item.order,
-            parent: null,
+            parent: 'main:system',
             enabled: true
         });
     }
@@ -457,12 +458,12 @@ async function registerTemporaryMenuItems(menuService: IMenuService): Promise<vo
  */
 async function registerPluginsAdminMenu(menuService: IMenuService): Promise<void> {
     const container = await menuService.create({
-        namespace: 'system',
+        namespace: 'main',
         label: 'Plugins',
         url: '/system/plugins',
         icon: 'Puzzle',
         order: 65,
-        parent: null,
+        parent: 'main:system',
         enabled: true
     });
 
@@ -487,7 +488,7 @@ async function registerPluginsAdminMenu(menuService: IMenuService): Promise<void
         // new plugin that sorts before an existing child rewrites that child's order
         // instead of colliding with it.
         const desiredChildren = eligible.map((manifest, index) => ({
-            namespace: 'system' as const,
+            namespace: 'main' as const,
             label: manifest.title,
             url: manifest.adminUrl,
             icon: 'Settings',
@@ -497,7 +498,7 @@ async function registerPluginsAdminMenu(menuService: IMenuService): Promise<void
         }));
         const desiredByUrl = new Map(desiredChildren.map(child => [child.url, child]));
 
-        const existing: IMenuNode[] = menuService.getChildren(parentId, 'system');
+        const existing: IMenuNode[] = menuService.getChildren(parentId, 'main');
         const existingByUrl = new Map<string, IMenuNode>();
         for (const child of existing) {
             if (!child.url || !desiredByUrl.has(child.url)) {

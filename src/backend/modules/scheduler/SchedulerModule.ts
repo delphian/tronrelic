@@ -91,14 +91,15 @@ export class SchedulerModule implements IModule<ISchedulerModuleDependencies> {
     async run(): Promise<void> {
         this.moduleLogger.info('Running scheduler module...');
 
-        // Register menu item in system namespace
+        // Register menu item under main:system. `requiresAdmin: true` is
+        // auto-applied by MenuService.
         await this.menuService.create({
-            namespace: 'system',
+            namespace: 'main',
             label: 'Scheduler',
             url: '/system/scheduler',
             icon: 'Clock',
             order: 35,
-            parent: null,
+            parent: 'main:system',
             enabled: true
         });
 

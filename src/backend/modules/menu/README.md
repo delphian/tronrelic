@@ -38,7 +38,7 @@ The menu service uses a singleton pattern with dependency injection for database
 
 Namespaces allow multiple independent menu trees to coexist. Each maintains its own hierarchy with separate root nodes.
 
-**Common namespaces:** `main` (primary navigation), `footer`, `admin-sidebar`, `mobile`
+**Common namespaces:** `main` (primary navigation, including the admin subtree), `footer`, `mobile`. Admin items live under the System container in `main` rather than in a dedicated namespace — see [The System Container](#the-system-container) below.
 
 ```typescript
 const namespaces = menuService.getNamespaces();
@@ -153,11 +153,47 @@ shared-admin-token holder.
 `requiresAdmin` is **not** the same as the `requireAdmin` middleware. The
 middleware is a shared-token gate (`x-admin-token` against
 `ADMIN_API_TOKEN`) for operators and CI tooling. `requiresAdmin` is a
-per-user check keyed off cookie identity. They coexist: operators creating
-admin-only menu items typically want both — `requiresAdmin: true` on the
-node so cookie-identified visitors are filtered out, and admin-namespace
-isolation (`system`, `admin-sidebar`) for the shared-token gate around
-mutating endpoints.
+per-user check keyed off cookie identity. They coexist: mutating menu
+endpoints stay behind `requireAdmin` (token-gated), while menu *reads*
+filter per-user via `requiresAdmin` so admin items remain invisible to
+ordinary visitors.
+
+### The System Container
+
+All admin menu items live as a subtree of `main` rooted at a
+hard-coded container with id `MAIN_SYSTEM_CONTAINER_ID = 'main:system'`
+(exported from `src/backend/modules/menu/constants.ts`). The container
+is seeded by `MenuModule.run()` and every module or plugin that wants
+to register an admin item parents directly under it:
+
+```typescript
+await menuService.create({
+    namespace: 'main',
+    label: 'Logs',
+    url: '/system/logs',
+    icon: 'ScrollText',
+    order: 30,
+    parent: 'main:system',
+    enabled: true
+});
+```
+
+Callers do not set `requiresAdmin` themselves. `MenuService.create` and
+`MenuService.update` walk the parent chain on every write; if
+`main:system` appears anywhere above the node (or the node itself has
+that id), `requiresAdmin: true` is forced regardless of caller input.
+This makes the admin gate non-bypassable: a misconfigured registration,
+a forgotten flag, or an explicit `requiresAdmin: false` all still end
+up gated as long as the node lives in the System subtree. Reparenting
+INTO the subtree via `update()` applies the same rule; reparenting OUT
+preserves the flag (clearing the gate is an explicit operator decision,
+not something the engine infers from the move).
+
+There is no separate `system` namespace anymore — read protection is
+per-node via `requiresAdmin`, applied by `getTreeForUser` against the
+cookie-resolved user. The `ADMIN_NAMESPACES` constant remains in place
+as a typed extension point for any future namespace that needs
+namespace-level suppression, but is currently empty.
 
 ### Real-time updates
 
@@ -232,7 +268,7 @@ socket.on('menu:update', (payload) => {
 });
 ```
 
-**Admin namespaces are suppressed.** Mutations to `system` / `admin-sidebar` skip the broadcast entirely so the existence of admin-only URLs doesn't leak to anonymous visitors. Admin UIs reload via authenticated fetch after each mutation, so the suppression is invisible to operators.
+**Admin items rely on per-user gating, not namespace suppression.** The `menu:update` signal is a refetch trigger, not a tree body, so a non-admin client refetching after an admin-item mutation receives a tree filtered by their own gating — admin entries never appear. The legacy `ADMIN_NAMESPACES` set remains in the source as a typed extension point but is currently empty.
 
 **Note:** Lifecycle events (init, ready, loaded) are NOT broadcast via WebSocket because clients are not connected during backend startup.
 
