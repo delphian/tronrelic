@@ -496,14 +496,20 @@ export async function logoutUser(userId: string): Promise<IUserData> {
  * Public profile data returned from the profile endpoint.
  */
 export interface IPublicProfile {
-    /** UUID of the user who owns this profile */
-    userId: string;
     /** Verified wallet address for this profile */
     address: string;
     /** When the user account was created */
     createdAt: string;
     /** Always true — public profiles only resolve for *verified* users. */
     isVerified: true;
+    /**
+     * True when the requester's cookie identity owns this profile.
+     *
+     * Computed server-side from the visitor's `tronrelic_uid` cookie so the
+     * owning UUID never leaves the server. Owners already know their own UUID
+     * (cookie / Redux); non-owners always see `false`.
+     */
+    isOwner: boolean;
 }
 
 /**

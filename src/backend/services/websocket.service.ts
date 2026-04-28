@@ -1,10 +1,12 @@
 import type { IWebSocketService } from '@/types';
 import type { Server } from 'http';
 import { Server as SocketIOServer, type Socket } from 'socket.io';
+import { unsign } from 'cookie-signature';
 import type { TronRelicSocketEvent, SocketSubscriptions } from '@/shared';
 import { logger } from '../lib/logger.js';
 import { PluginWebSocketRegistry } from './plugin-websocket-registry.js';
 import { corsOriginCallback } from '../config/cors.js';
+import { env } from '../config/env.js';
 import { USER_ID_COOKIE_NAME } from '../modules/user/api/identity-cookie.js';
 
 /** UUID v4 format check; mirrors UserService.isValidUUID. */
@@ -14,17 +16,43 @@ const UUID_V4_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[
  * Pull the identity UUID out of a handshake Cookie header string.
  *
  * Exported for unit testing; called from `readUserIdFromHandshake` with
- * the live socket's header. Returns null on missing, malformed, or
- * non-UUID cookie values so the caller can short-circuit cleanly.
+ * the live socket's header. Socket.IO doesn't run Express middleware, so
+ * cookie-parser isn't available here and we verify the HMAC ourselves via
+ * `cookie-signature.unsign`. The expected on-the-wire format for signed
+ * cookies is `s:<uuid>.<HMAC>` (cookie-parser convention); URL-encoding
+ * adds the `s%3A` prefix that `decodeURIComponent` strips back to `s:`.
+ *
+ * Returns null on missing, malformed, forged-signature, decode-error, or
+ * non-UUID cookie values so the caller can short-circuit cleanly. Legacy
+ * unsigned cookies issued before HMAC signing are also accepted — admin
+ * auth runs on `req.signedCookies` and never sees identity rooms anyway,
+ * so accepting unsigned values here only affects user-room subscriptions
+ * and matches the grace-window behavior in `userContextMiddleware`.
  */
 export function parseUserIdFromCookieHeader(cookieHeader: string | undefined | null): string | null {
     if (typeof cookieHeader !== 'string' || cookieHeader.length === 0) {
         return null;
     }
-    const match = cookieHeader.match(new RegExp(`(?:^|; )${USER_ID_COOKIE_NAME}=([^;]*)`));
+    const match = cookieHeader.match(new RegExp(`(?:^|;\\s*)${USER_ID_COOKIE_NAME}=([^;]*)`));
     if (!match) return null;
-    const value = decodeURIComponent(match[1]);
-    return UUID_V4_REGEX.test(value) ? value : null;
+    let raw: string;
+    try {
+        raw = decodeURIComponent(match[1]);
+    } catch {
+        return null;
+    }
+
+    // Signed cookies are `s:<uuid>.<HMAC>`. Verify with the same secret
+    // cookie-parser uses for Express requests; reject on tamper.
+    if (raw.startsWith('s:')) {
+        const unsigned = unsign(raw.slice(2), env.SESSION_SECRET ?? '');
+        if (unsigned === false) return null;
+        return UUID_V4_REGEX.test(unsigned) ? unsigned : null;
+    }
+
+    // Legacy unsigned cookies: accept if UUID v4. Admin auth doesn't read
+    // this path; only identity-room subscriptions use it.
+    return UUID_V4_REGEX.test(raw) ? raw : null;
 }
 
 /**

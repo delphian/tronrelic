@@ -149,14 +149,21 @@ export interface ILinkWalletResult {
  * not cryptographically proven.
  */
 export interface IPublicProfile {
-    /** UUID of the user who owns this profile */
-    userId: string;
     /** Verified wallet address for this profile */
     address: string;
     /** When the user account was created */
     createdAt: Date;
     /** Always true (only verified wallets resolve to a public profile) */
     isVerified: true;
+    /**
+     * True when the requester's cookie identity owns this profile.
+     *
+     * Computed server-side from `req.userId` so the owning UUID never
+     * leaves the server. Public visitors always see `false`; the owner
+     * already knows their own UUID via their cookie / bootstrap response,
+     * so they don't need it echoed back here.
+     */
+    isOwner: boolean;
 }
 
 /**
@@ -472,9 +479,11 @@ export class UserService {
      * *verified* state.
      *
      * @param address - Base58 TRON address
+     * @param visitorId - Cookie-resolved UUID of the caller, if any. Used to
+     *   compute `isOwner` server-side so the owning UUID never leaks publicly.
      * @returns Public profile or null if not found / not verified
      */
-    async getPublicProfile(address: string): Promise<IPublicProfile | null> {
+    async getPublicProfile(address: string, visitorId?: string | null): Promise<IPublicProfile | null> {
         // Normalize address using signature service (handles TRON address format)
         let normalizedAddress: string;
         try {
@@ -497,10 +506,10 @@ export class UserService {
         }
 
         return {
-            userId: user.id,
             address: wallet.address,
             createdAt: user.createdAt,
-            isVerified: true
+            isVerified: true,
+            isOwner: visitorId === user.id
         };
     }
 

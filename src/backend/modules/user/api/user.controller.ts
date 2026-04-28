@@ -162,7 +162,18 @@ export class UserController {
      */
     async bootstrap(req: Request, res: Response): Promise<void> {
         try {
-            const cookieId = req.cookies?.[COOKIE_NAME];
+            // Prefer the HMAC-verified signed cookie. Legacy unsigned cookies
+            // (issued before signing was introduced) live on `req.cookies` and
+            // are accepted as a fallback so visitors don't lose their UUID
+            // during the rollout — `setIdentityCookie` below re-anchors them
+            // as signed on the response. Forged signed cookies surface as
+            // `false` in signedCookies and are ignored here.
+            const signedId = (req as any).signedCookies?.[COOKIE_NAME];
+            const unsignedId = req.cookies?.[COOKIE_NAME];
+            const cookieId =
+                typeof signedId === 'string' ? signedId
+                : typeof unsignedId === 'string' ? unsignedId
+                : undefined;
             const isValidExisting = typeof cookieId === 'string' && UUID_V4_REGEX.test(cookieId);
 
             // Mint a fresh UUID when the cookie is missing or malformed.
@@ -257,8 +268,10 @@ export class UserController {
      *
      * If the wallet belongs to another user, performs identity swap and
      * returns `{ user: IUser, identitySwapped: true, previousUserId: '...' }`.
-     * Frontend should update cookie/localStorage to the new user ID — this is
-     * the cross-browser login path for *verified* users.
+     * In that case the server rewrites the HttpOnly identity cookie to the
+     * new user ID via Set-Cookie. The client cannot write this cookie; it
+     * should reload or re-bootstrap application state. This is the
+     * cross-browser login path for *verified* users.
      *
      * Requires: Cookie must match :id, fresh nonce from
      *           POST /api/user/:id/wallet/challenge with action=link
@@ -443,7 +456,7 @@ export class UserController {
      * signature back to the matching wallet endpoint atomically consumes
      * the nonce. Replaces the legacy 5-minute client-timestamp window.
      *
-     * Body: { action: 'link' | 'unlink' | 'set-primary', address }
+     * Body: { action: 'link' | 'unlink' | 'set-primary' | 'refresh-verification', address }
      * Response: IWalletChallenge { nonce, message, expiresAt }
      */
     async issueWalletChallenge(req: Request, res: Response): Promise<void> {
@@ -775,10 +788,14 @@ export class UserController {
      * - No user has this wallet linked, OR
      * - The wallet is registered (unsigned) — owner is *registered*, not *verified*.
      *
-     * Response includes user UUID so frontend can determine if visitor is owner
-     * by comparing with their cookie.
+     * The endpoint never returns the owning user's UUID. Ownership is computed
+     * server-side from the visitor's `tronrelic_uid` cookie (populated onto
+     * `req.userId` by `userContextMiddleware`) and exposed as `isOwner: boolean`.
+     * This closes a wallet-address → UUID lookup oracle: previously knowing an
+     * admin's wallet was enough to retrieve their UUID, which combined with the
+     * unsigned identity cookie made admin impersonation possible.
      *
-     * Response: { userId: string, address: string, createdAt: Date, isVerified: true }
+     * Response: { address: string, createdAt: Date, isVerified: true, isOwner: boolean }
      */
     async getProfile(req: Request, res: Response): Promise<void> {
         try {
@@ -792,7 +809,7 @@ export class UserController {
                 return;
             }
 
-            const profile = await this.userService.getPublicProfile(address);
+            const profile = await this.userService.getPublicProfile(address, req.userId);
 
             if (!profile) {
                 res.status(404).json({

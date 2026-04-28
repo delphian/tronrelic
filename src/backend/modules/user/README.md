@@ -228,13 +228,20 @@ app/(core)/system/users/
 The user identity cookie has these characteristics:
 
 - **Name:** `tronrelic_uid`
-- **HttpOnly:** true (server-only; not exposed to JavaScript)
-- **SameSite:** Lax (allow same-site navigation, block cross-site POST)
+- **HttpOnly:** true (not exposed to JavaScript)
+- **Signed:** true — HMAC-signed with `SESSION_SECRET` via cookie-parser. On the wire the value is `s:<uuid>.<HMAC>`; cookie-parser verifies on read and exposes the unsigned UUID via `req.signedCookies[name]`. Forged values surface as `false` and are rejected.
+- **SameSite:** Lax
 - **Secure:** true in production (HTTPS only)
-- **Path:** / (available site-wide)
+- **Path:** /
 - **Max-Age:** 1 year (31536000 seconds)
 
-**Server is the only writer.** Client-side JavaScript cannot read or set this cookie. The server mints the UUID at the bootstrap endpoint, refreshes the cookie's max-age on each bootstrap, and re-anchors the cookie when identity-swap reconciliation produces a new canonical UUID. The legacy JS UUID generator, `setUserIdCookie` helper, and localStorage mirror have been removed; the server is the single source of truth for identity.
+**Server is the only writer.** The server mints the UUID at the bootstrap endpoint, refreshes max-age on each bootstrap, and re-anchors the cookie when identity-swap reconciliation produces a new canonical UUID. The legacy JS UUID generator and localStorage mirror have been removed.
+
+**Why signing matters.** HttpOnly only blocks JavaScript reads in browsers — non-browser clients (curl, custom tools) can set arbitrary `Cookie` headers. Without a signature, an attacker who learns a UUID could forge `Cookie: tronrelic_uid=<uuid>` and pass identity checks. Signing requires possession of `SESSION_SECRET` to mint a valid value, so the cookie behaves as a server-bound bearer token, not a guess-the-UUID lottery.
+
+**Reader policy.** `requireAdmin` reads identity **only** from `req.signedCookies` — a forged or unsigned admin cookie is never honored. `userContextMiddleware` and the bootstrap controller prefer `req.signedCookies` and fall back to `req.cookies` for unsigned legacy values; on a fallback the server immediately re-issues the cookie as signed via `setIdentityCookie`, so visitors holding unsigned cookies upgrade transparently without losing their UUID. The websocket handshake parser verifies the HMAC directly via `cookie-signature.unsign` (Socket.IO doesn't run cookie-parser) and applies the same signed-first / legacy-fallback policy for identity-room subscriptions.
+
+**SESSION_SECRET.** Required in production: env validation throws on startup if unset. Development and test fall through to a fixed placeholder with a console.warn — never deploy with the placeholder.
 
 **Privacy compliance:** This cookie is classified as "functional/essential" under GDPR because it's necessary for the website to remember user preferences and provide personalized features. No consent banner required.
 

@@ -23,7 +23,12 @@ export function createExpressApp(): Express {
   }));
 
   app.use(compression());
-  app.use(cookieParser());
+  // Pass SESSION_SECRET so cookie-parser populates `req.signedCookies` for
+  // signed cookies (s:<value>.<HMAC> on the wire). Unsigned cookies still
+  // populate `req.cookies` so legacy clients keep working during the grace
+  // window in `userContextMiddleware` — but `requireAdmin` reads only from
+  // `req.signedCookies` to close the cookie-forgery vector.
+  app.use(cookieParser(env.SESSION_SECRET));
   app.use(express.json({ limit: '5mb' }));
   app.use(express.urlencoded({ extended: true }));
   app.use(morgan(env.NODE_ENV === 'production' ? 'combined' : 'dev'));

@@ -260,6 +260,30 @@ curl -H "X-Admin-Token: your-token-here" http://localhost:4000/api/admin/system/
 
 ---
 
+### SESSION_SECRET
+- **Type:** `string`
+- **Default:** None
+- **Required:** ✅ **Yes** in production; optional in development/test (falls through to a fixed placeholder)
+
+**Description:** HMAC secret used by `cookie-parser` to sign the `tronrelic_uid` identity cookie. Without a real secret, the cookie value is just a UUID — a non-browser client can forge a `Cookie` header from any HTTP tool and impersonate any user whose UUID is known. With signing, the on-the-wire value becomes `s:<uuid>.<HMAC>` and forgery requires possession of this secret.
+
+**Setup:**
+```bash
+# Development — leave unset to use the placeholder, or pin a stable value
+SESSION_SECRET=tronrelic-local-dev
+
+# Production — generate with: openssl rand -hex 32
+SESSION_SECRET=<paste-generated-secret-here>
+```
+
+**Behavior when unset:**
+- **Production:** backend refuses to start
+- **Development/test:** uses `tronrelic-dev-cookie-secret-do-not-use-in-prod` and emits a console.warn
+
+**Rotation:** rotating the secret invalidates every existing cookie. Anonymous and registered visitors get a fresh UUID on next bootstrap (acceptable per the documented "settings are ephemeral until verified" model). Verified users with linked wallets re-anchor through the link-wallet identity-swap flow on their next signature. There is no active session table to flush.
+
+---
+
 ### METRICS_TOKEN
 - **Type:** `string`
 - **Default:** None (empty)

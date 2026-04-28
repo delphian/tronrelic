@@ -64,8 +64,13 @@ function makeReqRes(opts: {
     headerToken?: string;
     bearer?: string;
 } = {}) {
+    // Admin auth reads identity from `signedCookies` (HMAC-verified by
+    // cookie-parser). The `cookies` map is populated too so middleware that
+    // reads either path stays exercised, but the admin gate runs off
+    // `signedCookies`.
     const req: any = {
         cookies: opts.cookieId ? { [USER_ID_COOKIE_NAME]: opts.cookieId } : {},
+        signedCookies: opts.cookieId ? { [USER_ID_COOKIE_NAME]: opts.cookieId } : {},
         headers: {} as Record<string, string>,
         adminVia: undefined as 'user' | 'service-token' | undefined,
         userId: undefined as string | undefined

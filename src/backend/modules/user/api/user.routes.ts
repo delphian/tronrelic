@@ -2,6 +2,7 @@ import { Router } from 'express';
 import type { UserController } from './user.controller.js';
 import type { UserGroupController } from './user-group.controller.js';
 import { createRateLimiter } from '../../../api/middleware/rate-limit.js';
+import { userContextMiddleware } from '../../../api/middleware/user-context.js';
 
 /**
  * Create Express router for public user endpoints.
@@ -199,7 +200,11 @@ export function createUserRouter(controller: UserController): Router {
 /**
  * Create Express router for public profile endpoints.
  *
- * No authentication required - these are publicly accessible profile pages.
+ * No authentication is required to read a public profile, but
+ * `userContextMiddleware` populates `req.userId` from the visitor's
+ * `tronrelic_uid` cookie when present so the controller can compute
+ * `isOwner` server-side without echoing the owning UUID back over the wire.
+ *
  * Routes are mounted at /api/profile.
  *
  * Rate limits (per IP):
@@ -221,7 +226,12 @@ export function createProfileRouter(controller: UserController): Router {
      * GET /api/profile/:address
      * Get public profile by verified wallet address
      */
-    router.get('/:address', profileRateLimiter, controller.getProfile.bind(controller));
+    router.get(
+        '/:address',
+        userContextMiddleware,
+        profileRateLimiter,
+        controller.getProfile.bind(controller)
+    );
 
     return router;
 }

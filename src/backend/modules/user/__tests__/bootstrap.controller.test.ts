@@ -80,7 +80,7 @@ describe('UserController.bootstrap', () => {
     });
 
     it('mints a fresh UUID and sets the HttpOnly cookie when no cookie is present', async () => {
-        const req: any = { cookies: {} };
+        const req: any = { cookies: {}, signedCookies: {} };
         const res = makeRes();
 
         await controller.bootstrap(req, res as any);
@@ -98,11 +98,17 @@ describe('UserController.bootstrap', () => {
         expect(res.cookies[0].options.path).toBe('/');
     });
 
-    it('returns the existing user and refreshes the cookie when a valid cookie is present', async () => {
+    it('returns the existing user and refreshes the cookie when a valid signed cookie is present', async () => {
         // Seed a user record.
         await userService.getOrCreate(VALID_UUID_A);
 
-        const req: any = { cookies: { [USER_ID_COOKIE_NAME]: VALID_UUID_A } };
+        // cookie-parser places HMAC-verified values on `signedCookies` and
+        // strips them from `cookies`. The bootstrap controller reads from
+        // signedCookies first.
+        const req: any = {
+            cookies: {},
+            signedCookies: { [USER_ID_COOKIE_NAME]: VALID_UUID_A }
+        };
         const res = makeRes();
 
         await controller.bootstrap(req, res as any);
@@ -115,8 +121,31 @@ describe('UserController.bootstrap', () => {
         expect(res.cookies[0].options.httpOnly).toBe(true);
     });
 
+    it('accepts an unsigned legacy cookie and re-anchors the user as signed', async () => {
+        // Cookies issued before HMAC signing was introduced still carry
+        // raw UUID values on `req.cookies`. The bootstrap controller falls
+        // back to that path so visitors keep their identity during rollout;
+        // `setIdentityCookie` then re-issues the cookie as signed.
+        await userService.getOrCreate(VALID_UUID_A);
+
+        const req: any = {
+            cookies: { [USER_ID_COOKIE_NAME]: VALID_UUID_A },
+            signedCookies: {}
+        };
+        const res = makeRes();
+
+        await controller.bootstrap(req, res as any);
+
+        expect(res.jsonBody.id).toBe(VALID_UUID_A);
+        expect(res.cookies[0].value).toBe(VALID_UUID_A);
+        expect(res.cookies[0].options.signed).toBe(true);
+    });
+
     it('treats a malformed cookie as missing and mints fresh', async () => {
-        const req: any = { cookies: { [USER_ID_COOKIE_NAME]: 'not-a-uuid' } };
+        const req: any = {
+            cookies: { [USER_ID_COOKIE_NAME]: 'not-a-uuid' },
+            signedCookies: {}
+        };
         const res = makeRes();
 
         await controller.bootstrap(req, res as any);
@@ -139,7 +168,10 @@ describe('UserController.bootstrap', () => {
         // follows the merge pointer.
         await mockCache.del('user:' + VALID_UUID_B);
 
-        const req: any = { cookies: { [USER_ID_COOKIE_NAME]: VALID_UUID_B } };
+        const req: any = {
+            cookies: {},
+            signedCookies: { [USER_ID_COOKIE_NAME]: VALID_UUID_B }
+        };
         const res = makeRes();
 
         await controller.bootstrap(req, res as any);

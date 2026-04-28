@@ -22,7 +22,7 @@ type CookieAdminFailureReason = 'verification_stale' | 'unauthorized';
 
 interface CookieAdminResult {
     userId: string | null;
-    reason: CookieAdminFailureReason;
+    reason?: CookieAdminFailureReason;
 }
 
 /**
@@ -109,7 +109,14 @@ function extractCandidate(req: Request): string | undefined {
  * path.
  */
 async function tryUserAdminAuth(req: Request): Promise<CookieAdminResult> {
-    const cookieId = req.cookies?.[USER_ID_COOKIE_NAME];
+    // Admin auth reads ONLY from signed cookies. cookie-parser populates
+    // `req.signedCookies` with the unsigned UUID when the HMAC verifies, or
+    // `false` when the signature is forged. Unsigned legacy cookies (still
+    // accepted by `userContextMiddleware` during the grace window) are
+    // deliberately not honored here — they would defeat the whole point of
+    // signing, which is to require server possession of `SESSION_SECRET` to
+    // mint a cookie value that passes admin auth.
+    const cookieId = (req as any).signedCookies?.[USER_ID_COOKIE_NAME];
     if (typeof cookieId !== 'string' || !UUID_V4_REGEX.test(cookieId)) {
         return { userId: null, reason: 'unauthorized' };
     }
@@ -139,7 +146,7 @@ async function tryUserAdminAuth(req: Request): Promise<CookieAdminResult> {
         return { userId: null, reason: 'verification_stale' };
     }
 
-    return { userId: user.id, reason: 'unauthorized' };
+    return { userId: user.id };
 }
 
 /**
@@ -194,6 +201,7 @@ export async function requireAdmin(req: Request, res: Response, next: NextFuncti
         const cookieResult = await tryUserAdminAuth(req);
         if (cookieResult.userId) {
             req.adminVia = 'user';
+            req.userId = cookieResult.userId;
             next();
             return;
         }

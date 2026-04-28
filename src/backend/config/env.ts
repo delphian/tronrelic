@@ -19,6 +19,16 @@ const envSchema = z.object({
   ALERT_WHALE_MIN_TRX: z.union([z.string(), z.coerce.number()]).optional(),
   ADMIN_API_TOKEN: z.string().optional(),
   METRICS_TOKEN: z.string().optional(),
+  /**
+   * HMAC secret used to sign the `tronrelic_uid` identity cookie.
+   *
+   * Required in production: cookie-parser falls back to no-op signing if a
+   * secret is not provided, which silently disables forgery protection.
+   * In dev/test we accept the absence with a console.warn and a stable
+   * placeholder so contributors don't have to configure one locally — the
+   * placeholder must not be used in any non-development deployment.
+   */
+  SESSION_SECRET: z.string().optional(),
   ENABLE_TELEMETRY: z
     .union([
       z.boolean(),
@@ -61,6 +71,22 @@ const parsed = envSchema.safeParse(process.env);
 if (!parsed.success) {
   console.error('Invalid environment configuration:', parsed.error.flatten().fieldErrors);
   throw new Error('Failed to parse environment variables');
+}
+
+// Enforce SESSION_SECRET in any non-development environment. Development and
+// test fall through to a hardcoded placeholder that is only safe locally; the
+// resolved value lives on `env.SESSION_SECRET` after this block runs.
+const DEV_SESSION_SECRET_FALLBACK = 'tronrelic-dev-cookie-secret-do-not-use-in-prod';
+if (!parsed.data.SESSION_SECRET) {
+  if (parsed.data.NODE_ENV === 'production' || parsed.data.ENV === 'production') {
+    throw new Error(
+      'SESSION_SECRET is required in production. Generate one with `openssl rand -hex 32` and set it in your environment.'
+    );
+  }
+  console.warn(
+    '[env] SESSION_SECRET unset — using a fixed development placeholder. Identity cookies will be signed with a known secret. Set SESSION_SECRET before deploying anywhere non-local.'
+  );
+  parsed.data.SESSION_SECRET = DEV_SESSION_SECRET_FALLBACK;
 }
 
 export type EnvConfig = z.infer<typeof envSchema>;
