@@ -49,12 +49,63 @@ export interface ILinkWalletResult {
     previousUserId?: string;
 }
 
+/**
+ * Wallet operations gated by a server-issued challenge.
+ *
+ * `'refresh-verification'` is the freshness-pump action used by the
+ * dual-track admin recovery flow when a verified admin's `verifiedAt`
+ * has aged past the freshness window and the cookie path returns 401
+ * with `reason: 'verification_stale'`. Distinct nonce scope keeps a
+ * captured signature for any other action from being replayable here.
+ */
+export type WalletChallengeAction = 'link' | 'unlink' | 'set-primary' | 'refresh-verification';
+
+/**
+ * Server-issued single-use wallet challenge.
+ *
+ * The client signs `message` verbatim with TronLink and submits the
+ * signature plus `nonce` back to the matching wallet endpoint within the
+ * TTL window indicated by `expiresAt`.
+ */
+export interface IWalletChallenge {
+    /** Single-use nonce to submit alongside the signature */
+    nonce: string;
+    /** Canonical message to sign verbatim with TronLink */
+    message: string;
+    /** Unix epoch ms when the nonce expires (informational only) */
+    expiresAt: number;
+}
+
 // ============================================================================
 // User API Functions
 // ============================================================================
 
 /**
- * Fetch or create user from backend.
+ * Bootstrap the visitor's identity.
+ *
+ * Idempotent: returning visitors get their canonical user back; first-time
+ * visitors have a UUID minted server-side and an HttpOnly `tronrelic_uid`
+ * cookie set on the response. The frontend never reads the UUID from
+ * cookies or localStorage — every page load just calls this once and
+ * receives the user data.
+ *
+ * @returns User data from API
+ */
+export async function bootstrapUser(): Promise<IUserData> {
+    const response = await apiClient.post(
+        `/user/bootstrap`,
+        {},
+        { withCredentials: true }
+    );
+    return response.data as IUserData;
+}
+
+/**
+ * Fetch user data by UUID.
+ *
+ * Used after bootstrap when the client already knows its own UUID and
+ * needs to refresh the data (e.g. after wallet operations). Cookie still
+ * required — the backend validates `tronrelic_uid` matches `:id`.
  *
  * @param userId - User UUID
  * @returns User data from API
@@ -98,6 +149,33 @@ export async function connectWallet(
 }
 
 /**
+ * Request a server-issued single-use challenge for a wallet operation.
+ *
+ * Replaces the legacy client-supplied timestamp with a server-minted nonce.
+ * Call this before `linkWallet`, `unlinkWallet`, or `setPrimaryWallet`,
+ * sign the returned `message` with TronLink, then submit the signature
+ * along with `nonce` to the matching endpoint within the TTL window
+ * (~60 seconds).
+ *
+ * @param userId - User UUID
+ * @param action - Wallet operation the challenge will gate
+ * @param address - TRON wallet address (hex or base58 — server normalizes)
+ * @returns Challenge with nonce, canonical message, and expiry
+ */
+export async function requestWalletChallenge(
+    userId: string,
+    action: WalletChallengeAction,
+    address: string
+): Promise<IWalletChallenge> {
+    const response = await apiClient.post(
+        `/user/${userId}/wallet/challenge`,
+        { action, address },
+        { withCredentials: true }
+    );
+    return response.data as IWalletChallenge;
+}
+
+/**
  * Verify a wallet on a user identity (cryptographic signature required).
  *
  * Stage 2 of the two-stage wallet flow. Upgrades a registered wallet to
@@ -115,9 +193,9 @@ export async function connectWallet(
  *
  * @param userId - User UUID
  * @param address - TRON wallet address
- * @param message - Message that was signed
- * @param signature - TronLink signature
- * @param timestamp - Timestamp when signature was created
+ * @param message - Canonical message returned by the matching challenge
+ * @param signature - TronLink signature over `message`
+ * @param nonce - Single-use nonce from `requestWalletChallenge`
  * @returns Result with user data and optional identity swap indicator
  */
 export async function linkWallet(
@@ -125,11 +203,11 @@ export async function linkWallet(
     address: string,
     message: string,
     signature: string,
-    timestamp: number
+    nonce: string
 ): Promise<ILinkWalletResult> {
     const response = await apiClient.post(
         `/user/${userId}/wallet`,
-        { address, message, signature, timestamp },
+        { address, message, signature, nonce },
         { withCredentials: true }
     );
     return response.data as ILinkWalletResult;
@@ -140,20 +218,22 @@ export async function linkWallet(
  *
  * @param userId - User UUID
  * @param address - TRON wallet address to unlink
- * @param message - Message that was signed
- * @param signature - TronLink signature
+ * @param message - Canonical message returned by the matching challenge
+ * @param signature - TronLink signature over `message`
+ * @param nonce - Single-use nonce from `requestWalletChallenge`
  * @returns Updated user data
  */
 export async function unlinkWallet(
     userId: string,
     address: string,
     message: string,
-    signature: string
+    signature: string,
+    nonce: string
 ): Promise<IUserData> {
     const response = await apiClient.delete(
         `/user/${userId}/wallet/${address}`,
         {
-            data: { message, signature },
+            data: { message, signature, nonce },
             withCredentials: true
         }
     );
@@ -163,17 +243,67 @@ export async function unlinkWallet(
 /**
  * Set a wallet as primary.
  *
+ * Step-up authentication: requires a fresh signature even though the wallet
+ * was already verified at link time. Cookie alone is XSS-stealable, and
+ * primary drives downstream attribution that should not be steerable from
+ * a captured cookie.
+ *
  * @param userId - User UUID
  * @param address - TRON wallet address to set as primary
+ * @param message - Canonical message returned by the matching challenge
+ * @param signature - TronLink signature over `message`
+ * @param nonce - Single-use nonce from `requestWalletChallenge`
  * @returns Updated user data
  */
 export async function setPrimaryWallet(
     userId: string,
-    address: string
+    address: string,
+    message: string,
+    signature: string,
+    nonce: string
 ): Promise<IUserData> {
     const response = await apiClient.patch(
         `/user/${userId}/wallet/${address}/primary`,
-        {},
+        { message, signature, nonce },
+        { withCredentials: true }
+    );
+    return response.data as IUserData;
+}
+
+/**
+ * Refresh the freshness clock on an already-verified wallet.
+ *
+ * Recovery path for stale-Verified admins: when an API call to a
+ * `requireAdmin`-protected endpoint returns 401 with
+ * `reason: 'verification_stale'`, the operator is already a verified
+ * admin — they just need to re-prove control of any one of their
+ * wallets to bring `verifiedAt` back inside the freshness window.
+ *
+ * Mints a `'refresh-verification'` challenge via `requestWalletChallenge`,
+ * the user signs the canonical message with TronLink, and this call
+ * consumes the nonce and updates `verifiedAt = now` on the wallet.
+ *
+ * Refuses to operate on registered (unsigned) wallets — moving a
+ * wallet from registered → verified is the link flow's job. Use
+ * `linkWallet` for that.
+ *
+ * @param userId - User UUID
+ * @param address - Already-verified wallet address to refresh
+ * @param message - Canonical message returned by the matching challenge
+ * @param signature - TronLink signature over `message`
+ * @param nonce - Single-use nonce from `requestWalletChallenge` with action='refresh-verification'
+ * @returns Updated user data with the wallet's `verifiedAt` set to now
+ */
+export async function refreshWalletVerification(
+    userId: string,
+    address: string,
+    message: string,
+    signature: string,
+    nonce: string
+): Promise<IUserData> {
+    const response = await apiClient.post(
+        `/user/${userId}/wallet/${address}/refresh-verification`,
+        { message, signature, nonce },
         { withCredentials: true }
     );
     return response.data as IUserData;
@@ -366,14 +496,20 @@ export async function logoutUser(userId: string): Promise<IUserData> {
  * Public profile data returned from the profile endpoint.
  */
 export interface IPublicProfile {
-    /** UUID of the user who owns this profile */
-    userId: string;
     /** Verified wallet address for this profile */
     address: string;
     /** When the user account was created */
     createdAt: string;
     /** Always true — public profiles only resolve for *verified* users. */
     isVerified: true;
+    /**
+     * True when the requester's cookie identity owns this profile.
+     *
+     * Computed server-side from the visitor's `tronrelic_uid` cookie so the
+     * owning UUID never leaves the server. Owners already know their own UUID
+     * (cookie / Redux); non-owners always see `false`.
+     */
+    isOwner: boolean;
 }
 
 /**

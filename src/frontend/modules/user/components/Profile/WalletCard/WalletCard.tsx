@@ -18,6 +18,7 @@ import { Wallet, ShieldCheck, Shield, Star, Trash2, Loader2 } from 'lucide-react
 import { Stack } from '../../../../../components/layout';
 import { useAppSelector, useAppDispatch } from '../../../../../store/hooks';
 import { selectWallets, selectUserId, setPrimaryWalletThunk, unlinkWalletThunk } from '../../../slice';
+import { requestWalletChallenge } from '../../../api';
 import { useWallet } from '../../../hooks/useWallet';
 import { useToast } from '../../../../../components/ui/ToastProvider';
 import type { IWalletLink } from '../../../types';
@@ -51,21 +52,42 @@ export function WalletCard(): JSX.Element {
 
     /**
      * Set a wallet as primary.
-     * No signature required — cookie validation is sufficient.
+     * Step-up authentication: cookie alone is XSS-stealable, and primary
+     * drives downstream attribution (referrals, public profile, plugin
+     * reads), so a fresh TronLink signature over a server-issued challenge
+     * is required even though the wallet was already verified at link time.
      */
     const handleSetPrimary = useCallback(async (address: string) => {
         if (!userId) return;
 
+        if (connectedAddress && connectedAddress !== address) {
+            push({
+                tone: 'warning',
+                title: 'Wrong wallet connected',
+                description: `Switch to ${truncateAddress(address)} in TronLink to set as primary.`
+            });
+            return;
+        }
+
         setPendingAction(`primary:${address}`);
         try {
-            await dispatch(setPrimaryWalletThunk({ userId, address })).unwrap();
+            const challenge = await requestWalletChallenge(userId, 'set-primary', address);
+            const signature = await signMessage(challenge.message);
+
+            await dispatch(setPrimaryWalletThunk({
+                userId,
+                address,
+                message: challenge.message,
+                signature,
+                nonce: challenge.nonce
+            })).unwrap();
             push({ tone: 'success', title: 'Primary wallet updated' });
         } catch {
-            push({ tone: 'warning', title: 'Failed to set primary wallet' });
+            push({ tone: 'warning', title: 'Failed to set primary wallet', description: 'Signature may have been rejected.' });
         } finally {
             setPendingAction(null);
         }
-    }, [dispatch, userId, push]);
+    }, [dispatch, userId, signMessage, push, connectedAddress]);
 
     /**
      * Unlink a wallet. Requires TronLink signature to prove ownership.
@@ -89,15 +111,15 @@ export function WalletCard(): JSX.Element {
 
         setPendingAction(`unlink:${address}`);
         try {
-            const timestamp = Date.now();
-            const message = `Unlink wallet ${address} from TronRelic identity ${userId} at ${timestamp}`;
-            const signature = await signMessage(message);
+            const challenge = await requestWalletChallenge(userId, 'unlink', address);
+            const signature = await signMessage(challenge.message);
 
             await dispatch(unlinkWalletThunk({
                 userId,
                 address,
-                message,
-                signature
+                message: challenge.message,
+                signature,
+                nonce: challenge.nonce
             })).unwrap();
 
             push({ tone: 'success', title: 'Wallet unlinked' });

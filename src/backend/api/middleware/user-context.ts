@@ -11,16 +11,11 @@
 import type { Request, Response, NextFunction, RequestHandler } from 'express';
 import { UserService } from '../../modules/user/services/user.service.js';
 import { logger } from '../../lib/logger.js';
+import {
+    USER_ID_COOKIE_NAME,
+    setIdentityCookie
+} from '../../modules/user/api/identity-cookie.js';
 
-/**
- * Parse cookies from request Cookie header.
- *
- * Express's cookie-parser middleware may not be available on all routes,
- * so we manually parse the Cookie header for reliability.
- *
- * @param req - Express request object
- * @returns Parsed cookies as key-value pairs
- */
 /**
  * UUID v4 format regex for validation.
  * Validates format before trusting client-provided cookie values.
@@ -28,35 +23,36 @@ import { logger } from '../../lib/logger.js';
 const UUID_V4_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 /**
- * Validate UUID v4 format.
+ * Resolve the visitor's identity UUID from request cookies.
  *
- * @param value - String to validate
- * @returns true if valid UUID v4 format
+ * Returns `{ userId, signed }` where `signed=true` means the value came from
+ * `req.signedCookies` (HMAC-verified by cookie-parser). The legacy
+ * `signed=false` path accepts an unsigned UUID v4 from `req.cookies` to
+ * preserve continuity for visitors whose cookies were issued before HMAC
+ * signing was introduced. Callers can use the flag to decide whether to
+ * re-issue the cookie as signed on the response.
+ *
+ * Returns `null` when no cookie is present or the candidate fails UUID v4
+ * format validation. `req.signedCookies[name] === false` (cookie-parser's
+ * "tampered" sentinel) is treated as no-cookie — we never honor a forged
+ * signed cookie, even on the legacy fallback.
  */
-function isValidUuid(value: string): boolean {
-    return UUID_V4_REGEX.test(value);
-}
-
-function parseCookies(req: Request): Record<string, string> {
-    // If Express cookie-parser is available, use it
-    if (req.cookies && typeof req.cookies === 'object') {
-        return req.cookies;
+function resolveIdentityFromCookies(req: Request): { userId: string; signed: boolean } | null {
+    const signedValue = (req as any).signedCookies?.[USER_ID_COOKIE_NAME];
+    if (typeof signedValue === 'string' && UUID_V4_REGEX.test(signedValue)) {
+        return { userId: signedValue, signed: true };
+    }
+    // signedCookies returns `false` on tampered values — never accept those
+    // even via the legacy unsigned path; that would defeat HMAC verification.
+    if (signedValue === false) {
+        return null;
     }
 
-    // Otherwise parse from header
-    const cookieHeader = req.headers.cookie || '';
-    if (!cookieHeader) {
-        return {};
+    const unsignedValue = (req as any).cookies?.[USER_ID_COOKIE_NAME];
+    if (typeof unsignedValue === 'string' && UUID_V4_REGEX.test(unsignedValue)) {
+        return { userId: unsignedValue, signed: false };
     }
-
-    const cookies: Record<string, string> = {};
-    cookieHeader.split(';').forEach(cookie => {
-        const [name, ...rest] = cookie.trim().split('=');
-        if (name) {
-            cookies[name] = rest.join('=');
-        }
-    });
-    return cookies;
+    return null;
 }
 
 /**
@@ -86,19 +82,14 @@ export const userContextMiddleware: RequestHandler = async (
     next: NextFunction
 ): Promise<void> => {
     try {
-        const cookies = parseCookies(req);
-        const userId = cookies['tronrelic_uid'];
+        const resolved = resolveIdentityFromCookies(req);
 
-        if (!userId) {
+        if (!resolved) {
             // No user cookie present - continue without user context
             return next();
         }
 
-        // Validate UUID format before trusting client-provided value
-        if (!isValidUuid(userId)) {
-            logger.debug({ userId: userId.substring(0, 20) }, 'Invalid UUID format in cookie');
-            return next();
-        }
+        const { userId, signed } = resolved;
 
         // Attach userId to request
         (req as any).userId = userId;
@@ -118,6 +109,19 @@ export const userContextMiddleware: RequestHandler = async (
                 { error, userId },
                 'Failed to resolve user context (UserService may not be initialized)'
             );
+        }
+
+        // Legacy unsigned cookies (issued before HMAC signing) are accepted
+        // for visitor identity continuity, but we re-issue the cookie as
+        // signed so subsequent requests land on the signed path. The flag
+        // stays out of admin auth — `requireAdmin` reads only signedCookies
+        // — so this fallback never grants admin access on a forged value.
+        if (!signed) {
+            try {
+                setIdentityCookie(res, userId);
+            } catch (error) {
+                logger.debug({ error, userId }, 'Failed to re-issue identity cookie as signed');
+            }
         }
 
         next();

@@ -1,8 +1,13 @@
 /**
  * Profile page server component.
  *
- * Fetches profile data during SSR and determines whether to show
- * the owner view (control panel) or public view based on cookie comparison.
+ * Fetches profile data during SSR and renders either the owner view or
+ * the public view. Ownership is decided server-side: the SSR fetch
+ * forwards the visitor's `tronrelic_uid` cookie to the backend, which
+ * compares it against the profile's owning UUID and returns
+ * `isOwner: boolean` in the payload. The owning UUID itself never crosses
+ * the wire, so a public profile lookup cannot be used as a
+ * wallet-address → UUID oracle.
  *
  * Public profiles only exist for wallet addresses whose owning user is in
  * the *verified* identity state — i.e. the wallet has `verified: true`.
@@ -14,7 +19,6 @@
 
 import { notFound } from 'next/navigation';
 import { cookies } from 'next/headers';
-import { getApiUrl } from '../../../../lib/config';
 import { USER_ID_COOKIE_NAME } from '../../lib/identity';
 import type { IPublicProfile } from '../../api';
 import { ProfileOwnerView } from './ProfileOwnerView';
@@ -28,14 +32,20 @@ interface ProfilePageProps {
 }
 
 /**
- * Fetch profile from backend API during SSR.
+ * Fetch profile from backend API during SSR, forwarding the visitor's
+ * identity cookie so the backend can compute `isOwner` server-side.
  *
  * @param address - TRON wallet address
+ * @param uidCookieValue - The visitor's `tronrelic_uid` cookie value, if any
  * @returns Profile data or null if not found
  */
-async function fetchProfile(address: string): Promise<IPublicProfile | null> {
+async function fetchProfile(address: string, uidCookieValue: string | null): Promise<IPublicProfile | null> {
     try {
-        const response = await fetch(getApiUrl(`/profile/${address}`), {
+        const backendUrl = process.env.SITE_BACKEND || 'http://localhost:4000';
+        const response = await fetch(`${backendUrl}/api/profile/${address}`, {
+            headers: uidCookieValue
+                ? { Cookie: `${USER_ID_COOKIE_NAME}=${uidCookieValue}` }
+                : {},
             cache: 'no-store'
         });
 
@@ -58,30 +68,25 @@ async function fetchProfile(address: string): Promise<IPublicProfile | null> {
  * ProfilePage server component.
  *
  * Fetches profile data during SSR and renders either the owner view or
- * public view based on whether the visitor's cookie UUID matches the
- * profile owner's UUID.
+ * the public view based on the backend-computed `isOwner` flag.
  *
  * Data is passed to client components as props - no client-side fetching
  * for initial page content.
  */
 export async function ProfilePage({ address }: ProfilePageProps): Promise<JSX.Element> {
-    // Fetch profile data during SSR
-    const profile = await fetchProfile(address);
+    // Forward the visitor's identity cookie so the backend can compute isOwner.
+    const cookieStore = await cookies();
+    const uidCookieValue = cookieStore.get(USER_ID_COOKIE_NAME)?.value ?? null;
+
+    const profile = await fetchProfile(address, uidCookieValue);
 
     // Return 404 if profile doesn't exist (wallet is registered or unknown)
     if (!profile) {
         notFound();
     }
 
-    // Get visitor's UUID from cookie during SSR
-    const cookieStore = await cookies();
-    const visitorId = cookieStore.get(USER_ID_COOKIE_NAME)?.value ?? null;
-
-    // Determine if visitor is the profile owner
-    const isOwner = visitorId !== null && visitorId === profile.userId;
-
     // Render appropriate view - data passed as props (SSR pattern)
-    if (isOwner) {
+    if (profile.isOwner) {
         return <ProfileOwnerView profile={profile} />;
     }
 

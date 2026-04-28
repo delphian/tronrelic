@@ -60,6 +60,14 @@ export interface IWalletLink {
      * `false` = registered claim only; `true` = verified.
      */
     verified: boolean;
+    /**
+     * ISO timestamp of the most recent successful signature on this wallet.
+     * `null` for wallets in the registered (unsigned) state. Refreshed on
+     * link, set-primary, and the dedicated refresh-verification endpoint.
+     * Consumed by `hasFreshVerification` from `@/types` to gate the
+     * dual-track admin recovery flow.
+     */
+    verifiedAt: string | null;
     /** Timestamp of last connection/use (ISO string) */
     lastUsed: string;
     label?: string;

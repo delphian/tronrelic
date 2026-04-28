@@ -2,9 +2,43 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { UserService } from '../services/user.service.js';
+import type { ILinkWalletInput } from '../database/IUserDocument.js';
+import type { WalletChallengeAction } from '../services/wallet-challenge.service.js';
 import { UserIdentityState } from '@/types';
 import type { ICacheService, ISystemLogService } from '@/types';
 import { createMockDatabaseService } from '../../../tests/vitest/mocks/database-service.js';
+
+/**
+ * Mint a real challenge via the service and build the corresponding wallet
+ * input. Tests use the production challenge flow (rather than fabricating
+ * canonical messages by hand) so any change to the message format or nonce
+ * binding is exercised end-to-end.
+ */
+async function buildWalletInput(
+    svc: UserService,
+    uuid: string,
+    addr: string,
+    action: WalletChallengeAction
+): Promise<{ message: string; signature: string; nonce: string }> {
+    const challenge = await svc.issueWalletChallenge(uuid, action, addr);
+    return { message: challenge.message, signature: 'mock-sig', nonce: challenge.nonce };
+}
+
+async function buildLinkInput(svc: UserService, uuid: string, addr: string): Promise<ILinkWalletInput> {
+    const c = await buildWalletInput(svc, uuid, addr, 'link');
+    return { address: addr, ...c };
+}
+
+/** Mint a challenge then call linkWallet — collapses the legacy 4-field literal that 20+ tests inlined. */
+async function linkWalletWithChallenge(svc: UserService, uuid: string, addr: string) {
+    return svc.linkWallet(uuid, await buildLinkInput(svc, uuid, addr));
+}
+
+/** Mint a challenge then call unlinkWallet — same role as the link helper for the unlink path. */
+async function unlinkWalletWithChallenge(svc: UserService, uuid: string, addr: string) {
+    const c = await buildWalletInput(svc, uuid, addr, 'unlink');
+    return svc.unlinkWallet(uuid, addr, c.message, c.signature, c.nonce);
+}
 
 // Mock SignatureService to avoid TRON address validation in unit tests
 vi.mock('../../auth/signature.service.js', () => {
@@ -460,16 +494,46 @@ describe('UserService', () => {
 
         it('should throw error if user not found', async () => {
             await expect(
-                userService.setPrimaryWallet(validUUID, validTronAddress)
+                userService.setPrimaryWallet(validUUID, validTronAddress, 'msg', 'sig', 'nonce')
             ).rejects.toThrow('User with id');
         });
 
         it('should throw error if wallet not linked', async () => {
             await userService.getOrCreate(validUUID);
+            const c = await buildWalletInput(userService, validUUID, validTronAddress, 'set-primary');
 
             await expect(
-                userService.setPrimaryWallet(validUUID, validTronAddress)
+                userService.setPrimaryWallet(validUUID, validTronAddress, c.message, c.signature, c.nonce)
             ).rejects.toThrow('Wallet is not linked to this user');
+        });
+
+        it('rejects an expired or already-consumed challenge', async () => {
+            await userService.getOrCreate(validUUID);
+            // Wallet must be linked so the failure surfaces from the challenge,
+            // not the wallet-existence check.
+            const collection = mockDatabase.getCollection('users');
+            await collection.updateOne(
+                { id: validUUID },
+                { $set: {
+                    wallets: [{ address: validTronAddress, linkedAt: new Date(), isPrimary: true, verified: true, verifiedAt: new Date(), lastUsed: new Date() }]
+                } }
+            );
+
+            const c = await buildWalletInput(userService, validUUID, validTronAddress, 'set-primary');
+            // First call consumes the nonce successfully.
+            await userService.setPrimaryWallet(validUUID, validTronAddress, c.message, c.signature, c.nonce);
+            // Second call with the same nonce must fail — single-use guarantee.
+            await expect(
+                userService.setPrimaryWallet(validUUID, validTronAddress, c.message, c.signature, c.nonce)
+            ).rejects.toThrow(/Wallet challenge expired or already used/);
+        });
+
+        it('rejects a tampered canonical message', async () => {
+            await userService.getOrCreate(validUUID);
+            const c = await buildWalletInput(userService, validUUID, validTronAddress, 'set-primary');
+            await expect(
+                userService.setPrimaryWallet(validUUID, validTronAddress, 'TronRelic set-primary wallet evil (nonce x)', c.signature, c.nonce)
+            ).rejects.toThrow(/canonical challenge form/);
         });
     });
 
@@ -680,12 +744,7 @@ describe('UserService', () => {
                 await userService.connectWallet(validUUID2, otherWallet);
 
                 // User B proves ownership of walletAddress → swap
-                const result = await userService.linkWallet(validUUID2, {
-                    address: walletAddress,
-                    message: `Link wallet ${walletAddress}`,
-                    signature: 'mock-sig',
-                    timestamp: Date.now()
-                });
+                const result = await linkWalletWithChallenge(userService, validUUID2, walletAddress);
 
                 expect(result.identitySwapped).toBe(true);
                 expect(result.previousUserId).toBe(validUUID2);
@@ -703,12 +762,7 @@ describe('UserService', () => {
 
                 await userService.getOrCreate(validUUID2);
 
-                const result = await userService.linkWallet(validUUID2, {
-                    address: walletAddress,
-                    message: `Link wallet ${walletAddress}`,
-                    signature: 'mock-sig',
-                    timestamp: Date.now()
-                });
+                const result = await linkWalletWithChallenge(userService, validUUID2, walletAddress);
 
                 const disputed = result.user.wallets.find(w => w.address === walletAddress);
                 expect(disputed).toBeDefined();
@@ -722,12 +776,7 @@ describe('UserService', () => {
                 await userService.getOrCreate(validUUID2);
                 await userService.connectWallet(validUUID2, otherWallet);
 
-                await userService.linkWallet(validUUID2, {
-                    address: walletAddress,
-                    message: `Link wallet ${walletAddress}`,
-                    signature: 'mock-sig',
-                    timestamp: Date.now()
-                });
+                await linkWalletWithChallenge(userService, validUUID2, walletAddress);
 
                 // Read loser document directly from database (bypass pointer resolution)
                 const collection = mockDatabase.getCollection('users');
@@ -754,12 +803,7 @@ describe('UserService', () => {
                 );
 
                 // B proves ownership of walletAddress → swap B into A
-                await userService.linkWallet(validUUID2, {
-                    address: walletAddress,
-                    message: `Link wallet ${walletAddress}`,
-                    signature: 'mock-sig',
-                    timestamp: Date.now()
-                });
+                await linkWalletWithChallenge(userService, validUUID2, walletAddress);
 
                 // C should now point directly to A (not B)
                 const cDoc = await collection.findOne({ id: validUUID3 });
@@ -784,18 +828,14 @@ describe('UserService', () => {
                                 linkedAt: new Date(),
                                 isPrimary: false,
                                 verified: false,
+                                verifiedAt: null,
                                 lastUsed: new Date()
                             }]
                         }
                     }
                 );
 
-                const result = await userService.linkWallet(validUUID2, {
-                    address: walletAddress,
-                    message: `Link wallet ${walletAddress}`,
-                    signature: 'mock-sig',
-                    timestamp: Date.now()
-                });
+                const result = await linkWalletWithChallenge(userService, validUUID2, walletAddress);
 
                 // Winner should not have duplicate wallet entries
                 const matchingWallets = result.user.wallets.filter(w => w.address === walletAddress);
@@ -812,12 +852,7 @@ describe('UserService', () => {
                 await userService.getById(validUUID);
                 await userService.getById(validUUID2);
 
-                await userService.linkWallet(validUUID2, {
-                    address: walletAddress,
-                    message: `Link wallet ${walletAddress}`,
-                    signature: 'mock-sig',
-                    timestamp: Date.now()
-                });
+                await linkWalletWithChallenge(userService, validUUID2, walletAddress);
 
                 // Both user caches should be invalidated
                 const winnerCached = await mockCache.get(`user:${validUUID}`);
@@ -826,48 +861,42 @@ describe('UserService', () => {
                 expect(loserCached).toBeNull();
             });
 
-            it('should throw on expired signature timestamp during swap', async () => {
+            it('should throw when an already-consumed nonce is replayed during swap', async () => {
                 await userService.getOrCreate(validUUID);
                 await userService.connectWallet(validUUID, walletAddress);
-
                 await userService.getOrCreate(validUUID2);
 
-                // Timestamp 10 minutes ago (beyond 5-minute window)
-                const expiredTimestamp = Date.now() - 10 * 60 * 1000;
+                // First consumption succeeds (it's the swap itself).
+                const input = await buildLinkInput(userService, validUUID2, walletAddress);
+                await userService.linkWallet(validUUID2, input);
 
+                // Replaying the same captured nonce must fail — single-use guarantee.
                 await expect(
-                    userService.linkWallet(validUUID2, {
-                        address: walletAddress,
-                        message: `Link wallet ${walletAddress}`,
-                        signature: 'mock-sig',
-                        timestamp: expiredTimestamp
-                    })
-                ).rejects.toThrow('Signature timestamp expired');
+                    userService.linkWallet(validUUID2, input)
+                ).rejects.toThrow(/Wallet challenge expired or already used/);
             });
 
-            it('should throw on invalid message format during swap', async () => {
+            it('should throw when the signed message diverges from the canonical form', async () => {
                 await userService.getOrCreate(validUUID);
                 await userService.connectWallet(validUUID, walletAddress);
-
                 await userService.getOrCreate(validUUID2);
 
+                const input = await buildLinkInput(userService, validUUID2, walletAddress);
                 await expect(
                     userService.linkWallet(validUUID2, {
-                        address: walletAddress,
-                        message: 'This message does not contain the wallet address',
-                        signature: 'mock-sig',
-                        timestamp: Date.now()
+                        ...input,
+                        message: 'TronRelic link wallet other-thing (nonce x)'
                     })
-                ).rejects.toThrow('Invalid message format');
+                ).rejects.toThrow(/canonical challenge form/);
             });
 
             it('should throw when loser user does not exist', async () => {
                 await expect(
                     userService.linkWallet(validUUID, {
                         address: walletAddress,
-                        message: `Link wallet ${walletAddress}`,
-                        signature: 'mock-sig',
-                        timestamp: Date.now()
+                        message: 'msg',
+                        signature: 'sig',
+                        nonce: 'nonce'
                     })
                 ).rejects.toThrow('User with id');
             });
@@ -880,12 +909,7 @@ describe('UserService', () => {
                 await userService.connectWallet(validUUID2, otherWallet);
                 mockLogger.clear();
 
-                await userService.linkWallet(validUUID2, {
-                    address: walletAddress,
-                    message: `Link wallet ${walletAddress}`,
-                    signature: 'mock-sig',
-                    timestamp: Date.now()
-                });
+                await linkWalletWithChallenge(userService, validUUID2, walletAddress);
 
                 const infoLogs = mockLogger.logs.filter(l => l.level === 'info');
                 const hasReconciliationLog = infoLogs.some(l =>
@@ -902,12 +926,7 @@ describe('UserService', () => {
 
                 await userService.getOrCreate(validUUID2);
 
-                await userService.linkWallet(validUUID2, {
-                    address: walletAddress,
-                    message: `Link wallet ${walletAddress}`,
-                    signature: 'mock-sig',
-                    timestamp: Date.now()
-                });
+                await linkWalletWithChallenge(userService, validUUID2, walletAddress);
                 mockCache.clear();
 
                 // Looking up loser should resolve to winner
@@ -923,12 +942,7 @@ describe('UserService', () => {
                 await userService.getOrCreate(validUUID2);
                 await userService.connectWallet(validUUID2, otherWallet);
 
-                await userService.linkWallet(validUUID2, {
-                    address: walletAddress,
-                    message: `Link wallet ${walletAddress}`,
-                    signature: 'mock-sig',
-                    timestamp: Date.now()
-                });
+                await linkWalletWithChallenge(userService, validUUID2, walletAddress);
                 mockCache.clear();
 
                 // otherWallet was transferred from loser to winner
@@ -945,12 +959,7 @@ describe('UserService', () => {
                 await userService.connectWallet(validUUID2, otherWallet);
 
                 // Perform merge
-                await userService.linkWallet(validUUID2, {
-                    address: walletAddress,
-                    message: `Link wallet ${walletAddress}`,
-                    signature: 'mock-sig',
-                    timestamp: Date.now()
-                });
+                await linkWalletWithChallenge(userService, validUUID2, walletAddress);
 
                 // Third user tries to claim otherWallet (now on winner)
                 await userService.getOrCreate(validUUID3);
@@ -989,12 +998,7 @@ describe('UserService', () => {
             await svc.connectWallet(winnerId, walletAddress);
             await svc.getOrCreate(loserId);
 
-            await svc.linkWallet(loserId, {
-                address: walletAddress,
-                message: `Link wallet ${walletAddress}`,
-                signature: 'mock-sig',
-                timestamp: Date.now()
-            });
+            await linkWalletWithChallenge(svc, loserId, walletAddress);
             cache.clear();
         }
 
@@ -1061,12 +1065,7 @@ describe('UserService', () => {
 
                 // Link wallet (triggers verification and code generation)
                 // Mock verifyMessage returns 'mocked-address', so message must include it
-                const result = await userService.linkWallet(validUUID, {
-                    address: 'mocked-address',
-                    message: 'Link wallet mocked-address',
-                    signature: 'mock-sig',
-                    timestamp: Date.now()
-                });
+                const result = await linkWalletWithChallenge(userService, validUUID, 'mocked-address');
 
                 // Verify referral code was generated
                 expect(result.user.referral).not.toBeNull();
@@ -1093,12 +1092,7 @@ describe('UserService', () => {
                 );
 
                 // Link wallet — should generate code but preserve referredBy
-                const result = await userService.linkWallet(validUUID, {
-                    address: 'mocked-address',
-                    message: 'Link wallet mocked-address',
-                    signature: 'mock-sig',
-                    timestamp: Date.now()
-                });
+                const result = await linkWalletWithChallenge(userService, validUUID, 'mocked-address');
 
                 expect(result.user.referral?.code).toBeTruthy();
                 expect(result.user.referral?.referredBy).toBe('abc12345');
@@ -1122,12 +1116,7 @@ describe('UserService', () => {
                 );
 
                 // Link another wallet
-                const result = await userService.linkWallet(validUUID, {
-                    address: 'mocked-address',
-                    message: 'Link wallet mocked-address',
-                    signature: 'mock-sig',
-                    timestamp: Date.now()
-                });
+                const result = await linkWalletWithChallenge(userService, validUUID, 'mocked-address');
 
                 // Code should remain unchanged
                 expect(result.user.referral?.code).toBe('existing1');
@@ -1482,12 +1471,7 @@ describe('UserService', () => {
             await userService.getOrCreate(validUUID);
             await userService.connectWallet(validUUID, walletAddress);
 
-            const result = await userService.linkWallet(validUUID, {
-                address: walletAddress,
-                message: `Link wallet ${walletAddress}`,
-                signature: 'mock-sig',
-                timestamp: Date.now()
-            });
+            const result = await linkWalletWithChallenge(userService, validUUID, walletAddress);
 
             expect(result.user.identityState).toBe(UserIdentityState.Verified);
 
@@ -1499,24 +1483,14 @@ describe('UserService', () => {
         it('transitions anonymous → verified directly when linkWallet adds a new wallet', async () => {
             await userService.getOrCreate(validUUID);
 
-            const result = await userService.linkWallet(validUUID, {
-                address: walletAddress,
-                message: `Link wallet ${walletAddress}`,
-                signature: 'mock-sig',
-                timestamp: Date.now()
-            });
+            const result = await linkWalletWithChallenge(userService, validUUID, walletAddress);
 
             expect(result.user.identityState).toBe(UserIdentityState.Verified);
         });
 
         it('stays verified when an additional unverified wallet is connected', async () => {
             await userService.getOrCreate(validUUID);
-            await userService.linkWallet(validUUID, {
-                address: walletAddress,
-                message: `Link wallet ${walletAddress}`,
-                signature: 'mock-sig',
-                timestamp: Date.now()
-            });
+            await linkWalletWithChallenge(userService, validUUID, walletAddress);
             await userService.connectWallet(validUUID, otherWallet);
 
             const collection = mockDatabase.getCollection('users');
@@ -1526,12 +1500,7 @@ describe('UserService', () => {
 
         it('demotes verified → registered when the only verified wallet is unlinked but another remains', async () => {
             await userService.getOrCreate(validUUID);
-            await userService.linkWallet(validUUID, {
-                address: walletAddress,
-                message: `Link wallet ${walletAddress}`,
-                signature: 'mock-sig',
-                timestamp: Date.now()
-            });
+            await linkWalletWithChallenge(userService, validUUID, walletAddress);
             await userService.connectWallet(validUUID, otherWallet);
 
             // The signature mock returns whatever address is passed to
@@ -1543,13 +1512,13 @@ describe('UserService', () => {
                 { id: validUUID },
                 { $set: {
                     wallets: [
-                        { address: 'mocked-address', linkedAt: new Date(), isPrimary: false, verified: true, lastUsed: new Date() },
-                        { address: otherWallet, linkedAt: new Date(), isPrimary: false, verified: false, lastUsed: new Date() }
+                        { address: 'mocked-address', linkedAt: new Date(), isPrimary: false, verified: true, verifiedAt: new Date(), lastUsed: new Date() },
+                        { address: otherWallet, linkedAt: new Date(), isPrimary: false, verified: false, verifiedAt: null, lastUsed: new Date() }
                     ]
                 } }
             );
 
-            await userService.unlinkWallet(validUUID, 'mocked-address', 'msg', 'sig');
+            await unlinkWalletWithChallenge(userService, validUUID, 'mocked-address');
 
             const doc = await collection.findOne({ id: validUUID });
             expect(doc!.identityState).toBe(UserIdentityState.Registered);
@@ -1565,12 +1534,12 @@ describe('UserService', () => {
                 { id: validUUID },
                 { $set: {
                     wallets: [
-                        { address: 'mocked-address', linkedAt: new Date(), isPrimary: true, verified: false, lastUsed: new Date() }
+                        { address: 'mocked-address', linkedAt: new Date(), isPrimary: true, verified: false, verifiedAt: null, lastUsed: new Date() }
                     ]
                 } }
             );
 
-            await userService.unlinkWallet(validUUID, 'mocked-address', 'msg', 'sig');
+            await unlinkWalletWithChallenge(userService, validUUID, 'mocked-address');
 
             const doc = await collection.findOne({ id: validUUID });
             expect(doc!.identityState).toBe(UserIdentityState.Anonymous);
@@ -1584,12 +1553,7 @@ describe('UserService', () => {
             await userService.getOrCreate(validUUID2);
             await userService.connectWallet(validUUID2, otherWallet);
 
-            const result = await userService.linkWallet(validUUID2, {
-                address: walletAddress,
-                message: `Link wallet ${walletAddress}`,
-                signature: 'mock-sig',
-                timestamp: Date.now()
-            });
+            const result = await linkWalletWithChallenge(userService, validUUID2, walletAddress);
 
             expect(result.identitySwapped).toBe(true);
             expect(result.user.identityState).toBe(UserIdentityState.Verified);
@@ -1606,12 +1570,7 @@ describe('UserService', () => {
             await userService.getOrCreate(validUUID2);
             await userService.connectWallet(validUUID2, otherWallet);
 
-            await userService.linkWallet(validUUID2, {
-                address: walletAddress,
-                message: `Link wallet ${walletAddress}`,
-                signature: 'mock-sig',
-                timestamp: Date.now()
-            });
+            await linkWalletWithChallenge(userService, validUUID2, walletAddress);
 
             const collection = mockDatabase.getCollection('users');
             const loserDoc = await collection.findOne({ id: validUUID2 });

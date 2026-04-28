@@ -15,6 +15,14 @@ export type {
     ScreenSizeCategory
 } from './IUser.js';
 
+export {
+    VERIFICATION_FRESHNESS_MS,
+    isWalletVerificationFresh,
+    hasFreshVerification
+} from './IUser.js';
+
+export type { IWalletVerificationFreshnessInput } from './IUser.js';
+
 export type {
     IUserGroup,
     ICreateUserGroupInput,

@@ -13,10 +13,12 @@ import { useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { LogOut, Loader2 } from 'lucide-react';
 import { Page, PageHeader, Stack } from '../../../../components/layout';
+import { useAppSelector } from '../../../../store/hooks';
 import type { ProfileData } from './index';
 import { useWallet } from '../../hooks/useWallet';
 import { useToast } from '../../../../components/ui/ToastProvider';
 import { getRuntimeConfig } from '../../../../lib/runtimeConfig';
+import { selectUserId } from '../../slice';
 import { ReferralCard } from './ReferralCard';
 import { WalletCard } from './WalletCard';
 import styles from './Profile.module.scss';
@@ -43,6 +45,10 @@ export function ProfileOwnerView({ profile }: ProfileOwnerViewProps): JSX.Elemen
     const router = useRouter();
     const { push } = useToast();
     const [isLoggingOut, setIsLoggingOut] = useState(false);
+    // The owner's UUID is the visitor's own cookie identity, hydrated into
+    // Redux by the bootstrap call. The profile payload no longer carries
+    // it — see backend `IPublicProfile` for the rationale.
+    const userId = useAppSelector(selectUserId);
 
     /**
      * Handle logout button click.
@@ -88,10 +94,12 @@ export function ProfileOwnerView({ profile }: ProfileOwnerViewProps): JSX.Elemen
 
             <Stack gap="lg">
                 <WalletCard />
-                <ReferralCard
-                    userId={profile.userId}
-                    siteUrl={getRuntimeConfig().siteUrl}
-                />
+                {userId && (
+                    <ReferralCard
+                        userId={userId}
+                        siteUrl={getRuntimeConfig().siteUrl}
+                    />
+                )}
             </Stack>
         </Page>
     );

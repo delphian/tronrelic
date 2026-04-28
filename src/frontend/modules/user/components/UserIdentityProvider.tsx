@@ -19,7 +19,6 @@ import {
     selectUserInitialized,
     selectUserId
 } from '../slice';
-import { getOrCreateUserId } from '../lib';
 import { useSessionTracking } from '../hooks';
 
 /**
@@ -30,12 +29,6 @@ export interface UserIdentityProviderProps {
      * Child components to render.
      */
     children: React.ReactNode;
-
-    /**
-     * Optional initial cookie string for SSR hydration.
-     * If provided, will be used to check for existing user ID.
-     */
-    initialCookies?: string;
 }
 
 /**
@@ -66,8 +59,7 @@ export interface UserIdentityProviderProps {
  * ```
  */
 export function UserIdentityProvider({
-    children,
-    initialCookies
+    children
 }: UserIdentityProviderProps) {
     const dispatch = useDispatch<AppDispatch>();
     const initialized = useSelector(selectUserInitialized);
@@ -75,22 +67,22 @@ export function UserIdentityProvider({
     const initAttempted = useRef(false);
 
     useEffect(() => {
-        // Skip if already initialized or initialization was attempted
+        // Skip if already initialized (SSR preloaded state) or in-flight.
         if (initialized || initAttempted.current) {
             return;
         }
 
         initAttempted.current = true;
 
-        // Get or create user ID
-        const id = getOrCreateUserId(initialCookies);
-
-        // Initialize user in backend
-        dispatch(initializeUser(id))
+        // The server owns identity. Bootstrap minted the cookie if absent
+        // and returns the canonical user; the response Set-Cookie keeps
+        // subsequent requests anchored to the right id without any
+        // client-side UUID handling.
+        dispatch(initializeUser())
             .catch(() => {
                 // Error handling is done in the slice
             });
-    }, [dispatch, initialized, initialCookies]);
+    }, [dispatch, initialized]);
 
     // Session tracking handles page visits, heartbeats, and country/device capture
     // Only enabled after user is initialized to ensure we have a valid userId

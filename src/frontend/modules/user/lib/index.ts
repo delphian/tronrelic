@@ -2,18 +2,12 @@
  * User module library utilities barrel export.
  */
 
-// Identity utilities (client-side)
+// Identity constants and validators. The server owns cookie writes; this
+// module is intentionally minimal now that JS UUID generation,
+// setUserIdCookie, and the localStorage mirror have been removed.
 export {
     USER_ID_COOKIE_NAME,
-    USER_ID_STORAGE_KEY,
-    COOKIE_MAX_AGE,
-    generateUUID,
-    isValidUUID,
-    getUserIdFromCookie,
-    getUserIdFromStorage,
-    setUserIdCookie,
-    getOrCreateUserId,
-    clearUserIdentity
+    isValidUUID
 } from './identity';
 
 // TronLink wallet provider utilities (client-side)

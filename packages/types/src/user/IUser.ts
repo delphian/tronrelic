@@ -26,6 +26,13 @@ import type { UserIdentityState } from './IUserIdentityState.js';
  *   the user *registered*.
  * - `verified: true` — wallet ownership was proven by a signed message.
  *   Any wallet with `verified: true` makes the user *verified*.
+ *
+ * `verifiedAt` is the freshness anchor for cookie+admin authority. The
+ * dual-track admin middleware accepts a *Verified* user only when at least
+ * one wallet has `verifiedAt` within `VERIFICATION_FRESHNESS_MS`. Stale
+ * verifications still count toward `identityState === Verified` for display
+ * and analytics, but stop conferring admin authority — the user must
+ * re-sign to refresh the freshness clock.
  */
 export interface IWalletLink {
     /** Base58 TRON address (e.g., TRX7NJa...) */
@@ -36,10 +43,91 @@ export interface IWalletLink {
     isPrimary: boolean;
     /** True iff wallet ownership has been cryptographically proven via signature. */
     verified: boolean;
+    /**
+     * Timestamp of the most recent successful signature on this wallet.
+     * `null` for wallets that have never been signed (i.e. registered-only).
+     * Refreshes on `linkWallet`, `setPrimaryWallet`, and the dedicated
+     * refresh-verification endpoint. Used by the freshness predicate that
+     * gates cookie-path admin authority — see `VERIFICATION_FRESHNESS_MS`.
+     */
+    verifiedAt: Date | null;
     /** Timestamp of last connection/use */
     lastUsed: Date;
     /** Optional user-assigned label for the wallet */
     label?: string;
+}
+
+/**
+ * How recently a wallet must have been signed before its verification stops
+ * conferring cookie-path admin authority. 14 days.
+ *
+ * The threshold is uniform across consumers so a wallet that's "fresh enough"
+ * for one access point is fresh enough for any. Picked short enough that an
+ * abandoned-account or stolen-cookie scenario decays in days, not months;
+ * long enough that an active operator who signs roughly monthly never sees
+ * the prompt. If 14 days proves too aggressive in practice, tune the number
+ * here — never carve out per-gate thresholds.
+ *
+ * Scope: only consulted when `identityState === Verified`. Anonymous and
+ * Registered users are unaffected by freshness, and stale-Verified users
+ * keep their stored `identityState` for display while losing admin
+ * authority until they refresh.
+ */
+export const VERIFICATION_FRESHNESS_MS = 14 * 24 * 60 * 60 * 1000;
+
+/**
+ * Minimal structural shape of the wallet fields the freshness predicate
+ * reads. Accepts both the canonical backend `IWalletLink` (Date instances)
+ * and the frontend's wire-form `IWalletLink` (ISO strings) without forcing
+ * either side to convert before calling. The predicate normalizes
+ * internally — see `isWalletVerificationFresh`.
+ */
+export interface IWalletVerificationFreshnessInput {
+    verified: boolean;
+    verifiedAt: Date | string | null;
+}
+
+/**
+ * True iff this wallet's verification is fresh enough to confer cookie-path
+ * admin authority right now.
+ *
+ * Defensive against legacy `verified: true` wallets with `verifiedAt: null`
+ * (pre-migration data): such wallets count as stale, never fresh, so the
+ * admin path can't accidentally grant authority on the strength of an
+ * unrecorded signature timestamp. Also defensive against wire-form
+ * timestamps — `verifiedAt` may arrive as a `Date` instance (server-side)
+ * or an ISO string (after JSON round-trip on the wire).
+ */
+export function isWalletVerificationFresh(
+    wallet: IWalletVerificationFreshnessInput,
+    now: number = Date.now()
+): boolean {
+    if (!wallet.verified || wallet.verifiedAt === null) {
+        return false;
+    }
+    const verifiedAtMs = wallet.verifiedAt instanceof Date
+        ? wallet.verifiedAt.getTime()
+        : new Date(wallet.verifiedAt).getTime();
+    if (Number.isNaN(verifiedAtMs)) {
+        return false;
+    }
+    return now - verifiedAtMs < VERIFICATION_FRESHNESS_MS;
+}
+
+/**
+ * True iff at least one wallet in the array is verification-fresh.
+ *
+ * "Any-fresh-wins" is the multi-wallet rule: a user with five wallets where
+ * only one is recently signed remains a fresh-Verified caller. Asking
+ * operators to keep every linked wallet signed within the window would be
+ * worse UX than no expiry at all — they'd click through prompts without
+ * reading. Keep one wallet hot, you keep admin authority.
+ */
+export function hasFreshVerification(
+    wallets: ReadonlyArray<IWalletVerificationFreshnessInput>,
+    now: number = Date.now()
+): boolean {
+    return wallets.some(w => isWalletVerificationFresh(w, now));
 }
 
 /**

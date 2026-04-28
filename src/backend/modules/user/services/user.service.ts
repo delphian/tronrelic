@@ -61,6 +61,7 @@ import {
 } from './geo.service.js';
 import type TronWeb from 'tronweb';
 import { SignatureService } from '../../auth/signature.service.js';
+import { WalletChallengeService, type IWalletChallenge, type WalletChallengeAction } from './wallet-challenge.service.js';
 import { GscService } from './gsc.service.js';
 import { AnalyticsRangeValidationError } from './user.errors.js';
 
@@ -148,14 +149,21 @@ export interface ILinkWalletResult {
  * not cryptographically proven.
  */
 export interface IPublicProfile {
-    /** UUID of the user who owns this profile */
-    userId: string;
     /** Verified wallet address for this profile */
     address: string;
     /** When the user account was created */
     createdAt: Date;
     /** Always true (only verified wallets resolve to a public profile) */
     isVerified: true;
+    /**
+     * True when the requester's cookie identity owns this profile.
+     *
+     * Computed server-side from `req.userId` so the owning UUID never
+     * leaves the server. Public visitors always see `false`; the owner
+     * already knows their own UUID via their cookie / bootstrap response,
+     * so they don't need it echoed back here.
+     */
+    isOwner: boolean;
 }
 
 /**
@@ -205,6 +213,7 @@ export class UserService {
     private static instance: UserService;
     private readonly collection: Collection<IUserDocument>;
     private readonly signatureService: SignatureService;
+    private readonly walletChallengeService: WalletChallengeService;
     private gscService: GscService | null = null;
     private readonly CACHE_KEY_PREFIX = 'user:';
     private readonly CACHE_KEY_WALLET_PREFIX = 'user:wallet:';
@@ -240,6 +249,7 @@ export class UserService {
     ) {
         this.collection = database.getCollection<IUserDocument>('users');
         this.signatureService = new SignatureService(tronWeb);
+        this.walletChallengeService = new WalletChallengeService(cacheService);
     }
 
     /**
@@ -469,9 +479,11 @@ export class UserService {
      * *verified* state.
      *
      * @param address - Base58 TRON address
+     * @param visitorId - Cookie-resolved UUID of the caller, if any. Used to
+     *   compute `isOwner` server-side so the owning UUID never leaks publicly.
      * @returns Public profile or null if not found / not verified
      */
-    async getPublicProfile(address: string): Promise<IPublicProfile | null> {
+    async getPublicProfile(address: string, visitorId?: string | null): Promise<IPublicProfile | null> {
         // Normalize address using signature service (handles TRON address format)
         let normalizedAddress: string;
         try {
@@ -494,10 +506,10 @@ export class UserService {
         }
 
         return {
-            userId: user.id,
             address: wallet.address,
             createdAt: user.createdAt,
-            isVerified: true
+            isVerified: true,
+            isOwner: visitorId === user.id
         };
     }
 
@@ -569,12 +581,14 @@ export class UserService {
             // Wallet already exists - update lastUsed
             doc.wallets[existingWalletIndex].lastUsed = now;
         } else {
-            // Add a new wallet in registered state (verified=false until signed)
+            // Add a new wallet in registered state (verified=false until signed).
+            // verifiedAt stays null until a signature lands via linkWallet.
             const walletLink: IWalletLink = {
                 address: normalizedAddress,
                 linkedAt: now,
                 isPrimary: false,
                 verified: false,
+                verifiedAt: null,
                 lastUsed: now
             };
             doc.wallets.push(walletLink);
@@ -643,23 +657,23 @@ export class UserService {
         }
         userId = doc.id;
 
-        // Verify signature proves wallet ownership
-        const normalizedAddress = await this.signatureService.verifyMessage(
-            input.address,
+        // Normalize the submitted address up front so the canonical-message
+        // check, the signature recovery, and the nonce key all reference the
+        // same string. The nonce was minted against the normalized form by
+        // `issueWalletChallenge`, so any mismatch here means the client is
+        // not signing the message we issued.
+        const normalizedAddress = this.signatureService.normalizeAddress(input.address);
+        await this.assertWalletChallenge(userId, 'link', normalizedAddress, input);
+
+        // Verify signature proves wallet ownership. The recovered address
+        // must equal the normalized form we already canonicalized against.
+        const recoveredAddress = await this.signatureService.verifyMessage(
+            normalizedAddress,
             input.message,
             input.signature
         );
-
-        // Check message format - must include wallet address
-        // Note: For identity swap (login), message may contain different userId
-        if (!input.message.includes(normalizedAddress)) {
-            throw new Error('Invalid message format. Message must include wallet address.');
-        }
-
-        // Check timestamp (prevent replay attacks - 5 minute window)
-        const now = Date.now();
-        if (Math.abs(now - input.timestamp) > 5 * 60 * 1000) {
-            throw new Error('Signature timestamp expired. Please sign a new message.');
+        if (recoveredAddress !== normalizedAddress) {
+            throw new Error('Signature address does not match submitted address.');
         }
 
         // Check if wallet already linked to another user
@@ -682,10 +696,17 @@ export class UserService {
             );
             const mergedWallets = [...existingLink.wallets, ...loserWallets];
 
-            // Mark the disputed wallet as verified on winner
+            // Mark the disputed wallet as verified on winner. The link call
+            // that triggered reconciliation carries a fresh signature on
+            // this address, so verifiedAt anchors at now — the freshness
+            // clock for this wallet now reflects the just-completed proof.
+            // Other transferred wallets retain whatever verifiedAt history
+            // the loser already had (proving control of one wallet doesn't
+            // refresh siblings).
             const disputedIdx = mergedWallets.findIndex(w => w.address === normalizedAddress);
             if (disputedIdx >= 0) {
                 mergedWallets[disputedIdx].verified = true;
+                mergedWallets[disputedIdx].verifiedAt = nowDate;
                 mergedWallets[disputedIdx].lastUsed = nowDate;
             }
 
@@ -773,16 +794,23 @@ export class UserService {
         const existingWalletIndex = doc.wallets.findIndex(w => w.address === normalizedAddress);
 
         if (existingWalletIndex >= 0) {
-            // Wallet already connected - verify it and update lastUsed
+            // Wallet already connected — promote to verified and stamp the
+            // freshness anchor. linkWallet always carries a fresh signature,
+            // so verifiedAt becomes "now" regardless of whether the wallet
+            // was previously verified (refreshing the freshness clock is the
+            // intended side effect of a successful re-link).
             doc.wallets[existingWalletIndex].verified = true;
+            doc.wallets[existingWalletIndex].verifiedAt = nowDate;
             doc.wallets[existingWalletIndex].lastUsed = nowDate;
         } else {
-            // Add new verified wallet
+            // Add new verified wallet. verifiedAt = now anchors the
+            // freshness window from the moment of signature.
             const walletLink: IWalletLink = {
                 address: normalizedAddress,
                 linkedAt: nowDate,
                 isPrimary: false,
                 verified: true,
+                verifiedAt: nowDate,
                 lastUsed: nowDate
             };
             doc.wallets.push(walletLink);
@@ -847,7 +875,8 @@ export class UserService {
         userId: string,
         address: string,
         message: string,
-        signature: string
+        signature: string,
+        nonce: string
     ): Promise<IUser> {
         // Resolve to canonical document (single DB hit, follows merge pointer if needed)
         const doc = await this.resolveDocument(userId);
@@ -856,12 +885,19 @@ export class UserService {
         }
         userId = doc.id;
 
-        // Verify signature
-        const normalizedAddress = await this.signatureService.verifyMessage(
-            address,
+        // Normalize once so the nonce, canonical message, and signature all
+        // reference the same address.
+        const normalizedAddress = this.signatureService.normalizeAddress(address);
+        await this.assertWalletChallenge(userId, 'unlink', normalizedAddress, { message, nonce });
+
+        const recoveredAddress = await this.signatureService.verifyMessage(
+            normalizedAddress,
             message,
             signature
         );
+        if (recoveredAddress !== normalizedAddress) {
+            throw new Error('Signature address does not match submitted address.');
+        }
 
         // Check wallet is linked to this user
         const walletIndex = doc.wallets.findIndex(w => w.address === normalizedAddress);
@@ -904,10 +940,11 @@ export class UserService {
     /**
      * Set primary wallet for a user.
      *
-     * Updates the wallet's lastUsed timestamp to make it the most recently used,
-     * then recalculates isPrimary using the standard algorithm.
-     * No signature required — wallet ownership was verified during linking.
-     * Cookie validation ensures only the owning user can call this endpoint.
+     * Step-up authentication: requires a fresh wallet challenge signed by
+     * the target wallet. Cookie validation alone is insufficient because
+     * the cookie is XSS-stealable, and the primary wallet drives downstream
+     * attribution (referrals, public profile, plugin integrations) — a
+     * captured cookie should not be able to steer those flows.
      *
      * Note: If the requested wallet is registered (unsigned) but the user
      * has at least one verified wallet, the most recent verified wallet
@@ -915,12 +952,19 @@ export class UserService {
      *
      * @param userId - UUID of user
      * @param address - Wallet address to set as primary
+     * @param message - Canonical message returned by the matching challenge
+     * @param signature - TronLink signature over `message`
+     * @param nonce - Single-use nonce minted by the wallet challenge endpoint
      * @returns Updated user document
-     * @throws Error if user not found or wallet not linked
+     * @throws Error if user not found, wallet not linked, signature invalid,
+     *               or nonce expired/already consumed
      */
     async setPrimaryWallet(
         userId: string,
-        address: string
+        address: string,
+        message: string,
+        signature: string,
+        nonce: string
     ): Promise<IUser> {
         // Resolve to canonical document (single DB hit, follows merge pointer if needed)
         const doc = await this.resolveDocument(userId);
@@ -929,14 +973,32 @@ export class UserService {
         }
         userId = doc.id;
 
+        const normalizedAddress = this.signatureService.normalizeAddress(address);
+        await this.assertWalletChallenge(userId, 'set-primary', normalizedAddress, { message, nonce });
+
+        const recoveredAddress = await this.signatureService.verifyMessage(
+            normalizedAddress,
+            message,
+            signature
+        );
+        if (recoveredAddress !== normalizedAddress) {
+            throw new Error('Signature address does not match submitted address.');
+        }
+
         // Find wallet in user's list (case-insensitive match via normalized address)
-        const walletIndex = doc.wallets.findIndex(w => w.address === address);
+        const walletIndex = doc.wallets.findIndex(w => w.address === normalizedAddress);
         if (walletIndex === -1) {
             throw new Error('Wallet is not linked to this user.');
         }
 
-        // Update lastUsed to make this wallet the most recently used
-        doc.wallets[walletIndex].lastUsed = new Date();
+        // setPrimaryWallet is a step-up signature path — the signature we
+        // just verified proves control of this wallet right now, so it's a
+        // legitimate freshness pump for the wallet being elevated. Sibling
+        // wallets keep their own verifiedAt; we don't propagate freshness
+        // across wallets because proving W1 doesn't prove W2.
+        const setPrimaryNow = new Date();
+        doc.wallets[walletIndex].lastUsed = setPrimaryNow;
+        doc.wallets[walletIndex].verifiedAt = setPrimaryNow;
 
         // Recalculate primary wallet using standard algorithm
         this.recalculatePrimaryWallet(doc.wallets);
@@ -952,7 +1014,7 @@ export class UserService {
             }
         );
 
-        this.logger.debug({ userId, primaryWallet: address }, 'Primary wallet updated');
+        this.logger.debug({ userId, primaryWallet: normalizedAddress }, 'Primary wallet updated');
 
         // Invalidate cache
         await this.invalidateUserCache(userId);
@@ -960,6 +1022,155 @@ export class UserService {
         // Fetch and return updated document
         const updated = await this.collection.findOne({ id: userId });
         return this.toPublicUser(updated!);
+    }
+
+    /**
+     * Refresh the freshness clock on an already-linked, already-verified
+     * wallet by consuming a `refresh-verification` challenge.
+     *
+     * Distinct from `linkWallet` because it does *not* add wallets, does
+     * not perform identity reconciliation, and refuses to operate on a
+     * wallet that isn't already attached and verified. It exists so a
+     * stale-Verified admin can reach back into the freshness window
+     * without going through the full link flow (which would otherwise
+     * trigger identity-swap on someone else's wallet, or fail outright on
+     * their own).
+     *
+     * Consumes a `'refresh-verification'` nonce — the action scoping
+     * ensures a captured `link` or `set-primary` signature cannot be
+     * replayed against this endpoint.
+     *
+     * @param userId - UUID of caller. Resolved through any merge pointer
+     *                 before nonce consumption so a stale loser cookie
+     *                 still refreshes the canonical user's wallet.
+     * @param address - Wallet address to refresh
+     * @param message - Canonical message returned by the matching challenge
+     * @param signature - TronLink signature over `message`
+     * @param nonce - Single-use nonce scoped to (userId, refresh-verification, address)
+     * @returns Updated user document with the wallet's `verifiedAt` set to now
+     * @throws Error if signature invalid, wallet not linked, or wallet not previously verified
+     */
+    async refreshWalletVerification(
+        userId: string,
+        address: string,
+        message: string,
+        signature: string,
+        nonce: string
+    ): Promise<IUser> {
+        const doc = await this.resolveDocument(userId);
+        if (!doc) {
+            throw new Error(`User with id "${userId}" not found`);
+        }
+        userId = doc.id;
+
+        const normalizedAddress = this.signatureService.normalizeAddress(address);
+        await this.assertWalletChallenge(userId, 'refresh-verification', normalizedAddress, { message, nonce });
+
+        const recoveredAddress = await this.signatureService.verifyMessage(
+            normalizedAddress,
+            message,
+            signature
+        );
+        if (recoveredAddress !== normalizedAddress) {
+            throw new Error('Signature address does not match submitted address.');
+        }
+
+        const walletIndex = doc.wallets.findIndex(w => w.address === normalizedAddress);
+        if (walletIndex === -1) {
+            throw new Error('Wallet is not linked to this user.');
+        }
+        // Refusing to refresh an unverified wallet is a deliberate
+        // narrowing — moving registered → verified is the link path's
+        // job, and conflating the two would let a refresh nonce replace
+        // the link nonce. Callers in that state should mint a `link`
+        // challenge and call `linkWallet` instead.
+        if (!doc.wallets[walletIndex].verified) {
+            throw new Error('Cannot refresh an unverified wallet. Use linkWallet to verify it first.');
+        }
+
+        const refreshNow = new Date();
+        doc.wallets[walletIndex].verifiedAt = refreshNow;
+        doc.wallets[walletIndex].lastUsed = refreshNow;
+
+        await this.collection.updateOne(
+            { id: userId },
+            {
+                $set: {
+                    wallets: doc.wallets,
+                    updatedAt: refreshNow
+                }
+            }
+        );
+
+        this.logger.info(
+            { userId, wallet: normalizedAddress },
+            'Wallet verification refreshed'
+        );
+
+        await this.invalidateUserCache(userId);
+
+        const updated = await this.collection.findOne({ id: userId });
+        return this.toPublicUser(updated!);
+    }
+
+    // ==================== Wallet Challenges ====================
+
+    /**
+     * Mint a single-use challenge for a wallet operation.
+     *
+     * The client posts `(action, address)` to
+     * `POST /api/user/:id/wallet/challenge`, signs the returned canonical
+     * `message` with TronLink, and submits `(message, signature, nonce)` back
+     * to the matching wallet endpoint within 60 seconds. The nonce is
+     * scoped to the canonical (resolved) UUID, the action verb, and the
+     * normalized address — preventing cross-action and cross-address
+     * replay.
+     *
+     * @param userId - UUID of caller (resolved through any merge pointer
+     *                 before the nonce is bound, so a stale loser cookie
+     *                 still produces a usable challenge for the canonical user)
+     * @param action - Wallet operation the challenge will gate
+     * @param address - Submitted TRON address (hex or base58)
+     * @returns Challenge with nonce, canonical message, and expiry
+     * @throws Error when user not found or address malformed
+     */
+    async issueWalletChallenge(
+        userId: string,
+        action: WalletChallengeAction,
+        address: string
+    ): Promise<IWalletChallenge> {
+        const doc = await this.resolveDocument(userId);
+        if (!doc) {
+            throw new Error(`User with id "${userId}" not found`);
+        }
+        const normalizedAddress = this.signatureService.normalizeAddress(address);
+        return this.walletChallengeService.issue(doc.id, action, normalizedAddress);
+    }
+
+    /**
+     * Verify the canonical challenge form and atomically consume the nonce.
+     *
+     * Throws on any mismatch — the caller need only handle the success case.
+     * Consuming after the format check guarantees a malformed-message attempt
+     * does not waste the user's nonce.
+     */
+    private async assertWalletChallenge(
+        userId: string,
+        action: WalletChallengeAction,
+        normalizedAddress: string,
+        input: { message: string; nonce: string }
+    ): Promise<void> {
+        if (!input.nonce) {
+            throw new Error('Wallet challenge nonce is required.');
+        }
+        const expected = WalletChallengeService.buildMessage(action, normalizedAddress, input.nonce);
+        if (input.message !== expected) {
+            throw new Error('Signed message does not match the canonical challenge form.');
+        }
+        const consumed = await this.walletChallengeService.consume(userId, action, normalizedAddress, input.nonce);
+        if (!consumed) {
+            throw new Error('Wallet challenge expired or already used. Request a new challenge.');
+        }
     }
 
     // ==================== Preferences ====================

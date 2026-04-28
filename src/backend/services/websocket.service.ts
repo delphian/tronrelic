@@ -1,10 +1,71 @@
 import type { IWebSocketService } from '@/types';
 import type { Server } from 'http';
 import { Server as SocketIOServer, type Socket } from 'socket.io';
+import { unsign } from 'cookie-signature';
 import type { TronRelicSocketEvent, SocketSubscriptions } from '@/shared';
 import { logger } from '../lib/logger.js';
 import { PluginWebSocketRegistry } from './plugin-websocket-registry.js';
 import { corsOriginCallback } from '../config/cors.js';
+import { env } from '../config/env.js';
+import { USER_ID_COOKIE_NAME } from '../modules/user/api/identity-cookie.js';
+
+/** UUID v4 format check; mirrors UserService.isValidUUID. */
+const UUID_V4_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+/**
+ * Pull the identity UUID out of a handshake Cookie header string.
+ *
+ * Exported for unit testing; called from `readUserIdFromHandshake` with
+ * the live socket's header. Socket.IO doesn't run Express middleware, so
+ * cookie-parser isn't available here and we verify the HMAC ourselves via
+ * `cookie-signature.unsign`. The expected on-the-wire format for signed
+ * cookies is `s:<uuid>.<HMAC>` (cookie-parser convention); URL-encoding
+ * adds the `s%3A` prefix that `decodeURIComponent` strips back to `s:`.
+ *
+ * Returns null on missing, malformed, forged-signature, decode-error, or
+ * non-UUID cookie values so the caller can short-circuit cleanly. Legacy
+ * unsigned cookies issued before HMAC signing are also accepted — admin
+ * auth runs on `req.signedCookies` and never sees identity rooms anyway,
+ * so accepting unsigned values here only affects user-room subscriptions
+ * and matches the grace-window behavior in `userContextMiddleware`.
+ */
+export function parseUserIdFromCookieHeader(cookieHeader: string | undefined | null): string | null {
+    if (typeof cookieHeader !== 'string' || cookieHeader.length === 0) {
+        return null;
+    }
+    const match = cookieHeader.match(new RegExp(`(?:^|;\\s*)${USER_ID_COOKIE_NAME}=([^;]*)`));
+    if (!match) return null;
+    let raw: string;
+    try {
+        raw = decodeURIComponent(match[1]);
+    } catch {
+        return null;
+    }
+
+    // Signed cookies are `s:<uuid>.<HMAC>`. Verify with the same secret
+    // cookie-parser uses for Express requests; reject on tamper.
+    if (raw.startsWith('s:')) {
+        const unsigned = unsign(raw.slice(2), env.SESSION_SECRET ?? '');
+        if (unsigned === false) return null;
+        return UUID_V4_REGEX.test(unsigned) ? unsigned : null;
+    }
+
+    // Legacy unsigned cookies: accept if UUID v4. Admin auth doesn't read
+    // this path; only identity-room subscriptions use it.
+    return UUID_V4_REGEX.test(raw) ? raw : null;
+}
+
+/**
+ * Pull the identity UUID out of the handshake's Cookie header.
+ *
+ * Socket.IO forwards the original HTTP Cookie header on the WebSocket
+ * upgrade when the client opts in with `withCredentials: true`. We parse
+ * it once at connection time so identity-scoped subscriptions can never
+ * be steered by a client-supplied payload field.
+ */
+function readUserIdFromHandshake(socket: Socket): string | null {
+    return parseUserIdFromCookieHeader(socket.handshake.headers.cookie);
+}
 
 export class WebSocketService implements IWebSocketService {
   private static instance: WebSocketService;
@@ -48,7 +109,15 @@ export class WebSocketService implements IWebSocketService {
   }
 
   private handleConnection(socket: Socket) {
-    logger.info({ socketId: socket.id }, 'Client connected');
+    // Resolve user identity from the handshake cookie once at connection
+    // time. This is the only trusted source of UUID — the subscribe payload
+    // is not consulted for identity-scoped rooms. Stash the resolved value
+    // on `socket.data.userId` so plugin managers (and the core subscribe
+    // handler below) can read it without re-parsing.
+    const cookieUserId = readUserIdFromHandshake(socket);
+    socket.data.userId = cookieUserId;
+
+    logger.info({ socketId: socket.id, hasIdentity: cookieUserId !== null }, 'Client connected');
 
     socket.on('subscribe', (pluginIdOrPayload: string | SocketSubscriptions, roomNameOrPayload?: string | any, optionalPayload?: any) => {
       this.handleSubscription(socket, pluginIdOrPayload, roomNameOrPayload, optionalPayload);
@@ -175,13 +244,19 @@ export class WebSocketService implements IWebSocketService {
       }
     }
 
-    // Handle user identity subscriptions
-    if (payload.user?.userId) {
-      const userId = payload.user.userId.trim();
-      if (userId) {
-        const userRoom = `user:${userId}`;
+    // Handle user identity subscriptions. The user id comes exclusively
+    // from the cookie resolved at connection time — payload.user.userId is
+    // ignored even if a client sends it. This closes the prior bug where a
+    // client could subscribe to any user's `user:<uid>` room by sending
+    // that uid in the payload.
+    if (payload.user) {
+      const cookieUserId: string | null = socket.data.userId ?? null;
+      if (cookieUserId) {
+        const userRoom = `user:${cookieUserId}`;
         socket.join(userRoom);
         logger.debug({ socketId: socket.id, userRoom }, 'User identity subscription registered');
+      } else {
+        logger.warn({ socketId: socket.id }, 'User subscription requested without identity cookie');
       }
     }
 

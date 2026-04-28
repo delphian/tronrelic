@@ -127,20 +127,16 @@ export {
 export type { ISessionData, IDailyVisitorData, IVisitorOrigin, IUtmParams, VisitorPeriod } from './api';
 
 // =============================================================================
-// Identity Utilities (Client-side)
+// Identity Utilities
 // =============================================================================
+//
+// The server is the only writer of `tronrelic_uid`. Client-side UUID
+// generation, cookie writing, and the localStorage mirror have been
+// removed; the constant and validator below remain for SSR helpers.
 
 export {
     USER_ID_COOKIE_NAME,
-    USER_ID_STORAGE_KEY,
-    COOKIE_MAX_AGE,
-    generateUUID,
     isValidUUID,
-    getUserIdFromCookie,
-    getUserIdFromStorage,
-    setUserIdCookie,
-    getOrCreateUserId,
-    clearUserIdentity,
     // TronLink provider utilities
     getTronWeb,
     assertTronWeb,
