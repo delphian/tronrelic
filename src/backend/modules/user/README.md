@@ -239,7 +239,7 @@ The user identity cookie has these characteristics:
 
 **Why signing matters.** HttpOnly only blocks JavaScript reads in browsers — non-browser clients (curl, custom tools) can set arbitrary `Cookie` headers. Without a signature, an attacker who learns a UUID could forge `Cookie: tronrelic_uid=<uuid>` and pass identity checks. Signing requires possession of `SESSION_SECRET` to mint a valid value, so the cookie behaves as a server-bound bearer token, not a guess-the-UUID lottery.
 
-**Reader policy.** `requireAdmin` reads identity **only** from `req.signedCookies` — a forged or unsigned admin cookie is never honored. `userContextMiddleware` and the bootstrap controller prefer `req.signedCookies` and fall back to `req.cookies` for unsigned legacy values; on a fallback the server immediately re-issues the cookie as signed via `setIdentityCookie`, so visitors holding unsigned cookies upgrade transparently without losing their UUID. The websocket handshake parser verifies the HMAC directly via `cookie-signature.unsign` (Socket.IO doesn't run cookie-parser) and applies the same signed-first / legacy-fallback policy for identity-room subscriptions.
+**Reader policy.** `requireAdmin` reads identity **only** from `req.signedCookies` — a forged or unsigned admin cookie is never honored. Every other HTTP entry point (the bootstrap controller, `validateCookie`, `userContextMiddleware`) shares a single resolver, `resolveIdentityFromCookies` in `identity-cookie.ts`, which prefers `req.signedCookies` and falls back to `req.cookies` for unsigned legacy values; on a fallback each of those readers immediately re-issues the cookie as signed via `setIdentityCookie` and emits an info-level `event: 'legacy_cookie_upgraded'` log so operators can track grace-window decay and flag anomalous patterns. Visitors holding unsigned cookies upgrade transparently on the very next request without losing their UUID. The websocket handshake parser verifies the HMAC directly via `cookie-signature.unsign` (Socket.IO doesn't run cookie-parser) and is **signed-only — no legacy fallback.** The handshake has no Set-Cookie channel, so it cannot facilitate the upgrade; accepting unsigned identity would only let a forged-UUID Cookie header subscribe to identity rooms without possessing `SESSION_SECRET`. Browser visitors always reach the handshake with a signed cookie because `SocketBridge` defers the WS connection past hydration, by which point `UserIdentityProvider` has re-anchored the cookie via `/api/user/bootstrap` — so the signed-only policy never breaks legitimate visitors. Non-browser clients must hit any HTTP entry point first to receive the signed cookie, then connect.
 
 **SESSION_SECRET.** Required in production: env validation throws on startup if unset. Development and test fall through to a fixed placeholder with a console.warn — never deploy with the placeholder.
 
@@ -319,21 +319,25 @@ UserController exposes REST API endpoints with cookie validation middleware for 
 
 **Cookie validation middleware:**
 
-The `validateCookie` middleware ensures the `tronrelic_uid` cookie matches the `:id` parameter in the URL. This prevents UUID enumeration attacks and ensures users can only access their own data.
+The `validateCookie` middleware ensures the `tronrelic_uid` cookie matches the `:id` parameter in the URL. This prevents UUID enumeration attacks and ensures users can only access their own data. Identity resolution flows through the shared `resolveIdentityFromCookies` helper in `identity-cookie.ts` — the single source of truth for the signed-first / unsigned-fallback policy used by every HTTP entry point. Legacy unsigned holders are upgraded on the response so the fallback is genuinely temporary, not a permanent shadow path for clients that bypass `/api/user/bootstrap`.
 
 ```typescript
 validateCookie(req: Request, res: Response, next: NextFunction): void {
-    const cookieId = req.cookies?.['tronrelic_uid'];
-    const paramId = req.params.id;
+    const resolved = resolveIdentityFromCookies(req);
 
-    if (!cookieId) {
+    if (!resolved) {
         res.status(401).json({ error: 'Unauthorized', message: 'Missing identity cookie' });
         return;
     }
 
-    if (cookieId !== paramId) {
+    if (resolved.userId !== req.params.id) {
         res.status(403).json({ error: 'Forbidden', message: 'Cookie does not match requested user ID' });
         return;
+    }
+
+    // Upgrade legacy unsigned cookies on the response. Signed path is a no-op.
+    if (!resolved.signed) {
+        setIdentityCookie(res, resolved.userId);
     }
 
     next();

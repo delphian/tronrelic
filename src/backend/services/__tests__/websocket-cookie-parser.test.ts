@@ -39,17 +39,22 @@ describe('parseUserIdFromCookieHeader', () => {
         expect(parseUserIdFromCookieHeader(`tronrelic_uid=${value}`)).toBeNull();
     });
 
-    it('accepts an unsigned legacy cookie for backwards compatibility', () => {
-        // Cookies issued before HMAC signing was introduced still carry
-        // raw UUID values. Identity-room subscriptions accept these so
-        // visitors don't lose continuity during the rollout window. Admin
-        // auth runs off `req.signedCookies` and never sees this path.
-        expect(parseUserIdFromCookieHeader(`tronrelic_uid=${VALID}`)).toBe(VALID);
+    it('rejects an unsigned cookie even when the value is a valid UUID', () => {
+        // The websocket handshake has no Set-Cookie channel, so it cannot
+        // re-anchor a legacy cookie the way HTTP entry points do. Accepting
+        // unsigned identity here would let any client that learned a
+        // victim's UUID forge a Cookie header and subscribe to that user's
+        // identity room without possessing SESSION_SECRET — the exact
+        // attack signing was meant to close. Browser visitors always reach
+        // the WS handshake with a signed cookie because SocketBridge
+        // defers the connection past hydration, by which point bootstrap
+        // has re-anchored.
+        expect(parseUserIdFromCookieHeader(`tronrelic_uid=${VALID}`)).toBeNull();
     });
 
-    it('decodes URL-encoded unsigned cookie values', () => {
+    it('rejects a URL-encoded unsigned cookie value', () => {
         const encoded = encodeURIComponent(VALID);
-        expect(parseUserIdFromCookieHeader(`tronrelic_uid=${encoded}`)).toBe(VALID);
+        expect(parseUserIdFromCookieHeader(`tronrelic_uid=${encoded}`)).toBeNull();
     });
 
     it('returns null when the cookie header is missing', () => {

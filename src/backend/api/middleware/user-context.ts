@@ -12,48 +12,9 @@ import type { Request, Response, NextFunction, RequestHandler } from 'express';
 import { UserService } from '../../modules/user/services/user.service.js';
 import { logger } from '../../lib/logger.js';
 import {
-    USER_ID_COOKIE_NAME,
-    setIdentityCookie
+    setIdentityCookie,
+    resolveIdentityFromCookies
 } from '../../modules/user/api/identity-cookie.js';
-
-/**
- * UUID v4 format regex for validation.
- * Validates format before trusting client-provided cookie values.
- */
-const UUID_V4_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
-/**
- * Resolve the visitor's identity UUID from request cookies.
- *
- * Returns `{ userId, signed }` where `signed=true` means the value came from
- * `req.signedCookies` (HMAC-verified by cookie-parser). The legacy
- * `signed=false` path accepts an unsigned UUID v4 from `req.cookies` to
- * preserve continuity for visitors whose cookies were issued before HMAC
- * signing was introduced. Callers can use the flag to decide whether to
- * re-issue the cookie as signed on the response.
- *
- * Returns `null` when no cookie is present or the candidate fails UUID v4
- * format validation. `req.signedCookies[name] === false` (cookie-parser's
- * "tampered" sentinel) is treated as no-cookie — we never honor a forged
- * signed cookie, even on the legacy fallback.
- */
-function resolveIdentityFromCookies(req: Request): { userId: string; signed: boolean } | null {
-    const signedValue = (req as any).signedCookies?.[USER_ID_COOKIE_NAME];
-    if (typeof signedValue === 'string' && UUID_V4_REGEX.test(signedValue)) {
-        return { userId: signedValue, signed: true };
-    }
-    // signedCookies returns `false` on tampered values — never accept those
-    // even via the legacy unsigned path; that would defeat HMAC verification.
-    if (signedValue === false) {
-        return null;
-    }
-
-    const unsignedValue = (req as any).cookies?.[USER_ID_COOKIE_NAME];
-    if (typeof unsignedValue === 'string' && UUID_V4_REGEX.test(unsignedValue)) {
-        return { userId: unsignedValue, signed: false };
-    }
-    return null;
-}
 
 /**
  * Middleware that resolves user context from cookies.
@@ -116,9 +77,21 @@ export const userContextMiddleware: RequestHandler = async (
         // signed so subsequent requests land on the signed path. The flag
         // stays out of admin auth — `requireAdmin` reads only signedCookies
         // — so this fallback never grants admin access on a forged value.
+        // The info log gives operators visibility into legacy-cookie decay
+        // and anomaly detection; see `validateCookie` for the rationale.
         if (!signed) {
             try {
                 setIdentityCookie(res, userId);
+                logger.info(
+                    {
+                        event: 'legacy_cookie_upgraded',
+                        site: 'userContextMiddleware',
+                        userId,
+                        path: req.path,
+                        ip: req.ip
+                    },
+                    'Legacy unsigned identity cookie accepted; re-anchored as signed'
+                );
             } catch (error) {
                 logger.debug({ error, userId }, 'Failed to re-issue identity cookie as signed');
             }

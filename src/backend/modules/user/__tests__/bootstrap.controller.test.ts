@@ -130,7 +130,8 @@ describe('UserController.bootstrap', () => {
 
         const req: any = {
             cookies: { [USER_ID_COOKIE_NAME]: VALID_UUID_A },
-            signedCookies: {}
+            signedCookies: {},
+            headers: {}
         };
         const res = makeRes();
 
@@ -180,5 +181,146 @@ describe('UserController.bootstrap', () => {
         // not the tombstone the request arrived with.
         expect(res.jsonBody.id).toBe(VALID_UUID_A);
         expect(res.cookies[0].value).toBe(VALID_UUID_A);
+    });
+});
+
+describe('UserController.validateCookie', () => {
+    let controller: UserController;
+    let mockDb: ReturnType<typeof createMockDatabaseService>;
+    let mockCache: MockCache;
+
+    beforeEach(() => {
+        mockDb = createMockDatabaseService();
+        mockCache = new MockCache();
+        UserService.resetInstance();
+        UserService.setDependencies(
+            mockDb,
+            mockCache,
+            new NullLogger(),
+            { getSiteUrl: async () => 'http://localhost:3000', getConfig: async () => ({ siteUrl: 'http://localhost:3000' }), updateConfig: async (u: any) => u, clearCache: () => {} } as any,
+            {} as any
+        );
+        controller = new UserController(UserService.getInstance(), {} as any, new NullLogger());
+    });
+
+    it('accepts the signed cookie and does NOT re-issue (avoids per-request Set-Cookie spam)', () => {
+        // After PR #197 cookie-parser exposes verified UUIDs on
+        // `signedCookies` and removes them from `cookies`. validateCookie
+        // must read signedCookies first, otherwise every signed visitor
+        // 401s on `/api/user/:id/...` calls (the original logout bug).
+        // The re-issue path is unsigned-only — the signed visitor is
+        // already in the target state, so emitting another Set-Cookie
+        // header here would be pure noise on every authenticated call.
+        const req: any = {
+            params: { id: VALID_UUID_A },
+            cookies: {},
+            signedCookies: { [USER_ID_COOKIE_NAME]: VALID_UUID_A }
+        };
+        const res = makeRes();
+        const next = vi.fn();
+
+        controller.validateCookie(req, res as any, next);
+
+        expect(next).toHaveBeenCalledOnce();
+        expect(res.statusCode).toBe(200);
+        expect(res.jsonBody).toBeNull();
+        expect(res.cookies).toHaveLength(0);
+    });
+
+    it('falls back to the unsigned cookie and re-anchors it as signed on the response', () => {
+        // Visitors whose cookie was minted before HMAC signing arrive
+        // with a bare UUID on `req.cookies`. We accept it so they don't
+        // lose access mid-rollout — and re-issue as signed on the same
+        // response so the upgrade is universal across HTTP entry points,
+        // not just bootstrap/userContextMiddleware. Without this a
+        // non-browser caller hitting only /api/user/:id/... would never
+        // visit a path that re-anchors.
+        const req: any = {
+            params: { id: VALID_UUID_A },
+            cookies: { [USER_ID_COOKIE_NAME]: VALID_UUID_A },
+            signedCookies: {},
+            headers: {},
+            path: '/api/user/' + VALID_UUID_A + '/logout'
+        };
+        const res = makeRes();
+        const next = vi.fn();
+
+        controller.validateCookie(req, res as any, next);
+
+        expect(next).toHaveBeenCalledOnce();
+        expect(res.statusCode).toBe(200);
+        expect(res.cookies).toHaveLength(1);
+        expect(res.cookies[0].name).toBe(USER_ID_COOKIE_NAME);
+        expect(res.cookies[0].value).toBe(VALID_UUID_A);
+        expect(res.cookies[0].options.signed).toBe(true);
+        expect(res.cookies[0].options.httpOnly).toBe(true);
+    });
+
+    it('returns 401 when neither cookie source carries an identity', () => {
+        const req: any = {
+            params: { id: VALID_UUID_A },
+            cookies: {},
+            signedCookies: {}
+        };
+        const res = makeRes();
+        const next = vi.fn();
+
+        controller.validateCookie(req, res as any, next);
+
+        expect(next).not.toHaveBeenCalled();
+        expect(res.statusCode).toBe(401);
+        expect(res.jsonBody).toMatchObject({ error: 'Unauthorized' });
+    });
+
+    it('rejects a tampered signed cookie (signedCookies value is `false`)', () => {
+        // cookie-parser surfaces forged signed cookies as the literal `false`.
+        // The signed branch's `typeof === "string"` guard must reject it,
+        // and the unsigned branch is empty, so the request 401s.
+        const req: any = {
+            params: { id: VALID_UUID_A },
+            cookies: {},
+            signedCookies: { [USER_ID_COOKIE_NAME]: false }
+        };
+        const res = makeRes();
+        const next = vi.fn();
+
+        controller.validateCookie(req, res as any, next);
+
+        expect(next).not.toHaveBeenCalled();
+        expect(res.statusCode).toBe(401);
+    });
+
+    it('returns 403 when the cookie identity does not match :id', () => {
+        const req: any = {
+            params: { id: VALID_UUID_A },
+            cookies: {},
+            signedCookies: { [USER_ID_COOKIE_NAME]: VALID_UUID_B }
+        };
+        const res = makeRes();
+        const next = vi.fn();
+
+        controller.validateCookie(req, res as any, next);
+
+        expect(next).not.toHaveBeenCalled();
+        expect(res.statusCode).toBe(403);
+        expect(res.jsonBody).toMatchObject({ error: 'Forbidden' });
+    });
+
+    it('prefers the signed cookie over a stale unsigned cookie when both are present', () => {
+        // Defensive: if both arrive (e.g. during the brief window after
+        // the backend re-issued as signed but before the legacy cookie
+        // has been overwritten), the signed value wins.
+        const req: any = {
+            params: { id: VALID_UUID_A },
+            cookies: { [USER_ID_COOKIE_NAME]: VALID_UUID_B },
+            signedCookies: { [USER_ID_COOKIE_NAME]: VALID_UUID_A }
+        };
+        const res = makeRes();
+        const next = vi.fn();
+
+        controller.validateCookie(req, res as any, next);
+
+        expect(next).toHaveBeenCalledOnce();
+        expect(res.statusCode).toBe(200);
     });
 });

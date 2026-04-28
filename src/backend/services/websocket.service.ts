@@ -7,10 +7,7 @@ import { logger } from '../lib/logger.js';
 import { PluginWebSocketRegistry } from './plugin-websocket-registry.js';
 import { corsOriginCallback } from '../config/cors.js';
 import { env } from '../config/env.js';
-import { USER_ID_COOKIE_NAME } from '../modules/user/api/identity-cookie.js';
-
-/** UUID v4 format check; mirrors UserService.isValidUUID. */
-const UUID_V4_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+import { USER_ID_COOKIE_NAME, UUID_V4_REGEX } from '../modules/user/api/identity-cookie.js';
 
 /**
  * Pull the identity UUID out of a handshake Cookie header string.
@@ -23,11 +20,30 @@ const UUID_V4_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[
  * adds the `s%3A` prefix that `decodeURIComponent` strips back to `s:`.
  *
  * Returns null on missing, malformed, forged-signature, decode-error, or
- * non-UUID cookie values so the caller can short-circuit cleanly. Legacy
- * unsigned cookies issued before HMAC signing are also accepted — admin
- * auth runs on `req.signedCookies` and never sees identity rooms anyway,
- * so accepting unsigned values here only affects user-room subscriptions
- * and matches the grace-window behavior in `userContextMiddleware`.
+ * non-UUID cookie values so the caller can short-circuit cleanly.
+ *
+ * **No legacy unsigned fallback.** Unlike the HTTP entry points
+ * (`bootstrap`, `validateCookie`, `userContextMiddleware`), which accept
+ * unsigned cookies *and re-anchor them as signed via `setIdentityCookie`*,
+ * the websocket handshake has no Set-Cookie response channel — it cannot
+ * facilitate the upgrade. The only thing accepting unsigned cookies here
+ * would do is let any client that learned a victim's UUID forge a Cookie
+ * header and subscribe to that user's `user:<uuid>` room without
+ * possessing `SESSION_SECRET`. That is exactly the attack signing was
+ * meant to close.
+ *
+ * Browser visitors are unaffected: `SocketBridge` defers the WS
+ * connection 5s past hydration (or until first interaction), and
+ * `UserIdentityProvider` runs `/api/user/bootstrap` on mount — completing
+ * in well under that window. By the time the handshake fires, the cookie
+ * is signed. A legacy-cookie holder visiting the site for the first time
+ * post-deploy gets the upgrade on the page request before the WS even
+ * tries to connect.
+ *
+ * Non-browser clients that bypass the HTTP API entirely will fail
+ * identity-room subscriptions — by design. Subscribing requires a server-
+ * issued signed cookie, which means going through the bootstrap endpoint
+ * at least once.
  */
 export function parseUserIdFromCookieHeader(cookieHeader: string | undefined | null): string | null {
     if (typeof cookieHeader !== 'string' || cookieHeader.length === 0) {
@@ -42,17 +58,14 @@ export function parseUserIdFromCookieHeader(cookieHeader: string | undefined | n
         return null;
     }
 
-    // Signed cookies are `s:<uuid>.<HMAC>`. Verify with the same secret
+    // Only signed envelopes are honored. Verify with the same secret
     // cookie-parser uses for Express requests; reject on tamper.
-    if (raw.startsWith('s:')) {
-        const unsigned = unsign(raw.slice(2), env.SESSION_SECRET ?? '');
-        if (unsigned === false) return null;
-        return UUID_V4_REGEX.test(unsigned) ? unsigned : null;
+    if (!raw.startsWith('s:')) {
+        return null;
     }
-
-    // Legacy unsigned cookies: accept if UUID v4. Admin auth doesn't read
-    // this path; only identity-room subscriptions use it.
-    return UUID_V4_REGEX.test(raw) ? raw : null;
+    const unsigned = unsign(raw.slice(2), env.SESSION_SECRET ?? '');
+    if (unsigned === false) return null;
+    return UUID_V4_REGEX.test(unsigned) ? unsigned : null;
 }
 
 /**
