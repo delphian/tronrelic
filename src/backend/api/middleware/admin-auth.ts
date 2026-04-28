@@ -3,7 +3,7 @@ import { UserIdentityState, hasFreshVerification } from '@/types';
 import { env } from '../../config/env.js';
 import { UserService } from '../../modules/user/services/user.service.js';
 import { UserGroupService } from '../../modules/user/services/user-group.service.js';
-import { USER_ID_COOKIE_NAME } from '../../modules/user/api/identity-cookie.js';
+import { USER_ID_COOKIE_NAME, UUID_V4_REGEX } from '../../modules/user/api/identity-cookie.js';
 
 /**
  * Internal failure reasons returned from `tryUserAdminAuth`. Surfaced in
@@ -47,8 +47,6 @@ declare module 'express-serve-static-core' {
         userId?: string;
     }
 }
-
-const UUID_V4_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 /**
  * Pull the admin token candidate off a request without enforcing.

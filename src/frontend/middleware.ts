@@ -168,8 +168,28 @@ export async function middleware(request: NextRequest) {
     // (app/layout.tsx → getServerUser) finds a cookie and can prefetch the
     // user record. Without this, brand-new visitors would see a flash on
     // first load while the client-side bootstrap completes after hydration.
+    //
+    // Skip bootstrap whenever the browser sends *any* non-empty identity
+    // cookie:
+    //   - Bare UUID (`<uuid>`): legacy unsigned cookie minted before PR
+    //     #197 or by this middleware on a prior cookieless visit. The
+    //     backend bootstrap accepts it on the next `/api/user/bootstrap`
+    //     call and re-anchors as signed.
+    //   - Signed envelope (`s:<uuid>.<sig>`): the current server-set
+    //     value. The wire format is opaque here — only the backend
+    //     holds `SESSION_SECRET` — but its presence proves the visitor
+    //     already has a canonical identity. Re-bootstrapping would mint
+    //     a fresh UUID and overwrite the signed cookie with an unsigned
+    //     one, orphaning the existing user record on every navigation.
+    //   - Garbage value: ignored on the middleware side; backend
+    //     bootstrap will mint a fresh UUID on the next client-side
+    //     bootstrap call when it can't recover a UUID from the cookie.
+    //
+    // Only mint here when the cookie is genuinely absent or empty. The
+    // raw UUID-regex check that used to gate this call rejected the
+    // signed envelope and orphaned every returning user post-PR-197.
     const existingId = request.cookies.get(USER_ID_COOKIE_NAME)?.value;
-    const needsBootstrap = !existingId || !UUID_V4_REGEX.test(existingId);
+    const needsBootstrap = typeof existingId !== 'string' || existingId.length === 0;
 
     let injectedUserId: string | null = null;
     if (needsBootstrap) {

@@ -7,15 +7,10 @@ import type { GscService } from '../services/index.js';
 import type { IUser, IUserPreferences } from '../database/index.js';
 import { getClientIP } from '../services/index.js';
 import { AnalyticsRangeValidationError } from '../services/user.errors.js';
-import { USER_ID_COOKIE_NAME, setIdentityCookie } from './identity-cookie.js';
-
-/**
- * Cookie name for user identity.
- */
-const COOKIE_NAME = USER_ID_COOKIE_NAME;
-
-/** UUID v4 format check, matches `UserService.isValidUUID`. */
-const UUID_V4_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+import {
+    setIdentityCookie,
+    resolveIdentityFromCookies
+} from './identity-cookie.js';
 
 /** Maximum length for stored path values. */
 const MAX_PATH_LENGTH = 500;
@@ -84,15 +79,24 @@ export class UserController {
      * Ensures the request cookie matches the :id parameter. This prevents
      * UUID enumeration and ensures users can only access their own data.
      *
+     * Identity resolution flows through the shared
+     * `resolveIdentityFromCookies` helper, which applies the canonical
+     * signed-first / unsigned-fallback policy documented in the User
+     * Module README. Legacy unsigned holders are upgraded on the
+     * response — mirroring `userContextMiddleware` — so that any HTTP
+     * entry point a non-browser caller might use re-anchors the cookie
+     * as signed on the first authenticated call. Without that the
+     * unsigned fallback would be a permanent shadow path for clients
+     * that bypass `/api/user/bootstrap`.
+     *
      * @param req - Express request
      * @param res - Express response
      * @param next - Express next function
      */
     validateCookie(req: Request, res: Response, next: NextFunction): void {
-        const cookieId = req.cookies?.[COOKIE_NAME];
-        const paramId = req.params.id;
+        const resolved = resolveIdentityFromCookies(req);
 
-        if (!cookieId) {
+        if (!resolved) {
             res.status(401).json({
                 error: 'Unauthorized',
                 message: 'Missing identity cookie'
@@ -100,12 +104,34 @@ export class UserController {
             return;
         }
 
-        if (cookieId !== paramId) {
+        if (resolved.userId !== req.params.id) {
             res.status(403).json({
                 error: 'Forbidden',
                 message: 'Cookie does not match requested user ID'
             });
             return;
+        }
+
+        // Upgrade legacy unsigned cookies on every authenticated call so
+        // the grace-window fallback is genuinely temporary. The signed
+        // path is a no-op here. The info log gives operators a signal
+        // they can use to (a) decide when the grace window has decayed
+        // far enough to remove the fallback, and (b) flag anomalous
+        // patterns — every legacy-fallback hit is also the shape of a
+        // forged-UUID attempt, so volume spikes or repeated UUIDs from
+        // one IP deserve attention.
+        if (!resolved.signed) {
+            setIdentityCookie(res, resolved.userId);
+            this.logger.info(
+                {
+                    event: 'legacy_cookie_upgraded',
+                    site: 'validateCookie',
+                    userId: resolved.userId,
+                    path: req.path,
+                    ip: getClientIP(req)
+                },
+                'Legacy unsigned identity cookie accepted; re-anchored as signed'
+            );
         }
 
         next();
@@ -162,22 +188,15 @@ export class UserController {
      */
     async bootstrap(req: Request, res: Response): Promise<void> {
         try {
-            // Prefer the HMAC-verified signed cookie. Legacy unsigned cookies
-            // (issued before signing was introduced) live on `req.cookies` and
-            // are accepted as a fallback so visitors don't lose their UUID
-            // during the rollout — `setIdentityCookie` below re-anchors them
-            // as signed on the response. Forged signed cookies surface as
-            // `false` in signedCookies and are ignored here.
-            const signedId = (req as any).signedCookies?.[COOKIE_NAME];
-            const unsignedId = req.cookies?.[COOKIE_NAME];
-            const cookieId =
-                typeof signedId === 'string' ? signedId
-                : typeof unsignedId === 'string' ? unsignedId
-                : undefined;
-            const isValidExisting = typeof cookieId === 'string' && UUID_V4_REGEX.test(cookieId);
-
-            // Mint a fresh UUID when the cookie is missing or malformed.
-            const candidateId = isValidExisting ? cookieId : randomUUID();
+            // The shared resolver applies the signed-first / unsigned-
+            // fallback policy and validates UUID v4 format in one step.
+            // Forged signed cookies and malformed values both collapse to
+            // null here, which we treat as "no existing identity" and
+            // mint fresh. setIdentityCookie below re-anchors any unsigned
+            // fallback as signed on the response.
+            const resolved = resolveIdentityFromCookies(req);
+            const isValidExisting = resolved !== null;
+            const candidateId = resolved?.userId ?? randomUUID();
 
             // getOrCreate resolves merge pointers, so a stale cookie that
             // points at a tombstone returns the canonical user. The returned
@@ -189,6 +208,21 @@ export class UserController {
             // to HttpOnly. For a new visitor it's the initial mint. For a
             // merged identity it points the cookie at the canonical user.
             setIdentityCookie(res, user.id);
+
+            // Surface unsigned-cookie upgrades as info-level so operators
+            // can track legacy-cookie decay and flag anomalous patterns.
+            // See validateCookie's matching log for the security rationale.
+            if (resolved && !resolved.signed) {
+                this.logger.info(
+                    {
+                        event: 'legacy_cookie_upgraded',
+                        site: 'bootstrap',
+                        userId: user.id,
+                        ip: getClientIP(req)
+                    },
+                    'Legacy unsigned identity cookie accepted; re-anchored as signed'
+                );
+            }
 
             this.logger.debug(
                 { userId: user.id, minted: !isValidExisting, merged: user.id !== candidateId },

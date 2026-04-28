@@ -122,6 +122,7 @@ services:
 
             # API Keys
             - ADMIN_API_TOKEN=${ADMIN_API_TOKEN}
+            - SESSION_SECRET=${SESSION_SECRET}
             - TRONGRID_API_KEY=${TRONGRID_API_KEY}
             - TRONGRID_API_KEY_2=${TRONGRID_API_KEY_2}
             - TRONGRID_API_KEY_3=${TRONGRID_API_KEY_3}
