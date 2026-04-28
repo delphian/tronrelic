@@ -1,4 +1,5 @@
 import type { Request, Response, NextFunction } from 'express';
+import { randomUUID } from 'node:crypto';
 import { USER_FILTERS } from '@/types';
 import type { ISystemLogService, UserFilterType } from '@/types';
 import type { UserService, IUserStats, IDateRange } from '../services/index.js';
@@ -6,11 +7,15 @@ import type { GscService } from '../services/index.js';
 import type { IUser, IUserPreferences } from '../database/index.js';
 import { getClientIP } from '../services/index.js';
 import { AnalyticsRangeValidationError } from '../services/user.errors.js';
+import { USER_ID_COOKIE_NAME, setIdentityCookie } from './identity-cookie.js';
 
 /**
  * Cookie name for user identity.
  */
-const COOKIE_NAME = 'tronrelic_uid';
+const COOKIE_NAME = USER_ID_COOKIE_NAME;
+
+/** UUID v4 format check, matches `UserService.isValidUUID`. */
+const UUID_V4_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 /** Maximum length for stored path values. */
 const MAX_PATH_LENGTH = 500;
@@ -135,6 +140,60 @@ export class UserController {
     }
 
     /**
+     * POST /api/user/bootstrap
+     *
+     * Idempotent identity bootstrap. The server is the only writer of the
+     * `tronrelic_uid` cookie. This endpoint is the canonical entry point
+     * for first-time visitors and the safe no-op for returning visitors.
+     *
+     * Behavior:
+     * - Cookie present and valid → resolve to canonical user (follows merge
+     *   pointers), refresh the cookie's max-age, return the user.
+     * - Cookie absent, malformed, or pointing to a never-created UUID →
+     *   mint a fresh UUID v4, create the user record, set the HttpOnly
+     *   cookie, return the new user.
+     *
+     * No `:id` parameter — the server resolves identity entirely from the
+     * cookie or mints one. Clients that ran in this environment with the
+     * legacy JS-minted cookie continue to work; the response refreshes the
+     * cookie with HttpOnly so the upgrade is transparent on next visit.
+     *
+     * Response: IUser
+     */
+    async bootstrap(req: Request, res: Response): Promise<void> {
+        try {
+            const cookieId = req.cookies?.[COOKIE_NAME];
+            const isValidExisting = typeof cookieId === 'string' && UUID_V4_REGEX.test(cookieId);
+
+            // Mint a fresh UUID when the cookie is missing or malformed.
+            const candidateId = isValidExisting ? cookieId : randomUUID();
+
+            // getOrCreate resolves merge pointers, so a stale cookie that
+            // points at a tombstone returns the canonical user. The returned
+            // id is what we re-anchor the cookie to.
+            const user = await this.userService.getOrCreate(candidateId);
+
+            // Always set the cookie on the response. For a returning visitor
+            // this refreshes max-age and rewrites the legacy JS-minted cookie
+            // to HttpOnly. For a new visitor it's the initial mint. For a
+            // merged identity it points the cookie at the canonical user.
+            setIdentityCookie(res, user.id);
+
+            this.logger.debug(
+                { userId: user.id, minted: !isValidExisting, merged: user.id !== candidateId },
+                'User identity bootstrapped'
+            );
+            res.json(user);
+        } catch (error) {
+            this.logger.error({ error }, 'Failed to bootstrap user identity');
+            res.status(500).json({
+                error: 'Failed to bootstrap user identity',
+                message: error instanceof Error ? error.message : 'Unknown error'
+            });
+        }
+    }
+
+    /**
      * POST /api/user/:id/wallet/connect
      *
      * Register a wallet to a user identity (no signature required).
@@ -191,28 +250,30 @@ export class UserController {
      * Verify a wallet on a user identity (cryptographic signature required).
      *
      * Stage 2 of the two-stage wallet flow: verifies wallet ownership via
-     * TronLink signature. If the wallet was previously registered
-     * (`verified: false`), upgrades it to `verified: true`. Either way the
-     * user transitions into the *verified* state.
+     * TronLink signature against a server-issued nonce. If the wallet was
+     * previously registered (`verified: false`), upgrades it to
+     * `verified: true`. Either way the user transitions into the *verified*
+     * state.
      *
      * If the wallet belongs to another user, performs identity swap and
      * returns `{ user: IUser, identitySwapped: true, previousUserId: '...' }`.
      * Frontend should update cookie/localStorage to the new user ID — this is
      * the cross-browser login path for *verified* users.
      *
-     * Requires: Cookie must match :id, wallet signature verification
-     * Body: { address, message, signature, timestamp }
+     * Requires: Cookie must match :id, fresh nonce from
+     *           POST /api/user/:id/wallet/challenge with action=link
+     * Body: { address, message, signature, nonce }
      * Response: ILinkWalletResult
      */
     async linkWallet(req: Request, res: Response): Promise<void> {
         try {
             const { id } = req.params;
-            const { address, message, signature, timestamp } = req.body;
+            const { address, message, signature, nonce } = req.body;
 
-            if (!address || !message || !signature || !timestamp) {
+            if (!address || !message || !signature || !nonce) {
                 res.status(400).json({
                     error: 'Missing required fields',
-                    message: 'Request must include address, message, signature, and timestamp'
+                    message: 'Request must include address, message, signature, and nonce'
                 });
                 return;
             }
@@ -221,10 +282,16 @@ export class UserController {
                 address,
                 message,
                 signature,
-                timestamp: Number(timestamp)
+                nonce
             });
 
             if (result.identitySwapped) {
+                // Re-anchor the HttpOnly cookie to the winner's UUID. The
+                // client can no longer write this cookie itself; without
+                // this Set-Cookie the next request would still arrive under
+                // the loser's stale id and the backend's merge-pointer
+                // resolution would silently redirect each call.
+                setIdentityCookie(res, result.user.id);
                 this.logger.info(
                     { previousUserId: result.previousUserId, newUserId: result.user.id, wallet: address },
                     'Identity swapped via wallet login'
@@ -248,24 +315,25 @@ export class UserController {
      *
      * Unlink a wallet from user identity.
      *
-     * Requires: Cookie must match :id, wallet signature verification
-     * Body: { message, signature }
+     * Requires: Cookie must match :id, fresh nonce from
+     *           POST /api/user/:id/wallet/challenge with action=unlink
+     * Body: { message, signature, nonce }
      * Response: IUser
      */
     async unlinkWallet(req: Request, res: Response): Promise<void> {
         try {
             const { id, address } = req.params;
-            const { message, signature } = req.body;
+            const { message, signature, nonce } = req.body;
 
-            if (!message || !signature) {
+            if (!message || !signature || !nonce) {
                 res.status(400).json({
                     error: 'Missing required fields',
-                    message: 'Request must include message and signature'
+                    message: 'Request must include message, signature, and nonce'
                 });
                 return;
             }
 
-            const user = await this.userService.unlinkWallet(id, address, message, signature);
+            const user = await this.userService.unlinkWallet(id, address, message, signature, nonce);
 
             this.logger.info({ userId: id, wallet: address }, 'Wallet unlinked via API');
             res.json(user);
@@ -281,17 +349,30 @@ export class UserController {
     /**
      * PATCH /api/user/:id/wallet/:address/primary
      *
-     * Set a wallet as primary. Cookie must match :id.
-     * No signature required — primary selection picks among already-verified
-     * (or registered) wallets and does not change the user's identity state.
+     * Set a wallet as primary. Step-up authentication: the cookie alone is
+     * insufficient because it is XSS-stealable, and the primary wallet drives
+     * downstream attribution (referrals, public profile, plugin reads).
+     * Requires a fresh nonce from `POST /api/user/:id/wallet/challenge`
+     * with `action: 'set-primary'` and a TronLink signature over the
+     * canonical message bound to that nonce.
      *
+     * Body: { message, signature, nonce }
      * Response: IUser
      */
     async setPrimaryWallet(req: Request, res: Response): Promise<void> {
         try {
             const { id, address } = req.params;
+            const { message, signature, nonce } = req.body;
 
-            const user = await this.userService.setPrimaryWallet(id, address);
+            if (!message || !signature || !nonce) {
+                res.status(400).json({
+                    error: 'Missing required fields',
+                    message: 'Request must include message, signature, and nonce'
+                });
+                return;
+            }
+
+            const user = await this.userService.setPrimaryWallet(id, address, message, signature, nonce);
 
             this.logger.debug({ userId: id, wallet: address }, 'Primary wallet set via API');
             res.json(user);
@@ -299,6 +380,100 @@ export class UserController {
             this.logger.error({ error, userId: req.params.id }, 'Failed to set primary wallet');
             res.status(400).json({
                 error: 'Failed to set primary wallet',
+                message: error instanceof Error ? error.message : 'Unknown error'
+            });
+        }
+    }
+
+    /**
+     * POST /api/user/:id/wallet/:address/refresh-verification
+     *
+     * Refresh the freshness clock on an already-linked, already-verified
+     * wallet. Used by the dual-track admin recovery flow when the
+     * cookie-resolved user is in the admin group with a verified wallet
+     * but every wallet's `verifiedAt` is older than the freshness window.
+     *
+     * Requires a fresh nonce from `POST /api/user/:id/wallet/challenge`
+     * with `action: 'refresh-verification'` and a TronLink signature
+     * over the canonical message bound to that nonce. The nonce scope
+     * (action+address+userId) prevents a captured `link` or `set-primary`
+     * signature from being replayed against this endpoint.
+     *
+     * Refuses to operate on registered (unverified) wallets — moving a
+     * wallet from registered → verified is the link path's job. Stale
+     * users with no verified wallets must complete a full link flow.
+     *
+     * Requires: Cookie must match :id
+     * Body: { message, signature, nonce }
+     * Response: IUser
+     */
+    async refreshWalletVerification(req: Request, res: Response): Promise<void> {
+        try {
+            const { id, address } = req.params;
+            const { message, signature, nonce } = req.body;
+
+            if (!message || !signature || !nonce) {
+                res.status(400).json({
+                    error: 'Missing required fields',
+                    message: 'Request must include message, signature, and nonce'
+                });
+                return;
+            }
+
+            const user = await this.userService.refreshWalletVerification(id, address, message, signature, nonce);
+
+            this.logger.info({ userId: id, wallet: address }, 'Wallet verification refreshed via API');
+            res.json(user);
+        } catch (error) {
+            this.logger.error({ error, userId: req.params.id }, 'Failed to refresh wallet verification');
+            res.status(400).json({
+                error: 'Failed to refresh wallet verification',
+                message: error instanceof Error ? error.message : 'Unknown error'
+            });
+        }
+    }
+
+    /**
+     * POST /api/user/:id/wallet/challenge
+     *
+     * Mint a server-issued single-use challenge for a wallet operation.
+     *
+     * The client sends `(action, address)` and receives a 60-second nonce
+     * plus the canonical message to sign with TronLink. Submitting the
+     * signature back to the matching wallet endpoint atomically consumes
+     * the nonce. Replaces the legacy 5-minute client-timestamp window.
+     *
+     * Body: { action: 'link' | 'unlink' | 'set-primary', address }
+     * Response: IWalletChallenge { nonce, message, expiresAt }
+     */
+    async issueWalletChallenge(req: Request, res: Response): Promise<void> {
+        try {
+            const { id } = req.params;
+            const { action, address } = req.body;
+
+            if (!action || !address) {
+                res.status(400).json({
+                    error: 'Missing required fields',
+                    message: 'Request must include action and address'
+                });
+                return;
+            }
+
+            if (action !== 'link' && action !== 'unlink' && action !== 'set-primary' && action !== 'refresh-verification') {
+                res.status(400).json({
+                    error: 'Invalid action',
+                    message: 'action must be one of: link, unlink, set-primary, refresh-verification'
+                });
+                return;
+            }
+
+            const challenge = await this.userService.issueWalletChallenge(id, action, address);
+
+            res.json(challenge);
+        } catch (error) {
+            this.logger.error({ error, userId: req.params.id }, 'Failed to issue wallet challenge');
+            res.status(400).json({
+                error: 'Failed to issue wallet challenge',
                 message: error instanceof Error ? error.message : 'Unknown error'
             });
         }

@@ -303,9 +303,9 @@ function publicTreeView(tree: IMenuTree): IMenuTree {
  * be silently bypassed when the caller omits the query param.
  */
 const DEFAULT_NAMESPACE = 'main';
-function denyIfAdminNamespace(req: Request, res: Response, namespace: string | undefined): boolean {
+async function denyIfAdminNamespace(req: Request, res: Response, namespace: string | undefined): Promise<boolean> {
     const effective = namespace || DEFAULT_NAMESPACE;
-    if (ADMIN_NAMESPACES.has(effective) && !isAdmin(req)) {
+    if (ADMIN_NAMESPACES.has(effective) && !(await isAdmin(req))) {
         res.status(401).json({ success: false, error: 'Unauthorized' });
         return true;
     }
@@ -373,13 +373,15 @@ export class MenuController {
                 return;
             }
 
-            if (denyIfAdminNamespace(req, res, namespace)) return;
+            if (await denyIfAdminNamespace(req, res, namespace)) return;
 
-            // Admin token holders see the full unfiltered tree (including
-            // disabled nodes and gated entries) so the admin UI can render
-            // and edit them. Regular visitors get the per-user filtered
-            // view: enabled-only AND gating-aware.
-            if (isAdmin(req)) {
+            // Admins see the full unfiltered tree (including disabled
+            // nodes and gated entries) so the admin UI can render and
+            // edit them. Admin status now resolves either via the user
+            // cookie (verified wallet + admin group) or via service token.
+            // Regular visitors get the per-user filtered view: enabled-
+            // only AND gating-aware.
+            if (await isAdmin(req)) {
                 res.json({ success: true, tree: this.service.getTree(namespace) });
                 return;
             }
@@ -624,7 +626,7 @@ export class MenuController {
             const all = this.service.getNamespaces();
             // Hide admin-only namespaces from anonymous callers so they
             // can't enumerate the admin surface via this endpoint.
-            const namespaces = isAdmin(req)
+            const namespaces = (await isAdmin(req))
                 ? all
                 : all.filter((ns) => !ADMIN_NAMESPACES.has(ns));
             res.json({ success: true, namespaces });
@@ -684,7 +686,7 @@ export class MenuController {
                 res.status(400).json({ success: false, error: 'Invalid namespace' });
                 return;
             }
-            if (denyIfAdminNamespace(req, res, namespace)) return;
+            if (await denyIfAdminNamespace(req, res, namespace)) return;
             const config = await this.service.getNamespaceConfig(namespace);
             res.json({ success: true, config });
         } catch (error) {
@@ -876,12 +878,13 @@ export class MenuController {
                 res.status(400).json({ success: false, error: 'Invalid namespace' });
                 return;
             }
-            if (denyIfAdminNamespace(req, res, namespace)) return;
+            if (await denyIfAdminNamespace(req, res, namespace)) return;
 
-            // Admin token holders bypass the per-user filter so they can
-            // resolve any URL regardless of gating; regular visitors see only
-            // the URLs (and children) their identity qualifies for.
-            const callerIsAdmin = isAdmin(req);
+            // Admins bypass the per-user filter so they can resolve any URL
+            // regardless of gating; regular visitors see only the URLs (and
+            // children) their identity qualifies for. Admin status now
+            // resolves via cookie+verified+admin-group OR service token.
+            const callerIsAdmin = await isAdmin(req);
             const user = (req as Request & { user?: IUser }).user;
             const tree = callerIsAdmin
                 ? this.service.getTree(namespace)

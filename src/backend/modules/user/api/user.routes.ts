@@ -39,6 +39,21 @@ export function createUserRouter(controller: UserController): Router {
         keyPrefix: 'user:wallet'
     });
 
+    // Bootstrap rate limiter — slightly tighter than the rest because this
+    // endpoint mints persistent identity. Even with idempotent semantics, an
+    // attacker hammering it would create churn in user counts.
+    const bootstrapRateLimiter = createRateLimiter({
+        windowSeconds: 60,
+        maxRequests: 10,
+        keyPrefix: 'user:bootstrap'
+    });
+
+    // Bootstrap is the only public user route that runs WITHOUT cookie
+    // validation — the whole point is to mint the cookie when none exists.
+    // Mounted before the `/:id` cookie-validation middleware so its specific
+    // path wins.
+    router.post('/bootstrap', bootstrapRateLimiter, controller.bootstrap.bind(controller));
+
     // Apply cookie validation to all routes with :id parameter
     router.use('/:id', controller.validateCookie.bind(controller));
     router.use('/:id/*', controller.validateCookie.bind(controller));
@@ -65,10 +80,18 @@ export function createUserRouter(controller: UserController): Router {
     router.post('/:id/wallet/connect', walletRateLimiter, controller.connectWallet.bind(controller));
 
     /**
+     * POST /api/user/:id/wallet/challenge
+     * Mint a server-issued single-use nonce for a wallet operation. Required
+     * before link/unlink/set-primary. Mounted before the bare `/wallet` route
+     * so its specific path wins. See `issueWalletChallenge` controller.
+     */
+    router.post('/:id/wallet/challenge', walletRateLimiter, controller.issueWalletChallenge.bind(controller));
+
+    /**
      * POST /api/user/:id/wallet
-     * Stage 2: verify the wallet via signature. Moves the user (or the
-     * specific wallet) into the *verified* state. See `linkWallet`
-     * controller for details.
+     * Stage 2: verify the wallet via signature against a fresh nonce. Moves
+     * the user (or the specific wallet) into the *verified* state. See
+     * `linkWallet` controller for details.
      */
     router.post('/:id/wallet', walletRateLimiter, controller.linkWallet.bind(controller));
 
@@ -80,9 +103,21 @@ export function createUserRouter(controller: UserController): Router {
 
     /**
      * PATCH /api/user/:id/wallet/:address/primary
-     * Set wallet as primary (requires signature)
+     * Set wallet as primary. Requires signature over a fresh challenge —
+     * cookie alone is insufficient because primary drives downstream
+     * attribution and a captured cookie should not steer it.
      */
     router.patch('/:id/wallet/:address/primary', walletRateLimiter, controller.setPrimaryWallet.bind(controller));
+
+    /**
+     * POST /api/user/:id/wallet/:address/refresh-verification
+     * Refresh `verifiedAt` on an already-verified wallet. Recovery path
+     * for stale-Verified admins whose cookie-path admin authority has
+     * decayed past the freshness window. Requires a `refresh-verification`
+     * nonce and a TronLink signature; nonce action-scoping ensures
+     * captured signatures from other actions cannot replay here.
+     */
+    router.post('/:id/wallet/:address/refresh-verification', walletRateLimiter, controller.refreshWalletVerification.bind(controller));
 
     // ============================================================================
     // Preferences Routes (30 requests/minute)

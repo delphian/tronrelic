@@ -45,6 +45,7 @@ import {
     clearWalletLoginRequired,
     connectWalletThunk,
     linkWalletThunk,
+    refreshWalletVerificationThunk,
     loginThunk,
     logoutThunk,
     selectUserId,
@@ -55,6 +56,7 @@ import {
     selectExistingWalletOwner,
     type WalletConnectionStatus
 } from '../slice';
+import { requestWalletChallenge } from '../api';
 import { getTronWeb, getTronLink } from '../lib';
 
 const DETECTION_INTERVALS = 12;
@@ -324,23 +326,18 @@ export function useWallet() {
         try {
             setStatus('connecting');
 
-            const timestamp = Date.now();
+            // Server mints a single-use nonce bound to (userId, 'link', address)
+            // and returns the canonical message we must sign verbatim.
+            const challenge = await requestWalletChallenge(userId, 'link', connectedAddress);
 
-            // Use different message format when logging in vs linking
-            // For login, we don't include userId in message since we're proving
-            // wallet ownership to swap to a different identity
-            const message = walletLoginRequired
-                ? `Login to TronRelic with wallet ${connectedAddress} at ${timestamp}`
-                : `Link wallet ${connectedAddress} to TronRelic identity ${userId} at ${timestamp}`;
-
-            const signature = await tronWeb.trx.signMessageV2(message);
+            const signature = await tronWeb.trx.signMessageV2(challenge.message);
 
             const result = await dispatch(linkWalletThunk({
                 userId,
                 address: connectedAddress,
-                message,
+                message: challenge.message,
                 signature,
-                timestamp
+                nonce: challenge.nonce
             })).unwrap();
 
             dispatch(setWalletVerified(true));
@@ -363,6 +360,59 @@ export function useWallet() {
             return false;
         }
     }, [dispatch, userId, connectedAddress, setStatus, walletLoginRequired]);
+
+    /**
+     * Refresh `verifiedAt` on an already-verified wallet via a fresh
+     * TronLink signature.
+     *
+     * Recovery path for stale-Verified admins. Mints a
+     * `'refresh-verification'` challenge, prompts TronLink to sign the
+     * canonical message, and dispatches the thunk that consumes the
+     * nonce on the backend. On success, the user document is refetched
+     * and `selectHasFreshVerification` returns true, restoring
+     * cookie-path admin authority.
+     *
+     * `address` defaults to `connectedAddress` because the caller
+     * usually wants to refresh whichever wallet TronLink currently has
+     * active. Pass an explicit address when the UI lets the user choose
+     * among multiple verified wallets.
+     */
+    const refreshVerification = useCallback(async (address?: string): Promise<boolean> => {
+        const target = address ?? connectedAddress;
+        if (!userId || !target) {
+            console.warn('Cannot refresh verification: no user or wallet address');
+            return false;
+        }
+
+        const tronWeb = getTronWeb();
+        if (!tronWeb?.trx?.signMessageV2) {
+            dispatch(setConnectionError('TronLink signature capability not available.'));
+            return false;
+        }
+
+        try {
+            const challenge = await requestWalletChallenge(userId, 'refresh-verification', target);
+            const signature = await tronWeb.trx.signMessageV2(challenge.message);
+
+            await dispatch(refreshWalletVerificationThunk({
+                userId,
+                address: target,
+                message: challenge.message,
+                signature,
+                nonce: challenge.nonce
+            })).unwrap();
+
+            console.log(`Wallet ${target} verification refreshed for user ${userId}`);
+            return true;
+        } catch (error) {
+            const errorMessage = error instanceof Error
+                ? error.message
+                : 'Failed to refresh wallet verification.';
+            dispatch(setConnectionError(errorMessage));
+            console.warn('Wallet verification refresh failed:', error);
+            return false;
+        }
+    }, [dispatch, userId, connectedAddress]);
 
     /**
      * Sign a message using TronLink.
@@ -459,6 +509,7 @@ export function useWallet() {
         // Actions
         connect,
         verify,
+        refreshVerification,
         disconnect,
         signMessage,
         setStatus,

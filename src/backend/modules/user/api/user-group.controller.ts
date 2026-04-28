@@ -129,11 +129,14 @@ export class UserGroupController {
      * PUT /api/admin/users/:id/groups
      *
      * Replace the user's complete group membership. Audit-logs a single
-     * info entry with target user id, requester IP, and before/after
-     * arrays — the shared-token admin model has no per-human attribution,
-     * so this is the only forensic record if the token leaks. Service
-     * layer is the source of truth: validation (unknown groups, missing
-     * user) and cache invalidation happen there.
+     * info entry tagged with `req.adminVia` ('user' for cookie+verified+
+     * admin-group, 'service-token' for the shared-token path) plus the
+     * requester UUID when human-attributed, the requester IP, the target
+     * user id, and the before/after arrays. The dual-track auth model
+     * means service-token calls remain shared; the path tag is the
+     * forensic record that distinguishes them. Service layer is the
+     * source of truth: validation (unknown groups, missing user) and
+     * cache invalidation happen there.
      */
     async setUserGroups(req: Request, res: Response): Promise<void> {
         const userId = req.params.id;
@@ -152,6 +155,8 @@ export class UserGroupController {
 
             this.logger.info(
                 {
+                    adminVia: req.adminVia ?? 'unknown',
+                    requesterUserId: req.adminVia === 'user' ? req.userId : null,
                     ip: getClientIP(req),
                     userId,
                     before,

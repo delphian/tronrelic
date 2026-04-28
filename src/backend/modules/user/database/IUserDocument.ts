@@ -37,6 +37,16 @@ export interface IWalletLink {
      * (and the owning user is in the *verified* state).
      */
     verified: boolean;
+    /**
+     * Timestamp of the most recent successful signature on this wallet.
+     * `null` for wallets in the registered (unsigned) state. Set by
+     * `linkWallet`, `setPrimaryWallet`, and the dedicated
+     * refresh-verification endpoint. Backfilled from `linkedAt` for legacy
+     * verified rows by migration 008. Consumed by the freshness predicate
+     * that gates cookie-path admin authority — see
+     * `VERIFICATION_FRESHNESS_MS` in `@/types`.
+     */
+    verifiedAt: Date | null;
     /** Timestamp of last connection/use (for primary wallet selection) */
     lastUsed: Date;
     /** Optional user-assigned label for the wallet */
@@ -295,16 +305,22 @@ export interface ICreateUserInput {
 
 /**
  * Input for linking a wallet to a user identity.
+ *
+ * Replay protection is anchored on `nonce` rather than a client-supplied
+ * timestamp: the server mints a single-use nonce via
+ * `POST /api/user/:id/wallet/challenge`, the client signs the canonical
+ * message returned alongside it, and the server consumes the nonce
+ * atomically before applying the mutation.
  */
 export interface ILinkWalletInput {
     /** Base58 TRON address to link */
     address: string;
-    /** Signature message for verification */
+    /** Canonical message returned by the matching wallet challenge */
     message: string;
     /** TronLink signature proving wallet ownership */
     signature: string;
-    /** Timestamp when signature was created (for replay protection) */
-    timestamp: number;
+    /** Single-use nonce minted by `POST /api/user/:id/wallet/challenge` */
+    nonce: string;
 }
 
 /**

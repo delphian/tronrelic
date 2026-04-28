@@ -5,10 +5,13 @@
 export {
     // User API functions
     fetchUser,
+    bootstrapUser,
     connectWallet,
+    requestWalletChallenge,
     linkWallet,
     unlinkWallet,
     setPrimaryWallet,
+    refreshWalletVerification,
     updatePreferences,
     recordActivity,
     // Session tracking functions
@@ -48,6 +51,8 @@ export type {
     ISessionData,
     IConnectWalletResult,
     ILinkWalletResult,
+    IWalletChallenge,
+    WalletChallengeAction,
     IPublicProfile,
     IDailyVisitorData,
     IVisitorOrigin,

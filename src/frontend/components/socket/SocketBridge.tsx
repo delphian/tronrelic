@@ -319,7 +319,11 @@ export function SocketBridge() {
     commentThreadSetRef.current = next;
   }, [commentThreads, connectionStatus]);
 
-  // Subscribe to user identity events when userId is available
+  // Subscribe to user identity events. The user UUID is no longer sent in
+  // the payload — the server reads `tronrelic_uid` from the handshake
+  // cookie at connection time and joins the socket to its own room. The
+  // local `userId` here is only used to decide *when* to subscribe (after
+  // bootstrap completes) and for re-subscribe debouncing.
   useEffect(() => {
     const socket = socketRef.current;
     if (!socket || !socket.connected || !userId) {
@@ -331,7 +335,7 @@ export function SocketBridge() {
       return;
     }
 
-    socket.emit('subscribe', { user: { userId } });
+    socket.emit('subscribe', { user: true });
     userSubscribedRef.current = true;
   }, [userId, connectionStatus]);
 

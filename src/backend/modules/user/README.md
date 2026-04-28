@@ -168,6 +168,7 @@ modules/user/
 ├── UserModule.ts            # IModule implementation (lifecycle, DI)
 ├── api/
 │   ├── index.ts             # Barrel exports
+│   ├── identity-cookie.ts   # Canonical HttpOnly cookie spec + setter
 │   ├── user.controller.ts   # Request handlers with cookie validation
 │   └── user.routes.ts       # Public and admin router factories
 ├── database/
@@ -193,7 +194,7 @@ modules/user/
 │   └── UserIdentityProvider.tsx  # React provider for identity initialization
 ├── lib/
 │   ├── index.ts             # Barrel exports
-│   ├── identity.ts          # UUID generation, cookie/localStorage management
+│   ├── identity.ts          # Cookie name + UUID validator (server-owned cookie)
 │   └── server.ts            # SSR utilities (getServerUserId, getServerUser)
 └── types/
     ├── index.ts             # Barrel exports
@@ -227,11 +228,13 @@ app/(core)/system/users/
 The user identity cookie has these characteristics:
 
 - **Name:** `tronrelic_uid`
-- **HttpOnly:** false (client needs to read for API calls)
+- **HttpOnly:** true (server-only; not exposed to JavaScript)
 - **SameSite:** Lax (allow same-site navigation, block cross-site POST)
 - **Secure:** true in production (HTTPS only)
 - **Path:** / (available site-wide)
 - **Max-Age:** 1 year (31536000 seconds)
+
+**Server is the only writer.** Client-side JavaScript cannot read or set this cookie. The server mints the UUID at the bootstrap endpoint, refreshes the cookie's max-age on each bootstrap, and re-anchors the cookie when identity-swap reconciliation produces a new canonical UUID. The legacy JS UUID generator, `setUserIdCookie` helper, and localStorage mirror have been removed; the server is the single source of truth for identity.
 
 **Privacy compliance:** This cookie is classified as "functional/essential" under GDPR because it's necessary for the website to remember user preferences and provide personalized features. No consent banner required.
 
@@ -277,12 +280,14 @@ static getInstance(): UserService
 // Get or create user by UUID (creates if not exists)
 const user = await userService.getOrCreate(userId);
 
-// Link wallet with signature verification
+// Mint a wallet challenge, then verify the signed message
+const challenge = await userService.issueWalletChallenge(userId, 'link', 'TXyz...');
+const signature = await tronWeb.trx.signMessageV2(challenge.message);
 const user = await userService.linkWallet(userId, {
     address: 'TXyz...',
-    message: 'Link wallet to TronRelic',
-    signature: '0x...',
-    timestamp: Date.now()
+    message: challenge.message,
+    signature,
+    nonce: challenge.nonce
 });
 
 // Update preferences
@@ -329,11 +334,14 @@ validateCookie(req: Request, res: Response, next: NextFunction): void {
 ```
 
 **Public endpoints (require cookie validation):**
+- `POST /api/user/bootstrap` - Idempotent identity entry point (mints HttpOnly cookie if absent, refreshes if present)
 - `GET /api/user/:id` - Get or create user by UUID
-- `POST /api/user/:id/wallet/connect` - Connect wallet without verification (step 1)
-- `POST /api/user/:id/wallet` - Link wallet with signature verification (step 2)
-- `DELETE /api/user/:id/wallet/:address` - Unlink wallet (requires signature)
-- `PATCH /api/user/:id/wallet/:address/primary` - Set primary wallet (cookie auth only)
+- `POST /api/user/:id/wallet/connect` - Register wallet without verification (stage 1)
+- `POST /api/user/:id/wallet/challenge` - Mint single-use nonce for the next wallet mutation
+- `POST /api/user/:id/wallet` - Verify wallet via signature against a fresh `link` nonce (stage 2)
+- `DELETE /api/user/:id/wallet/:address` - Unlink wallet (requires signature + `unlink` nonce)
+- `PATCH /api/user/:id/wallet/:address/primary` - Set primary wallet (requires signature + `set-primary` nonce)
+- `POST /api/user/:id/wallet/:address/refresh-verification` - Refresh `verifiedAt` on an already-verified wallet (requires signature + `refresh-verification` nonce). Recovery path for stale-Verified admins
 - `PATCH /api/user/:id/preferences` - Update preferences
 - `POST /api/user/:id/activity` - Record activity
 
@@ -389,12 +397,14 @@ interface UserState {
 
 **Available thunks:**
 - `initializeUser(userId)` - Fetch or create user
-- `connectWalletThunk({ userId, address })` - Connect wallet without verification
-- `linkWalletThunk({ userId, address, message, signature, timestamp })` - Verify and link wallet
-- `unlinkWalletThunk({ userId, address, message, signature })` - Unlink wallet (requires signature)
-- `setPrimaryWalletThunk({ userId, address })` - Set primary wallet (cookie auth only)
+- `connectWalletThunk({ userId, address })` - Register wallet without verification (stage 1)
+- `linkWalletThunk({ userId, address, message, signature, nonce })` - Verify and link wallet (stage 2). Caller mints the challenge, prompts TronLink for the signature, then dispatches.
+- `unlinkWalletThunk({ userId, address, message, signature, nonce })` - Unlink wallet. Same nonce + signature contract as link.
+- `setPrimaryWalletThunk({ userId, address, message, signature, nonce })` - Set primary wallet. Step-up gate over an existing verified wallet.
 - `updatePreferencesThunk({ userId, preferences })`
 - `recordActivityThunk(userId)`
+
+The challenge round-trip lives at the call site (e.g. `useWallet`, `WalletCard`) rather than inside the thunk so the slice has no TronLink dependency. Callers fetch a challenge with `requestWalletChallenge(userId, action, address)` from `modules/user/api`, sign `challenge.message` with TronLink, then dispatch the thunk with `(challenge.message, signature, challenge.nonce)`.
 
 **Selectors:**
 ```typescript
@@ -437,13 +447,20 @@ React provider component that initializes user identity on app mount. Must be re
 
 The module supports real-time updates via WebSocket.
 
+**Identity is resolved from the cookie at handshake time, not from the subscribe payload.** Socket.IO forwards the HTTP `Cookie` header on the WebSocket upgrade when the client opts in with `withCredentials: true`. The server parses `tronrelic_uid` once on connection, stashes it on `socket.data.userId`, and uses that — never `payload.user.userId` — when joining identity-scoped rooms. Clients send `{ user: true }` as a sentinel to opt the socket into its own room.
+
 **Backend subscription handling:**
 ```typescript
 // In websocket.service.ts
-if (payload.user?.userId) {
-    socket.join(`user:${payload.user.userId}`);
+if (payload.user) {
+    const cookieUserId = socket.data.userId; // resolved at connection time
+    if (cookieUserId) {
+        socket.join(`user:${cookieUserId}`);
+    }
 }
 ```
+
+This closes a prior trust gap where any client that learned a UUID could subscribe to that user's `user:<uid>` room by sending it in the payload — the server never consulted the cookie.
 
 **Backend emit method:**
 ```typescript
@@ -456,8 +473,8 @@ webSocketService.emitToUser(userId, {
 
 **Frontend handling in SocketBridge:**
 ```typescript
-// Subscribe when userId is available
-socket.emit('subscribe', { user: { userId } });
+// Sentinel opt-in — server resolves the UUID from the cookie.
+socket.emit('subscribe', { user: true });
 
 // Handle updates
 socket.on('user:update', (payload) => {
@@ -578,11 +595,38 @@ The user module implements multiple layers of protection against abuse and unaut
 
 ### Authentication
 
-**Cookie-based validation** - Public endpoints require `tronrelic_uid` cookie to match the `:id` parameter in the URL. This prevents UUID enumeration and ensures users can only access their own data.
+**Cookie-based validation** - Public endpoints require `tronrelic_uid` cookie to match the `:id` parameter. Prevents UUID enumeration and ensures users can only access their own data.
 
-**Signature verification** - Wallet mutation operations (link, unlink, set primary) require TronLink signature verification to prove wallet ownership. Signatures include timestamp for replay protection (5-minute expiry window).
+**Server-issued wallet challenges** - Wallet mutations (link, unlink, set-primary) require a fresh server-minted nonce in addition to a TronLink signature. The client posts `(action, address)` to `POST /api/user/:id/wallet/challenge`, receives a single-use nonce plus the canonical message to sign, signs the message verbatim with TronLink, and submits `(message, signature, nonce)` to the matching wallet endpoint. The server reconstructs the expected canonical message from `(action, normalizedAddress, nonce)` for strict equality, verifies the signature, then atomically consumes the nonce. Nonces have a 60-second TTL, are scoped per `(userId, action, normalizedAddress)`, and cannot be replayed across actions, addresses, users, or themselves. Replaces the legacy 5-minute client-supplied timestamp window — the client no longer controls the freshness signal.
 
-**Admin token** - Admin endpoints require `ADMIN_API_TOKEN` via `x-admin-token` header or `Authorization: Bearer` header.
+**Step-up authentication on `setPrimaryWallet`** - Setting a primary wallet requires a fresh `set-primary` challenge and signature, not just the cookie. The cookie is XSS-stealable, and the primary wallet drives downstream attribution (referrals, public profile, plugin reads) — a captured cookie should not steer those flows. The wallet must already be linked; `set-primary` is a step-up gate over an existing verified wallet, not a path to add new ones.
+
+**Admin authentication — dual-track.** Admin endpoints accept *either* of two authorization paths, evaluated in this order:
+
+1. **User path (preferred for human operators)** — the `tronrelic_uid` cookie identifies the caller, the user's `identityState === Verified` proves cryptographic wallet ownership, *at least one wallet's `verifiedAt` is within the freshness window* (`VERIFICATION_FRESHNESS_MS`, 14 days), and `IUserGroupService.isAdmin(userId)` confirms admin-group membership. The middleware sets `req.adminVia = 'user'`, and audit logs record the operator's UUID via `req.userId`. A stolen cookie alone is not sufficient — the verification step requires a wallet signature to have happened *recently*.
+
+2. **Service-token path (CI, scripts, first-admin bootstrap)** — `ADMIN_API_TOKEN` via `x-admin-token` header or `Authorization: Bearer`. The middleware sets `req.adminVia = 'service-token'`. No per-human attribution; audit logs note this fact explicitly.
+
+The cookie path is tried first so a request that carries both a valid cookie and a service token is attributed to the human operator. When the user-cookie path fails and `ADMIN_API_TOKEN` is unset, the middleware returns 503 (admin disabled); when it's set but doesn't match, 401.
+
+**Verification freshness — the stale-Verified branch.** When the cookie-resolved user is in the admin group with a verified wallet but every wallet's `verifiedAt` is older than `VERIFICATION_FRESHNESS_MS`, the middleware returns 401 with body `{ "reason": "verification_stale" }` *without* falling through to the service-token path. The user is an admin; they need to re-prove control of an attached wallet. Falling through would attribute the request to a service caller when the operator's intent was to act as themselves, and the recovery prompt the frontend renders would never fire. The cookie itself stays put — it is the freshness clock on the wallet, not the cookie, that resets.
+
+**Multi-wallet rule — any-fresh-wins.** A user with multiple verified wallets stays fresh-Verified as long as *at least one* wallet's `verifiedAt` is within the window. Operators accumulate wallets over time; requiring every linked wallet to be re-signed each window would train them to click through signature prompts without reading them — worse UX than no expiry at all. Stale wallets keep their `verified: true` flag and continue contributing to `identityState === Verified` for display and analytics. Only the freshness predicate ignores them until they are re-signed.
+
+**Recovery flow.** Stale-Verified admins refresh `verifiedAt` on any attached verified wallet via `POST /api/user/:id/wallet/:address/refresh-verification`. The endpoint requires a fresh `'refresh-verification'` challenge nonce and a TronLink signature on the canonical message — the same shape as the link/unlink/set-primary actions, with its own nonce scope so a captured signature for any other action cannot replay here. The endpoint refuses to operate on registered (unverified) wallets — moving registered → verified is the link path's responsibility. The frontend `SystemAuthContext` exposes `needsRefreshVerification` so `SystemAuthGate` renders a re-sign affordance distinct from the generic "no admin access" screen.
+
+**Bootstrapping the first admin.** A fresh install has no human admins yet. Use the service token to add yourself:
+
+```bash
+# After connecting + verifying your wallet on /profile, look up your UUID
+# (visible in /system/users once you have admin, or via the cookie value).
+curl -X PUT https://your-domain/api/admin/users/<your-uuid>/groups \
+  -H "x-admin-token: $ADMIN_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"groups": ["admin"]}'
+```
+
+After that, you authenticate via the cookie path on every subsequent request — the service token is needed only for CI, deployment automation, and recovery. If the service token leaks, rotate it; human admins are unaffected because they don't depend on it.
 
 ### Rate Limiting
 
@@ -608,9 +652,9 @@ HTTP status code `429` is returned when rate limit is exceeded.
 
 **UUID as "knowledge" factor** - The security model relies on UUIDs being unguessable (122 bits of randomness). If an attacker learns a UUID (via logs, XSS, or user sharing), they can access that user's data by setting their own cookie. This is acceptable for anonymous-first identity but limits what sensitive operations should be tied to UUID alone.
 
-**Wallet operations require signatures** - Destructive wallet mutations (link, unlink) require cryptographic signature verification. Setting primary is a non-destructive preference change among already-verified wallets, so it requires only cookie authentication.
+**Wallet operations require signatures plus a fresh nonce** - All wallet mutations (link, unlink, set-primary) require both cryptographic signature verification and a server-issued nonce minted via the wallet challenge endpoint. The nonce is single-use and bound to (userId, action, normalizedAddress); a captured signed message cannot be replayed against any of the three operations.
 
-**Admin bypass** - Admin endpoints can access any user data without cookie validation. Protect the `ADMIN_API_TOKEN` carefully.
+**Admin bypass** - Admin endpoints can access any user data without cookie validation when called via the service-token path. Cookie-path admin calls still attribute the request to a specific operator UUID. Protect the `ADMIN_API_TOKEN` carefully — it remains a high-value secret used by CI and recovery flows.
 
 ### Wallet Verification Trust Model
 
@@ -644,7 +688,7 @@ When a user attempts to connect a wallet address that is already claimed by anot
 
 Once the signature is verified, identity reconciliation occurs. The UUID that already held the wallet is the "winner" (canonical identity). The calling UUID is the "loser" (merged identity). The reconciliation operation transfers all wallets from the loser to the winner (skipping duplicates), marks the disputed wallet as verified on the winner, creates a tombstone on the loser by setting `mergedInto` to the winner's UUID and clearing its wallets array, and flattens any existing pointer chains so that any UUID already pointing to the loser now points directly to the winner.
 
-After reconciliation the frontend updates cookie/localStorage to the winner's UUID and triggers a full page reload to reset Redux state, WebSocket subscriptions, and all cached data.
+After reconciliation the *server* sets the cookie to the winner's UUID via Set-Cookie on the link-wallet response (the client cannot write the HttpOnly cookie). The frontend triggers a full page reload to reset Redux state, WebSocket subscriptions, and all cached data; the next request then carries the canonical cookie.
 
 ### Merge Pointer Resolution
 
@@ -662,7 +706,20 @@ The `mergedInto` field is an optional string on `IUserDocument`. A sparse index 
 
 ### Public Endpoints
 
-All public endpoints require cookie validation - the `tronrelic_uid` cookie must match the `:id` parameter. Rate limits are applied per IP address.
+Most public endpoints require cookie validation — the `tronrelic_uid` cookie must match the `:id` parameter. The bootstrap endpoint is the exception (it mints the cookie). Rate limits are applied per IP address.
+
+**Bootstrap Identity** *(10 req/min)* — Idempotent. The single entry point for visitors. Mints a UUID and sets the HttpOnly cookie when none is present; refreshes max-age and resolves merge tombstones when one is present.
+```
+POST /api/user/bootstrap
+Content-Type: application/json
+
+(empty body)
+
+Response: IUser
+Set-Cookie: tronrelic_uid=<uuid>; HttpOnly; SameSite=Lax; Secure; Path=/; Max-Age=31536000
+```
+
+The frontend calls this once on mount via the `initializeUser` thunk; the Next.js middleware (`src/frontend/middleware.ts`) calls it server-to-server when an inbound page request lacks a cookie, so SSR finds an identity on the very first visit.
 
 **Get or Create User** *(30 req/min)*:
 ```
@@ -683,39 +740,80 @@ Content-Type: application/json
 Response: IUser (wallet added with verified: false)
 ```
 
-**Link Wallet** *(10 req/min)* — Stage 2: verify the wallet via signature. Moves the user (or the specific wallet) into the *verified* state:
+**Issue Wallet Challenge** *(10 req/min)* — Mint a single-use nonce for the next wallet mutation. Required before link, unlink, set-primary, or refresh-verification:
+```
+POST /api/user/:id/wallet/challenge
+Content-Type: application/json
+
+{
+    "action": "link" | "unlink" | "set-primary" | "refresh-verification",
+    "address": "TXyz..."
+}
+
+Response: {
+    "nonce": "<48 hex chars>",
+    "message": "TronRelic link wallet TXyz... (nonce <48 hex chars>)",
+    "expiresAt": 1732646460000
+}
+```
+
+The nonce expires 60 seconds after issuance, is scoped to `(userId, action, normalizedAddress)`, and is consumed atomically on the matching wallet call. Issuing a new challenge for the same tuple invalidates the previous one.
+
+**Link Wallet** *(10 req/min)* — Stage 2: verify the wallet via signature against a fresh `link` nonce. Moves the user (or the specific wallet) into the *verified* state:
 ```
 POST /api/user/:id/wallet
 Content-Type: application/json
 
 {
     "address": "TXyz...",
-    "message": "Link wallet to TronRelic: 1732646400000",
+    "message": "TronRelic link wallet TXyz... (nonce <48 hex chars>)",
     "signature": "0x...",
-    "timestamp": 1732646400000
+    "nonce": "<48 hex chars>"
 }
 
 Response: IUser (wallet updated to verified: true)
 ```
 
-**Unlink Wallet** *(10 req/min)* - Requires signature:
+**Unlink Wallet** *(10 req/min)* — Requires signature against a fresh `unlink` nonce:
 ```
 DELETE /api/user/:id/wallet/:address
 Content-Type: application/json
 
 {
-    "message": "Unlink wallet from TronRelic: 1732646400000",
-    "signature": "0x..."
+    "message": "TronRelic unlink wallet TXyz... (nonce <48 hex chars>)",
+    "signature": "0x...",
+    "nonce": "<48 hex chars>"
 }
 
 Response: IUser
 ```
 
-**Set Primary Wallet** *(10 req/min)* - Cookie auth only, no signature required:
+**Set Primary Wallet** *(10 req/min)* — Step-up authentication: requires signature against a fresh `set-primary` nonce. The wallet must already be linked.
 ```
 PATCH /api/user/:id/wallet/:address/primary
+Content-Type: application/json
+
+{
+    "message": "TronRelic set-primary wallet TXyz... (nonce <48 hex chars>)",
+    "signature": "0x...",
+    "nonce": "<48 hex chars>"
+}
 
 Response: IUser
+```
+
+**Refresh Wallet Verification** *(10 req/min)* — Recovery path for stale-Verified admins. Updates `verifiedAt = now` on an already-verified wallet without changing its `verified` flag, identity state, or any other field. Refuses to operate on registered (unsigned) wallets.
+```
+POST /api/user/:id/wallet/:address/refresh-verification
+Content-Type: application/json
+
+{
+    "message": "TronRelic refresh-verification wallet TXyz... (nonce <48 hex chars>)",
+    "signature": "0x...",
+    "nonce": "<48 hex chars>"
+}
+
+Response: IUser (wallet's verifiedAt updated to now)
 ```
 
 **Update Preferences** *(30 req/min)*:
@@ -740,7 +838,7 @@ Response: { "success": true }
 
 ### Admin Endpoints
 
-All admin endpoints require `x-admin-token` header.
+All admin endpoints require admin authorization via *either*: (a) the `tronrelic_uid` cookie of a verified user in the admin group, or (b) the `ADMIN_API_TOKEN` shared service token via `x-admin-token` header or `Authorization: Bearer`. See [Admin authentication — dual-track](#admin-authentication--dual-track) above.
 
 **List Users:**
 ```
@@ -779,7 +877,7 @@ Content-Type: application/json
 Response: { "groups": ["admin", "vip-traders"] }
 ```
 
-Set semantics — the body's `groups` array becomes the user's complete membership. Unknown group ids and unknown users both return 404 (mapped from `UserGroupNotFoundError`); a malformed payload returns 400. Audit-logged at info level with target user, requester IP, and before/after arrays.
+Set semantics — the body's `groups` array becomes the user's complete membership. Unknown group ids and unknown users both return 404 (mapped from `UserGroupNotFoundError`); a malformed payload returns 400. Audit-logged at info level with `adminVia` (user vs service-token), `requesterUserId` (the operator's UUID for cookie-path calls; `null` for service-token calls), the requester IP, the target user, and the before/after arrays. The `adminVia` tag distinguishes per-human admin actions from automated service-token traffic in the audit trail.
 
 **List Group Members:**
 ```
@@ -828,7 +926,8 @@ function MyComponent() {
 
 ```typescript
 import { useSelector, useDispatch } from 'react-redux';
-import { selectUserId, linkWalletThunk } from '@/features/user';
+import { selectUserId, linkWalletThunk } from '@/modules/user';
+import { requestWalletChallenge } from '@/modules/user/api';
 
 function WalletConnect() {
     const dispatch = useDispatch();
@@ -842,16 +941,17 @@ function WalletConnect() {
         }
 
         const address = tronWeb.defaultAddress.base58;
-        const timestamp = Date.now();
-        const message = `Link wallet to TronRelic: ${timestamp}`;
-        const signature = await tronWeb.trx.signMessageV2(message);
+
+        // Mint a server-issued nonce; sign the canonical message verbatim.
+        const challenge = await requestWalletChallenge(userId, 'link', address);
+        const signature = await tronWeb.trx.signMessageV2(challenge.message);
 
         dispatch(linkWalletThunk({
             userId,
             address,
-            message,
+            message: challenge.message,
             signature,
-            timestamp
+            nonce: challenge.nonce
         }));
     };
 
@@ -911,14 +1011,20 @@ Before deploying user module features, verify:
 - [ ] Module registered in backend bootstrap with two-phase initialization
 - [ ] UserService singleton configured via `setDependencies()` before first use
 - [ ] cookie-parser middleware installed and configured in Express
+- [ ] `tronrelic_uid` cookie set with `HttpOnly: true` via `setIdentityCookie`; client never writes it directly
+- [ ] WebSocket subscribe handler reads identity from `socket.data.userId` (cookie-resolved), never from the payload
 - [ ] UUID v4 validation enforced in service layer
-- [ ] Wallet signature verification uses SignatureService
+- [ ] Wallet signature verification uses SignatureService and consumes a fresh nonce via WalletChallengeService
+- [ ] All wallet mutation routes (link, unlink, set-primary, refresh-verification) require a `nonce` field; legacy `timestamp` field has been removed
+- [ ] `IWalletLink.verifiedAt` populated on every link / set-primary / refresh-verification success path; legacy rows backfilled by migration 008
+- [ ] `requireAdmin` cookie path consults `hasFreshVerification(user.wallets)` after the verified + admin-group checks; stale verification short-circuits with 401 + `reason: 'verification_stale'` instead of falling through to the service-token path
 - [ ] Cookie validation middleware applied to all `/api/user/:id/*` routes
-- [ ] Admin routes protected by `requireAdmin` middleware
+- [ ] Admin routes protected by `requireAdmin` middleware (dual-track: cookie+verified+admin-group OR service token)
+- [ ] First admin bootstrapped via `PUT /api/admin/users/:id/groups` with the service token; subsequent operators added via the cookie path
 - [ ] WebSocket subscription for `user:${userId}` room implemented
 - [ ] SocketBridge handles `user:update` events
 - [ ] UserIdentityProvider placed inside Redux Provider in app providers
-- [ ] Dual storage (cookie + localStorage) synced on client
+- [ ] No client-side writes to `tronrelic_uid` (cookie or localStorage); identity flows from `POST /api/user/bootstrap`
 - [ ] SSR utilities use Next.js `cookies()` function (async in Next.js 15)
 - [ ] Admin UI registered at `/system/users` via menu service
 - [ ] Database indexes created for `id`, `wallets.address`, `activity.lastSeen`
@@ -928,25 +1034,19 @@ Before deploying user module features, verify:
 
 ### Cookie Not Being Set
 
-**Diagnosis:**
-```javascript
-console.log(document.cookie);
-// Empty or missing tronrelic_uid
-```
+The `tronrelic_uid` cookie is HttpOnly, so `document.cookie` will never show it from JavaScript. That is by design, not a bug. To diagnose missing cookies, check the browser devtools "Application → Cookies" panel or the network tab's `Set-Cookie` headers.
 
 **Common causes:**
-- Script running before DOM ready
-- Secure flag set but not on HTTPS
-- SameSite issues with cross-origin requests
+- Bootstrap endpoint not reachable from the browser (CORS, backend down, wrong `SITE_BACKEND`)
+- `Secure` flag set without HTTPS in production
+- SameSite blocking on cross-origin requests
+- Next.js middleware bootstrap failed silently — check server logs for fetch errors against `/api/user/bootstrap`
 
 **Resolution:**
-```typescript
-// Check production mode detection
-const isProduction = window.location.protocol === 'https:';
-console.log('Is production:', isProduction);
-
-// Manually set cookie for testing
-setUserIdCookie('test-uuid-here');
+```bash
+# Verify the bootstrap endpoint sets the cookie correctly
+curl -i -X POST http://localhost:4000/api/user/bootstrap -H 'Content-Type: application/json' -d '{}'
+# Expect: Set-Cookie: tronrelic_uid=<uuid>; Path=/; HttpOnly; SameSite=Lax; Max-Age=31536000
 ```
 
 ### 401 Unauthorized on API Calls
@@ -990,25 +1090,38 @@ const userId = getOrCreateUserId(); // Uses same ID for cookie and API
 
 **Diagnosis:**
 ```json
-{"error":"Failed to link wallet","message":"Invalid signature"}
+{"error":"Failed to link wallet","message":"Wallet challenge expired or already used. Request a new challenge."}
+```
+
+or
+
+```json
+{"error":"Failed to link wallet","message":"Signed message does not match the canonical challenge form."}
 ```
 
 **Common causes:**
-- Message format doesn't match expected pattern
-- Timestamp too old (check backend validation)
-- Signature from different address than provided
+- Nonce expired (60-second TTL elapsed between challenge issuance and submission)
+- Nonce already consumed (single-use; retrying after success requires a new challenge)
+- Client modified the message before signing instead of signing the canonical form verbatim
+- Address mismatch — challenge minted for one address but a different wallet signed
+- Action mismatch — `link` nonce submitted to the unlink or set-primary endpoint
 
 **Resolution:**
 ```typescript
-// Ensure message matches backend expectations
-const timestamp = Date.now();
-const message = `Link wallet to TronRelic: ${timestamp}`;
+// Always mint a fresh challenge immediately before signing.
+const challenge = await requestWalletChallenge(userId, 'link', address);
 
-// Sign with TronLink
-const signature = await tronWeb.trx.signMessageV2(message);
+// Sign the canonical message verbatim — do not modify or rebuild it.
+const signature = await tronWeb.trx.signMessageV2(challenge.message);
 
-// Verify address matches
-const address = tronWeb.defaultAddress.base58;
+// Submit within 60 seconds. Use the nonce from the challenge response.
+await dispatch(linkWalletThunk({
+    userId,
+    address,
+    message: challenge.message,
+    signature,
+    nonce: challenge.nonce
+}));
 ```
 
 ### User Data Not Updating in Real-Time

@@ -7,21 +7,21 @@
  */
 
 import { createSlice, createAsyncThunk, type PayloadAction } from '@reduxjs/toolkit';
-import { UserIdentityState } from '@/types';
+import { UserIdentityState, hasFreshVerification } from '@/types';
 import type { IUserData, IWalletLink, IUserPreferences } from './types';
 import {
-    fetchUser,
+    bootstrapUser,
     connectWallet as apiConnectWallet,
     linkWallet as apiLinkWallet,
     unlinkWallet as apiUnlinkWallet,
     setPrimaryWallet as apiSetPrimaryWallet,
+    refreshWalletVerification as apiRefreshWalletVerification,
     updatePreferences as apiUpdatePreferences,
     recordActivity as apiRecordActivity,
     loginUser as apiLoginUser,
     logoutUser as apiLogoutUser
 } from './api';
 import type { IConnectWalletResult, ILinkWalletResult } from './api';
-import { setUserIdCookie, USER_ID_STORAGE_KEY } from './lib';
 
 /**
  * Status of user identity operations.
@@ -130,27 +130,22 @@ const initialState: UserState = {
 // ============================================================================
 
 /**
- * Initialize user identity by fetching/creating from backend.
+ * Bootstrap user identity from the backend.
  *
- * When the backend returns a user with a different ID than requested,
- * the local UUID was merged into another identity via wallet-based
- * reconciliation. Updates cookie/localStorage to the canonical UUID
- * so subsequent requests use the correct identity.
+ * Server is the only writer of the `tronrelic_uid` cookie. This thunk hits
+ * `POST /api/user/bootstrap`, which is idempotent: returning visitors get
+ * their canonical user back (cookie unchanged); first-time visitors have a
+ * UUID minted server-side and an HttpOnly cookie set on the response.
+ *
+ * If the backend resolves a merged tombstone, it returns the canonical
+ * user's id and refreshes the cookie to point at it — no client-side
+ * cookie/localStorage write is needed.
  */
 export const initializeUser = createAsyncThunk(
     'user/initialize',
-    async (userId: string, { rejectWithValue }) => {
+    async (_arg: void, { rejectWithValue }) => {
         try {
-            const userData = await fetchUser(userId);
-
-            // If returned user has different ID, identity was merged — update local storage
-            if (userData.id !== userId) {
-                setUserIdCookie(userData.id);
-                if (typeof localStorage !== 'undefined') {
-                    localStorage.setItem(USER_ID_STORAGE_KEY, userData.id);
-                }
-            }
-
+            const userData = await bootstrapUser();
             return { userId: userData.id, userData };
         } catch (error) {
             return rejectWithValue(
@@ -212,7 +207,7 @@ export const linkWalletThunk = createAsyncThunk(
             address: string;
             message: string;
             signature: string;
-            timestamp: number;
+            nonce: string;
         },
         { rejectWithValue }
     ) => {
@@ -222,17 +217,15 @@ export const linkWalletThunk = createAsyncThunk(
                 payload.address,
                 payload.message,
                 payload.signature,
-                payload.timestamp
+                payload.nonce
             );
 
-            // Handle identity swap — update cookie/localStorage then full reload
-            // to reset Redux, WebSocket subscriptions, and all cached state.
+            // Handle identity swap — the backend already rewrote the
+            // HttpOnly cookie to the winner's UUID via Set-Cookie on this
+            // response. Trigger a full reload so Redux, WebSocket
+            // subscriptions, and cached state rebuild against the canonical
+            // user. The next bootstrap call will read the refreshed cookie.
             if (result.identitySwapped && result.user) {
-                const newUserId = result.user.id;
-                setUserIdCookie(newUserId);
-                if (typeof localStorage !== 'undefined') {
-                    localStorage.setItem(USER_ID_STORAGE_KEY, newUserId);
-                }
                 if (typeof window !== 'undefined') {
                     window.location.reload();
                 }
@@ -258,6 +251,7 @@ export const unlinkWalletThunk = createAsyncThunk(
             address: string;
             message: string;
             signature: string;
+            nonce: string;
         },
         { rejectWithValue }
     ) => {
@@ -266,7 +260,8 @@ export const unlinkWalletThunk = createAsyncThunk(
                 payload.userId,
                 payload.address,
                 payload.message,
-                payload.signature
+                payload.signature,
+                payload.nonce
             );
             return userData;
         } catch (error) {
@@ -279,19 +274,76 @@ export const unlinkWalletThunk = createAsyncThunk(
 
 /**
  * Set a wallet as primary.
+ *
+ * Step-up authentication: requires a fresh signature even though the wallet
+ * was already verified at link time. Callers must mint a 'set-primary'
+ * challenge, prompt the user to sign with TronLink, and submit the
+ * resulting (message, signature, nonce) triple.
  */
 export const setPrimaryWalletThunk = createAsyncThunk(
     'user/setPrimaryWallet',
     async (
-        payload: { userId: string; address: string },
+        payload: {
+            userId: string;
+            address: string;
+            message: string;
+            signature: string;
+            nonce: string;
+        },
         { rejectWithValue }
     ) => {
         try {
-            const userData = await apiSetPrimaryWallet(payload.userId, payload.address);
+            const userData = await apiSetPrimaryWallet(
+                payload.userId,
+                payload.address,
+                payload.message,
+                payload.signature,
+                payload.nonce
+            );
             return userData;
         } catch (error) {
             return rejectWithValue(
                 error instanceof Error ? error.message : 'Failed to set primary wallet'
+            );
+        }
+    }
+);
+
+/**
+ * Refresh the freshness clock on an already-verified wallet.
+ *
+ * Recovery path for stale-Verified admins. Callers mint a
+ * `'refresh-verification'` challenge, sign the canonical message with
+ * TronLink, and dispatch this thunk with `(message, signature, nonce)`.
+ * On success the wallet's `verifiedAt` is now and the user regains
+ * cookie-path admin authority on the next request. As a bonus side
+ * effect, the user document is refetched so `selectIsVerified` and any
+ * derived freshness checks reflect the new state immediately.
+ */
+export const refreshWalletVerificationThunk = createAsyncThunk(
+    'user/refreshWalletVerification',
+    async (
+        payload: {
+            userId: string;
+            address: string;
+            message: string;
+            signature: string;
+            nonce: string;
+        },
+        { rejectWithValue }
+    ) => {
+        try {
+            const userData = await apiRefreshWalletVerification(
+                payload.userId,
+                payload.address,
+                payload.message,
+                payload.signature,
+                payload.nonce
+            );
+            return userData;
+        } catch (error) {
+            return rejectWithValue(
+                error instanceof Error ? error.message : 'Failed to refresh wallet verification'
             );
         }
     }
@@ -594,6 +646,21 @@ const userSlice = createSlice({
                 state.error = action.payload as string;
             });
 
+        // Refresh wallet verification (stale-Verified recovery path)
+        builder
+            .addCase(refreshWalletVerificationThunk.pending, (state) => {
+                state.status = 'loading';
+                state.error = null;
+            })
+            .addCase(refreshWalletVerificationThunk.fulfilled, (state, action) => {
+                state.status = 'succeeded';
+                state.userData = action.payload;
+            })
+            .addCase(refreshWalletVerificationThunk.rejected, (state, action) => {
+                state.status = 'failed';
+                state.error = action.payload as string;
+            });
+
         // Update preferences
         builder
             .addCase(updatePreferencesThunk.pending, (state) => {
@@ -754,6 +821,20 @@ export const selectHasWallets = (state: { user: UserState }): boolean =>
  */
 export const selectHasVerifiedWallet = (state: { user: UserState }): boolean =>
     selectIsVerified(state);
+
+/**
+ * Select whether at least one wallet has a `verifiedAt` inside the freshness
+ * window. Used by the dual-track admin gate to decide whether to render the
+ * admin surface or route the operator to the re-sign UI.
+ *
+ * False on stale-Verified users (still `identityState === Verified`, but
+ * every wallet's signature is older than `VERIFICATION_FRESHNESS_MS`),
+ * Anonymous, and Registered users alike. The component-level gate then
+ * combines this with `selectIsVerified` to distinguish "stale admin who
+ * needs to re-sign" from "user who never verified."
+ */
+export const selectHasFreshVerification = (state: { user: UserState }): boolean =>
+    hasFreshVerification(selectWallets(state));
 
 /**
  * Select whether user is logged in (UI/feature gate).
