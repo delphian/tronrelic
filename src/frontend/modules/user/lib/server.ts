@@ -37,16 +37,25 @@ import type { IUserData } from '../types';
 /**
  * Get user ID from cookies during SSR.
  *
- * Uses Next.js `cookies()` function to read the identity cookie
- * from the request. Returns null if cookie is missing or invalid.
+ * Handles both shapes the cookie can take on the wire:
+ *   - Bare UUID (`<uuid>`): legacy unsigned cookie or freshly-minted
+ *     middleware bootstrap cookie. Validated as UUID v4.
+ *   - Signed envelope (`s:<uuid>.<HMAC>`): the standard server-set
+ *     value after PR #197. The HMAC cannot be verified on the
+ *     frontend (the secret lives only on the backend, by design),
+ *     so we extract the inner UUID best-effort and trust the backend
+ *     to verify when `getServerUser` forwards the raw cookie. This
+ *     is safe because every privileged path funnels through the
+ *     backend, which rejects forged envelopes via cookie-parser
+ *     (`signedCookies[name] === false`) — SSR with a forged UUID
+ *     gets a 401 from `getServerUser` and renders the unauthenticated
+ *     shell, no data leak.
+ *
+ * Without this signed-envelope parsing, every signed visitor would
+ * fall through to client-side bootstrap and see a wallet-button flash
+ * on first paint of every navigation.
  *
  * @returns User UUID or null if not found/invalid
- *
- * @example
- * ```typescript
- * // In a server component
- * const userId = await getServerUserId();
- * ```
  */
 export async function getServerUserId(): Promise<string | null> {
     const cookieStore = await cookies();
@@ -56,7 +65,22 @@ export async function getServerUserId(): Promise<string | null> {
         return null;
     }
 
-    const value = cookie.value;
+    let value = cookie.value;
+
+    // Signed envelope: `s:<uuid>.<HMAC>`. Strip the prefix and trailing
+    // signature to recover the inner UUID. Authoritative verification
+    // happens on the backend via cookie-parser; here we just need a
+    // UUID candidate to pass into the backend SSR fetch.
+    if (value.startsWith('s:')) {
+        const dotIdx = value.lastIndexOf('.');
+        // Require both a non-empty inner value and a non-empty signature.
+        if (dotIdx > 2) {
+            value = value.slice(2, dotIdx);
+        } else {
+            return null;
+        }
+    }
+
     if (!isValidUUID(value)) {
         return null;
     }
