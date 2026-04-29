@@ -13,17 +13,19 @@ import type { UserIdentityState, IAuthStatus } from '@/types';
 export interface IUserData {
     id: string;
     /**
-     * UI/feature gate controlling what is surfaced to the user.
-     * When false, frontend shows "Connect" button and hides logged-in features.
-     * UUID tracking continues regardless of this flag.
-     */
-    isLoggedIn: boolean;
-    /**
-     * Canonical anonymous / registered / verified state. Stored on the
-     * backend document and surfaced as-is by the API. Read this field
-     * directly; do not derive from `wallets`.
+     * Canonical anonymous / registered / verified state. Authoritative
+     * stored field on the backend; surfaced as-is by the API. Read
+     * this field directly; do not derive from `wallets`.
      */
     identityState: UserIdentityState;
+    /**
+     * ISO timestamp when the current Verified session was established.
+     * `null` when `identityState !== Verified`. The backend lazily
+     * downgrades sessions older than `SESSION_TTL_MS` on read, so a
+     * `Verified` payload here is guaranteed to be within the live
+     * window at the moment the response was assembled.
+     */
+    identityVerifiedAt: string | null;
     wallets: IWalletLink[];
     preferences: IUserPreferences;
     activity: IUserActivity;
@@ -72,13 +74,11 @@ export interface IWalletLink {
      */
     verified: boolean;
     /**
-     * ISO timestamp of the most recent successful signature on this wallet.
-     * `null` for wallets in the registered (unsigned) state. Refreshed on
-     * link, set-primary, and the dedicated refresh-verification endpoint.
-     * Feeds `deriveIdentityState` from `@/types`: a user whose every
-     * wallet's `verifiedAt` has aged past `VERIFICATION_FRESHNESS_MS`
-     * collapses from `Verified` to `Registered`, so this field is the
-     * load-bearing input for the user-level identity state.
+     * ISO timestamp of the most recent successful signature on this
+     * wallet. `null` for wallets in the registered (unsigned) state.
+     * Refreshed on link, set-primary, and the dedicated
+     * refresh-verification endpoint. Historical audit data — the
+     * user-level session clock lives on `IUserData.identityVerifiedAt`.
      */
     verifiedAt: string | null;
     /** Timestamp of last connection/use (ISO string) */

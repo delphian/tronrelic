@@ -13,7 +13,7 @@
  */
 
 import { describe, it, expect, vi } from 'vitest';
-import { UserIdentityState, VERIFICATION_FRESHNESS_MS } from '@/types';
+import { UserIdentityState } from '@/types';
 import type { IUser, IUserGroupService } from '@/types';
 import { computeUserAuthStatus, withAuthStatus } from '../services/auth-status.js';
 
@@ -32,8 +32,8 @@ function makeGroupService(isAdminResult: boolean): IUserGroupService {
 function makeUser(overrides: Partial<IUser> = {}): IUser {
     return {
         id: '550e8400-e29b-41d4-a716-446655440000',
-        isLoggedIn: false,
         identityState: UserIdentityState.Anonymous,
+        identityVerifiedAt: null,
         wallets: [],
         preferences: {},
         activity: {
@@ -54,7 +54,6 @@ function makeUser(overrides: Partial<IUser> = {}): IUser {
 }
 
 const FRESH = new Date(Date.now() - 1000);
-const STALE = new Date(Date.now() - VERIFICATION_FRESHNESS_MS - 1000);
 
 describe('computeUserAuthStatus', () => {
     it('returns the anonymous-default shape for an anonymous user', async () => {
@@ -64,10 +63,12 @@ describe('computeUserAuthStatus', () => {
     });
 
     it('flags verified-not-admin without conferring admin authority', async () => {
-        // Caller has already passed `user` through `toPublicUser`, so
-        // `identityState` reflects current freshness — Verified iff fresh.
+        // Caller has already passed `user` through the lazy session-expiry
+        // pass, so `identityState` reflects current truth — Verified iff
+        // identityVerifiedAt is within the live window.
         const user = makeUser({
             identityState: UserIdentityState.Verified,
+            identityVerifiedAt: FRESH,
             wallets: [{
                 address: 'TXyz...',
                 linkedAt: new Date(0),
@@ -84,6 +85,7 @@ describe('computeUserAuthStatus', () => {
     it('confers admin authority when Verified and in an admin group', async () => {
         const user = makeUser({
             identityState: UserIdentityState.Verified,
+            identityVerifiedAt: FRESH,
             wallets: [{
                 address: 'TXyz...',
                 linkedAt: new Date(0),
@@ -97,25 +99,26 @@ describe('computeUserAuthStatus', () => {
         expect(status).toEqual({ isVerified: true, isAdmin: true });
     });
 
-    it('a stale-signed user reads as not-Verified — there is no special "stale admin" state', async () => {
+    it('an expired-session user reads as not-Verified — there is no special "stale admin" state', async () => {
         // The previous design distinguished stale-Verified from
-        // unverified to surface a bespoke recovery prompt. With
-        // freshness folded into `Verified` itself (via
-        // `deriveIdentityState`), a stale user reads as `Registered`
-        // and the gate uses the same "not Verified" branch as any
-        // unsigned user. Recovery is the normal verify-wallet flow on
-        // /profile — no special branch.
+        // unverified to surface a bespoke recovery prompt. With the
+        // session clock enforced lazily inside `UserService.getById`,
+        // an expired session reads as `Registered` before this
+        // predicate ever sees it, and the gate uses the same "not
+        // Verified" branch as any unsigned user. Recovery is the
+        // normal verify-wallet flow on /profile.
         const user = makeUser({
-            // Caller has already derived identityState from wallets at
-            // toPublicUser time, so a stale wallet collapses the user to
-            // Registered before this predicate ever sees it.
+            // Caller has already passed the user through the lazy
+            // session-expiry pass at the read boundary, which collapsed
+            // the expired session to Registered.
             identityState: UserIdentityState.Registered,
+            identityVerifiedAt: null,
             wallets: [{
                 address: 'TXyz...',
                 linkedAt: new Date(0),
                 isPrimary: true,
                 verified: true,
-                verifiedAt: STALE,
+                verifiedAt: new Date(0),
                 lastUsed: new Date(0)
             }]
         });

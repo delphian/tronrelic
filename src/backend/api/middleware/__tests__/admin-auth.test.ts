@@ -119,6 +119,14 @@ async function seedUser(
         {
             $set: {
                 identityState: options.verified ? UserIdentityState.Verified : UserIdentityState.Anonymous,
+                // Mirror the per-wallet verifiedAt onto the user-level
+                // session clock. The lazy expiry pass in
+                // `UserService.getById` reads `identityVerifiedAt` —
+                // fixtures explicitly setting `verifiedAt: null` simulate
+                // pre-migration legacy data and must end up with a null
+                // session clock, which downgrades the user to Registered
+                // on read.
+                identityVerifiedAt: verifiedAt,
                 wallets: options.verified
                     ? [{
                         address: 'TXyz',
@@ -293,10 +301,10 @@ describe('requireAdmin middleware', () => {
         // arithmetic.
         const STALE_VERIFIED_AT = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
 
-        // Verification freshness is folded into `identityState === Verified`
-        // itself (see `deriveIdentityState`). A user with only stale
-        // signatures collapses to `Registered` at the serialization
-        // boundary, so the middleware sees them as "not Verified" and
+        // Session freshness is enforced by the lazy session-expiry pass
+        // inside `UserService.getById`. A user whose `identityVerifiedAt`
+        // has aged past `SESSION_TTL_MS` is downgraded to `Registered`
+        // before the middleware ever sees them, so the cookie path
         // rejects with a generic 401 — the same way an unsigned-claim
         // user gets rejected. There is no separate `verification_stale`
         // reason code, no special branch, and no block on service-token
@@ -346,9 +354,12 @@ describe('requireAdmin middleware', () => {
             expect(req.adminVia).toBe('service-token');
         });
 
-        it('approves when at least one wallet is fresh even if siblings are stale', async () => {
-            // any-fresh-wins: the user has multiple wallets, only one
-            // signed recently. Admin authority should still attach.
+        it('approves a Verified admin with a fresh session regardless of per-wallet stamp ages', async () => {
+            // Per-wallet freshness no longer drives auth — the
+            // user-level session clock (`identityVerifiedAt`) does. A
+            // user whose session is fresh is approved even if some of
+            // their per-wallet `verifiedAt` stamps are old (those are
+            // historical audit data, not authentication state).
             await userService.getOrCreate(VALID_UUID);
             const collection = mockDb.getCollection('users');
             const now = new Date();
@@ -357,6 +368,7 @@ describe('requireAdmin middleware', () => {
                 {
                     $set: {
                         identityState: UserIdentityState.Verified,
+                        identityVerifiedAt: now,
                         groups: [SYSTEM_ADMIN_GROUP_ID],
                         wallets: [
                             {
@@ -388,11 +400,14 @@ describe('requireAdmin middleware', () => {
             expect(req.adminVia).toBe('user');
         });
 
-        it('treats verified: true wallets with null verifiedAt as not-Verified (defensive)', async () => {
-            // Pre-migration legacy data: wallet flagged verified but no
-            // recorded signature timestamp. `deriveIdentityState` reads
-            // these as not-fresh, the user collapses to Registered, and
-            // the gate rejects via the generic not-Verified branch.
+        it('treats Verified users with null identityVerifiedAt as not-Verified (defensive)', async () => {
+            // Defensive: a stored `identityState: Verified` paired with a
+            // null `identityVerifiedAt` is incoherent (post-refactor, the
+            // session clock should always be set when the state is
+            // Verified). `isSessionFresh` treats this as expired, the
+            // lazy expiry pass downgrades the user to Registered on
+            // read, and the gate rejects via the generic not-Verified
+            // branch.
             process.env.ADMIN_API_TOKEN = SERVICE_TOKEN;
             await seedUser(userService, mockDb, mockCache, VALID_UUID, {
                 verified: true,

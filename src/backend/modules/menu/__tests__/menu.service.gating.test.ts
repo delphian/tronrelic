@@ -123,8 +123,8 @@ function createGroupsService(adminUserIds: Set<string>): IUserGroupService {
 function makeUser(overrides: Partial<IUser> = {}): IUser {
     return {
         id: 'u-1',
-        isLoggedIn: true,
         identityState: UserIdentityState.Verified,
+        identityVerifiedAt: new Date(),
         wallets: [],
         preferences: {} as IUser['preferences'],
         activity: { firstSeen: new Date(), lastSeen: new Date(), pageViews: 0 } as IUser['activity'],

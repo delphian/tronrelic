@@ -18,29 +18,15 @@ import type { IAuthStatus } from './IAuthStatus.js';
  * Users can link multiple wallets to their UUID, enabling cross-wallet
  * preferences and unified activity tracking.
  *
- * The `verified` flag is the wire-format indicator that ownership was
- * proven by signature at some point — but on its own it no longer
- * decides `identityState`. Freshness is folded into the enum via
- * `deriveIdentityState`: `Verified` requires not just `verified: true`
- * but a `verifiedAt` within `VERIFICATION_FRESHNESS_MS`. See the User
- * Module README for the canonical anonymous / registered / verified
- * taxonomy.
- *
- * - `verified: false` — wallet was registered (claimed via TronLink connect)
- *   but no signature has proven ownership. Holding only such wallets makes
- *   the user *registered*.
- * - `verified: true` with a fresh `verifiedAt` — proven ownership within
- *   the freshness window. Any such wallet lifts the user to *verified*.
- * - `verified: true` with a stale `verifiedAt` — proof aged past the
- *   freshness window. The user collapses back to *registered* (stale
- *   verifications no longer count toward `identityState === Verified`),
- *   and admin authority is gone until the user re-signs.
- *
- * `verifiedAt` is the freshness anchor: re-signing refreshes the clock
- * and lifts the user back to `Verified` through the normal verify-wallet
- * flow. There is no separate "stale" state — expired proof and absent
- * proof are functionally indistinguishable for any consumer gating on
- * `Verified`.
+ * The `verified` flag and `verifiedAt` timestamp are **historical audit
+ * data** — they record that ownership was proven by signature at some
+ * point in the past. They no longer drive `identityState`. The platform
+ * decides "is this user currently authenticated?" by reading the
+ * stored `identityState` and `identityVerifiedAt` on the user document
+ * (see `IUser.identityVerifiedAt` and `SESSION_TTL_MS`). The per-wallet
+ * fields survive because (a) they are still useful audit history, and
+ * (b) the re-verify-after-logout flow in `linkWallet` needs to know
+ * which wallets the user has previously proven ownership of.
  */
 export interface IWalletLink {
     /** Base58 TRON address (e.g., TRX7NJa...) */
@@ -49,14 +35,20 @@ export interface IWalletLink {
     linkedAt: Date;
     /** Whether this is the default wallet for display */
     isPrimary: boolean;
-    /** True iff wallet ownership has been cryptographically proven via signature. */
+    /**
+     * True iff wallet ownership has been cryptographically proven via
+     * signature at any point. Historical audit flag — does not drive
+     * authentication decisions. The re-verify flow in `linkWallet`
+     * reads this to enforce the policy that a user re-establishing a
+     * session must sign with a wallet they have previously proven.
+     */
     verified: boolean;
     /**
      * Timestamp of the most recent successful signature on this wallet.
      * `null` for wallets that have never been signed (i.e. registered-only).
-     * Refreshes on `linkWallet`, `setPrimaryWallet`, and the dedicated
-     * refresh-verification endpoint. Used by the freshness predicate that
-     * gates cookie-path admin authority — see `VERIFICATION_FRESHNESS_MS`.
+     * Refreshed on `linkWallet`, `setPrimaryWallet`, and the dedicated
+     * refresh-verification endpoint. Historical audit data — the user-level
+     * session clock lives on `IUser.identityVerifiedAt`.
      */
     verifiedAt: Date | null;
     /** Timestamp of last connection/use */
@@ -66,111 +58,70 @@ export interface IWalletLink {
 }
 
 /**
- * How recently a wallet must have been signed before it counts toward the
- * `Verified` identity state. 14 days.
+ * How long a verified session is valid before the user is forced to
+ * re-authenticate by signing with a wallet they have previously proven.
+ * 14 days.
  *
- * Verification freshness is folded directly into `identityState` via
- * `deriveIdentityState`: a user whose every wallet's `verifiedAt` has
- * aged past this window collapses from `Verified` to `Registered`,
- * just like a never-signed user. The threshold is uniform across
- * consumers so a wallet that's "fresh enough" for one access point is
- * fresh enough for any. Picked short enough that an abandoned-account
- * or stolen-cookie scenario decays in days, not months; long enough
- * that an active operator who signs roughly monthly never sees the
- * prompt. If 14 days proves too aggressive in practice, tune the
- * number here — never carve out per-gate thresholds, and never add a
- * separate freshness predicate alongside `identityState`.
+ * The session clock anchors on `IUser.identityVerifiedAt`, stamped by
+ * any successful `linkWallet` (or `refreshWalletVerification` /
+ * `setPrimaryWallet`). When `identityVerifiedAt + SESSION_TTL_MS < now`,
+ * the next read of the user document via `UserService.getById` (or the
+ * sibling lookup paths) lazily downgrades the user from `Verified` to
+ * `Registered` and persists the change. There is no separate per-wallet
+ * freshness predicate — the user-level clock is the single source of
+ * truth for "is this session still alive?".
+ *
+ * Tuning: short enough that an abandoned-account or stolen-cookie
+ * scenario decays in days, not months; long enough that an active
+ * operator who signs roughly monthly never sees the prompt. If 14 days
+ * proves too aggressive in practice, tune the number here — never
+ * carve out per-gate thresholds.
  */
-export const VERIFICATION_FRESHNESS_MS = 14 * 24 * 60 * 60 * 1000;
+export const SESSION_TTL_MS = 14 * 24 * 60 * 60 * 1000;
 
 /**
- * Minimal structural shape of the wallet fields the freshness predicate
- * reads. Accepts both the canonical backend `IWalletLink` (Date instances)
- * and the frontend's wire-form `IWalletLink` (ISO strings) without forcing
- * either side to convert before calling. The predicate normalizes
- * internally — see `isWalletVerificationFresh`.
+ * Minimal structural shape consumed by `isSessionFresh`. Accepts both
+ * canonical backend `IUser` (Date instances) and the frontend's wire
+ * form (ISO strings) without forcing either side to convert before
+ * calling.
  */
-export interface IWalletVerificationFreshnessInput {
-    verified: boolean;
-    verifiedAt: Date | string | null;
+export interface ISessionFreshnessInput {
+    identityState: UserIdentityState;
+    identityVerifiedAt: Date | string | null;
 }
 
 /**
- * True iff this wallet's verification is fresh enough to confer cookie-path
- * admin authority right now.
+ * True iff this user's session timestamp is within `SESSION_TTL_MS`.
  *
- * Defensive against legacy `verified: true` wallets with `verifiedAt: null`
- * (pre-migration data): such wallets count as stale, never fresh, so the
- * admin path can't accidentally grant authority on the strength of an
- * unrecorded signature timestamp. Also defensive against wire-form
- * timestamps — `verifiedAt` may arrive as a `Date` instance (server-side)
+ * Returns `false` when the user is not in `Verified` state, when the
+ * `identityVerifiedAt` is null (defensive: a Verified user without a
+ * timestamp cannot be considered fresh), or when the timestamp has
+ * aged past the TTL. Defensive against wire-form timestamps —
+ * `identityVerifiedAt` may arrive as a `Date` instance (server-side)
  * or an ISO string (after JSON round-trip on the wire).
+ *
+ * The lazy-downgrade in `UserService.getById` calls this and persists
+ * the demotion when it returns false. Other callers use it for
+ * read-only checks (e.g. UI gates that want to know "would this user
+ * pass auth right now?" without forcing a write).
  */
-export function isWalletVerificationFresh(
-    wallet: IWalletVerificationFreshnessInput,
+export function isSessionFresh(
+    user: ISessionFreshnessInput,
     now: number = Date.now()
 ): boolean {
-    if (!wallet.verified || wallet.verifiedAt === null) {
+    if (user.identityState !== UserIdentityState.Verified) {
         return false;
     }
-    const verifiedAtMs = wallet.verifiedAt instanceof Date
-        ? wallet.verifiedAt.getTime()
-        : new Date(wallet.verifiedAt).getTime();
+    if (user.identityVerifiedAt === null) {
+        return false;
+    }
+    const verifiedAtMs = user.identityVerifiedAt instanceof Date
+        ? user.identityVerifiedAt.getTime()
+        : new Date(user.identityVerifiedAt).getTime();
     if (Number.isNaN(verifiedAtMs)) {
         return false;
     }
-    return now - verifiedAtMs < VERIFICATION_FRESHNESS_MS;
-}
-
-/**
- * True iff at least one wallet in the array is verification-fresh.
- *
- * "Any-fresh-wins" is the multi-wallet rule: a user with five wallets where
- * only one is recently signed remains a fresh-Verified caller. Asking
- * operators to keep every linked wallet signed within the window would be
- * worse UX than no expiry at all — they'd click through prompts without
- * reading. Keep one wallet hot, you keep admin authority.
- */
-export function hasFreshVerification(
-    wallets: ReadonlyArray<IWalletVerificationFreshnessInput>,
-    now: number = Date.now()
-): boolean {
-    return wallets.some(w => isWalletVerificationFresh(w, now));
-}
-
-/**
- * Derive the current `UserIdentityState` from a wallets array.
- *
- * Freshness is folded into the enum: `Verified` requires not only that a
- * signature happened, but that it happened recently. A user whose every
- * wallet's `verifiedAt` has aged past the freshness window collapses to
- * `Registered` until they re-sign — same behavior an unverified-claim
- * registered user gets, on the principle that an expired proof and an
- * absent proof are functionally indistinguishable for any consumer
- * gating on Verified. Re-signing produces a fresh `verifiedAt`, lifting
- * the user back to Verified through the normal verify-wallet flow.
- *
- * This is the single derivation rule. `UserService.toPublicUser`
- * computes identityState through it on every read, so the wire form
- * always reflects current truth — there is no separate "stale" gate
- * anywhere in the stack.
- *
- * Storage may hold a denormalized `identityState` for indexes and admin
- * filter queries, but storage is a cache: the API surface always returns
- * the freshly-derived value, even when storage drifted because no
- * wallet mutation happened to trigger a recompute.
- */
-export function deriveIdentityState(
-    wallets: ReadonlyArray<IWalletVerificationFreshnessInput>,
-    now: number = Date.now()
-): UserIdentityState {
-    if (wallets.length === 0) {
-        return UserIdentityState.Anonymous;
-    }
-    if (hasFreshVerification(wallets, now)) {
-        return UserIdentityState.Verified;
-    }
-    return UserIdentityState.Registered;
+    return now - verifiedAtMs < SESSION_TTL_MS;
 }
 
 /**
@@ -295,29 +246,37 @@ export interface IUserActivity {
  * Used in API responses, frontend state, and plugin consumption.
  * This is the safe-to-expose representation without internal MongoDB fields.
  *
- * The user's identity state is the canonical `identityState` field, which is
- * **stored** (never derived at read time). `UserService` recomputes and
- * persists it on every wallet mutation. Consumers must read
- * `user.identityState` directly rather than reconstruct it from `wallets`.
+ * Authentication is described by two fields together:
  *
- * Note: `isLoggedIn` is a separate UI/feature gate, not the identity state.
- * A user can be in any `identityState` regardless of `isLoggedIn`.
+ *   - `identityState` — anonymous / registered / verified. Stored as the
+ *     authoritative scalar; written exactly once per state transition by
+ *     `UserService` mutation handlers (connectWallet, linkWallet,
+ *     unlinkWallet, logout, identity reconciliation, lazy session
+ *     expiry). Never derived at read time.
+ *   - `identityVerifiedAt` — when the current Verified session was
+ *     established. `null` for non-verified users. The session is alive
+ *     for `SESSION_TTL_MS` from this timestamp; past that, the next
+ *     `getById` lazily downgrades the user to Registered and nulls
+ *     this field.
+ *
+ * Consumers gating UI or actions read `identityState` and `authStatus`
+ * directly — there is no derivation step.
  */
 export interface IUser {
     /** UUID v4 identifier */
     id: string;
     /**
-     * UI/feature gate controlling what is surfaced to the user.
-     * When false, frontend shows "Connect" button and hides logged-in features.
-     * Independent of `identityState`.
-     */
-    isLoggedIn: boolean;
-    /**
-     * Canonical anonymous / registered / verified state. Stored on the
-     * document and recomputed by `UserService` on every wallet mutation.
-     * Read this field directly; do not derive from `wallets`.
+     * Canonical anonymous / registered / verified state. Authoritative
+     * stored field — read this directly. Written by `UserService` on
+     * each transition; never derived from `wallets` at read time.
      */
     identityState: UserIdentityState;
+    /**
+     * When the user's current Verified session was established. Anchor
+     * for the `SESSION_TTL_MS` clock. `null` for users not in Verified
+     * state (and reset to `null` on logout or lazy expiry).
+     */
+    identityVerifiedAt: Date | null;
     /** Linked wallet addresses */
     wallets: IWalletLink[];
     /** User preferences */

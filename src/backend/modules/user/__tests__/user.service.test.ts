@@ -355,110 +355,67 @@ describe('UserService', () => {
         });
     });
 
-    describe('login', () => {
-        it('should set isLoggedIn to true', async () => {
-            const user = await userService.getOrCreate(validUUID);
-            expect(user.isLoggedIn).toBe(false);
-
-            const loggedIn = await userService.login(validUUID);
-
-            expect(loggedIn.isLoggedIn).toBe(true);
-        });
-
-        it('should throw error for non-existent user', async () => {
-            await expect(userService.login(validUUID)).rejects.toThrow('User with id');
-        });
-
-        it('should invalidate cache after login', async () => {
-            await userService.getOrCreate(validUUID);
-
-            // Verify cache exists
-            let cached = await mockCache.get(`user:${validUUID}`);
-            expect(cached).toBeDefined();
-
-            // Login
-            await userService.login(validUUID);
-
-            // Cache should be invalidated
-            cached = await mockCache.get(`user:${validUUID}`);
-            expect(cached).toBeNull();
-        });
-
-        it('should log login action', async () => {
-            await userService.getOrCreate(validUUID);
-            mockLogger.clear();
-
-            await userService.login(validUUID);
-
-            const infoLogs = mockLogger.logs.filter(l => l.level === 'info');
-            const hasLoginLog = infoLogs.some(l => l.message?.includes('logged in'));
-            expect(hasLoginLog).toBe(true);
-        });
-    });
-
     describe('logout', () => {
-        it('should set isLoggedIn to false', async () => {
+        it('downgrades verified user to registered and clears identityVerifiedAt', async () => {
             await userService.getOrCreate(validUUID);
-            await userService.login(validUUID);
+            const linkResult = await linkWalletWithChallenge(userService, validUUID, 'TXyz123456789');
+            expect(linkResult.user.identityState).toBe(UserIdentityState.Verified);
+            expect(linkResult.user.identityVerifiedAt).not.toBeNull();
             mockCache.clear();
-
-            const user = await userService.getById(validUUID);
-            expect(user?.isLoggedIn).toBe(true);
 
             const loggedOut = await userService.logout(validUUID);
 
-            expect(loggedOut.isLoggedIn).toBe(false);
+            expect(loggedOut.identityState).toBe(UserIdentityState.Registered);
+            expect(loggedOut.identityVerifiedAt).toBeNull();
         });
 
-        it('should preserve wallets after logout', async () => {
-            // Create user with wallet
+        it('downgrades to anonymous when no wallets remain', async () => {
             await userService.getOrCreate(validUUID);
-            await userService.connectWallet(validUUID, 'T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwb');
-            await userService.login(validUUID);
             mockCache.clear();
 
-            // Verify wallet exists
+            const loggedOut = await userService.logout(validUUID);
+
+            expect(loggedOut.identityState).toBe(UserIdentityState.Anonymous);
+            expect(loggedOut.identityVerifiedAt).toBeNull();
+        });
+
+        it('preserves wallets after logout', async () => {
+            await userService.getOrCreate(validUUID);
+            await userService.connectWallet(validUUID, 'T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwb');
+            mockCache.clear();
+
             const beforeLogout = await userService.getById(validUUID);
             expect(beforeLogout?.wallets.length).toBe(1);
 
-            // Logout
             await userService.logout(validUUID);
             mockCache.clear();
 
-            // Wallet should still exist
             const afterLogout = await userService.getById(validUUID);
             expect(afterLogout?.wallets.length).toBe(1);
-            expect(afterLogout?.isLoggedIn).toBe(false);
+            expect(afterLogout?.identityState).toBe(UserIdentityState.Registered);
+            expect(afterLogout?.identityVerifiedAt).toBeNull();
         });
 
-        it('should throw error for non-existent user', async () => {
+        it('throws for non-existent user', async () => {
             await expect(userService.logout(validUUID)).rejects.toThrow('User with id');
         });
 
-        it('should invalidate cache after logout', async () => {
+        it('invalidates cache after logout', async () => {
             await userService.getOrCreate(validUUID);
-            await userService.login(validUUID);
+            await userService.connectWallet(validUUID, 'T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwb');
 
-            // Verify cache exists after login
-            let cached = await mockCache.get(`user:${validUUID}`);
-            expect(cached).toBeNull(); // Already invalidated by login
-
-            // Re-fetch to populate cache
             await userService.getById(validUUID);
-            cached = await mockCache.get(`user:${validUUID}`);
+            let cached = await mockCache.get(`user:${validUUID}`);
             expect(cached).toBeDefined();
 
-            // Logout
             await userService.logout(validUUID);
 
-            // Cache should be invalidated
             cached = await mockCache.get(`user:${validUUID}`);
             expect(cached).toBeNull();
         });
 
-        it('should log logout action', async () => {
+        it('logs the logout action', async () => {
             await userService.getOrCreate(validUUID);
-            await userService.login(validUUID);
             mockLogger.clear();
 
             await userService.logout(validUUID);
@@ -1011,24 +968,18 @@ describe('UserService', () => {
             expect(updated.preferences.theme).toBe('dark-id');
         });
 
-        it('login with merged UUID should log in canonical user', async () => {
+        it('logout with merged UUID downgrades canonical user', async () => {
             await setupMerge(userService, mockDatabase, mockCache, validUUID, validUUID2);
-
-            const result = await userService.login(validUUID2);
-
-            expect(result.id).toBe(validUUID);
-            expect(result.isLoggedIn).toBe(true);
-        });
-
-        it('logout with merged UUID should log out canonical user', async () => {
-            await setupMerge(userService, mockDatabase, mockCache, validUUID, validUUID2);
-            await userService.login(validUUID);
+            // setupMerge ends with the canonical user in Verified state
+            // (the loser's link reconciliation lifted the winner). Logging
+            // out via the loser cookie must downgrade the winner.
             mockCache.clear();
 
             const result = await userService.logout(validUUID2);
 
             expect(result.id).toBe(validUUID);
-            expect(result.isLoggedIn).toBe(false);
+            expect(result.identityState).toBe(UserIdentityState.Registered);
+            expect(result.identityVerifiedAt).toBeNull();
         });
 
         it('recordActivity with merged UUID should increment canonical user pageViews', async () => {

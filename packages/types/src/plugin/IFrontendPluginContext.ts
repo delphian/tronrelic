@@ -41,7 +41,7 @@ export interface IPluginWalletLink {
  *
  * @example
  * ```typescript
- * const { hasLinkedWallet, hasVerifiedWallet, isLoggedIn, wallets } = context.useUser();
+ * const { hasLinkedWallet, hasVerifiedWallet, wallets } = context.useUser();
  *
  * // Gate feature to verified users only
  * if (!hasVerifiedWallet) {
@@ -71,18 +71,14 @@ export interface IPluginUserState {
     hasLinkedWallet: boolean;
 
     /**
-     * Whether the user has at least one verified wallet.
-     * Convenience check for `wallets.some(w => w.verified)`.
-     * Use this for feature gating (e.g., "verify wallet to access historical data").
+     * Whether the user is in the *verified* identity state — i.e.
+     * `user.identityState === Verified`, which means a wallet was
+     * signed and the resulting session is still within
+     * `SESSION_TTL_MS`. Use this for feature gating (e.g., "verify
+     * wallet to access historical data"). Equivalent to
+     * `hasLinkedWallet` plus a live session.
      */
     hasVerifiedWallet: boolean;
-
-    /**
-     * Whether the user is currently logged in (UI feature gate).
-     * This is independent of wallet verification - a user can be logged in
-     * without verified wallets, or have verified wallets but be logged out.
-     */
-    isLoggedIn: boolean;
 
     /**
      * All linked wallets (both verified and unverified).
@@ -815,10 +811,10 @@ export interface IFrontendPluginContext {
      *
      * @example
      * ```typescript
-     * const { isRegistered, isLoggedIn, wallets } = context.useUser();
+     * const { hasVerifiedWallet, wallets } = context.useUser();
      *
      * // Gate features to verified users
-     * if (!isRegistered) {
+     * if (!hasVerifiedWallet) {
      *     return <p>Please verify your wallet to access this feature</p>;
      * }
      *

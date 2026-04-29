@@ -66,7 +66,6 @@ export {
     setPrimaryWalletThunk,
     updatePreferencesThunk,
     recordActivityThunk,
-    loginThunk,
     logoutThunk,
     // Selectors
     selectUserId,
@@ -79,7 +78,6 @@ export {
     selectUserInitialized,
     selectHasWallets,
     selectHasVerifiedWallet,
-    selectIsLoggedIn,
     // Identity-state selectors (read the canonical UserIdentityState)
     selectIdentityState,
     selectIsAnonymous,
@@ -113,8 +111,7 @@ export {
     recordPage,
     heartbeat,
     endSession,
-    // Login state functions
-    loginUser,
+    // Logout
     logoutUser,
     // Admin API functions
     adminListUsers,

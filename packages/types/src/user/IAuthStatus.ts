@@ -7,8 +7,9 @@
  * and the frontend `SystemAuthGate` that decides whether to admit the
  * visitor to `/system` (page entry). Each tier asks the same question,
  * and they all reduce to two primitives: identity-state verification
- * (`identityState === Verified`, which itself folds in freshness via
- * `deriveIdentityState`), and admin-group membership through
+ * (`identityState === Verified`, the authoritative stored field whose
+ * freshness is enforced by the lazy session-expiry pass inside
+ * `UserService.getById`), and admin-group membership through
  * `IUserGroupService.isAdmin` (which matches the reserved-admin slug
  * pattern, not just the literal `'admin'`).
  *
@@ -16,21 +17,21 @@
  * ships it on every `IUser` payload as `authStatus`, and consumers
  * read these booleans rather than re-deriving them from raw fields.
  *
- * Two booleans cover every gate the platform has. Verification
- * freshness is no longer a separate field because `Verified` itself
- * means "fresh-Verified" — a stale-signature user reads as
- * `Registered` and `isVerified` is false. There is no "admin but
- * stale" state: if the user is in the admin group but no wallet is
- * fresh, `isVerified` is false and the gate falls to the generic
- * "not-Verified" branch, recovering through the normal verify-wallet
- * flow on `/profile`. Recovery has no special UI surface.
+ * Two booleans cover every gate the platform has. Session expiry is
+ * not a separate field because by the time the predicate runs the
+ * user has already been passed through `getById`, which lazily
+ * downgrades a stale Verified user to Registered before returning —
+ * `isVerified` is therefore false for an expired session, and the
+ * gate falls to the generic "not-Verified" branch. Recovery is the
+ * normal verify-wallet flow on `/profile`; no special UI surface.
  */
 export interface IAuthStatus {
     /**
-     * True iff the user's current identity state is `Verified` — at
-     * least one linked wallet has a `verifiedAt` within the freshness
-     * window. The "ever proven" flag (`wallets[].verified === true`)
-     * alone is not enough; the proof must be recent.
+     * True iff `user.identityState === Verified` at the moment the
+     * snapshot was computed. The lazy session-expiry pass inside
+     * `UserService.getById` has already demoted any stale Verified
+     * user to Registered before this predicate sees them, so a `true`
+     * value here means "session is currently within `SESSION_TTL_MS`".
      */
     isVerified: boolean;
     /**

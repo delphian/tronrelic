@@ -46,12 +46,11 @@ import {
     connectWalletThunk,
     linkWalletThunk,
     refreshWalletVerificationThunk,
-    loginThunk,
     logoutThunk,
     selectUserId,
     selectUserInitialized,
     selectWallets,
-    selectIsLoggedIn,
+    selectHasWallets,
     selectIsVerified,
     selectWalletLoginRequired,
     selectExistingWalletOwner,
@@ -80,19 +79,23 @@ export function useWallet() {
     const connectionError = useAppSelector(state => state.user.connectionError);
     const walletVerified = useAppSelector(state => state.user.walletVerified);
 
-    // User-level identity. Freshness-aware: a user whose every signature
-    // has aged past the freshness window collapses from Verified to
-    // Registered, so this flag flips false even though `walletVerified`
-    // (the per-wallet historical flag) stays true. WalletButton consults
-    // this rather than `walletVerified` to decide whether to send the
-    // user to the Verified-only profile route or show the verify CTA.
+    // User-level identity. The backend ships `identityState` already
+    // resolved through the lazy session-expiry pass, so a stale-collapsed
+    // user reads as Registered (not Verified) here. WalletButton consults
+    // this rather than the per-wallet `walletVerified` historical flag to
+    // decide whether to send the user to the Verified-only profile route
+    // or show the verify CTA.
     const isUserVerified = useAppSelector(selectIsVerified);
 
     // Linked wallets from backend (for auto-verify check)
     const linkedWallets = useAppSelector(selectWallets);
 
-    // Login state (UI/feature gate)
-    const isLoggedIn = useAppSelector(selectIsLoggedIn);
+    // Has at least one linked wallet — proxy for "this visitor has done
+    // anything past Anonymous". Drives WalletButton's branching alongside
+    // `isUserVerified`. Replaces the legacy `isLoggedIn` UI flag, which
+    // was a separate boolean independent of identity state; now we read
+    // identity state directly.
+    const hasWallets = useAppSelector(selectHasWallets);
 
     // Wallet login required state (wallet belongs to another user)
     const walletLoginRequired = useAppSelector(selectWalletLoginRequired);
@@ -448,30 +451,14 @@ export function useWallet() {
     }, []);
 
     /**
-     * Log in the user (set isLoggedIn to true).
+     * End the user's verified session.
      *
-     * This is a UI/feature gate - it controls what is surfaced to the user,
-     * not their underlying identity. UUID tracking continues regardless.
-     */
-    const login = useCallback(async () => {
-        if (!userId) {
-            console.warn('Cannot login: user not initialized');
-            return;
-        }
-
-        try {
-            await dispatch(loginThunk(userId)).unwrap();
-        } catch (error) {
-            console.error('Login failed:', error);
-            throw error;
-        }
-    }, [dispatch, userId]);
-
-    /**
-     * Log out the user (set isLoggedIn to false).
-     *
-     * This is a UI/feature gate - wallets and all other data remain intact.
-     * Also disconnects from TronLink session.
+     * Calls the backend logout endpoint, which downgrades `identityState`
+     * to Registered (or Anonymous if no wallets remain) and clears
+     * `identityVerifiedAt`. Wallets and the cookie persist; the next
+     * verify-wallet click re-establishes the session. Also disconnects
+     * the live TronLink connection so the user must re-engage the
+     * extension on their next attempt.
      */
     const logout = useCallback(async () => {
         if (!userId) {
@@ -510,7 +497,7 @@ export function useWallet() {
         connectionError,
         walletVerified,
         isConnected: connectionStatus === 'connected' && connectedAddress !== null,
-        isLoggedIn,
+        hasWallets,
 
         // Wallet login required state
         walletLoginRequired,
@@ -535,7 +522,6 @@ export function useWallet() {
         disconnect,
         signMessage,
         setStatus,
-        login,
         logout,
         cancelWalletLogin
     } as const;
