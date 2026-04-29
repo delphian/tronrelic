@@ -181,7 +181,7 @@ export function useWhaleTransactions(threshold: number) {
 | `SITE_BACKEND`, other server vars | ✅ Available | ❌ Undefined |
 | `NEXT_PUBLIC_*` | ✅ Available | ✅ Available |
 
-**Always use the centralized config module** (`@/lib/config`) — it returns the right value for the current context. Never read `process.env.*` directly. See [frontend-architecture.md](../frontend-architecture.md#environment-configuration-and-runtime-contexts).
+**Use the runtime-config APIs.** In SSR (server components, `generateMetadata`) call `getServerConfig()` from `@/lib/serverConfig`; in client code call `getRuntimeConfig()` from `@/lib/runtimeConfig`. The legacy `@/lib/config` module is deprecated — it inlines `NEXT_PUBLIC_*` at build time and breaks universal Docker images. Never read `process.env.*` directly. See [frontend-architecture.md](../frontend-architecture.md#environment-configuration-and-runtime-contexts).
 
 ## Composition Over Inheritance
 
@@ -208,7 +208,7 @@ function MyComponent() {
 - [ ] `'use client'` only when file needs hooks/browser/WebSocket/events/Redux/portals
 - [ ] No `window`/`document` in render body — only in `useEffect`
 - [ ] Dates rendered via `<ClientTime>`, not `toLocaleString`
-- [ ] `process.env.*` never read directly — use `@/lib/config`
+- [ ] `process.env.*` never read directly — use `getServerConfig()` (SSR) or `getRuntimeConfig()` (client)
 - [ ] Hooks: `use` prefix, all dependencies listed, `useEffect` cleanups returned
 - [ ] Plugin components consume `IFrontendPluginContext` (no cross-workspace imports)
 

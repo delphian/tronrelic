@@ -1,6 +1,6 @@
 # Environment Variables Reference
 
-Authoritative reference for every environment variable the backend reads. Source of truth: `src/backend/config/env.ts` (Zod schema) plus `.env.example` for deploy-time vars consumed by docker-compose.
+Authoritative reference for every environment variable read at runtime. Three scopes: backend (Zod-validated in `src/backend/config/env.ts`), frontend SSR (read by the Next.js server process — `SITE_BACKEND`, `SITE_WS`), and deploy-time vars consumed by docker-compose (`.env.example`).
 
 ## Why This Matters
 
