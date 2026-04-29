@@ -1,5 +1,13 @@
-import { UserIdentityState } from '@/types';
 import type { IMigration, IMigrationContext } from '@/types';
+
+// Inline string literals matching `UserIdentityState`. Migration files are
+// compiled with `bundle: false`, which does not resolve the `@/types` path
+// alias, so a runtime import of the enum breaks the scanner's dynamic
+// import in production. Keep these in sync with
+// packages/types/src/user/IUserIdentityState.ts.
+const IDENTITY_ANONYMOUS = 'anonymous';
+const IDENTITY_REGISTERED = 'registered';
+const IDENTITY_VERIFIED = 'verified';
 
 /**
  * Backfill `identityState` on every existing user document.
@@ -62,13 +70,13 @@ export const migration: IMigration = {
                     { wallets: { $size: 0 } }
                 ]
             },
-            { $set: { identityState: UserIdentityState.Anonymous } }
+            { $set: { identityState: IDENTITY_ANONYMOUS } }
         );
 
         // Any wallet with verified=true → user is verified.
         const verifiedResult = await usersCollection.updateMany(
             { wallets: { $elemMatch: { verified: true } } },
-            { $set: { identityState: UserIdentityState.Verified } }
+            { $set: { identityState: IDENTITY_VERIFIED } }
         );
 
         // Has wallets but none verified → registered. We compute the
@@ -79,7 +87,7 @@ export const migration: IMigration = {
                 'wallets.0': { $exists: true },
                 wallets: { $not: { $elemMatch: { verified: true } } }
             },
-            { $set: { identityState: UserIdentityState.Registered } }
+            { $set: { identityState: IDENTITY_REGISTERED } }
         );
 
         console.log(

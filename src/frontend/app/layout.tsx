@@ -195,12 +195,15 @@ async function fetchInitialBlock(): Promise<BlockSummary | null> {
 }
 
 /**
- * Fetch user data during SSR to prevent wallet button flash.
+ * Fetch user data during SSR to prevent wallet button flash and to
+ * seed the auth gate with server-computed truth on first paint.
  *
- * If user has identity cookie, fetches their data including linked wallets.
- * This allows the wallet button to render correctly on first paint.
- *
- * @returns SSR user data or null if no identity
+ * Returns the full `IUserData` payload — including `identityState`,
+ * `groups`, and `authStatus` — so the Redux preload matches what
+ * the backend would have shipped on a client-side bootstrap call.
+ * Returning `null` (no cookie, fetch failure, or backend miss) lets
+ * `UserIdentityProvider` fall through to its mount-time bootstrap,
+ * which is the only safe way to populate `authStatus` client-side.
  */
 async function fetchSSRUserData(): Promise<SSRUserData | null> {
   try {
@@ -209,16 +212,7 @@ async function fetchSSRUserData(): Promise<SSRUserData | null> {
       return null;
     }
 
-    const userData = await getServerUser(userId);
-    if (!userData) {
-      return { userId, wallets: [], isLoggedIn: false };
-    }
-
-    return {
-      userId,
-      wallets: userData.wallets || [],
-      isLoggedIn: userData.isLoggedIn ?? false
-    };
+    return await getServerUser(userId);
   } catch {
     return null;
   }
