@@ -37,16 +37,16 @@ import {
     selectPrimaryWallet
 } from '../modules/user/slice';
 import { getSocket } from './socketClient';
-import { config } from './config';
+import { getRuntimeConfig } from './runtimeConfig';
 
 /**
  * API client implementation for frontend plugins.
  *
  * Provides a simple interface for making authenticated requests to the
  * backend without requiring plugins to manage base URLs, headers, or
- * error handling. The base URL delegates to `config.apiBaseUrl` so
- * plugin traffic benefits from the same Docker-aware fallbacks
- * described in `getBackendBaseUrl()`.
+ * error handling. The base URL is read from SSR-injected runtime config
+ * via `getRuntimeConfig().apiUrl`, so universal Docker images resolve
+ * the correct backend per domain without rebuilding.
  *
  * Authentication rides the same-origin `tronrelic_uid` cookie. The
  * cookie is HttpOnly and signed with `SESSION_SECRET`, set by the
@@ -62,7 +62,7 @@ class ApiClient implements IApiClient {
     private baseUrl: string;
 
     constructor() {
-        this.baseUrl = config.apiBaseUrl;
+        this.baseUrl = getRuntimeConfig().apiUrl;
     }
 
     /**
@@ -71,9 +71,13 @@ class ApiClient implements IApiClient {
      * public method is a one-line delegation.
      *
      * Body is conditionally serialized — GET/DELETE pass `undefined`
-     * so the request remains body-less and `Content-Type` doesn't
-     * mislead intermediaries. Query params apply only when supplied
-     * (GET's only escape hatch into URL state).
+     * so the request remains body-less and `Content-Type` is omitted
+     * entirely (set only when a body is present, so intermediaries
+     * aren't misled). Query params apply only when supplied (GET's
+     * only escape hatch into URL state). Responses are parsed
+     * defensively: 204/205 and empty bodies return `undefined`,
+     * non-JSON content-types return the raw text — endpoints that
+     * declare `Promise<void>` no longer throw on success.
      */
     private async request<T>(
         method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
@@ -91,10 +95,10 @@ class ApiClient implements IApiClient {
 
         const init: RequestInit = {
             method,
-            headers: { 'Content-Type': 'application/json' },
             credentials: 'include'
         };
         if (body !== undefined) {
+            init.headers = { 'Content-Type': 'application/json' };
             init.body = JSON.stringify(body);
         }
 
@@ -114,7 +118,22 @@ class ApiClient implements IApiClient {
             throw new Error(`API request failed: ${errorMessage}`);
         }
 
-        return response.json();
+        // 204 No Content / 205 Reset Content carry no body; calling
+        // response.json() on them throws. Several DELETE endpoints
+        // return 204 on success, so guard before parsing. Non-JSON
+        // bodies fall through to text — callers that asked for void
+        // get undefined, others get the raw payload.
+        if (response.status === 204 || response.status === 205) {
+            return undefined as T;
+        }
+
+        const contentType = response.headers.get('content-type')?.toLowerCase() ?? '';
+        if (contentType.includes('application/json')) {
+            return response.json() as Promise<T>;
+        }
+
+        const text = await response.text();
+        return (text === '' ? undefined : text) as T;
     }
 
     async get<T = any>(path: string, params?: Record<string, any>): Promise<T> {

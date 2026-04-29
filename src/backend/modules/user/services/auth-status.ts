@@ -10,16 +10,20 @@
  * "not Verified" branch — no separate stale-admin state, no special
  * recovery branch.
  *
- * This module computes the snapshot once. `requireAdmin`, `isAdmin(req)`,
+ * This module centralizes that snapshot. `requireAdmin`, `isAdmin(req)`,
  * and the user controller's response-shaping helper all consume it;
  * the payload travels to the client as `IUser.authStatus`; the
  * frontend reads booleans rather than re-deriving from raw fields.
  *
  * The function is async because `IUserGroupService.isAdmin` round-trips
  * to the database to evaluate the reserved-admin pattern with
- * `system: true`. That cost was already paid by every gate that used
- * to call `isAdmin` inline; centralizing it doesn't add round-trips,
- * only consolidates them.
+ * `system: true`. Centralizing the logic keeps every caller on the same
+ * semantics, but it does not make that query free: because
+ * `withAuthStatus` decorates every user-controller response, response
+ * shaping now performs an `isAdmin` lookup on paths that previously
+ * needed no admin check (e.g. user bootstrap, profile reads). That
+ * cost is the price of a single freshness-aware predicate everywhere —
+ * worth measuring under load if the user-controller hot path widens.
  */
 
 import { UserIdentityState } from '@/types';

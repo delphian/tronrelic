@@ -18,22 +18,29 @@ import type { IAuthStatus } from './IAuthStatus.js';
  * Users can link multiple wallets to their UUID, enabling cross-wallet
  * preferences and unified activity tracking.
  *
- * The `verified` flag is the wire-format indicator of which user state this
- * wallet contributes to (see the User Module README for the canonical
- * anonymous / registered / verified taxonomy):
+ * The `verified` flag is the wire-format indicator that ownership was
+ * proven by signature at some point — but on its own it no longer
+ * decides `identityState`. Freshness is folded into the enum via
+ * `deriveIdentityState`: `Verified` requires not just `verified: true`
+ * but a `verifiedAt` within `VERIFICATION_FRESHNESS_MS`. See the User
+ * Module README for the canonical anonymous / registered / verified
+ * taxonomy.
  *
  * - `verified: false` — wallet was registered (claimed via TronLink connect)
  *   but no signature has proven ownership. Holding only such wallets makes
  *   the user *registered*.
- * - `verified: true` — wallet ownership was proven by a signed message.
- *   Any wallet with `verified: true` makes the user *verified*.
+ * - `verified: true` with a fresh `verifiedAt` — proven ownership within
+ *   the freshness window. Any such wallet lifts the user to *verified*.
+ * - `verified: true` with a stale `verifiedAt` — proof aged past the
+ *   freshness window. The user collapses back to *registered* (stale
+ *   verifications no longer count toward `identityState === Verified`),
+ *   and admin authority is gone until the user re-signs.
  *
- * `verifiedAt` is the freshness anchor for cookie+admin authority. The
- * dual-track admin middleware accepts a *Verified* user only when at least
- * one wallet has `verifiedAt` within `VERIFICATION_FRESHNESS_MS`. Stale
- * verifications still count toward `identityState === Verified` for display
- * and analytics, but stop conferring admin authority — the user must
- * re-sign to refresh the freshness clock.
+ * `verifiedAt` is the freshness anchor: re-signing refreshes the clock
+ * and lifts the user back to `Verified` through the normal verify-wallet
+ * flow. There is no separate "stale" state — expired proof and absent
+ * proof are functionally indistinguishable for any consumer gating on
+ * `Verified`.
  */
 export interface IWalletLink {
     /** Base58 TRON address (e.g., TRX7NJa...) */
