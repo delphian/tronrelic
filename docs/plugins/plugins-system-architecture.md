@@ -526,14 +526,14 @@ Plugins often need secure settings screens without touching core admin code. Giv
 
 - **Purpose-built configuration** – Each plugin owns its own settings UI and storage, so toggling features never requires editing shared dashboards.
 - **Predictable routing** – Everything lives under `/system/plugins/{plugin-id}` and `/api/plugins/{plugin-id}/system/**`, which keeps links and permissions consistent.
-- **Centralised auth** – All admin routes pass through the shared `requireAdmin` middleware so we only maintain one token gate.
+- **Centralised auth** – All admin routes pass through the shared `requireAdmin` middleware, which runs the [dual-track](../../src/backend/modules/user/README.md#admin-authentication--dual-track) admit-or-reject in one place rather than letting each plugin wire its own.
 
 ### Implementation snapshot
 
 1. **Manifest** – Set `adminUrl` so the platform can surface a "Settings" button in `/system/plugins`.
 2. **Backend** – Populate the plugin’s `adminRoutes` array; `PluginApiService` mounts them under `/api/plugins/{plugin-id}/system/**` and applies admin auth automatically.
 3. **Frontend** – Register React components in `adminPages`; the dynamic catch-all route loads them with the injected `IFrontendPluginContext`.
-4. **Management UI** – Once a plugin is installed and enabled, the system plugins page links directly to the manifest’s `adminUrl`, and the admin token stored in `localStorage` keeps requests authenticated.
+4. **Management UI** – Once a plugin is installed and enabled, the system plugins page links directly to the manifest’s `adminUrl`. Operators authenticate via the signed `tronrelic_uid` cookie; same-origin fetches carry it automatically, so plugin admin pages need no token plumbing.
 
 ### Where to dive deeper
 

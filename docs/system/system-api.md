@@ -10,7 +10,11 @@ System APIs provide programmatic health monitoring, emergency controls, runtime 
 
 ### Authentication
 
-Most admin endpoints require authentication via the `ADMIN_API_TOKEN` configured in backend `.env`:
+Admin endpoints accept either of two paths via the `requireAdmin` middleware. See [admin authentication — dual-track](../../src/backend/modules/user/README.md#admin-authentication--dual-track) for the canonical specification.
+
+**Cookie path (preferred for human operators in the browser).** A signed `tronrelic_uid` cookie identifying a user with `identityState === Verified` and membership in the `admin` group authorizes the call. This is what the `/system` SPA uses; same-origin fetches carry the cookie automatically when `credentials: 'include'` is set.
+
+**Service-token path (CI, scripts, first-admin bootstrap).** The examples below use this path; it is the right choice for shell scripts and automation.
 
 ```bash
 # Generate a secure token
@@ -20,8 +24,6 @@ openssl rand -hex 32
 ADMIN_API_TOKEN=your-secure-token-here
 ```
 
-**Sending the token:**
-
 ```bash
 # Recommended: Custom header
 curl -H "X-Admin-Token: your-token" http://localhost:4000/api/admin/system/overview
@@ -29,6 +31,8 @@ curl -H "X-Admin-Token: your-token" http://localhost:4000/api/admin/system/overv
 # Alternative: Bearer token
 curl -H "Authorization: Bearer your-token" http://localhost:4000/api/admin/system/overview
 ```
+
+The cookie path is tried first, so a request carrying both a valid cookie and a token is attributed to the human operator (`req.adminVia = 'user'`). Requests authorized via the token alone are tagged `req.adminVia = 'service-token'` for audit logs.
 
 **Security note:** Query parameter authentication (`?token=...`) is intentionally not supported to prevent tokens from appearing in server access logs.
 
@@ -906,11 +910,15 @@ socket.on('subscription:error', (error) => {
 
 ### Authentication Failures (401 Unauthorized)
 
-**Solution:**
+401 means the cookie path failed *and* the service token (if presented) didn't match. 503 means `ADMIN_API_TOKEN` is unset and no admin user resolved — the admin surface is disabled entirely.
+
+**Solution (service-token path — scripts/CI):**
 1. Verify `ADMIN_API_TOKEN` is set in backend `.env`
 2. Check you're using `X-Admin-Token` header (not query param)
 3. Ensure token has no extra whitespace or quotes
 4. Restart backend after changing token
+
+**Solution (cookie path — humans):** see [system-dashboard.md → Cannot Access Dashboard](./system-dashboard.md#cannot-access-dashboard-401-unauthorized) for the full recovery flow.
 
 ### Endpoints Returning Empty Data
 

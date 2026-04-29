@@ -723,9 +723,13 @@ of `'anonymous' | 'registered' | 'verified'`), `requiresGroups: string[]`
 `MenuService.getTreeForUser`; the admin UI surfaces the fields as a
 checkbox/multi-select fieldset on `/system/menu`. See the
 [Menu Module README → Visibility Gating](../../src/backend/modules/menu/README.md#visibility-gating)
-for the full contract and the distinction between `requiresAdmin` (per-user,
-cookie identity) and the `requireAdmin` middleware (shared-token gate, see
-[plugins-api-registration.md](./plugins-api-registration.md)).
+for the full contract. Note the menu config's `requiresAdmin` is purely a
+visibility predicate (resolves through `IUserGroupService.isAdmin` against
+the cookie-identified visitor) and is unrelated to the `requireAdmin`
+middleware that gates HTTP routes. The middleware admits *either* a Verified
+admin user via cookie *or* a service token via `x-admin-token` — see
+[plugins-api-registration.md](./plugins-api-registration.md) and
+[admin authentication — dual-track](../../src/backend/modules/user/README.md#admin-authentication--dual-track).
 
 ### 🚧 Planned
 

@@ -81,7 +81,7 @@ interface Props {
 
 **Prop descriptions:**
 
-- `token` - **Required**. Admin API token retrieved from localStorage (`admin_token` key). Used in `X-Admin-Token` header for all API requests. Without a valid token, API calls return 503 Service Unavailable.
+- `token` - **Required for backwards compatibility, but typically empty.** The frontend now authorizes admin requests via the signed `tronrelic_uid` cookie carried automatically on same-origin fetches; `useSystemAuth().token` returns `''` and the backend treats an empty `x-admin-token` header as "no token, fall back to cookie". Pass it through as-is. If the cookie path fails (visitor not signed in / not in `admin` group), API calls return 401 — render an `<AuthPrompt href="/system" />` based on `isAuthenticated`, not on token presence.
 - `jobFilter` - **Optional**. Array of job names (`['markets:refresh']`) or filter function (`(job) => job.enabled`). When omitted, shows all jobs.
 - `sectionTitle` - **Optional**. Custom heading for the jobs section. Defaults to `'Scheduled Jobs'`. Use plugin-specific titles like `'Market Jobs'` for better context.
 - `hideHealth` - **Optional**. Boolean to hide global health metrics. Defaults to `false`. Set to `true` in plugin admin pages where scheduler health is irrelevant to plugin users.
@@ -93,7 +93,7 @@ The component fetches data from two admin API endpoints:
 1. **`GET /api/admin/system/scheduler/status`** - Returns array of jobs with execution history, status, schedule, and error details
 2. **`GET /api/admin/system/scheduler/health`** - Returns global scheduler metrics (enabled state, uptime, success rate)
 
-Both endpoints require admin authentication via `X-Admin-Token` header. Data refreshes every 10 seconds automatically.
+Both endpoints require admin authority via the [dual-track admin gate](../../../src/backend/modules/user/README.md#admin-authentication--dual-track) — for `/system` SPA usage that resolves through the signed `tronrelic_uid` cookie. Data refreshes every 10 seconds automatically.
 
 **Configuration updates use:**
 
@@ -123,7 +123,7 @@ export default function SchedulerPage() {
 - Displays all jobs in the system (blockchain:sync, markets:refresh, cache:cleanup, etc.)
 - Shows scheduler health section with uptime and success rate
 - Uses default "Scheduled Jobs" section title
-- Requires user to authenticate at /system first (useSystemAuth validates token)
+- Requires the visitor to be a Verified admin (signed `tronrelic_uid` cookie + `admin` group). `useSystemAuth().isAuthenticated` reflects the server-computed `authStatus` snapshot.
 
 ### Plugin-Scoped Job Control
 
@@ -144,13 +144,10 @@ interface SchedulerMonitorProps {
 
 export function PluginSchedulerControl({ context }: { context: IFrontendPluginContext }) {
     const [SchedulerMonitor, setSchedulerMonitor] = useState<React.ComponentType<SchedulerMonitorProps> | null>(null);
-    const [adminToken, setAdminToken] = useState<string | null>(null);
+    const { token, isAuthenticated, isHydrated } = useSystemAuth();
 
     useEffect(() => {
         async function loadMonitor() {
-            const token = typeof window !== 'undefined' ? localStorage.getItem('admin_token') : null;
-            setAdminToken(token);
-
             const { SchedulerMonitor: Monitor } = await import(
                 '../../../../../src/frontend/features/system'
             );
@@ -159,10 +156,12 @@ export function PluginSchedulerControl({ context }: { context: IFrontendPluginCo
         void loadMonitor();
     }, []);
 
-    if (!adminToken) {
+    if (!isHydrated) return <context.ui.Skeleton height="200px" />;
+
+    if (!isAuthenticated) {
         return (
             <context.ui.Card>
-                <p>Admin authentication required. Visit <a href="/system">/system</a> to authenticate.</p>
+                <p>Admin access required. Sign in via <a href="/profile">/profile</a> with a wallet in the admin group.</p>
             </context.ui.Card>
         );
     }
@@ -172,7 +171,7 @@ export function PluginSchedulerControl({ context }: { context: IFrontendPluginCo
     return (
         <context.ui.Card>
             <SchedulerMonitor
-                token={adminToken}
+                token={token}
                 jobFilter={['markets:refresh']}
                 sectionTitle="Market Refresh Job"
                 hideHealth={true}
@@ -184,10 +183,10 @@ export function PluginSchedulerControl({ context }: { context: IFrontendPluginCo
 
 **What this does:**
 - Dynamically imports SchedulerMonitor to avoid build-time workspace dependencies
-- Retrieves admin token from localStorage (set by /system auth gate)
+- Reads `isAuthenticated` from `useSystemAuth()` — the server-computed `authStatus` snapshot, not a localStorage check
 - Filters to show only the `markets:refresh` job
 - Hides global health metrics (plugin users don't care about system-wide scheduler)
-- Shows auth prompt if no token found (directs user to /system)
+- Shows an auth prompt when the visitor is not a Verified admin, directing them to `/profile`
 
 ### Filter by Job Name Prefix
 
@@ -244,21 +243,20 @@ To debug, temporarily remove `jobFilter` to see all available jobs.
 
 ### Admin Authentication
 
-SchedulerMonitor requires admin authentication. The token must be stored in localStorage under the key `admin_token`.
+SchedulerMonitor authorizes through the [dual-track admin gate](../../../src/backend/modules/user/README.md#admin-authentication--dual-track). For SPA usage that resolves to the cookie path: the visitor needs a signed `tronrelic_uid` cookie, `identityState === Verified`, and membership in the `admin` group. Same-origin fetches carry the cookie automatically; the component does not read or write any JS-readable secret.
 
-**Typical authentication flow:**
+**Typical flow:**
 
-1. User visits `/system` and enters admin token
-2. SystemAuthContext stores token in localStorage
-3. Component retrieves token from localStorage
-4. Token is sent in `X-Admin-Token` header for all API requests
+1. Visitor signs a wallet on `/profile` (moves them to `Verified`).
+2. An existing admin adds them to the `admin` group on `/system/users` (or for the first admin, see [Bootstrapping the first admin](../../../src/backend/modules/user/README.md#bootstrapping-the-first-admin)).
+3. `useSystemAuth()` exposes `isAuthenticated`, computed from the server-attached `authStatus` snapshot on every `IUser` payload.
+4. Component reads `isAuthenticated` and renders the monitor or an auth prompt accordingly. The `token` prop stays as `''` for fetch-site compatibility — the backend ignores empty `x-admin-token` and falls through to the cookie path.
 
-**Security considerations:**
+**Notes:**
 
-- Token is stored client-side (localStorage)
-- Backend validates token on every request
-- Invalid tokens return 503 Service Unavailable
-- No token refresh logic (user must re-authenticate if expired)
+- No JS-readable admin secret exists on the client; XSS cannot steal an admin token because there isn't one.
+- 401 means the cookie path failed (not Verified, or not in `admin` group). 503 means `ADMIN_API_TOKEN` is unset *and* no admin user resolved.
+- Sessions expire after `SESSION_TTL_MS` (14 days from the last wallet signature). Recovery is the normal verify-wallet flow on `/profile` — there is no special "stale admin" UI.
 
 ### Auto-Refresh Behavior
 
@@ -404,24 +402,23 @@ return <Monitor token={token} jobFilter={['my-job']} />;
 
 ### Conditional Rendering Based on Auth
 
-**Problem:** Component requires admin token but plugins don't have auth context.
+**Problem:** Component requires admin authority but plugin pages need to render an auth-required state for non-admin visitors.
 
-**Solution:** Check localStorage and show auth prompt:
+**Solution:** Read `isAuthenticated` from `useSystemAuth()` and render an auth prompt directing the user to sign in:
 
 ```tsx
-const token = typeof window !== 'undefined' ? localStorage.getItem('admin_token') : null;
+const { token, isAuthenticated, isHydrated } = useSystemAuth();
 
-if (!token) {
-    return <AuthPrompt href="/system" />;
-}
+if (!isHydrated) return <Skeleton />;
+if (!isAuthenticated) return <AuthPrompt href="/profile" />;
 
 return <SchedulerMonitor token={token} />;
 ```
 
 **Benefits:**
-- Clear user guidance (directs to /system)
-- Prevents unauthorized API calls
-- No need for plugin-specific auth systems
+- Single source of truth — `isAuthenticated` is the server-computed `authStatus.isVerified && authStatus.isAdmin`, not a local heuristic
+- No JS-readable admin secret to leak via XSS
+- Hydration flag prevents flashing the not-admin UI while the bootstrap call is in flight
 
 ### Monitoring Specific Job Type
 
@@ -453,14 +450,13 @@ return <SchedulerMonitor token={token} />;
 2. Verify job names match filter exactly (case-sensitive)
 3. Check backend logs for scheduler initialization errors
 
-### Authentication errors (503)
+### Authentication errors (401 or 503)
 
-**Cause:** Invalid or missing admin token.
+**401:** cookie path failed (no signed cookie, not Verified, or not in `admin` group) and no valid service token was presented. Fix by signing a wallet on `/profile` and confirming admin-group membership on `/system/users`.
 
-**Fix:**
-1. Visit `/system` and enter valid admin token
-2. Check browser console for localStorage `admin_token` value
-3. Verify backend `ADMIN_API_TOKEN` environment variable is set
+**503:** `ADMIN_API_TOKEN` is unset *and* no admin user resolved — the admin surface is disabled entirely. Fix by either configuring the service token in backend `.env` or completing the cookie-path sign-in above.
+
+See [system-dashboard.md → Cannot Access Dashboard](../../system/system-dashboard.md#cannot-access-dashboard-401-unauthorized) for the full recovery flow.
 
 ### Stale data (not auto-refreshing)
 
@@ -484,12 +480,12 @@ return <SchedulerMonitor token={token} />;
 
 Before integrating SchedulerMonitor, verify:
 
-- [ ] Admin authentication system in place (`/system` page with token prompt)
-- [ ] Admin token stored in localStorage under `admin_token` key
+- [ ] Cookie-based admin path operational: `SESSION_SECRET` set in backend `.env`, at least one user is a Verified member of the `admin` group
+- [ ] Service-token path available for CI/scripts: `ADMIN_API_TOKEN` set in backend `.env`
 - [ ] Backend scheduler service initialized and registered jobs
-- [ ] Backend admin API endpoints enabled (require `ADMIN_API_TOKEN` environment variable)
 - [ ] MongoDB running (scheduler config persistence requires database)
-- [ ] Component rendered client-side (uses localStorage and fetch)
+- [ ] Component rendered client-side (uses `useSystemAuth` and fetch)
+- [ ] `useSystemAuth().isAuthenticated` consulted before rendering the monitor; `token` passed through but not relied on
 
 ## Further Reading
 

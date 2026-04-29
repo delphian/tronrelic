@@ -39,16 +39,16 @@ The string values are the wire format — they appear in MongoDB documents, HTTP
 | Member | Wire value | Definition |
 |--------|-----------|------------|
 | `UserIdentityState.Anonymous` | `'anonymous'` | UUID only. No wallets linked. |
-| `UserIdentityState.Registered` | `'registered'` | One or more linked wallets; no current cryptographic proof of ownership (never signed, or every signature has aged past `VERIFICATION_FRESHNESS_MS`). |
-| `UserIdentityState.Verified` | `'verified'` | At least one linked wallet has been signed within `VERIFICATION_FRESHNESS_MS`. |
+| `UserIdentityState.Registered` | `'registered'` | One or more linked wallets; no current verified session (never signed, or the user-level `identityVerifiedAt` clock has aged past `SESSION_TTL_MS`). |
+| `UserIdentityState.Verified` | `'verified'` | A wallet was signed within `SESSION_TTL_MS` and the user-level session is still alive. |
 
-The wire form is **always derived** at the API boundary by `deriveIdentityState(wallets)`. `UserService.toPublicUser` runs through it on every read, so the value reflects current truth — verification freshness is folded into `Verified` itself. A user whose every wallet's `verifiedAt` has aged past the freshness window collapses to `Registered` with no wallet mutation needed; re-signing any one wallet lifts them back. Storage holds a denormalized `identityState` for indexes and admin filter queries, but storage is a cache: between wallet mutations the stored value drifts as freshness ages out, while the API surface stays correct because it always derives.
+`identityState` is an **authoritative stored field**, not a derived view. Mutation handlers (`connectWallet`, `linkWallet`, `unlinkWallet`, `logout`, identity reconciliation) write it exactly once per transition; `toPublicUser` reads it straight through. Verified-session freshness is anchored on a single user-level timestamp, `identityVerifiedAt`, stamped whenever any wallet signature lands (`linkWallet`, `setPrimaryWallet`, `refreshWalletVerification`). The TTL is `SESSION_TTL_MS` (14 days) — past that, the next read through `UserService.getById` / `getOrCreate` / `getByWallet` runs `enforceSessionExpiry`, which lazily demotes the user to Registered (or Anonymous if no wallets remain), nulls `identityVerifiedAt`, and persists. So `Verified` on the wire always means "session is currently alive"; a stale Verified document gets corrected on its next read instead of via per-request derivation.
 
 The members are ordered by claim strength (Anonymous → Registered → Verified). Users transition forward when they sign, backward when wallets are unlinked or signatures age. The exported `USER_IDENTITY_STATES` array preserves this order for index-based comparisons.
 
 **Security implication.** `Registered` carries no current cryptographic proof — either unsigned or aged out. Only `Verified` confers proven, current control. Sensitive operations (publishing a public profile, claiming referral rewards, destructive wallet actions) must compare against `UserIdentityState.Verified`, not the per-wallet `verified` historical flag (which stays `true` even after a signature ages out).
 
-**Forbidden pattern — bare string literals.** Do not write `if (state === 'verified')`. Use `if (state === UserIdentityState.Verified)`. Likewise, do not introduce a parallel enum (`UserState`, `IdentityTier`, etc.) — `UserIdentityState` is canonical. The name was chosen to distinguish this concept from `isLoggedIn` (a separate UI/feature gate) and from any future session/connection state.
+**Forbidden pattern — bare string literals.** Do not write `if (state === 'verified')`. Use `if (state === UserIdentityState.Verified)`. Likewise, do not introduce a parallel enum (`UserState`, `IdentityTier`, etc.) — `UserIdentityState` is canonical. The name was chosen to distinguish this concept from the now-retired `isLoggedIn` UI flag (replaced by `identityVerifiedAt` + `SESSION_TTL_MS` in migration 009) and from any future session/connection state.
 
 **Vocabulary mapping to existing API surface.** The HTTP routes and service method names predate this taxonomy and remain unchanged for wire compatibility. The mapping is:
 
@@ -166,21 +166,42 @@ The user module spans both backend and frontend with parallel directory structur
 **Backend (`src/backend/src/modules/user/`):**
 ```
 modules/user/
-├── index.ts                 # Public API exports
-├── UserModule.ts            # IModule implementation (lifecycle, DI)
+├── index.ts                       # Public API exports
+├── UserModule.ts                  # IModule implementation (lifecycle, DI)
 ├── api/
-│   ├── index.ts             # Barrel exports
-│   ├── identity-cookie.ts   # Canonical HttpOnly cookie spec + setter
-│   ├── user.controller.ts   # Request handlers with cookie validation
-│   └── user.routes.ts       # Public and admin router factories
+│   ├── index.ts                   # Barrel exports
+│   ├── identity-cookie.ts         # Canonical HttpOnly cookie spec + setter + resolver
+│   ├── user.controller.ts         # Request handlers with cookie validation
+│   ├── user.routes.ts             # Public, profile, and admin router factories
+│   ├── user-group.controller.ts   # Group membership and definition handlers
+│   └── user-group.routes.ts       # Admin group router factory
 ├── database/
-│   ├── index.ts             # Barrel exports
-│   └── IUserDocument.ts     # MongoDB document interface
+│   ├── index.ts                   # Barrel exports
+│   ├── IUserDocument.ts           # MongoDB document interface for users
+│   └── IUserGroupDocument.ts      # MongoDB document interface for groups
 ├── services/
-│   ├── index.ts             # Barrel exports
-│   └── user.service.ts      # Business logic (CRUD, wallet linking, caching)
+│   ├── index.ts                   # Barrel exports
+│   ├── auth-status.ts             # Single source of truth for IAuthStatus computation
+│   ├── geo.service.ts             # IP → country, referrer parsing, device derivation
+│   ├── gsc.service.ts             # Google Search Console keyword integration
+│   ├── user.service.ts            # Business logic (CRUD, wallet linking, sessions, caching)
+│   ├── user.errors.ts             # Service-layer error classes
+│   ├── user-group.service.ts      # Group definition CRUD + membership API
+│   ├── user-group.errors.ts       # Group-service error classes
+│   └── wallet-challenge.service.ts # Single-use nonce mint/consume for wallet mutations
+├── migrations/
+│   ├── 004_backfill_user_traffic_origins.ts
+│   ├── 005_backfill_referral_codes.ts
+│   ├── 006_backfill_user_identity_state.ts
+│   ├── 007_backfill_user_groups.ts
+│   ├── 008_backfill_wallet_verified_at.ts
+│   └── 009_session_identity_verified_at.ts
 └── __tests__/
-    └── user.service.test.ts # Unit tests with mocks
+    ├── auth-status.test.ts
+    ├── bootstrap.controller.test.ts
+    ├── user-group.service.test.ts
+    ├── user.service.test.ts
+    └── wallet-challenge.service.test.ts
 ```
 
 **Frontend (`src/frontend/modules/user/`):**
@@ -305,8 +326,11 @@ const user = await userService.updatePreferences(userId, {
     notifications: true
 });
 
-// Record activity (page view)
-await userService.recordActivity(userId);
+// Record a page visit in the active session (creates a session if none exists)
+await userService.recordPage(userId, '/markets');
+
+// Extend the active session without a page event
+await userService.heartbeat(userId);
 
 // Admin: List users with pagination
 const users = await userService.listUsers(50, 0);
@@ -346,7 +370,7 @@ validateCookie(req: Request, res: Response, next: NextFunction): void {
 }
 ```
 
-**Public endpoints (require cookie validation):**
+**Public endpoints (cookie-validated `:id` routes; bootstrap is the only exception):**
 - `POST /api/user/bootstrap` - Idempotent identity entry point (mints HttpOnly cookie if absent, refreshes if present)
 - `GET /api/user/:id` - Get or create user by UUID
 - `POST /api/user/:id/wallet/connect` - Register wallet without verification (stage 1)
@@ -354,44 +378,67 @@ validateCookie(req: Request, res: Response, next: NextFunction): void {
 - `POST /api/user/:id/wallet` - Verify wallet via signature against a fresh `link` nonce (stage 2)
 - `DELETE /api/user/:id/wallet/:address` - Unlink wallet (requires signature + `unlink` nonce)
 - `PATCH /api/user/:id/wallet/:address/primary` - Set primary wallet (requires signature + `set-primary` nonce)
-- `POST /api/user/:id/wallet/:address/refresh-verification` - Refresh `verifiedAt` on an already-verified wallet (requires signature + `refresh-verification` nonce). Narrower equivalent of the link flow; the WalletButton uses link by default
+- `POST /api/user/:id/wallet/:address/refresh-verification` - Refresh `identityVerifiedAt` and the per-wallet `verifiedAt` (requires signature + `refresh-verification` nonce). Narrower equivalent of the link flow; the WalletButton uses link by default
 - `PATCH /api/user/:id/preferences` - Update preferences
-- `POST /api/user/:id/activity` - Record activity
+- `POST /api/user/:id/activity` - Record activity (legacy — prefer the session/page endpoints below)
+- `POST /api/user/:id/session/start` - Open or resume the active session (returns existing session if within timeout)
+- `POST /api/user/:id/session/page` - Record a page visit in the active session
+- `POST /api/user/:id/session/heartbeat` - Extend session duration without recording a page
+- `POST /api/user/:id/session/end` - Explicitly close the active session
+- `GET /api/user/:id/referral` - Return the user's referral code and referred/converted counts
+- `POST /api/user/:id/logout` - End the verified session (downgrade `identityState`, null `identityVerifiedAt`); cookie persists
 
-**Admin endpoints (require admin token):**
-- `GET /api/admin/users` - List users with pagination and search
-- `GET /api/admin/users/stats` - Get user statistics
-- `GET /api/admin/users/:id` - Get any user by UUID (admin bypass)
+**Public profile endpoint (no cookie required; `userContextMiddleware` populates `req.userId` for `isOwner` computation):**
+- `GET /api/profile/:address` - Public profile lookup by verified wallet address
+
+**Admin endpoints (require admin token via `requireAdmin`):**
+- `GET /api/admin/users` - List/filter/search users with pagination
+- `GET /api/admin/users/stats` - User counts and wallet aggregates
+- `GET /api/admin/users/analytics/*` - Daily visitors, visitor origins, new users, traffic sources, traffic-source details, top landing pages, geo distribution, device breakdown, campaign performance, engagement, conversion funnel, retention, referral overview
+- `GET /api/admin/users/analytics/gsc/status` - Google Search Console configuration status
+- `POST | DELETE /api/admin/users/analytics/gsc/credentials` - Save / remove GSC service-account credentials
+- `POST /api/admin/users/analytics/gsc/refresh` - On-demand GSC data fetch
+- `GET /api/admin/users/:id` - Fetch any user (admin bypass of cookie validation)
+- `PUT /api/admin/users/:id/groups` - Replace a user's complete group membership (audit-logged)
+- `GET | POST /api/admin/users/groups` - List or create group definitions
+- `GET | PATCH | DELETE /api/admin/users/groups/:id` - Read / update / delete a group definition
+- `GET /api/admin/users/groups/:id/members` - Paginated user-id list for a group (excludes merge tombstones)
 
 ### Frontend Identity Utilities
 
-The frontend includes utilities for UUID generation, cookie management, and API calls.
+The server is the only writer of `tronrelic_uid`. The frontend never mints a UUID, never writes the cookie, and never mirrors identity in `localStorage` — those code paths were removed. The frontend uses Redux thunks for all client-side reads/mutations and dedicated SSR helpers for server-side reads.
 
-**lib/userIdentity.ts:**
+**`modules/user/lib/identity.ts` — read-only client helpers:**
 ```typescript
-// Generate UUID v4
-const id = generateUUID();
+// Cookie name used by the SSR helpers in ./server.ts
+export const USER_ID_COOKIE_NAME = 'tronrelic_uid';
 
-// Get or create user ID (checks cookie, then localStorage, then generates)
-const userId = getOrCreateUserId();
+// UUID v4 format guard (rejects malformed cookie values before forwarding)
+isValidUUID(uuid: string): boolean
+```
 
-// API calls
+**`modules/user/lib/server.ts` — SSR helpers (read the HttpOnly cookie via `next/headers`):**
+```typescript
+// Resolve the visitor's UUID from the request cookie during SSR
+const userId = await getServerUserId();
+
+// Boolean form of the same check
+const hasIdentity = await hasServerUserIdentity();
+
+// Fetch the user record server-side (forwards the cookie to /api/user/:id)
+const user = await getServerUser(userId);
+```
+
+**`modules/user/api/client.ts` — API client functions consumed by the Redux thunks:**
+```typescript
+// Direct HTTP wrappers; prefer dispatching the matching thunk in components
 const user = await fetchUser(userId);
-const user = await linkWallet(userId, address, message, signature, timestamp);
+const challenge = await requestWalletChallenge(userId, 'link', address);
+const user = await linkWallet(userId, { address, message, signature, nonce });
 const user = await updatePreferences(userId, { theme: 'dark' });
 ```
 
-**lib/serverUserIdentity.ts (SSR):**
-```typescript
-// Get user ID during server-side rendering
-const userId = await getServerUserId();
-
-// Check if user has identity cookie
-const hasIdentity = await hasServerUserIdentity();
-
-// Fetch user data during SSR
-const user = await getServerUser(userId);
-```
+Components should dispatch the Redux thunks listed below (`initializeUser`, `linkWalletThunk`, etc.) rather than calling the client functions directly. The thunks own loading/error state and cache invalidation; the client functions exist only as the transport they wrap.
 
 ### Redux State Management
 
@@ -409,24 +456,50 @@ interface UserState {
 ```
 
 **Available thunks:**
-- `initializeUser(userId)` - Fetch or create user
+- `initializeUser()` - Idempotent identity bootstrap (calls `POST /api/user/bootstrap`); resolves identity from cookie or mints a fresh one server-side
 - `connectWalletThunk({ userId, address })` - Register wallet without verification (stage 1)
 - `linkWalletThunk({ userId, address, message, signature, nonce })` - Verify and link wallet (stage 2). Caller mints the challenge, prompts TronLink for the signature, then dispatches.
 - `unlinkWalletThunk({ userId, address, message, signature, nonce })` - Unlink wallet. Same nonce + signature contract as link.
 - `setPrimaryWalletThunk({ userId, address, message, signature, nonce })` - Set primary wallet. Step-up gate over an existing verified wallet.
-- `updatePreferencesThunk({ userId, preferences })`
-- `recordActivityThunk(userId)`
+- `refreshWalletVerificationThunk({ userId, address, message, signature, nonce })` - Refresh `identityVerifiedAt` on an already-verified wallet without going through the link flow's full validation. Uses the `refresh-verification` action-scoped nonce.
+- `updatePreferencesThunk({ userId, preferences })` - Merge preference updates
+- `logoutThunk(userId)` - End the verified session (downgrade `identityState`, null `identityVerifiedAt`); cookie persists
+- `recordActivityThunk(userId)` - Legacy single-bump activity recorder; new code dispatches the session/page tracking calls in `SocketBridge` / `UserIdentityProvider` instead
 
 The challenge round-trip lives at the call site (e.g. `useWallet`, `WalletCard`) rather than inside the thunk so the slice has no TronLink dependency. Callers fetch a challenge with `requestWalletChallenge(userId, action, address)` from `modules/user/api`, sign `challenge.message` with TronLink, then dispatch the thunk with `(challenge.message, signature, challenge.nonce)`.
 
 **Selectors:**
 ```typescript
-selectUserId(state)           // Get user ID
-selectUserData(state)         // Get full user data
-selectWallets(state)          // Get linked wallets array
-selectPrimaryWallet(state)    // Get primary wallet address
-selectPreferences(state)      // Get preferences object
-selectHasWallets(state)       // Check if any wallets linked
+// Identity and data
+selectUserId(state)            // UUID v4 (null until initializeUser resolves)
+selectUserData(state)          // Full IUserData payload (null until first fetch)
+selectUserStatus(state)        // 'idle' | 'loading' | 'succeeded' | 'failed'
+selectUserError(state)         // Last thunk error message or null
+selectUserInitialized(state)   // True after first initializeUser attempt resolves
+
+// Identity-state shortcuts (drive UI gating; freshness is folded into Verified)
+selectIdentityState(state)     // UserIdentityState enum value
+selectIsAnonymous(state)       // identityState === Anonymous
+selectIsRegistered(state)      // identityState === Registered
+selectIsVerified(state)        // identityState === Verified
+
+// Wallet data
+selectWallets(state)           // Linked wallets array
+selectPrimaryWallet(state)     // Primary wallet address (or null)
+selectHasWallets(state)        // True iff any wallets linked
+selectHasVerifiedWallet(state) // Alias of selectIsVerified — kept for callers reasoning about wallets
+
+// Preferences
+selectPreferences(state)       // Preferences object
+
+// TronLink connection state (not session state — see selectIsVerified for that)
+selectConnectedAddress(state)    // Currently connected TronLink address (or null)
+selectConnectionStatus(state)    // WalletConnectionStatus enum
+selectProviderDetected(state)    // True if TronLink injected
+selectConnectionError(state)     // Last connection-flow error message or null
+selectIsWalletConnected(state)   // True iff TronLink is connected
+selectWalletVerified(state)      // True iff the connected wallet has been verified by signature in this flow
+selectWalletLoginRequired(state) // True when connect surfaced loginRequired (wallet belongs to another UUID)
 ```
 
 ### UserIdentityProvider
@@ -507,24 +580,30 @@ interface IUserDocument {
     _id: ObjectId;
     id: string;                          // UUID v4 primary identifier
     identityState: UserIdentityState;    // Stored taxonomy: anonymous | registered | verified
+    identityVerifiedAt: Date | null;     // User-level session clock; null when !Verified
     wallets: IWalletLink[];              // Linked TRON wallets
     preferences: IUserPreferences;       // User settings
     activity: IUserActivity;             // Tracking data
     groups: string[];                    // Admin-defined group memberships (group ids)
-    mergedInto?: string;                 // Tombstone pointer to canonical UUID after reconciliation
+    referral: IReferral | null;          // Referral code + attribution; null until first verification or referral arrival
+    mergedInto?: string | null;          // Tombstone pointer to canonical UUID after reconciliation
     createdAt: Date;
     updatedAt: Date;
 }
 ```
 
-`identityState` is stored, not derived — UserService recomputes it on every wallet mutation so all consumers read the field directly. `groups` holds group ids from the `module_user_groups` collection and is mutated only via `IUserGroupService`. Migrations 006 and 007 backfill `identityState` and `groups` on legacy documents.
+`identityState` is stored, not derived — UserService writes it on every state transition so all consumers read the field directly. `identityVerifiedAt` anchors the verified-session clock (see `SESSION_TTL_MS` and the `enforceSessionExpiry` flow above). `groups` holds group ids from the `module_user_groups` collection and is mutated only via `IUserGroupService`. Migrations 006 and 007 backfill `identityState` and `groups` on legacy documents; migration 008 backfills per-wallet `verifiedAt`; migration 009 introduces `identityVerifiedAt` and retires the legacy `isLoggedIn` flag.
 
 **Indexes:**
 - `id` (unique) - Fast lookup by UUID, prevents duplicates
 - `wallets.address` - Find users by linked wallet address
+- `activity.firstSeen` - Sort/filter by first-visit date for new-user analytics
 - `activity.lastSeen` - Sort by recency for admin queries
+- `activity.sessions.startedAt` - Session-level analytics aggregations after `$unwind`
+- `activity.sessions.endedAt` - Live-now filter and session-end queries
 - `identityState` - Filter users by canonical taxonomy in admin queries
 - `groups` - Fast membership lookups for `isMember` / `isAdmin`
+- `referral.code` (unique, sparse) - Reverse lookup of referrers by code; sparse since codes only mint at first verification
 - `mergedInto` (sparse) - Pointer-chain flattening during identity reconciliation
 
 **Validation rules:**
@@ -616,15 +695,15 @@ The user module implements multiple layers of protection against abuse and unaut
 
 **Admin authentication — dual-track.** Admin endpoints accept *either* of two authorization paths, evaluated in this order:
 
-1. **User path (preferred for human operators)** — the `tronrelic_uid` cookie identifies the caller, the user reads as `identityState === Verified` (which already folds in freshness via `deriveIdentityState`), and `IUserGroupService.isAdmin(userId)` confirms admin-group membership. The middleware sets `req.adminVia = 'user'`; audit logs record the operator's UUID via `req.userId`. Two checks, no separate freshness gate — a user whose every signature has aged past `VERIFICATION_FRESHNESS_MS` reads as `Registered` and fails the verified check the same way an unsigned-claim user does.
+1. **User path (preferred for human operators)** — the `tronrelic_uid` cookie identifies the caller, the user reads as `identityState === Verified` (freshness is folded in by `enforceSessionExpiry`, the lazy demote-on-read pass that runs inside `UserService.getById`), and `IUserGroupService.isAdmin(userId)` confirms admin-group membership. The middleware sets `req.adminVia = 'user'`; audit logs record the operator's UUID via `req.userId`. Two checks, no separate freshness gate — a user whose `identityVerifiedAt` has aged past `SESSION_TTL_MS` is demoted to `Registered` on the next read and fails the verified check the same way an unsigned-claim user does.
 
 2. **Service-token path (CI, scripts, first-admin bootstrap)** — `ADMIN_API_TOKEN` via `x-admin-token` header or `Authorization: Bearer`. The middleware sets `req.adminVia = 'service-token'`. No per-human attribution; audit logs note this fact explicitly.
 
 The cookie path is tried first so a request that carries both a valid cookie and a service token is attributed to the human operator. A stale-collapsed cookie carries no authority, so a request with both a stale cookie and a valid service token is attributed to the service-token caller — that's the truthful description of what authorized the call. When the cookie path fails and `ADMIN_API_TOKEN` is unset, the middleware returns 503 (admin disabled); when it's set but doesn't match, 401 with no `reason` field.
 
-**Multi-wallet rule — any-fresh-wins.** A user with multiple wallets reads as `Verified` as long as at least one `verifiedAt` is within the window. Stale siblings keep their per-wallet `verified: true` flag (it's the historical fact that they were once signed), but freshness ignores them until re-signed. Requiring every linked wallet to be re-signed each window would train operators to click through signature prompts without reading them — worse UX than no expiry at all.
+**Multi-wallet rule — any-signature-keeps-session-alive.** Signing any linked wallet stamps the user-level `identityVerifiedAt` clock via `markVerifiedSession`, so a user with multiple wallets stays `Verified` as long as the most recent signature on *any one* of them is within `SESSION_TTL_MS`. Per-wallet `verifiedAt` is retained as audit history (and drives primary-wallet selection plus the re-verify-after-logout policy in `linkWallet`), but the freshness predicate reads only the single user-level clock. Requiring every linked wallet to be re-signed each window would train operators to click through signature prompts without reading them — worse UX than no expiry at all.
 
-**Recovery flow.** Stale-collapsed users (admin or not) recover through the same surface a never-signed registered user does: the wallet button in the page header. Clicking it prompts a fresh signature on any attached wallet via the link flow, which updates `verifiedAt` and re-derives the user as `Verified`. There is no special "stale admin" UI, no `verification_stale` reason code, and no `/profile` redirect — the affordance disappearing is the signal, the WalletButton is the recovery, and the System nav reappears once the signature lands. Operators who specifically want to re-sign without going through the full link flow can call `POST /api/user/:id/wallet/:address/refresh-verification` directly; the WalletButton uses the link flow because it's already wired and produces an identical `verifiedAt` update.
+**Recovery flow.** Stale-collapsed users (admin or not) recover through the same surface a never-signed registered user does: the wallet button in the page header. Clicking it prompts a fresh signature on any attached wallet via the link flow, which calls `markVerifiedSession` to stamp a fresh `identityVerifiedAt` and set `identityState = Verified` directly. There is no special "stale admin" UI, no `verification_stale` reason code, and no `/profile` redirect — the affordance disappearing is the signal, the WalletButton is the recovery, and the System nav reappears once the signature lands. Operators who specifically want to re-sign without going through the full link flow can call `POST /api/user/:id/wallet/:address/refresh-verification` directly; the WalletButton uses the link flow because it's already wired and produces an identical session-clock update.
 
 **Bootstrapping the first admin.** A fresh install has no human admins yet. Use the service token to add yourself:
 
@@ -813,7 +892,7 @@ Content-Type: application/json
 Response: IUser
 ```
 
-**Refresh Wallet Verification** *(10 req/min)* — Updates `verifiedAt = now` on an already-verified wallet without touching its `verified` flag or any other field. Equivalent to re-signing through the link flow but narrower in effect; the WalletButton uses link by default so this endpoint is reserved for callers that specifically want to refresh freshness without going through link's full validation. Refuses to operate on registered (unsigned) wallets — moving registered → verified is the link path's job.
+**Refresh Wallet Verification** *(10 req/min)* — Stamps `identityVerifiedAt = now` (user-level session clock) and the per-wallet `verifiedAt = now` on an already-verified wallet without toggling its `verified` flag, adding wallets, or running identity reconciliation. Equivalent to re-signing through the link flow but narrower in effect; the WalletButton uses link by default so this endpoint is reserved for callers that specifically want to refresh freshness without going through link's full validation. Refuses to operate on registered (unsigned) wallets — moving registered → verified is the link path's job.
 ```
 POST /api/user/:id/wallet/:address/refresh-verification
 Content-Type: application/json
@@ -847,6 +926,82 @@ POST /api/user/:id/activity
 Response: { "success": true }
 ```
 
+Legacy single-bump tracker. Prefer the session endpoints below for any new instrumentation.
+
+**Start Session** *(60 req/min)* — Idempotent within the 30-minute inactivity window. Returns the active session if one is alive, otherwise opens a new one. Captures device, country (from IP), screen size, referrer, UTM, and landing page on first session; the user-level `activity.origin` is set once and never overwritten:
+```
+POST /api/user/:id/session/start
+Content-Type: application/json
+
+{
+    "screenWidth": 1920,
+    "landingPage": "/markets",
+    "rawUtm": { "source": "twitter", "medium": "social", "campaign": "launch" },
+    "bodyReferrer": "https://example.com"
+}
+
+Response: IUserSession
+```
+
+**Record Page Visit** *(60 req/min)* — Append a page to the active session and bump `activity.lastSeen`. Auto-creates a minimal session if none is active:
+```
+POST /api/user/:id/session/page
+Content-Type: application/json
+
+{
+    "path": "/markets/TXyz..."
+}
+
+Response: { "success": true }
+```
+
+**Heartbeat** *(60 req/min)* — Extend the active session's `durationSeconds` and `activity.lastSeen` without recording a page. No-op when there is no active session:
+```
+POST /api/user/:id/session/heartbeat
+
+Response: { "success": true }
+```
+
+**End Session** *(60 req/min)* — Close the active session explicitly, aggregate its duration into lifetime totals. No-op when there is no active session:
+```
+POST /api/user/:id/session/end
+
+Response: { "success": true }
+```
+
+**Referral Stats** *(30 req/min)* — Return the user's referral code (null until first verification) plus counts of referred users and those who reached `Verified`:
+```
+GET /api/user/:id/referral
+
+Response: {
+    "code": "a1b2c3d4" | null,
+    "referredCount": number,
+    "convertedCount": number
+}
+```
+
+**Logout** *(30 req/min)* — End the verified session: downgrade `identityState` to `Registered` (or `Anonymous` if no wallets remain) and null `identityVerifiedAt`. The cookie persists; re-establishing a session requires signing with a historically-verified wallet via `/wallet`:
+```
+POST /api/user/:id/logout
+
+Response: IUser
+```
+
+### Public Profile Endpoint
+
+`GET /api/profile/:address` is mounted under a separate router (`/api/profile`) and does not require cookie validation, but `userContextMiddleware` populates `req.userId` so the controller can compute `isOwner` server-side without echoing the owning UUID over the wire. Only verified wallets resolve to a profile; registered (unsigned) and unknown addresses both return 404.
+
+```
+GET /api/profile/:address     (60 req/min)
+
+Response: {
+    "address": "TXyz...",
+    "createdAt": "2024-01-01T00:00:00.000Z",
+    "isVerified": true,
+    "isOwner": false
+}
+```
+
 ### Admin Endpoints
 
 All admin endpoints require admin authorization via *either*: (a) the `tronrelic_uid` cookie of a verified user in the admin group, or (b) the `ADMIN_API_TOKEN` shared service token via `x-admin-token` header or `Authorization: Bearer`. See [Admin authentication — dual-track](#admin-authentication--dual-track) above.
@@ -875,6 +1030,10 @@ GET /api/admin/users/:id
 
 Response: IUser (or 404 if not found)
 ```
+
+**Analytics suite.** The admin user router exposes thirteen analytics endpoints under `/api/admin/users/analytics/*` (daily visitors, visitor origins, new users, traffic sources, traffic-source details, top landing pages, geo distribution, device breakdown, campaign performance, engagement, conversion funnel, retention, referral overview) plus the GSC integration endpoints under `/api/admin/users/analytics/gsc/*`. Each accepts a date range via the `period` / `startDate` / `endDate` query params (`UserService.resolveAnalyticsRange` owns the vocabulary; presets are `24h`, `7d`, `30d`, `90d`, default `30d`). Responses match the corresponding `IUserService` summary types in `@/types`. The admin dashboard at `/system/users` wires these endpoints into chart and table widgets — see `UsersMonitor.tsx` for the canonical consumer rather than duplicating per-endpoint schemas here.
+
+**Group Definition CRUD.** The admin user-groups router (mounted at `/api/admin/users/groups` before the `/:id` user routes so its specific paths win) exposes `GET /` (list), `POST /` (create), `GET /:id` (read), `PATCH /:id` (update), `DELETE /:id` (delete), and `GET /:id/members` (paginated user-id list). System-flagged rows (the seeded `admin` group) refuse rename/delete; the reserved-admin slug pattern blocks operators from creating new admin-pattern names. See [User Groups and Admin Status](#user-groups-and-admin-status) for the consumption side.
 
 **Replace User Group Membership:**
 ```
@@ -914,22 +1073,20 @@ The admin dashboard at `/system/users` provides:
 
 ### Frontend: Initialize User Identity
 
-The `UserIdentityProvider` handles this automatically, but for manual control:
+The `UserIdentityProvider` handles this automatically. For manual control, dispatch `initializeUser` — it calls `POST /api/user/bootstrap` (which mints the cookie if absent) and populates Redux from the response:
 
 ```typescript
-import { getOrCreateUserId, fetchUser } from '@/lib/userIdentity';
 import { useDispatch } from 'react-redux';
-import { setUserData } from '@/features/user';
+import { initializeUser } from '@/modules/user';
 
 function MyComponent() {
     const dispatch = useDispatch();
 
     useEffect(() => {
-        const userId = getOrCreateUserId();
-        fetchUser(userId).then(user => {
-            dispatch(setUserData(user));
-        });
-    }, []);
+        // No client-side UUID minting — the bootstrap endpoint resolves
+        // identity from the cookie or mints a fresh one server-side.
+        void dispatch(initializeUser());
+    }, [dispatch]);
 }
 ```
 
@@ -993,7 +1150,7 @@ if (userByWallet) {
 
 ```typescript
 // In a server component
-import { getServerUserId, getServerUser } from '@/lib/serverUserIdentity';
+import { getServerUserId, getServerUser } from '@/modules/user';
 
 export default async function ProfilePage() {
     const userId = await getServerUserId();
@@ -1028,7 +1185,7 @@ Before deploying user module features, verify:
 - [ ] Wallet signature verification uses SignatureService and consumes a fresh nonce via WalletChallengeService
 - [ ] All wallet mutation routes (link, unlink, set-primary, refresh-verification) require a `nonce` field; legacy `timestamp` field has been removed
 - [ ] `IWalletLink.verifiedAt` populated on every link / set-primary / refresh-verification success path; legacy rows backfilled by migration 008
-- [ ] `UserService.toPublicUser` derives `identityState` from `wallets[]` via `deriveIdentityState` on every read; storage drift between mutations is acceptable because the wire form always recomputes
+- [ ] `UserService.toPublicUser` reads stored `identityState` and `identityVerifiedAt` straight through (authoritative fields, never derived); freshness is enforced by `enforceSessionExpiry` on every materializing read (`getById` / `getOrCreate` / `getByWallet`)
 - [ ] `requireAdmin` cookie path checks `identityState === Verified && IUserGroupService.isAdmin(userId)` and nothing else; freshness is folded into `Verified`, no separate gate
 - [ ] Cookie validation middleware applied to all `/api/user/:id/*` routes
 - [ ] Admin routes protected by `requireAdmin` middleware (dual-track: cookie+verified+admin-group OR service token)
@@ -1093,10 +1250,7 @@ curl http://localhost:4000/api/user/some-uuid \
 The UUID in the URL doesn't match the UUID in the cookie.
 
 **Resolution:**
-Ensure the client uses the same UUID from storage for both the cookie and API calls:
-```typescript
-const userId = getOrCreateUserId(); // Uses same ID for cookie and API
-```
+The cookie is server-minted at `/api/user/bootstrap` — clients should not synthesise UUIDs. Dispatch `initializeUser()` (which calls bootstrap), then read `selectUserId(state)` from Redux for any subsequent `/api/user/:id/...` request. The `:id` path segment must match the value from the bootstrap response, which is the same UUID the server bound to the cookie.
 
 ### Wallet Link Fails with Signature Error
 

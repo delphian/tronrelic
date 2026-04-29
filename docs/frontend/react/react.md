@@ -505,7 +505,7 @@ Admin diagnostic tool for monitoring BullMQ scheduled job health, execution hist
 - **Global health metrics** - Scheduler uptime, success rate, and enabled/disabled state
 - **Inline job control** - Enable/disable toggles and editable cron expressions with blur-to-save
 - **Job filtering** - Show all jobs or filter by job name/prefix for plugin-scoped views
-- **Admin authentication** - Requires admin token from localStorage, directs to /system if missing
+- **Admin authentication** - Authorized via the signed `tronrelic_uid` cookie (verified user + `admin` group) carried automatically on same-origin fetches; the `token` prop is retained as an empty string for transitional callers and is not a JS-readable secret
 - **Persistent configuration** - All changes saved to MongoDB, no backend restart needed
 
 **Props interface:**
@@ -542,9 +542,9 @@ function SchedulerPage() {
 
 // Plugin-scoped view (filter to specific jobs)
 function PluginJobControl() {
-    const token = typeof window !== 'undefined' ? localStorage.getItem('admin_token') : null;
+    const { token, isAuthenticated } = useSystemAuth();
 
-    if (!token) {
+    if (!isAuthenticated) {
         return <AuthPrompt href="/system" />;
     }
 
