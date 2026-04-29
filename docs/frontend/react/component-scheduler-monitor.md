@@ -81,7 +81,7 @@ interface Props {
 
 **Prop descriptions:**
 
-- `token` - **Required for backwards compatibility, but typically empty.** The frontend now authorizes admin requests via the signed `tronrelic_uid` cookie carried automatically on same-origin fetches; `useSystemAuth().token` returns `''` and the backend treats an empty `x-admin-token` header as "no token, fall back to cookie". Pass it through as-is. If the cookie path fails (visitor not signed in / not in `admin` group), API calls return 401 — render an `<AuthPrompt href="/system" />` based on `isAuthenticated`, not on token presence.
+- `token` - **Required for backwards compatibility, but typically empty.** The frontend now authorizes admin requests via the signed `tronrelic_uid` cookie carried automatically on same-origin fetches; `useSystemAuth().token` returns `''` and the backend treats an empty `x-admin-token` header as "no token, fall back to cookie". Pass it through as-is. If the cookie path fails, do **not** assume a 401-only response: requests typically return 401 when the visitor is not signed in or is not in the `admin` group, but `requireAdmin` returns 503 when `ADMIN_API_TOKEN` is unset and the admin surface is disabled. Render an `<AuthPrompt href="/system" />` based on `isAuthenticated`, not on token presence, and avoid hard-coding 401-only handling.
 - `jobFilter` - **Optional**. Array of job names (`['markets:refresh']`) or filter function (`(job) => job.enabled`). When omitted, shows all jobs.
 - `sectionTitle` - **Optional**. Custom heading for the jobs section. Defaults to `'Scheduled Jobs'`. Use plugin-specific titles like `'Market Jobs'` for better context.
 - `hideHealth` - **Optional**. Boolean to hide global health metrics. Defaults to `false`. Set to `true` in plugin admin pages where scheduler health is irrelevant to plugin users.
@@ -161,7 +161,7 @@ export function PluginSchedulerControl({ context }: { context: IFrontendPluginCo
     if (!isAuthenticated) {
         return (
             <context.ui.Card>
-                <p>Admin access required. Sign in via <a href="/profile">/profile</a> with a wallet in the admin group.</p>
+                <p>Admin access required. Sign a wallet via the WalletButton in the page header (must be a member of the admin group).</p>
             </context.ui.Card>
         );
     }
@@ -186,7 +186,7 @@ export function PluginSchedulerControl({ context }: { context: IFrontendPluginCo
 - Reads `isAuthenticated` from `useSystemAuth()` — the server-computed `authStatus` snapshot, not a localStorage check
 - Filters to show only the `markets:refresh` job
 - Hides global health metrics (plugin users don't care about system-wide scheduler)
-- Shows an auth prompt when the visitor is not a Verified admin, directing them to `/profile`
+- Shows an auth prompt when the visitor is not a Verified admin, directing them to sign via the WalletButton in the page header
 
 ### Filter by Job Name Prefix
 
@@ -247,7 +247,7 @@ SchedulerMonitor authorizes through the [dual-track admin gate](../../../src/bac
 
 **Typical flow:**
 
-1. Visitor signs a wallet on `/profile` (moves them to `Verified`).
+1. Visitor signs a wallet via the header WalletButton (moves them to `Verified`).
 2. An existing admin adds them to the `admin` group on `/system/users` (or for the first admin, see [Bootstrapping the first admin](../../../src/backend/modules/user/README.md#bootstrapping-the-first-admin)).
 3. `useSystemAuth()` exposes `isAuthenticated`, computed from the server-attached `authStatus` snapshot on every `IUser` payload.
 4. Component reads `isAuthenticated` and renders the monitor or an auth prompt accordingly. The `token` prop stays as `''` for fetch-site compatibility — the backend ignores empty `x-admin-token` and falls through to the cookie path.
@@ -410,7 +410,7 @@ return <Monitor token={token} jobFilter={['my-job']} />;
 const { token, isAuthenticated, isHydrated } = useSystemAuth();
 
 if (!isHydrated) return <Skeleton />;
-if (!isAuthenticated) return <AuthPrompt href="/profile" />;
+if (!isAuthenticated) return <AuthPrompt message="Sign with the header WalletButton" />;
 
 return <SchedulerMonitor token={token} />;
 ```
@@ -452,7 +452,7 @@ return <SchedulerMonitor token={token} />;
 
 ### Authentication errors (401 or 503)
 
-**401:** cookie path failed (no signed cookie, not Verified, or not in `admin` group) and no valid service token was presented. Fix by signing a wallet on `/profile` and confirming admin-group membership on `/system/users`.
+**401:** cookie path failed (no signed cookie, not Verified, or not in `admin` group) and no valid service token was presented. Fix by signing a wallet via the header WalletButton and confirming admin-group membership on `/system/users`.
 
 **503:** `ADMIN_API_TOKEN` is unset *and* no admin user resolved — the admin surface is disabled entirely. Fix by either configuring the service token in backend `.env` or completing the cookie-path sign-in above.
 

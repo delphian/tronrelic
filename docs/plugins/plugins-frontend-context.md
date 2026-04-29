@@ -165,7 +165,7 @@ export function MyPluginPage({ context }: { context: IFrontendPluginContext }) {
         if (!hasVerifiedWallet) {
             modal.open({
                 title: 'Wallet Verification Required',
-                content: <p>Sign with your wallet on /profile to access this feature.</p>,
+                content: <p>Sign with your wallet via the header WalletButton to access this feature.</p>,
                 size: 'sm'
             });
             return;

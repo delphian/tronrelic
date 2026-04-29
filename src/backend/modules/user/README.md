@@ -42,7 +42,7 @@ The string values are the wire format — they appear in MongoDB documents, HTTP
 | `UserIdentityState.Registered` | `'registered'` | One or more linked wallets; no current verified session (never signed, or the user-level `identityVerifiedAt` clock has aged past `SESSION_TTL_MS`). |
 | `UserIdentityState.Verified` | `'verified'` | A wallet was signed within `SESSION_TTL_MS` and the user-level session is still alive. |
 
-`identityState` is an **authoritative stored field**, not a derived view. Mutation handlers (`connectWallet`, `linkWallet`, `unlinkWallet`, `logout`, identity reconciliation) write it exactly once per transition; `toPublicUser` reads it straight through. Verified-session freshness is anchored on a single user-level timestamp, `identityVerifiedAt`, stamped whenever any wallet signature lands (`linkWallet`, `setPrimaryWallet`, `refreshWalletVerification`). The TTL is `SESSION_TTL_MS` (14 days) — past that, the next read through `UserService.getById` / `getOrCreate` / `getByWallet` runs `enforceSessionExpiry`, which lazily demotes the user to Registered (or Anonymous if no wallets remain), nulls `identityVerifiedAt`, and persists. So `Verified` on the wire always means "session is currently alive"; a stale Verified document gets corrected on its next read instead of via per-request derivation.
+`identityState` is an **authoritative stored field**, not a derived view. Mutation handlers (`connectWallet`, `linkWallet`, `unlinkWallet`, `logout`, identity reconciliation) write it exactly once per transition; `toPublicUser` reads it straight through. Verified-session freshness is anchored on a single user-level timestamp, `identityVerifiedAt`, refreshed only by the actions that explicitly renew verification: `linkWallet`, `setPrimaryWallet`, and `refreshWalletVerification`. A signature supplied to authorize `unlinkWallet` does **not** refresh or extend the verified-session clock; unlinking only downgrades state when it removes the wallet basis for the current verification. The TTL is `SESSION_TTL_MS` (14 days) — past that, the next read through `UserService.getById` / `getOrCreate` / `getByWallet` runs `enforceSessionExpiry`, which lazily demotes the user to Registered (or Anonymous if no wallets remain), nulls `identityVerifiedAt`, and persists. So `Verified` on the wire always means "session is currently alive"; a stale Verified document gets corrected on its next read instead of via per-request derivation.
 
 The members are ordered by claim strength (Anonymous → Registered → Verified). Users transition forward when they sign, backward when wallets are unlinked or signatures age. The exported `USER_IDENTITY_STATES` array preserves this order for index-based comparisons.
 
@@ -163,7 +163,7 @@ The module follows TronRelic's layered architecture with cookie-based authentica
 
 The user module spans both backend and frontend with parallel directory structures:
 
-**Backend (`src/backend/src/modules/user/`):**
+**Backend (`src/backend/modules/user/`):**
 ```
 modules/user/
 ├── index.ts                       # Public API exports
@@ -708,7 +708,7 @@ The cookie path is tried first so a request that carries both a valid cookie and
 **Bootstrapping the first admin.** A fresh install has no human admins yet. Use the service token to add yourself:
 
 ```bash
-# After connecting + verifying your wallet on /profile, look up your UUID
+# After connecting + verifying your wallet via the header WalletButton, look up your UUID
 # (visible in /system/users once you have admin, or via the cookie value).
 curl -X PUT https://your-domain/api/admin/users/<your-uuid>/groups \
   -H "x-admin-token: $ADMIN_API_TOKEN" \

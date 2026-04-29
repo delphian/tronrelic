@@ -910,7 +910,7 @@ socket.on('subscription:error', (error) => {
 
 ### Authentication Failures (401 Unauthorized)
 
-401 means the cookie path failed *and* the service token (if presented) didn't match. 503 means `ADMIN_API_TOKEN` is unset and no admin user resolved — the admin surface is disabled entirely.
+401 means the cookie path failed *and* the service token was missing or invalid. 503 means `ADMIN_API_TOKEN` is unset and no admin user resolved — the admin surface is disabled entirely.
 
 **Solution (service-token path — scripts/CI):**
 1. Verify `ADMIN_API_TOKEN` is set in backend `.env`

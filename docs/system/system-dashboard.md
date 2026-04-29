@@ -13,11 +13,11 @@ Scheduler jobs fail silently, blockchain sync stalls without warning, and market
 The dashboard uses the cookie path of the user module's [admin authentication — dual-track](../../src/backend/modules/user/README.md#admin-authentication--dual-track) model. Operators sign in like any other visitor; admin authority comes from group membership, not a JS-readable token.
 
 1. **Bootstrap your identity** by visiting any TronRelic page — the server mints the signed `tronrelic_uid` cookie via `POST /api/user/bootstrap`.
-2. **Verify a wallet** on `/profile` via TronLink signature. This moves your `identityState` to `Verified` and starts the 14-day session clock.
+2. **Verify a wallet** via the header WalletButton (TronLink signature). This moves your `identityState` to `Verified` and starts the 14-day session clock.
 3. **Get added to the `admin` group** by an existing operator using the Groups editor on `/system/users`. For a fresh install with no admins yet, see [Bootstrapping the first admin](../../src/backend/modules/user/README.md#bootstrapping-the-first-admin) — it uses the service token (`ADMIN_API_TOKEN`) once, then the cookie path takes over.
 4. **Navigate to** `http://localhost:3000/system` (or your production domain). The `requireAdmin` middleware reads the signed cookie, confirms `Verified`, and checks `IUserGroupService.isAdmin(userId)`. The `/system` nav entry only appears when all three pass.
 
-**Recovery:** if your session ages past `SESSION_TTL_MS` (14 days), the dashboard becomes inaccessible — re-sign on `/profile` to refresh `identityVerifiedAt`. There is no separate "stale admin" UI.
+**Recovery:** if your session ages past `SESSION_TTL_MS` (14 days), the dashboard becomes inaccessible — re-sign via the header WalletButton to refresh `identityVerifiedAt`. There is no separate "stale admin" UI.
 
 **Service token alternative:** scripts, CI, and the first-admin bootstrap use `ADMIN_API_TOKEN` via the `x-admin-token` header (or `Authorization: Bearer`). It is intended for automation, not for human operators in the browser. Protect it like any production secret and rotate on suspected compromise — human admins authenticate via the cookie path and are unaffected by token rotation.
 
@@ -213,11 +213,11 @@ System configuration display:
 
 ### Cannot Access Dashboard (401 Unauthorized)
 
-**Cause:** Cookie path failed and the service token (if presented) didn't match. The middleware tries the cookie path first; only the service-token branch produces 401 (or 503 when `ADMIN_API_TOKEN` is unset entirely).
+**Cause:** Cookie path failed and no valid service token was provided (missing or mismatched). The middleware tries the cookie path first; the service-token branch produces 401 on missing or invalid tokens (or 503 when `ADMIN_API_TOKEN` is unset entirely).
 
 **Solution (cookie path — humans):**
 1. Confirm a signed `tronrelic_uid` cookie exists in devtools → Application → Cookies. If absent, reload the site so `POST /api/user/bootstrap` mints it.
-2. Confirm `identityState === Verified` on `/profile`. If it reads `Registered`, sign a wallet to refresh `identityVerifiedAt`.
+2. Confirm `identityState === Verified` (e.g., via `/api/user/me` or the WalletButton state). If it reads `Registered`, sign a wallet via the header WalletButton to refresh `identityVerifiedAt`.
 3. Confirm your UUID appears in the `admin` group on `/system/users` (ask a current admin if not).
 
 **Solution (service token — scripts/CI):**
