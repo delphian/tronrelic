@@ -5,7 +5,7 @@
  * preferences, and activity tracking.
  */
 
-import type { UserIdentityState } from '@/types';
+import type { UserIdentityState, IAuthStatus } from '@/types';
 
 /**
  * User data returned from the API.
@@ -29,6 +29,17 @@ export interface IUserData {
     activity: IUserActivity;
     /** Admin-defined group memberships. Read-only on the client. */
     groups: string[];
+    /**
+     * Server-computed authorization snapshot. Populated on every payload
+     * shipped from the user controller's response helper. Consumers
+     * gating UI on admin status (most notably `SystemAuthContext`) read
+     * these booleans rather than re-deriving from `identityState`,
+     * `groups`, or wallet freshness — see `IAuthStatus` for why each
+     * field exists. Optional because legacy snapshots persisted before
+     * the field was added (Redux serialization, SSR cache) may lack it;
+     * absent means "treat as not admin", which matches the safe default.
+     */
+    authStatus?: IAuthStatus;
     createdAt: string;
     updatedAt: string;
 }
@@ -64,8 +75,10 @@ export interface IWalletLink {
      * ISO timestamp of the most recent successful signature on this wallet.
      * `null` for wallets in the registered (unsigned) state. Refreshed on
      * link, set-primary, and the dedicated refresh-verification endpoint.
-     * Consumed by `hasFreshVerification` from `@/types` to gate the
-     * dual-track admin recovery flow.
+     * Feeds `deriveIdentityState` from `@/types`: a user whose every
+     * wallet's `verifiedAt` has aged past `VERIFICATION_FRESHNESS_MS`
+     * collapses from `Verified` to `Registered`, so this field is the
+     * load-bearing input for the user-level identity state.
      */
     verifiedAt: string | null;
     /** Timestamp of last connection/use (ISO string) */

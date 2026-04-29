@@ -55,6 +55,24 @@ function makeRes() {
     };
 }
 
+/**
+ * Minimal `IUserGroupService` stand-in for the controller's response-shaping
+ * helper. Bootstrap-controller tests don't exercise admin gating, so all
+ * predicates collapse to "not an admin / no membership" and the
+ * authStatus snapshot the response includes is the safe-default shape.
+ */
+function mockGroupService(): any {
+    return {
+        isAdmin: async () => false,
+        isMember: async () => false,
+        getUserGroups: async () => [],
+        addMember: async () => {},
+        removeMember: async () => {},
+        setUserGroups: async () => [],
+        getMembers: async () => ({ userIds: [], total: 0 })
+    };
+}
+
 const VALID_UUID_A = '550e8400-e29b-41d4-a716-446655440000';
 const VALID_UUID_B = '660e8400-e29b-41d4-a716-446655440001';
 
@@ -76,7 +94,7 @@ describe('UserController.bootstrap', () => {
             {} as any
         );
         userService = UserService.getInstance();
-        controller = new UserController(userService, {} as any, new NullLogger());
+        controller = new UserController(userService, {} as any, mockGroupService(), new NullLogger());
     });
 
     it('mints a fresh UUID and sets the HttpOnly cookie when no cookie is present', async () => {
@@ -200,7 +218,7 @@ describe('UserController.validateCookie', () => {
             { getSiteUrl: async () => 'http://localhost:3000', getConfig: async () => ({ siteUrl: 'http://localhost:3000' }), updateConfig: async (u: any) => u, clearCache: () => {} } as any,
             {} as any
         );
-        controller = new UserController(UserService.getInstance(), {} as any, new NullLogger());
+        controller = new UserController(UserService.getInstance(), {} as any, mockGroupService(), new NullLogger());
     });
 
     it('accepts the signed cookie and does NOT re-issue (avoids per-request Set-Cookie spam)', () => {

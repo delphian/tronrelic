@@ -9,7 +9,8 @@
  * @module @/types/user
  */
 
-import type { UserIdentityState } from './IUserIdentityState.js';
+import { UserIdentityState } from './IUserIdentityState.js';
+import type { IAuthStatus } from './IAuthStatus.js';
 
 /**
  * Represents a linked TRON wallet address associated with a user identity.
@@ -17,22 +18,29 @@ import type { UserIdentityState } from './IUserIdentityState.js';
  * Users can link multiple wallets to their UUID, enabling cross-wallet
  * preferences and unified activity tracking.
  *
- * The `verified` flag is the wire-format indicator of which user state this
- * wallet contributes to (see the User Module README for the canonical
- * anonymous / registered / verified taxonomy):
+ * The `verified` flag is the wire-format indicator that ownership was
+ * proven by signature at some point — but on its own it no longer
+ * decides `identityState`. Freshness is folded into the enum via
+ * `deriveIdentityState`: `Verified` requires not just `verified: true`
+ * but a `verifiedAt` within `VERIFICATION_FRESHNESS_MS`. See the User
+ * Module README for the canonical anonymous / registered / verified
+ * taxonomy.
  *
  * - `verified: false` — wallet was registered (claimed via TronLink connect)
  *   but no signature has proven ownership. Holding only such wallets makes
  *   the user *registered*.
- * - `verified: true` — wallet ownership was proven by a signed message.
- *   Any wallet with `verified: true` makes the user *verified*.
+ * - `verified: true` with a fresh `verifiedAt` — proven ownership within
+ *   the freshness window. Any such wallet lifts the user to *verified*.
+ * - `verified: true` with a stale `verifiedAt` — proof aged past the
+ *   freshness window. The user collapses back to *registered* (stale
+ *   verifications no longer count toward `identityState === Verified`),
+ *   and admin authority is gone until the user re-signs.
  *
- * `verifiedAt` is the freshness anchor for cookie+admin authority. The
- * dual-track admin middleware accepts a *Verified* user only when at least
- * one wallet has `verifiedAt` within `VERIFICATION_FRESHNESS_MS`. Stale
- * verifications still count toward `identityState === Verified` for display
- * and analytics, but stop conferring admin authority — the user must
- * re-sign to refresh the freshness clock.
+ * `verifiedAt` is the freshness anchor: re-signing refreshes the clock
+ * and lifts the user back to `Verified` through the normal verify-wallet
+ * flow. There is no separate "stale" state — expired proof and absent
+ * proof are functionally indistinguishable for any consumer gating on
+ * `Verified`.
  */
 export interface IWalletLink {
     /** Base58 TRON address (e.g., TRX7NJa...) */
@@ -58,20 +66,20 @@ export interface IWalletLink {
 }
 
 /**
- * How recently a wallet must have been signed before its verification stops
- * conferring cookie-path admin authority. 14 days.
+ * How recently a wallet must have been signed before it counts toward the
+ * `Verified` identity state. 14 days.
  *
- * The threshold is uniform across consumers so a wallet that's "fresh enough"
- * for one access point is fresh enough for any. Picked short enough that an
- * abandoned-account or stolen-cookie scenario decays in days, not months;
- * long enough that an active operator who signs roughly monthly never sees
- * the prompt. If 14 days proves too aggressive in practice, tune the number
- * here — never carve out per-gate thresholds.
- *
- * Scope: only consulted when `identityState === Verified`. Anonymous and
- * Registered users are unaffected by freshness, and stale-Verified users
- * keep their stored `identityState` for display while losing admin
- * authority until they refresh.
+ * Verification freshness is folded directly into `identityState` via
+ * `deriveIdentityState`: a user whose every wallet's `verifiedAt` has
+ * aged past this window collapses from `Verified` to `Registered`,
+ * just like a never-signed user. The threshold is uniform across
+ * consumers so a wallet that's "fresh enough" for one access point is
+ * fresh enough for any. Picked short enough that an abandoned-account
+ * or stolen-cookie scenario decays in days, not months; long enough
+ * that an active operator who signs roughly monthly never sees the
+ * prompt. If 14 days proves too aggressive in practice, tune the
+ * number here — never carve out per-gate thresholds, and never add a
+ * separate freshness predicate alongside `identityState`.
  */
 export const VERIFICATION_FRESHNESS_MS = 14 * 24 * 60 * 60 * 1000;
 
@@ -128,6 +136,41 @@ export function hasFreshVerification(
     now: number = Date.now()
 ): boolean {
     return wallets.some(w => isWalletVerificationFresh(w, now));
+}
+
+/**
+ * Derive the current `UserIdentityState` from a wallets array.
+ *
+ * Freshness is folded into the enum: `Verified` requires not only that a
+ * signature happened, but that it happened recently. A user whose every
+ * wallet's `verifiedAt` has aged past the freshness window collapses to
+ * `Registered` until they re-sign — same behavior an unverified-claim
+ * registered user gets, on the principle that an expired proof and an
+ * absent proof are functionally indistinguishable for any consumer
+ * gating on Verified. Re-signing produces a fresh `verifiedAt`, lifting
+ * the user back to Verified through the normal verify-wallet flow.
+ *
+ * This is the single derivation rule. `UserService.toPublicUser`
+ * computes identityState through it on every read, so the wire form
+ * always reflects current truth — there is no separate "stale" gate
+ * anywhere in the stack.
+ *
+ * Storage may hold a denormalized `identityState` for indexes and admin
+ * filter queries, but storage is a cache: the API surface always returns
+ * the freshly-derived value, even when storage drifted because no
+ * wallet mutation happened to trigger a recompute.
+ */
+export function deriveIdentityState(
+    wallets: ReadonlyArray<IWalletVerificationFreshnessInput>,
+    now: number = Date.now()
+): UserIdentityState {
+    if (wallets.length === 0) {
+        return UserIdentityState.Anonymous;
+    }
+    if (hasFreshVerification(wallets, now)) {
+        return UserIdentityState.Verified;
+    }
+    return UserIdentityState.Registered;
 }
 
 /**
@@ -289,6 +332,15 @@ export interface IUser {
      * `admin` system group via `IUserGroupService.isAdmin`.
      */
     groups: string[];
+    /**
+     * Server-computed authorization snapshot. Optional on the storage
+     * shape (`UserService.toPublicUser` returns the data model without
+     * it) and populated by `withAuthStatus` at the response boundary
+     * before payloads cross to clients. Consumers gating UI or actions
+     * read this rather than re-deriving from `identityState`, `groups`,
+     * and `wallets`. See `IAuthStatus`.
+     */
+    authStatus?: IAuthStatus;
     /** Document creation timestamp */
     createdAt: Date;
     /** Document last update timestamp */

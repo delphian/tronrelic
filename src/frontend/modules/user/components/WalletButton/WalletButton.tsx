@@ -9,10 +9,21 @@
  *
  * 1. **Logged out** — "Connect" button. Triggers TronLink account access; on
  *    success the wallet is registered (user becomes *registered*).
- * 2. **Logged in, registered** — Address with warning icon. Click prompts
- *    for signature to verify the wallet (user becomes *verified*).
- * 3. **Logged in, verified** — Address. Click navigates to the user's
- *    profile page.
+ * 2. **Logged in, not currently Verified** — Address with warning icon.
+ *    Click prompts for signature to verify the wallet (user becomes
+ *    *verified*). This branch fires for never-signed registered users
+ *    *and* for stale-collapsed users whose every signature has aged
+ *    past the freshness window — both states resolve through the same
+ *    re-sign affordance, no special UI for stale.
+ * 3. **Logged in, currently Verified** — Address. Click navigates to the
+ *    user's profile page.
+ *
+ * The verified check reads the user-level `identityState === Verified`
+ * (freshness-aware via `deriveIdentityState`), not the per-wallet
+ * `verified` historical flag. A stale-collapsed user whose wallet still
+ * carries `verified: true` reads as not-Verified here, so the button
+ * routes them to the re-sign CTA instead of into the Verified-only
+ * profile route (which would 404 for them).
  *
  * Logout is handled from the user's profile page, not from this button.
  *
@@ -46,7 +57,7 @@ export function WalletButton() {
         verify,
         login,
         connectionError,
-        walletVerified,
+        isVerified,
         connectionStatus,
         isLoggedIn
     } = useWallet();
@@ -128,8 +139,10 @@ export function WalletButton() {
         }
     }, [address, router]);
 
-    // Registered state (logged in, wallet not yet signed) — click to verify
-    if (isLoggedIn && address && !walletVerified) {
+    // Not-currently-Verified branch — fires for never-signed registered
+    // users and for stale-collapsed users whose signatures have aged out.
+    // Both recover through the same verify CTA.
+    if (isLoggedIn && address && !isVerified) {
         return (
             <Button
                 variant="secondary"

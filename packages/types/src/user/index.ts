@@ -18,10 +18,13 @@ export type {
 export {
     VERIFICATION_FRESHNESS_MS,
     isWalletVerificationFresh,
-    hasFreshVerification
+    hasFreshVerification,
+    deriveIdentityState
 } from './IUser.js';
 
 export type { IWalletVerificationFreshnessInput } from './IUser.js';
+
+export type { IAuthStatus } from './IAuthStatus.js';
 
 export type {
     IUserGroup,

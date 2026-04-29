@@ -52,6 +52,7 @@ import {
     selectUserInitialized,
     selectWallets,
     selectIsLoggedIn,
+    selectIsVerified,
     selectWalletLoginRequired,
     selectExistingWalletOwner,
     type WalletConnectionStatus
@@ -78,6 +79,14 @@ export function useWallet() {
     const providerDetected = useAppSelector(state => state.user.providerDetected);
     const connectionError = useAppSelector(state => state.user.connectionError);
     const walletVerified = useAppSelector(state => state.user.walletVerified);
+
+    // User-level identity. Freshness-aware: a user whose every signature
+    // has aged past the freshness window collapses from Verified to
+    // Registered, so this flag flips false even though `walletVerified`
+    // (the per-wallet historical flag) stays true. WalletButton consults
+    // this rather than `walletVerified` to decide whether to send the
+    // user to the Verified-only profile route or show the verify CTA.
+    const isUserVerified = useAppSelector(selectIsVerified);
 
     // Linked wallets from backend (for auto-verify check)
     const linkedWallets = useAppSelector(selectWallets);
@@ -365,12 +374,19 @@ export function useWallet() {
      * Refresh `verifiedAt` on an already-verified wallet via a fresh
      * TronLink signature.
      *
-     * Recovery path for stale-Verified admins. Mints a
-     * `'refresh-verification'` challenge, prompts TronLink to sign the
-     * canonical message, and dispatches the thunk that consumes the
-     * nonce on the backend. On success, the user document is refetched
-     * and `selectHasFreshVerification` returns true, restoring
-     * cookie-path admin authority.
+     * Mints a `'refresh-verification'` challenge, prompts TronLink to
+     * sign the canonical message, and dispatches the thunk that
+     * consumes the nonce on the backend. On success the user document
+     * is refetched, `identityState` re-derives as `Verified`, and any
+     * gates that depend on it (admin nav, public profile, plugin
+     * features) come back online.
+     *
+     * Narrower equivalent of `verify()`, which uses the link flow.
+     * Both produce an identical `verifiedAt` update on a wallet the
+     * user already owns; the WalletButton uses `verify()` because it's
+     * already wired and link's full validation is harmless. This hook
+     * exposes the dedicated path for callers that want to skip link's
+     * identity-swap detection.
      *
      * `address` defaults to `connectedAddress` because the caller
      * usually wants to refresh whichever wallet TronLink currently has
@@ -504,7 +520,13 @@ export function useWallet() {
         address: connectedAddress,
         status: connectionStatus,
         error: connectionError,
-        isVerified: walletVerified,
+        // User-level identity, freshness-aware. Was previously aliased
+        // to the per-wallet `walletVerified` flag, which conflated
+        // "this wallet has ever been signed" with "this user is
+        // currently Verified". Stale-collapsed users now read as
+        // not-Verified here, which lets the WalletButton route them
+        // through the verify-wallet CTA instead of into a 404.
+        isVerified: isUserVerified,
 
         // Actions
         connect,

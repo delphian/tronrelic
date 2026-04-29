@@ -7,7 +7,7 @@
  */
 
 import { createSlice, createAsyncThunk, type PayloadAction } from '@reduxjs/toolkit';
-import { UserIdentityState, hasFreshVerification } from '@/types';
+import { UserIdentityState } from '@/types';
 import type { IUserData, IWalletLink, IUserPreferences } from './types';
 import {
     bootstrapUser,
@@ -312,13 +312,14 @@ export const setPrimaryWalletThunk = createAsyncThunk(
 /**
  * Refresh the freshness clock on an already-verified wallet.
  *
- * Recovery path for stale-Verified admins. Callers mint a
- * `'refresh-verification'` challenge, sign the canonical message with
- * TronLink, and dispatch this thunk with `(message, signature, nonce)`.
- * On success the wallet's `verifiedAt` is now and the user regains
- * cookie-path admin authority on the next request. As a bonus side
- * effect, the user document is refetched so `selectIsVerified` and any
- * derived freshness checks reflect the new state immediately.
+ * Callers mint a `'refresh-verification'` challenge, sign the canonical
+ * message with TronLink, and dispatch this thunk with
+ * `(message, signature, nonce)`. On success the wallet's `verifiedAt`
+ * is now, the server re-derives the user as `Verified`, and the
+ * refetched user document propagates that through `selectIsVerified`
+ * and `userData.authStatus` so any UI gated on Verified comes back
+ * online — admin nav, public profile, plugin features that check
+ * Verified.
  */
 export const refreshWalletVerificationThunk = createAsyncThunk(
     'user/refreshWalletVerification',
@@ -646,7 +647,7 @@ const userSlice = createSlice({
                 state.error = action.payload as string;
             });
 
-        // Refresh wallet verification (stale-Verified recovery path)
+        // Refresh wallet verification (re-pump verifiedAt on existing wallet)
         builder
             .addCase(refreshWalletVerificationThunk.pending, (state) => {
                 state.status = 'loading';
@@ -821,20 +822,6 @@ export const selectHasWallets = (state: { user: UserState }): boolean =>
  */
 export const selectHasVerifiedWallet = (state: { user: UserState }): boolean =>
     selectIsVerified(state);
-
-/**
- * Select whether at least one wallet has a `verifiedAt` inside the freshness
- * window. Used by the dual-track admin gate to decide whether to render the
- * admin surface or route the operator to the re-sign UI.
- *
- * False on stale-Verified users (still `identityState === Verified`, but
- * every wallet's signature is older than `VERIFICATION_FRESHNESS_MS`),
- * Anonymous, and Registered users alike. The component-level gate then
- * combines this with `selectIsVerified` to distinguish "stale admin who
- * needs to re-sign" from "user who never verified."
- */
-export const selectHasFreshVerification = (state: { user: UserState }): boolean =>
-    hasFreshVerification(selectWallets(state));
 
 /**
  * Select whether user is logged in (UI/feature gate).

@@ -219,14 +219,17 @@ export class UserModule implements IModule<IUserModuleDependencies> {
         // Inject GscService into UserService for explicit dependency
         this.userService.setGscService(this.gscService);
 
-        // Create controller with singleton service
-        this.controller = new UserController(this.userService, this.gscService, this.logger);
-
-        // Initialize UserGroupService singleton, build indexes, seed system groups
+        // Initialize UserGroupService singleton, build indexes, seed system groups.
+        // Must precede UserController construction so the controller can inject
+        // it for `withAuthStatus` response shaping — keeps the cross-tier
+        // admin predicate (middleware, controller, frontend) in one place.
         UserGroupService.setDependencies(this.database, this.cacheService, this.logger);
         this.userGroupService = UserGroupService.getInstance();
         await this.userGroupService.createIndexes();
         await this.userGroupService.seedSystemGroups();
+
+        // Create controller with singleton services
+        this.controller = new UserController(this.userService, this.gscService, this.userGroupService, this.logger);
 
         // Create group controller with singleton service
         this.groupController = new UserGroupController(this.userGroupService, this.logger);

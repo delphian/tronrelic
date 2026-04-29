@@ -3,49 +3,42 @@
 /**
  * @fileoverview Authentication context for the `/system/*` admin surface.
  *
- * Admin status is derived from the cookie-resolved user, not from any
- * client-readable secret. The user must satisfy three conditions:
+ * Admin status is the server-computed `authStatus` snapshot attached to
+ * every `IUser` payload by the backend's response helper (see
+ * `computeUserAuthStatus`). The client does not re-derive admin status
+ * from raw fields. Verification freshness is folded into
+ * `identityState === Verified` itself — a stale-signed user reads as
+ * `Registered`, the gate falls to the generic "not Verified" branch,
+ * and recovery is the normal verify-wallet flow on `/profile`. There
+ * is no special "stale admin" state, no special recovery branch, and
+ * no inline re-sign affordance: the affordance disappearing _is_ the
+ * signal, and `/profile` is where wallet management already lives.
  *
- *   1. `identityState === Verified` — they have cryptographically proven
- *      wallet ownership via TronLink signature.
- *   2. At least one wallet has `verifiedAt` within
- *      `VERIFICATION_FRESHNESS_MS` (14 days). A months-old signature is
- *      not load-bearing for admin authority — the operator must have
- *      proved control of a wallet recently.
- *   3. The user belongs to the `admin` group.
+ * Two flags surface for the gate's branching:
  *
- * All three checks are non-bypassable: a stolen cookie cannot promote a
- * user to admin (verification requires a live wallet signature),
- * freshness decays without a new signature, and group membership is
- * server-controlled.
+ *   - `needsVerification` — visitor is not currently `Verified` (no
+ *     wallets, only unsigned wallets, or every signature is stale).
+ *     Recovery: connect or re-sign a wallet on `/profile`.
+ *   - `needsAdminGroupMembership` — visitor is `Verified`, but not in
+ *     any admin group. Recovery: an existing admin must add them.
  *
- * `needsRefreshVerification` exposes the stale-Verified state distinctly
- * so the gate component can show a "refresh verification" recovery path
- * instead of the generic "not an admin" screen — these are two different
- * problems with different solutions.
+ * `isAuthenticated` is the single boolean the gate consults to admit
+ * the visitor — it is `isVerified && isAdmin`, both server-computed.
  *
  * The legacy `localStorage.getItem('admin_token')` flow is gone — there
- * is no JS-readable admin secret on the client. The 62-ish fetch sites
- * across `/system/*` that still send an `x-admin-token` header continue
- * to work because (a) the request includes the `tronrelic_uid` cookie
- * automatically (same-origin), and (b) the backend `requireAdmin`
- * middleware now accepts cookie+verified+admin-group+fresh as an
- * alternative to the shared service token. The `token` field below
- * remains in the context shape and returns empty string so those sites
- * need no edits.
+ * is no JS-readable admin secret on the client. Same-origin fetches
+ * carry the signed `tronrelic_uid` cookie automatically, which is what
+ * `requireAdmin` consults; the `token` field below stays as an empty
+ * string for transitional callers that still build an `x-admin-token`
+ * header so those sites need no edits.
  */
 
 import { createContext, useCallback, useContext, useMemo, type ReactNode } from 'react';
-import { UserIdentityState } from '@/types';
 import { useAppSelector } from '../../../store/hooks';
 import {
     selectUserData,
-    selectUserInitialized,
-    selectHasFreshVerification
+    selectUserInitialized
 } from '../../../modules/user/slice';
-
-/** Slug of the seeded admin group. Mirrors the backend's seeded row. */
-const ADMIN_GROUP_ID = 'admin';
 
 interface ISystemAuthContext {
     /**
@@ -55,21 +48,15 @@ interface ISystemAuthContext {
      * treated as "no token" by the backend middleware.
      */
     token: string;
-    /** True when the cookie-resolved user is a verified admin with a
-     *  wallet signature inside the freshness window. */
+    /** True when the cookie-resolved user is a Verified admin. */
     isAuthenticated: boolean;
     /** True until the bootstrap call completes; lets gates render a
      *  loading state instead of flashing the not-admin UI. */
     isHydrated: boolean;
-    /** True when the visitor exists but isn't a verified admin yet. */
+    /** True when the visitor is not currently `Verified`. */
     needsVerification: boolean;
-    /** True when the visitor is verified but not yet in the admin group. */
+    /** True when the visitor is `Verified` but not in an admin group. */
     needsAdminGroupMembership: boolean;
-    /** True when the visitor is a verified admin whose wallet
-     *  signature has aged past the freshness window. The recovery
-     *  path is to re-sign any attached wallet via the dedicated
-     *  refresh-verification endpoint. */
-    needsRefreshVerification: boolean;
     /** Best-effort logout: clears the in-tab admin gate. The cookie
      *  itself is HttpOnly and survives — admin status is derived from
      *  group membership, not any tab-local state. */
@@ -81,11 +68,15 @@ const SystemAuthContext = createContext<ISystemAuthContext | undefined>(undefine
 export function SystemAuthProvider({ children }: { children: ReactNode }) {
     const userData = useAppSelector(selectUserData);
     const initialized = useAppSelector(selectUserInitialized);
-    const hasFresh = useAppSelector(selectHasFreshVerification);
 
-    const isVerified = userData?.identityState === UserIdentityState.Verified;
-    const isInAdminGroup = userData?.groups?.includes(ADMIN_GROUP_ID) ?? false;
-    const isAuthenticated = isVerified && isInAdminGroup && hasFresh;
+    // Read the server's verdict directly. Falling back to safe defaults
+    // when `authStatus` is missing handles the legacy-payload edge case
+    // (Redux state hydrated from a snapshot taken before the field
+    // existed) and the "no user yet" state without admitting anyone the
+    // server didn't already approve.
+    const status = userData?.authStatus;
+    const isVerified = status?.isVerified ?? false;
+    const isAdmin = status?.isAdmin ?? false;
 
     const logout = useCallback(() => {
         // Cookie is HttpOnly; nothing meaningful to clear here. The page
@@ -95,13 +86,12 @@ export function SystemAuthProvider({ children }: { children: ReactNode }) {
 
     const value = useMemo<ISystemAuthContext>(() => ({
         token: '',
-        isAuthenticated,
+        isAuthenticated: isVerified && isAdmin,
         isHydrated: initialized,
         needsVerification: initialized && !isVerified,
-        needsAdminGroupMembership: initialized && isVerified && !isInAdminGroup,
-        needsRefreshVerification: initialized && isVerified && isInAdminGroup && !hasFresh,
+        needsAdminGroupMembership: initialized && isVerified && !isAdmin,
         logout
-    }), [isAuthenticated, initialized, isVerified, isInAdminGroup, hasFresh, logout]);
+    }), [isVerified, isAdmin, initialized, logout]);
 
     return (
         <SystemAuthContext.Provider value={value}>

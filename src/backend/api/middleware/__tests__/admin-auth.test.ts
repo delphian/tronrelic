@@ -293,7 +293,20 @@ describe('requireAdmin middleware', () => {
         // arithmetic.
         const STALE_VERIFIED_AT = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
 
-        it('rejects with verification_stale when the cookie-resolved admin has only stale signatures', async () => {
+        // Verification freshness is folded into `identityState === Verified`
+        // itself (see `deriveIdentityState`). A user with only stale
+        // signatures collapses to `Registered` at the serialization
+        // boundary, so the middleware sees them as "not Verified" and
+        // rejects with a generic 401 — the same way an unsigned-claim
+        // user gets rejected. There is no separate `verification_stale`
+        // reason code, no special branch, and no block on service-token
+        // fall-through; recovery is the normal verify-wallet flow on
+        // /profile.
+
+        it('rejects a stale-only admin via the generic not-Verified branch', async () => {
+            // ADMIN_API_TOKEN must be set so the middleware reaches the
+            // 401 path; without it, the cookie failure collapses to 503
+            // (admin disabled) before reason codes matter.
             process.env.ADMIN_API_TOKEN = SERVICE_TOKEN;
             await seedUser(userService, mockDb, mockCache, VALID_UUID, {
                 verified: true,
@@ -305,15 +318,18 @@ describe('requireAdmin middleware', () => {
 
             expect(called()).toBe(false);
             expect(res.statusCode).toBe(401);
-            expect(res.jsonBody?.reason).toBe('verification_stale');
+            // No `verification_stale` reason — stale and absent proof are
+            // indistinguishable to the gate.
+            expect(res.jsonBody?.reason).toBeUndefined();
         });
 
-        it('does NOT fall through to the service-token path when verification is stale', async () => {
-            // Even if the request happens to carry a valid service token,
-            // the stale-verified branch should short-circuit. Otherwise
-            // the request would be attributed to a service caller when
-            // the operator's intent was to act as themselves — and the
-            // recovery prompt would never fire.
+        it('lets a service token win when the cookie-only user is stale', async () => {
+            // A request carrying both a stale cookie and a valid service
+            // token is attributed to the service caller. The stale cookie
+            // confers no authority, so it isn't competing for attribution
+            // — service-token is the only valid claim on the request.
+            // Audit logs will record `adminVia: 'service-token'`, which
+            // is the truthful description of what authorized the call.
             process.env.ADMIN_API_TOKEN = SERVICE_TOKEN;
             await seedUser(userService, mockDb, mockCache, VALID_UUID, {
                 verified: true,
@@ -326,10 +342,8 @@ describe('requireAdmin middleware', () => {
             });
             await requireAdmin(req, res, next);
 
-            expect(called()).toBe(false);
-            expect(res.statusCode).toBe(401);
-            expect(res.jsonBody?.reason).toBe('verification_stale');
-            expect(req.adminVia).toBeUndefined();
+            expect(called()).toBe(true);
+            expect(req.adminVia).toBe('service-token');
         });
 
         it('approves when at least one wallet is fresh even if siblings are stale', async () => {
@@ -374,11 +388,11 @@ describe('requireAdmin middleware', () => {
             expect(req.adminVia).toBe('user');
         });
 
-        it('treats verified: true wallets with null verifiedAt as stale (defensive)', async () => {
+        it('treats verified: true wallets with null verifiedAt as not-Verified (defensive)', async () => {
             // Pre-migration legacy data: wallet flagged verified but no
-            // recorded signature timestamp. The freshness predicate must
-            // refuse to grant admin authority — we have no proof of when
-            // (or whether) the signature actually happened.
+            // recorded signature timestamp. `deriveIdentityState` reads
+            // these as not-fresh, the user collapses to Registered, and
+            // the gate rejects via the generic not-Verified branch.
             process.env.ADMIN_API_TOKEN = SERVICE_TOKEN;
             await seedUser(userService, mockDb, mockCache, VALID_UUID, {
                 verified: true,
@@ -390,7 +404,7 @@ describe('requireAdmin middleware', () => {
 
             expect(called()).toBe(false);
             expect(res.statusCode).toBe(401);
-            expect(res.jsonBody?.reason).toBe('verification_stale');
+            expect(res.jsonBody?.reason).toBeUndefined();
         });
     });
 });

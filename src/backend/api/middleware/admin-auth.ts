@@ -1,28 +1,24 @@
 import type { NextFunction, Request, Response } from 'express';
-import { UserIdentityState, hasFreshVerification } from '@/types';
 import { env } from '../../config/env.js';
 import { UserService } from '../../modules/user/services/user.service.js';
 import { UserGroupService } from '../../modules/user/services/user-group.service.js';
+import { computeUserAuthStatus } from '../../modules/user/services/auth-status.js';
 import { USER_ID_COOKIE_NAME, UUID_V4_REGEX } from '../../modules/user/api/identity-cookie.js';
 
 /**
- * Internal failure reasons returned from `tryUserAdminAuth`. Surfaced in
- * the 401 body via `requireAdmin` so the frontend can route the operator
- * to the right recovery flow:
+ * Internal result returned from `tryUserAdminAuth`. A non-null
+ * `userId` means cookie-path admin authority is granted; null means
+ * the caller should fall back to the service-token path or 401.
  *
- *   - `'verification_stale'` — user is in the admin group with a verified
- *     wallet, but every wallet's `verifiedAt` is older than the freshness
- *     window. Frontend should prompt re-sign on any attached wallet.
- *   - any other failure (no cookie, malformed cookie, not verified, not
- *     admin, services not initialized) collapses to a generic 401 — those
- *     callers don't need a recovery affordance, they need a verified-admin
- *     account in the first place.
+ * There is no separate "stale verification" reason because the
+ * platform no longer recognizes that as a distinct state — verification
+ * freshness is folded into `identityState === Verified` itself. A
+ * stale-signed user reads as `Registered`, fails the verified check
+ * here for the same reason an unsigned-claim user does, and recovers
+ * through the normal verify-wallet flow on `/profile`.
  */
-type CookieAdminFailureReason = 'verification_stale' | 'unauthorized';
-
 interface CookieAdminResult {
     userId: string | null;
-    reason?: CookieAdminFailureReason;
 }
 
 /**
@@ -82,28 +78,20 @@ function extractCandidate(req: Request): string | undefined {
 /**
  * Try to authorize via cookie identity + admin-group membership.
  *
- * Four checks must all pass:
- *   1. `tronrelic_uid` cookie is present and well-formed
- *   2. The resolved user is in `UserIdentityState.Verified` — they have
- *      cryptographically proven control of a wallet, not just a paper
- *      claim. A stolen cookie alone cannot promote a user to admin; the
- *      wallet signature must have actually happened.
- *   3. At least one wallet has `verifiedAt` within the freshness window.
- *      A signature from months ago is no longer load-bearing for admin
- *      authority — the user must re-sign to refresh the freshness clock.
- *      "Any-fresh-wins": one fresh wallet keeps the user fresh-Verified
- *      regardless of how many siblings have gone stale.
- *   4. The user is in the admin group per `IUserGroupService.isAdmin`.
+ * Three checks must all pass:
+ *   1. `tronrelic_uid` cookie is present, well-formed, and signed.
+ *   2. The resolved user reads as `identityState === Verified`. The
+ *      derivation in `deriveIdentityState` already folds in verification
+ *      freshness — a user with only stale signatures collapses to
+ *      `Registered` and fails this check the same way an unsigned-claim
+ *      user does. Stale recovery is the normal verify-wallet flow on
+ *      `/profile`; there is no special branch here.
+ *   3. The user is in the admin group per `IUserGroupService.isAdmin`.
  *
- * Returns the canonical resolved userId on success, or a failure reason
- * the caller can surface to the client. The freshness failure is
- * distinguished from generic unauthorized so the frontend can prompt
- * re-sign instead of rendering the "no admin access" screen for a user
- * who in fact had it five minutes ago.
- *
- * Service singletons are looked up at request time; if they are not yet
- * initialized (test or boot-order edge), the cookie path returns
- * unauthorized cleanly and the caller falls back to the service-token
+ * Returns the canonical resolved userId on success, null on any
+ * failure. Service singletons are looked up at request time; if they
+ * are not yet initialized (test or boot-order edge), the cookie path
+ * returns null cleanly and the caller falls back to the service-token
  * path.
  */
 async function tryUserAdminAuth(req: Request): Promise<CookieAdminResult> {
@@ -116,7 +104,7 @@ async function tryUserAdminAuth(req: Request): Promise<CookieAdminResult> {
     // mint a cookie value that passes admin auth.
     const cookieId = (req as any).signedCookies?.[USER_ID_COOKIE_NAME];
     if (typeof cookieId !== 'string' || !UUID_V4_REGEX.test(cookieId)) {
-        return { userId: null, reason: 'unauthorized' };
+        return { userId: null };
     }
 
     let userService: UserService;
@@ -125,26 +113,22 @@ async function tryUserAdminAuth(req: Request): Promise<CookieAdminResult> {
         userService = UserService.getInstance();
         groupService = UserGroupService.getInstance();
     } catch {
-        return { userId: null, reason: 'unauthorized' };
+        return { userId: null };
     }
 
     const user = await userService.getById(cookieId);
-    if (!user) return { userId: null, reason: 'unauthorized' };
-    if (user.identityState !== UserIdentityState.Verified) {
-        return { userId: null, reason: 'unauthorized' };
+    if (!user) return { userId: null };
+
+    // Single source of truth: `computeUserAuthStatus` is the same
+    // predicate that ships on every IUser response payload as
+    // `authStatus`. Reusing it here keeps the middleware in lockstep
+    // with what the frontend sees — no risk of one tier accepting a
+    // user the other rejects.
+    const status = await computeUserAuthStatus(user, groupService);
+    if (status.isVerified && status.isAdmin) {
+        return { userId: user.id };
     }
-
-    const isAdminMember = await groupService.isAdmin(user.id);
-    if (!isAdminMember) return { userId: null, reason: 'unauthorized' };
-
-    // Freshness gate fires only after every other identity check passes,
-    // so the response cleanly distinguishes "you're not an admin" from
-    // "you are an admin but need to re-sign."
-    if (!hasFreshVerification(user.wallets)) {
-        return { userId: null, reason: 'verification_stale' };
-    }
-
-    return { userId: user.id };
+    return { userId: null };
 }
 
 /**
@@ -201,20 +185,6 @@ export async function requireAdmin(req: Request, res: Response, next: NextFuncti
             req.adminVia = 'user';
             req.userId = cookieResult.userId;
             next();
-            return;
-        }
-
-        // Stale verification short-circuits before the service-token
-        // fallback. The user *is* an admin — they just need to re-sign.
-        // Service-token holders authenticate as themselves, not as the
-        // user; falling through would attribute the request to the
-        // wrong actor and skip the recovery prompt the frontend needs.
-        if (cookieResult.reason === 'verification_stale') {
-            res.status(401).json({
-                success: false,
-                error: 'Unauthorized',
-                reason: 'verification_stale'
-            });
             return;
         }
 

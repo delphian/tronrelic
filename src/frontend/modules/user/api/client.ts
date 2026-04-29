@@ -52,11 +52,13 @@ export interface ILinkWalletResult {
 /**
  * Wallet operations gated by a server-issued challenge.
  *
- * `'refresh-verification'` is the freshness-pump action used by the
- * dual-track admin recovery flow when a verified admin's `verifiedAt`
- * has aged past the freshness window and the cookie path returns 401
- * with `reason: 'verification_stale'`. Distinct nonce scope keeps a
- * captured signature for any other action from being replayable here.
+ * `'refresh-verification'` updates `verifiedAt` on an already-linked,
+ * already-verified wallet. It is the natural action when a user's
+ * `identityState` has collapsed to `Registered` because every signature
+ * has aged past the freshness window — re-signing pumps `verifiedAt`
+ * forward, lifting the user back to `Verified`. Distinct nonce scope
+ * keeps a captured signature for any other action from being replayable
+ * here.
  */
 export type WalletChallengeAction = 'link' | 'unlink' | 'set-primary' | 'refresh-verification';
 
@@ -273,11 +275,13 @@ export async function setPrimaryWallet(
 /**
  * Refresh the freshness clock on an already-verified wallet.
  *
- * Recovery path for stale-Verified admins: when an API call to a
- * `requireAdmin`-protected endpoint returns 401 with
- * `reason: 'verification_stale'`, the operator is already a verified
- * admin — they just need to re-prove control of any one of their
- * wallets to bring `verifiedAt` back inside the freshness window.
+ * Re-pumps `verifiedAt` on a wallet whose signature has aged past the
+ * freshness window. The user's `identityState` is derived from
+ * `wallets[].verifiedAt` at the API boundary (see `deriveIdentityState`),
+ * so a stale signature collapses them to `Registered` until a refresh
+ * lifts them back to `Verified`. This is the natural verify-wallet
+ * affordance for the wallet card on `/profile` — no special "stale
+ * admin" flow, just normal wallet management.
  *
  * Mints a `'refresh-verification'` challenge via `requestWalletChallenge`,
  * the user signs the canonical message with TronLink, and this call

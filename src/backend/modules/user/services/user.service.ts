@@ -1,7 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { randomBytes } from 'crypto';
 import type { Collection } from 'mongodb';
-import { UserIdentityState } from '@/types';
+import { UserIdentityState, deriveIdentityState } from '@/types';
 import type {
     IDatabaseService,
     ICacheService,
@@ -1030,11 +1030,11 @@ export class UserService {
      *
      * Distinct from `linkWallet` because it does *not* add wallets, does
      * not perform identity reconciliation, and refuses to operate on a
-     * wallet that isn't already attached and verified. It exists so a
-     * stale-Verified admin can reach back into the freshness window
-     * without going through the full link flow (which would otherwise
-     * trigger identity-swap on someone else's wallet, or fail outright on
-     * their own).
+     * wallet that isn't already attached and verified. It exists for
+     * callers that want to bump `verifiedAt` without going through
+     * link's full validation — useful when re-signing on a stale-
+     * collapsed user's own wallet, where link would also work but with
+     * extra path through identity-swap detection.
      *
      * Consumes a `'refresh-verification'` nonce — the action scoping
      * ensures a captured `link` or `set-primary` signature cannot be
@@ -4731,19 +4731,15 @@ export class UserService {
     /**
      * Compute the canonical `UserIdentityState` from a wallets array.
      *
-     * This is the single source of truth for the anonymous → registered →
-     * verified taxonomy. All wallet-mutating code paths in this service must
-     * use the result of this function (typically via `recomputeIdentityState`)
-     * rather than recomputing the rules ad hoc.
+     * Delegates to the shared `deriveIdentityState` helper in `@/types`
+     * so every consumer (this service's mutation handlers, the
+     * `toPublicUser` serialization boundary, and any future server-side
+     * caller) reads the same rule. Verification freshness is folded
+     * into `Verified` — a stale wallet collapses the user to
+     * `Registered`. See `deriveIdentityState` for the full rule.
      */
     private computeIdentityState(wallets: IWalletLink[]): UserIdentityState {
-        if (wallets.length === 0) {
-            return UserIdentityState.Anonymous;
-        }
-        if (wallets.some(w => w.verified)) {
-            return UserIdentityState.Verified;
-        }
-        return UserIdentityState.Registered;
+        return deriveIdentityState(wallets);
     }
 
     /**
@@ -4769,15 +4765,20 @@ export class UserService {
     /**
      * Convert MongoDB document to public user representation.
      *
-     * `identityState` falls back to a fresh computation only as a defensive
-     * measure for legacy documents that pre-date migration 006. Documents
-     * written by the current `UserService` always have it set explicitly.
+     * `identityState` is **always** computed from `doc.wallets` at this
+     * boundary, even when the storage column has a value. The stored
+     * value is a denormalized cache for indexes and admin filter
+     * queries; it gets refreshed on wallet mutation but drifts as
+     * verification freshness ages out without any mutation to trigger
+     * recompute. Deriving here guarantees the wire form reflects
+     * current truth — a stale-Verified user reads as `Registered`,
+     * which is exactly the state machine the platform enforces.
      */
     private toPublicUser(doc: IUserDocument | Omit<IUserDocument, '_id'>): IUser {
         return {
             id: doc.id,
             isLoggedIn: doc.isLoggedIn ?? false,
-            identityState: doc.identityState ?? this.computeIdentityState(doc.wallets ?? []),
+            identityState: this.computeIdentityState(doc.wallets ?? []),
             wallets: doc.wallets,
             preferences: doc.preferences,
             activity: doc.activity,

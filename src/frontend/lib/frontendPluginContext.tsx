@@ -37,25 +37,54 @@ import {
     selectPrimaryWallet
 } from '../modules/user/slice';
 import { getSocket } from './socketClient';
-import { config } from './config';
+import { getRuntimeConfig } from './runtimeConfig';
 
 /**
  * API client implementation for frontend plugins.
  *
- * Provides a simple interface for making authenticated requests to the backend
- * without requiring plugins to manage base URLs, headers, or error handling.
- * The base URL delegates to config.apiBaseUrl so plugin traffic benefits from
- * the same Docker-aware fallbacks described in getBackendBaseUrl().
+ * Provides a simple interface for making authenticated requests to the
+ * backend without requiring plugins to manage base URLs, headers, or
+ * error handling. The base URL is read from SSR-injected runtime config
+ * via `getRuntimeConfig().apiUrl`, so universal Docker images resolve
+ * the correct backend per domain without rebuilding.
+ *
+ * Authentication rides the same-origin `tronrelic_uid` cookie. The
+ * cookie is HttpOnly and signed with `SESSION_SECRET`, set by the
+ * server on `/api/user/bootstrap`, and travels automatically with
+ * `credentials: 'include'`. The client does not — and cannot — read
+ * any admin secret from `localStorage`; the legacy `admin_token`
+ * value is gone, and consulting it here was duplicated five times for
+ * a value that is always null. Admin endpoints validate the signed
+ * cookie via `requireAdmin` middleware (which also accepts the
+ * service-token path for CI/scripts that don't run in a browser).
  */
 class ApiClient implements IApiClient {
     private baseUrl: string;
 
     constructor() {
-        this.baseUrl = config.apiBaseUrl;
+        this.baseUrl = getRuntimeConfig().apiUrl;
     }
 
-    async get<T = any>(path: string, params?: Record<string, any>): Promise<T> {
-        // Remove leading slash if present to ensure proper URL joining
+    /**
+     * Internal request executor. Centralizes URL composition, header
+     * construction, error-message extraction, and JSON parsing so each
+     * public method is a one-line delegation.
+     *
+     * Body is conditionally serialized — GET/DELETE pass `undefined`
+     * so the request remains body-less and `Content-Type` is omitted
+     * entirely (set only when a body is present, so intermediaries
+     * aren't misled). Query params apply only when supplied (GET's
+     * only escape hatch into URL state). Responses are parsed
+     * defensively: 204/205 and empty bodies return `undefined`,
+     * non-JSON content-types return the raw text — endpoints that
+     * declare `Promise<void>` no longer throw on success.
+     */
+    private async request<T>(
+        method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
+        path: string,
+        body?: unknown,
+        params?: Record<string, unknown>
+    ): Promise<T> {
         const cleanPath = path.startsWith('/') ? path.slice(1) : path;
         const url = new URL(cleanPath, this.baseUrl.endsWith('/') ? this.baseUrl : `${this.baseUrl}/`);
         if (params) {
@@ -64,24 +93,18 @@ class ApiClient implements IApiClient {
             });
         }
 
-        const headers: HeadersInit = {
-            'Content-Type': 'application/json'
+        const init: RequestInit = {
+            method,
+            credentials: 'include'
         };
-
-        // Add admin token if available (for admin API routes)
-        const adminToken = typeof window !== 'undefined' ? localStorage.getItem('admin_token') : null;
-        if (adminToken) {
-            headers['Authorization'] = `Bearer ${adminToken}`;
+        if (body !== undefined) {
+            init.headers = { 'Content-Type': 'application/json' };
+            init.body = JSON.stringify(body);
         }
 
-        const response = await fetch(url.toString(), {
-            method: 'GET',
-            headers,
-            credentials: 'include'
-        });
+        const response = await fetch(url.toString(), init);
 
         if (!response.ok) {
-            // Try to extract error message from JSON response body
             let errorMessage = response.statusText;
             try {
                 const errorData = await response.json();
@@ -89,163 +112,48 @@ class ApiClient implements IApiClient {
                     errorMessage = errorData.error;
                 }
             } catch {
-                // If JSON parsing fails, use statusText
+                // JSON parse failure means the server didn't return a
+                // structured error body — fall back to statusText.
             }
             throw new Error(`API request failed: ${errorMessage}`);
         }
 
-        return response.json();
+        // 204 No Content / 205 Reset Content carry no body; calling
+        // response.json() on them throws. Several DELETE endpoints
+        // return 204 on success, so guard before parsing. Non-JSON
+        // bodies fall through to text — callers that asked for void
+        // get undefined, others get the raw payload.
+        if (response.status === 204 || response.status === 205) {
+            return undefined as T;
+        }
+
+        const contentType = response.headers.get('content-type')?.toLowerCase() ?? '';
+        if (contentType.includes('application/json')) {
+            return response.json() as Promise<T>;
+        }
+
+        const text = await response.text();
+        return (text === '' ? undefined : text) as T;
+    }
+
+    async get<T = any>(path: string, params?: Record<string, any>): Promise<T> {
+        return this.request<T>('GET', path, undefined, params);
     }
 
     async post<T = any>(path: string, body?: any): Promise<T> {
-        const cleanPath = path.startsWith('/') ? path.slice(1) : path;
-        const url = new URL(cleanPath, this.baseUrl.endsWith('/') ? this.baseUrl : `${this.baseUrl}/`);
-
-        const headers: HeadersInit = {
-            'Content-Type': 'application/json'
-        };
-
-        // Add admin token if available (for admin API routes)
-        const adminToken = typeof window !== 'undefined' ? localStorage.getItem('admin_token') : null;
-        if (adminToken) {
-            headers['Authorization'] = `Bearer ${adminToken}`;
-        }
-
-        const response = await fetch(url.toString(), {
-            method: 'POST',
-            headers,
-            body: JSON.stringify(body),
-            credentials: 'include'
-        });
-
-        if (!response.ok) {
-            // Try to extract error message from JSON response body
-            let errorMessage = response.statusText;
-            try {
-                const errorData = await response.json();
-                if (errorData.error) {
-                    errorMessage = errorData.error;
-                }
-            } catch {
-                // If JSON parsing fails, use statusText
-            }
-            throw new Error(`API request failed: ${errorMessage}`);
-        }
-
-        return response.json();
+        return this.request<T>('POST', path, body);
     }
 
     async put<T = any>(path: string, body?: any): Promise<T> {
-        const cleanPath = path.startsWith('/') ? path.slice(1) : path;
-        const url = new URL(cleanPath, this.baseUrl.endsWith('/') ? this.baseUrl : `${this.baseUrl}/`);
-
-        const headers: HeadersInit = {
-            'Content-Type': 'application/json'
-        };
-
-        // Add admin token if available (for admin API routes)
-        const adminToken = typeof window !== 'undefined' ? localStorage.getItem('admin_token') : null;
-        if (adminToken) {
-            headers['Authorization'] = `Bearer ${adminToken}`;
-        }
-
-        const response = await fetch(url.toString(), {
-            method: 'PUT',
-            headers,
-            body: JSON.stringify(body),
-            credentials: 'include'
-        });
-
-        if (!response.ok) {
-            // Try to extract error message from JSON response body
-            let errorMessage = response.statusText;
-            try {
-                const errorData = await response.json();
-                if (errorData.error) {
-                    errorMessage = errorData.error;
-                }
-            } catch {
-                // If JSON parsing fails, use statusText
-            }
-            throw new Error(`API request failed: ${errorMessage}`);
-        }
-
-        return response.json();
-    }
-
-    async delete<T = any>(path: string): Promise<T> {
-        const cleanPath = path.startsWith('/') ? path.slice(1) : path;
-        const url = new URL(cleanPath, this.baseUrl.endsWith('/') ? this.baseUrl : `${this.baseUrl}/`);
-
-        const headers: HeadersInit = {
-            'Content-Type': 'application/json'
-        };
-
-        // Add admin token if available (for admin API routes)
-        const adminToken = typeof window !== 'undefined' ? localStorage.getItem('admin_token') : null;
-        if (adminToken) {
-            headers['Authorization'] = `Bearer ${adminToken}`;
-        }
-
-        const response = await fetch(url.toString(), {
-            method: 'DELETE',
-            headers,
-            credentials: 'include'
-        });
-
-        if (!response.ok) {
-            // Try to extract error message from JSON response body
-            let errorMessage = response.statusText;
-            try {
-                const errorData = await response.json();
-                if (errorData.error) {
-                    errorMessage = errorData.error;
-                }
-            } catch {
-                // If JSON parsing fails, use statusText
-            }
-            throw new Error(`API request failed: ${errorMessage}`);
-        }
-
-        return response.json();
+        return this.request<T>('PUT', path, body);
     }
 
     async patch<T = any>(path: string, body?: any): Promise<T> {
-        const cleanPath = path.startsWith('/') ? path.slice(1) : path;
-        const url = new URL(cleanPath, this.baseUrl.endsWith('/') ? this.baseUrl : `${this.baseUrl}/`);
+        return this.request<T>('PATCH', path, body);
+    }
 
-        const headers: HeadersInit = {
-            'Content-Type': 'application/json'
-        };
-
-        // Add admin token if available (for admin API routes)
-        const adminToken = typeof window !== 'undefined' ? localStorage.getItem('admin_token') : null;
-        if (adminToken) {
-            headers['Authorization'] = `Bearer ${adminToken}`;
-        }
-
-        const response = await fetch(url.toString(), {
-            method: 'PATCH',
-            headers,
-            body: JSON.stringify(body),
-            credentials: 'include'
-        });
-
-        if (!response.ok) {
-            // Try to extract error message from JSON response body
-            let errorMessage = response.statusText;
-            try {
-                const errorData = await response.json();
-                if (errorData.error) {
-                    errorMessage = errorData.error;
-                }
-            } catch {
-                // If JSON parsing fails, use statusText
-            }
-            throw new Error(`API request failed: ${errorMessage}`);
-        }
-
-        return response.json();
+    async delete<T = any>(path: string): Promise<T> {
+        return this.request<T>('DELETE', path);
     }
 }
 
