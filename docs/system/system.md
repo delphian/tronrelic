@@ -213,14 +213,15 @@ The pages module provides custom content management capabilities, allowing admin
 
 ### User Module
 
-The user module provides visitor identity management, enabling anonymous tracking via UUID with optional upgrade to verified TRON wallet addresses. Users start with client-generated UUIDs stored in cookies/localStorage, can link multiple wallets via TronLink signature verification, and have their preferences and activity tracked across sessions.
+The user module provides visitor identity management, enabling anonymous tracking via UUID with optional upgrade to verified TRON wallet addresses. Identity is anchored on a single HttpOnly, HMAC-signed `tronrelic_uid` cookie that the server is the only writer of (minted at `POST /api/user/bootstrap`). Users can link multiple wallets via TronLink signature verification, and their preferences and activity are tracked across sessions.
 
 **Key architectural decisions:**
 
-- **Anonymous-first identity** - UUID generated on first visit, no registration required
-- **Dual storage** - Cookie for SSR access, localStorage for client-side persistence
-- **Multi-wallet support** - One UUID can link to multiple TRON addresses with primary designation
-- **Cookie-based validation** - API endpoints validate cookie matches :id parameter for security
+- **Anonymous-first identity** - UUID minted server-side on first request to `/api/user/bootstrap`, no registration required
+- **HttpOnly signed cookie** - `tronrelic_uid` carries the UUID as `s:<uuid>.<HMAC>`; the server (holding `SESSION_SECRET`) is the only writer
+- **Canonical identity states** - `UserIdentityState` enum (`Anonymous` | `Registered` | `Verified`) is stored, not derived; `Verified` requires a wallet signature within `SESSION_TTL_MS`
+- **Multi-wallet support** - One UUID can link to multiple TRON addresses with primary designation; signing any one keeps the user-level session alive
+- **Cookie-based validation** - API endpoints validate the signed cookie matches the `:id` parameter
 - **Real-time sync** - WebSocket events push user updates to connected clients
 
 **See [User Module README](../../src/backend/modules/user/README.md) for complete details on:**

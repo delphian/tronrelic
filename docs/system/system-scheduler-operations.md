@@ -67,10 +67,9 @@ TronRelic includes six built-in scheduler jobs. Plugins can register additional 
 
 The easiest way to control scheduler jobs:
 
-1. **Navigate to `/system`** - Requires admin token (set in `ADMIN_API_TOKEN`)
-2. **Enter your admin token** in the modal (stored in browser localStorage)
-3. **Find the "Scheduled Jobs" section**
-4. **For each job:**
+1. **Navigate to `/system`** - Requires cookie-based admin authority (verified wallet + `admin` group membership). See [Authentication Workflow](./system-dashboard.md#authentication-workflow) for the full sign-in path and the service-token alternative for CI/scripts.
+2. **Find the "Scheduled Jobs" section**
+3. **For each job:**
    - **Toggle enabled/disabled** - Checkbox shows job state (bright background = enabled, dim = disabled)
    - **Modify schedule** - Click schedule input, enter new cron expression, press Enter
    - **Monitor status** - Badge shows: success (green), failed (red), running (blue), never_run (gray)

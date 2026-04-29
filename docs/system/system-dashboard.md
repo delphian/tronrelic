@@ -10,26 +10,16 @@ Scheduler jobs fail silently, blockchain sync stalls without warning, and market
 
 ### Authentication Workflow
 
-1. **Generate an admin token** (if not already set):
-   ```bash
-   openssl rand -hex 32
-   ```
+The dashboard uses the cookie path of the user module's [admin authentication — dual-track](../../src/backend/modules/user/README.md#admin-authentication--dual-track) model. Operators sign in like any other visitor; admin authority comes from group membership, not a JS-readable token.
 
-2. **Configure the backend** with your token in `src/backend/.env`:
-   ```bash
-   ADMIN_API_TOKEN=your-secure-token-here
-   ```
+1. **Bootstrap your identity** by visiting any TronRelic page — the server mints the signed `tronrelic_uid` cookie via `POST /api/user/bootstrap`.
+2. **Verify a wallet** via the header WalletButton (TronLink signature). This moves your `identityState` to `Verified` and starts the 14-day session clock.
+3. **Get added to the `admin` group** by an existing operator using the Groups editor on `/system/users`. For a fresh install with no admins yet, see [Bootstrapping the first admin](../../src/backend/modules/user/README.md#bootstrapping-the-first-admin) — it uses the service token (`ADMIN_API_TOKEN`) once, then the cookie path takes over.
+4. **Navigate to** `http://localhost:3000/system` (or your production domain). The `requireAdmin` middleware reads the signed cookie, confirms `Verified`, and checks `IUserGroupService.isAdmin(userId)`. The `/system` nav entry only appears when all three pass.
 
-3. **Restart the backend** if already running (Ctrl+C then):
-   ```bash
-   npm run dev
-   ```
+**Recovery:** if your session ages past `SESSION_TTL_MS` (14 days), the dashboard becomes inaccessible — re-sign via the header WalletButton to refresh `identityVerifiedAt`. There is no separate "stale admin" UI.
 
-4. **Navigate to the dashboard** at `http://localhost:3000/system` (or your production domain)
-
-5. **Enter your admin token** in the authentication modal - it will be stored in browser localStorage for subsequent visits
-
-**Security note:** The admin token grants full control over system operations. Never commit it to version control or share it publicly.
+**Service token alternative:** scripts, CI, and the first-admin bootstrap use `ADMIN_API_TOKEN` via the `x-admin-token` header (or `Authorization: Bearer`). It is intended for automation, not for human operators in the browser. Protect it like any production secret and rotate on suspected compromise — human admins authenticate via the cookie path and are unaffected by token rotation.
 
 ## Monitoring Workflows
 
@@ -223,13 +213,17 @@ System configuration display:
 
 ### Cannot Access Dashboard (401 Unauthorized)
 
-**Cause:** Invalid or missing admin token.
+**Cause:** Cookie path failed and no valid service token was provided (missing or mismatched). The middleware tries the cookie path first; the service-token branch produces 401 on missing or invalid tokens (or 503 when `ADMIN_API_TOKEN` is unset entirely).
 
-**Solution:**
-1. Verify `ADMIN_API_TOKEN` is set in backend `.env`
-2. Clear browser localStorage and re-enter the token
-3. Check token doesn't have extra whitespace or quotes
-4. Restart backend after changing token
+**Solution (cookie path — humans):**
+1. Confirm a signed `tronrelic_uid` cookie exists in devtools → Application → Cookies. If absent, reload the site so `POST /api/user/bootstrap` mints it.
+2. Confirm `identityState === Verified` (e.g., via `/api/user/me` or the WalletButton state). If it reads `Registered`, sign a wallet via the header WalletButton to refresh `identityVerifiedAt`.
+3. Confirm your UUID appears in the `admin` group on `/system/users` (ask a current admin if not).
+
+**Solution (service token — scripts/CI):**
+1. Verify `ADMIN_API_TOKEN` is set in backend `.env` and the backend was restarted after the change.
+2. Send the token via `x-admin-token` or `Authorization: Bearer`; query-param auth is intentionally unsupported.
+3. Trim whitespace/quotes — strict equality.
 
 ### Dashboard Shows "No Data" or Empty Metrics
 
