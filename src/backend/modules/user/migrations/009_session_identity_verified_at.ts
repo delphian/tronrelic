@@ -49,9 +49,10 @@ const IDENTITY_VERIFIED = 'verified';
  *   - Anonymous and Registered users are unaffected by the session
  *     fields; only the `isLoggedIn` removal touches them.
  *
- * **Idempotent.** Re-running matches zero documents on the second
- * pass: every user has either a `null` or non-null `identityVerifiedAt`,
- * and `isLoggedIn` is already gone.
+ * **Idempotent.** Safe to re-run. The non-Verified backfill and
+ * `isLoggedIn` unset match nothing on subsequent passes; the
+ * Verified-user update may still match documents but recomputes the
+ * same `identityVerifiedAt` value, resulting in no-op modifications.
  *
  * **Rollback.**
  * ```javascript
@@ -119,13 +120,19 @@ export const migration: IMigration = {
             ]
         );
 
-        // For non-Verified users: stamp explicit null so the field
-        // exists uniformly across the collection. Future writes always
-        // include the field; this is just for legacy rows.
+        // For non-Verified users: enforce explicit null so the field
+        // is consistent across the collection. Catches both legacy rows
+        // missing the field and any rows that already carry an
+        // inconsistent non-null timestamp (e.g. from a partial / failed
+        // earlier deploy of this migration). Guarantees the invariant
+        // `identityState !== Verified ⇒ identityVerifiedAt === null`.
         const nullResult = await usersCollection.updateMany(
             {
                 identityState: { $ne: IDENTITY_VERIFIED },
-                identityVerifiedAt: { $exists: false }
+                $or: [
+                    { identityVerifiedAt: { $exists: false } },
+                    { identityVerifiedAt: { $ne: null } }
+                ]
             },
             { $set: { identityVerifiedAt: null } }
         );

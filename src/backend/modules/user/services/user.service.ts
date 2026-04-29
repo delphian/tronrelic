@@ -329,7 +329,7 @@ export class UserService {
         // Try cache first
         const cached = await this.getCachedUser(id);
         if (cached) {
-            return this.enforceSessionExpiryOnUser(cached);
+            return this.enforceSessionExpiry(cached);
         }
 
         // Try database
@@ -339,7 +339,7 @@ export class UserService {
             if (existing.mergedInto) {
                 const target = await this.collection.findOne({ id: existing.mergedInto });
                 if (target) {
-                    const user = await this.enforceSessionExpiryOnUser(this.toPublicUser(target));
+                    const user = await this.enforceSessionExpiry(this.toPublicUser(target));
                     await this.cacheUser(user);
                     return user;
                 }
@@ -349,9 +349,9 @@ export class UserService {
                     { userId: id, mergedInto: existing.mergedInto },
                     'Broken merge pointer: target user does not exist'
                 );
-                return this.enforceSessionExpiryOnUser(this.toPublicUser(existing));
+                return this.enforceSessionExpiry(this.toPublicUser(existing));
             }
-            const user = await this.enforceSessionExpiryOnUser(this.toPublicUser(existing));
+            const user = await this.enforceSessionExpiry(this.toPublicUser(existing));
             await this.cacheUser(user);
             return user;
         }
@@ -407,7 +407,7 @@ export class UserService {
         // Try cache first
         const cached = await this.getCachedUser(id);
         if (cached) {
-            return this.enforceSessionExpiryOnUser(cached);
+            return this.enforceSessionExpiry(cached);
         }
 
         // Fetch from database
@@ -422,12 +422,12 @@ export class UserService {
             if (!target) {
                 return null;
             }
-            const user = await this.enforceSessionExpiryOnUser(this.toPublicUser(target));
+            const user = await this.enforceSessionExpiry(this.toPublicUser(target));
             await this.cacheUser(user);
             return user;
         }
 
-        const user = await this.enforceSessionExpiryOnUser(this.toPublicUser(doc));
+        const user = await this.enforceSessionExpiry(this.toPublicUser(doc));
         await this.cacheUser(user);
         return user;
     }
@@ -465,7 +465,7 @@ export class UserService {
         // Cache the wallet-to-user mapping
         await this.cacheService.set(cacheKey, doc.id, this.CACHE_TTL);
 
-        const user = await this.enforceSessionExpiryOnUser(this.toPublicUser(doc));
+        const user = await this.enforceSessionExpiry(this.toPublicUser(doc));
         await this.cacheUser(user);
         return user;
     }
@@ -541,14 +541,11 @@ export class UserService {
      * @throws Error if user not found or address invalid
      */
     async connectWallet(userId: string, address: string): Promise<IConnectWalletResult> {
-        // Resolve to canonical document (single DB hit, follows merge pointer if needed)
         const doc = await this.resolveDocument(userId);
         if (!doc) {
             throw new Error(`User with id "${userId}" not found`);
         }
-        userId = doc.id;
 
-        // Normalize address
         let normalizedAddress: string;
         try {
             normalizedAddress = this.signatureService.normalizeAddress(address);
@@ -556,83 +553,57 @@ export class UserService {
             throw new Error('Invalid TRON address format.');
         }
 
-        // Check if wallet already linked to another user
         const existingLink = await this.collection.findOne({
             'wallets.address': normalizedAddress,
-            id: { $ne: userId }
+            id: { $ne: doc.id }
         });
         if (existingLink) {
-            // Wallet belongs to another user - require login via signature
             this.logger.info(
-                { userId, wallet: normalizedAddress, existingUserId: existingLink.id },
+                { userId: doc.id, wallet: normalizedAddress, existingUserId: existingLink.id },
                 'Wallet already linked to another user, login required'
             );
-            return {
-                success: false,
-                loginRequired: true,
-                existingUserId: existingLink.id
-            };
+            return { success: false, loginRequired: true, existingUserId: existingLink.id };
         }
 
         const now = new Date();
         const existingWalletIndex = doc.wallets.findIndex(w => w.address === normalizedAddress);
-
         if (existingWalletIndex >= 0) {
-            // Wallet already exists - update lastUsed
             doc.wallets[existingWalletIndex].lastUsed = now;
         } else {
-            // Add a new wallet in registered state (verified=false until signed).
-            // verifiedAt stays null until a signature lands via linkWallet.
-            const walletLink: IWalletLink = {
+            doc.wallets.push({
                 address: normalizedAddress,
                 linkedAt: now,
                 isPrimary: false,
                 verified: false,
                 verifiedAt: null,
                 lastUsed: now
-            };
-            doc.wallets.push(walletLink);
+            });
         }
-
-        // Recalculate primary wallet, then take a single explicit step
-        // up the state machine if this is the user's first wallet.
-        // connectWallet promotes Anonymous → Registered exactly once;
-        // it never demotes a Verified user (their session clock is
-        // independent of the registered claim). Verified users
-        // adding additional wallets stay Verified.
         this.recalculatePrimaryWallet(doc.wallets);
+
+        // connectWallet promotes Anonymous → Registered exactly once.
+        // Verified users adding wallets stay Verified; the registered
+        // claim doesn't demote a live session.
         if (doc.identityState === UserIdentityState.Anonymous) {
             doc.identityState = UserIdentityState.Registered;
         }
 
-        // Update database
-        await this.collection.updateOne(
-            { id: userId },
-            {
-                $set: {
-                    wallets: doc.wallets,
-                    identityState: doc.identityState,
-                    updatedAt: now
-                }
-            }
-        );
-
-        this.logger.info({ userId, wallet: normalizedAddress, identityState: doc.identityState }, 'Wallet registered to user');
-
-        // Invalidate cache
-        await this.invalidateUserCache(userId);
+        await this.persistUserUpdate(doc, {
+            wallets: doc.wallets,
+            identityState: doc.identityState
+        });
         await this.cacheService.set(
             `${this.CACHE_KEY_WALLET_PREFIX}${normalizedAddress}`,
-            userId,
+            doc.id,
             this.CACHE_TTL
         );
 
-        // Fetch and return updated document
-        const updated = await this.collection.findOne({ id: userId });
-        return {
-            success: true,
-            user: this.toPublicUser(updated!)
-        };
+        this.logger.info(
+            { userId: doc.id, wallet: normalizedAddress, identityState: doc.identityState },
+            'Wallet registered to user'
+        );
+
+        return { success: true, user: this.toPublicUser(doc) };
     }
 
     /**
@@ -656,248 +627,198 @@ export class UserService {
      * @throws Error if signature invalid or user not found
      */
     async linkWallet(userId: string, input: ILinkWalletInput): Promise<ILinkWalletResult> {
-        // Resolve to canonical UUID if this identity was merged
-        // Resolve to canonical document (single DB hit, follows merge pointer if needed)
-        const doc = await this.resolveDocument(userId);
-        if (!doc) {
-            throw new Error(`User with id "${userId}" not found`);
-        }
-        userId = doc.id;
-
-        // Normalize the submitted address up front so the canonical-message
-        // check, the signature recovery, and the nonce key all reference the
-        // same string. The nonce was minted against the normalized form by
-        // `issueWalletChallenge`, so any mismatch here means the client is
-        // not signing the message we issued.
-        const normalizedAddress = this.signatureService.normalizeAddress(input.address);
-        await this.assertWalletChallenge(userId, 'link', normalizedAddress, input);
-
-        // Verify signature proves wallet ownership. The recovered address
-        // must equal the normalized form we already canonicalized against.
-        const recoveredAddress = await this.signatureService.verifyMessage(
-            normalizedAddress,
-            input.message,
-            input.signature
+        const { doc, normalizedAddress, now } = await this.verifyWalletAction(
+            userId, 'link', input.address, input.message, input.signature, input.nonce
         );
-        if (recoveredAddress !== normalizedAddress) {
-            throw new Error('Signature address does not match submitted address.');
-        }
 
-        // Check if wallet already linked to another user
+        // Cross-user wallet conflict — the signer has proven control of
+        // this wallet, so merge their current UUID (loser) into the
+        // existing wallet owner (winner). Identity reconciliation is its
+        // own multi-doc transaction; delegated.
         const existingLink = await this.collection.findOne({
             'wallets.address': normalizedAddress,
-            id: { $ne: userId }
+            id: { $ne: doc.id }
         });
-
         if (existingLink) {
-            // Wallet belongs to another user — perform identity reconciliation.
-            // The signer has proven wallet ownership, so merge the current UUID
-            // (loser) into the existing wallet owner (winner).
-            const winnerId = existingLink.id;
-            const loserId = userId;
-            const nowDate = new Date();
-
-            // Transfer wallets from loser to winner (skip duplicates)
-            const loserWallets = doc.wallets.filter(w =>
-                !existingLink.wallets.some(ew => ew.address === w.address)
-            );
-            const mergedWallets = [...existingLink.wallets, ...loserWallets];
-
-            // Mark the disputed wallet as verified on winner. The link call
-            // that triggered reconciliation carries a fresh signature on
-            // this address, so verifiedAt anchors at now — the freshness
-            // clock for this wallet now reflects the just-completed proof.
-            // Other transferred wallets retain whatever verifiedAt history
-            // the loser already had (proving control of one wallet doesn't
-            // refresh siblings).
-            const disputedIdx = mergedWallets.findIndex(w => w.address === normalizedAddress);
-            if (disputedIdx >= 0) {
-                mergedWallets[disputedIdx].verified = true;
-                mergedWallets[disputedIdx].verifiedAt = nowDate;
-                mergedWallets[disputedIdx].lastUsed = nowDate;
-            }
-
-            // Recalculate primary wallet across merged set
-            this.recalculatePrimaryWallet(mergedWallets);
-
-            // The disputed wallet was just signed, so the winner enters
-            // (or refreshes) the Verified state and the session clock
-            // anchors at `nowDate`. Identity reconciliation is by
-            // definition a successful signature event — same effect on
-            // the user-level session as a normal `linkWallet` success.
-            const winnerUpdateFields: Record<string, unknown> = {
-                wallets: mergedWallets,
-                identityState: UserIdentityState.Verified,
-                identityVerifiedAt: nowDate,
-                'activity.lastSeen': nowDate,
-                updatedAt: nowDate
-            };
-            if (!existingLink.referral?.code) {
-                const referralCode = await this.generateUniqueReferralCode();
-                winnerUpdateFields.referral = {
-                    code: referralCode,
-                    referredBy: existingLink.referral?.referredBy ?? null,
-                    referredAt: existingLink.referral?.referredAt ?? null
-                };
-            }
-
-            // Update winner with transferred wallets
-            await this.collection.updateOne(
-                { id: winnerId },
-                { $set: winnerUpdateFields }
-            );
-
-            // Create tombstone on loser — clear wallets, set merge pointer.
-            // A tombstone has no wallets, so its identityState is forced to
-            // Anonymous and the session clock cleared, both to keep the
-            // fields honest with the empty array and to ensure the loser
-            // cookie cannot ride a stale Verified flag.
-            await this.collection.updateOne(
-                { id: loserId },
-                {
-                    $set: {
-                        wallets: [],
-                        identityState: UserIdentityState.Anonymous,
-                        identityVerifiedAt: null,
-                        mergedInto: winnerId,
-                        updatedAt: nowDate
-                    }
-                }
-            );
-
-            // Flatten pointer chains: any UUID already pointing to loser now points to winner
-            await this.collection.updateMany(
-                { mergedInto: loserId },
-                { $set: { mergedInto: winnerId } }
-            );
-
-            this.logger.info(
-                {
-                    previousUserId: loserId,
-                    newUserId: winnerId,
-                    wallet: normalizedAddress,
-                    walletsTransferred: loserWallets.length
-                },
-                'Identity reconciliation: wallets transferred, tombstone created'
-            );
-
-            // Invalidate caches for both users and transferred wallet mappings
-            await this.invalidateUserCache(winnerId);
-            await this.invalidateUserCache(loserId);
-            for (const w of doc.wallets) {
-                await this.cacheService.invalidate(`${this.CACHE_KEY_WALLET_PREFIX}${w.address}`);
-            }
-
-            // Fetch and return the winner's updated data
-            const updated = await this.collection.findOne({ id: winnerId });
-            return {
-                user: this.toPublicUser(updated!),
-                identitySwapped: true,
-                previousUserId: loserId
-            };
+            return this.reconcileIdentities(doc, existingLink, normalizedAddress, now);
         }
 
-        // Normal flow - link wallet to current user.
-        const nowDate = new Date();
-        const existingWalletIndex = doc.wallets.findIndex(w => w.address === normalizedAddress);
-
         // Re-verify policy: a Registered user (no live session) must
-        // sign with a wallet they have previously proven. This blocks
-        // the cookie-hijack-then-add-attacker-wallet path: if the
-        // attacker connects a fresh wallet under the victim's UUID,
-        // the wallet enters the array with `verified: false`, and the
-        // signature step here is rejected because that wallet is not
-        // historically verified on this user.
+        // sign with a wallet they have previously proven. Defends
+        // against cookie-hijack-then-add-attacker-wallet: an attacker
+        // adds their own wallet via `connectWallet` (verified=false) and
+        // calling here with their wallet's signature gets rejected
+        // because it's not historically verified on this user.
         //
-        // Escape hatch: if the user has no historically-verified
-        // wallets at all (brand-new user who connected wallets but
-        // never signed), allow any wallet — there is no prior proof
-        // to defend against.
-        //
-        // Anonymous users and currently-Verified users skip the
-        // policy: anonymous because there is nothing to defend yet,
-        // verified because they already passed authentication and
-        // are simply adding/refreshing wallets within their session.
-        if (doc.identityState === UserIdentityState.Registered) {
-            const hasHistoricallyVerifiedWallets = doc.wallets.some(w => w.verified);
-            if (hasHistoricallyVerifiedWallets) {
-                const isHistoricallyVerifiedOnThisUser =
-                    existingWalletIndex >= 0 && doc.wallets[existingWalletIndex].verified;
-                if (!isHistoricallyVerifiedOnThisUser) {
-                    throw new Error(
-                        'After logout or session expiry, you must sign with a wallet you have used before.'
-                    );
-                }
-            }
+        // Escape hatch — Registered with no historically-verified
+        // wallets (a fresh user who connected but never signed) — let
+        // any signature through; there's no prior proof to defend.
+        // Anonymous and Verified callers skip the policy: anonymous
+        // because nothing to defend, verified because they already
+        // passed authentication (the lazy expiry pass in
+        // `resolveDocument` ensures `identityState === Verified` here
+        // means the session is genuinely fresh, not stale-stored).
+        const existingWalletIndex = doc.wallets.findIndex(w => w.address === normalizedAddress);
+        if (
+            doc.identityState === UserIdentityState.Registered &&
+            this.hasVerifiedSessionBasis(doc.wallets) &&
+            !(existingWalletIndex >= 0 && doc.wallets[existingWalletIndex].verified)
+        ) {
+            throw new Error(
+                'After logout or session expiry, you must sign with a wallet you have used before.'
+            );
         }
 
         if (existingWalletIndex >= 0) {
-            // Wallet already connected — promote to verified and stamp the
-            // per-wallet history. The user-level session clock is
-            // anchored separately on `identityVerifiedAt` below.
             doc.wallets[existingWalletIndex].verified = true;
-            doc.wallets[existingWalletIndex].verifiedAt = nowDate;
-            doc.wallets[existingWalletIndex].lastUsed = nowDate;
+            doc.wallets[existingWalletIndex].verifiedAt = now;
+            doc.wallets[existingWalletIndex].lastUsed = now;
         } else {
-            // Add new verified wallet.
-            const walletLink: IWalletLink = {
+            doc.wallets.push({
                 address: normalizedAddress,
-                linkedAt: nowDate,
+                linkedAt: now,
                 isPrimary: false,
                 verified: true,
-                verifiedAt: nowDate,
-                lastUsed: nowDate
-            };
-            doc.wallets.push(walletLink);
+                verifiedAt: now,
+                lastUsed: now
+            });
         }
-
-        // Recalculate primary wallet, then take an explicit step into
-        // Verified and anchor the session clock at `nowDate`. Whether
-        // the user was Anonymous, Registered, or already Verified,
-        // a successful signature lands them at Verified with a fresh
-        // session — the user-level clock never depends on per-wallet
-        // freshness.
         this.recalculatePrimaryWallet(doc.wallets);
-        doc.identityState = UserIdentityState.Verified;
-        doc.identityVerifiedAt = nowDate;
+        this.markVerifiedSession(doc, now);
 
-        // Generate referral code on first wallet verification if user doesn't have one
-        const updateFields: Record<string, unknown> = {
+        const fields: Record<string, unknown> = {
             wallets: doc.wallets,
             identityState: doc.identityState,
-            identityVerifiedAt: doc.identityVerifiedAt,
-            updatedAt: nowDate
+            identityVerifiedAt: doc.identityVerifiedAt
         };
         if (!doc.referral?.code) {
             const referralCode = await this.generateUniqueReferralCode();
-            updateFields.referral = {
+            doc.referral = {
                 code: referralCode,
                 referredBy: doc.referral?.referredBy ?? null,
                 referredAt: doc.referral?.referredAt ?? null
             };
-            this.logger.info({ userId, referralCode }, 'Referral code generated on wallet verification');
+            fields.referral = doc.referral;
+            this.logger.info(
+                { userId: doc.id, referralCode },
+                'Referral code generated on wallet verification'
+            );
         }
 
-        // Update database
-        await this.collection.updateOne(
-            { id: userId },
-            { $set: updateFields }
-        );
-
-        this.logger.info({ userId, wallet: normalizedAddress, identityState: doc.identityState }, 'Wallet verified and linked to user');
-
-        // Invalidate cache
-        await this.invalidateUserCache(userId);
+        await this.persistUserUpdate(doc, fields);
         await this.cacheService.set(
             `${this.CACHE_KEY_WALLET_PREFIX}${normalizedAddress}`,
-            userId,
+            doc.id,
             this.CACHE_TTL
         );
 
-        // Fetch and return updated document
-        const updated = await this.collection.findOne({ id: userId });
+        this.logger.info(
+            { userId: doc.id, wallet: normalizedAddress, identityState: doc.identityState },
+            'Wallet verified and linked to user'
+        );
+
+        return { user: this.toPublicUser(doc) };
+    }
+
+    /**
+     * Merge the caller (loser) into the existing wallet owner (winner)
+     * after a successful link-wallet signature on a wallet already held
+     * by another UUID. Transfers wallets, marks the disputed wallet as
+     * freshly verified on the winner, lifts the winner to Verified with
+     * a fresh session clock, tombstones the loser, and flattens any
+     * pointer chains that previously pointed at the loser.
+     *
+     * Returns the winner's public payload with `identitySwapped: true`
+     * so the controller can re-anchor the visitor's identity cookie.
+     */
+    private async reconcileIdentities(
+        loserDoc: IUserDocument,
+        winnerDoc: IUserDocument,
+        disputedAddress: string,
+        now: Date
+    ): Promise<ILinkWalletResult> {
+        const loserId = loserDoc.id;
+        const winnerId = winnerDoc.id;
+        const transferredWallets = loserDoc.wallets.filter(w =>
+            !winnerDoc.wallets.some(ew => ew.address === w.address)
+        );
+        const previousLoserWallets = [...loserDoc.wallets];
+
+        // Build the merged wallet array on the winner. The disputed
+        // wallet anchors at `now` (we just verified its signature);
+        // sibling transfers retain their own per-wallet `verifiedAt`
+        // history because proving W1 doesn't prove W2.
+        const mergedWallets = [...winnerDoc.wallets, ...transferredWallets];
+        const disputedIdx = mergedWallets.findIndex(w => w.address === disputedAddress);
+        if (disputedIdx >= 0) {
+            mergedWallets[disputedIdx].verified = true;
+            mergedWallets[disputedIdx].verifiedAt = now;
+            mergedWallets[disputedIdx].lastUsed = now;
+        }
+        this.recalculatePrimaryWallet(mergedWallets);
+
+        winnerDoc.wallets = mergedWallets;
+        this.markVerifiedSession(winnerDoc, now);
+        if (winnerDoc.activity) {
+            winnerDoc.activity.lastSeen = now;
+        }
+
+        const winnerFields: Record<string, unknown> = {
+            wallets: mergedWallets,
+            identityState: winnerDoc.identityState,
+            identityVerifiedAt: winnerDoc.identityVerifiedAt,
+            'activity.lastSeen': now
+        };
+        if (!winnerDoc.referral?.code) {
+            const referralCode = await this.generateUniqueReferralCode();
+            winnerDoc.referral = {
+                code: referralCode,
+                referredBy: winnerDoc.referral?.referredBy ?? null,
+                referredAt: winnerDoc.referral?.referredAt ?? null
+            };
+            winnerFields.referral = winnerDoc.referral;
+        }
+        await this.persistUserUpdate(winnerDoc, winnerFields);
+
+        // Tombstone the loser. Clear wallets, downgrade through the
+        // canonical helper (empty wallets → Anonymous, clock null), and
+        // anchor the merge pointer so future cookie hits resolve to
+        // the winner.
+        loserDoc.wallets = [];
+        this.applyIdentityDowngrade(loserDoc);
+        loserDoc.mergedInto = winnerId;
+        await this.persistUserUpdate(loserDoc, {
+            wallets: [],
+            identityState: loserDoc.identityState,
+            identityVerifiedAt: null,
+            mergedInto: winnerId
+        });
+
+        // Flatten pointer chains: anything previously pointing at the
+        // loser now points at the winner.
+        await this.collection.updateMany(
+            { mergedInto: loserId },
+            { $set: { mergedInto: winnerId } }
+        );
+
+        for (const w of previousLoserWallets) {
+            await this.cacheService.invalidate(`${this.CACHE_KEY_WALLET_PREFIX}${w.address}`);
+        }
+
+        this.logger.info(
+            {
+                previousUserId: loserId,
+                newUserId: winnerId,
+                wallet: disputedAddress,
+                walletsTransferred: transferredWallets.length
+            },
+            'Identity reconciliation: wallets transferred, tombstone created'
+        );
+
         return {
-            user: this.toPublicUser(updated!)
+            user: this.toPublicUser(winnerDoc),
+            identitySwapped: true,
+            previousUserId: loserId
         };
     }
 
@@ -920,79 +841,40 @@ export class UserService {
         signature: string,
         nonce: string
     ): Promise<IUser> {
-        // Resolve to canonical document (single DB hit, follows merge pointer if needed)
-        const doc = await this.resolveDocument(userId);
-        if (!doc) {
-            throw new Error(`User with id "${userId}" not found`);
-        }
-        userId = doc.id;
-
-        // Normalize once so the nonce, canonical message, and signature all
-        // reference the same address.
-        const normalizedAddress = this.signatureService.normalizeAddress(address);
-        await this.assertWalletChallenge(userId, 'unlink', normalizedAddress, { message, nonce });
-
-        const recoveredAddress = await this.signatureService.verifyMessage(
-            normalizedAddress,
-            message,
-            signature
+        const { doc, normalizedAddress } = await this.verifyWalletAction(
+            userId, 'unlink', address, message, signature, nonce
         );
-        if (recoveredAddress !== normalizedAddress) {
-            throw new Error('Signature address does not match submitted address.');
-        }
 
-        // Check wallet is linked to this user
         const walletIndex = doc.wallets.findIndex(w => w.address === normalizedAddress);
         if (walletIndex === -1) {
             throw new Error('Wallet is not linked to this user.');
         }
 
-        // Remove wallet
         doc.wallets.splice(walletIndex, 1);
         this.recalculatePrimaryWallet(doc.wallets);
 
-        // Take an explicit step down the state machine when the
-        // unlink invalidates the user's basis for being Verified:
-        //
-        //   - Wallets array empty → Anonymous, clear session clock.
-        //   - No remaining wallet has `verified: true` historical →
-        //     the re-verify policy can no longer be satisfied, so
-        //     downgrade to Registered immediately and clear the clock
-        //     (rather than letting the user ride out their TTL on a
-        //     basis that no longer exists).
-        //   - Otherwise → leave identityState and identityVerifiedAt
-        //     alone; the user is still authenticated for their
-        //     current session.
-        if (doc.wallets.length === 0) {
-            doc.identityState = UserIdentityState.Anonymous;
-            doc.identityVerifiedAt = null;
-        } else if (!doc.wallets.some(w => w.verified)) {
-            doc.identityState = UserIdentityState.Registered;
-            doc.identityVerifiedAt = null;
+        // Downgrade only when the unlink removes the basis for the
+        // current session. Empty wallets and "no remaining wallet is
+        // historically verified" both eliminate the re-verify-policy
+        // basis, so let the live session ride no further. A user who
+        // unlinks one of several verified wallets keeps their session.
+        if (!this.hasVerifiedSessionBasis(doc.wallets)) {
+            this.applyIdentityDowngrade(doc);
         }
 
-        // Update database
-        await this.collection.updateOne(
-            { id: userId },
-            {
-                $set: {
-                    wallets: doc.wallets,
-                    identityState: doc.identityState,
-                    identityVerifiedAt: doc.identityVerifiedAt,
-                    updatedAt: new Date()
-                }
-            }
-        );
-
-        this.logger.info({ userId, wallet: normalizedAddress, identityState: doc.identityState }, 'Wallet unlinked from user');
-
-        // Invalidate caches
-        await this.invalidateUserCache(userId);
+        await this.persistUserUpdate(doc, {
+            wallets: doc.wallets,
+            identityState: doc.identityState,
+            identityVerifiedAt: doc.identityVerifiedAt
+        });
         await this.cacheService.invalidate(`${this.CACHE_KEY_WALLET_PREFIX}${normalizedAddress}`);
 
-        // Fetch and return updated document
-        const updated = await this.collection.findOne({ id: userId });
-        return this.toPublicUser(updated!);
+        this.logger.info(
+            { userId: doc.id, wallet: normalizedAddress, identityState: doc.identityState },
+            'Wallet unlinked from user'
+        );
+
+        return this.toPublicUser(doc);
     }
 
     /**
@@ -1024,72 +906,45 @@ export class UserService {
         signature: string,
         nonce: string
     ): Promise<IUser> {
-        // Resolve to canonical document (single DB hit, follows merge pointer if needed)
-        const doc = await this.resolveDocument(userId);
-        if (!doc) {
-            throw new Error(`User with id "${userId}" not found`);
-        }
-        userId = doc.id;
-
-        const normalizedAddress = this.signatureService.normalizeAddress(address);
-        await this.assertWalletChallenge(userId, 'set-primary', normalizedAddress, { message, nonce });
-
-        const recoveredAddress = await this.signatureService.verifyMessage(
-            normalizedAddress,
-            message,
-            signature
+        const { doc, normalizedAddress, now } = await this.verifyWalletAction(
+            userId, 'set-primary', address, message, signature, nonce
         );
-        if (recoveredAddress !== normalizedAddress) {
-            throw new Error('Signature address does not match submitted address.');
-        }
 
-        // Find wallet in user's list (case-insensitive match via normalized address)
         const walletIndex = doc.wallets.findIndex(w => w.address === normalizedAddress);
         if (walletIndex === -1) {
             throw new Error('Wallet is not linked to this user.');
         }
 
-        // setPrimaryWallet is a step-up signature path — the signature
-        // we just verified proves control of this wallet right now, so
-        // it's a legitimate freshness pump for both the per-wallet
-        // history and the user-level session clock. Sibling wallets
-        // keep their own per-wallet verifiedAt; we don't propagate
-        // per-wallet freshness across wallets because proving W1
+        // Step-up gate over an existing verified wallet, not a path to
+        // mint first-time verification. Refusing to elevate an unsigned
+        // wallet keeps this endpoint out of the linkWallet re-verify
+        // bypass surface — callers in that state must use `linkWallet`,
+        // which enforces the policy.
+        if (!doc.wallets[walletIndex].verified) {
+            throw new Error('Cannot elevate an unverified wallet to primary. Use linkWallet to verify it first.');
+        }
+
+        // The signature proves control of this wallet now — pump the
+        // per-wallet freshness and the user-level session clock. Sibling
+        // wallets keep their own per-wallet verifiedAt; proving W1
         // doesn't prove W2.
-        const setPrimaryNow = new Date();
-        doc.wallets[walletIndex].lastUsed = setPrimaryNow;
-        doc.wallets[walletIndex].verifiedAt = setPrimaryNow;
-        doc.wallets[walletIndex].verified = true;
-
-        // Recalculate primary wallet using standard algorithm
+        doc.wallets[walletIndex].lastUsed = now;
+        doc.wallets[walletIndex].verifiedAt = now;
         this.recalculatePrimaryWallet(doc.wallets);
+        this.markVerifiedSession(doc, now);
 
-        // A successful step-up signature refreshes the session — same
-        // semantic as a normal `linkWallet` success on this user.
-        doc.identityState = UserIdentityState.Verified;
-        doc.identityVerifiedAt = setPrimaryNow;
+        await this.persistUserUpdate(doc, {
+            wallets: doc.wallets,
+            identityState: doc.identityState,
+            identityVerifiedAt: doc.identityVerifiedAt
+        });
 
-        // Update database
-        await this.collection.updateOne(
-            { id: userId },
-            {
-                $set: {
-                    wallets: doc.wallets,
-                    identityState: doc.identityState,
-                    identityVerifiedAt: doc.identityVerifiedAt,
-                    updatedAt: new Date()
-                }
-            }
+        this.logger.debug(
+            { userId: doc.id, primaryWallet: normalizedAddress },
+            'Primary wallet updated'
         );
 
-        this.logger.debug({ userId, primaryWallet: normalizedAddress }, 'Primary wallet updated');
-
-        // Invalidate cache
-        await this.invalidateUserCache(userId);
-
-        // Fetch and return updated document
-        const updated = await this.collection.findOne({ id: userId });
-        return this.toPublicUser(updated!);
+        return this.toPublicUser(doc);
     }
 
     /**
@@ -1125,70 +980,38 @@ export class UserService {
         signature: string,
         nonce: string
     ): Promise<IUser> {
-        const doc = await this.resolveDocument(userId);
-        if (!doc) {
-            throw new Error(`User with id "${userId}" not found`);
-        }
-        userId = doc.id;
-
-        const normalizedAddress = this.signatureService.normalizeAddress(address);
-        await this.assertWalletChallenge(userId, 'refresh-verification', normalizedAddress, { message, nonce });
-
-        const recoveredAddress = await this.signatureService.verifyMessage(
-            normalizedAddress,
-            message,
-            signature
+        const { doc, normalizedAddress, now } = await this.verifyWalletAction(
+            userId, 'refresh-verification', address, message, signature, nonce
         );
-        if (recoveredAddress !== normalizedAddress) {
-            throw new Error('Signature address does not match submitted address.');
-        }
 
         const walletIndex = doc.wallets.findIndex(w => w.address === normalizedAddress);
         if (walletIndex === -1) {
             throw new Error('Wallet is not linked to this user.');
         }
-        // Refusing to refresh an unverified wallet is a deliberate
-        // narrowing — moving registered → verified is the link path's
-        // job, and conflating the two would let a refresh nonce replace
-        // the link nonce. Callers in that state should mint a `link`
-        // challenge and call `linkWallet` instead.
+        // Deliberate narrowing — moving registered → verified is the
+        // link path's job, and conflating the two would let a refresh
+        // nonce replace a link nonce. Callers in that state must mint
+        // a `link` challenge and use `linkWallet`.
         if (!doc.wallets[walletIndex].verified) {
             throw new Error('Cannot refresh an unverified wallet. Use linkWallet to verify it first.');
         }
 
-        const refreshNow = new Date();
-        doc.wallets[walletIndex].verifiedAt = refreshNow;
-        doc.wallets[walletIndex].lastUsed = refreshNow;
+        doc.wallets[walletIndex].verifiedAt = now;
+        doc.wallets[walletIndex].lastUsed = now;
+        this.markVerifiedSession(doc, now);
 
-        // A successful refresh signature lifts the user back to
-        // Verified and re-anchors the session clock. This is the
-        // narrower equivalent of the `linkWallet` re-sign path —
-        // useful for stale-collapsed users whose wallet is already
-        // attached and historically verified.
-        doc.identityState = UserIdentityState.Verified;
-        doc.identityVerifiedAt = refreshNow;
-
-        await this.collection.updateOne(
-            { id: userId },
-            {
-                $set: {
-                    wallets: doc.wallets,
-                    identityState: doc.identityState,
-                    identityVerifiedAt: doc.identityVerifiedAt,
-                    updatedAt: refreshNow
-                }
-            }
-        );
+        await this.persistUserUpdate(doc, {
+            wallets: doc.wallets,
+            identityState: doc.identityState,
+            identityVerifiedAt: doc.identityVerifiedAt
+        });
 
         this.logger.info(
-            { userId, wallet: normalizedAddress },
+            { userId: doc.id, wallet: normalizedAddress },
             'Wallet verification refreshed'
         );
 
-        await this.invalidateUserCache(userId);
-
-        const updated = await this.collection.findOne({ id: userId });
-        return this.toPublicUser(updated!);
+        return this.toPublicUser(doc);
     }
 
     // ==================== Wallet Challenges ====================
@@ -1267,41 +1090,20 @@ export class UserService {
         userId: string,
         preferences: Partial<IUserPreferences>
     ): Promise<IUser> {
-        // Resolve to canonical document (single DB hit, follows merge pointer if needed)
         const doc = await this.resolveDocument(userId);
         if (!doc) {
             throw new Error(`User with id "${userId}" not found`);
         }
-        userId = doc.id;
 
-        // Merge preferences
-        const mergedPreferences = {
-            ...doc.preferences,
-            ...preferences
-        };
-
-        // Update database
-        await this.collection.updateOne(
-            { id: userId },
-            {
-                $set: {
-                    preferences: mergedPreferences,
-                    updatedAt: new Date()
-                }
-            }
-        );
+        doc.preferences = { ...doc.preferences, ...preferences };
+        await this.persistUserUpdate(doc, { preferences: doc.preferences });
 
         this.logger.debug(
-            { userId, updatedKeys: Object.keys(preferences) },
+            { userId: doc.id, updatedKeys: Object.keys(preferences) },
             'User preferences updated'
         );
 
-        // Invalidate cache
-        await this.invalidateUserCache(userId);
-
-        // Fetch and return updated document
-        const updated = await this.collection.findOne({ id: userId });
-        return this.toPublicUser(updated!);
+        return this.toPublicUser(doc);
     }
 
     // ==================== Logout ====================
@@ -1325,38 +1127,23 @@ export class UserService {
      * @throws Error if user not found
      */
     async logout(userId: string): Promise<IUser> {
-        // Resolve to canonical document (single DB hit, follows merge pointer if needed)
         const doc = await this.resolveDocument(userId);
         if (!doc) {
             throw new Error(`User with id "${userId}" not found`);
         }
-        userId = doc.id;
 
-        // Downgrade respects whether any wallets remain. A user with
-        // no wallets at all (extremely rare for logout but possible
-        // if every wallet was unlinked) collapses to Anonymous;
-        // anyone else lands on Registered awaiting their next signature.
-        const downgradedState = doc.wallets.length === 0
-            ? UserIdentityState.Anonymous
-            : UserIdentityState.Registered;
+        this.applyIdentityDowngrade(doc);
+        await this.persistUserUpdate(doc, {
+            identityState: doc.identityState,
+            identityVerifiedAt: null
+        });
 
-        await this.collection.updateOne(
-            { id: userId },
-            {
-                $set: {
-                    identityState: downgradedState,
-                    identityVerifiedAt: null,
-                    updatedAt: new Date()
-                }
-            }
+        this.logger.info(
+            { userId: doc.id, identityState: doc.identityState },
+            'User logged out'
         );
 
-        this.logger.info({ userId, identityState: downgradedState }, 'User logged out');
-
-        await this.invalidateUserCache(userId);
-
-        const updated = await this.collection.findOne({ id: userId });
-        return this.toPublicUser(updated!);
+        return this.toPublicUser(doc);
     }
 
     // ==================== Session & Activity Tracking ====================
@@ -1879,7 +1666,9 @@ export class UserService {
             .limit(limit)
             .toArray();
 
-        return docs.map(doc => this.toPublicUser(doc));
+        return Promise.all(
+            docs.map(async doc => this.toPublicUser(await this.enforceSessionExpiry(doc)))
+        );
     }
 
     /**
@@ -1900,7 +1689,9 @@ export class UserService {
             .limit(limit)
             .toArray();
 
-        return docs.map(doc => this.toPublicUser(doc));
+        return Promise.all(
+            docs.map(async doc => this.toPublicUser(await this.enforceSessionExpiry(doc)))
+        );
     }
 
     /**
@@ -1961,7 +1752,9 @@ export class UserService {
         ]);
 
         return {
-            users: docs.map(doc => this.toPublicUser(doc)),
+            users: await Promise.all(
+                docs.map(async doc => this.toPublicUser(await this.enforceSessionExpiry(doc)))
+            ),
             filteredTotal
         };
     }
@@ -4639,10 +4432,17 @@ export class UserService {
         if (!doc) {
             return null;
         }
-        if (doc.mergedInto) {
-            return this.collection.findOne({ id: doc.mergedInto });
+        const target = doc.mergedInto
+            ? await this.collection.findOne({ id: doc.mergedInto })
+            : doc;
+        if (!target) {
+            return null;
         }
-        return doc;
+        // Funnel through the single expiry chokepoint so every mutation
+        // handler sees a doc whose `identityState` reflects current
+        // truth — closes the bypass where a stale-stored Verified user
+        // could skip the linkWallet re-verify policy.
+        return this.enforceSessionExpiry(target);
     }
 
     /**
@@ -4801,7 +4601,7 @@ export class UserService {
      * Reads `identityState` and `identityVerifiedAt` straight from the
      * stored fields — they are authoritative, not derived. Lazy
      * session expiry is enforced separately by
-     * `enforceSessionExpiryOnUser`, which runs at every entry point
+     * `enforceSessionExpiry`, which runs at every entry point
      * that materializes a user (`getOrCreate`, `getById`, `getByWallet`)
      * before the public payload is returned to a caller.
      */
@@ -4822,32 +4622,64 @@ export class UserService {
 
     /**
      * Lazily downgrade a Verified user whose session clock has aged
-     * past `SESSION_TTL_MS`. Persists the demotion (and busts cache)
-     * before returning the corrected payload, so that subsequent
-     * reads — and any consumer that has already filtered on stored
-     * `identityState` — see consistent state.
+     * past `SESSION_TTL_MS`. The single chokepoint that demotes
+     * expired sessions and persists the change.
      *
-     * Returns the input unchanged when the user is not Verified or
-     * the session is still fresh. Safe to call from any read path.
-     * The mutation paths that have just stamped `identityVerifiedAt`
-     * skip this — they refetch and serialize the user themselves
-     * with no expiry check needed.
+     * Every code path that materializes a user funnels through here:
+     * cache hits, db reads via `getById`/`getOrCreate`/`getByWallet`,
+     * the internal `resolveDocument` used by every mutation handler,
+     * and the admin bulk-list paths. Mutation handlers therefore see
+     * a doc whose `identityState` already reflects current truth, so
+     * the re-verify policy in `linkWallet` (and friends) is correct
+     * without per-handler freshness checks.
+     *
+     * Generic over `IUser` (cache shape) and `IUserDocument` (db
+     * shape) — both satisfy the freshness-input contract.
+     *
+     * Race protection: before writing the demote, the helper re-reads
+     * the doc and re-checks freshness. If a concurrent `linkWallet` /
+     * `setPrimaryWallet` / `refreshWalletVerification` stamped a fresh
+     * session between our read and this write, the doc is no longer
+     * expired and the helper short-circuits — returning the fresh
+     * version straight from the re-read, so the caller sees current
+     * truth instead of a stale-corrected snapshot.
      */
-    private async enforceSessionExpiryOnUser(user: IUser): Promise<IUser> {
-        if (user.identityState !== UserIdentityState.Verified) {
-            return user;
+    private async enforceSessionExpiry<T extends {
+        id: string;
+        identityState: UserIdentityState;
+        identityVerifiedAt: Date | null;
+        wallets: IWalletLink[];
+        updatedAt?: Date;
+    }>(input: T): Promise<T> {
+        if (input.identityState !== UserIdentityState.Verified) {
+            return input;
         }
-        if (isSessionFresh(user)) {
-            return user;
+        if (isSessionFresh(input)) {
+            return input;
+        }
+
+        // Race protection: re-read the doc immediately before the
+        // demote write. If a concurrent `linkWallet`/`setPrimaryWallet`/
+        // `refreshWalletVerification` stamped a fresh session between
+        // our original read and now, the doc is no longer expired and
+        // we must not clobber the fresh state back to Registered.
+        // Cheaper than a conditional update filter and works
+        // identically against real MongoDB and against testing mocks.
+        const current = await this.collection.findOne({ id: input.id });
+        if (!current) {
+            return input;
+        }
+        if (current.identityState !== UserIdentityState.Verified || isSessionFresh(current)) {
+            return current as unknown as T;
         }
 
         const now = new Date();
-        const downgradedState = user.wallets.length === 0
+        const downgradedState = current.wallets.length === 0
             ? UserIdentityState.Anonymous
             : UserIdentityState.Registered;
 
         await this.collection.updateOne(
-            { id: user.id },
+            { id: input.id },
             {
                 $set: {
                     identityState: downgradedState,
@@ -4856,19 +4688,125 @@ export class UserService {
                 }
             }
         );
-        await this.invalidateUserCache(user.id);
 
+        await this.invalidateUserCache(input.id);
         this.logger.info(
-            { userId: user.id, sessionTtlMs: SESSION_TTL_MS, previousVerifiedAt: user.identityVerifiedAt },
-            'Session expired; user downgraded to registered'
+            {
+                userId: input.id,
+                sessionTtlMs: SESSION_TTL_MS,
+                previousVerifiedAt: input.identityVerifiedAt,
+                downgradedState
+            },
+            'Session expired; user downgraded due to session expiry'
         );
 
         return {
-            ...user,
+            ...input,
             identityState: downgradedState,
             identityVerifiedAt: null,
             updatedAt: now
         };
+    }
+
+    /**
+     * True iff at least one wallet has been cryptographically proven
+     * at any point in the past. The historical-verification basis for
+     * re-establishing a session — both `linkWallet`'s re-verify
+     * policy and `unlinkWallet`'s downgrade decision read this.
+     */
+    private hasVerifiedSessionBasis(wallets: IWalletLink[]): boolean {
+        return wallets.some(w => w.verified);
+    }
+
+    /**
+     * Stamp the user as Verified and anchor the session clock. The
+     * single writer that pairs `identityState = Verified` with a
+     * non-null `identityVerifiedAt` — keeps the invariant impossible
+     * to violate by accident from a mutation handler.
+     */
+    private markVerifiedSession(doc: IUserDocument, now: Date): void {
+        doc.identityState = UserIdentityState.Verified;
+        doc.identityVerifiedAt = now;
+    }
+
+    /**
+     * Step down the identity state machine and clear the session
+     * clock. The single writer for the Verified→Registered/Anonymous
+     * transition. Used by `logout`, `enforceSessionExpiry`, and
+     * `unlinkWallet` (when the unlink removes the historical-
+     * verification basis).
+     *
+     * The downgrade target depends on whether any wallets remain —
+     * empty collapses to Anonymous (nothing left to identify the
+     * user with); non-empty downgrades to Registered (user can
+     * re-establish a session by re-signing a historically-verified
+     * wallet).
+     */
+    private applyIdentityDowngrade(doc: IUserDocument): void {
+        doc.identityState = doc.wallets.length === 0
+            ? UserIdentityState.Anonymous
+            : UserIdentityState.Registered;
+        doc.identityVerifiedAt = null;
+    }
+
+    /**
+     * The four-step preamble shared by every signature-gated wallet
+     * mutation: resolve canonical doc (which itself enforces session
+     * expiry), normalize the address, consume the one-shot challenge,
+     * and verify the signature. Returns the mutation-ready triple
+     * (doc, normalizedAddress, now) or throws with the operation-
+     * specific error.
+     */
+    private async verifyWalletAction(
+        userId: string,
+        action: WalletChallengeAction,
+        address: string,
+        message: string,
+        signature: string,
+        nonce: string
+    ): Promise<{ doc: IUserDocument; normalizedAddress: string; now: Date }> {
+        const doc = await this.resolveDocument(userId);
+        if (!doc) {
+            throw new Error(`User with id "${userId}" not found`);
+        }
+
+        const normalizedAddress = this.signatureService.normalizeAddress(address);
+        await this.assertWalletChallenge(doc.id, action, normalizedAddress, { message, nonce });
+
+        const recoveredAddress = await this.signatureService.verifyMessage(
+            normalizedAddress,
+            message,
+            signature
+        );
+        if (recoveredAddress !== normalizedAddress) {
+            throw new Error('Signature address does not match submitted address.');
+        }
+
+        return { doc, normalizedAddress, now: new Date() };
+    }
+
+    /**
+     * Persist field updates to a user document and bust the cache.
+     *
+     * The single writer for ad-hoc user mutations. Always sets
+     * `updatedAt` and always invalidates the user cache — both are
+     * invariants every mutation must respect, and centralizing them
+     * here keeps mutation handlers from forgetting either. Mutates
+     * the passed doc's `updatedAt` in place so callers can serialize
+     * the locally-mutated doc directly via `toPublicUser` instead of
+     * paying for a post-mutation refetch.
+     */
+    private async persistUserUpdate(
+        doc: IUserDocument,
+        fields: Record<string, unknown>
+    ): Promise<void> {
+        const now = new Date();
+        doc.updatedAt = now;
+        await this.collection.updateOne(
+            { id: doc.id },
+            { $set: { ...fields, updatedAt: now } }
+        );
+        await this.invalidateUserCache(doc.id);
     }
 
     /**
