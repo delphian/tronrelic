@@ -1,77 +1,51 @@
 /**
  * SSR state building utilities for user module.
  *
- * Provides functions to construct Redux initial state from server-fetched
- * user data, enabling hydration without UI flash.
+ * Constructs the Redux user slice from the full backend `IUserData`
+ * payload fetched during SSR. The payload travels intact from
+ * `getServerUser` through the layout into `buildSSRUserState`, so the
+ * client hydrates with the same `identityState`, `groups`, and
+ * `authStatus` the backend computed — no parallel client-side
+ * derivation that could drift from the freshness-aware backend rule
+ * and no `authStatus`-shaped hole that would force `SystemAuthGate`
+ * into its safe-default "not admin" branch on first paint.
  */
 
-import { UserIdentityState } from '@/types';
 import type { UserState } from '../slice';
-import type { IWalletLink } from '../types';
-
-/**
- * Derive `UserIdentityState` from the wallets array. Mirrors the
- * backend's canonical rule (see user module README): no wallets →
- * Anonymous, at least one verified → Verified, otherwise Registered.
- */
-function deriveIdentityState(wallets: IWalletLink[]): UserIdentityState {
-    if (wallets.length === 0) return UserIdentityState.Anonymous;
-    if (wallets.some(w => w.verified)) return UserIdentityState.Verified;
-    return UserIdentityState.Registered;
-}
+import type { IUserData } from '../types';
 
 /**
  * SSR user data passed from server layout to client providers.
+ *
+ * This is the full `IUserData` payload returned by the backend
+ * (decorated with `authStatus` via `withAuthStatus`), not a
+ * trimmed-down shape. Keeping it whole means every Redux selector
+ * — `selectIsVerified`, `selectIdentityState`, the `SystemAuthGate`
+ * read of `authStatus.isVerified` — sees the same server-computed
+ * truth from the first render.
  */
-export interface SSRUserData {
-    userId: string;
-    wallets: IWalletLink[];
-    isLoggedIn: boolean;
-}
+export type SSRUserData = IUserData;
 
 /**
  * Build Redux UserState from SSR-fetched data.
  *
- * Used during SSR hydration to preload user state, preventing
- * wallet button flash on page load. If user has linked wallets,
- * shows their primary wallet as connected with its actual verification status.
- *
- * The isPrimary field is auto-maintained by the backend based on:
- * 1. Most recent `lastUsed` among verified wallets.
- * 2. Fallback: Most recent `lastUsed` among registered (unsigned) wallets,
- *    used only when the user has no verified wallets.
- *
- * @param ssrData - User data fetched during SSR
- * @returns Complete UserState for Redux preloading
+ * Uses server-computed `identityState`, `groups`, and `authStatus`
+ * directly. The primary wallet (auto-maintained by the backend)
+ * seeds the connection slice so the wallet button paints with its
+ * actual verification status on first frame.
  */
 export function buildSSRUserState(ssrData: SSRUserData): UserState {
-    // isPrimary is auto-maintained by backend - just find it
     const primaryWallet = ssrData.wallets.find(w => w.isPrimary);
 
     return {
-        userId: ssrData.userId,
-        userData: {
-            id: ssrData.userId,
-            isLoggedIn: ssrData.isLoggedIn,
-            identityState: deriveIdentityState(ssrData.wallets),
-            wallets: ssrData.wallets,
-            preferences: {},
-            activity: {
-                firstSeen: new Date().toISOString(),
-                lastSeen: new Date().toISOString(),
-                pageViews: 0
-            },
-            groups: [],
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString()
-        },
+        userId: ssrData.id,
+        userData: ssrData,
         status: 'succeeded',
         error: null,
         initialized: true,
-        // Show primary wallet with its actual verification status
         connectedAddress: primaryWallet?.address ?? null,
         connectionStatus: primaryWallet ? 'connected' : 'idle',
-        providerDetected: false, // Will be updated client-side
+        providerDetected: false,
         connectionError: null,
         walletVerified: primaryWallet?.verified ?? false,
         walletLoginRequired: false,
