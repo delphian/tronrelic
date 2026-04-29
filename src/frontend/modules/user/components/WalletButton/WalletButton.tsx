@@ -116,10 +116,10 @@ export function WalletButton() {
                     description: 'Your wallet has been verified successfully.'
                 });
             }
-            // Failure path: verify() dispatches setConnectionError, which the
-            // connectionError useEffect surfaces as a warning toast.
-        } catch (error) {
-            console.error('Verify failed:', error);
+            // Most verify() failures dispatch setConnectionError, which the
+            // connectionError useEffect surfaces as a warning toast. A few
+            // early-return paths (e.g. missing userId/connectedAddress) exit
+            // silently without setting connectionError.
         } finally {
             setIsVerifying(false);
         }
