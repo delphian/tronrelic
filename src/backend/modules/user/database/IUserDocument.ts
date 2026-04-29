@@ -32,19 +32,21 @@ export interface IWalletLink {
     /** Whether this is the default wallet for display (auto-maintained by UserService) */
     isPrimary: boolean;
     /**
-     * True iff wallet ownership has been cryptographically proven via signature.
-     * `false` = wallet is registered (claim only); `true` = wallet is verified
-     * (and the owning user is in the *verified* state).
+     * True iff wallet ownership has been cryptographically proven via
+     * signature at any point. Historical audit flag — does not drive
+     * authentication decisions. Read by the re-verify policy in
+     * `linkWallet` to enforce that a Registered user re-establishing a
+     * session must sign with a wallet they have previously proven.
      */
     verified: boolean;
     /**
      * Timestamp of the most recent successful signature on this wallet.
      * `null` for wallets in the registered (unsigned) state. Set by
      * `linkWallet`, `setPrimaryWallet`, and the dedicated
-     * refresh-verification endpoint. Backfilled from `linkedAt` for legacy
-     * verified rows by migration 008. Consumed by the freshness predicate
-     * that gates cookie-path admin authority — see
-     * `VERIFICATION_FRESHNESS_MS` in `@/types`.
+     * refresh-verification endpoint. Backfilled from `linkedAt` for
+     * legacy verified rows by migration 008. Historical audit data —
+     * the user-level session clock lives on
+     * `IUserDocument.identityVerifiedAt`.
      */
     verifiedAt: Date | null;
     /** Timestamp of last connection/use (for primary wallet selection) */
@@ -236,22 +238,25 @@ export interface IUserDocument {
      */
     mergedInto?: string | null;
     /**
-     * UI/feature gate controlling what is surfaced to the user.
-     * When false, frontend shows "Connect" button and hides logged-in features.
-     * UUID tracking continues regardless of this flag.
-     */
-    isLoggedIn: boolean;
-    /**
      * Canonical identity state (anonymous / registered / verified).
      *
-     * Stored, not derived. `UserService` recomputes this whenever `wallets`
-     * is mutated (`connectWallet`, `linkWallet`, `unlinkWallet`, identity
-     * reconciliation, and tombstone creation). All consumers must read this
-     * field directly rather than recompute from `wallets`.
+     * Authoritative stored field — written exactly once per state
+     * transition by `UserService` mutation handlers (`connectWallet`,
+     * `linkWallet`, `unlinkWallet`, `logout`, identity reconciliation,
+     * lazy session expiry on read). Never derived from `wallets` at
+     * read time. All consumers read this field directly.
      *
      * Indexed for fast filter queries (see migration 006).
      */
     identityState: UserIdentityState;
+    /**
+     * Timestamp the current Verified session was established.
+     * Anchor for the `SESSION_TTL_MS` clock. `null` when
+     * `identityState !== Verified`, and reset to `null` on logout or
+     * lazy expiry. Backfilled from `max(wallets[*].verifiedAt)` for
+     * legacy verified users by migration 009.
+     */
+    identityVerifiedAt: Date | null;
     /** Linked TRON wallet addresses */
     wallets: IWalletLink[];
     /** User preferences (theme, notifications, plugin-specific) */
@@ -393,15 +398,16 @@ export interface IUser {
     /** UUID v4 identifier */
     id: string;
     /**
-     * UI/feature gate controlling what is surfaced to the user.
-     * When false, frontend shows "Connect" button and hides logged-in features.
-     * UUID tracking continues regardless of this flag.
-     */
-    isLoggedIn: boolean;
-    /**
-     * Canonical identity state. Stored, not derived. See `IUserDocument.identityState`.
+     * Canonical identity state. Authoritative stored field — see
+     * `IUserDocument.identityState`.
      */
     identityState: UserIdentityState;
+    /**
+     * Timestamp the current Verified session was established. `null`
+     * when `identityState !== Verified`. See
+     * `IUserDocument.identityVerifiedAt`.
+     */
+    identityVerifiedAt: Date | null;
     /** Linked wallet addresses */
     wallets: IWalletLink[];
     /** User preferences */

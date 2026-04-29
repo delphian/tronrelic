@@ -16,13 +16,11 @@ export type {
 } from './IUser.js';
 
 export {
-    VERIFICATION_FRESHNESS_MS,
-    isWalletVerificationFresh,
-    hasFreshVerification,
-    deriveIdentityState
+    SESSION_TTL_MS,
+    isSessionFresh
 } from './IUser.js';
 
-export type { IWalletVerificationFreshnessInput } from './IUser.js';
+export type { ISessionFreshnessInput } from './IUser.js';
 
 export type { IAuthStatus } from './IAuthStatus.js';
 

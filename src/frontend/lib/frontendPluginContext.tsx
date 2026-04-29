@@ -33,7 +33,7 @@ import {
     selectUserId,
     selectUserData,
     selectUserInitialized,
-    selectIsLoggedIn,
+    selectIsVerified,
     selectPrimaryWallet
 } from '../modules/user/slice';
 import { getSocket } from './socketClient';
@@ -279,7 +279,7 @@ function usePluginUser(): IPluginUserState {
     const userId = useAppSelector(selectUserId);
     const userData = useAppSelector(selectUserData);
     const initialized = useAppSelector(selectUserInitialized);
-    const isLoggedIn = useAppSelector(selectIsLoggedIn);
+    const isUserVerified = useAppSelector(selectIsVerified);
     const primaryWallet = useAppSelector(selectPrimaryWallet);
 
     // Transform wallets to plugin-safe format
@@ -292,15 +292,20 @@ function usePluginUser(): IPluginUserState {
         label: w.label
     }));
 
-    // Wallet state convenience properties
+    // Wallet state convenience properties.
+    // hasVerifiedWallet now reads from the user-level identity state
+    // (already resolved through the backend's lazy session-expiry pass)
+    // rather than scanning per-wallet `verified` flags. A user with a
+    // historically-verified wallet whose session has expired reads as
+    // `hasVerifiedWallet: false` — the per-wallet flag is audit history,
+    // not authentication state.
     const hasLinkedWallet = wallets.length > 0;
-    const hasVerifiedWallet = wallets.some(w => w.verified);
+    const hasVerifiedWallet = isUserVerified;
 
     return {
         userId,
         hasLinkedWallet,
         hasVerifiedWallet,
-        isLoggedIn,
         wallets,
         primaryWallet,
         initialized

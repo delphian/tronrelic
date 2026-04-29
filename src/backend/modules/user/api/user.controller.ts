@@ -787,44 +787,17 @@ export class UserController {
     }
 
     // ============================================================================
-    // Login State Endpoints (require cookie validation)
+    // Logout Endpoint (requires cookie validation)
     // ============================================================================
-
-    /**
-     * POST /api/user/:id/login
-     *
-     * Log in a user (set isLoggedIn to true).
-     *
-     * This is a UI/feature gate - it controls what is surfaced to the user,
-     * not their underlying identity. UUID tracking continues regardless.
-     *
-     * Requires: Cookie must match :id
-     * Response: IUser
-     */
-    async login(req: Request, res: Response): Promise<void> {
-        try {
-            const { id } = req.params;
-
-            const user = await this.userService.login(id);
-
-            this.logger.info({ userId: id }, 'User logged in via API');
-            await this.respondWithUser(res, user);
-        } catch (error) {
-            this.logger.error({ error, userId: req.params.id }, 'Failed to log in user');
-            res.status(400).json({
-                error: 'Failed to log in',
-                message: error instanceof Error ? error.message : 'Unknown error'
-            });
-        }
-    }
 
     /**
      * POST /api/user/:id/logout
      *
-     * Log out a user (set isLoggedIn to false).
-     *
-     * This is a UI/feature gate - wallets and all other data remain intact.
-     * The user is still tracked by UUID under the hood.
+     * End the user's verified session. Downgrades `identityState` to
+     * Registered (or Anonymous when no wallets remain) and clears
+     * `identityVerifiedAt`. Wallets, preferences, and the cookie all
+     * survive. To re-establish a session, sign with a wallet you
+     * have previously verified.
      *
      * Requires: Cookie must match :id
      * Response: IUser

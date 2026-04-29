@@ -18,7 +18,6 @@ import {
     refreshWalletVerification as apiRefreshWalletVerification,
     updatePreferences as apiUpdatePreferences,
     recordActivity as apiRecordActivity,
-    loginUser as apiLoginUser,
     logoutUser as apiLogoutUser
 } from './api';
 import type { IConnectWalletResult, ILinkWalletResult } from './api';
@@ -382,30 +381,14 @@ export const recordActivityThunk = createAsyncThunk(
 );
 
 /**
- * Log in a user (set isLoggedIn to true).
+ * End the user's verified session.
  *
- * This is a UI/feature gate - it controls what is surfaced to the user,
- * not their underlying identity. UUID tracking continues regardless.
- */
-export const loginThunk = createAsyncThunk(
-    'user/login',
-    async (userId: string, { rejectWithValue }) => {
-        try {
-            const userData = await apiLoginUser(userId);
-            return userData;
-        } catch (error) {
-            return rejectWithValue(
-                error instanceof Error ? error.message : 'Failed to log in'
-            );
-        }
-    }
-);
-
-/**
- * Log out a user (set isLoggedIn to false).
- *
- * This is a UI/feature gate - wallets and all other data remain intact.
- * The user is still tracked by UUID under the hood.
+ * Calls `POST /api/user/:id/logout`, which downgrades `identityState`
+ * from `Verified` to `Registered` (or `Anonymous` when no wallets
+ * remain) and clears `identityVerifiedAt` on the backend. Wallets,
+ * preferences, and the cookie all survive — only the live session
+ * ends. Re-establishing a session requires signing with a wallet
+ * the user has previously verified.
  */
 export const logoutThunk = createAsyncThunk(
     'user/logout',
@@ -686,21 +669,6 @@ const userSlice = createSlice({
                 // Silently ignore activity recording failures
             });
 
-        // Login
-        builder
-            .addCase(loginThunk.pending, (state) => {
-                state.status = 'loading';
-                state.error = null;
-            })
-            .addCase(loginThunk.fulfilled, (state, action) => {
-                state.status = 'succeeded';
-                state.userData = action.payload;
-            })
-            .addCase(loginThunk.rejected, (state, action) => {
-                state.status = 'failed';
-                state.error = action.payload as string;
-            });
-
         // Logout
         builder
             .addCase(logoutThunk.pending, (state) => {
@@ -822,16 +790,6 @@ export const selectHasWallets = (state: { user: UserState }): boolean =>
  */
 export const selectHasVerifiedWallet = (state: { user: UserState }): boolean =>
     selectIsVerified(state);
-
-/**
- * Select whether user is logged in (UI/feature gate).
- *
- * When false, frontend shows "Connect" button and hides logged-in features.
- * UUID tracking continues regardless of this flag, and this is independent
- * of `identityState` — a user can be logged in or out at any state.
- */
-export const selectIsLoggedIn = (state: { user: UserState }): boolean =>
-    state.user.userData?.isLoggedIn ?? false;
 
 // ============================================================================
 // Wallet Connection Selectors

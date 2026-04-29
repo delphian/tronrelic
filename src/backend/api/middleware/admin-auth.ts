@@ -81,11 +81,12 @@ function extractCandidate(req: Request): string | undefined {
  * Three checks must all pass:
  *   1. `tronrelic_uid` cookie is present, well-formed, and signed.
  *   2. The resolved user reads as `identityState === Verified`. The
- *      derivation in `deriveIdentityState` already folds in verification
- *      freshness — a user with only stale signatures collapses to
- *      `Registered` and fails this check the same way an unsigned-claim
- *      user does. Stale recovery is the normal verify-wallet flow on
- *      `/profile`; there is no special branch here.
+ *      lazy session-expiry pass inside `UserService.getById` has
+ *      already demoted any stale Verified user to Registered before
+ *      this check runs, so a stale session collapses to `Registered`
+ *      and fails for the same reason an unsigned-claim user does.
+ *      Stale recovery is the normal verify-wallet flow on `/profile`;
+ *      there is no special branch here.
  *   3. The user is in the admin group per `IUserGroupService.isAdmin`.
  *
  * Returns the canonical resolved userId on success, null on any

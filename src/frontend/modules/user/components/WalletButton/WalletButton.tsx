@@ -5,30 +5,27 @@
  *
  * Self-contained wallet connection button driving the two-stage wallet flow
  * (see User Module README for the canonical anonymous / registered / verified
- * taxonomy). Shows different states based on the current connection:
+ * taxonomy). Shows different states based on the visitor's identity state
+ * and live TronLink connection:
  *
- * 1. **Logged out** — "Connect" button. Triggers TronLink account access; on
- *    success the wallet is registered (user becomes *registered*).
- * 2. **Logged in, not currently Verified** — Address with warning icon.
- *    Click prompts for signature to verify the wallet (user becomes
+ * 1. **No connected address** — "Login" button. Triggers TronLink account
+ *    access; on success the wallet is auto-registered by the `useWallet`
+ *    hook and the user transitions from *anonymous* to *registered*.
+ * 2. **Connected address, not currently Verified** — Address with warning
+ *    icon. Click prompts for signature to verify the wallet (user becomes
  *    *verified*). This branch fires for never-signed registered users
- *    *and* for stale-collapsed users whose every signature has aged
- *    past the freshness window — both states resolve through the same
- *    re-sign affordance, no special UI for stale.
- * 3. **Logged in, currently Verified** — Address. Click navigates to the
- *    user's profile page.
+ *    *and* for users whose previous session has expired — both states
+ *    resolve through the same re-sign affordance, no special UI.
+ * 3. **Connected address, currently Verified** — Address. Click navigates
+ *    to the user's profile page.
  *
- * The verified check reads the user-level `identityState === Verified`
- * (freshness-aware via `deriveIdentityState`), not the per-wallet
- * `verified` historical flag. A stale-collapsed user whose wallet still
- * carries `verified: true` reads as not-Verified here, so the button
- * routes them to the re-sign CTA instead of into the Verified-only
- * profile route (which would 404 for them).
+ * The verified check reads the user-level `identityState === Verified`,
+ * which the backend has already resolved through its lazy session-expiry
+ * pass. A user whose session has aged past `SESSION_TTL_MS` reads as
+ * not-Verified here, so the button routes them to the re-sign CTA
+ * instead of into the Verified-only profile route (which would 404).
  *
  * Logout is handled from the user's profile page, not from this button.
- *
- * Note: `isLoggedIn` is a UI/feature gate independent of the identity state —
- * UUID tracking always continues.
  */
 
 import { useEffect, useCallback, useState } from 'react';
@@ -55,11 +52,9 @@ export function WalletButton() {
         address,
         connect,
         verify,
-        login,
         connectionError,
         isVerified,
-        connectionStatus,
-        isLoggedIn
+        connectionStatus
     } = useWallet();
     const router = useRouter();
     const { push } = useToast();
@@ -84,20 +79,22 @@ export function WalletButton() {
 
     /**
      * Handle connect button click.
-     * Connects to TronLink, then auto-logs in.
+     *
+     * Triggers TronLink account access. The `useWallet` hook's auto-register
+     * effect picks up the connected address and registers it on the backend
+     * (stage 1), moving the user from *anonymous* to *registered*. The
+     * separate "verify" CTA then handles the signature step.
      */
     const handleConnect = useCallback(async () => {
         setIsLoggingIn(true);
         try {
             await connect();
-            // Auto-login after successful connection
-            await login();
         } catch (error) {
-            console.error('Connect/login failed:', error);
+            console.error('Connect failed:', error);
         } finally {
             setIsLoggingIn(false);
         }
-    }, [connect, login]);
+    }, [connect]);
 
     /**
      * Handle verify button click.
@@ -140,9 +137,9 @@ export function WalletButton() {
     }, [address, router]);
 
     // Not-currently-Verified branch — fires for never-signed registered
-    // users and for stale-collapsed users whose signatures have aged out.
-    // Both recover through the same verify CTA.
-    if (isLoggedIn && address && !isVerified) {
+    // users and for users whose previous session has expired. Both
+    // recover through the same verify CTA.
+    if (address && !isVerified) {
         return (
             <Button
                 variant="secondary"
@@ -167,7 +164,7 @@ export function WalletButton() {
     }
 
     // Verified state — click navigates to profile
-    if (isLoggedIn && address) {
+    if (address) {
         return (
             <Button
                 variant="secondary"

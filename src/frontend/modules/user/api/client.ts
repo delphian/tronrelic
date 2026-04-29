@@ -52,13 +52,13 @@ export interface ILinkWalletResult {
 /**
  * Wallet operations gated by a server-issued challenge.
  *
- * `'refresh-verification'` updates `verifiedAt` on an already-linked,
+ * `'refresh-verification'` updates the per-wallet `verifiedAt` and
+ * the user-level `identityVerifiedAt` on an already-linked,
  * already-verified wallet. It is the natural action when a user's
- * `identityState` has collapsed to `Registered` because every signature
- * has aged past the freshness window — re-signing pumps `verifiedAt`
- * forward, lifting the user back to `Verified`. Distinct nonce scope
- * keeps a captured signature for any other action from being replayable
- * here.
+ * session has expired — the backend's lazy expiry pass has already
+ * downgraded them to `Registered`, and re-signing here lifts them
+ * back to `Verified`. Distinct nonce scope keeps a captured signature
+ * for any other action from being replayable here.
  */
 export type WalletChallengeAction = 'link' | 'unlink' | 'set-primary' | 'refresh-verification';
 
@@ -273,13 +273,15 @@ export async function setPrimaryWallet(
 }
 
 /**
- * Refresh the freshness clock on an already-verified wallet.
+ * Refresh the user's session by re-signing an already-verified wallet.
  *
- * Re-pumps `verifiedAt` on a wallet whose signature has aged past the
- * freshness window. The user's `identityState` is derived from
- * `wallets[].verifiedAt` at the API boundary (see `deriveIdentityState`),
- * so a stale signature collapses them to `Registered` until a refresh
- * lifts them back to `Verified`. This is the natural verify-wallet
+ * The user-level session clock (`identityVerifiedAt`) ages out after
+ * `SESSION_TTL_MS`, at which point the backend lazily downgrades the
+ * user from `Verified` to `Registered`. This call mints a
+ * `'refresh-verification'` challenge, the user signs the canonical
+ * message with TronLink, and the backend bumps both the per-wallet
+ * `verifiedAt` and the user-level `identityVerifiedAt`, lifting the
+ * user back to `Verified`. This is the natural verify-wallet
  * affordance for the wallet card on `/profile` — no special "stale
  * admin" flow, just normal wallet management.
  *
@@ -453,32 +455,15 @@ export async function endSession(userId: string): Promise<void> {
 }
 
 // ============================================================================
-// Login State Functions
+// Logout
 // ============================================================================
 
 /**
- * Log in a user (set isLoggedIn to true).
+ * End the user's verified session.
  *
- * This is a UI/feature gate - it controls what is surfaced to the user,
- * not their underlying identity. UUID tracking continues regardless.
- *
- * @param userId - User UUID
- * @returns Updated user data
- */
-export async function loginUser(userId: string): Promise<IUserData> {
-    const response = await apiClient.post(
-        `/user/${userId}/login`,
-        {},
-        { withCredentials: true }
-    );
-    return response.data as IUserData;
-}
-
-/**
- * Log out a user (set isLoggedIn to false).
- *
- * This is a UI/feature gate - wallets and all other data remain intact.
- * The user is still tracked by UUID under the hood.
+ * Calls `POST /api/user/:id/logout`, which downgrades `identityState`
+ * from `Verified` to `Registered` (or `Anonymous` if no wallets remain)
+ * and clears `identityVerifiedAt`. Wallets and the cookie persist.
  *
  * @param userId - User UUID
  * @returns Updated user data

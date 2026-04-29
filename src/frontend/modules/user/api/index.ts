@@ -19,8 +19,7 @@ export {
     recordPage,
     heartbeat,
     endSession,
-    // Login state functions
-    loginUser,
+    // Logout
     logoutUser,
     // Public profile functions
     fetchProfile,

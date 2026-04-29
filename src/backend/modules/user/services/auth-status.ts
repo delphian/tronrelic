@@ -4,10 +4,11 @@
  * Every gate in the platform — `requireAdmin` middleware, the
  * `MenuService` affordance filter, the frontend `SystemAuthGate` —
  * reduces to the same two questions: is this user currently Verified,
- * and are they in an admin group. Verification freshness is folded
- * into `Verified` itself (see `deriveIdentityState`), so a stale
- * signature reads as `Registered` and the gate falls to the generic
- * "not Verified" branch — no separate stale-admin state, no special
+ * and are they in an admin group. The lazy session-expiry pass inside
+ * `UserService.getById` has already demoted any stale Verified user
+ * to Registered before this predicate sees them, so a stale session
+ * reads as `Registered` and the gate falls to the generic "not
+ * Verified" branch — no separate stale-admin state, no special
  * recovery branch.
  *
  * This module centralizes that snapshot. `requireAdmin`, `isAdmin(req)`,
@@ -33,8 +34,9 @@ import type { IAuthStatus, IUser, IUserGroupService } from '@/types';
  * Compute the canonical authorization snapshot for a resolved user.
  *
  * Accepts an `IUser` whose `identityState` already reflects current
- * truth (i.e. has been derived through `deriveIdentityState` at the
- * serialization boundary) and a reference to the user-group service.
+ * truth (i.e. has been passed through the lazy session-expiry pass
+ * in `UserService.getById` before reaching this predicate) and a
+ * reference to the user-group service.
  *
  * The function intentionally does not accept a request, a cookie, or a
  * service token — those are concerns of the middleware that wraps it.

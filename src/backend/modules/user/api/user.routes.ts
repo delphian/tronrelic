@@ -181,18 +181,15 @@ export function createUserRouter(controller: UserController): Router {
     router.get('/:id/referral', userRateLimiter, controller.getReferralStats.bind(controller));
 
     // ============================================================================
-    // Login State Routes (30 requests/minute)
+    // Logout Route (30 requests/minute)
     // ============================================================================
 
     /**
-     * POST /api/user/:id/login
-     * Log in user (set isLoggedIn to true)
-     */
-    router.post('/:id/login', userRateLimiter, controller.login.bind(controller));
-
-    /**
      * POST /api/user/:id/logout
-     * Log out user (set isLoggedIn to false)
+     * End the user's verified session (downgrade identityState to
+     * Registered or Anonymous, clear identityVerifiedAt). The cookie
+     * persists; re-establishing a session requires signing with a
+     * historically-verified wallet via /wallet (link).
      */
     router.post('/:id/logout', userRateLimiter, controller.logout.bind(controller));
 
