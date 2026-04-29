@@ -550,8 +550,8 @@ export interface IUserPreferencesSummary {
  *             const user = await userService.getByWallet(fromAddress);
  *
  *             if (user) {
- *                 const hasVerifiedWallet = user.wallets?.some(w => w.verified);
- *                 logger.info({ userId: user.id, hasVerifiedWallet },
+ *                 const isVerified = user.identityState === UserIdentityState.Verified;
+ *                 logger.info({ userId: user.id, isVerified },
  *                     'Transaction from known user');
  *             }
  *         }

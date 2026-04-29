@@ -65,24 +65,22 @@ Plugins have full access to user identity through two mechanisms:
 All plugin route handlers receive user context automatically via middleware. The `req.user` and `req.userId` fields are populated before requests reach plugin handlers:
 
 ```typescript
+import { UserIdentityState } from '@/types';
+
 // In plugin route handler
 handler: async (req: IHttpRequest, res: IHttpResponse) => {
-    // Check if user context is present (cookie contained valid UUID)
-    // Note: This is identity, NOT authentication - cookie values are client-controlled
+    // Cookie present and resolved? (identity continuity, not wallet auth)
     if (!req.user) {
         return res.status(401).json({ error: 'User context required' });
     }
 
-    // Wallet state checks
-    const hasLinkedWallet = (req.user.wallets?.length ?? 0) > 0;
-    const hasVerifiedWallet = req.user.wallets?.some(w => w.verified) ?? false;
-
-    // For sensitive operations, require cryptographic proof of wallet ownership
-    if (!hasVerifiedWallet) {
+    // Sensitive operations require a live verified session — compare
+    // against the canonical taxonomy, never the per-wallet `verified`
+    // flag (audit history that stays true after signatures age out).
+    if (req.user.identityState !== UserIdentityState.Verified) {
         return res.status(403).json({ error: 'Wallet verification required' });
     }
 
-    // Access user data directly from request
     const userId = req.userId;
     const wallets = req.user.wallets;
     const preferences = req.user.preferences;
@@ -91,7 +89,7 @@ handler: async (req: IHttpRequest, res: IHttpResponse) => {
 
 The middleware parses the `tronrelic_uid` cookie and resolves the user via `UserService`. Plugins don't need to parse cookies or call services directly.
 
-**Security note:** The cookie-based user context is identity, not authentication. The `tronrelic_uid` cookie is client-controlled and contains an unverified UUID. For sensitive operations, always check `hasVerifiedWallet` which indicates the user has cryptographically proven wallet ownership via signature.
+**Security note:** The `tronrelic_uid` cookie is HttpOnly and HMAC-signed by `SESSION_SECRET`, so the UUID is server-issued and unforgeable — but possessing a stable UUID is identity continuity, not proof of wallet ownership. For sensitive operations, always check `req.user.identityState === UserIdentityState.Verified` — the user-level live-session state, with `SESSION_TTL_MS` freshness already enforced by `enforceSessionExpiry`. Frontend plugins consume the same signal as `useUser().isVerified`.
 
 ### IUserService (For Non-Request Context)
 

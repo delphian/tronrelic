@@ -34,27 +34,24 @@ export interface IPluginWalletLink {
  * and personalization. Designed as a stable interface that won't break
  * plugins when core user module internals are refactored.
  *
- * Wallet states (in order of progression):
- * 1. No wallets - `!hasLinkedWallet`
- * 2. Linked but unverified - `hasLinkedWallet && !hasVerifiedWallet`
- * 3. At least one verified - `hasVerifiedWallet`
+ * Identity progression:
+ * 1. Anonymous - `!hasLinkedWallet`
+ * 2. Registered - `hasLinkedWallet && !isVerified` (wallet linked but no live session)
+ * 3. Verified - `isVerified` (wallet signed, session still within SESSION_TTL_MS)
  *
  * @example
  * ```typescript
- * const { hasLinkedWallet, hasVerifiedWallet, wallets } = context.useUser();
+ * const { hasLinkedWallet, isVerified, wallets } = context.useUser();
  *
  * // Gate feature to verified users only
- * if (!hasVerifiedWallet) {
+ * if (!isVerified) {
  *     return <p>Please verify your wallet to access this feature</p>;
  * }
  *
- * // Check if user has started wallet linking process
- * if (hasLinkedWallet && !hasVerifiedWallet) {
- *     return <p>Please complete wallet verification</p>;
+ * // Detect "registered but session aged out" state
+ * if (hasLinkedWallet && !isVerified) {
+ *     return <p>Please re-sign with your wallet to refresh your session</p>;
  * }
- *
- * // Get only verified wallets
- * const verifiedWallets = wallets.filter(w => w.verified);
  * ```
  */
 export interface IPluginUserState {
@@ -71,14 +68,17 @@ export interface IPluginUserState {
     hasLinkedWallet: boolean;
 
     /**
-     * Whether the user is in the *verified* identity state — i.e.
-     * `user.identityState === Verified`, which means a wallet was
-     * signed and the resulting session is still within
-     * `SESSION_TTL_MS`. Use this for feature gating (e.g., "verify
-     * wallet to access historical data"). Equivalent to
-     * `hasLinkedWallet` plus a live session.
+     * Whether the user is in the canonical `Verified` identity state —
+     * `user.identityState === UserIdentityState.Verified`, meaning a
+     * wallet was signed and the user-level session is still within
+     * `SESSION_TTL_MS`. Freshness is enforced by the backend's lazy
+     * session-expiry pass, so this is always a live-session signal,
+     * never a historical claim. Use this for feature gating.
+     *
+     * Distinct from per-wallet `verified` (audit history that stays
+     * `true` after any past signature) — see `wallets[].verified`.
      */
-    hasVerifiedWallet: boolean;
+    isVerified: boolean;
 
     /**
      * All linked wallets (both verified and unverified).
@@ -811,15 +811,12 @@ export interface IFrontendPluginContext {
      *
      * @example
      * ```typescript
-     * const { hasVerifiedWallet, wallets } = context.useUser();
+     * const { isVerified } = context.useUser();
      *
      * // Gate features to verified users
-     * if (!hasVerifiedWallet) {
+     * if (!isVerified) {
      *     return <p>Please verify your wallet to access this feature</p>;
      * }
-     *
-     * // Show different UI based on wallet verification state
-     * const hasUnverifiedWallet = wallets.some(w => !w.verified);
      * ```
      */
     useUser: () => IPluginUserState;

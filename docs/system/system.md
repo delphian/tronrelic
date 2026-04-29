@@ -1,326 +1,92 @@
 # System Architecture Overview
 
-TronRelic's system layer manages the core data pipelines, scheduling, and blockchain synchronization that power all features. Understanding these components is essential for debugging production issues, optimizing performance, and implementing new features that depend on real-time data.
+The system layer orchestrates blockchain sync, job scheduling, observer notification, real-time metrics, and runtime configuration — the data pipelines every TronRelic feature depends on.
 
 ## Why This Matters
 
-The system layer orchestrates blockchain synchronization, job scheduling, observer notification, and real-time metrics — the data pipelines that every feature depends on. When these components stall, transactions stop indexing, market prices go stale, and plugin observers receive nothing. Understanding the system layer is essential for diagnosing production issues and deploying changes safely.
+When the system layer stalls, transactions stop indexing, market prices go stale, observers receive nothing. Use this file to find the right detail doc; read the detail doc before changing the subsystem.
 
-## Core System Components
+## Components
 
-### Runtime Configuration System
+### Runtime Configuration
 
-TronRelic uses runtime configuration to enable universal Docker images that work on any domain without rebuilding. The system solves Next.js's build-time environment variable inlining by fetching configuration from the backend API and injecting it into HTML during SSR.
+Solves Next.js build-time env inlining so a single Docker image runs on any domain. Backend stores `siteUrl` (and TRON chain parameters) in MongoDB; the frontend SSR fetches once at startup and injects as `window.__RUNTIME_CONFIG__`. No `NEXT_PUBLIC_*` in production code. See [system-runtime-config.md](./system-runtime-config.md).
 
-**Key architectural decisions:**
+### Backend Modules
 
-- **Backend as source of truth** - SystemConfigService stores siteUrl in MongoDB (editable via admin UI)
-- **Chain parameters included** - TRON network parameters injected alongside URL config for instant energy/TRX conversions
-- **SSR fetch and cache** - Frontend fetches config once at container startup, caches in memory
-- **HTML injection** - Config injected as `window.__RUNTIME_CONFIG__` for instant client access
-- **No NEXT_PUBLIC_* in production** - Frontend doesn't rely on build-time variables for client code
+Essential, non-toggleable infrastructure (Pages, Menu, User, Migrations) initialized during bootstrap. Two-phase lifecycle — `init()` resolves typed DI dependencies, `run()` mounts routes — with fail-fast errors and no degraded mode. Plugins, by contrast, are optional and runtime-toggleable. See [modules.md](./modules/modules.md), [modules-architecture.md](./modules/modules-architecture.md), [modules-creating.md](./modules/modules-creating.md).
 
-**See [system-runtime-config.md](./system-runtime-config.md) for complete details on:**
-- Why Next.js build-time inlining breaks universal Docker images
-- How SSR-injected runtime config solves the problem
-- Backend environment variable configuration (SITE_URL in .env)
-- Using chain parameters in frontend components for energy/TRX conversions
-- Deployment workflow for fresh installs
-- Troubleshooting WebSocket connection issues
+### Database Access
 
-### Backend Module System
-
-The backend module system provides a structured pattern for permanent, core backend components that initialize during application bootstrap. Modules are essential infrastructure that follow a two-phase lifecycle (init/run) with dependency injection and inversion of control patterns.
+All database I/O must flow through `IDatabaseService`; direct Mongoose imports are prohibited. The abstraction exposes three access tiers (raw collections, Mongoose models, convenience methods), auto-prefixes plugin collections (`plugin_<id>_*`) for namespace isolation, and accepts mock implementations for testing. See [system-database.md](./system-database.md).
 
-**Key architectural principles:**
+### Blockchain Sync
 
-- **Two-phase lifecycle** - Explicit `init()` and `run()` phases ensure proper dependency resolution
-- **Dependency injection** - Modules receive typed dependencies enabling testability and decoupling
-- **Inversion of Control** - Modules attach themselves to the application (mount routes, register menu items)
-- **Colocated organization** - All module code lives in a single `modules/<name>/` directory
-- **Fail-fast error handling** - Module initialization failures cause application shutdown (no degraded mode)
+Pulls TronGrid blocks serially with a 200ms throttle (~5 req/s) to avoid burst rate limits, enriches transactions with USD and energy data, and notifies observers asynchronously so a slow observer cannot block sync. Pending blocks are capped to prevent memory leaks; multiple TronGrid keys rotate to spread load. See [system-blockchain-sync-architecture.md](./system-blockchain-sync-architecture.md).
 
-**See [modules.md](./modules/modules.md) for:**
-- Module system overview, module vs plugin decision matrix, and service type rules
-- [modules-architecture.md](./modules/modules-architecture.md) for IModule interface, bootstrap sequence, and dependency injection patterns
-- [modules-creating.md](./modules/modules-creating.md) for step-by-step module creation guide and best practices
+### Scheduler
 
-### Database Access Architecture
+Runs six built-in cron jobs, each toggleable at runtime without restart. Critical jobs — `blockchain:sync` (1m), `markets:refresh` (10m), `chain-parameters:fetch` (10m), `usdt-parameters:fetch` (10m) — drive every downstream feature; disabling any of them stales data. Safe to disable temporarily: `cache:cleanup` (memory only) and `alerts:*` (notifications only, not data collection). Global kill via `ENABLE_SCHEDULER=false`. See [system-scheduler-operations.md](./system-scheduler-operations.md).
 
-All database operations in TronRelic must go through `IDatabaseService`. This unified abstraction provides testability through mock implementations, consistent patterns across the codebase, and automatic namespace isolation for plugins. Direct imports of Mongoose models or raw MongoDB collections are prohibited.
+### Monitoring API
 
-**Key architectural decisions:**
+16+ admin-token-gated endpoints covering sync status, scheduler control, market freshness, DB/Redis/server health, env config, and WebSocket diagnostics. Powers the dashboard and any custom automation. See [system-api.md](./system-api.md).
 
-- **Mandatory abstraction** - All consumers receive `IDatabaseService` via dependency injection, never direct Mongoose access
-- **Three-tier access** - Raw collections for flexibility, Mongoose models for validation, convenience methods for common CRUD
-- **Namespace isolation** - Plugins automatically get prefixed collections (`plugin_whale-alerts_subscriptions`)
-- **Testability** - Interface enables mock implementations without touching MongoDB
+### Dashboard
 
-**See [system-database.md](./system-database.md) for complete details on:**
-- Mandatory requirement and prohibited patterns
-- Three-tier access pattern (raw collections, Mongoose models, convenience methods)
-- Consumer-specific patterns for modules, services, and plugins
-- Namespace isolation and collection prefixing
-- Key-value storage API
-- Index creation and error handling
-- Pre-implementation checklist
-
-### Blockchain Sync Architecture
-
-The blockchain sync service retrieves blocks from TronGrid, enriches transactions with market data and energy costs, and notifies all subscribed observers asynchronously. The architecture prioritizes consistency and error isolation over throughput, using serial requests with 200ms throttling to avoid overwhelming the network.
+Tabbed web UI at `/system` (requires `ADMIN_API_TOKEN`) for live metrics, job toggles, schedule edits, and manual sync/refresh triggers. Built on the monitoring API. See [system-dashboard.md](./system-dashboard.md).
 
-**Key design decisions:**
+### Menu
 
-- **Serial API requests** - One block at a time, preventing burst rate limiting and queue unpredictability
-- **200ms per-block throttle** - Sustainable ~5 requests/second leaves headroom for TronGrid limits
-- **Rotating API keys** - Distributes load across multiple TronGrid accounts
-- **Queue overflow protection** - Caps pending blocks to prevent memory leaks
-- **Async observer notification** - Observers process independently without blocking sync
+Centralized navigation service that aggregates menu nodes from core and plugins. Supports DB-backed and memory-only entries, multiple namespaces, and emits WebSocket events when structure changes; plugins register through lifecycle hooks — no core edits. See [Menu Module README](../../src/backend/modules/menu/README.md).
 
-**See [system-blockchain-sync-architecture.md](./system-blockchain-sync-architecture.md) for complete details on:**
-- Block retrieval strategy and rate limiting rationale
-- Transaction enrichment pipeline (parsing, categorization, USD/energy calculations)
-- Observer notification flow and async processing patterns
-- Blockchain service lifecycle and monitoring metrics
-- Performance characteristics and scalability analysis
-
-### Scheduler Operations
-
-The scheduler manages six built-in jobs that keep the system healthy: market data refreshes, blockchain sync, cache cleanup, alert dispatch, and chain parameter updates. Each job runs on an independent schedule and can be controlled at runtime without requiring backend restarts.
-
-**Critical jobs:**
-- `blockchain:sync` - Fetches new TRON blocks every minute
-- `markets:refresh` - Updates all energy market prices every 10 minutes
-- `chain-parameters:fetch` - Fetches TRON energy costs every 10 minutes
-- `usdt-parameters:fetch` - Fetches USDT transfer energy cost every 10 minutes
+### Migrations
 
-**Safe to disable temporarily:**
-- `cache:cleanup` - Only impacts memory usage
-- `alerts:*` - Only impacts notifications, not data collection
+Schema evolution discovered automatically from system, module, and plugin directories; topologically sorted by dependency; executed serially with MongoDB transaction wrapping (replica set required) and full audit history. Admin UI at `/system/database`. See [system-database-migrations.md](./system-database-migrations.md).
 
-**See [system-scheduler-operations.md](./system-scheduler-operations.md) for complete details on:**
-- Global enable/disable via `ENABLE_SCHEDULER` environment variable
-- Per-job configuration and runtime control without restarts
-- Complete list of all six scheduler jobs with schedules and impacts
-- System Monitor dashboard UI for job control
-- Admin API endpoints for programmatic control
-- Cron expression syntax and common modifications
-- Comprehensive troubleshooting runbooks for common failure scenarios
-- Configuration persistence to MongoDB for durability across restarts
-
-### System Monitoring API
-
-The system monitoring API provides programmatic access to all operational metrics, job control, and infrastructure health checks. All endpoints require admin authentication and support both web dashboard and custom automation workflows.
-
-**Available endpoint categories:**
-
-- **System Overview** - Consolidated snapshot of all metrics in a single request
-- **Blockchain Monitoring** - Sync status, transaction stats, processing metrics, manual sync trigger
-- **Scheduler Operations** - Job status, health checks, runtime configuration updates
-- **Market Monitoring** - Platform status, data freshness, manual refresh trigger
-- **System Health** - Database, Redis, and server metrics
-- **Configuration** - Environment settings and feature flags
-- **WebSocket Monitoring** - Plugin subscription stats, connection tracking, and real-time event diagnostics
-
-**See [system-api.md](./system-api.md) for complete details on:**
-- Authentication requirements and header formats
-- All 16+ API endpoints with request/response examples
-- Field-by-field documentation of response structures
-- Practical usage examples with curl and JavaScript
-- Common operations (health checks, job control, data refresh)
-- Troubleshooting API issues
-- Building custom monitoring scripts
-
-### System Dashboard
-
-The web-based dashboard provides real-time visibility into all system operations through a tabbed interface. Built on top of the system monitoring API, it offers point-and-click job control, live metric displays, and manual operation triggers.
-
-**See [system-dashboard.md](./system-dashboard.md) for complete details on:**
-- Accessing the dashboard at `/system` with admin token authentication
-- Overview tab with at-a-glance health indicators
-- Blockchain, Scheduler, Markets, Health, and Config tabs
-- Live auto-refresh behavior and manual refresh controls
-- Job enable/disable toggles and schedule modification
-- Manual sync and refresh trigger buttons
-- Visual status indicators and error displays
-
-### Navigation Menu System
-
-The navigation menu system manages application-wide navigation through a centralized service that coordinates menu items from core features and plugins. Each menu item (called a "menu node") represents a navigation link with ordering, icons, access control, and hierarchical relationships.
-
-**Key architectural decisions:**
-
-- **Centralized menu management** - Single source of truth for all navigation across the application
-- **Plugin integration** - Plugins register menu items through lifecycle hooks without modifying core code
-- **Event-driven updates** - Real-time WebSocket notifications when menu structure changes
-- **Dual persistence modes** - Database-backed entries and memory-only runtime entries
-- **Multiple namespaces** - Independent navigation contexts for different UI areas
-
-**See [Menu Module README](../../src/backend/modules/menu/README.md) for complete details on:**
-- Menu service architecture and singleton pattern
-- Menu node lifecycle (create, update, delete, reorder)
-- REST API endpoints for menu management
-- WebSocket real-time update events
-- Plugin integration patterns
-- Event-driven validation system
-- Namespace isolation and container nodes
-- Testing patterns with MockPluginDatabase
-
-### Database Migration System
+### Pages
 
-The database migration system enables safe, repeatable schema evolution across development, staging, and production environments. Migrations are discovered automatically from system, module, and plugin directories, executed serially with transaction support, and tracked in MongoDB for audit trails.
-
-**Key architectural decisions:**
-
-- **Automatic discovery** - Migrations discovered from three predefined locations without manual registration
-- **Dependency resolution** - Topological sorting ensures migrations execute in dependency order
-- **Transaction wrapping** - Atomic execution with automatic rollback on failure (replica set required)
-- **State tracking** - Complete execution history with timestamps, duration, and error details
-- **Admin UI** - Web-based interface for viewing pending migrations and triggering execution
-
-**See [system-database-migrations.md](./system-database-migrations.md) for complete details on:**
-- Migration discovery and scanning workflow
-- Transaction execution and rollback behavior
-- State tracking and MongoDB persistence
-- REST API reference with all 4 endpoints
-- Admin UI guide at `/system/database`
-- Complete migration lifecycle walkthrough
-- Troubleshooting common failure scenarios
-
-**For practical guidance on writing migrations, see [system-database-migrations.md](./system-database-migrations.md).**
-
-### Pages Module
-
-The pages module provides custom content management capabilities, allowing administrators to create user-facing pages (articles, documentation, announcements) with markdown authoring, file uploads, and dynamic routing. Pages are rendered from markdown to HTML, cached for performance, and discoverable at URLs matching their configured slugs.
-
-**Key architectural decisions:**
-
-- **Service-Provider separation** - PageService (business logic) depends on IStorageProvider (infrastructure abstraction)
-- **Singleton pattern** - PageService implements `IPageService` interface with shared state across all consumers
-- **Pluggable storage** - LocalStorageProvider, S3StorageProvider, or custom implementations via dependency injection
-- **Redis caching** - Rendered HTML cached for 24 hours with automatic invalidation on updates
-- **Route conflict prevention** - Blacklist patterns prevent pages from overriding core routes
-
-**See [Pages Module README](../../src/backend/modules/pages/README.md) for complete details on:**
-- Pages module architecture and Provider vs Service distinction
-- PageService singleton pattern and dependency injection
-- IStorageProvider interface and adding new storage backends
-- Database schema (pages, page_files, page_settings collections)
-- REST API reference with admin and public endpoints
-- Markdown rendering pipeline with frontmatter extraction
-- File upload validation with two-layer size enforcement
-- Module lifecycle and menu registration patterns
-
-### User Module
-
-The user module provides visitor identity management, enabling anonymous tracking via UUID with optional upgrade to verified TRON wallet addresses. Identity is anchored on a single HttpOnly, HMAC-signed `tronrelic_uid` cookie that the server is the only writer of (minted at `POST /api/user/bootstrap`). Users can link multiple wallets via TronLink signature verification, and their preferences and activity are tracked across sessions.
-
-**Key architectural decisions:**
-
-- **Anonymous-first identity** - UUID minted server-side on first request to `/api/user/bootstrap`, no registration required
-- **HttpOnly signed cookie** - `tronrelic_uid` carries the UUID as `s:<uuid>.<HMAC>`; the server (holding `SESSION_SECRET`) is the only writer
-- **Canonical identity states** - `UserIdentityState` enum (`Anonymous` | `Registered` | `Verified`) is stored, not derived; `Verified` requires a wallet signature within `SESSION_TTL_MS`
-- **Multi-wallet support** - One UUID can link to multiple TRON addresses with primary designation; signing any one keeps the user-level session alive
-- **Cookie-based validation** - API endpoints validate the signed cookie matches the `:id` parameter
-- **Real-time sync** - WebSocket events push user updates to connected clients
-
-**See [User Module README](../../src/backend/modules/user/README.md) for complete details on:**
-- User module architecture and cookie-based authentication pattern
-- UserService singleton with Redis caching and tag invalidation
-- Database schema (users collection with wallets, preferences, activity)
-- REST API reference for public and admin endpoints
-- Frontend integration (UserIdentityProvider, Redux slice, SSR utilities)
-- Admin UI at `/system/users` for user management
-- Wallet linking via TronLink signature verification
-
-### Testing Framework
-
-TronRelic uses Vitest for unit testing with comprehensive Mongoose mocking utilities that enable full database service testing without requiring a live MongoDB instance. The shared mock system provides complete implementations of MongoDB collections, Mongoose models, and chainable query builders.
-
-**Key testing capabilities:**
-
-- **Isolated test environments** - Each test runs with clean state using in-memory collections
-- **Complete MongoDB API coverage** - CRUD operations, chainable queries, index creation
-- **Error injection** - Simulate database failures to validate error handling
-- **Test fixtures** - Pre-populate mock data for complex scenarios
-- **Operation spying** - Verify service behavior with Vitest spies
-
-**See [system-testing.md](./system-testing.md) for complete details on:**
-- Vitest test runner configuration and commands
-- Mongoose mocking system architecture and usage
-- Available mock helpers (clearMockCollections, injectCollectionError, etc.)
-- Common testing patterns with code examples
-- Real-world usage in database service tests
-- Pre-test checklist for proper mock setup
-
-## Quick Reference
-
-### Monitoring System Health
-
-Access the system monitoring dashboard at `/system` (requires `ADMIN_API_TOKEN`):
-
-1. **Blockchain Status** - Current block, network block, lag, processing rate
-2. **Scheduled Jobs** - Enabled/disabled state, last run status, duration
-3. **API Queue** - Pending requests, error rates, rate limit warnings
-
-### Common Operations
-
-**Note:** Replace `$ADMIN_API_TOKEN` with your actual admin token from `.env` in these examples.
-
-**Check scheduler status:**
-```bash
-curl -H "X-Admin-Token: $ADMIN_API_TOKEN" \
-  http://localhost:4000/api/admin/system/scheduler/status
-```
-
-**Enable a job:**
-```bash
-curl -X PATCH \
-  -H "X-Admin-Token: $ADMIN_API_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"enabled": true}' \
-  http://localhost:4000/api/admin/system/scheduler/job/blockchain:sync
-```
-
-**Modify job schedule (every 10 minutes instead of 5):**
-```bash
-curl -X PATCH \
-  -H "X-Admin-Token: $ADMIN_API_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"schedule": "*/10 * * * *"}' \
-  http://localhost:4000/api/admin/system/scheduler/job/markets:refresh
-```
-
-### Troubleshooting Checklist
-
-| Symptom | First Check | Documentation |
-|---------|------------|-----------------|
-| Blockchain data stale | Is `blockchain:sync` job enabled? | [system-scheduler-operations.md](./system-scheduler-operations.md#troubleshooting) |
-| Market prices outdated | Is `markets:refresh` job enabled? | [system-scheduler-operations.md](./system-scheduler-operations.md#troubleshooting) |
-| High API queue depth | Check TronGrid API key errors | [system-blockchain-sync-architecture.md](./system-blockchain-sync-architecture.md#block-overflow-protection) |
-| Scheduler not running | Is `ENABLE_SCHEDULER=true`? | [system-scheduler-operations.md](./system-scheduler-operations.md#troubleshooting) |
-| Jobs run too frequently | Modify schedule in `/system` | [system-scheduler-operations.md](./system-scheduler-operations.md#cron-expression-syntax) |
-
-## Further Reading
-
-**Detailed documentation:**
-- [system-database.md](./system-database.md) - Database access architecture, mandatory IDatabaseService abstraction, three-tier access patterns, and namespace isolation
-- [modules.md](./modules/modules.md) - Backend module system overview, decision matrix, and service type rules
-- [modules-architecture.md](./modules/modules-architecture.md) - IModule interface, bootstrap sequence, dependency injection, and migration guidance
-- [modules-creating.md](./modules/modules-creating.md) - Step-by-step module creation guide with best practices
-- [system-blockchain-sync-architecture.md](./system-blockchain-sync-architecture.md) - Complete technical overview of block retrieval, transaction enrichment, observer notification, and performance characteristics
-- [system-scheduler-operations.md](./system-scheduler-operations.md) - Scheduler control, job management, troubleshooting, and configuration persistence
-- [system-api.md](./system-api.md) - Complete API reference with all endpoints, authentication, request/response formats, and usage examples
-- [system-dashboard.md](./system-dashboard.md) - Web dashboard UI guide with tab-by-tab feature documentation
-- [system-database-migrations.md](./system-database-migrations.md) - Database migration system architecture, REST API, admin UI, lifecycle documentation, and troubleshooting
-- [system-logging.md](./system-logging.md) - Logging system architecture, log levels, MongoDB persistence, and accessing historical logs
-- [Menu Module README](../../src/backend/modules/menu/README.md) - Menu module architecture, API reference, plugin integration, and event-driven updates
-- [Pages Module README](../../src/backend/modules/pages/README.md) - Pages module for custom content management with markdown authoring, file uploads, and storage provider abstraction
-- [User Module README](../../src/backend/modules/user/README.md) - User module for visitor identity management with anonymous UUID tracking, wallet linking, and admin dashboard
-- [system-testing.md](./system-testing.md) - Testing framework guide with Vitest setup, Mongoose mocking utilities, and testing patterns
-
-**Related topics:**
-- [plugins/plugins-blockchain-observers.md](../plugins/plugins-blockchain-observers.md) - How to build observers that react to transactions
-- [markets/market-system-architecture.md](../markets/market-system-architecture.md) - How market data is fetched and normalized
-- [tron/tron-chain-parameters.md](../tron/tron-chain-parameters.md) - How chain parameters are fetched and cached
-- [environment.md](../environment.md) - `ENABLE_SCHEDULER` and `TRONGRID_API_KEY` configuration
+Markdown-authored CMS for admin-published content. `PageService` (singleton, implements `IPageService`) depends on `IStorageProvider`, so the storage backend (local FS, S3, custom) is swappable via DI. Rendered HTML cached in Redis 24h with auto-invalidation; a route blacklist prevents slugs from shadowing core routes. See [Pages Module README](../../src/backend/modules/pages/README.md).
+
+### User
+
+Visitor identity anchored on one HttpOnly, HMAC-signed `tronrelic_uid` cookie minted by the server at `POST /api/user/bootstrap` — the server is the only writer. Identity state (`Anonymous` | `Registered` | `Verified`) is stored, not derived; `Verified` requires a recent TronLink signature within `SESSION_TTL_MS`. One UUID can link multiple wallets with a primary designation. See [User Module README](../../src/backend/modules/user/README.md).
+
+### Logging
+
+Pino-based logger with MongoDB persistence for historical queries. See [system-logging.md](./system-logging.md).
+
+### Testing
+
+Vitest with shared Mongoose mocking utilities — in-memory collections, chainable queries, error injection, operation spies — so database services exercise without a live MongoDB. See [system-testing.md](./system-testing.md).
+
+## Operations Quick Start
+
+Inspect health from the `/system` dashboard (auth: `ADMIN_API_TOKEN`) — fastest path to blockchain status, scheduler jobs, and queue depth. For programmatic access, every endpoint is documented in [system-api.md](./system-api.md). For full troubleshooting runbooks (sync stalled, jobs not firing, queue saturation), see [system-scheduler-operations.md](./system-scheduler-operations.md).
+
+## Detail Documents
+
+| Document | Covers |
+|---|---|
+| [system-runtime-config.md](./system-runtime-config.md) | Universal Docker images, SSR config injection, `SITE_URL` |
+| [modules.md](./modules/modules.md) | Module overview, module-vs-plugin matrix, service singleton rules |
+| [modules-architecture.md](./modules/modules-architecture.md) | `IModule` interface, bootstrap order, DI, service registry |
+| [modules-creating.md](./modules/modules-creating.md) | Step-by-step new-module guide |
+| [system-database.md](./system-database.md) | `IDatabaseService`, three-tier access, namespace isolation |
+| [system-blockchain-sync-architecture.md](./system-blockchain-sync-architecture.md) | Block retrieval, enrichment pipeline, observer dispatch |
+| [system-scheduler-operations.md](./system-scheduler-operations.md) | Job control, cron syntax, persistence, troubleshooting |
+| [system-api.md](./system-api.md) | All admin endpoints, auth, examples |
+| [system-dashboard.md](./system-dashboard.md) | Dashboard tabs and controls |
+| [system-database-migrations.md](./system-database-migrations.md) | Migration discovery, transactions, REST API, admin UI |
+| [system-logging.md](./system-logging.md) | Pino, MongoDB persistence, log queries |
+| [Menu Module README](../../src/backend/modules/menu/README.md) | Menu service, plugin integration, WebSocket events |
+| [Pages Module README](../../src/backend/modules/pages/README.md) | Markdown CMS, storage providers, file uploads |
+| [User Module README](../../src/backend/modules/user/README.md) | Identity cookie, wallet linking, admin UI |
+| [system-testing.md](./system-testing.md) | Vitest, Mongoose mocks, fixtures |
+
+## Related
+
+- [plugins-blockchain-observers.md](../plugins/plugins-blockchain-observers.md) — building observers that react to transactions
+- [market-system-architecture.md](../markets/market-system-architecture.md) — market fetcher pipeline
+- [tron-chain-parameters.md](../tron/tron-chain-parameters.md) — chain parameter caching
+- [environment.md](../environment.md) — `ENABLE_SCHEDULER`, `TRONGRID_API_KEY`, `SESSION_SECRET`

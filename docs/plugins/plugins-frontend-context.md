@@ -128,7 +128,7 @@ Reactive access to the current user's identity and wallet information:
 interface IPluginUserState {
     userId: string | null;           // Cookie-resolved UUID
     hasLinkedWallet: boolean;        // wallets.length > 0 (verified or not)
-    hasVerifiedWallet: boolean;      // identityState === Verified — wallet signed within SESSION_TTL_MS
+    isVerified: boolean;             // identityState === Verified — wallet signed within SESSION_TTL_MS
     wallets: IPluginWalletLink[];    // All linked wallets (verified and unverified)
     primaryWallet: string | null;    // Primary wallet address
     initialized: boolean;            // Whether user state has loaded
@@ -146,23 +146,23 @@ interface IPluginWalletLink {
 
 **Why `useUser` exists:** Plugins need to gate features on identity state without coupling to Redux store internals or recomputing freshness. The hook provides a stable interface that won't break plugins when the core user module is refactored.
 
-**`hasVerifiedWallet` vs per-wallet `verified`.** `hasVerifiedWallet` is the user-level live-session check — it reads the backend's `identityState === Verified`, which expires after `SESSION_TTL_MS` (14 days). The per-wallet `verified` flag stays `true` after any historical signature and is audit history, *not* an authentication state. Use `hasVerifiedWallet` for feature gating; use `wallets.some(w => w.verified)` only when you need the historical claim.
+**`isVerified` vs per-wallet `verified`.** `isVerified` mirrors the canonical `UserIdentityState.Verified` — a user-level live-session signal that reads the backend's `identityState`, which expires after `SESSION_TTL_MS` (14 days). The per-wallet `verified` flag stays `true` after any historical signature and is audit history, *not* session state. Use `isVerified` for feature gating; use `wallets.some(w => w.verified)` only when you need the historical claim.
 
-**Wallet states (in order of progression):**
-1. No wallets - `wallets.length === 0`
-2. Linked but no current session - `hasLinkedWallet && !hasVerifiedWallet` (never signed, or every signature aged out)
-3. Verified session alive - `hasVerifiedWallet === true`
+**Identity progression:**
+1. Anonymous — `!hasLinkedWallet`
+2. Registered — `hasLinkedWallet && !isVerified` (never signed, or every signature aged out)
+3. Verified — `isVerified === true`
 
 **Example — feature gating on a live verified session:**
 
 ```typescript
 export function MyPluginPage({ context }: { context: IFrontendPluginContext }) {
     const { layout, ui, useUser, useModal } = context;
-    const { hasVerifiedWallet } = useUser();
+    const { isVerified } = useUser();
     const modal = useModal();
 
     const handlePremiumFeature = () => {
-        if (!hasVerifiedWallet) {
+        if (!isVerified) {
             modal.open({
                 title: 'Wallet Verification Required',
                 content: <p>Sign with your wallet via the header WalletButton to access this feature.</p>,
@@ -179,7 +179,7 @@ export function MyPluginPage({ context }: { context: IFrontendPluginContext }) {
             <ui.Card>
                 <ui.Button onClick={handlePremiumFeature}>
                     Premium Feature
-                    {!hasVerifiedWallet && <LockIcon />}
+                    {!isVerified && <LockIcon />}
                 </ui.Button>
             </ui.Card>
         </layout.Page>
