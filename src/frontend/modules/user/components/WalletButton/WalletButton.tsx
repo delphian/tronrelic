@@ -108,19 +108,18 @@ export function WalletButton() {
         setIsVerifying(true);
         try {
             await connect();
-            await verify();
-            push({
-                tone: 'success',
-                title: 'Wallet Verified',
-                description: 'Your wallet has been verified successfully.'
-            });
+            const verified = await verify();
+            if (verified) {
+                push({
+                    tone: 'success',
+                    title: 'Wallet Verified',
+                    description: 'Your wallet has been verified successfully.'
+                });
+            }
+            // Failure path: verify() dispatches setConnectionError, which the
+            // connectionError useEffect surfaces as a warning toast.
         } catch (error) {
             console.error('Verify failed:', error);
-            push({
-                tone: 'warning',
-                title: 'Verification Failed',
-                description: 'Unable to verify wallet. Please try again.'
-            });
         } finally {
             setIsVerifying(false);
         }
