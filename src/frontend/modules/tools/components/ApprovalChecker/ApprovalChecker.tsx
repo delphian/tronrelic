@@ -64,12 +64,11 @@ export function ApprovalChecker() {
                             <div className={styles.gate_message}>
                                 <ShieldAlert size={24} />
                                 <p>
-                                    This tool requires a verified wallet. Connect and verify your TRON wallet
-                                    via TronLink signature to use the approval checker.
+                                    This tool requires a verified wallet. Use the wallet
+                                    button in the page header to connect and sign a TronLink
+                                    wallet — that flow handles both first-time verification
+                                    and re-signing after a stale signature.
                                 </p>
-                                <a href="/profile" className="btn btn--primary btn--md">
-                                    Verify Wallet
-                                </a>
                             </div>
                         </Stack>
                     </Card>

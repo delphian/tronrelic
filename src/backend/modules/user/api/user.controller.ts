@@ -1,11 +1,11 @@
 import type { Request, Response, NextFunction } from 'express';
 import { randomUUID } from 'node:crypto';
 import { USER_FILTERS } from '@/types';
-import type { ISystemLogService, UserFilterType } from '@/types';
+import type { ISystemLogService, UserFilterType, IUserGroupService } from '@/types';
 import type { UserService, IUserStats, IDateRange } from '../services/index.js';
 import type { GscService } from '../services/index.js';
 import type { IUser, IUserPreferences } from '../database/index.js';
-import { getClientIP } from '../services/index.js';
+import { getClientIP, withAuthStatus } from '../services/index.js';
 import { AnalyticsRangeValidationError } from '../services/user.errors.js';
 import {
     setIdentityCookie,
@@ -66,8 +66,47 @@ export class UserController {
     constructor(
         private readonly userService: UserService,
         private readonly gscService: GscService,
+        private readonly userGroupService: IUserGroupService,
         private readonly logger: ISystemLogService
     ) {}
+
+    /**
+     * Send an `IUser` payload to the client decorated with the
+     * server-computed `authStatus` snapshot.
+     *
+     * Centralizing the decoration here is the controller-side half of the
+     * DRY admin-predicate fix: every cookie-holder-facing endpoint that
+     * returns the *current* user (bootstrap, identity reads, wallet
+     * mutations, preferences, login/logout) routes through this helper so
+     * `userData.authStatus` arrives populated and the frontend
+     * `SystemAuthGate` reads booleans instead of re-deriving admin status
+     * from raw fields. Admin endpoints that return *other* users
+     * (`getAnyUser`, `listUsers`) intentionally bypass this — those views
+     * manage memberships directly through the group editor and don't gate
+     * on per-row `authStatus`.
+     */
+    private async respondWithUser(res: Response, user: IUser): Promise<void> {
+        res.json(await withAuthStatus(user, this.userGroupService));
+    }
+
+    /**
+     * Variant for endpoints that wrap `IUser` inside a result envelope
+     * (e.g. `connectWallet` returns `{ success, user, loginRequired }`).
+     * Decorates `result.user` in place when present; passes the envelope
+     * through unchanged when the user field is absent (the `loginRequired`
+     * branch of `connectWallet` and similar negative-result shapes).
+     */
+    private async respondWithUserResult<T extends { user?: IUser }>(
+        res: Response,
+        result: T
+    ): Promise<void> {
+        if (result.user) {
+            const decorated = await withAuthStatus(result.user, this.userGroupService);
+            res.json({ ...result, user: decorated });
+            return;
+        }
+        res.json(result);
+    }
 
     // ============================================================================
     // Middleware
@@ -155,7 +194,7 @@ export class UserController {
 
             const user = await this.userService.getOrCreate(id);
 
-            res.json(user);
+            await this.respondWithUser(res, user);
         } catch (error) {
             this.logger.error({ error, userId: req.params.id }, 'Failed to get user');
             res.status(400).json({
@@ -228,7 +267,7 @@ export class UserController {
                 { userId: user.id, minted: !isValidExisting, merged: user.id !== candidateId },
                 'User identity bootstrapped'
             );
-            res.json(user);
+            await this.respondWithUser(res, user);
         } catch (error) {
             this.logger.error({ error }, 'Failed to bootstrap user identity');
             res.status(500).json({
@@ -274,12 +313,12 @@ export class UserController {
             if (result.loginRequired) {
                 // Wallet belongs to another user - frontend should prompt for login
                 this.logger.info({ userId: id, wallet: address }, 'Wallet requires login via API');
-                res.json(result);
+                await this.respondWithUserResult(res, result);
                 return;
             }
 
             this.logger.info({ userId: id, wallet: address }, 'Wallet registered via API');
-            res.json(result);
+            await this.respondWithUserResult(res, result);
         } catch (error) {
             this.logger.error({ error, userId: req.params.id }, 'Failed to connect wallet');
             res.status(400).json({
@@ -347,7 +386,7 @@ export class UserController {
                 this.logger.info({ userId: id, wallet: address }, 'Wallet verified via API');
             }
 
-            res.json(result);
+            await this.respondWithUserResult(res, result);
         } catch (error) {
             this.logger.error({ error, userId: req.params.id }, 'Failed to link wallet');
             res.status(400).json({
@@ -383,7 +422,7 @@ export class UserController {
             const user = await this.userService.unlinkWallet(id, address, message, signature, nonce);
 
             this.logger.info({ userId: id, wallet: address }, 'Wallet unlinked via API');
-            res.json(user);
+            await this.respondWithUser(res, user);
         } catch (error) {
             this.logger.error({ error, userId: req.params.id }, 'Failed to unlink wallet');
             res.status(400).json({
@@ -422,7 +461,7 @@ export class UserController {
             const user = await this.userService.setPrimaryWallet(id, address, message, signature, nonce);
 
             this.logger.debug({ userId: id, wallet: address }, 'Primary wallet set via API');
-            res.json(user);
+            await this.respondWithUser(res, user);
         } catch (error) {
             this.logger.error({ error, userId: req.params.id }, 'Failed to set primary wallet');
             res.status(400).json({
@@ -470,7 +509,7 @@ export class UserController {
             const user = await this.userService.refreshWalletVerification(id, address, message, signature, nonce);
 
             this.logger.info({ userId: id, wallet: address }, 'Wallet verification refreshed via API');
-            res.json(user);
+            await this.respondWithUser(res, user);
         } catch (error) {
             this.logger.error({ error, userId: req.params.id }, 'Failed to refresh wallet verification');
             res.status(400).json({
@@ -550,7 +589,7 @@ export class UserController {
 
             const user = await this.userService.updatePreferences(id, preferences);
 
-            res.json(user);
+            await this.respondWithUser(res, user);
         } catch (error) {
             this.logger.error({ error, userId: req.params.id }, 'Failed to update preferences');
             res.status(400).json({
@@ -769,7 +808,7 @@ export class UserController {
             const user = await this.userService.login(id);
 
             this.logger.info({ userId: id }, 'User logged in via API');
-            res.json(user);
+            await this.respondWithUser(res, user);
         } catch (error) {
             this.logger.error({ error, userId: req.params.id }, 'Failed to log in user');
             res.status(400).json({
@@ -797,7 +836,7 @@ export class UserController {
             const user = await this.userService.logout(id);
 
             this.logger.info({ userId: id }, 'User logged out via API');
-            res.json(user);
+            await this.respondWithUser(res, user);
         } catch (error) {
             this.logger.error({ error, userId: req.params.id }, 'Failed to log out user');
             res.status(400).json({

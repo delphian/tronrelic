@@ -112,11 +112,13 @@ export function createUserRouter(controller: UserController): Router {
 
     /**
      * POST /api/user/:id/wallet/:address/refresh-verification
-     * Refresh `verifiedAt` on an already-verified wallet. Recovery path
-     * for stale-Verified admins whose cookie-path admin authority has
-     * decayed past the freshness window. Requires a `refresh-verification`
-     * nonce and a TronLink signature; nonce action-scoping ensures
-     * captured signatures from other actions cannot replay here.
+     * Refresh `verifiedAt` on an already-verified wallet. Narrower
+     * equivalent of the link flow — both update `verifiedAt`, but this
+     * one only operates on already-verified wallets and never toggles
+     * `verified`. Used by callers that specifically want to bump
+     * freshness without going through link's full validation. Requires
+     * a `refresh-verification` nonce and a TronLink signature; nonce
+     * action-scoping prevents replay of signatures from other actions.
      */
     router.post('/:id/wallet/:address/refresh-verification', walletRateLimiter, controller.refreshWalletVerification.bind(controller));
 

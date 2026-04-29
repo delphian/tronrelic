@@ -36,15 +36,17 @@ export enum UserIdentityState {
 
 The string values are the wire format — they appear in MongoDB documents, HTTP responses, logs, and admin URLs unchanged. Member names give consumer code typo-safe references; renames and refactors are compiler-checked.
 
-| Member | Wire value | Definition | Detection from `IUser.wallets` |
-|--------|-----------|------------|--------------------------------|
-| `UserIdentityState.Anonymous` | `'anonymous'` | UUID only. No wallets linked. | `wallets.length === 0` |
-| `UserIdentityState.Registered` | `'registered'` | One or more linked wallets, none cryptographically signed. The wallet claim is unverified. | `wallets.length > 0 && wallets.every(w => !w.verified)` |
-| `UserIdentityState.Verified` | `'verified'` | At least one linked wallet has been cryptographically signed, proving control of the private key. | `wallets.some(w => w.verified)` |
+| Member | Wire value | Definition |
+|--------|-----------|------------|
+| `UserIdentityState.Anonymous` | `'anonymous'` | UUID only. No wallets linked. |
+| `UserIdentityState.Registered` | `'registered'` | One or more linked wallets; no current cryptographic proof of ownership (never signed, or every signature has aged past `VERIFICATION_FRESHNESS_MS`). |
+| `UserIdentityState.Verified` | `'verified'` | At least one linked wallet has been signed within `VERIFICATION_FRESHNESS_MS`. |
 
-The members are ordered by claim strength (Anonymous → Registered → Verified). A user transitions forward as they connect and then sign for wallets, and only transitions back if wallets are explicitly unlinked. The exported `USER_IDENTITY_STATES` array preserves this order for index-based comparisons or iteration.
+The wire form is **always derived** at the API boundary by `deriveIdentityState(wallets)`. `UserService.toPublicUser` runs through it on every read, so the value reflects current truth — verification freshness is folded into `Verified` itself. A user whose every wallet's `verifiedAt` has aged past the freshness window collapses to `Registered` with no wallet mutation needed; re-signing any one wallet lifts them back. Storage holds a denormalized `identityState` for indexes and admin filter queries, but storage is a cache: between wallet mutations the stored value drifts as freshness ages out, while the API surface stays correct because it always derives.
 
-**Security implication.** `Registered` is an unverified claim — the cookie holder asserts the wallet is theirs, but the backend has no cryptographic proof. Only `Verified` proves private-key control. Sensitive operations (publishing a public profile, claiming referral rewards, destructive wallet actions) must compare against `UserIdentityState.Verified` (or use a `hasVerifiedWallet` helper), not the mere presence of a linked wallet.
+The members are ordered by claim strength (Anonymous → Registered → Verified). Users transition forward when they sign, backward when wallets are unlinked or signatures age. The exported `USER_IDENTITY_STATES` array preserves this order for index-based comparisons.
+
+**Security implication.** `Registered` carries no current cryptographic proof — either unsigned or aged out. Only `Verified` confers proven, current control. Sensitive operations (publishing a public profile, claiming referral rewards, destructive wallet actions) must compare against `UserIdentityState.Verified`, not the per-wallet `verified` historical flag (which stays `true` even after a signature ages out).
 
 **Forbidden pattern — bare string literals.** Do not write `if (state === 'verified')`. Use `if (state === UserIdentityState.Verified)`. Likewise, do not introduce a parallel enum (`UserState`, `IdentityTier`, etc.) — `UserIdentityState` is canonical. The name was chosen to distinguish this concept from `isLoggedIn` (a separate UI/feature gate) and from any future session/connection state.
 
@@ -352,7 +354,7 @@ validateCookie(req: Request, res: Response, next: NextFunction): void {
 - `POST /api/user/:id/wallet` - Verify wallet via signature against a fresh `link` nonce (stage 2)
 - `DELETE /api/user/:id/wallet/:address` - Unlink wallet (requires signature + `unlink` nonce)
 - `PATCH /api/user/:id/wallet/:address/primary` - Set primary wallet (requires signature + `set-primary` nonce)
-- `POST /api/user/:id/wallet/:address/refresh-verification` - Refresh `verifiedAt` on an already-verified wallet (requires signature + `refresh-verification` nonce). Recovery path for stale-Verified admins
+- `POST /api/user/:id/wallet/:address/refresh-verification` - Refresh `verifiedAt` on an already-verified wallet (requires signature + `refresh-verification` nonce). Narrower equivalent of the link flow; the WalletButton uses link by default
 - `PATCH /api/user/:id/preferences` - Update preferences
 - `POST /api/user/:id/activity` - Record activity
 
@@ -614,17 +616,15 @@ The user module implements multiple layers of protection against abuse and unaut
 
 **Admin authentication — dual-track.** Admin endpoints accept *either* of two authorization paths, evaluated in this order:
 
-1. **User path (preferred for human operators)** — the `tronrelic_uid` cookie identifies the caller, the user's `identityState === Verified` proves cryptographic wallet ownership, *at least one wallet's `verifiedAt` is within the freshness window* (`VERIFICATION_FRESHNESS_MS`, 14 days), and `IUserGroupService.isAdmin(userId)` confirms admin-group membership. The middleware sets `req.adminVia = 'user'`, and audit logs record the operator's UUID via `req.userId`. A stolen cookie alone is not sufficient — the verification step requires a wallet signature to have happened *recently*.
+1. **User path (preferred for human operators)** — the `tronrelic_uid` cookie identifies the caller, the user reads as `identityState === Verified` (which already folds in freshness via `deriveIdentityState`), and `IUserGroupService.isAdmin(userId)` confirms admin-group membership. The middleware sets `req.adminVia = 'user'`; audit logs record the operator's UUID via `req.userId`. Two checks, no separate freshness gate — a user whose every signature has aged past `VERIFICATION_FRESHNESS_MS` reads as `Registered` and fails the verified check the same way an unsigned-claim user does.
 
 2. **Service-token path (CI, scripts, first-admin bootstrap)** — `ADMIN_API_TOKEN` via `x-admin-token` header or `Authorization: Bearer`. The middleware sets `req.adminVia = 'service-token'`. No per-human attribution; audit logs note this fact explicitly.
 
-The cookie path is tried first so a request that carries both a valid cookie and a service token is attributed to the human operator. When the user-cookie path fails and `ADMIN_API_TOKEN` is unset, the middleware returns 503 (admin disabled); when it's set but doesn't match, 401.
+The cookie path is tried first so a request that carries both a valid cookie and a service token is attributed to the human operator. A stale-collapsed cookie carries no authority, so a request with both a stale cookie and a valid service token is attributed to the service-token caller — that's the truthful description of what authorized the call. When the cookie path fails and `ADMIN_API_TOKEN` is unset, the middleware returns 503 (admin disabled); when it's set but doesn't match, 401 with no `reason` field.
 
-**Verification freshness — the stale-Verified branch.** When the cookie-resolved user is in the admin group with a verified wallet but every wallet's `verifiedAt` is older than `VERIFICATION_FRESHNESS_MS`, the middleware returns 401 with body `{ "reason": "verification_stale" }` *without* falling through to the service-token path. The user is an admin; they need to re-prove control of an attached wallet. Falling through would attribute the request to a service caller when the operator's intent was to act as themselves, and the recovery prompt the frontend renders would never fire. The cookie itself stays put — it is the freshness clock on the wallet, not the cookie, that resets.
+**Multi-wallet rule — any-fresh-wins.** A user with multiple wallets reads as `Verified` as long as at least one `verifiedAt` is within the window. Stale siblings keep their per-wallet `verified: true` flag (it's the historical fact that they were once signed), but freshness ignores them until re-signed. Requiring every linked wallet to be re-signed each window would train operators to click through signature prompts without reading them — worse UX than no expiry at all.
 
-**Multi-wallet rule — any-fresh-wins.** A user with multiple verified wallets stays fresh-Verified as long as *at least one* wallet's `verifiedAt` is within the window. Operators accumulate wallets over time; requiring every linked wallet to be re-signed each window would train them to click through signature prompts without reading them — worse UX than no expiry at all. Stale wallets keep their `verified: true` flag and continue contributing to `identityState === Verified` for display and analytics. Only the freshness predicate ignores them until they are re-signed.
-
-**Recovery flow.** Stale-Verified admins refresh `verifiedAt` on any attached verified wallet via `POST /api/user/:id/wallet/:address/refresh-verification`. The endpoint requires a fresh `'refresh-verification'` challenge nonce and a TronLink signature on the canonical message — the same shape as the link/unlink/set-primary actions, with its own nonce scope so a captured signature for any other action cannot replay here. The endpoint refuses to operate on registered (unverified) wallets — moving registered → verified is the link path's responsibility. The frontend `SystemAuthContext` exposes `needsRefreshVerification` so `SystemAuthGate` renders a re-sign affordance distinct from the generic "no admin access" screen.
+**Recovery flow.** Stale-collapsed users (admin or not) recover through the same surface a never-signed registered user does: the wallet button in the page header. Clicking it prompts a fresh signature on any attached wallet via the link flow, which updates `verifiedAt` and re-derives the user as `Verified`. There is no special "stale admin" UI, no `verification_stale` reason code, and no `/profile` redirect — the affordance disappearing is the signal, the WalletButton is the recovery, and the System nav reappears once the signature lands. Operators who specifically want to re-sign without going through the full link flow can call `POST /api/user/:id/wallet/:address/refresh-verification` directly; the WalletButton uses the link flow because it's already wired and produces an identical `verifiedAt` update.
 
 **Bootstrapping the first admin.** A fresh install has no human admins yet. Use the service token to add yourself:
 
@@ -813,7 +813,7 @@ Content-Type: application/json
 Response: IUser
 ```
 
-**Refresh Wallet Verification** *(10 req/min)* — Recovery path for stale-Verified admins. Updates `verifiedAt = now` on an already-verified wallet without changing its `verified` flag, identity state, or any other field. Refuses to operate on registered (unsigned) wallets.
+**Refresh Wallet Verification** *(10 req/min)* — Updates `verifiedAt = now` on an already-verified wallet without touching its `verified` flag or any other field. Equivalent to re-signing through the link flow but narrower in effect; the WalletButton uses link by default so this endpoint is reserved for callers that specifically want to refresh freshness without going through link's full validation. Refuses to operate on registered (unsigned) wallets — moving registered → verified is the link path's job.
 ```
 POST /api/user/:id/wallet/:address/refresh-verification
 Content-Type: application/json
@@ -1028,7 +1028,8 @@ Before deploying user module features, verify:
 - [ ] Wallet signature verification uses SignatureService and consumes a fresh nonce via WalletChallengeService
 - [ ] All wallet mutation routes (link, unlink, set-primary, refresh-verification) require a `nonce` field; legacy `timestamp` field has been removed
 - [ ] `IWalletLink.verifiedAt` populated on every link / set-primary / refresh-verification success path; legacy rows backfilled by migration 008
-- [ ] `requireAdmin` cookie path consults `hasFreshVerification(user.wallets)` after the verified + admin-group checks; stale verification short-circuits with 401 + `reason: 'verification_stale'` instead of falling through to the service-token path
+- [ ] `UserService.toPublicUser` derives `identityState` from `wallets[]` via `deriveIdentityState` on every read; storage drift between mutations is acceptable because the wire form always recomputes
+- [ ] `requireAdmin` cookie path checks `identityState === Verified && IUserGroupService.isAdmin(userId)` and nothing else; freshness is folded into `Verified`, no separate gate
 - [ ] Cookie validation middleware applied to all `/api/user/:id/*` routes
 - [ ] Admin routes protected by `requireAdmin` middleware (dual-track: cookie+verified+admin-group OR service token)
 - [ ] First admin bootstrapped via `PUT /api/admin/users/:id/groups` with the service token; subsequent operators added via the cookie path
