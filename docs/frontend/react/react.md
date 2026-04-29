@@ -1,69 +1,34 @@
 # React Component Architecture
 
-This document provides a high-level overview of TronRelic's React component patterns and architectural decisions. For detailed component implementation guides, refer to the specialized documentation in the `react/` subdirectory.
+TronRelic combines Next.js 14 App Router, Redux, context-based DI, and Socket.IO for real-time blockchain UI. This file covers the architectural patterns; component-specific guides live alongside it in [`docs/frontend/react/`](.).
 
 ## Why This Matters
 
-TronRelic's React architecture uses context providers, custom hooks, server/client component separation, and composition patterns to manage a real-time blockchain monitoring UI. Deviating from these patterns causes prop drilling through deep component trees, duplicated WebSocket logic, hydration errors from mixed server/client concerns, and plugins that cannot extend the UI cleanly.
+Skipping these patterns produces prop drilling, duplicated WebSocket logic, hydration errors, loading-flash on every page visit, and plugins that cannot extend the UI cleanly. Each rule below traces to a specific class of bug — follow them, link out for depth.
 
 ## SSR + Live Updates Pattern
 
-**This is the foundational rendering pattern for all public-facing TronRelic components.** Components must render fully on the server with real data (no loading flash), then hydrate on the client for interactivity and real-time updates.
+**The foundational rule for every public-facing component.** Render fully on the server with real data, then hydrate for interactivity and live updates. No loading flash on initial render.
 
-### Why SSR-First Rendering Matters
-
-Server components fetch data during SSR so HTML arrives with content — users see data immediately instead of loading spinners. After hydration, WebSocket subscriptions provide live updates. Skipping this pattern causes loading flash on every page visit, hydration mismatches when server and client HTML diverge, and SEO penalties from content-sparse initial renders.
-
-### How It Works
-
-**Step 1: Server component fetches data**
+The server component fetches data and passes it as a prop. The client component initializes state from that prop and attaches WebSocket subscriptions in `useEffect` after hydration.
 
 ```typescript
-// app/(core)/markets/page.tsx (Server Component - no 'use client')
-import { getApiUrl } from '@/lib/config';
-import { MarketDashboard } from '../../../features/markets';
-
+// app/(core)/markets/page.tsx — Server Component (no 'use client')
 export default async function MarketsPage() {
-    // Runs on server during SSR
     const response = await fetch(getApiUrl('/markets/compare'));
-    const data = await response.json();
-
-    // Pass data as prop to client component
-    return <MarketDashboard initialMarkets={data.markets} />;
+    const { markets } = await response.json();
+    return <MarketDashboard initialMarkets={markets} />;
 }
-```
 
-**Step 2: Client component initializes state from props**
-
-```typescript
 // features/markets/components/MarketDashboard.tsx
 'use client';
-
-import { useState, useEffect } from 'react';
-
-interface Props {
-    initialMarkets: Market[];  // SSR data passed as prop
-}
-
-export function MarketDashboard({ initialMarkets }: Props) {
-    // Initialize state FROM the prop - NOT empty array
-    const [markets, setMarkets] = useState(initialMarkets);
-
-    // After hydration, subscribe to live updates
+export function MarketDashboard({ initialMarkets }: { initialMarkets: Market[] }) {
+    const [markets, setMarkets] = useState(initialMarkets); // initialize FROM prop
     useEffect(() => {
-        const socket = getSocket();
-        socket.on('markets:updated', setMarkets);
+        socket.on('markets:updated', setMarkets);            // live updates AFTER hydration
         return () => socket.off('markets:updated', setMarkets);
     }, []);
-
-    // Render immediately - data is already present
-    return (
-        <div>
-            {markets.map(market => (
-                <MarketCard key={market.guid} {...market} />
-            ))}
-        </div>
-    );
+    return <>{markets.map(m => <MarketCard key={m.guid} {...m} />)}</>;
 }
 ```
 
@@ -71,936 +36,192 @@ export function MarketDashboard({ initialMarkets }: Props) {
 
 | Rule | Correct | Wrong |
 |------|---------|-------|
-| **Initialize state from props** | `useState(initialData)` | `useState([])` then fetch |
-| **No loading states for initial data** | Render content immediately | Show "Loading..." on mount |
-| **Fetch in server components** | `async function Page()` | `useEffect(() => fetch())` |
-| **Client components receive data** | `<Component data={data} />` | Component fetches its own data |
+| Initialize state from props | `useState(initialData)` | `useState([])` then fetch |
+| No initial loading state | Render content immediately | "Loading…" spinner on mount |
+| Fetch in server component | `async function Page()` | `useEffect(() => fetch())` |
+| Client receives data as prop | `<Component data={data} />` | Component fetches its own data |
 
-### Common Mistakes
+Initializing with empty state breaks hydration: server HTML contains content, client first render is empty, React refuses to attach. SSR-first keeps server and client output identical.
 
-**Wrong: Empty initial state with client-side fetch**
+### When Loading States Are Appropriate
 
-```typescript
-'use client';
+User-triggered actions (Save spinner), pagination/infinite scroll, search results, secondary/optional data. **Never** for initial page render or primary content.
 
-export function BadComponent() {
-    const [data, setData] = useState([]);  // Empty initial state
-    const [loading, setLoading] = useState(true);  // Loading state
+### Redux Compatibility
 
-    useEffect(() => {
-        fetch('/api/data')
-            .then(r => r.json())
-            .then(setData)
-            .finally(() => setLoading(false));
-    }, []);
-
-    if (loading) return <div>Loading...</div>;  // Users see this flash
-
-    return <DataDisplay data={data} />;
-}
-```
-
-**Correct: Initialize from SSR props**
+Redux state is empty during SSR. If a component reads from Redux, accept the SSR data as a prop, sync it on mount, and fall back to the prop until Redux populates.
 
 ```typescript
-'use client';
-
-export function GoodComponent({ initialData }: { initialData: Data[] }) {
-    const [data, setData] = useState(initialData);  // From SSR
-
-    useEffect(() => {
-        // Subscribe to live updates AFTER hydration
-        socket.on('data:updated', setData);
-        return () => socket.off('data:updated', setData);
-    }, []);
-
-    // No loading state - data is already present
-    return <DataDisplay data={data} />;
-}
+useEffect(() => {
+    if (initialData && !data) dispatch(setFeatureData(initialData));
+}, [initialData, data, dispatch]);
+const displayData = data ?? initialData;
 ```
-
-**Wrong: Relying on Redux without SSR initialization**
-
-```typescript
-'use client';
-
-export function BadReduxComponent() {
-    // Redux state is empty during SSR
-    const data = useAppSelector(state => state.feature.data);
-
-    // Shows loading during SSR and until WebSocket populates Redux
-    if (!data) return <div>Waiting for data...</div>;
-
-    return <DataDisplay data={data} />;
-}
-```
-
-**Correct: Pass SSR data, sync to Redux after hydration**
-
-```typescript
-'use client';
-
-export function GoodReduxComponent({ initialData }: { initialData: Data }) {
-    const dispatch = useAppDispatch();
-    const data = useAppSelector(state => state.feature.data);
-
-    // Sync SSR data to Redux on mount
-    useEffect(() => {
-        if (initialData && !data) {
-            dispatch(setFeatureData(initialData));
-        }
-    }, [initialData, data, dispatch]);
-
-    // Use SSR data until Redux is populated
-    const displayData = data || initialData;
-
-    return <DataDisplay data={displayData} />;
-}
-```
-
-### When Loading States ARE Appropriate
-
-Loading states are appropriate for:
-
-- **User-triggered actions** - "Save" button shows spinner while saving
-- **Pagination/infinite scroll** - Loading more items after initial render
-- **Search results** - New search query fetches fresh data
-- **Optional data** - Secondary content that enhances but isn't required
-
-Loading states are NOT appropriate for:
-
-- **Initial page render** - Primary content should arrive with HTML
-- **Core page data** - The main purpose of the page should render immediately
-- **Navigation** - Moving between pages should show content, not spinners
-
-### Relationship to Hydration
-
-This SSR-first pattern works hand-in-hand with hydration safety:
-
-1. **Server renders with data** - HTML contains actual content
-2. **Client hydrates** - React attaches to server HTML (must match)
-3. **Live updates flow** - WebSocket/Redux updates state
-
-If you initialize with empty state (`useState([])`), the client render won't match the server render, causing hydration errors. The SSR-first pattern prevents this by ensuring server and client render identical content.
-
-**See [Hydration Error Prevention](#hydration-error-prevention) for timezone-specific concerns like date formatting.**
 
 ### SSR + Live Updates Checklist
 
-Before shipping any public-facing component:
-
-- [ ] Server component fetches initial data (no client-side fetch for primary content)
+- [ ] Server component fetches initial data
 - [ ] Client component receives data as prop
 - [ ] State initialized from prop: `useState(initialData)`
-- [ ] No loading state for initial render
-- [ ] WebSocket/live updates established in `useEffect` (after hydration)
-- [ ] Empty states only shown when data is genuinely empty (not loading)
+- [ ] No loading state on initial render
+- [ ] Live updates attach in `useEffect` after hydration
 
-## Core React Patterns
+## Provider Composition
 
-### Context Provider System
-
-TronRelic uses React Context for dependency injection and cross-cutting concerns. All providers are composed in a single `Providers` wrapper that establishes the application's runtime environment:
+All providers compose in `src/frontend/app/providers.tsx`. Outer providers must be available to inner ones — Redux first so every component can reach the store; toast/modal next so plugins can call `useToast`/`useModal`.
 
 ```typescript
 // src/frontend/app/providers.tsx
 export function Providers({ children }: { children: ReactNode }) {
-  return (
-    <Provider store={store}>           {/* Redux state management */}
-      <ToastProvider>                  {/* Toast notifications */}
-        <ModalProvider>                {/* Modal dialogs */}
-          <FrontendPluginContextProvider>  {/* Plugin API access */}
-            <SocketBridge />           {/* WebSocket sync */}
-            <PluginLoader />           {/* Plugin initialization */}
-            {children}
-          </FrontendPluginContextProvider>
-        </ModalProvider>
-      </ToastProvider>
-    </Provider>
-  );
-}
-```
-
-**Key architectural decisions:**
-
-- **Composition order matters** - Redux wraps everything so all components can access the store; toast/modal providers wrap plugins so plugins can use these APIs
-- **Single provider wrapper** - All providers compose in one place (`app/providers.tsx`) making the dependency tree visible at a glance
-- **Client-side only** - Providers use `'use client'` directive since they manage runtime state and cannot run during server-side rendering
-
-**See [Component-Specific Providers](#component-specific-providers) for detailed documentation on:**
-- ModalProvider - Portal-based modal system with size variants and dismissibility
-- ToastProvider - Notification system with success/error/info variants
-- FrontendPluginContextProvider - Plugin dependency injection for UI components, API client, charts, and WebSocket
-
-### Custom Hooks Pattern
-
-TronRelic organizes hooks by feature, colocating them with the components that use them. Each hook encapsulates a single responsibility (WebSocket subscription, wallet state, real-time status) and can be composed into more complex hooks.
-
-**Common hook patterns:**
-
-| Hook Type | Purpose | Example |
-|-----------|---------|---------|
-| **State management hooks** | Access Redux slices | `useWallet()`, `useMarketData()` |
-| **Real-time hooks** | WebSocket subscriptions | `useRealtimeStatus()`, `useSocketSubscription()` |
-| **API hooks** | Data fetching and mutations | `useTransactionTimeseries()` |
-| **UI state hooks** | Component-level state | `useModal()`, `useToast()` |
-
-**Hook organization:**
-
-```
-features/accounts/
-├── hooks/
-│   └── useWallet.ts              # Feature-specific hook
-features/realtime/
-├── hooks/
-│   ├── useRealtimeStatus.ts      # WebSocket connection status
-│   └── useSocketSubscription.ts  # Custom event subscriptions
-```
-
-**Example: Real-time whale transaction hook**
-
-```typescript
-// features/whales/hooks/useWhaleTransactions.ts
-import { useEffect } from 'react';
-import { useAppDispatch, useAppSelector } from '../../../store/hooks';
-import { useSocketSubscription } from '../../realtime/hooks/useSocketSubscription';
-import { whaleTransactionReceived } from '../slice';
-
-export function useWhaleTransactions(thresholdTRX: number) {
-  const dispatch = useAppDispatch();
-  const transactions = useAppSelector(state => state.whales.transactions);
-
-  // Subscribe to WebSocket events
-  const { isSubscribed, error } = useSocketSubscription({
-    event: 'whale:transaction',
-    room: `whales:${thresholdTRX}`,
-    payload: { thresholdTRX },
-    handler: (transaction) => {
-      dispatch(whaleTransactionReceived(transaction));
-    }
-  });
-
-  return { transactions, isSubscribed, error };
-}
-```
-
-**See [Custom Hooks Best Practices](#custom-hooks-best-practices) for guidance on:**
-- When to create a new hook vs inline logic
-- Naming conventions (use-prefixed, camelCase)
-- Dependency management and useEffect patterns
-- Testing custom hooks
-
-### Server vs Client Components
-
-Next.js 14 App Router supports two component types with different capabilities and performance characteristics. TronRelic uses server components by default for pages and layouts, upgrading to client components only when necessary.
-
-**Decision matrix:**
-
-| Use Server Components | Use Client Components |
-|-----------------------|----------------------|
-| Static content rendering | WebSocket subscriptions |
-| Database queries (SSR) | User interactions (clicks, forms) |
-| SEO-critical pages | Real-time updates |
-| Layout shells | Modal/toast rendering |
-| Metadata generation | Redux state access |
-
-**Server component example:**
-
-```typescript
-// app/(core)/markets/page.tsx (no 'use client' directive)
-import { getApiUrl } from '@/lib/config';
-import { MarketDashboard } from '../../../features/markets';
-
-// Runs on server, fetches data during SSR
-export default async function MarketsPage() {
-  const response = await fetch(getApiUrl('/markets/compare'));
-  const data = await response.json();
-
-  // Server component passes data as props to client component
-  return <MarketDashboard markets={data.markets} />;
-}
-```
-
-**Client component example:**
-
-```typescript
-// features/markets/components/MarketDashboard.tsx
-'use client';  // Required for interactivity and WebSocket
-
-import { useState } from 'react';
-import { useSocketSubscription } from '../../realtime/hooks/useSocketSubscription';
-
-export function MarketDashboard({ markets: initialMarkets }) {
-  const [markets, setMarkets] = useState(initialMarkets);
-
-  // Client-only: WebSocket subscription
-  useSocketSubscription({
-    event: 'markets:updated',
-    room: 'markets',
-    handler: (updatedMarkets) => setMarkets(updatedMarkets)
-  });
-
-  return (
-    <div>
-      {markets.map(market => <MarketCard key={market.guid} {...market} />)}
-    </div>
-  );
-}
-```
-
-**Common mistakes to avoid:**
-
-```typescript
-// ❌ BAD - Mixing server and client logic without boundary
-export default async function Page() {
-  const data = await fetch('/api/data');  // Server-side fetch
-
-  const [state, setState] = useState(data);  // ERROR: Hooks don't work in server components
-
-  return <div>{state}</div>;
-}
-
-// ✅ GOOD - Separate concerns with component boundary
-export default async function Page() {
-  const data = await fetch('/api/data');  // Server-side fetch
-
-  return <ClientComponent initialData={data} />;  // Pass to client component
-}
-
-// ClientComponent.tsx
-'use client';
-export function ClientComponent({ initialData }) {
-  const [state, setState] = useState(initialData);  // Now works
-  return <div>{state}</div>;
-}
-```
-
-**See [Next.js Server vs Client Components](#nextjs-server-vs-client-components) for complete guidance on:**
-- When to add `'use client'` directive
-- Hydration error prevention
-- Passing data from server to client components
-- Environment variable access in each context
-
-### Composition Patterns
-
-TronRelic favors composition over inheritance for component reusability. Components accept `children`, render props, or component props to enable customization without subclassing.
-
-**Component composition example:**
-
-```typescript
-// components/ui/Card/Card.tsx
-export interface CardProps {
-  children: ReactNode;
-  title?: string;
-  actions?: ReactNode;  // Render prop for header actions
-  className?: string;
-}
-
-export function Card({ children, title, actions, className }: CardProps) {
-  return (
-    <div className={cn(styles.card, className)}>
-      {(title || actions) && (
-        <header className={styles.card__header}>
-          {title && <h2>{title}</h2>}
-          {actions}
-        </header>
-      )}
-      <div className={styles.card__body}>
-        {children}
-      </div>
-    </div>
-  );
-}
-
-// Usage with composition
-<Card
-  title="Market Leaderboard"
-  actions={<Button onClick={refresh}>Refresh</Button>}
->
-  <MarketTable markets={markets} />
-</Card>
-```
-
-**Plugin component injection:**
-
-Plugins extend core UI by injecting components through the plugin context:
-
-```typescript
-// Plugin frontend code
-export const myPluginFrontend = definePlugin({
-  manifest: myManifest,
-  pages: [
-    {
-      path: '/my-plugin/dashboard',
-      component: MyPluginDashboard  // Plugin component
-    }
-  ]
-});
-
-// MyPluginDashboard.tsx
-export function MyPluginDashboard({ context }: { context: IFrontendPluginContext }) {
-  const { ui, api, charts } = context;  // Core components injected via context
-
-  return (
-    <ui.Card title="Plugin Dashboard">
-      <charts.LineChart data={...} />
-    </ui.Card>
-  );
-}
-```
-
-**See [Composition Best Practices](#composition-best-practices) for guidance on:**
-- When to use children vs render props vs component props
-- Plugin component injection patterns
-- Higher-order components (HOCs) vs hooks
-- Component API design
-
-## Component-Specific Providers
-
-### ModalProvider
-
-Portal-based modal system supporting multiple simultaneous modals, size variants, dismissibility controls, and Redux integration for analytics.
-
-**Key features:**
-
-- **Imperative API** - Open/close modals programmatically without managing state
-- **Portal rendering** - Modals render outside component hierarchy for proper z-index stacking
-- **Size variants** - `sm`, `md`, `lg`, `xl` for responsive width control
-- **Dismissible control** - Optional backdrop clicks and X button for closing
-- **Multiple modals** - Supports stacking multiple modals simultaneously
-- **Redux integration** - Tracks modal state for analytics and debugging
-
-**Usage example:**
-
-```typescript
-import { useModal } from '../../../components/ui/ModalProvider';
-
-function ThemeForm() {
-  const { open: openModal, close: closeModal } = useModal();
-
-  const handleOpenPicker = () => {
-    const modalId = openModal({
-      title: 'Select Icon',
-      size: 'lg',
-      content: <IconPickerModal onSelect={handleSelect} onClose={() => closeModal(modalId)} />,
-      dismissible: true
-    });
-  };
-
-  return <Button onClick={handleOpenPicker}>Choose Icon</Button>;
-}
-```
-
-**See [react/component-icon-picker-modal.md](./react/component-icon-picker-modal.md) for a complete example using ModalProvider.**
-
-**Provider location:** `src/frontend/components/ui/ModalProvider/ModalProvider.tsx`
-
-### SchedulerMonitor
-
-Admin diagnostic tool for monitoring BullMQ scheduled job health, execution history, and runtime configuration. Displays real-time job status tracking with inline controls for enabling/disabling jobs and modifying schedules without backend restarts.
-
-**Key features:**
-
-- **Real-time status tracking** - Color-coded badges (success/failed/running/never run) with auto-refresh every 10 seconds
-- **Global health metrics** - Scheduler uptime, success rate, and enabled/disabled state
-- **Inline job control** - Enable/disable toggles and editable cron expressions with blur-to-save
-- **Job filtering** - Show all jobs or filter by job name/prefix for plugin-scoped views
-- **Admin authentication** - Authorized via the signed `tronrelic_uid` cookie (verified user + `admin` group) carried automatically on same-origin fetches; the `token` prop is retained as an empty string for transitional callers and is not a JS-readable secret
-- **Persistent configuration** - All changes saved to MongoDB, no backend restart needed
-
-**Props interface:**
-
-```typescript
-interface SchedulerJob {
-    name: string;
-    schedule: string;
-    enabled: boolean;
-    lastRun: string | null;
-    nextRun: string | null;
-    status: 'running' | 'success' | 'failed' | 'never_run';
-    duration: number | null;
-    error: string | null;
-}
-
-interface Props {
-    token: string;
-    jobFilter?: string[] | ((job: SchedulerJob) => boolean);
-    sectionTitle?: string;
-    hideHealth?: boolean;
-}
-```
-
-**Usage example:**
-
-```typescript
-import { SchedulerMonitor, useSystemAuth } from '../../../features/system';
-
-function SchedulerPage() {
-    const { token } = useSystemAuth();
-    return <SchedulerMonitor token={token} />;
-}
-
-// Plugin-scoped view (filter to specific jobs)
-function PluginJobControl() {
-    const { token, isAuthenticated } = useSystemAuth();
-
-    if (!isAuthenticated) {
-        return <AuthPrompt href="/system" />;
-    }
-
     return (
-        <SchedulerMonitor
-            token={token}
-            jobFilter={['markets:refresh']}
-            sectionTitle="Market Refresh Job"
-            hideHealth={true}
-        />
+        <Provider store={store}>                  {/* Redux */}
+            <ToastProvider>                       {/* useToast() */}
+                <ModalProvider>                   {/* useModal() */}
+                    <FrontendPluginContextProvider>
+                        <SocketBridge />
+                        <PluginLoader />
+                        {children}
+                    </FrontendPluginContextProvider>
+                </ModalProvider>
+            </ToastProvider>
+        </Provider>
     );
 }
 ```
 
-**See [react/component-scheduler-monitor.md](./react/component-scheduler-monitor.md) for complete integration guide and troubleshooting.**
+All providers are `'use client'` — they manage runtime state.
 
-**Component location:** `src/frontend/features/system/components/SchedulerMonitor/SchedulerMonitor.tsx`
+| Provider | Purpose | Reference |
+|----------|---------|-----------|
+| Redux `<Provider>` | Global state | `src/frontend/store/` |
+| `<ToastProvider>` | Notifications via `useToast()` | `components/ui/ToastProvider/` |
+| `<ModalProvider>` | Portal-based modals via `useModal()` | [component-icon-picker-modal.md](./component-icon-picker-modal.md) |
+| `<FrontendPluginContextProvider>` | Plugin DI (UI, layout, api, charts, websocket) | [plugins-frontend-context.md](../../plugins/plugins-frontend-context.md) |
+| `<SchedulerMonitor>` (admin) | BullMQ job control | [component-scheduler-monitor.md](./component-scheduler-monitor.md) |
 
-### ToastProvider
+## Server vs Client Components
 
-Notification system for displaying success, error, info, and warning messages with automatic dismissal and action buttons.
+Default to server. Upgrade to client only when needed.
 
-**Key features:**
+| Server Components | Client Components |
+|-------------------|-------------------|
+| Static content, SSR data fetching | Hooks (`useState`, `useEffect`, `useContext`) |
+| SEO-critical pages | WebSocket, user events, Redux |
+| Layout shells, metadata | Modal/toast, browser APIs, portals |
 
-- **Variant types** - Success, error, info, warning with distinct styling
-- **Auto-dismissal** - Configurable timeout (default 5 seconds)
-- **Action buttons** - Optional clickable actions in toast content
-- **Stacking** - Multiple toasts stack vertically
-- **Accessibility** - ARIA live regions for screen reader announcements
+Add `'use client'` whenever the file uses hooks, browser APIs (`window`, `localStorage`), WebSocket, event handlers, Redux hooks, or `createPortal`.
 
-**Usage example:**
+**Never mix `await` and hooks in one file.** Server-side `await` and React hooks cannot coexist:
 
 ```typescript
-import { useToast } from '../../../components/ui/ToastProvider';
+// ❌ Hooks fail in server components
+export default async function Page() {
+    const data = await fetch('/api/data');
+    const [state, setState] = useState(data); // ERROR
+}
 
-function SaveButton() {
-  const { showToast } = useToast();
-
-  const handleSave = async () => {
-    try {
-      await saveData();
-      showToast({
-        type: 'success',
-        message: 'Settings saved successfully'
-      });
-    } catch (error) {
-      showToast({
-        type: 'error',
-        message: 'Failed to save settings',
-        duration: 7000
-      });
-    }
-  };
-
-  return <Button onClick={handleSave}>Save</Button>;
+// ✅ Boundary at the file level
+export default async function Page() {
+    const data = await fetchData();
+    return <ClientComponent initialData={data} />;
 }
 ```
 
-**Provider location:** `src/frontend/components/ui/ToastProvider/ToastProvider.tsx`
+## Hydration Error Prevention
 
-### FrontendPluginContextProvider
+Hydration mismatch = server HTML differs from first client render. React aborts and re-renders. Two common causes:
 
-Dependency injection system for plugins to access layout components, UI primitives, API client, charts, and WebSocket without cross-workspace imports.
+- **Browser APIs during render** — `window`, `document`, `localStorage` are undefined on the server. Read them in `useEffect`, not the render body.
+- **Timezone-sensitive dates** — `new Date().toLocaleString()` differs between server (UTC container) and client (local TZ). Use the `<ClientTime>` component.
 
-**Key features:**
+See [ui-ssr-hydration.md](../ui/ui-ssr-hydration.md) for `<ClientTime>` API and the full rule set.
 
-- **Layout components** - Page, PageHeader, Stack, Grid, Section for consistent page structure
-- **UI component access** - Plugins use shared Card, Button, Badge without importing
-- **API client** - Pre-configured axios instance with authentication
-- **Chart components** - Reusable LineChart, BarChart, PieChart
-- **WebSocket bridge** - Subscribe to real-time events from plugin pages
+## Custom Hooks
 
-**Usage in plugins:**
+Create a hook when logic is reused across components, stateful logic is complex, side effects need cleanup, or testing benefits from isolation. Don't create one for single-use logic, pure transformations (use a function), or simple computed values (use `useMemo` inline).
 
-```typescript
-import type { IFrontendPluginContext } from '@/types';
+Naming: `use` prefix, camelCase, describe what — not how. Organization: feature-specific in `features/<name>/hooks/`; shared utilities in `lib/hooks/`.
 
-export function MyPluginPage({ context }: { context: IFrontendPluginContext }) {
-  const { ui, layout, api, charts, websocket } = context;
-
-  useEffect(() => {
-    websocket.subscribe({
-      event: 'my-plugin:update',
-      room: 'my-plugin-room',
-      handler: (data) => console.log('Update received:', data)
-    });
-  }, [websocket]);
-
-  return (
-    <layout.Page>
-      <layout.PageHeader title="Plugin Dashboard" />
-      <ui.Card>
-        <layout.Stack gap="md">
-          <charts.LineChart data={...} />
-          <ui.Button onClick={() => api.post('/plugins/my-plugin/action', {})}>
-            Trigger Action
-          </ui.Button>
-        </layout.Stack>
-      </ui.Card>
-    </layout.Page>
-  );
-}
-```
-
-**Provider location:** `src/frontend/lib/frontendPluginContext.tsx`
-
-**See [plugins-frontend-context.md](../plugins/plugins-frontend-context.md) for complete plugin context documentation.**
-
-## Custom Hooks Best Practices
-
-### When to Create a Hook
-
-Create a custom hook when:
-
-- **Logic is reused across multiple components** - WebSocket subscriptions, wallet state, API fetching
-- **Stateful logic is complex** - Multiple useState/useEffect calls that should be encapsulated
-- **Side effects need cleanup** - WebSocket connections, timers, subscriptions require cleanup on unmount
-- **Testing would benefit from isolation** - Hooks can be tested separately from component rendering
-
-**Do not create hooks for:**
-
-- Single-use logic that's simpler inline
-- Pure data transformations (use utility functions instead)
-- Simple computed values (use useMemo inline)
-
-### Hook Naming Conventions
-
-- **Always prefix with `use`** - Required for React to recognize hooks
-- **CamelCase** - `useWallet`, `useRealtimeStatus`, `useSocketSubscription`
-- **Descriptive names** - Name should explain what the hook does, not how it works internally
-
-### Hook Organization
-
-**Feature-specific hooks:**
-```
-features/accounts/hooks/
-└── useWallet.ts              # Account feature logic
-
-features/realtime/hooks/
-├── useRealtimeStatus.ts      # WebSocket status
-└── useSocketSubscription.ts  # Event subscriptions
-```
-
-**Shared hooks:**
-```
-lib/hooks/
-└── useMenuConfig.ts          # Cross-feature utilities
-```
-
-### Hook Composition Example
-
-Compose simple hooks into more complex ones:
+**Compose low-level hooks into high-level ones:**
 
 ```typescript
-// Low-level hook: WebSocket subscription
+// Low-level: WebSocket subscription
 export function useSocketSubscription({ event, room, handler }) {
-  const socket = useContext(SocketContext);
-
-  useEffect(() => {
-    socket.on(event, handler);
-    socket.emit('subscribe', { room });
-
-    return () => {
-      socket.off(event, handler);
-      socket.emit('unsubscribe', { room });
-    };
-  }, [event, room, handler, socket]);
-
-  return { isSubscribed: true };
+    const socket = useContext(SocketContext);
+    useEffect(() => {
+        socket.on(event, handler);
+        socket.emit('subscribe', { room });
+        return () => {
+            socket.off(event, handler);
+            socket.emit('unsubscribe', { room });
+        };
+    }, [event, room, handler, socket]);
+    return { isSubscribed: true };
 }
 
-// High-level hook: Whale transactions (composes low-level hook)
+// High-level: composes the low-level hook
 export function useWhaleTransactions(threshold: number) {
-  const dispatch = useAppDispatch();
-  const transactions = useAppSelector(state => state.whales.transactions);
-
-  useSocketSubscription({
-    event: 'whale:transaction',
-    room: `whales:${threshold}`,
-    handler: (tx) => dispatch(whaleTransactionReceived(tx))
-  });
-
-  return { transactions };
+    const dispatch = useAppDispatch();
+    const transactions = useAppSelector(state => state.whales.transactions);
+    useSocketSubscription({
+        event: 'whale:transaction',
+        room: `whales:${threshold}`,
+        handler: (tx) => dispatch(whaleTransactionReceived(tx))
+    });
+    return { transactions };
 }
 ```
 
-### Dependency Array Management
+**List every dependency** in `useEffect` / `useCallback` / `useMemo` arrays. Missing deps cause stale closures. Wrap unstable function deps in `useCallback`.
 
-Always include all dependencies in `useEffect`/`useCallback`/`useMemo` dependency arrays:
+## Environment Variables
 
-```typescript
-// ❌ BAD - Missing dependencies causes stale closures
-useEffect(() => {
-  fetchData(userId);  // userId not in dependency array
-}, []);
-
-// ✅ GOOD - All dependencies listed
-useEffect(() => {
-  fetchData(userId);
-}, [userId]);
-
-// ✅ GOOD - Stable reference for function dependency
-const fetchData = useCallback(async (id: string) => {
-  const result = await api.get(`/users/${id}`);
-  setData(result);
-}, [api]);
-
-useEffect(() => {
-  fetchData(userId);
-}, [userId, fetchData]);
-```
-
-## Next.js Server vs Client Components
-
-### Adding 'use client' Directive
-
-Add `'use client'` at the top of any file that:
-
-- Uses React hooks (`useState`, `useEffect`, `useContext`, etc.)
-- Accesses browser APIs (`window`, `document`, `localStorage`)
-- Subscribes to WebSocket events
-- Handles user interactions (clicks, form submissions)
-- Uses Redux hooks (`useAppDispatch`, `useAppSelector`)
-- Renders portals (`createPortal`)
-
-**Example requiring 'use client':**
-
-```typescript
-'use client';
-
-import { useState } from 'react';
-import { useModal } from '../../../components/ui/ModalProvider';
-
-export function InteractiveComponent() {
-  const [count, setCount] = useState(0);  // Hook requires client
-  const { open } = useModal();            // Context requires client
-
-  return (
-    <button onClick={() => setCount(c => c + 1)}>  {/* Event handler requires client */}
-      Count: {count}
-    </button>
-  );
-}
-```
-
-### Hydration Error Prevention
-
-Hydration errors occur when server-rendered HTML doesn't match client-side rendering. Common causes:
-
-**Problem 1: Using browser APIs during render**
-
-```typescript
-// ❌ BAD - window not available during SSR
-export function BadComponent() {
-  const width = window.innerWidth;  // ReferenceError: window is not defined
-  return <div>Width: {width}</div>;
-}
-
-// ✅ GOOD - Check for browser environment first
-'use client';
-export function GoodComponent() {
-  const [width, setWidth] = useState(0);
-
-  useEffect(() => {
-    setWidth(window.innerWidth);  // Safe: runs client-side only
-  }, []);
-
-  return <div>Width: {width || 'Loading...'}</div>;
-}
-```
-
-**Problem 2: Timezone-sensitive dates without SSR compatibility**
-
-```typescript
-// ❌ BAD - Date formatting differs between server (UTC) and client (local time)
-export function BadTimestamp({ date }: { date: Date }) {
-  return <span>{date.toLocaleString()}</span>;  // Hydration mismatch
-}
-
-// ✅ GOOD - Use ClientTime component for timezone-aware rendering
-import { ClientTime } from '../../../components/ui/ClientTime';
-
-export function GoodTimestamp({ date }: { date: Date }) {
-  return <ClientTime date={date} format="PPpp" />;  // Handles SSR correctly
-}
-```
-
-**See [ui-ssr-hydration.md](../ui/ui-ssr-hydration.md) for complete SSR hydration guidance.**
-
-### Environment Variable Access
-
-Server and client components have different environment variable access:
-
-| Variable Type | Server Components | Client Components |
-|---------------|-------------------|-------------------|
-| `SITE_BACKEND` | ✅ Available | ❌ Undefined |
+| Variable | Server Components | Client Components |
+|----------|-------------------|-------------------|
+| `SITE_BACKEND`, other server vars | ✅ Available | ❌ Undefined |
 | `NEXT_PUBLIC_*` | ✅ Available | ✅ Available |
-| Other env vars | ✅ Available | ❌ Undefined |
 
-**Always use centralized config module:**
+**Always use the centralized config module** (`@/lib/config`) — it returns the right value for the current context. Never read `process.env.*` directly. See [frontend-architecture.md](../frontend-architecture.md#environment-configuration-and-runtime-contexts).
 
-```typescript
-// ✅ GOOD - Works in both server and client contexts
-import { config } from '@/lib/config';
+## Composition Over Inheritance
 
-export function Component() {
-  const apiUrl = config.apiBaseUrl;  // Correct URL for current context
-  // ...
-}
+Use `children` for content slots, render props when the child needs parent data, and component props (`renderItem: ComponentType`) when the parent passes a component reference.
 
-// ❌ BAD - Breaks in client or server depending on variable
-export function Component() {
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL;  // May be undefined
-  // ...
-}
-```
-
-**See [frontend-architecture.md](./frontend-architecture.md#environment-configuration-and-runtime-contexts) for complete config module documentation.**
-
-## Composition Best Practices
-
-### Children vs Render Props vs Component Props
-
-**Use `children` for simple content injection:**
+**Prefer hooks over HOCs.** HOCs nest deeply and obscure props; hooks compose flat. Use HOCs only for error boundaries, third-party wrapping, or legacy migration.
 
 ```typescript
-function Card({ children }: { children: ReactNode }) {
-  return <div className={styles.card}>{children}</div>;
-}
+// ❌ HOC nests, hides props
+withAuth(MyComponent)
 
-<Card>
-  <p>Simple content</p>
-</Card>
-```
-
-**Use render props when child needs parent data:**
-
-```typescript
-function DataFetcher({ render }: { render: (data: Data) => ReactNode }) {
-  const [data, setData] = useState<Data | null>(null);
-
-  useEffect(() => {
-    fetchData().then(setData);
-  }, []);
-
-  return <div>{data ? render(data) : 'Loading...'}</div>;
-}
-
-<DataFetcher
-  render={(data) => <DataDisplay data={data} />}
-/>
-```
-
-**Use component props when child needs control from parent:**
-
-```typescript
-interface ListProps<T> {
-  items: T[];
-  renderItem: ComponentType<{ item: T }>;  // Component, not element
-  emptyState?: ComponentType;
-}
-
-function List<T>({ items, renderItem: Item, emptyState: Empty }: ListProps<T>) {
-  if (!items.length && Empty) {
-    return <Empty />;
-  }
-
-  return (
-    <div>
-      {items.map((item, i) => <Item key={i} item={item} />)}
-    </div>
-  );
-}
-
-<List
-  items={markets}
-  renderItem={MarketCard}         // Pass component, not JSX
-  emptyState={EmptyMarketsState}
-/>
-```
-
-### Higher-Order Components vs Hooks
-
-**Prefer hooks over HOCs for logic reuse:**
-
-```typescript
-// ❌ OLD - HOC pattern (verbose, nesting issues)
-function withAuth(Component) {
-  return function AuthenticatedComponent(props) {
-    const user = useContext(UserContext);
-    if (!user) return <Redirect to="/login" />;
-    return <Component {...props} user={user} />;
-  };
-}
-
-export default withAuth(MyComponent);
-
-// ✅ NEW - Hook pattern (cleaner, composable)
-function useAuth() {
-  const user = useContext(UserContext);
-  if (!user) redirect('/login');
-  return user;
-}
-
+// ✅ Hook is flat and explicit
 function MyComponent() {
-  const user = useAuth();  // Simple hook call
-  return <div>Welcome {user.name}</div>;
+    const user = useAuth();
+    return <div>Welcome {user.name}</div>;
 }
 ```
-
-**Use HOCs only for:**
-
-- Cross-cutting concerns that can't be hooks (error boundaries)
-- Third-party library integration that requires component wrapping
-- Legacy code migration paths
 
 ## Pre-Ship Checklist
 
-Before committing any React component or feature, verify:
+- [ ] Server component fetches initial data; client receives it as prop
+- [ ] `useState` initialized from prop; no initial loading state
+- [ ] Live updates attached in `useEffect` after hydration
+- [ ] `'use client'` only when file needs hooks/browser/WebSocket/events/Redux/portals
+- [ ] No `window`/`document` in render body — only in `useEffect`
+- [ ] Dates rendered via `<ClientTime>`, not `toLocaleString`
+- [ ] `process.env.*` never read directly — use `@/lib/config`
+- [ ] Hooks: `use` prefix, all dependencies listed, `useEffect` cleanups returned
+- [ ] Plugin components consume `IFrontendPluginContext` (no cross-workspace imports)
 
-- [ ] Uses `'use client'` directive if component uses hooks, browser APIs, or interactivity
-- [ ] Server components don't use hooks or browser APIs
-- [ ] No hydration errors (dates/timezones use ClientTime component)
-- [ ] Environment variables accessed through centralized config module
-- [ ] Custom hooks follow naming conventions (`use` prefix, camelCase)
-- [ ] Hooks include all dependencies in dependency arrays
-- [ ] Providers composed in correct order in `app/providers.tsx`
-- [ ] Modal/toast APIs used for notifications, not inline state
-- [ ] Plugin components receive context via `IFrontendPluginContext` prop
-- [ ] Composition patterns used instead of inheritance
-- [ ] JSDoc comments explain the "why" before showing the "how"
-- [ ] Tested in multiple contexts (full-page, modal, plugin page, mobile)
+## Component Documentation
 
-## Available Component Documentation
-
-**Detailed component guides in `docs/frontend/react/`:**
-
-- [component-icon-picker-modal.md](./react/component-icon-picker-modal.md) - Searchable icon selection modal with visual browsing and real-time search
-- [component-scheduler-monitor.md](./react/component-scheduler-monitor.md) - Admin diagnostic tool for monitoring BullMQ scheduled job health with inline controls
-
-**Future component documentation will be added to the `react/` subdirectory following the same pattern.**
+- [component-icon-picker-modal.md](./component-icon-picker-modal.md) — IconPickerModal + ModalProvider integration
+- [component-scheduler-monitor.md](./component-scheduler-monitor.md) — SchedulerMonitor admin panel
 
 ## Further Reading
 
-**Detailed documentation:**
-- [frontend-architecture.md](./frontend-architecture.md) - File organization, feature modules, environment configuration
-- [ui.md](./ui/ui.md) - UI system overview with design tokens and styling standards
-- [ui-scss-modules.md](../ui/ui-scss-modules.md) - SCSS architecture and component styling workflow
-- [ui-ssr-hydration.md](../ui/ui-ssr-hydration.md) - Hydration error prevention and ClientTime
-- [documentation.md](../documentation.md) - Documentation standards and writing style
-
-**React-specific component guides:**
-- [react/component-icon-picker-modal.md](./react/component-icon-picker-modal.md) - IconPickerModal component with ModalProvider integration
-- [react/component-scheduler-monitor.md](./react/component-scheduler-monitor.md) - SchedulerMonitor component for admin job control
-
-**Related topics:**
-- [plugins.md](../plugins/plugins.md) - Plugin architecture overview
-- [plugins-frontend-context.md](../plugins/plugins-frontend-context.md) - Plugin context injection and dependency access
-- [plugins-page-registration.md](../plugins/plugins-page-registration.md) - Plugin page registration and routing
+- [frontend.md](../frontend.md) — Frontend overview and module organization
+- [frontend-architecture.md](../frontend-architecture.md) — File layout, env config, runtime contexts
+- [ui.md](../ui/ui.md) — Design tokens, SCSS Modules, layout primitives
+- [ui-ssr-hydration.md](../ui/ui-ssr-hydration.md) — `<ClientTime>` and hydration safety
+- [plugins-frontend-context.md](../../plugins/plugins-frontend-context.md) — Plugin DI: UI, API, charts, websocket
+- [documentation.md](../../documentation.md) — Documentation writing standards

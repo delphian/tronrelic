@@ -292,20 +292,19 @@ function usePluginUser(): IPluginUserState {
         label: w.label
     }));
 
-    // Wallet state convenience properties.
-    // hasVerifiedWallet now reads from the user-level identity state
-    // (already resolved through the backend's lazy session-expiry pass)
-    // rather than scanning per-wallet `verified` flags. A user with a
-    // historically-verified wallet whose session has expired reads as
-    // `hasVerifiedWallet: false` — the per-wallet flag is audit history,
-    // not authentication state.
+    // `isVerified` mirrors the canonical `UserIdentityState.Verified`
+    // — already resolved through the backend's lazy session-expiry
+    // pass — rather than scanning per-wallet `verified` flags. A user
+    // with a historically-verified wallet whose session has expired
+    // reads as `isVerified: false`; the per-wallet flag is audit
+    // history, not session state.
     const hasLinkedWallet = wallets.length > 0;
-    const hasVerifiedWallet = isUserVerified;
+    const isVerified = isUserVerified;
 
     return {
         userId,
         hasLinkedWallet,
-        hasVerifiedWallet,
+        isVerified,
         wallets,
         primaryWallet,
         initialized
