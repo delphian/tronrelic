@@ -260,6 +260,8 @@ The user identity cookie has these characteristics:
 
 **Server is the only writer.** The server mints the UUID at the bootstrap endpoint, refreshes max-age on each bootstrap, and re-anchors the cookie when identity-swap reconciliation produces a new canonical UUID. The legacy JS UUID generator and localStorage mirror have been removed.
 
+**Bootstrap is Mongo-read-only; first write happens in `startSession`.** Phase 2 of the traffic-events split (see [PLAN-traffic-events.md](../../../../PLAN-traffic-events.md)) made `POST /api/user/bootstrap` mint the cookie and emit one ClickHouse `traffic_event`, but never write to the `users` collection. The first Mongo write is the upsert inside `startSession` (Phase 3) — the first cookie-validated mutation that proves the visitor honors cookies and runs JavaScript. Pre-Phase-2 every cookieless GET (search-engine crawlers, link unfurlers, uptime probes) wrote an empty user row; that traffic is still tracked, but in ClickHouse `traffic_events` rather than the identity collection. `GET /api/user/:id` returns 404 when no row exists for the cookie-resolved UUID; `getServerUser` already maps 404 onto the unauthenticated shell, and `userContextMiddleware` proceeds with `req.user` undefined — both pre-existing graceful-degradation paths the orphan-row fix relies on.
+
 **Why signing matters.** HttpOnly only blocks JavaScript reads in browsers — non-browser clients (curl, custom tools) can set arbitrary `Cookie` headers. Without a signature, an attacker who learns a UUID could forge `Cookie: tronrelic_uid=<uuid>` and pass identity checks. Signing requires possession of `SESSION_SECRET` to mint a valid value, so the cookie behaves as a server-bound bearer token, not a guess-the-UUID lottery.
 
 **Reader policy.** `requireAdmin` reads identity **only** from `req.signedCookies` — a forged or unsigned admin cookie is never honored. Every other HTTP entry point (the bootstrap controller, `validateCookie`, `userContextMiddleware`) shares a single resolver, `resolveIdentityFromCookies` in `identity-cookie.ts`, which prefers `req.signedCookies` and falls back to `req.cookies` for unsigned legacy values; on a fallback each of those readers immediately re-issues the cookie as signed via `setIdentityCookie` and emits an info-level `event: 'legacy_cookie_upgraded'` log so operators can track grace-window decay and flag anomalous patterns. Visitors holding unsigned cookies upgrade transparently on the very next request without losing their UUID. The websocket handshake parser verifies the HMAC directly via `cookie-signature.unsign` (Socket.IO doesn't run cookie-parser) and is **signed-only — no legacy fallback.** The handshake has no Set-Cookie channel, so it cannot facilitate the upgrade; accepting unsigned identity would only let a forged-UUID Cookie header subscribe to identity rooms without possessing `SESSION_SECRET`. Browser visitors always reach the handshake with a signed cookie because `SocketBridge` defers the WS connection past hydration, by which point `UserIdentityProvider` has re-anchored the cookie via `/api/user/bootstrap` — so the signed-only policy never breaks legitimate visitors. Non-browser clients must hit any HTTP entry point first to receive the signed cookie, then connect.
@@ -639,8 +641,10 @@ interface IUserGroupDocument {
 The user module implements the `IModule` interface with two-phase initialization:
 
 **Phase 1: init()** - Prepare module without activation
-- Store injected dependencies (database, cache, menu service, app, scheduler, service registry, system config)
+- Store injected dependencies (database, cache, menu service, app, scheduler, service registry, system config, optional ClickHouse)
 - Initialize UserService singleton with `setDependencies()` and create its indexes
+- Initialize GscService singleton; inject into UserService for keyword enrichment
+- Initialize TrafficService singleton (no-ops when `CLICKHOUSE_HOST` is unset); inject into UserService for first-touch backfill on `startSession`
 - Initialize UserGroupService singleton, create its indexes, and seed system groups (the reserved `admin` row)
 - Create user and user-group controllers with their service references
 
@@ -798,24 +802,28 @@ The `mergedInto` field is an optional string on `IUserDocument`. A sparse index 
 
 Most public endpoints require cookie validation — the `tronrelic_uid` cookie must match the `:id` parameter. The bootstrap endpoint is the exception (it mints the cookie). Rate limits are applied per IP address.
 
-**Bootstrap Identity** *(10 req/min)* — Idempotent. The single entry point for visitors. Mints a UUID and sets the HttpOnly cookie when none is present; refreshes max-age and resolves merge tombstones when one is present.
+**Bootstrap Identity** *(10 req/min)* — Idempotent. The single entry point for visitors. Mints a UUID and sets the HttpOnly cookie when none is present; refreshes max-age and resolves merge tombstones when one is present. **Mongo-read-only** since the traffic-events split — the first write happens in `startSession`. Emits one ClickHouse `traffic_events` row per call.
 ```
 POST /api/user/bootstrap
 Content-Type: application/json
 
-(empty body)
+{
+    "landingPath": "/markets",
+    "utm": { "source": "twitter" },
+    "originalReferrer": "https://example.com/post"
+}
 
 Response: IUser
 Set-Cookie: tronrelic_uid=<uuid>; HttpOnly; SameSite=Lax; Secure; Path=/; Max-Age=31536000
 ```
 
-The frontend calls this once on mount via the `initializeUser` thunk; the Next.js middleware (`src/frontend/middleware.ts`) calls it server-to-server when an inbound page request lacks a cookie, so SSR finds an identity on the very first visit.
+The frontend calls this once on mount via the `initializeUser` thunk; the Next.js middleware (`src/frontend/middleware.ts`) calls it server-to-server when an inbound page request lacks a cookie, so SSR finds an identity on the very first visit. The middleware forwards `User-Agent`, `Referer`, `Accept-Language`, `Sec-CH-UA*`, `Sec-Fetch-*`, and `X-Forwarded-For` plus the JSON body shown above so the backend's `traffic_events` row carries real visitor context (not the Docker bridge IP and Node default UA). The body is capped at 1 KB.
 
-**Get or Create User** *(30 req/min)*:
+**Get User** *(30 req/min)* — Read-only since Phase 2 of the traffic-events split. Returns 404 when no Mongo row exists for the cookie-resolved UUID (ephemeral anonymous; first write happens in `startSession`).
 ```
 GET /api/user/:id
 
-Response: IUser
+Response: IUser, or 404 when ephemeral
 ```
 
 **Connect Wallet** *(10 req/min)* — Stage 1: register the wallet (no signature). Moves the user from *anonymous* to *registered*:
@@ -928,7 +936,7 @@ Response: { "success": true }
 
 Legacy single-bump tracker. Prefer the session endpoints below for any new instrumentation.
 
-**Start Session** *(60 req/min)* — Idempotent within the 30-minute inactivity window. Returns the active session if one is alive, otherwise opens a new one. Captures device, country (from IP), screen size, referrer, UTM, and landing page on first session; the user-level `activity.origin` is set once and never overwritten:
+**Start Session** *(60 req/min)* — Idempotent within the 30-minute inactivity window. Returns the active session if one is alive, otherwise opens a new one. **Upserts the Mongo row** when bootstrap left no record (Phase 3 of the traffic-events split); also queries ClickHouse for the visitor's earliest pre-hydration `bootstrap` event by candidate UUID and prefers those values (device, country, referrer domain, landing page, UTM) over the post-hydration session payload, so a crawler-then-browser sequence attributes to the cookieless first impression. Captures device, country (from IP), screen size, referrer, UTM, and landing page on first session; the user-level `activity.origin` is set once and never overwritten. Emits one ClickHouse `session_start` event:
 ```
 POST /api/user/:id/session/start
 Content-Type: application/json

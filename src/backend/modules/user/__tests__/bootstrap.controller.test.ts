@@ -3,6 +3,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import type { ICacheService, ISystemLogService } from '@/types';
 import { UserService } from '../services/user.service.js';
+import { TrafficService } from '../services/traffic.service.js';
 import { UserController } from '../api/user.controller.js';
 import { USER_ID_COOKIE_NAME } from '../api/identity-cookie.js';
 import { createMockDatabaseService } from '../../../tests/vitest/mocks/database-service.js';
@@ -86,6 +87,8 @@ describe('UserController.bootstrap', () => {
         mockDb = createMockDatabaseService();
         mockCache = new MockCache();
         UserService.resetInstance();
+        TrafficService.resetInstance();
+        TrafficService.setDependencies(undefined, new NullLogger());
         UserService.setDependencies(
             mockDb,
             mockCache,
@@ -94,7 +97,7 @@ describe('UserController.bootstrap', () => {
             {} as any
         );
         userService = UserService.getInstance();
-        controller = new UserController(userService, {} as any, mockGroupService(), new NullLogger());
+        controller = new UserController(userService, {} as any, mockGroupService(), TrafficService.getInstance(), new NullLogger());
     });
 
     it('mints a fresh UUID and sets the HttpOnly cookie when no cookie is present', async () => {
@@ -174,6 +177,56 @@ describe('UserController.bootstrap', () => {
         expect(res.cookies[0].value).toBe(res.jsonBody.id);
     });
 
+    it('does NOT persist a Mongo row on cookieless first contact (Phase 2 traffic-events split)', async () => {
+        // Pre-Phase-2, every cookieless GET wrote an empty `users` row
+        // because the bootstrap controller called `getOrCreate`. Phase 2
+        // makes bootstrap read-only with respect to MongoDB — bots and
+        // uptime probes minted a UUID and got the cookie, but never
+        // polluted the identity collection. The first Mongo write now
+        // happens in `startSession`.
+        const req: any = { cookies: {}, signedCookies: {}, headers: {}, body: {} };
+        const res = makeRes();
+
+        await controller.bootstrap(req, res as any);
+
+        const collection = mockDb.getCollection('users');
+        const persisted = await collection.findOne({ id: res.jsonBody.id });
+        expect(persisted).toBeNull();
+
+        // The response still contains a fully-shaped IUser so the
+        // frontend Redux preload doesn't need an ephemeral-anonymous
+        // branch — the synthetic payload mirrors what `getOrCreate`
+        // would have written.
+        expect(res.jsonBody.identityState).toBe('anonymous');
+        expect(res.jsonBody.wallets).toEqual([]);
+        expect(res.jsonBody.activity).toMatchObject({ pageViews: 0, sessionsCount: 0 });
+    });
+
+    it('reads an existing user without writing when the cookie resolves to a persisted row', async () => {
+        // A returning visitor arrives with a valid cookie; the row was
+        // created on a prior `startSession`. Bootstrap must read it back
+        // (so Redux gets the correct wallets/identityState on first paint)
+        // without bumping `updatedAt` — bootstrap is read-only.
+        await userService.getOrCreate(VALID_UUID_A);
+        const collection = mockDb.getCollection('users');
+        const before = await collection.findOne({ id: VALID_UUID_A });
+
+        const req: any = {
+            cookies: {},
+            signedCookies: { [USER_ID_COOKIE_NAME]: VALID_UUID_A },
+            headers: {},
+            body: {}
+        };
+        const res = makeRes();
+
+        await controller.bootstrap(req, res as any);
+
+        const after = await collection.findOne({ id: VALID_UUID_A });
+        expect(res.jsonBody.id).toBe(VALID_UUID_A);
+        // No write — `updatedAt` matches the seeded value.
+        expect(after?.updatedAt).toEqual(before?.updatedAt);
+    });
+
     it('resolves a merged tombstone and re-anchors the cookie to the canonical user', async () => {
         // Create canonical user A, then create B as a tombstone pointing to A.
         await userService.getOrCreate(VALID_UUID_A);
@@ -211,6 +264,8 @@ describe('UserController.validateCookie', () => {
         mockDb = createMockDatabaseService();
         mockCache = new MockCache();
         UserService.resetInstance();
+        TrafficService.resetInstance();
+        TrafficService.setDependencies(undefined, new NullLogger());
         UserService.setDependencies(
             mockDb,
             mockCache,
@@ -218,7 +273,7 @@ describe('UserController.validateCookie', () => {
             { getSiteUrl: async () => 'http://localhost:3000', getConfig: async () => ({ siteUrl: 'http://localhost:3000' }), updateConfig: async (u: any) => u, clearCache: () => {} } as any,
             {} as any
         );
-        controller = new UserController(UserService.getInstance(), {} as any, mockGroupService(), new NullLogger());
+        controller = new UserController(UserService.getInstance(), {} as any, mockGroupService(), TrafficService.getInstance(), new NullLogger());
     });
 
     it('accepts the signed cookie and does NOT re-issue (avoids per-request Set-Cookie spam)', () => {

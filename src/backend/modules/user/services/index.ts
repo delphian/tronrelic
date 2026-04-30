@@ -6,8 +6,13 @@ export { UserGroupService, RESERVED_ADMIN_PATTERN, SYSTEM_ADMIN_GROUP_ID } from 
 export { computeUserAuthStatus, withAuthStatus } from './auth-status.js';
 export { GscService } from './gsc.service.js';
 export type { IGscStatus, IGscKeyword, IGscQueryDocument } from './gsc.service.js';
-export { TrafficService } from './traffic.service.js';
-export type { ITrafficEvent, TrafficEventType, IGetEventsForUserOptions } from './traffic.service.js';
+export { TrafficService, buildTrafficEvent } from './traffic.service.js';
+export type {
+    ITrafficEvent,
+    TrafficEventType,
+    IGetEventsForUserOptions,
+    ITrafficEventBuilderInputs
+} from './traffic.service.js';
 export type { UserFilterType } from '@/types';
 export {
     initGeoIP,

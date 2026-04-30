@@ -2,10 +2,10 @@ import type { Request, Response, NextFunction } from 'express';
 import { randomUUID } from 'node:crypto';
 import { USER_FILTERS } from '@/types';
 import type { ISystemLogService, UserFilterType, IUserGroupService } from '@/types';
-import type { UserService, IUserStats, IDateRange } from '../services/index.js';
+import type { UserService, IUserStats, IDateRange, TrafficService } from '../services/index.js';
 import type { GscService } from '../services/index.js';
 import type { IUser, IUserPreferences } from '../database/index.js';
-import { getClientIP, withAuthStatus } from '../services/index.js';
+import { buildTrafficEvent, getClientIP, withAuthStatus } from '../services/index.js';
 import { AnalyticsRangeValidationError } from '../services/user.errors.js';
 import {
     setIdentityCookie,
@@ -67,6 +67,7 @@ export class UserController {
         private readonly userService: UserService,
         private readonly gscService: GscService,
         private readonly userGroupService: IUserGroupService,
+        private readonly trafficService: TrafficService,
         private readonly logger: ISystemLogService
     ) {}
 
@@ -192,7 +193,21 @@ export class UserController {
         try {
             const { id } = req.params;
 
-            const user = await this.userService.getOrCreate(id);
+            // Phase 2 of the traffic-events split (PLAN-traffic-events.md):
+            // bootstrap no longer writes a Mongo row, so the user record may
+            // not yet exist. Treat that as ephemeral anonymous and return 404
+            // — `getServerUser` on the frontend already maps 404 onto the
+            // unauthenticated shell, and `userContextMiddleware` already
+            // gracefully proceeds when `req.user` is absent. The first Mongo
+            // write happens in `startSession`.
+            const user = await this.userService.getById(id);
+            if (!user) {
+                res.status(404).json({
+                    error: 'User not found',
+                    message: 'No persisted record for this identity yet'
+                });
+                return;
+            }
 
             await this.respondWithUser(res, user);
         } catch (error) {
@@ -211,17 +226,35 @@ export class UserController {
      * `tronrelic_uid` cookie. This endpoint is the canonical entry point
      * for first-time visitors and the safe no-op for returning visitors.
      *
+     * Phase 2 of the traffic-events split (PLAN-traffic-events.md) makes
+     * this endpoint **read-only with respect to MongoDB**. Bootstrap
+     * mints/refreshes the cookie and emits one ClickHouse `traffic_event`,
+     * but never persists to the `users` collection. The first Mongo write
+     * happens in `startSession`, which is the first cookie-validated
+     * mutation that proves the visitor honors cookies and runs JavaScript.
+     * Pre-Phase-2 every cookieless GET (crawlers, link unfurlers, uptime
+     * probes) wrote an empty user row; tracking that traffic is still
+     * valuable, but it belongs in ClickHouse, not the identity collection.
+     *
      * Behavior:
-     * - Cookie present and valid → resolve to canonical user (follows merge
-     *   pointers), refresh the cookie's max-age, return the user.
-     * - Cookie absent, malformed, or pointing to a never-created UUID →
-     *   mint a fresh UUID v4, create the user record, set the HttpOnly
-     *   cookie, return the new user.
+     * - Cookie present and resolves to an existing user → return that
+     *   user (follows merge pointers); refresh cookie max-age.
+     * - Cookie present but no Mongo row exists → return an *ephemeral*
+     *   anonymous IUser payload built from the cookie's UUID; cookie
+     *   refreshed; no Mongo write.
+     * - Cookie absent / malformed → mint a fresh UUID v4, return ephemeral
+     *   anonymous payload, set HttpOnly cookie; no Mongo write.
      *
      * No `:id` parameter — the server resolves identity entirely from the
-     * cookie or mints one. Clients that ran in this environment with the
-     * legacy JS-minted cookie continue to work; the response refreshes the
-     * cookie with HttpOnly so the upgrade is transparent on next visit.
+     * cookie or mints one. The response shape stays IUser-compatible so
+     * the frontend Redux preload doesn't need a separate ephemeral path.
+     *
+     * Forwarded request context (User-Agent, Referer, Sec-CH-UA*,
+     * Sec-Fetch-*, X-Forwarded-For) plus the body's `landingPath`, `utm`,
+     * and `originalReferrer` populate the `traffic_events` row. The
+     * Next.js middleware (Phase 1) is the canonical caller for inbound
+     * SSR requests; the frontend `initializeUser` thunk supplies its own
+     * `landingPath` from `window.location` for client-driven bootstraps.
      *
      * Response: IUser
      */
@@ -237,15 +270,19 @@ export class UserController {
             const isValidExisting = resolved !== null;
             const candidateId = resolved?.userId ?? randomUUID();
 
-            // getOrCreate resolves merge pointers, so a stale cookie that
-            // points at a tombstone returns the canonical user. The returned
-            // id is what we re-anchor the cookie to.
-            const user = await this.userService.getOrCreate(candidateId);
+            // Read-only lookup. `getById` follows merge pointers, so a stale
+            // cookie pointing at a tombstone resolves to the canonical user
+            // without a write. When no row exists we synthesize an ephemeral
+            // anonymous IUser; the frontend never sees the difference, but
+            // bots and uptime probes never persist.
+            const existing = await this.userService.getById(candidateId);
+            const user = existing ?? this.userService.buildEphemeralUser(candidateId);
 
             // Always set the cookie on the response. For a returning visitor
             // this refreshes max-age and rewrites the legacy JS-minted cookie
-            // to HttpOnly. For a new visitor it's the initial mint. For a
-            // merged identity it points the cookie at the canonical user.
+            // to HttpOnly. For a new or ephemeral visitor it's the initial
+            // mint. For a merged identity it points the cookie at the
+            // canonical user.
             setIdentityCookie(res, user.id);
 
             // Surface unsigned-cookie upgrades as info-level so operators
@@ -263,8 +300,22 @@ export class UserController {
                 );
             }
 
+            // Record the bootstrap as a ClickHouse traffic event. Fire-and-
+            // forget; never blocks the response, never throws into the
+            // request path. When ClickHouse is unconfigured the service
+            // no-ops silently — the orphan-row fix above stays correct
+            // because Mongo writes are gated independently.
+            this.trafficService.recordEvent(
+                buildTrafficEvent('bootstrap', user.id, req, this.extractBootstrapBody(req))
+            );
+
             this.logger.debug(
-                { userId: user.id, minted: !isValidExisting, merged: user.id !== candidateId },
+                {
+                    userId: user.id,
+                    minted: !isValidExisting,
+                    merged: existing !== null && user.id !== candidateId,
+                    persisted: existing !== null
+                },
                 'User identity bootstrapped'
             );
             await this.respondWithUser(res, user);
@@ -275,6 +326,44 @@ export class UserController {
                 message: error instanceof Error ? error.message : 'Unknown error'
             });
         }
+    }
+
+    /**
+     * Pull `landingPath`, `utm`, and `originalReferrer` from the
+     * middleware-supplied bootstrap body. The middleware caps the body at
+     * 1 KB, so anything we read here is already bounded; we still
+     * defensively type-check before forwarding to the traffic-event
+     * builder.
+     */
+    private extractBootstrapBody(req: Request): {
+        landingPath?: string;
+        utm?: Record<string, string | null>;
+        originalReferrer?: string | null;
+    } {
+        const body = (req.body ?? {}) as Record<string, unknown>;
+        const result: {
+            landingPath?: string;
+            utm?: Record<string, string | null>;
+            originalReferrer?: string | null;
+        } = {};
+
+        if (typeof body.landingPath === 'string') {
+            result.landingPath = body.landingPath;
+        }
+        if (typeof body.originalReferrer === 'string') {
+            result.originalReferrer = body.originalReferrer;
+        }
+        if (body.utm && typeof body.utm === 'object') {
+            const rawUtm = body.utm as Record<string, unknown>;
+            result.utm = {
+                source: typeof rawUtm.source === 'string' ? rawUtm.source : null,
+                medium: typeof rawUtm.medium === 'string' ? rawUtm.medium : null,
+                campaign: typeof rawUtm.campaign === 'string' ? rawUtm.campaign : null,
+                term: typeof rawUtm.term === 'string' ? rawUtm.term : null,
+                content: typeof rawUtm.content === 'string' ? rawUtm.content : null
+            };
+        }
+        return result;
     }
 
     /**
@@ -662,6 +751,21 @@ export class UserController {
                     : undefined
             });
 
+            // Phase 3: emit a ClickHouse `session_start` event alongside the
+            // bootstrap row from earlier in this visitor's lifecycle. Same
+            // fire-and-forget posture as bootstrap — we never block the
+            // response on analytics persistence, and a missing ClickHouse
+            // host silently no-ops.
+            this.trafficService.recordEvent(
+                buildTrafficEvent('session_start', req.params.id, req, {
+                    landingPath: sanitizePath(req.body.landingPage),
+                    utm: this.extractSessionUtm(req.body.utm),
+                    originalReferrer: typeof req.body.referrer === 'string'
+                        ? req.body.referrer
+                        : null
+                })
+            );
+
             res.json({ session });
         } catch (error) {
             this.logger.warn({ error, userId: req.params.id }, 'Failed to start session');
@@ -670,6 +774,33 @@ export class UserController {
                 message: error instanceof Error ? error.message : 'Unknown error'
             });
         }
+    }
+
+    /**
+     * Coerce the session-start body's free-form `utm` object into the
+     * shape `buildTrafficEvent` expects. The session-start payload is
+     * already truncated and validated by the service-layer
+     * `extractUtmParams`, but the CH row is a sibling write that runs
+     * before that — so we apply the same defensive type checks here.
+     */
+    private extractSessionUtm(raw: unknown): {
+        source?: string | null;
+        medium?: string | null;
+        campaign?: string | null;
+        term?: string | null;
+        content?: string | null;
+    } | undefined {
+        if (!raw || typeof raw !== 'object') {
+            return undefined;
+        }
+        const r = raw as Record<string, unknown>;
+        return {
+            source: typeof r.source === 'string' ? r.source : null,
+            medium: typeof r.medium === 'string' ? r.medium : null,
+            campaign: typeof r.campaign === 'string' ? r.campaign : null,
+            term: typeof r.term === 'string' ? r.term : null,
+            content: typeof r.content === 'string' ? r.content : null
+        };
     }
 
     /**

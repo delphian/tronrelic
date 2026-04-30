@@ -30,24 +30,143 @@ const USER_ID_COOKIE_MAX_AGE_SECONDS = 31536000;
 const UUID_V4_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 /**
+ * Cap on the JSON body forwarded to the backend bootstrap endpoint. The
+ * payload only carries small derived signals (landing path, UTM params,
+ * `document.referrer`) so 1 KB is generous; the cap exists to defend
+ * against a malicious or pathological URL that could otherwise inflate
+ * the request indefinitely.
+ */
+const BOOTSTRAP_BODY_BYTE_CAP = 1024;
+
+/**
+ * Headers we want the backend to see on `POST /api/user/bootstrap` so the
+ * Phase 1 traffic-event row carries real visitor context instead of the
+ * Docker bridge IP and Node default User-Agent. Order matches the columns
+ * in the `traffic_events` ClickHouse table.
+ */
+const FORWARDED_HEADERS = [
+    'user-agent',
+    'referer',
+    'accept-language',
+    'sec-ch-ua',
+    'sec-ch-ua-mobile',
+    'sec-ch-ua-platform',
+    'sec-fetch-dest',
+    'sec-fetch-mode',
+    'sec-fetch-site'
+] as const;
+
+/** UTM keys we accept from the URL. Anything else is dropped. */
+const UTM_KEYS = ['source', 'medium', 'campaign', 'term', 'content'] as const;
+
+/**
+ * Build the JSON body for the backend bootstrap call.
+ *
+ * Carries the derived per-request context that the backend cannot see by
+ * inspecting the inbound request alone:
+ *   - `landingPath`  the path the visitor actually requested (the bootstrap
+ *     fetch itself targets `/api/user/bootstrap`, which would otherwise be
+ *     the only path the backend sees);
+ *   - `utm` UTM params parsed from the request URL's query string;
+ *   - `originalReferrer` value preserved by the legacy-redirect path in
+ *     `_original_ref` cookie when the visitor arrived via an external link.
+ *
+ * The body is capped at `BOOTSTRAP_BODY_BYTE_CAP` bytes. Oversized payloads
+ * fall back to an empty object so the backend bootstrap still succeeds.
+ */
+function buildBootstrapBody(request: NextRequest): string {
+    const utm: Record<string, string> = {};
+    for (const key of UTM_KEYS) {
+        const value = request.nextUrl.searchParams.get(`utm_${key}`);
+        if (value) {
+            utm[key] = value;
+        }
+    }
+
+    const originalReferrer = request.cookies.get(ORIGINAL_REFERRER_COOKIE)?.value;
+
+    const payload: Record<string, unknown> = {
+        landingPath: request.nextUrl.pathname
+    };
+    if (Object.keys(utm).length > 0) {
+        payload.utm = utm;
+    }
+    if (originalReferrer) {
+        payload.originalReferrer = originalReferrer;
+    }
+
+    const serialized = JSON.stringify(payload);
+    // The middleware runs on Next.js's Edge runtime where `Buffer` is not
+    // guaranteed; `TextEncoder` is a Web-standard API and gives us the
+    // UTF-8 byte length directly without a Node-only dependency.
+    if (new TextEncoder().encode(serialized).byteLength > BOOTSTRAP_BODY_BYTE_CAP) {
+        return '{}';
+    }
+    return serialized;
+}
+
+/**
+ * Forward selected request headers to the backend bootstrap call.
+ *
+ * The middleware runs behind the public ingress, so by the time a request
+ * reaches us the original client IP and user-agent are visible only on
+ * inbound headers — not on the server-to-server fetch we're about to make.
+ * Without this forwarding the backend would see the Docker bridge IP and
+ * `node-fetch`'s default UA on every event.
+ *
+ * `X-Forwarded-For` is appended to (or seeded from) the inbound chain so
+ * the backend's `getClientIP` helper still reads the original client at
+ * the head of the list.
+ */
+function buildForwardedHeaders(request: NextRequest): Record<string, string> {
+    const headers: Record<string, string> = {
+        'Content-Type': 'application/json'
+    };
+
+    for (const name of FORWARDED_HEADERS) {
+        const value = request.headers.get(name);
+        if (value) {
+            headers[name] = value;
+        }
+    }
+
+    // Preserve the original client IP at the head of X-Forwarded-For so
+    // the backend's getClientIP reads through to the real visitor instead
+    // of the Docker bridge.
+    const inboundForwardedFor = request.headers.get('x-forwarded-for');
+    const directIp = request.headers.get('x-real-ip');
+    if (inboundForwardedFor) {
+        headers['x-forwarded-for'] = inboundForwardedFor;
+    } else if (directIp) {
+        headers['x-forwarded-for'] = directIp;
+    }
+
+    return headers;
+}
+
+/**
  * Mint the identity cookie via the backend's bootstrap endpoint.
  *
  * Resolves to a valid UUID string when the bootstrap call succeeds. Returns
  * null on any failure — middleware must never block page loads on a backend
  * outage; the client-side `UserIdentityProvider` retries on mount.
  *
- * The fetch is server-to-server (within the same Docker network), so the
- * empty cookie jar is expected and the backend mints a fresh UUID. We
+ * The fetch is server-to-server (within the same Docker network). We
  * intentionally don't forward the inbound request's cookies — there's
- * nothing useful in them when this code path runs.
+ * nothing useful in them when this code path runs (the bootstrap fires
+ * only when the identity cookie is absent). We *do* forward the visitor
+ * context the backend needs to record a useful `traffic_events` row:
+ * client headers (UA, Referer, Sec-CH-UA*, Sec-Fetch-*), the original
+ * client IP via `X-Forwarded-For`, and a small JSON body with the
+ * landing path, UTM params, and `_original_ref` cookie.
  */
-async function bootstrapIdentity(): Promise<string | null> {
+async function bootstrapIdentity(request: NextRequest): Promise<string | null> {
     const backendUrl = process.env.SITE_BACKEND || 'http://localhost:4000';
     try {
         const response = await fetch(`${backendUrl}/api/user/bootstrap`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: '{}',
+            headers: buildForwardedHeaders(request),
+            body: buildBootstrapBody(request),
             // Prevent edge runtime from caching identity bootstrap.
             cache: 'no-store',
             signal: AbortSignal.timeout(3000)
@@ -193,7 +312,7 @@ export async function middleware(request: NextRequest) {
 
     let injectedUserId: string | null = null;
     if (needsBootstrap) {
-        injectedUserId = await bootstrapIdentity();
+        injectedUserId = await bootstrapIdentity(request);
         if (injectedUserId) {
             // Mutate the request's cookie jar so server components running
             // in the same render tree see the cookie via `next/headers`.

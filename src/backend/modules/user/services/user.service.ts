@@ -63,6 +63,7 @@ import type TronWeb from 'tronweb';
 import { SignatureService } from '../../auth/signature.service.js';
 import { WalletChallengeService, type IWalletChallenge, type WalletChallengeAction } from './wallet-challenge.service.js';
 import { GscService } from './gsc.service.js';
+import { TrafficService } from './traffic.service.js';
 import { AnalyticsRangeValidationError } from './user.errors.js';
 
 /**
@@ -215,6 +216,7 @@ export class UserService {
     private readonly signatureService: SignatureService;
     private readonly walletChallengeService: WalletChallengeService;
     private gscService: GscService | null = null;
+    private trafficService: TrafficService | null = null;
     private readonly CACHE_KEY_PREFIX = 'user:';
     private readonly CACHE_KEY_WALLET_PREFIX = 'user:wallet:';
     private readonly CACHE_TTL = 3600; // 1 hour
@@ -309,6 +311,22 @@ export class UserService {
         this.gscService = gscService;
     }
 
+    /**
+     * Inject the TrafficService for first-touch backfill on session start.
+     *
+     * Called from `UserModule.init()` after both singletons are initialized.
+     * The dependency is optional in that `startSession` falls through to its
+     * pre-Phase-3 behaviour (post-hydration values only) when the service
+     * is unavailable — that path matters for tests that boot the user
+     * module without ClickHouse, and for deployments where `CLICKHOUSE_HOST`
+     * is unset.
+     *
+     * @param trafficService - Initialized TrafficService singleton
+     */
+    public setTrafficService(trafficService: TrafficService): void {
+        this.trafficService = trafficService;
+    }
+
     // ==================== Core CRUD Operations ====================
 
     /**
@@ -387,6 +405,51 @@ export class UserService {
         const user = this.toPublicUser(newUser as IUserDocument);
         await this.cacheUser(user);
         return user;
+    }
+
+    /**
+     * Build an ephemeral `IUser` payload for a UUID without writing to MongoDB.
+     *
+     * Phase 2 of the traffic-events split makes `POST /api/user/bootstrap`
+     * read-only — the first Mongo write happens in `startSession`. When a
+     * brand-new visitor (no row yet) hits bootstrap, the response still
+     * needs an `IUser`-shaped payload so the frontend can populate Redux
+     * and render the unauthenticated shell without a flash. This helper
+     * returns that payload with the same anonymous defaults `getOrCreate`
+     * would have written, but never persists.
+     *
+     * The returned object is *not* cached. Subsequent reads (`getById`)
+     * still return null until `startSession` upserts the row, which is
+     * the intended outcome — bots and uptime probes never reach
+     * `startSession`, so they never persist.
+     *
+     * @param id - UUID v4 identifier minted at bootstrap
+     * @returns Anonymous `IUser` payload with `firstSeen = lastSeen = now`
+     */
+    buildEphemeralUser(id: string): IUser {
+        const now = new Date();
+        return {
+            id,
+            identityState: UserIdentityState.Anonymous,
+            identityVerifiedAt: null,
+            wallets: [],
+            preferences: {},
+            activity: {
+                firstSeen: now,
+                lastSeen: now,
+                pageViews: 0,
+                sessionsCount: 0,
+                totalDurationSeconds: 0,
+                sessions: [],
+                pageViewsByPath: {},
+                countryCounts: {},
+                origin: null
+            },
+            groups: [],
+            referral: null,
+            createdAt: now,
+            updatedAt: now
+        };
     }
 
     /**
@@ -1161,6 +1224,21 @@ export class UserService {
      * The controller passes raw request fields via `IStartSessionInput` and
      * does not interpret them.
      *
+     * **Phase 3 of the traffic-events split (PLAN-traffic-events.md).** This
+     * is the **first Mongo write** in the visitor lifecycle. Bootstrap no
+     * longer persists, so the canonical user document may not yet exist
+     * when this runs. We upsert: if no row resolves for `input.userId`, we
+     * create one from anonymous defaults instead of throwing. On the
+     * upsert path we also query ClickHouse for the visitor's earliest
+     * pre-hydration `bootstrap` event and prefer those values over the
+     * post-hydration session payload — bots and uptime probes never get
+     * here, but humans whose first event was a cookieless GET (search
+     * crawlers indexed the same URL, or middleware bootstrap fired before
+     * JS loaded) get attribution from that first touch instead of the
+     * client-supplied fields. The CH read silently falls back to `[]`
+     * when ClickHouse is unavailable, so deployments without CH simply
+     * get the post-hydration values.
+     *
      * @param input - Raw session input fields (userId, clientIP, userAgent,
      *                screenWidth, landingPage, rawUtm, bodyReferrer,
      *                headerReferrer)
@@ -1179,10 +1257,15 @@ export class UserService {
                 input.headerReferrer
             );
 
-            // Resolve to canonical document (single DB hit, follows merge pointer if needed)
-            const doc = await this.resolveDocument(input.userId);
+            // Resolve to canonical document (single DB hit, follows merge pointer if needed).
+            // Phase 3 upsert: a null result is *not* an error — bootstrap no
+            // longer creates the row, so first-time visitors land here without
+            // a Mongo doc yet. We synthesize the defaults and insert. The
+            // canonical id stays equal to input.userId in that case (no merge
+            // pointer to follow).
+            let doc = await this.resolveDocument(input.userId);
             if (!doc) {
-                throw new Error(`User with id "${input.userId}" not found`);
+                doc = await this.createUserForSession(input.userId);
             }
             const userId = doc.id;
 
@@ -1212,19 +1295,44 @@ export class UserService {
                 activity.totalDurationSeconds += activeSession.durationSeconds;
             }
 
-            // Derive context from request (IP/UA never stored)
-            const device = getDeviceCategory(userAgent);
-            const referrerDomain = extractReferrerDomain(referrer);
-            const country = getCountryFromIP(clientIP);
+            // Pull the visitor's earliest pre-hydration bootstrap event from
+            // ClickHouse so a crawler-then-browser sequence attributes to the
+            // crawler's first touch instead of the post-hydration browser
+            // fetch. Returns `[]` when CH is unavailable or no rows match
+            // — both collapse to "use post-hydration values," which is the
+            // pre-Phase-3 behaviour and matches the no-ClickHouse posture in
+            // PLAN-traffic-events.md.
+            const firstTouch = await this.fetchFirstTouchEvent(userId);
+
+            // Derive context from request (IP/UA never stored). The CH first-
+            // touch event takes precedence on every dimension it carries —
+            // these are stored as part of the user's traffic-acquisition
+            // origin, so the cookieless first impression is what we want
+            // recorded, not the post-hydration page-view that happens to
+            // reach `startSession` first.
+            const device = this.coerceDeviceCategory(firstTouch?.device) ?? getDeviceCategory(userAgent);
+            const referrerDomain = firstTouch?.referer
+                ? extractReferrerDomain(firstTouch.referer)
+                : extractReferrerDomain(referrer);
+            const country = firstTouch?.country ?? getCountryFromIP(clientIP);
             const screenSize = getScreenSizeCategory(screenWidth);
-            const searchKeyword = extractSearchKeyword(referrer);
+            const searchKeyword = firstTouch?.referer
+                ? extractSearchKeyword(firstTouch.referer)
+                : extractSearchKeyword(referrer);
 
             // Track country distribution
             if (country) {
                 activity.countryCounts[country] = (activity.countryCounts[country] || 0) + 1;
             }
 
-            // Create new session
+            // Create new session. Landing page and UTM also prefer the CH
+            // first-touch values (same rationale as device/country above —
+            // origin attribution should reflect the first impression, not
+            // the page that happened to fire startSession).
+            const utmFromFirstTouch = this.extractUtmFromTrafficEvent(firstTouch);
+            const sessionUtm = utmFromFirstTouch
+                ?? (utm && Object.values(utm).some(v => v) ? utm : null);
+            const sessionLandingPage = firstTouch?.path ?? landingPage ?? null;
             const newSession: IUserSession = {
                 startedAt: now,
                 endedAt: null,
@@ -1235,8 +1343,8 @@ export class UserService {
                 screenSize,
                 referrerDomain,
                 country,
-                utm: utm && Object.values(utm).some(v => v) ? utm : null,
-                landingPage: landingPage || null,
+                utm: sessionUtm,
+                landingPage: sessionLandingPage,
                 searchKeyword
             };
 
@@ -1260,7 +1368,7 @@ export class UserService {
                 } else {
                     activity.origin = {
                         referrerDomain,
-                        landingPage: landingPage || null,
+                        landingPage: sessionLandingPage,
                         country,
                         device,
                         utm: newSession.utm,
@@ -4536,6 +4644,100 @@ export class UserService {
      * The truncation limits (200 chars for source/medium/term/content,
      * 500 for campaign) protect the database from unbounded growth.
      */
+    /**
+     * Insert a fresh anonymous user for a session start.
+     *
+     * Phase 3 of the traffic-events split makes `startSession` the first
+     * Mongo write in the visitor lifecycle. When the resolved document is
+     * null (bootstrap no longer persists; this is a brand-new visitor or a
+     * cookie holder whose row hasn't been created yet) we synthesize the
+     * defaults that `getOrCreate` used to write at bootstrap and insert
+     * them. Format validation lives here so an invalid UUID can't slip
+     * past resolveDocument's silent null-on-missing path.
+     */
+    private async createUserForSession(userId: string): Promise<IUserDocument> {
+        if (!this.isValidUUID(userId)) {
+            throw new Error('Invalid UUID format. Must be a valid UUID v4.');
+        }
+        const now = new Date();
+        const fresh: Omit<IUserDocument, '_id'> = {
+            id: userId,
+            identityState: UserIdentityState.Anonymous,
+            identityVerifiedAt: null,
+            wallets: [],
+            preferences: {},
+            activity: {
+                firstSeen: now,
+                lastSeen: now,
+                pageViews: 0,
+                sessionsCount: 0,
+                totalDurationSeconds: 0,
+                sessions: [],
+                pageViewsByPath: {},
+                countryCounts: {},
+                origin: null
+            },
+            groups: [],
+            referral: null,
+            createdAt: now,
+            updatedAt: now
+        };
+        await this.collection.insertOne(fresh as any);
+        this.logger.info({ userId }, 'User created via session start');
+        return fresh as IUserDocument;
+    }
+
+    /**
+     * Fetch the visitor's earliest pre-hydration `bootstrap` event from
+     * ClickHouse, if any. Drives Phase 3's first-touch backfill on
+     * `startSession`. Returns `null` when ClickHouse is unavailable, the
+     * lookup fails, or no rows match — every caller falls back to the
+     * post-hydration session payload in that case.
+     */
+    private async fetchFirstTouchEvent(userId: string) {
+        if (!this.trafficService) {
+            return null;
+        }
+        const events = await this.trafficService.getEventsForUser(userId, {
+            eventTypes: ['bootstrap'],
+            limit: 1
+        });
+        return events[0] ?? null;
+    }
+
+    /**
+     * Narrow the loosely-typed `device` string from a ClickHouse traffic
+     * event row back to the `DeviceCategory` union the user document
+     * expects. Returns `undefined` when the value isn't one of the known
+     * categories so callers fall through to the post-hydration derivation.
+     */
+    private coerceDeviceCategory(value: string | undefined | null): DeviceCategory | undefined {
+        if (value === 'mobile' || value === 'tablet' || value === 'desktop' || value === 'unknown') {
+            return value;
+        }
+        return undefined;
+    }
+
+    /**
+     * Build an `IUtmParams` from a traffic event row, returning `null` when
+     * every UTM field is null. Mirrors the empty-utm collapse rule the
+     * service applies to post-hydration UTMs so a CH row with all-null
+     * UTMs doesn't displace a populated post-hydration set.
+     */
+    private extractUtmFromTrafficEvent(event: { utm_source: string | null; utm_medium: string | null; utm_campaign: string | null; utm_term: string | null; utm_content: string | null } | null | undefined): IUtmParams | null {
+        if (!event) {
+            return null;
+        }
+        const utm: IUtmParams = {
+            source: event.utm_source ?? undefined,
+            medium: event.utm_medium ?? undefined,
+            campaign: event.utm_campaign ?? undefined,
+            term: event.utm_term ?? undefined,
+            content: event.utm_content ?? undefined
+        };
+        return Object.values(utm).some(v => v !== undefined) ? utm : null;
+    }
+
     private extractUtmParams(raw: unknown): IUtmParams | undefined {
         if (!raw || typeof raw !== 'object') {
             return undefined;
