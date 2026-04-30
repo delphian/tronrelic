@@ -51,6 +51,8 @@ Circular dependencies throw at startup with the cycle path.
 
 ### Execution and Transactions
 
+**Operator-triggered, not auto-run at boot.** Bootstrap discovers pending migrations but does not execute them. Run them via the `/system/database` admin UI or `POST /api/admin/migrations/execute`. This is intentional — schema changes happen on the operator's clock, not the deploy's.
+
 `MigrationExecutor` runs migrations serially and accepts an optional `IClickHouseService` for ClickHouse-targeted migrations.
 
 **With transaction support (replica set):** wraps `migration.up(context)` in `session.withTransaction()`. On failure, transaction rolls back automatically, failure is recorded, error is thrown.

@@ -182,6 +182,7 @@ modules/user/
 │   ├── auth-status.ts             # Single source of truth for IAuthStatus computation
 │   ├── geo.service.ts             # IP → country, referrer parsing, device derivation
 │   ├── gsc.service.ts             # Google Search Console keyword integration
+│   ├── traffic.service.ts         # ClickHouse traffic_events sibling (PLAN-traffic-events.md)
 │   ├── user.service.ts            # Business logic (CRUD, wallet linking, sessions, caching)
 │   ├── user.errors.ts             # Service-layer error classes
 │   ├── user-group.service.ts      # Group definition CRUD + membership API
@@ -193,7 +194,8 @@ modules/user/
 │   ├── 006_backfill_user_identity_state.ts
 │   ├── 007_backfill_user_groups.ts
 │   ├── 008_backfill_wallet_verified_at.ts
-│   └── 009_session_identity_verified_at.ts
+│   ├── 009_session_identity_verified_at.ts
+│   └── 010_create_traffic_events_table.ts  # ClickHouse, target: 'clickhouse'
 └── __tests__/
     ├── auth-status.test.ts
     ├── bootstrap.controller.test.ts

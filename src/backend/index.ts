@@ -306,7 +306,7 @@ async function bootstrapInit(): Promise<BootstrapContext> {
     await themeModule.init(sharedDeps);
     await schedulerModule.init({ database: coreDatabase, menuService, app });
     const schedulerService = schedulerModule.getSchedulerService();
-    await userModule.init({ ...sharedDeps, scheduler: schedulerService, systemConfig: SystemConfigService.getInstance() });
+    await userModule.init({ ...sharedDeps, scheduler: schedulerService, systemConfig: SystemConfigService.getInstance(), clickhouse });
     await addressLabelsModule.init(sharedDeps);
     await toolsModule.init(sharedDeps);
 
