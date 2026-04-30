@@ -2,8 +2,6 @@
 
 import { useState } from 'react';
 import { useSystemAuth } from '../../../../features/system';
-import { Page } from '../../../../components/layout';
-import { Card } from '../../../../components/ui/Card';
 import styles from './page.module.css';
 import { PagesTab } from './tabs/PagesTab';
 import { FilesTab } from './tabs/FilesTab';
@@ -21,16 +19,6 @@ import { SettingsTab } from './tabs/SettingsTab';
 export default function PagesAdminPage() {
     const { token } = useSystemAuth();
     const [activeTab, setActiveTab] = useState<'pages' | 'files' | 'settings'>('pages');
-
-    if (!token) {
-        return (
-            <Page>
-                <Card padding="lg">
-                    <p>Authentication required</p>
-                </Card>
-            </Page>
-        );
-    }
 
     return (
         <div className={styles.container}>
