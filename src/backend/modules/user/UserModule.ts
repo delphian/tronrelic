@@ -23,12 +23,13 @@
  */
 
 import type { Express, Router } from 'express';
-import type { ICacheService, IDatabaseService, IMenuService, IModule, IModuleMetadata, ISchedulerService, IServiceRegistry, ISystemConfigService } from '@/types';
+import type { ICacheService, IClickHouseService, IDatabaseService, IMenuService, IModule, IModuleMetadata, ISchedulerService, IServiceRegistry, ISystemConfigService } from '@/types';
 import { logger } from '../../lib/logger.js';
 import { MAIN_SYSTEM_CONTAINER_ID } from '../menu/index.js';
 import { TronGridClient } from '../blockchain/tron-grid.client.js';
 import { UserService } from './services/user.service.js';
 import { GscService } from './services/gsc.service.js';
+import { TrafficService } from './services/traffic.service.js';
 import { UserGroupService } from './services/user-group.service.js';
 import { initGeoIP } from './services/geo.service.js';
 import { UserController } from './api/user.controller.js';
@@ -83,6 +84,15 @@ export interface IUserModuleDependencies {
      * to an external origin or to our own site.
      */
     systemConfig: ISystemConfigService;
+
+    /**
+     * ClickHouse service for the new TrafficService sibling. Optional —
+     * `undefined` when `CLICKHOUSE_HOST` is unset and the ClickHouse
+     * module skipped initialization. TrafficService stays usable in
+     * that mode but silently drops writes; see traffic.service.ts.
+     * Backs the cookieless-traffic split tracked in PLAN-traffic-events.md.
+     */
+    clickhouse: IClickHouseService | undefined;
 }
 
 /**
@@ -156,6 +166,7 @@ export class UserModule implements IModule<IUserModuleDependencies> {
      */
     private userService!: UserService;
     private gscService!: GscService;
+    private trafficService!: TrafficService;
     private userGroupService!: UserGroupService;
     private controller!: UserController;
     private groupController!: UserGroupController;
@@ -218,6 +229,13 @@ export class UserModule implements IModule<IUserModuleDependencies> {
 
         // Inject GscService into UserService for explicit dependency
         this.userService.setGscService(this.gscService);
+
+        // Initialize TrafficService sibling. ClickHouse is optional;
+        // when it's undefined the service no-ops and the orphan-row
+        // fix in later phases still works (Mongo writes are gated
+        // independently). See PLAN-traffic-events.md.
+        TrafficService.setDependencies(dependencies.clickhouse, this.logger);
+        this.trafficService = TrafficService.getInstance();
 
         // Initialize UserGroupService singleton, build indexes, seed system groups.
         // Must precede UserController construction so the controller can inject
