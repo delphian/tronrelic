@@ -333,10 +333,19 @@ describe('UserService', () => {
             expect(updated.preferences.notifications).toBe(false);
         });
 
-        it('should throw error for non-existent user', async () => {
-            await expect(
-                userService.updatePreferences(validUUID, { theme: 'test' })
-            ).rejects.toThrow('User with id');
+        it('upserts an anonymous row for a non-existent user (Phase 4)', async () => {
+            // Phase 4 of the traffic-events split: cookie-validated writes
+            // route through `ensureExists`, so a fresh cookie holder who
+            // updates preferences before any session/start gets a row
+            // synthesised on the fly. The pre-Phase-4 behaviour was a
+            // 400-mapped throw — now it persists the deliberate user
+            // choice. See PLAN-traffic-events.md.
+            const updated = await userService.updatePreferences(validUUID, { theme: 'theme-1' });
+            expect(updated.preferences.theme).toBe('theme-1');
+
+            const persisted = await userService.getById(validUUID);
+            expect(persisted).not.toBeNull();
+            expect(persisted?.preferences.theme).toBe('theme-1');
         });
 
         it('should invalidate cache after update', async () => {
@@ -396,8 +405,20 @@ describe('UserService', () => {
             expect(afterLogout?.identityVerifiedAt).toBeNull();
         });
 
-        it('throws for non-existent user', async () => {
-            await expect(userService.logout(validUUID)).rejects.toThrow('User with id');
+        it('returns ephemeral payload for non-existent user without writing (Phase 4)', async () => {
+            // Phase 4 of the traffic-events split: logout from an ephemeral
+            // cookie (no Mongo row yet) is semantically a no-op — there is
+            // nothing to downgrade. The pre-Phase-4 throw forced any
+            // hand-rolled client to call `/session/start` first; now the
+            // service synthesises the same anonymous payload `bootstrap`
+            // returns, without persisting. See PLAN-traffic-events.md.
+            const result = await userService.logout(validUUID);
+            expect(result.id).toBe(validUUID);
+            expect(result.identityState).toBe(UserIdentityState.Anonymous);
+            expect(result.identityVerifiedAt).toBeNull();
+
+            // No Mongo row should have been spawned.
+            expect(await userService.getById(validUUID)).toBeNull();
         });
 
         it('invalidates cache after logout', async () => {
@@ -847,15 +868,28 @@ describe('UserService', () => {
                 ).rejects.toThrow(/canonical challenge form/);
             });
 
-            it('should throw when loser user does not exist', async () => {
-                await expect(
-                    userService.linkWallet(validUUID, {
-                        address: walletAddress,
-                        message: 'msg',
-                        signature: 'sig',
-                        nonce: 'nonce'
-                    })
-                ).rejects.toThrow('User with id');
+            it('upserts the loser row and runs identity swap when no row exists for the caller (Phase 4)', async () => {
+                // Phase 4 of the traffic-events split: linkWallet routes
+                // through `ensureExists`, so a fresh cookie holder coming
+                // from a new browser (the cross-browser login path) gets
+                // their loser row synthesised before identity reconciliation
+                // runs. Pre-Phase-4 the missing row threw "User with id"
+                // and the cross-browser login flow had to go through
+                // session/start first. The reconciliation tombstones the
+                // synthesised loser row anyway, so the upsert costs at
+                // most a transient document. See PLAN-traffic-events.md.
+                await userService.getOrCreate(validUUID);
+                await userService.connectWallet(validUUID, walletAddress);
+
+                // No row for validUUID2 yet — this is the new-browser case.
+                expect(await userService.getById(validUUID2)).toBeNull();
+
+                const input = await buildLinkInput(userService, validUUID2, walletAddress);
+                const result = await userService.linkWallet(validUUID2, input);
+
+                expect(result.identitySwapped).toBe(true);
+                expect(result.user.id).toBe(validUUID); // canonical winner
+                expect(result.previousUserId).toBe(validUUID2);
             });
 
             it('should log reconciliation with wallet transfer count', async () => {

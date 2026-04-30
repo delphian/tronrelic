@@ -601,13 +601,17 @@ export class UserService {
      * @param userId - UUID of user to register the wallet to
      * @param address - Base58 TRON address
      * @returns Result with success status or login requirement
-     * @throws Error if user not found or address invalid
+     * @throws Error if `userId` is not a valid UUID v4 or the address is malformed
      */
     async connectWallet(userId: string, address: string): Promise<IConnectWalletResult> {
-        const doc = await this.resolveDocument(userId);
-        if (!doc) {
-            throw new Error(`User with id "${userId}" not found`);
-        }
+        // Phase 4 of the traffic-events split: cookie-validated writes that
+        // intend to create durable user state route through `ensureExists`.
+        // A signed-cookie holder may bootstrap and click the wallet button
+        // before any session/start has fired, so the row may not yet exist;
+        // creating it here matches the pre-Phase-2 behaviour of the wallet
+        // flow without re-introducing the orphan-row bug, because the cookie
+        // signature is the trust boundary and bots never reach this endpoint.
+        const doc = await this.ensureExists(userId);
 
         let normalizedAddress: string;
         try {
@@ -687,11 +691,24 @@ export class UserService {
      * @param userId - UUID of the caller attempting to verify the wallet
      * @param input - Wallet address, signature message, and signature
      * @returns Result with user data and optional identity swap indicator
-     * @throws Error if signature invalid or user not found
+     * @throws Error if `userId` is not a valid UUID v4, the signature
+     *               doesn't recover to the submitted address, or the
+     *               challenge nonce is missing/expired/already-consumed
      */
     async linkWallet(userId: string, input: ILinkWalletInput): Promise<ILinkWalletResult> {
+        // Phase 4 of the traffic-events split: this is the cross-browser
+        // login path for verified users, so the cookie's UUID may not yet
+        // have a Mongo row in the new browser. `ensureExists` upserts the
+        // anonymous defaults so `verifyWalletAction` has a doc; identity
+        // reconciliation below will tombstone it via `mergedInto` on the
+        // identity-swap path, so the upsert costs at most a transient row.
+        // Threading the upserted doc into `verifyWalletAction` skips the
+        // helper's own resolveDocument and avoids a redundant DB read on
+        // the wallet-link hot path.
+        const upserted = await this.ensureExists(userId);
+
         const { doc, normalizedAddress, now } = await this.verifyWalletAction(
-            userId, 'link', input.address, input.message, input.signature, input.nonce
+            userId, 'link', input.address, input.message, input.signature, input.nonce, upserted
         );
 
         // Cross-user wallet conflict — the signer has proven control of
@@ -1096,17 +1113,20 @@ export class UserService {
      * @param action - Wallet operation the challenge will gate
      * @param address - Submitted TRON address (hex or base58)
      * @returns Challenge with nonce, canonical message, and expiry
-     * @throws Error when user not found or address malformed
+     * @throws Error when `userId` is not a valid UUID v4 or the address
+     *               is malformed
      */
     async issueWalletChallenge(
         userId: string,
         action: WalletChallengeAction,
         address: string
     ): Promise<IWalletChallenge> {
-        const doc = await this.resolveDocument(userId);
-        if (!doc) {
-            throw new Error(`User with id "${userId}" not found`);
-        }
+        // Phase 4 of the traffic-events split: the wallet-flow entry point
+        // upserts the row so a fresh cookie-holder can mint a challenge
+        // before they've fired any other write. Without this, ensureExists
+        // in `connectWallet` / `linkWallet` would still leave the challenge
+        // mint failing for the very first call in the flow.
+        const doc = await this.ensureExists(userId);
         const normalizedAddress = this.signatureService.normalizeAddress(address);
         return this.walletChallengeService.issue(doc.id, action, normalizedAddress);
     }
@@ -1143,20 +1163,25 @@ export class UserService {
      * Update user preferences.
      *
      * Merges provided preferences with existing ones (partial update).
+     * Phase 4 of the traffic-events split routes through `ensureExists`,
+     * so a fresh cookie holder gets an anonymous row created on demand
+     * — preferences are a deliberate user choice and persistence is the
+     * intended outcome.
      *
      * @param userId - UUID of user
      * @param preferences - Partial preferences to merge
      * @returns Updated user document
-     * @throws Error if user not found
+     * @throws Error if `userId` is not a valid UUID v4
      */
     async updatePreferences(
         userId: string,
         preferences: Partial<IUserPreferences>
     ): Promise<IUser> {
-        const doc = await this.resolveDocument(userId);
-        if (!doc) {
-            throw new Error(`User with id "${userId}" not found`);
-        }
+        // Phase 4 of the traffic-events split: a deliberate user choice
+        // (theme, notifications) deserves persistence. ensureExists upserts
+        // an anonymous row when bootstrap left none, then we apply the
+        // partial-merge update.
+        const doc = await this.ensureExists(userId);
 
         doc.preferences = { ...doc.preferences, ...preferences };
         await this.persistUserUpdate(doc, { preferences: doc.preferences });
@@ -1183,16 +1208,26 @@ export class UserService {
      * policy in `linkWallet`).
      *
      * Idempotent — calling on an already-Anonymous or already-Registered
-     * user just nulls the session clock if it wasn't already null.
+     * user just nulls the session clock if it wasn't already null. Calling
+     * on an ephemeral cookie holder (Phase 2 of the traffic-events split:
+     * bootstrap no longer persists, so a row may not exist yet) is also
+     * idempotent: there's nothing to downgrade, so we synthesize and return
+     * the same anonymous payload `buildEphemeralUser` produces and skip the
+     * write entirely. Spawning a row just to immediately downgrade it would
+     * re-introduce the orphan-row bug for any hand-rolled client that posts
+     * to `/logout` without ever firing `/session/start`.
      *
      * @param userId - UUID of user
-     * @returns Updated user document
-     * @throws Error if user not found
+     * @returns Updated (or ephemeral) user document
      */
     async logout(userId: string): Promise<IUser> {
         const doc = await this.resolveDocument(userId);
         if (!doc) {
-            throw new Error(`User with id "${userId}" not found`);
+            // Ephemeral cookie holder — nothing to log out from. Return the
+            // same anonymous payload bootstrap would have. No Mongo write,
+            // so the orphan-row property holds even when a hand-rolled
+            // client targets this endpoint cold.
+            return this.buildEphemeralUser(userId);
         }
 
         this.applyIdentityDowngrade(doc);
@@ -1224,11 +1259,15 @@ export class UserService {
      * The controller passes raw request fields via `IStartSessionInput` and
      * does not interpret them.
      *
-     * **Phase 3 of the traffic-events split (PLAN-traffic-events.md).** This
-     * is the **first Mongo write** in the visitor lifecycle. Bootstrap no
-     * longer persists, so the canonical user document may not yet exist
-     * when this runs. We upsert: if no row resolves for `input.userId`, we
-     * create one from anonymous defaults instead of throwing. On the
+     * **Phase 3 of the traffic-events split (PLAN-traffic-events.md).** For
+     * the normal pageview/session path this is the first Mongo write in the
+     * visitor lifecycle (bootstrap no longer persists). Phase 4 generalised
+     * the upsert via `ensureExists`, so other cookie-validated writes
+     * (`connectWallet`, `linkWallet`, `issueWalletChallenge`,
+     * `updatePreferences`) can also create the row when called cold —
+     * `startSession` is the typical first writer, not the only one. If no
+     * row resolves for `input.userId`, we create one from anonymous defaults
+     * instead of throwing. On the
      * upsert path we also query ClickHouse for the visitor's earliest
      * pre-hydration `bootstrap` event and prefer those values over the
      * post-hydration session payload — bots and uptime probes never get
@@ -1266,16 +1305,14 @@ export class UserService {
                 input.headerReferrer
             );
 
-            // Resolve to canonical document (single DB hit, follows merge pointer if needed).
-            // Phase 3 upsert: a null result is *not* an error — bootstrap no
-            // longer creates the row, so first-time visitors land here without
-            // a Mongo doc yet. We synthesize the defaults and insert. The
-            // canonical id stays equal to input.userId in that case (no merge
-            // pointer to follow).
-            let doc = await this.resolveDocument(input.userId);
-            if (!doc) {
-                doc = await this.createUserForSession(input.userId);
-            }
+            // Resolve to canonical document, creating an anonymous row when
+            // one doesn't yet exist. Phase 3 made `startSession` the first
+            // cookie-validated write; Phase 4 centralizes that upsert in
+            // `ensureExists` so every write endpoint reaches the doc through
+            // a single chokepoint with consistent race-safe insert semantics.
+            // The canonical id stays equal to input.userId on the upsert path
+            // (no merge pointer to follow).
+            const doc = await this.ensureExists(input.userId);
             const userId = doc.id;
 
             // Initialize activity fields if missing (migration support)
@@ -4643,36 +4680,69 @@ export class UserService {
     }
 
     /**
-     * Extract a sanitized `IUtmParams` from a raw object (typically from a
-     * request body) by applying per-field type checks and truncation limits.
+     * Resolve the canonical document for `userId`, creating an anonymous
+     * row when none exists. The single chokepoint every cookie-validated
+     * write that needs a persisted user routes through.
      *
-     * Returns `undefined` if the input is not an object or if every field
-     * ends up empty after sanitization — this matches the historical
-     * behaviour where an all-empty UTM object was treated as "no UTM".
+     * Phase 4 of the traffic-events split (PLAN-traffic-events.md). Phase 2
+     * stopped bootstrap from persisting and Phase 3 made `startSession` the
+     * first cookie-validated write. The remaining write endpoints
+     * (`connectWallet`, `linkWallet`, `issueWalletChallenge`,
+     * `updatePreferences`) used to throw "User not found" when the row
+     * hadn't been created yet — i.e. a visitor who bootstrapped but jumped
+     * straight to the wallet button without firing a session/start. The
+     * fix is to centralize "make a row if cookie-validated and we need
+     * one" here so the orphan-row property still holds: the cookie was
+     * server-signed, so only legitimate JS-running visitors reach this
+     * code path; bots and uptime probes never get past `validateCookie`.
      *
-     * The truncation limits (200 chars for source/medium/term/content,
-     * 500 for campaign) protect the database from unbounded growth.
+     * Mutation handlers that *require an existing wallet* (set-primary,
+     * unlink, refresh-verification) deliberately skip this — without a
+     * row there is no wallet, and throwing surfaces the broken precondition
+     * instead of papering over it with a fresh row that can't satisfy the
+     * call anyway.
+     *
+     * Idempotent under concurrent calls. The unique index on `users.id`
+     * collapses any race into one insert — losers catch E11000, re-fetch
+     * the winner, and return that document as if they had won. See
+     * `createAnonymousDocument` for the race-handling details.
+     *
+     * @param userId - UUID v4 identifier resolved from the signed cookie
+     * @returns Canonical document (existing or newly inserted)
+     * @throws Error when `userId` is not a valid UUID v4
      */
+    public async ensureExists(userId: string): Promise<IUserDocument> {
+        // Reject malformed UUIDs before the DB roundtrip. The throw also
+        // exists inside `createAnonymousDocument` for callers that bypass
+        // this orchestrator, but checking here avoids a wasted findOne on
+        // every malformed input.
+        if (!this.isValidUUID(userId)) {
+            throw new Error('Invalid UUID format. Must be a valid UUID v4.');
+        }
+        const existing = await this.resolveDocument(userId);
+        if (existing) {
+            return existing;
+        }
+        return this.createAnonymousDocument(userId);
+    }
+
     /**
-     * Insert a fresh anonymous user for a session start.
+     * Insert a fresh anonymous user document.
      *
-     * Phase 3 of the traffic-events split makes `startSession` the first
-     * Mongo write in the visitor lifecycle. When the resolved document is
-     * null (bootstrap no longer persists; this is a brand-new visitor or a
-     * cookie holder whose row hasn't been created yet) we synthesize the
-     * defaults that `getOrCreate` used to write at bootstrap and insert
-     * them. Format validation lives here so an invalid UUID can't slip
-     * past resolveDocument's silent null-on-missing path.
+     * Synthesizes the same defaults `getOrCreate` would write — anonymous
+     * identity state, empty wallets, zeroed activity counters, no referral
+     * — and inserts them. Format validation lives here so an invalid UUID
+     * can't slip past `resolveDocument`'s silent null-on-missing path.
      *
-     * Idempotent under concurrent calls. Two simultaneous `startSession`
+     * Idempotent under concurrent calls. Two simultaneous `ensureExists`
      * requests for the same UUID would both `resolveDocument → null` and
      * race into this method; the unique index on `users.id` makes the
      * second insert throw E11000. We catch that and re-resolve the
      * canonical document, returning it as if we had won the race —
-     * subsequent activity writes in `startSession` then merge into the
+     * subsequent updates in the calling handler then merge into the
      * winner's row. Any non-duplicate error rethrows untouched.
      */
-    private async createUserForSession(userId: string): Promise<IUserDocument> {
+    private async createAnonymousDocument(userId: string): Promise<IUserDocument> {
         if (!this.isValidUUID(userId)) {
             throw new Error('Invalid UUID format. Must be a valid UUID v4.');
         }
@@ -4709,7 +4779,7 @@ export class UserService {
             if (error?.code === 11000) {
                 const existing = await this.resolveDocument(userId);
                 if (existing) {
-                    this.logger.debug({ userId }, 'createUserForSession lost a concurrent race; reusing existing row');
+                    this.logger.debug({ userId }, 'ensureExists lost a concurrent race; reusing existing row');
                     return existing;
                 }
             }
@@ -4825,6 +4895,17 @@ export class UserService {
         return Object.values(utm).some(v => v !== undefined) ? utm : null;
     }
 
+    /**
+     * Extract a sanitized `IUtmParams` from a raw object (typically from a
+     * request body) by applying per-field type checks and truncation limits.
+     *
+     * Returns `undefined` if the input is not an object or if every field
+     * ends up empty after sanitization — this matches the historical
+     * behaviour where an all-empty UTM object was treated as "no UTM".
+     *
+     * The truncation limits (200 chars for source/medium/term/content,
+     * 500 for campaign) protect the database from unbounded growth.
+     */
     private extractUtmParams(raw: unknown): IUtmParams | undefined {
         if (!raw || typeof raw !== 'object') {
             return undefined;
@@ -5045,6 +5126,14 @@ export class UserService {
      * and verify the signature. Returns the mutation-ready triple
      * (doc, normalizedAddress, now) or throws with the operation-
      * specific error.
+     *
+     * Callers that have already materialised the canonical document
+     * (e.g. `linkWallet`, which calls `ensureExists` to upsert before
+     * verification) can pass `existingDoc` to skip the redundant
+     * `resolveDocument` round-trip. The expiry check is applied at the
+     * upstream materialisation site (every `resolveDocument` /
+     * `ensureExists` flows through `enforceSessionExpiry`), so the
+     * preamble's freshness invariant is preserved.
      */
     private async verifyWalletAction(
         userId: string,
@@ -5052,9 +5141,10 @@ export class UserService {
         address: string,
         message: string,
         signature: string,
-        nonce: string
+        nonce: string,
+        existingDoc?: IUserDocument
     ): Promise<{ doc: IUserDocument; normalizedAddress: string; now: Date }> {
-        const doc = await this.resolveDocument(userId);
+        const doc = existingDoc ?? await this.resolveDocument(userId);
         if (!doc) {
             throw new Error(`User with id "${userId}" not found`);
         }
