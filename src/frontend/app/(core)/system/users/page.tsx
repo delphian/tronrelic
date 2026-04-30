@@ -2,8 +2,6 @@
 
 import { useState } from 'react';
 import { useSystemAuth } from '../../../../features/system';
-import { Page } from '../../../../components/layout';
-import { Card } from '../../../../components/ui/Card';
 import { UsersMonitor, AnalyticsDashboard, ReferralOverview, GscSettings, GroupsManager } from '../../../../modules/user';
 import styles from './page.module.scss';
 
@@ -26,16 +24,6 @@ type UsersTab = 'users' | 'analytics' | 'referrals' | 'groups' | 'settings';
 export default function SystemUsersPage() {
     const { token } = useSystemAuth();
     const [activeTab, setActiveTab] = useState<UsersTab>('users');
-
-    if (!token) {
-        return (
-            <Page>
-                <Card padding="lg">
-                    <p>Authentication required</p>
-                </Card>
-            </Page>
-        );
-    }
 
     return (
         <div className={styles.container}>
