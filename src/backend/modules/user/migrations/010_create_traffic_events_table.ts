@@ -29,9 +29,9 @@ import type { IMigration, IMigrationContext } from '@/types';
  *     `'session_start'` (cookie-validated session begins). Future event types may be
  *     added without schema change. `LowCardinality(String)` because the cardinality
  *     is bounded.
- *   - `candidate_uid` — the cookie UUID minted by the bootstrap controller. Always
- *     present; `''` only for events emitted before a cookie can be assigned (none
- *     today).
+ *   - `candidate_uid` — the cookie UUID minted by the bootstrap controller. Stored
+ *     as the native `UUID` type (16 bytes, validated on insert) since every event
+ *     is tied to a real `randomUUID()`-minted v4.
  *   - `path` / `referer` / `original_referrer` — request URL plus the two distinct
  *     referrers we want to keep separate: `Referer` HTTP header (server-visible,
  *     reliable) and `document.referrer` reported by the client (subject to client
@@ -82,8 +82,8 @@ export const migration: IMigration = {
         await context.clickhouse.exec(`
             CREATE TABLE IF NOT EXISTS traffic_events (
                 event_type LowCardinality(String),
-                timestamp DateTime64(3),
-                candidate_uid String,
+                timestamp DateTime64(3, 'UTC'),
+                candidate_uid UUID,
 
                 path String,
                 referer Nullable(String),

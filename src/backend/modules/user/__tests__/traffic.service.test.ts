@@ -121,18 +121,21 @@ describe('TrafficService', () => {
     });
 
     describe('recordEvent()', () => {
-        it('no-ops when ClickHouse is unavailable', async () => {
+        it('no-ops when ClickHouse is unavailable', () => {
             TrafficService.setDependencies(undefined, createMockLogger());
-            await expect(
-                TrafficService.getInstance().recordEvent(sampleEvent)
-            ).resolves.toBeUndefined();
+            expect(() => TrafficService.getInstance().recordEvent(sampleEvent)).not.toThrow();
         });
 
-        it('inserts to traffic_events when ClickHouse is available', async () => {
+        it('returns synchronously and dispatches an insert to traffic_events', async () => {
             const ch = createMockClickHouse();
             TrafficService.setDependencies(ch, createMockLogger());
 
-            await TrafficService.getInstance().recordEvent(sampleEvent);
+            // Fire-and-forget: returns void synchronously.
+            const ret = TrafficService.getInstance().recordEvent(sampleEvent);
+            expect(ret).toBeUndefined();
+
+            // Insert is dispatched on a microtask; await one tick to let it settle.
+            await Promise.resolve();
 
             expect(ch.inserts).toHaveLength(1);
             expect(ch.inserts[0].table).toBe('traffic_events');
@@ -140,7 +143,8 @@ describe('TrafficService', () => {
             expect(row.candidate_uid).toBe(sampleEvent.candidate_uid);
             expect(row.event_type).toBe('bootstrap');
             expect(typeof row.timestamp).toBe('string');
-            expect(row.timestamp).toBe('2026-04-30T12:00:00.000Z');
+            // ClickHouse native DateTime64(3) form, UTC, no 'T'/'Z' suffix.
+            expect(row.timestamp).toBe('2026-04-30 12:00:00.000');
         });
 
         it('swallows ClickHouse failures without throwing', async () => {
@@ -149,9 +153,10 @@ describe('TrafficService', () => {
             const logger = createMockLogger();
             TrafficService.setDependencies(ch, logger);
 
-            await expect(
-                TrafficService.getInstance().recordEvent(sampleEvent)
-            ).resolves.toBeUndefined();
+            expect(() => TrafficService.getInstance().recordEvent(sampleEvent)).not.toThrow();
+
+            // Allow the rejected insert promise to flush through .catch().
+            await new Promise(resolve => setImmediate(resolve));
 
             expect(logger.warn).toHaveBeenCalled();
         });
@@ -164,9 +169,10 @@ describe('TrafficService', () => {
             expect(events).toEqual([]);
         });
 
-        it('rehydrates timestamps as Date instances', async () => {
+        it('rehydrates ClickHouse native-format timestamps as Date instances', async () => {
             const ch = createMockClickHouse();
-            ch.queue.push({ ...sampleEvent, timestamp: '2026-04-30T12:00:00.000Z' });
+            // ClickHouse JSONEachRow returns DateTime64 in this form, not ISO.
+            ch.queue.push({ ...sampleEvent, timestamp: '2026-04-30 12:00:00.000' });
             TrafficService.setDependencies(ch, createMockLogger());
 
             const events = await TrafficService.getInstance().getEventsForUser('uid');

@@ -172,21 +172,19 @@ export class TrafficService {
     }
 
     /**
-     * Record one traffic event. Returns immediately — ClickHouse async
-     * inserts buffer server-side, and errors surface via the async-insert
-     * error poller in `ClickHouseService`. Failures here never propagate
-     * to the request handler.
+     * Record one traffic event. Fire-and-forget: returns synchronously
+     * once the insert is dispatched, never blocks the request handler.
+     * Errors are logged via the attached `.catch()` and additionally
+     * surface via the async-insert error poller in `ClickHouseService`.
      */
-    async recordEvent(event: ITrafficEvent): Promise<void> {
+    recordEvent(event: ITrafficEvent): void {
         if (!this.clickhouse) {
             return;
         }
 
-        try {
-            await this.clickhouse.insert(TABLE_NAME, [serializeEvent(event)]);
-        } catch (error) {
+        this.clickhouse.insert(TABLE_NAME, [serializeEvent(event)]).catch((error) => {
             this.logger.warn({ error, eventType: event.event_type }, 'Failed to record traffic event');
-        }
+        });
     }
 
     /**
@@ -212,10 +210,34 @@ export class TrafficService {
             ? 'AND event_type IN ({eventTypes:Array(String)})'
             : '';
 
+        // Explicit column list (rather than SELECT *) so a future schema
+        // addition we don't intend to read won't auto-bleed into our type.
         const sql = `
-            SELECT *
+            SELECT
+                event_type,
+                timestamp,
+                candidate_uid,
+                path,
+                referer,
+                original_referrer,
+                user_agent,
+                accept_language,
+                country,
+                device,
+                bot_class,
+                utm_source,
+                utm_medium,
+                utm_campaign,
+                utm_term,
+                utm_content,
+                sec_ch_ua,
+                sec_ch_ua_mobile,
+                sec_ch_ua_platform,
+                sec_fetch_dest,
+                sec_fetch_mode,
+                sec_fetch_site
             FROM ${TABLE_NAME}
-            WHERE candidate_uid = {candidateUid:String}
+            WHERE candidate_uid = {candidateUid:UUID}
             ${eventFilter}
             ORDER BY timestamp ASC
             LIMIT {limit:UInt32}
@@ -237,24 +259,70 @@ export class TrafficService {
 }
 
 /**
- * Wire-format row returned by ClickHouse. `timestamp` arrives as an ISO
- * string; everything else lines up with `ITrafficEvent` directly.
+ * Wire-format row returned by ClickHouse. `timestamp` arrives as a UTC
+ * `DateTime64(3)` string in `YYYY-MM-DD HH:MM:SS.mmm` form (ClickHouse's
+ * native format under `JSONEachRow`); everything else lines up with
+ * `ITrafficEvent` directly.
  */
 interface TrafficEventRow extends Omit<ITrafficEvent, 'timestamp'> {
     timestamp: string;
 }
 
-/**
- * Convert an `ITrafficEvent` into the shape ClickHouse expects on insert.
- * `timestamp` becomes an ISO string; the column is `DateTime64(3)`.
- */
-function serializeEvent(event: ITrafficEvent): Record<string, unknown> {
-    return { ...event, timestamp: event.timestamp.toISOString() };
+function pad(value: number, length: number): string {
+    return String(value).padStart(length, '0');
 }
 
 /**
- * Inverse of `serializeEvent`. Re-hydrates the `Date` instance.
+ * Render a `Date` in ClickHouse's native `DateTime64(3)` form, in UTC.
+ *
+ * The default `date_time_input_format=basic` rejects `toISOString()`
+ * output (the `T...Z` form) — inserts would fail in production. The
+ * column is declared `DateTime64(3, 'UTC')` so emitting in UTC keeps
+ * the wire format and the column tz aligned regardless of which
+ * ClickHouse node the row lands on.
+ */
+function formatClickHouseDateTime64Utc(date: Date): string {
+    return (
+        `${pad(date.getUTCFullYear(), 4)}-${pad(date.getUTCMonth() + 1, 2)}-${pad(date.getUTCDate(), 2)} ` +
+        `${pad(date.getUTCHours(), 2)}:${pad(date.getUTCMinutes(), 2)}:${pad(date.getUTCSeconds(), 2)}.${pad(date.getUTCMilliseconds(), 3)}`
+    );
+}
+
+/**
+ * Inverse of `formatClickHouseDateTime64Utc`. Falls back to `new Date(value)`
+ * for any unrecognized form so a future ClickHouse driver upgrade that
+ * normalizes timestamps to ISO doesn't break us silently.
+ */
+function parseClickHouseDateTime64Utc(value: string): Date {
+    const match = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,3}))?Z?$/.exec(value);
+    if (!match) {
+        return new Date(value);
+    }
+    const [, year, month, day, hour, minute, second, milliseconds = '0'] = match;
+    return new Date(Date.UTC(
+        Number(year),
+        Number(month) - 1,
+        Number(day),
+        Number(hour),
+        Number(minute),
+        Number(second),
+        Number(milliseconds.padEnd(3, '0'))
+    ));
+}
+
+/**
+ * Convert an `ITrafficEvent` into the shape ClickHouse expects on insert.
+ * `timestamp` becomes a UTC `DateTime64(3)` string in ClickHouse's native
+ * form so inserts succeed under the default `date_time_input_format=basic`.
+ */
+function serializeEvent(event: ITrafficEvent): Record<string, unknown> {
+    return { ...event, timestamp: formatClickHouseDateTime64Utc(event.timestamp) };
+}
+
+/**
+ * Inverse of `serializeEvent`. Re-hydrates the `Date` instance from
+ * ClickHouse's native `DateTime64(3)` string form.
  */
 function deserializeEvent(row: TrafficEventRow): ITrafficEvent {
-    return { ...row, timestamp: new Date(row.timestamp) };
+    return { ...row, timestamp: parseClickHouseDateTime64Utc(row.timestamp) };
 }
