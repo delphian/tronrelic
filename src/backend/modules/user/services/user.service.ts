@@ -601,7 +601,7 @@ export class UserService {
      * @param userId - UUID of user to register the wallet to
      * @param address - Base58 TRON address
      * @returns Result with success status or login requirement
-     * @throws Error if user not found or address invalid
+     * @throws Error if `userId` is not a valid UUID v4 or the address is malformed
      */
     async connectWallet(userId: string, address: string): Promise<IConnectWalletResult> {
         // Phase 4 of the traffic-events split: cookie-validated writes that
@@ -691,19 +691,24 @@ export class UserService {
      * @param userId - UUID of the caller attempting to verify the wallet
      * @param input - Wallet address, signature message, and signature
      * @returns Result with user data and optional identity swap indicator
-     * @throws Error if signature invalid or user not found
+     * @throws Error if `userId` is not a valid UUID v4, the signature
+     *               doesn't recover to the submitted address, or the
+     *               challenge nonce is missing/expired/already-consumed
      */
     async linkWallet(userId: string, input: ILinkWalletInput): Promise<ILinkWalletResult> {
         // Phase 4 of the traffic-events split: this is the cross-browser
         // login path for verified users, so the cookie's UUID may not yet
         // have a Mongo row in the new browser. `ensureExists` upserts the
-        // anonymous defaults so `verifyWalletAction` finds a doc; identity
+        // anonymous defaults so `verifyWalletAction` has a doc; identity
         // reconciliation below will tombstone it via `mergedInto` on the
         // identity-swap path, so the upsert costs at most a transient row.
-        await this.ensureExists(userId);
+        // Threading the upserted doc into `verifyWalletAction` skips the
+        // helper's own resolveDocument and avoids a redundant DB read on
+        // the wallet-link hot path.
+        const upserted = await this.ensureExists(userId);
 
         const { doc, normalizedAddress, now } = await this.verifyWalletAction(
-            userId, 'link', input.address, input.message, input.signature, input.nonce
+            userId, 'link', input.address, input.message, input.signature, input.nonce, upserted
         );
 
         // Cross-user wallet conflict — the signer has proven control of
@@ -1108,7 +1113,8 @@ export class UserService {
      * @param action - Wallet operation the challenge will gate
      * @param address - Submitted TRON address (hex or base58)
      * @returns Challenge with nonce, canonical message, and expiry
-     * @throws Error when user not found or address malformed
+     * @throws Error when `userId` is not a valid UUID v4 or the address
+     *               is malformed
      */
     async issueWalletChallenge(
         userId: string,
@@ -1157,11 +1163,15 @@ export class UserService {
      * Update user preferences.
      *
      * Merges provided preferences with existing ones (partial update).
+     * Phase 4 of the traffic-events split routes through `ensureExists`,
+     * so a fresh cookie holder gets an anonymous row created on demand
+     * — preferences are a deliberate user choice and persistence is the
+     * intended outcome.
      *
      * @param userId - UUID of user
      * @param preferences - Partial preferences to merge
      * @returns Updated user document
-     * @throws Error if user not found
+     * @throws Error if `userId` is not a valid UUID v4
      */
     async updatePreferences(
         userId: string,
@@ -1249,11 +1259,15 @@ export class UserService {
      * The controller passes raw request fields via `IStartSessionInput` and
      * does not interpret them.
      *
-     * **Phase 3 of the traffic-events split (PLAN-traffic-events.md).** This
-     * is the **first Mongo write** in the visitor lifecycle. Bootstrap no
-     * longer persists, so the canonical user document may not yet exist
-     * when this runs. We upsert: if no row resolves for `input.userId`, we
-     * create one from anonymous defaults instead of throwing. On the
+     * **Phase 3 of the traffic-events split (PLAN-traffic-events.md).** For
+     * the normal pageview/session path this is the first Mongo write in the
+     * visitor lifecycle (bootstrap no longer persists). Phase 4 generalised
+     * the upsert via `ensureExists`, so other cookie-validated writes
+     * (`connectWallet`, `linkWallet`, `issueWalletChallenge`,
+     * `updatePreferences`) can also create the row when called cold —
+     * `startSession` is the typical first writer, not the only one. If no
+     * row resolves for `input.userId`, we create one from anonymous defaults
+     * instead of throwing. On the
      * upsert path we also query ClickHouse for the visitor's earliest
      * pre-hydration `bootstrap` event and prefer those values over the
      * post-hydration session payload — bots and uptime probes never get
@@ -4666,17 +4680,6 @@ export class UserService {
     }
 
     /**
-     * Extract a sanitized `IUtmParams` from a raw object (typically from a
-     * request body) by applying per-field type checks and truncation limits.
-     *
-     * Returns `undefined` if the input is not an object or if every field
-     * ends up empty after sanitization — this matches the historical
-     * behaviour where an all-empty UTM object was treated as "no UTM".
-     *
-     * The truncation limits (200 chars for source/medium/term/content,
-     * 500 for campaign) protect the database from unbounded growth.
-     */
-    /**
      * Resolve the canonical document for `userId`, creating an anonymous
      * row when none exists. The single chokepoint every cookie-validated
      * write that needs a persisted user routes through.
@@ -4709,6 +4712,13 @@ export class UserService {
      * @throws Error when `userId` is not a valid UUID v4
      */
     public async ensureExists(userId: string): Promise<IUserDocument> {
+        // Reject malformed UUIDs before the DB roundtrip. The throw also
+        // exists inside `createAnonymousDocument` for callers that bypass
+        // this orchestrator, but checking here avoids a wasted findOne on
+        // every malformed input.
+        if (!this.isValidUUID(userId)) {
+            throw new Error('Invalid UUID format. Must be a valid UUID v4.');
+        }
         const existing = await this.resolveDocument(userId);
         if (existing) {
             return existing;
@@ -4885,6 +4895,17 @@ export class UserService {
         return Object.values(utm).some(v => v !== undefined) ? utm : null;
     }
 
+    /**
+     * Extract a sanitized `IUtmParams` from a raw object (typically from a
+     * request body) by applying per-field type checks and truncation limits.
+     *
+     * Returns `undefined` if the input is not an object or if every field
+     * ends up empty after sanitization — this matches the historical
+     * behaviour where an all-empty UTM object was treated as "no UTM".
+     *
+     * The truncation limits (200 chars for source/medium/term/content,
+     * 500 for campaign) protect the database from unbounded growth.
+     */
     private extractUtmParams(raw: unknown): IUtmParams | undefined {
         if (!raw || typeof raw !== 'object') {
             return undefined;
@@ -5105,6 +5126,14 @@ export class UserService {
      * and verify the signature. Returns the mutation-ready triple
      * (doc, normalizedAddress, now) or throws with the operation-
      * specific error.
+     *
+     * Callers that have already materialised the canonical document
+     * (e.g. `linkWallet`, which calls `ensureExists` to upsert before
+     * verification) can pass `existingDoc` to skip the redundant
+     * `resolveDocument` round-trip. The expiry check is applied at the
+     * upstream materialisation site (every `resolveDocument` /
+     * `ensureExists` flows through `enforceSessionExpiry`), so the
+     * preamble's freshness invariant is preserved.
      */
     private async verifyWalletAction(
         userId: string,
@@ -5112,9 +5141,10 @@ export class UserService {
         address: string,
         message: string,
         signature: string,
-        nonce: string
+        nonce: string,
+        existingDoc?: IUserDocument
     ): Promise<{ doc: IUserDocument; normalizedAddress: string; now: Date }> {
-        const doc = await this.resolveDocument(userId);
+        const doc = existingDoc ?? await this.resolveDocument(userId);
         if (!doc) {
             throw new Error(`User with id "${userId}" not found`);
         }
