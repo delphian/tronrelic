@@ -38,7 +38,9 @@
  *   response on analytics persistence.
  */
 
+import type { Request } from 'express';
 import type { IClickHouseService, ISystemLogService } from '@/types';
+import { getClientIP, getCountryFromIP, getDeviceCategory } from './geo.service.js';
 
 /**
  * Categorical event types written to `traffic_events.event_type`.
@@ -256,6 +258,141 @@ export class TrafficService {
             return [];
         }
     }
+}
+
+/**
+ * Inputs the controller can derive from the request body and cookie state
+ * but the request headers cannot supply on their own.
+ *
+ * Phase 1 forwards a small JSON body alongside the inbound headers so the
+ * backend has real visitor context (landing path, UTM params, original
+ * referrer captured by the legacy-redirect middleware) on the bootstrap
+ * call. The `startSession` payload supplies the same shape from the
+ * frontend session-start fetch.
+ */
+export interface ITrafficEventBuilderInputs {
+    /** Sanitized landing path; falls back to `req.path` when omitted. */
+    landingPath?: string;
+    /** UTM params parsed from the URL or session-start payload. */
+    utm?: {
+        source?: string | null;
+        medium?: string | null;
+        campaign?: string | null;
+        term?: string | null;
+        content?: string | null;
+    };
+    /** `document.referrer` reported by the client at landing. */
+    originalReferrer?: string | null;
+}
+
+/**
+ * Build an `ITrafficEvent` from an Express request and a candidate UUID.
+ *
+ * Centralizes "request → ITrafficEvent" mapping so both the bootstrap
+ * controller (Phase 2) and the session-start controller (Phase 3) emit
+ * rows with the same shape. The geo / device helpers are reused from
+ * `geo.service.ts` so the device-category and country-derivation rules
+ * stay in one place.
+ *
+ * The builder never throws — every dimension is `Nullable` in the
+ * ClickHouse schema, so missing or malformed input collapses to `null`
+ * rather than failing the inbound request.
+ *
+ * @param eventType - Categorical kind of event (`'bootstrap'` or
+ *   `'session_start'`). Future event types extend the union without a
+ *   schema change since the column is `LowCardinality(String)`.
+ * @param candidateUid - UUID v4 the cookie is anchored to. The caller is
+ *   responsible for resolving merge tombstones to the canonical id
+ *   before emitting; otherwise analytics split across stale/canonical
+ *   ids and Phase 3's first-touch lookup misses.
+ * @param req - Express request whose headers carry the visitor's
+ *   browser context (UA, Referer, Sec-CH-UA*, Sec-Fetch-*) and whose IP
+ *   resolves the country dimension. Headers default to `{}` when
+ *   absent, keeping the builder safe to call with stub requests in
+ *   tests.
+ * @param inputs - Optional extra context the controller derived from
+ *   the request body or cookie state and that headers cannot supply on
+ *   their own (`landingPath`, `utm`, `originalReferrer`). See
+ *   `ITrafficEventBuilderInputs` for per-field docs. Defaults to `{}`
+ *   so callers that only have request-level context (none of the body
+ *   payload) can call the builder without a sentinel object.
+ */
+export function buildTrafficEvent(
+    eventType: TrafficEventType,
+    candidateUid: string,
+    req: Request,
+    inputs: ITrafficEventBuilderInputs = {}
+): ITrafficEvent {
+    const headers = req.headers ?? {};
+    const userAgent = readSingleHeader(headers['user-agent']);
+    const referer = readSingleHeader(headers['referer']);
+    const acceptLanguage = readSingleHeader(headers['accept-language']);
+    const secChUa = readSingleHeader(headers['sec-ch-ua']);
+    const secChUaMobile = readSingleHeader(headers['sec-ch-ua-mobile']);
+    const secChUaPlatform = readSingleHeader(headers['sec-ch-ua-platform']);
+    const secFetchDest = readSingleHeader(headers['sec-fetch-dest']);
+    const secFetchMode = readSingleHeader(headers['sec-fetch-mode']);
+    const secFetchSite = readSingleHeader(headers['sec-fetch-site']);
+
+    const utm = inputs.utm ?? {};
+
+    return {
+        event_type: eventType,
+        timestamp: new Date(),
+        candidate_uid: candidateUid,
+
+        path: inputs.landingPath ?? (typeof req.path === 'string' ? req.path : '/'),
+        referer: referer ?? null,
+        original_referrer: inputs.originalReferrer ?? null,
+
+        user_agent: userAgent ?? null,
+        accept_language: acceptLanguage ?? null,
+
+        country: getCountryFromIP(getClientIP({ ip: req.ip, headers })),
+        device: getDeviceCategory(userAgent),
+        // bot_class deferred — see PLAN-traffic-events.md "Open Questions".
+        // Until the library-vs-regex decision lands, every row carries
+        // null. Future Phase 4+ work can backfill via a CH `ALTER TABLE
+        // ... UPDATE` over recent rows once the classifier exists.
+        bot_class: null,
+
+        utm_source: utm.source ?? null,
+        utm_medium: utm.medium ?? null,
+        utm_campaign: utm.campaign ?? null,
+        utm_term: utm.term ?? null,
+        utm_content: utm.content ?? null,
+
+        sec_ch_ua: secChUa ?? null,
+        sec_ch_ua_mobile: parseSecChUaMobile(secChUaMobile),
+        sec_ch_ua_platform: secChUaPlatform ?? null,
+        sec_fetch_dest: secFetchDest ?? null,
+        sec_fetch_mode: secFetchMode ?? null,
+        sec_fetch_site: secFetchSite ?? null
+    };
+}
+
+/**
+ * Express normalizes most headers to a single string but allows arrays
+ * for ones that can repeat (e.g. `Set-Cookie`). For our forwarded set we
+ * only care about the first occurrence; coercing the array form here
+ * keeps the call site free of `Array.isArray` checks.
+ */
+function readSingleHeader(value: string | string[] | undefined): string | undefined {
+    if (Array.isArray(value)) {
+        return value[0];
+    }
+    return value;
+}
+
+/**
+ * Parse the `Sec-CH-UA-Mobile` header (`"?0"` / `"?1"`) into the 0/1 form
+ * the ClickHouse `Nullable(UInt8)` column expects. Anything else maps to
+ * null so a malformed client header doesn't poison the row.
+ */
+function parseSecChUaMobile(value: string | undefined): number | null {
+    if (value === '?1') return 1;
+    if (value === '?0') return 0;
+    return null;
 }
 
 /**

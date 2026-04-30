@@ -237,6 +237,13 @@ export class UserModule implements IModule<IUserModuleDependencies> {
         TrafficService.setDependencies(dependencies.clickhouse, this.logger);
         this.trafficService = TrafficService.getInstance();
 
+        // Inject TrafficService into UserService so `startSession` can
+        // backfill from ClickHouse first-touch events (Phase 3). Explicit
+        // dependency rather than a hidden singleton lookup so tests can
+        // boot the user module without ClickHouse and assert on the
+        // post-hydration fallback path.
+        this.userService.setTrafficService(this.trafficService);
+
         // Initialize UserGroupService singleton, build indexes, seed system groups.
         // Must precede UserController construction so the controller can inject
         // it for `withAuthStatus` response shaping — keeps the cross-tier
@@ -247,7 +254,13 @@ export class UserModule implements IModule<IUserModuleDependencies> {
         await this.userGroupService.seedSystemGroups();
 
         // Create controller with singleton services
-        this.controller = new UserController(this.userService, this.gscService, this.userGroupService, this.logger);
+        this.controller = new UserController(
+            this.userService,
+            this.gscService,
+            this.userGroupService,
+            this.trafficService,
+            this.logger
+        );
 
         // Create group controller with singleton service
         this.groupController = new UserGroupController(this.userGroupService, this.logger);
