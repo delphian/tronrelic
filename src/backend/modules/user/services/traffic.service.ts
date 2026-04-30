@@ -297,6 +297,25 @@ export interface ITrafficEventBuilderInputs {
  * The builder never throws — every dimension is `Nullable` in the
  * ClickHouse schema, so missing or malformed input collapses to `null`
  * rather than failing the inbound request.
+ *
+ * @param eventType - Categorical kind of event (`'bootstrap'` or
+ *   `'session_start'`). Future event types extend the union without a
+ *   schema change since the column is `LowCardinality(String)`.
+ * @param candidateUid - UUID v4 the cookie is anchored to. The caller is
+ *   responsible for resolving merge tombstones to the canonical id
+ *   before emitting; otherwise analytics split across stale/canonical
+ *   ids and Phase 3's first-touch lookup misses.
+ * @param req - Express request whose headers carry the visitor's
+ *   browser context (UA, Referer, Sec-CH-UA*, Sec-Fetch-*) and whose IP
+ *   resolves the country dimension. Headers default to `{}` when
+ *   absent, keeping the builder safe to call with stub requests in
+ *   tests.
+ * @param inputs - Optional extra context the controller derived from
+ *   the request body or cookie state and that headers cannot supply on
+ *   their own (`landingPath`, `utm`, `originalReferrer`). See
+ *   `ITrafficEventBuilderInputs` for per-field docs. Defaults to `{}`
+ *   so callers that only have request-level context (none of the body
+ *   payload) can call the builder without a sentinel object.
  */
 export function buildTrafficEvent(
     eventType: TrafficEventType,

@@ -1239,12 +1239,21 @@ export class UserService {
      * when ClickHouse is unavailable, so deployments without CH simply
      * get the post-hydration values.
      *
+     * Returns both the session and the **canonical user id** so callers
+     * that emit downstream analytics (the controller's `session_start`
+     * ClickHouse event) can attribute under the canonical id even when
+     * `input.userId` arrived as a merge tombstone. Without this, the
+     * controller would record events under the stale id, splitting
+     * analytics across two UUIDs and breaking the next session's
+     * first-touch lookup.
+     *
      * @param input - Raw session input fields (userId, clientIP, userAgent,
      *                screenWidth, landingPage, rawUtm, bodyReferrer,
      *                headerReferrer)
-     * @returns The active session
+     * @returns `{ session, userId }` where `userId` is the canonical UUID
+     *   the session was persisted under (resolves merge pointers)
      */
-    async startSession(input: IStartSessionInput): Promise<IUserSession> {
+    async startSession(input: IStartSessionInput): Promise<{ session: IUserSession; userId: string }> {
         try {
             const { clientIP, userAgent, screenWidth, landingPage } = input;
 
@@ -1282,7 +1291,7 @@ export class UserService {
 
                 if (now.getTime() - lastActivity.getTime() < this.SESSION_TIMEOUT_MS) {
                     // Session still active - return as-is (duration tracked by heartbeat)
-                    return activeSession;
+                    return { session: activeSession, userId };
                 }
 
                 // Session timed out - close it
@@ -1430,7 +1439,7 @@ export class UserService {
                 'Session started'
             );
 
-            return newSession;
+            return { session: newSession, userId };
         } catch (error) {
             // Use input.userId here: the canonical `userId` is bound
             // inside the try (`const userId = doc.id`) so it isn't visible
@@ -4654,6 +4663,14 @@ export class UserService {
      * defaults that `getOrCreate` used to write at bootstrap and insert
      * them. Format validation lives here so an invalid UUID can't slip
      * past resolveDocument's silent null-on-missing path.
+     *
+     * Idempotent under concurrent calls. Two simultaneous `startSession`
+     * requests for the same UUID would both `resolveDocument → null` and
+     * race into this method; the unique index on `users.id` makes the
+     * second insert throw E11000. We catch that and re-resolve the
+     * canonical document, returning it as if we had won the race —
+     * subsequent activity writes in `startSession` then merge into the
+     * winner's row. Any non-duplicate error rethrows untouched.
      */
     private async createUserForSession(userId: string): Promise<IUserDocument> {
         if (!this.isValidUUID(userId)) {
@@ -4682,9 +4699,22 @@ export class UserService {
             createdAt: now,
             updatedAt: now
         };
-        await this.collection.insertOne(fresh as any);
-        this.logger.info({ userId }, 'User created via session start');
-        return fresh as IUserDocument;
+        try {
+            await this.collection.insertOne(fresh as any);
+            this.logger.info({ userId }, 'User created via session start');
+            return fresh as IUserDocument;
+        } catch (error: any) {
+            // MongoServerError code 11000 = duplicate key. A concurrent
+            // startSession won the race; re-fetch the winner's doc.
+            if (error?.code === 11000) {
+                const existing = await this.resolveDocument(userId);
+                if (existing) {
+                    this.logger.debug({ userId }, 'createUserForSession lost a concurrent race; reusing existing row');
+                    return existing;
+                }
+            }
+            throw error;
+        }
     }
 
     /**
@@ -4693,6 +4723,15 @@ export class UserService {
      * `startSession`. Returns `null` when ClickHouse is unavailable, the
      * lookup fails, or no rows match — every caller falls back to the
      * post-hydration session payload in that case.
+     *
+     * Field-level caps are applied here as defense-in-depth on the read
+     * path. The bootstrap controller already clamps `landingPath`, UTM,
+     * and `originalReferrer` before writing to ClickHouse (see
+     * `clampUtm` / `MAX_REFERRER_LENGTH` in user.controller.ts), so in
+     * the steady state CH rows are already bounded. The redundant caps
+     * here protect against rows already in CH from before the write-
+     * boundary fix landed and against any future emit site that adds
+     * a CH event without going through the existing chokepoint.
      */
     private async fetchFirstTouchEvent(userId: string) {
         if (!this.trafficService) {
@@ -4702,7 +4741,55 @@ export class UserService {
             eventTypes: ['bootstrap'],
             limit: 1
         });
-        return events[0] ?? null;
+        const raw = events[0];
+        if (!raw) return null;
+        return this.clampFirstTouchEvent(raw);
+    }
+
+    /**
+     * Apply field-level caps to a CH first-touch row before its values
+     * flow into Mongo writes. Mirrors the limits the controller applies
+     * to the post-hydration session payload (`MAX_PATH_LENGTH = 500`,
+     * UTM truncation matching `extractUtmParams`, country normalized to
+     * a 2-char ISO code).
+     */
+    private clampFirstTouchEvent<T extends {
+        path: string;
+        referer: string | null;
+        country: string | null;
+        utm_source: string | null;
+        utm_medium: string | null;
+        utm_campaign: string | null;
+        utm_term: string | null;
+        utm_content: string | null;
+    }>(event: T): T {
+        const FIRST_TOUCH_PATH_MAX = 500;
+        const FIRST_TOUCH_REFERER_MAX = 500;
+        const COUNTRY_CODE_REGEX = /^[A-Z]{2}$/;
+
+        const clamp = (value: string | null, max: number) =>
+            typeof value === 'string' ? value.slice(0, max) : value;
+
+        return {
+            ...event,
+            path: typeof event.path === 'string' ? event.path.slice(0, FIRST_TOUCH_PATH_MAX) : event.path,
+            // Cap the referrer before it reaches `new URL(...)` /
+            // `extractReferrerDomain` / `extractSearchKeyword`. Those
+            // helpers already truncate their *outputs* but pay the
+            // parse cost on the unbounded input — capping here defends
+            // against a crafted multi-MB referer in a stale CH row.
+            referer: clamp(event.referer, FIRST_TOUCH_REFERER_MAX),
+            // Country must be a 2-char ISO code; anything else collapses
+            // to null so we don't persist garbage into countryCounts.
+            country: typeof event.country === 'string' && COUNTRY_CODE_REGEX.test(event.country)
+                ? event.country
+                : null,
+            utm_source:   clamp(event.utm_source,   200),
+            utm_medium:   clamp(event.utm_medium,   200),
+            utm_campaign: clamp(event.utm_campaign, 500),
+            utm_term:     clamp(event.utm_term,     200),
+            utm_content:  clamp(event.utm_content,  200)
+        };
     }
 
     /**

@@ -112,7 +112,7 @@ describe('UserService.startSession (Phase 3)', () => {
         const before = await collection.findOne({ id: VALID_UUID });
         expect(before).toBeNull();
 
-        const session = await userService.startSession({
+        const { session, userId } = await userService.startSession({
             userId: VALID_UUID,
             userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)',
             landingPage: '/markets',
@@ -121,6 +121,10 @@ describe('UserService.startSession (Phase 3)', () => {
 
         expect(session.landingPage).toBe('/markets');
         expect(session.device).toBe('desktop');
+        // Canonical id matches input.userId on the upsert path (no merge
+        // pointer involved); same equality is asserted in the merge-
+        // resolution test in user.service.test.ts.
+        expect(userId).toBe(VALID_UUID);
 
         const persisted = await collection.findOne({ id: VALID_UUID });
         expect(persisted).not.toBeNull();
@@ -161,7 +165,7 @@ describe('UserService.startSession (Phase 3)', () => {
         };
         const userService = bootService(createMockClickHouse([firstTouch]));
 
-        const session = await userService.startSession({
+        const { session } = await userService.startSession({
             userId: VALID_UUID,
             userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)',
             clientIP: '127.0.0.1',
@@ -195,7 +199,7 @@ describe('UserService.startSession (Phase 3)', () => {
         // with the post-hydration payload exactly as it did pre-Phase-3.
         const userService = bootService(createMockClickHouse([]));
 
-        const session = await userService.startSession({
+        const { session } = await userService.startSession({
             userId: VALID_UUID,
             userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0)',
             landingPage: '/markets',
@@ -237,7 +241,7 @@ describe('UserService.startSession (Phase 3)', () => {
         const userService = UserService.getInstance();
         // Intentionally do NOT call setTrafficService.
 
-        const session = await userService.startSession({
+        const { session } = await userService.startSession({
             userId: VALID_UUID,
             userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)',
             landingPage: '/markets'

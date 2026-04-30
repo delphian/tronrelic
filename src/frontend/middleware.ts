@@ -114,9 +114,13 @@ function buildBootstrapBody(request: NextRequest): string {
  * Without this forwarding the backend would see the Docker bridge IP and
  * `node-fetch`'s default UA on every event.
  *
- * `X-Forwarded-For` is appended to (or seeded from) the inbound chain so
- * the backend's `getClientIP` helper still reads the original client at
- * the head of the list.
+ * `X-Forwarded-For` is preserved verbatim from the inbound chain (or
+ * seeded from `X-Real-IP` when no chain exists) so the backend's
+ * `getClientIP` helper still reads the original client at the head of
+ * the list. We deliberately do NOT append our own hop: the next hop is
+ * an in-cluster server-to-server fetch and adding the Docker bridge IP
+ * would shift the original client out of the head position, defeating
+ * the helper.
  */
 function buildForwardedHeaders(request: NextRequest): Record<string, string> {
     const headers: Record<string, string> = {

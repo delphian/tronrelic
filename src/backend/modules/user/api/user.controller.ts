@@ -16,6 +16,70 @@ import {
 const MAX_PATH_LENGTH = 500;
 
 /**
+ * Per-field length caps for UTM dimensions written to `traffic_events`.
+ *
+ * Mirrors the truncation rules `UserService.extractUtmParams` applies to
+ * the post-hydration session payload. Centralizing the limits here (and
+ * in the service) avoids divergence between the CH row and the Mongo
+ * `activity.sessions[].utm` shape that downstream analytics joins.
+ */
+const UTM_FIELD_LIMITS: Record<'source' | 'medium' | 'campaign' | 'term' | 'content', number> = {
+    source: 200,
+    medium: 200,
+    campaign: 500,
+    term: 200,
+    content: 200
+};
+
+/**
+ * Maximum stored length for an originalReferrer URL or `bodyReferrer`.
+ *
+ * Bootstrap and session-start are publicly callable, so even with the
+ * 1 KB middleware body cap a single field could still consume the whole
+ * budget. 500 chars matches the path cap and accommodates URLs with
+ * long query strings without inviting unbounded ingestion.
+ */
+const MAX_REFERRER_LENGTH = 500;
+
+/**
+ * Truncate a request-supplied string to `max` chars, returning `null` when
+ * the input is not a string. Used to apply the same caps `UserService`
+ * applies to its post-hydration payload to fields that bypass the service
+ * (the CH `traffic_events` row written by the controller).
+ */
+function clampString(raw: unknown, max: number): string | null {
+    if (typeof raw !== 'string') {
+        return null;
+    }
+    return raw.slice(0, max);
+}
+
+/**
+ * Apply per-field UTM truncation. Returns `null` when the input isn't an
+ * object so callers can preserve the "no UTM" semantics that
+ * `buildTrafficEvent` collapses into all-null columns.
+ */
+function clampUtm(raw: unknown): {
+    source: string | null;
+    medium: string | null;
+    campaign: string | null;
+    term: string | null;
+    content: string | null;
+} | null {
+    if (!raw || typeof raw !== 'object') {
+        return null;
+    }
+    const r = raw as Record<string, unknown>;
+    return {
+        source:   clampString(r.source,   UTM_FIELD_LIMITS.source),
+        medium:   clampString(r.medium,   UTM_FIELD_LIMITS.medium),
+        campaign: clampString(r.campaign, UTM_FIELD_LIMITS.campaign),
+        term:     clampString(r.term,     UTM_FIELD_LIMITS.term),
+        content:  clampString(r.content,  UTM_FIELD_LIMITS.content)
+    };
+}
+
+/**
  * Sanitize a URL path for storage.
  *
  * Ensures the value starts with '/', strips query strings and hash
@@ -184,10 +248,17 @@ export class UserController {
     /**
      * GET /api/user/:id
      *
-     * Get user by UUID. Creates user if not exists.
+     * Get user by UUID. Read-only since Phase 2 of the traffic-events
+     * split: returns 404 when no Mongo row exists for the cookie-resolved
+     * UUID. The first persistence happens in `startSession`, so a fresh
+     * visitor's bootstrap leaves them as ephemeral anonymous on the
+     * server. Frontend `getServerUser` already maps 404 onto the
+     * unauthenticated SSR shell, and `userContextMiddleware` proceeds
+     * with `req.user` undefined — both pre-existing graceful-degradation
+     * paths the orphan-row fix relies on.
      *
      * Requires: Cookie must match :id
-     * Response: IUser
+     * Response: IUser, or 404 when ephemeral
      */
     async getUser(req: Request, res: Response): Promise<void> {
         try {
@@ -329,39 +400,43 @@ export class UserController {
     }
 
     /**
-     * Pull `landingPath`, `utm`, and `originalReferrer` from the
-     * middleware-supplied bootstrap body. The middleware caps the body at
-     * 1 KB, so anything we read here is already bounded; we still
-     * defensively type-check before forwarding to the traffic-event
-     * builder.
+     * Pull `landingPath`, `utm`, and `originalReferrer` from the bootstrap
+     * body and apply the same caps the service-layer mutation handlers
+     * already enforce on the post-hydration session payload.
+     *
+     * The bootstrap endpoint is publicly callable — middleware is the
+     * intended caller, but a hand-rolled client can hit it directly and
+     * the 1 KB middleware body cap doesn't apply. Uncapped strings would
+     * otherwise be persisted to ClickHouse, inflating row size and
+     * polluting analytics dashboards. We apply `sanitizePath` to
+     * `landingPath`, length-cap each UTM field via `clampUtm`, and clamp
+     * `originalReferrer` at `MAX_REFERRER_LENGTH` so the CH row matches
+     * the Mongo `activity.sessions[].utm` shape downstream consumers
+     * expect.
      */
     private extractBootstrapBody(req: Request): {
         landingPath?: string;
-        utm?: Record<string, string | null>;
+        utm?: NonNullable<ReturnType<typeof clampUtm>>;
         originalReferrer?: string | null;
     } {
         const body = (req.body ?? {}) as Record<string, unknown>;
         const result: {
             landingPath?: string;
-            utm?: Record<string, string | null>;
+            utm?: NonNullable<ReturnType<typeof clampUtm>>;
             originalReferrer?: string | null;
         } = {};
 
-        if (typeof body.landingPath === 'string') {
-            result.landingPath = body.landingPath;
+        const landingPath = sanitizePath(body.landingPath);
+        if (landingPath) {
+            result.landingPath = landingPath;
         }
-        if (typeof body.originalReferrer === 'string') {
-            result.originalReferrer = body.originalReferrer;
+        const originalReferrer = clampString(body.originalReferrer, MAX_REFERRER_LENGTH);
+        if (originalReferrer !== null) {
+            result.originalReferrer = originalReferrer;
         }
-        if (body.utm && typeof body.utm === 'object') {
-            const rawUtm = body.utm as Record<string, unknown>;
-            result.utm = {
-                source: typeof rawUtm.source === 'string' ? rawUtm.source : null,
-                medium: typeof rawUtm.medium === 'string' ? rawUtm.medium : null,
-                campaign: typeof rawUtm.campaign === 'string' ? rawUtm.campaign : null,
-                term: typeof rawUtm.term === 'string' ? rawUtm.term : null,
-                content: typeof rawUtm.content === 'string' ? rawUtm.content : null
-            };
+        const utm = clampUtm(body.utm);
+        if (utm) {
+            result.utm = utm;
         }
         return result;
     }
@@ -732,7 +807,7 @@ export class UserController {
             // empty-UTM detection, and body-vs-header referrer priority
             // (with internal-domain filtering) all live in `UserService`
             // so any future caller gets identical behaviour.
-            const session = await this.userService.startSession({
+            const { session, userId } = await this.userService.startSession({
                 userId: req.params.id,
                 clientIP: getClientIP(req),
                 userAgent: typeof req.headers['user-agent'] === 'string'
@@ -755,14 +830,23 @@ export class UserController {
             // bootstrap row from earlier in this visitor's lifecycle. Same
             // fire-and-forget posture as bootstrap — we never block the
             // response on analytics persistence, and a missing ClickHouse
-            // host silently no-ops.
+            // host silently no-ops. UTM and referrer fields are capped via
+            // the same `clampUtm` / `MAX_REFERRER_LENGTH` rules the
+            // bootstrap controller applies, so the CH row stays bounded
+            // even though a hand-rolled client could submit oversized
+            // values directly to `/api/user/:id/session/start`.
+            //
+            // Use the canonical `userId` returned by `startSession` (not
+            // `req.params.id`) so a request that arrives carrying a merged
+            // tombstone still records analytics under the canonical UUID.
+            // Without this the next visit's first-touch lookup — which
+            // queries CH by canonical id — would miss this session_start
+            // row and the visitor would lose attribution continuity.
             this.trafficService.recordEvent(
-                buildTrafficEvent('session_start', req.params.id, req, {
+                buildTrafficEvent('session_start', userId, req, {
                     landingPath: sanitizePath(req.body.landingPage),
-                    utm: this.extractSessionUtm(req.body.utm),
-                    originalReferrer: typeof req.body.referrer === 'string'
-                        ? req.body.referrer
-                        : null
+                    utm: clampUtm(req.body.utm) ?? undefined,
+                    originalReferrer: clampString(req.body.referrer, MAX_REFERRER_LENGTH)
                 })
             );
 
@@ -774,33 +858,6 @@ export class UserController {
                 message: error instanceof Error ? error.message : 'Unknown error'
             });
         }
-    }
-
-    /**
-     * Coerce the session-start body's free-form `utm` object into the
-     * shape `buildTrafficEvent` expects. The session-start payload is
-     * already truncated and validated by the service-layer
-     * `extractUtmParams`, but the CH row is a sibling write that runs
-     * before that — so we apply the same defensive type checks here.
-     */
-    private extractSessionUtm(raw: unknown): {
-        source?: string | null;
-        medium?: string | null;
-        campaign?: string | null;
-        term?: string | null;
-        content?: string | null;
-    } | undefined {
-        if (!raw || typeof raw !== 'object') {
-            return undefined;
-        }
-        const r = raw as Record<string, unknown>;
-        return {
-            source: typeof r.source === 'string' ? r.source : null,
-            medium: typeof r.medium === 'string' ? r.medium : null,
-            campaign: typeof r.campaign === 'string' ? r.campaign : null,
-            term: typeof r.term === 'string' ? r.term : null,
-            content: typeof r.content === 'string' ? r.content : null
-        };
     }
 
     /**
