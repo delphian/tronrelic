@@ -186,10 +186,18 @@ export class ClickHouseService implements IClickHouseService {
      *
      * @param table - Target table name
      * @param rows - Array of row objects matching table schema
+     * @param options - When `options.waitForCommit` is true the call
+     *   overrides the connection-level `wait_for_async_insert: 0` setting
+     *   so the promise only resolves once the async-insert flush has
+     *   committed the rows. Used by code paths that need a thrown error
+     *   to be the authoritative "this did not persist" signal — primarily
+     *   one-shot migrations whose downstream Mongo deletes must not run
+     *   ahead of a CH flush failure surfacing in the error poller.
      */
     async insert<T extends Record<string, unknown>>(
         table: string,
-        rows: T[]
+        rows: T[],
+        options?: { waitForCommit?: boolean }
     ): Promise<void> {
         if (!this.connected) {
             throw new Error('ClickHouse not connected. Call connect() first.');
@@ -203,7 +211,10 @@ export class ClickHouseService implements IClickHouseService {
             await this.client.insert({
                 table,
                 values: rows,
-                format: 'JSONEachRow'
+                format: 'JSONEachRow',
+                clickhouse_settings: options?.waitForCommit
+                    ? { wait_for_async_insert: 1 }
+                    : undefined
             });
             this.logger.debug({ table, count: rows.length }, 'Inserted rows into ClickHouse');
         } catch (error) {

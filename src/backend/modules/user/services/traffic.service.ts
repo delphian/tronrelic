@@ -143,7 +143,16 @@ export interface ITrafficAggregateOptions {
     limit?: number;
 }
 
-const TABLE_NAME = 'traffic_events';
+/**
+ * ClickHouse table backing every traffic event the user module records.
+ *
+ * Exported so module-internal collaborators (notably migration 011's
+ * Phase 6 backfill) target the same table name without re-declaring the
+ * literal — keeps the table name a single chokepoint rather than a
+ * string scattered across files.
+ */
+export const TRAFFIC_EVENTS_TABLE_NAME = 'traffic_events';
+const TABLE_NAME = TRAFFIC_EVENTS_TABLE_NAME;
 const DEFAULT_AGGREGATE_HOURS = 24;
 const DEFAULT_AGGREGATE_LIMIT = 20;
 
@@ -601,10 +610,18 @@ function parseClickHouseDateTime64Utc(value: string): Date {
  * Convert an `ITrafficEvent` into the shape ClickHouse expects on insert.
  * `timestamp` becomes a UTC `DateTime64(3)` string in ClickHouse's native
  * form so inserts succeed under the default `date_time_input_format=basic`.
+ *
+ * Exported so migration 011 (Phase 6 backfill) can build synthetic events
+ * from `IUserDocument.activity.origin` and feed them through the same
+ * wire-format pipeline as live traffic. Internal callers (`recordEvent`)
+ * use it via the `serializeEvent` alias to keep the original name local
+ * to this file.
  */
-function serializeEvent(event: ITrafficEvent): Record<string, unknown> {
+export function serializeTrafficEventForClickHouse(event: ITrafficEvent): Record<string, unknown> {
     return { ...event, timestamp: formatClickHouseDateTime64Utc(event.timestamp) };
 }
+
+const serializeEvent = serializeTrafficEventForClickHouse;
 
 /**
  * Inverse of `serializeEvent`. Re-hydrates the `Date` instance from

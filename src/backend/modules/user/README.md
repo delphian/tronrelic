@@ -198,7 +198,8 @@ modules/user/
 │   ├── 007_backfill_user_groups.ts
 │   ├── 008_backfill_wallet_verified_at.ts
 │   ├── 009_session_identity_verified_at.ts
-│   └── 010_create_traffic_events_table.ts  # ClickHouse, target: 'clickhouse'
+│   ├── 010_create_traffic_events_table.ts  # ClickHouse, target: 'clickhouse'
+│   └── 011_prune_empty_user_rows.ts        # Phase 6 of traffic-events split
 └── __tests__/
     ├── auth-status.test.ts
     ├── bootstrap.controller.test.ts
@@ -597,7 +598,7 @@ interface IUserDocument {
 }
 ```
 
-`identityState` is stored, not derived — UserService writes it on every state transition so all consumers read the field directly. `identityVerifiedAt` anchors the verified-session clock (see `SESSION_TTL_MS` and the `enforceSessionExpiry` flow above). `groups` holds group ids from the `module_user_groups` collection and is mutated only via `IUserGroupService`. Migrations 006 and 007 backfill `identityState` and `groups` on legacy documents; migration 008 backfills per-wallet `verifiedAt`; migration 009 introduces `identityVerifiedAt` and retires the legacy `isLoggedIn` flag.
+`identityState` is stored, not derived — UserService writes it on every state transition so all consumers read the field directly. `identityVerifiedAt` anchors the verified-session clock (see `SESSION_TTL_MS` and the `enforceSessionExpiry` flow above). `groups` holds group ids from the `module_user_groups` collection and is mutated only via `IUserGroupService`. Migrations 006 and 007 backfill `identityState` and `groups` on legacy documents; migration 008 backfills per-wallet `verifiedAt`; migration 009 introduces `identityVerifiedAt` and retires the legacy `isLoggedIn` flag. Migration 010 creates the ClickHouse `traffic_events` table that backs the cookieless-traffic split; migration 011 prunes the empty `users` rows the 2026-04-27 → 2026-04-30 orphan-row bug stranded, after first writing each row's `activity.origin` data into ClickHouse as a synthetic `bootstrap` event so first-touch attribution survives the prune (see `PLAN-traffic-events.md` for the full phase history).
 
 **Indexes:**
 - `id` (unique) - Fast lookup by UUID, prevents duplicates
