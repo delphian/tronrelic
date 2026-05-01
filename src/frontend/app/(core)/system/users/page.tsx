@@ -2,11 +2,11 @@
 
 import { useState } from 'react';
 import { useSystemAuth } from '../../../../features/system';
-import { UsersMonitor, AnalyticsDashboard, ReferralOverview, GscSettings, GroupsManager } from '../../../../modules/user';
+import { UsersMonitor, AnalyticsDashboard, ReferralOverview, GscSettings, GroupsManager, TrafficDashboard } from '../../../../modules/user';
 import styles from './page.module.scss';
 
 /** Tab identifiers for the users admin page. */
-type UsersTab = 'users' | 'analytics' | 'referrals' | 'groups' | 'settings';
+type UsersTab = 'users' | 'analytics' | 'traffic' | 'referrals' | 'groups' | 'settings';
 
 /**
  * System users administration page with tabbed interface.
@@ -44,6 +44,13 @@ export default function SystemUsersPage() {
                 </button>
                 <button
                     type="button"
+                    className={activeTab === 'traffic' ? styles.tab__active : styles.tab}
+                    onClick={() => setActiveTab('traffic')}
+                >
+                    Traffic
+                </button>
+                <button
+                    type="button"
                     className={activeTab === 'referrals' ? styles.tab__active : styles.tab}
                     onClick={() => setActiveTab('referrals')}
                 >
@@ -68,6 +75,7 @@ export default function SystemUsersPage() {
             <div className={styles.content}>
                 {activeTab === 'users' && <UsersMonitor token={token} />}
                 {activeTab === 'analytics' && <AnalyticsDashboard token={token} />}
+                {activeTab === 'traffic' && <TrafficDashboard token={token} />}
                 {activeTab === 'referrals' && <ReferralOverview token={token} />}
                 {activeTab === 'groups' && <GroupsManager token={token} />}
                 {activeTab === 'settings' && <GscSettings token={token} />}

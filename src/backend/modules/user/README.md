@@ -172,7 +172,9 @@ modules/user/
 │   ├── user.controller.ts         # Request handlers with cookie validation
 │   ├── user.routes.ts             # Public, profile, and admin router factories
 │   ├── user-group.controller.ts   # Group membership and definition handlers
-│   └── user-group.routes.ts       # Admin group router factory
+│   ├── user-group.routes.ts       # Admin group router factory
+│   ├── traffic.controller.ts      # ClickHouse traffic_events admin reads (PLAN-traffic-events.md)
+│   └── traffic.routes.ts          # Admin traffic router factory
 ├── database/
 │   ├── index.ts                   # Barrel exports
 │   ├── IUserDocument.ts           # MongoDB document interface for users
@@ -1067,6 +1069,30 @@ Response: { "userIds": ["uuid1", "uuid2", ...], "total": number }
 
 Paginated user-id list. `limit` defaults to 100, ceiling 500. Excludes merged tombstones.
 
+**Traffic admin endpoints.** The admin traffic router is mounted at `/api/admin/users/traffic` (before the `/:id` user routes so its specific paths win) and exposes aggregate reads against the ClickHouse `traffic_events` table tracked in `PLAN-traffic-events.md`. Endpoints accept a `sinceHours` query param (default `24`, ceiling `720` = 30 days) and `limit` for the top-N reads (default `20`, ceiling `200`):
+
+| Endpoint | Returns |
+|----------|---------|
+| `GET /api/admin/users/traffic/summary` | Row counts grouped by `bot_class` over the lookback window. NULL is preserved as a distinct bucket so operators see classifier coverage decay. Response includes `total` and `clickhouseEnabled`. |
+| `GET /api/admin/users/traffic/top-paths` | Most-hit landing paths over the window (NULL excluded). |
+| `GET /api/admin/users/traffic/top-countries` | Most-active ISO-3166 alpha-2 countries (NULL excluded). |
+| `GET /api/admin/users/traffic/bot-other-samples` | Most-frequent UAs for `bot_class = 'bot_other'` only — the operator's feedback loop on classifier coverage. UAs that recur here are candidates for explicit rules in `bot-classifier.ts`. |
+
+The per-user history endpoint lives on the user admin router so it composes with the cookie-resolved UUID:
+
+```
+GET /api/admin/users/:id/traffic-history?limit=50
+
+Response: {
+    "userId": string,
+    "limit": number,
+    "events": ITrafficEvent[],   // oldest first
+    "clickhouseEnabled": boolean
+}
+```
+
+The endpoint reads ClickHouse directly by `candidate_uid`, so it works for cookie holders that never advanced past the ephemeral-user state and have no Mongo `users` row — exactly the case Phase 5 admins use it to investigate. When ClickHouse is unavailable, every traffic endpoint returns `[]` (or zero counts) rather than failing the request; admins see the `clickhouseEnabled: false` flag and the dashboard surfaces a notice.
+
 ## Admin UI
 
 The admin dashboard at `/system/users` provides:
@@ -1077,6 +1103,7 @@ The admin dashboard at `/system/users` provides:
 - **User details** - View linked wallets (with primary indicator), preferences, activity history, and current group memberships
 - **Group membership editor** - "Manage Groups" action on the expanded user row opens a checkbox list of all defined groups; ticking and saving calls `PUT /api/admin/users/:id/groups`. This is the operator path for promoting a user into the reserved `admin` group
 - **Group members audit view** - The Groups tab exposes a per-row "Members" action that lists every user currently in a group, backed by `GET /api/admin/users/groups/:id/members`. Available for system groups too (the `admin` row is the canonical use case)
+- **Traffic dashboard** - The Traffic tab surfaces the ClickHouse `traffic_events` aggregates over a 1h/24h/7d/30d lookback window: bot-class breakdown (the headline panel), `bot_other` UA samples (the classifier-gap diagnostic), and top landing paths and countries. Backed by `/api/admin/users/traffic/*`. See `PLAN-traffic-events.md` for the phased rollout
 
 ## Usage Examples
 

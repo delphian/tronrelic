@@ -102,7 +102,12 @@ const RULES: ReadonlyArray<{ class: BotClass; fragments: readonly string[] }> = 
             'ccbot',
             'bytespider',
             'cohere-ai',
-            'meta-externalagent'
+            'meta-externalagent',
+            // Amazonbot powers both Alexa search and Amazon's LLM training
+            // pipeline. Classify as `ai_crawler` because the training-crawl
+            // intent is the analytically interesting one; the dashboard
+            // surfaces AI ingestion as its own bucket.
+            'amazonbot'
         ]
     },
     {
@@ -120,7 +125,10 @@ const RULES: ReadonlyArray<{ class: BotClass; fragments: readonly string[] }> = 
             'applebot',
             'petalbot',
             'seznambot',
-            'mojeekbot'
+            'mojeekbot',
+            // Moz's SEO crawler (DotBot/1.x). Drives the link graph behind
+            // Moz/Open Site Explorer rankings — search-ranking adjacent.
+            'dotbot'
         ]
     },
     {
@@ -138,7 +146,10 @@ const RULES: ReadonlyArray<{ class: BotClass; fragments: readonly string[] }> = 
             'pinterestbot',
             'redditbot',
             'embedly',
-            'skypeuripreview'
+            'skypeuripreview',
+            // Flipboard's link unfurler. Same role as Twitterbot/Slackbot
+            // for Flipboard "boards" sharing.
+            'flipboardproxy'
         ]
     },
     {

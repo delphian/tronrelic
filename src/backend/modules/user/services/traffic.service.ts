@@ -116,7 +116,36 @@ export interface IGetEventsForUserOptions {
     eventTypes?: TrafficEventType[];
 }
 
+/**
+ * One bucket of an aggregate read. The `key` is the dimension value
+ * (bot_class, country, path, user_agent), `count` is the row count.
+ *
+ * `key` is `string | null` because ClickHouse `Nullable(...)` columns
+ * legitimately carry `null` for "not classified yet" / "not derivable
+ * from request" — the dashboard distinguishes those from low-cardinality
+ * known values, so the wire shape preserves the difference rather than
+ * coercing to an empty string.
+ */
+export interface ITrafficAggregateBucket {
+    key: string | null;
+    count: number;
+}
+
+/**
+ * Common params shared by every aggregate read. `sinceHours` defaults to
+ * 24 because the Phase 5 admin dashboard tracks "what happened today" by
+ * default; longer windows are explicitly chosen by the operator.
+ */
+export interface ITrafficAggregateOptions {
+    /** Lookback window in hours. Clamped to `[1, 720]` (30 days) by the controller. */
+    sinceHours?: number;
+    /** Max rows for top-N reads. Clamped to `[1, 200]` by the controller. */
+    limit?: number;
+}
+
 const TABLE_NAME = 'traffic_events';
+const DEFAULT_AGGREGATE_HOURS = 24;
+const DEFAULT_AGGREGATE_LIMIT = 20;
 
 /**
  * ClickHouse-backed traffic events store.
@@ -261,6 +290,125 @@ export class TrafficService {
             return rows.map(deserializeEvent);
         } catch (error) {
             this.logger.warn({ error, candidateUid }, 'Failed to read traffic events');
+            return [];
+        }
+    }
+
+    /**
+     * Count rows grouped by `bot_class` over the lookback window. Powers
+     * the headline panel of the Phase 5 admin dashboard. NULL counts are
+     * preserved as a distinct bucket so operators can see classifier
+     * coverage erode as pre-classifier rows roll off the window.
+     *
+     * Returns `[]` when ClickHouse is unavailable.
+     */
+    async getBotClassBreakdown(options: ITrafficAggregateOptions = {}): Promise<ITrafficAggregateBucket[]> {
+        return this.aggregateByDimension('bot_class', options);
+    }
+
+    /**
+     * Count rows grouped by `country` (ISO-3166 alpha-2) over the lookback
+     * window. Drives the geo-distribution panel.
+     */
+    async getTopCountries(options: ITrafficAggregateOptions = {}): Promise<ITrafficAggregateBucket[]> {
+        return this.aggregateByDimension('country', options, true);
+    }
+
+    /**
+     * Count rows grouped by `path` (landing path) over the lookback
+     * window. Drives the top-landing-paths panel.
+     */
+    async getTopPaths(options: ITrafficAggregateOptions = {}): Promise<ITrafficAggregateBucket[]> {
+        return this.aggregateByDimension('path', options, true);
+    }
+
+    /**
+     * Count rows grouped by `user_agent` for `bot_class = 'bot_other'`
+     * only. Powers the classifier-gap panel — when a UA cluster appears
+     * here, it's a candidate for an explicit rule in `bot-classifier.ts`.
+     *
+     * `bot_other` is the catch-all bucket where `isbot()` returned true
+     * but no explicit fragment matched. Surfacing the raw UAs is the
+     * operator's only feedback loop on classifier coverage.
+     */
+    async getBotOtherUserAgents(options: ITrafficAggregateOptions = {}): Promise<ITrafficAggregateBucket[]> {
+        if (!this.clickhouse) {
+            return [];
+        }
+
+        const sinceHours = options.sinceHours ?? DEFAULT_AGGREGATE_HOURS;
+        const limit = options.limit ?? DEFAULT_AGGREGATE_LIMIT;
+
+        // Clamp the user_agent column to a sane display width here rather
+        // than at the controller — the dashboard never needs the full
+        // 500-char raw value, and trimming saves wire bandwidth.
+        const sql = `
+            SELECT
+                substring(user_agent, 1, 240) AS key,
+                count() AS count
+            FROM ${TABLE_NAME}
+            WHERE timestamp > now() - INTERVAL {sinceHours:UInt32} HOUR
+              AND bot_class = 'bot_other'
+              AND user_agent IS NOT NULL
+            GROUP BY key
+            ORDER BY count DESC
+            LIMIT {limit:UInt32}
+        `;
+
+        try {
+            const rows = await this.clickhouse.query<{ key: string | null; count: string | number }>(
+                sql,
+                { sinceHours, limit }
+            );
+            return rows.map(r => ({ key: r.key, count: Number(r.count) }));
+        } catch (error) {
+            this.logger.warn({ error, sinceHours, limit }, 'Failed to read bot_other UA aggregate');
+            return [];
+        }
+    }
+
+    /**
+     * Generic GROUP BY count for low-cardinality dimensions. `dimension`
+     * is interpolated directly into the SQL because the column name
+     * cannot be a parameter; callers MUST pass a hardcoded literal.
+     * `excludeNull` is on for top-N reads where a `null` row would
+     * dominate the chart with little analytic value (path/country are
+     * mostly populated; bot_class is interesting precisely because of
+     * its NULL bucket).
+     */
+    private async aggregateByDimension(
+        dimension: 'bot_class' | 'country' | 'path',
+        options: ITrafficAggregateOptions,
+        excludeNull = false
+    ): Promise<ITrafficAggregateBucket[]> {
+        if (!this.clickhouse) {
+            return [];
+        }
+
+        const sinceHours = options.sinceHours ?? DEFAULT_AGGREGATE_HOURS;
+        const limit = options.limit ?? DEFAULT_AGGREGATE_LIMIT;
+        const nullFilter = excludeNull ? `AND ${dimension} IS NOT NULL` : '';
+
+        const sql = `
+            SELECT
+                ${dimension} AS key,
+                count() AS count
+            FROM ${TABLE_NAME}
+            WHERE timestamp > now() - INTERVAL {sinceHours:UInt32} HOUR
+            ${nullFilter}
+            GROUP BY key
+            ORDER BY count DESC
+            LIMIT {limit:UInt32}
+        `;
+
+        try {
+            const rows = await this.clickhouse.query<{ key: string | null; count: string | number }>(
+                sql,
+                { sinceHours, limit }
+            );
+            return rows.map(r => ({ key: r.key, count: Number(r.count) }));
+        } catch (error) {
+            this.logger.warn({ error, dimension, sinceHours, limit }, 'Failed to read traffic aggregate');
             return [];
         }
     }

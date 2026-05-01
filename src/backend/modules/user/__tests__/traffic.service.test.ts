@@ -194,4 +194,94 @@ describe('TrafficService', () => {
             expect(logger.warn).toHaveBeenCalled();
         });
     });
+
+    describe('getBotClassBreakdown()', () => {
+        it('returns [] when ClickHouse is unavailable', async () => {
+            TrafficService.setDependencies(undefined, createMockLogger());
+            const out = await TrafficService.getInstance().getBotClassBreakdown();
+            expect(out).toEqual([]);
+        });
+
+        it('preserves NULL buckets and coerces count to number', async () => {
+            // NULL is a real, distinct bucket — pre-classifier rows roll
+            // through that bucket and the dashboard charts the decay.
+            // Coercion guards against ClickHouse returning string counts
+            // under JSONEachRow.
+            const ch = createMockClickHouse();
+            ch.queue.push(
+                { key: 'human', count: '76' },
+                { key: null, count: '23' },
+                { key: 'bot_other', count: 21 }
+            );
+            TrafficService.setDependencies(ch, createMockLogger());
+
+            const out = await TrafficService.getInstance().getBotClassBreakdown({ sinceHours: 24 });
+
+            expect(out).toEqual([
+                { key: 'human', count: 76 },
+                { key: null, count: 23 },
+                { key: 'bot_other', count: 21 }
+            ]);
+        });
+    });
+
+    describe('getTopPaths() / getTopCountries()', () => {
+        it('exclude null keys (low analytic value vs the populated keys)', async () => {
+            const ch = createMockClickHouse();
+            // Verifies the SQL the service generates includes the
+            // null-exclusion clause; we rely on the captured query
+            // string since the mock can't actually filter.
+            const captured: { sql?: string; params?: unknown } = {};
+            ch.query = async <T>(sql: string, params?: unknown): Promise<T[]> => {
+                captured.sql = sql;
+                captured.params = params;
+                return [{ key: 'US', count: 12 }] as T[];
+            };
+            TrafficService.setDependencies(ch, createMockLogger());
+
+            await TrafficService.getInstance().getTopCountries({ sinceHours: 6, limit: 5 });
+
+            expect(captured.sql).toContain('country IS NOT NULL');
+            expect(captured.params).toEqual({ sinceHours: 6, limit: 5 });
+        });
+    });
+
+    describe('getBotOtherUserAgents()', () => {
+        it('filters to bot_other and clamps the UA column', async () => {
+            const ch = createMockClickHouse();
+            const captured: { sql?: string } = {};
+            ch.query = async <T>(sql: string): Promise<T[]> => {
+                captured.sql = sql;
+                return [{ key: 'CensysInspect/1.1', count: 6 }] as T[];
+            };
+            TrafficService.setDependencies(ch, createMockLogger());
+
+            const out = await TrafficService.getInstance().getBotOtherUserAgents({ sinceHours: 24, limit: 10 });
+
+            // Two assertions document load-bearing parts of the SQL —
+            // the clamp keeps wire bandwidth bounded and the WHERE
+            // filter is what makes this method "bot_other only".
+            expect(captured.sql).toContain("bot_class = 'bot_other'");
+            expect(captured.sql).toContain('substring(user_agent, 1, 240)');
+            expect(out).toEqual([{ key: 'CensysInspect/1.1', count: 6 }]);
+        });
+
+        it('returns [] when ClickHouse is unavailable', async () => {
+            TrafficService.setDependencies(undefined, createMockLogger());
+            const out = await TrafficService.getInstance().getBotOtherUserAgents();
+            expect(out).toEqual([]);
+        });
+
+        it('returns [] and logs on query failure', async () => {
+            const ch = createMockClickHouse();
+            ch.error = new Error('CH down');
+            const logger = createMockLogger();
+            TrafficService.setDependencies(ch, logger);
+
+            const out = await TrafficService.getInstance().getBotOtherUserAgents();
+
+            expect(out).toEqual([]);
+            expect(logger.warn).toHaveBeenCalled();
+        });
+    });
 });

@@ -34,8 +34,10 @@ import { UserGroupService } from './services/user-group.service.js';
 import { initGeoIP } from './services/geo.service.js';
 import { UserController } from './api/user.controller.js';
 import { UserGroupController } from './api/user-group.controller.js';
+import { TrafficController } from './api/traffic.controller.js';
 import { createUserRouter, createAdminUserRouter, createProfileRouter } from './api/user.routes.js';
 import { createAdminUserGroupRouter } from './api/user-group.routes.js';
+import { createAdminTrafficRouter } from './api/traffic.routes.js';
 import { requireAdmin } from '../../api/middleware/admin-auth.js';
 
 /**
@@ -170,6 +172,7 @@ export class UserModule implements IModule<IUserModuleDependencies> {
     private userGroupService!: UserGroupService;
     private controller!: UserController;
     private groupController!: UserGroupController;
+    private trafficController!: TrafficController;
 
     /**
      * Logger instance for this module.
@@ -265,6 +268,10 @@ export class UserModule implements IModule<IUserModuleDependencies> {
         // Create group controller with singleton service
         this.groupController = new UserGroupController(this.userGroupService, this.logger);
 
+        // Create traffic controller for the Phase 5 admin dashboard.
+        // Reads ClickHouse `traffic_events` aggregates and per-user history.
+        this.trafficController = new TrafficController(this.trafficService, this.logger);
+
         this.logger.info('User module initialized');
     }
 
@@ -326,12 +333,17 @@ export class UserModule implements IModule<IUserModuleDependencies> {
 
         // Create and mount admin router (IoC - module attaches itself to app)
         // Apply requireAdmin middleware to all admin routes.
-        // Note: the user-groups router is mounted FIRST under the same prefix
-        // so its specific paths (/groups, /groups/:id) win over /:id, which
-        // would otherwise treat 'groups' as a user UUID.
+        // Note: the user-groups and traffic routers are mounted FIRST under
+        // the same prefix so their specific paths (/groups/*, /traffic/*)
+        // win over /:id, which would otherwise treat 'groups' or 'traffic'
+        // as a user UUID.
         const adminGroupRouter = createAdminUserGroupRouter(this.groupController);
         this.app.use('/api/admin/users/groups', requireAdmin, adminGroupRouter);
         this.logger.info('Admin user-groups router mounted at /api/admin/users/groups');
+
+        const adminTrafficRouter = createAdminTrafficRouter(this.trafficController);
+        this.app.use('/api/admin/users/traffic', requireAdmin, adminTrafficRouter);
+        this.logger.info('Admin traffic router mounted at /api/admin/users/traffic');
 
         const adminRouter = this.createAdminRouter();
         this.app.use('/api/admin/users', requireAdmin, adminRouter);
@@ -390,7 +402,7 @@ export class UserModule implements IModule<IUserModuleDependencies> {
      * @internal
      */
     private createAdminRouter(): Router {
-        return createAdminUserRouter(this.controller, this.groupController);
+        return createAdminUserRouter(this.controller, this.groupController, this.trafficController);
     }
 
     /**

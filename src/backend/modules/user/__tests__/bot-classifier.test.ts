@@ -24,7 +24,11 @@ describe('classifyUserAgent', () => {
             ['Mozilla/5.0 (compatible; YandexBot/3.0; +http://yandex.com/bots)'],
             ['Mozilla/5.0 (compatible; Baiduspider/2.0; +http://www.baidu.com/search/spider.html)'],
             ['Sogou web spider/4.0(+http://www.sogou.com/docs/help/webmasters.htm#07)'],
-            ['Mozilla/5.0 (compatible; Applebot/0.1; +http://www.apple.com/go/applebot)']
+            ['Mozilla/5.0 (compatible; Applebot/0.1; +http://www.apple.com/go/applebot)'],
+            // DotBot is Moz's SEO crawler (Open Site Explorer link graph).
+            // Real prod sample observed 2026-04-30 in `bot_other` before
+            // the rule was added — search-ranking adjacent, so search_engine.
+            ['Mozilla/5.0 (compatible; DotBot/1.2; +https://opensiteexplorer.org/dotbot; help@moz.com)']
         ])('classifies %p as search_engine', (ua) => {
             expect(classifyUserAgent(ua)).toBe('search_engine');
         });
@@ -38,7 +42,12 @@ describe('classifyUserAgent', () => {
             ['Mozilla/5.0 (compatible; PerplexityBot/1.0; +https://docs.perplexity.ai/docs/perplexity-bot)'],
             ['CCBot/2.0 (https://commoncrawl.org/faq/)'],
             ['Mozilla/5.0 (compatible; Bytespider; spider-feedback@bytedance.com)'],
-            ['anthropic-ai']
+            ['anthropic-ai'],
+            // Real Amazonbot UA observed in prod (2026-04-30 traffic_events sample).
+            // Classified as ai_crawler because Amazon documents the bot as serving
+            // both Alexa and LLM training; training-crawl is the operator-meaningful
+            // bucket for a TRON analytics product.
+            ['Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; Amazonbot/0.1; +https://developer.amazon.com/support/amazonbot)']
         ])('classifies %p as ai_crawler', (ua) => {
             expect(classifyUserAgent(ua)).toBe('ai_crawler');
         });
@@ -61,7 +70,10 @@ describe('classifyUserAgent', () => {
             ['LinkedInBot/1.0 (compatible; Mozilla/5.0; Apache-HttpClient +http://www.linkedin.com)'],
             ['Mozilla/5.0 (compatible; Discordbot/2.0; +https://discordapp.com)'],
             ['TelegramBot (like TwitterBot)'],
-            ['WhatsApp/2.23.20.0 A']
+            ['WhatsApp/2.23.20.0 A'],
+            // FlipboardProxy advertises a long Mozilla-prefix UA in real
+            // traffic; the matching fragment is `flipboardproxy`.
+            ['Mozilla/5.0 (Macintosh; Intel Mac OS X 10.9; rv:28.0) Gecko/20100101 Firefox/28.0 (FlipboardProxy/1.1; +http://flipboard.com/browserproxy)']
         ])('classifies %p as social_unfurler', (ua) => {
             expect(classifyUserAgent(ua)).toBe('social_unfurler');
         });

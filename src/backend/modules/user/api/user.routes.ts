@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import type { UserController } from './user.controller.js';
 import type { UserGroupController } from './user-group.controller.js';
+import type { TrafficController } from './traffic.controller.js';
 import { createRateLimiter } from '../../../api/middleware/rate-limit.js';
 import { userContextMiddleware } from '../../../api/middleware/user-context.js';
 
@@ -242,15 +243,20 @@ export function createProfileRouter(controller: UserController): Router {
  * Routes are mounted at /api/admin/users. The user-group controller is
  * injected so the per-user membership editor (`PUT /:id/groups`) can live
  * inside the user admin tree without coupling UserController to group
- * concerns.
+ * concerns. The traffic controller is injected for the same reason —
+ * `/:id/traffic-history` reads from ClickHouse, not Mongo, and bundling
+ * the read into UserController would re-couple two stores that the
+ * traffic-events split deliberately separated.
  *
  * @param controller - User controller instance
  * @param groupController - User-group controller for membership mutation
+ * @param trafficController - Traffic controller for ClickHouse history reads
  * @returns Express router with admin endpoints
  */
 export function createAdminUserRouter(
     controller: UserController,
-    groupController: UserGroupController
+    groupController: UserGroupController,
+    trafficController: TrafficController
 ): Router {
     const router = Router();
 
@@ -389,6 +395,15 @@ export function createAdminUserRouter(
      * Audit-logged at info level by the controller.
      */
     router.put('/:id/groups', groupController.setUserGroups.bind(groupController));
+
+    /**
+     * GET /api/admin/users/:id/traffic-history
+     * Return the candidate UUID's ClickHouse traffic events oldest-first.
+     * Works for cookie holders that never advanced past the ephemeral-user
+     * state — Phase 5 admin UI uses this to investigate a candidate UUID
+     * before any Mongo `users` row exists.
+     */
+    router.get('/:id/traffic-history', trafficController.getUserHistory.bind(trafficController));
 
     return router;
 }
