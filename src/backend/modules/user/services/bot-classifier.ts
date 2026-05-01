@@ -194,7 +194,7 @@ export function classifyUserAgent(userAgent: string | null | undefined): BotClas
         }
     }
 
-    if (isbot(userAgent)) {
+    if (isbot(ua)) {
         return 'bot_other';
     }
 

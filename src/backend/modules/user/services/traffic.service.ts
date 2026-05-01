@@ -41,7 +41,7 @@
 import type { Request } from 'express';
 import type { IClickHouseService, ISystemLogService } from '@/types';
 import { getClientIP, getCountryFromIP, getDeviceCategory } from './geo.service.js';
-import { classifyUserAgent } from './bot-classifier.js';
+import { classifyUserAgent, type BotClass } from './bot-classifier.js';
 
 /**
  * Categorical event types written to `traffic_events.event_type`.
@@ -83,8 +83,13 @@ export interface ITrafficEvent {
     country: string | null;
     /** `'desktop' | 'mobile' | 'tablet' | 'bot' | 'unknown'`. */
     device: string;
-    /** `'crawler' | 'monitoring' | ...` when classified, else null. */
-    bot_class: string | null;
+    /**
+     * Closed enum produced by `classifyUserAgent` at write time. `null`
+     * is reserved for legacy rows written before the classifier landed
+     * (Phases 0-4 of the traffic-events split) and for ClickHouse reads
+     * that materialize those rows back through `getEventsForUser`.
+     */
+    bot_class: BotClass | null;
 
     utm_source: string | null;
     utm_medium: string | null;
