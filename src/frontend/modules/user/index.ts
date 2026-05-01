@@ -169,3 +169,4 @@ export { AnalyticsDashboard } from './components';
 export { ReferralOverview } from './components';
 export { GscSettings } from './components';
 export { GroupsManager } from './components';
+export { TrafficDashboard } from './components';

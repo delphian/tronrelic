@@ -11,3 +11,4 @@ export { AnalyticsDashboard } from './AnalyticsDashboard';
 export { ReferralOverview } from './ReferralOverview';
 export { GscSettings } from './GscSettings';
 export { GroupsManager } from './GroupsManager';
+export { TrafficDashboard } from './TrafficDashboard';
