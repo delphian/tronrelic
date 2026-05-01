@@ -26,23 +26,12 @@
 import type { Request, Response } from 'express';
 import type { ISystemLogService } from '@/types';
 import type { TrafficService } from '../services/traffic.service.js';
+import { parsePositiveInt } from './query-params.js';
 
 /** Hard upper bounds on user-supplied query params. Keeps ClickHouse query cost predictable. */
 const MAX_SINCE_HOURS = 720; // 30 days
 const MAX_LIMIT = 200;
 const MAX_HISTORY_LIMIT = 200;
-
-/**
- * Parse a positive integer query param with a default and ceiling. Returns
- * the default for missing or unparseable values; otherwise clamps to
- * `[1, max]`. Mirrors the helper in `user-group.controller.ts`.
- */
-function parsePositiveInt(raw: unknown, defaultVal: number, max: number): number {
-    if (typeof raw !== 'string') return defaultVal;
-    const n = Number.parseInt(raw, 10);
-    if (Number.isNaN(n)) return defaultVal;
-    return Math.min(Math.max(1, n), max);
-}
 
 /**
  * Controller for `/api/admin/users/traffic/*` and the per-user

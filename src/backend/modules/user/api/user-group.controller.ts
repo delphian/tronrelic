@@ -9,29 +9,7 @@ import {
     UserGroupSystemProtectedError,
     UserGroupMemberNotFoundError
 } from '../services/user-group.errors.js';
-
-/**
- * Parse a positive integer query param with a default and ceiling. Returns
- * the default for missing or unparseable values; otherwise clamps to
- * `[1, max]`. Used by the members listing endpoint to bound page size.
- */
-function parsePositiveInt(raw: unknown, defaultVal: number, max: number): number {
-    if (typeof raw !== 'string') return defaultVal;
-    const n = Number.parseInt(raw, 10);
-    if (Number.isNaN(n)) return defaultVal;
-    return Math.min(Math.max(1, n), max);
-}
-
-/**
- * Parse a non-negative integer query param. Used for pagination offsets
- * where 0 is valid but negatives must be clamped.
- */
-function parseNonNegativeInt(raw: unknown, defaultVal: number): number {
-    if (typeof raw !== 'string') return defaultVal;
-    const n = Number.parseInt(raw, 10);
-    if (Number.isNaN(n)) return defaultVal;
-    return Math.max(0, n);
-}
+import { parsePositiveInt, parseNonNegativeInt } from './query-params.js';
 
 /**
  * Controller for admin user-group endpoints.

@@ -28,9 +28,9 @@
  * failing query for one dimension does not block the rest of the dashboard.
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Bot, Globe, MapPin, RefreshCw } from 'lucide-react';
-import { config as runtimeConfig } from '../../../../../lib/config';
+import { getRuntimeConfig } from '../../../../../lib/runtimeConfig';
 import { Button } from '../../../../../components/ui/Button';
 import { Card } from '../../../../../components/ui/Card';
 import styles from './TrafficDashboard.module.scss';
@@ -88,6 +88,10 @@ function useNumberFormatter(): (n: number) => string {
 
 export function TrafficDashboard({ token }: Props) {
     const [sinceHours, setSinceHours] = useState<number>(24);
+    // Bumped by the Refresh button to re-trigger the fetch effect under
+    // the same cleanup-flag guard used for window changes. Avoids a
+    // separate manual fetch path that would race with the in-flight one.
+    const [refreshNonce, setRefreshNonce] = useState(0);
     const formatNumber = useNumberFormatter();
 
     // Each panel manages its own state; a failing query for one
@@ -108,64 +112,85 @@ export function TrafficDashboard({ token }: Props) {
     const [topCountriesError, setTopCountriesError] = useState<string | null>(null);
     const [topCountriesLoading, setTopCountriesLoading] = useState(true);
 
+    // Read from window.__RUNTIME_CONFIG__ so the same Docker image works
+    // on any domain. Calling once per mount is enough — the runtime
+    // config is set during SSR injection and never changes client-side.
     const baseUrl = useMemo(
-        () => `${runtimeConfig.apiBaseUrl}/admin/users/traffic`,
+        () => `${getRuntimeConfig().apiUrl}/admin/users/traffic`,
         []
     );
 
-    const fetchAll = useCallback(async () => {
+    useEffect(() => {
+        // Cleanup-flag guard against stale fetch results: clicking the
+        // window picker rapidly (e.g. 24h -> 7d -> 1h) starts overlapping
+        // requests, and a slower earlier response can land after a
+        // faster later one. Without this guard, the dashboard would
+        // briefly display data for a window the user has already left.
+        // The flag also covers the Refresh-while-fetching case via
+        // refreshNonce because the effect re-runs through the same
+        // cleanup path.
+        let active = true;
         const headers = { 'X-Admin-Token': token };
         const params = `?sinceHours=${sinceHours}`;
 
-        // Fire all four reads in parallel — they're independent endpoints
-        // and the loading-per-panel UX hides any tail latency.
+        // Reset loading and error state up-front so a previously-failed
+        // panel renders the loading state during refresh rather than
+        // continuing to display the stale error (PanelBody renders error
+        // before loading).
         setSummaryLoading(true);
         setBotOtherLoading(true);
         setTopPathsLoading(true);
         setTopCountriesLoading(true);
+        setSummaryError(null);
+        setBotOtherError(null);
+        setTopPathsError(null);
+        setTopCountriesError(null);
 
+        // Fire all four reads in parallel — they're independent endpoints
+        // and the loading-per-panel UX hides any tail latency.
         const summaryPromise = fetch(`${baseUrl}/summary${params}`, { headers })
             .then(async r => {
                 if (!r.ok) throw new Error(`Failed to load summary (${r.status})`);
                 return r.json() as Promise<SummaryResponse>;
             })
-            .then(data => { setSummary(data); setSummaryError(null); })
-            .catch(err => setSummaryError(err instanceof Error ? err.message : 'Failed to load'))
-            .finally(() => setSummaryLoading(false));
+            .then(data => { if (active) { setSummary(data); setSummaryError(null); } })
+            .catch(err => { if (active) setSummaryError(err instanceof Error ? err.message : 'Failed to load'); })
+            .finally(() => { if (active) setSummaryLoading(false); });
 
         const botOtherPromise = fetch(`${baseUrl}/bot-other-samples${params}&limit=15`, { headers })
             .then(async r => {
                 if (!r.ok) throw new Error(`Failed to load bot_other (${r.status})`);
                 return r.json() as Promise<AggregateResponse>;
             })
-            .then(data => { setBotOther(data); setBotOtherError(null); })
-            .catch(err => setBotOtherError(err instanceof Error ? err.message : 'Failed to load'))
-            .finally(() => setBotOtherLoading(false));
+            .then(data => { if (active) { setBotOther(data); setBotOtherError(null); } })
+            .catch(err => { if (active) setBotOtherError(err instanceof Error ? err.message : 'Failed to load'); })
+            .finally(() => { if (active) setBotOtherLoading(false); });
 
         const topPathsPromise = fetch(`${baseUrl}/top-paths${params}&limit=15`, { headers })
             .then(async r => {
                 if (!r.ok) throw new Error(`Failed to load paths (${r.status})`);
                 return r.json() as Promise<AggregateResponse>;
             })
-            .then(data => { setTopPaths(data); setTopPathsError(null); })
-            .catch(err => setTopPathsError(err instanceof Error ? err.message : 'Failed to load'))
-            .finally(() => setTopPathsLoading(false));
+            .then(data => { if (active) { setTopPaths(data); setTopPathsError(null); } })
+            .catch(err => { if (active) setTopPathsError(err instanceof Error ? err.message : 'Failed to load'); })
+            .finally(() => { if (active) setTopPathsLoading(false); });
 
         const topCountriesPromise = fetch(`${baseUrl}/top-countries${params}&limit=15`, { headers })
             .then(async r => {
                 if (!r.ok) throw new Error(`Failed to load countries (${r.status})`);
                 return r.json() as Promise<AggregateResponse>;
             })
-            .then(data => { setTopCountries(data); setTopCountriesError(null); })
-            .catch(err => setTopCountriesError(err instanceof Error ? err.message : 'Failed to load'))
-            .finally(() => setTopCountriesLoading(false));
+            .then(data => { if (active) { setTopCountries(data); setTopCountriesError(null); } })
+            .catch(err => { if (active) setTopCountriesError(err instanceof Error ? err.message : 'Failed to load'); })
+            .finally(() => { if (active) setTopCountriesLoading(false); });
 
-        await Promise.all([summaryPromise, botOtherPromise, topPathsPromise, topCountriesPromise]);
-    }, [baseUrl, token, sinceHours]);
+        // The await-all isn't required for cleanup correctness — each
+        // chain self-guards via `active`. It's kept off the effect
+        // signature deliberately: useEffect can't return a Promise.
+        void Promise.all([summaryPromise, botOtherPromise, topPathsPromise, topCountriesPromise]);
 
-    useEffect(() => {
-        void fetchAll();
-    }, [fetchAll]);
+        return () => { active = false; };
+    }, [baseUrl, token, sinceHours, refreshNonce]);
 
     const clickhouseDisabledNotice = summary && !summary.clickhouseEnabled;
 
@@ -198,7 +223,7 @@ export function TrafficDashboard({ token }: Props) {
                     <Button
                         variant="secondary"
                         size="sm"
-                        onClick={() => void fetchAll()}
+                        onClick={() => setRefreshNonce(n => n + 1)}
                         aria-label="Refresh dashboard"
                     >
                         <RefreshCw size={16} aria-hidden="true" /> Refresh
