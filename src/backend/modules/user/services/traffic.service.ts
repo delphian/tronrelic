@@ -41,6 +41,7 @@
 import type { Request } from 'express';
 import type { IClickHouseService, ISystemLogService } from '@/types';
 import { getClientIP, getCountryFromIP, getDeviceCategory } from './geo.service.js';
+import { classifyUserAgent, type BotClass } from './bot-classifier.js';
 
 /**
  * Categorical event types written to `traffic_events.event_type`.
@@ -82,8 +83,13 @@ export interface ITrafficEvent {
     country: string | null;
     /** `'desktop' | 'mobile' | 'tablet' | 'bot' | 'unknown'`. */
     device: string;
-    /** `'crawler' | 'monitoring' | ...` when classified, else null. */
-    bot_class: string | null;
+    /**
+     * Closed enum produced by `classifyUserAgent` at write time. `null`
+     * is reserved for legacy rows written before the classifier landed
+     * (Phases 0-4 of the traffic-events split) and for ClickHouse reads
+     * that materialize those rows back through `getEventsForUser`.
+     */
+    bot_class: BotClass | null;
 
     utm_source: string | null;
     utm_medium: string | null;
@@ -350,11 +356,7 @@ export function buildTrafficEvent(
 
         country: getCountryFromIP(getClientIP({ ip: req.ip, headers })),
         device: getDeviceCategory(userAgent),
-        // bot_class deferred — see PLAN-traffic-events.md "Open Questions".
-        // Until the library-vs-regex decision lands, every row carries
-        // null. Future Phase 4+ work can backfill via a CH `ALTER TABLE
-        // ... UPDATE` over recent rows once the classifier exists.
-        bot_class: null,
+        bot_class: classifyUserAgent(userAgent),
 
         utm_source: utm.source ?? null,
         utm_medium: utm.medium ?? null,

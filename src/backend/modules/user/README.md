@@ -183,6 +183,7 @@ modules/user/
 │   ├── geo.service.ts             # IP → country, referrer parsing, device derivation
 │   ├── gsc.service.ts             # Google Search Console keyword integration
 │   ├── traffic.service.ts         # ClickHouse traffic_events sibling (PLAN-traffic-events.md)
+│   ├── bot-classifier.ts          # User-Agent → BotClass enum (powers traffic_events.bot_class)
 │   ├── user.service.ts            # Business logic (CRUD, wallet linking, sessions, caching)
 │   ├── user.errors.ts             # Service-layer error classes
 │   ├── user-group.service.ts      # Group definition CRUD + membership API
