@@ -1,11 +1,18 @@
 import type { IMigration, IMigrationContext } from '@/types';
-import { UserIdentityState } from '@/types';
 import type { IUserDocument, ITrafficOrigin } from '../database/IUserDocument.js';
 import {
     TRAFFIC_EVENTS_TABLE_NAME,
     serializeTrafficEventForClickHouse,
     type ITrafficEvent
 } from '../services/traffic.service.js';
+
+// Inline string literal matching `UserIdentityState.Anonymous`. Migration
+// files are compiled with `bundle: false`, which does not resolve the
+// `@/types` path alias, so a runtime import of the enum breaks the
+// scanner's dynamic import in production. Migrations 006 and 009 follow
+// the same pattern. Keep this in sync with
+// packages/types/src/user/IUserIdentityState.ts.
+const IDENTITY_ANONYMOUS = 'anonymous';
 
 /**
  * Phase 6 of the traffic-events split: prune empty Mongo `users` rows
@@ -52,13 +59,21 @@ import {
  * doesn't fully understand.
  *
  * **Idempotency.** A successful run leaves no candidates for a future
- * run. If the migration fails partway through, the Mongo transaction
- * rolls back the `deleteOne` calls but the ClickHouse inserts are
- * already durable — `wait_for_async_insert: 0` means CH does not
- * participate in the Mongo transaction. To prevent duplicate synthetic
- * events on retry, we query CH at the top for any candidate UUID that
- * already carries a `bootstrap` event and skip backfill for those rows
- * (the prune still runs).
+ * run. Partial-failure semantics are best understood as "each row is
+ * its own unit of work, neither side is transactional." `MigrationExecutor`
+ * opens a mongoose session and wraps `migration.up()` in
+ * `session.withTransaction()`, but the session is not threaded into
+ * `IMigrationContext`, so native-driver `getCollection().deleteOne(...)`
+ * calls do not participate — each delete commits independently the
+ * moment it returns. ClickHouse inserts are likewise non-transactional
+ * relative to MongoDB. If the migration crashes mid-loop, some rows are
+ * deleted with their synthetic CH events durable, and the rest remain
+ * pinned in Mongo with no synthetic event written. Retry is safe for
+ * two reasons: already-deleted rows simply don't appear in the next
+ * candidate scan, and the CH dedup query at the top filters out any
+ * UUID that already carries a `bootstrap` event so a re-run cannot
+ * duplicate-emit synthetic events for rows whose Mongo delete failed
+ * after the CH insert succeeded.
  *
  * **ClickHouse required.** If `context.clickhouse` is undefined the
  * migration throws rather than silently pruning rows we cannot preserve
@@ -93,18 +108,44 @@ export const migration: IMigration = {
             );
         }
 
-        const users = context.database.getCollection<IUserDocument>('users');
+        // Skip the type parameter on getCollection — the migration filter
+        // would otherwise force the literal `'anonymous'` constant through
+        // the `UserIdentityState` enum gate, which TypeScript rejects under
+        // string-valued enum nominal typing. Migrations 006 and 009 follow
+        // the same pattern; documents are narrowed to `IUserDocument` after
+        // the fetch via the `isEmptyUserRow` predicate.
+        const users = context.database.getCollection('users');
         const ch = context.clickhouse;
 
-        const candidates = await users.find({
-            identityState: UserIdentityState.Anonymous,
+        // Push the bulk-volume predicates into MongoDB so the index on
+        // `identityState` and the array `$size` checks eliminate the vast
+        // majority of non-orphans server-side. Three reviewers independently
+        // flagged the prior `find().toArray()` materialize-everything pattern
+        // as an OOM risk under bot-heavy incident windows. Real production
+        // data here is bounded (~3 days of crawler traffic on a low-volume
+        // site), but pushing the filter into the query is a strict
+        // improvement and means the migration scales gracefully if the
+        // orphan count surprises us.
+        const candidates = (await users.find({
+            identityState: IDENTITY_ANONYMOUS,
             createdAt: { $lt: SAFETY_CUTOFF },
+            wallets: { $size: 0 },
+            groups: { $size: 0 },
+            'activity.sessionsCount': { $in: [null, 0] },
+            'activity.pageViews': { $in: [null, 0] },
             $or: [
                 { mergedInto: null },
                 { mergedInto: { $exists: false } }
             ]
-        }).toArray();
+        }).toArray()) as unknown as IUserDocument[];
 
+        // The JS post-filter handles the two predicates that don't
+        // translate cleanly into Mongo: empty `preferences` object
+        // (would require `$expr` + `$objectToArray`) and the referral
+        // engagement check (Mongo's null-matches-missing semantics make
+        // the clean expression awkward). It also keeps the wallets/groups/
+        // activity invariants as a defensive belt — if the schema ever
+        // drifts in production the JS predicate stays the source of truth.
         const orphans = candidates.filter(isEmptyUserRow);
 
         if (orphans.length === 0) {
@@ -126,9 +167,17 @@ export const migration: IMigration = {
 
             if (origin && hasUsefulOrigin(origin) && !alreadyBackfilled.has(user.id)) {
                 try {
+                    // `waitForCommit` overrides the connection-level
+                    // `wait_for_async_insert: 0` so the awaited promise
+                    // really does mean "the row is durable in ClickHouse."
+                    // Without it a flush failure would surface 30s later in
+                    // the error poller — long after we'd already deleted
+                    // the Mongo row that was the only other copy of this
+                    // origin data.
                     await ch.insert(
                         TRAFFIC_EVENTS_TABLE_NAME,
-                        [serializeTrafficEventForClickHouse(buildSyntheticEvent(user, origin))]
+                        [serializeTrafficEventForClickHouse(buildSyntheticEvent(user, origin))],
+                        { waitForCommit: true }
                     );
                     backfilled++;
                 } catch (error) {
@@ -213,10 +262,19 @@ function hasUsefulOrigin(origin: ITrafficOrigin): boolean {
  * Construct a synthetic `bootstrap` event from a pruned user's
  * `activity.origin`. The full HTTP context (raw `Referer`, `User-Agent`,
  * `Sec-CH-UA*`, `Sec-Fetch-*`) is unrecoverable for these legacy rows —
- * we only kept the dimensions migration 004 distilled. We map the
- * domain into `referer` (a domain is a valid Referer URL even if real
- * traffic typically carries the full path) and leave header-dependent
- * columns as `null` rather than fabricating values.
+ * we only kept the dimensions migration 004 distilled. The header-
+ * dependent columns are left `null` rather than fabricated.
+ *
+ * The preserved domain (e.g. `"twitter.com"`) is wrapped into a
+ * scheme-prefixed URL form (`"https://twitter.com/"`) before going into
+ * the `referer` column. This matters because Phase 3's first-touch
+ * backfill in `UserService.startSession` reads this field through
+ * `extractReferrerDomain`, which calls `new URL(value)` and returns
+ * `null` for any bare-domain string. Without the scheme prefix the
+ * synthetic event would still flow through CH but the next session
+ * keyed off it would silently drop the referrer dimension —
+ * defeating the migration's stated goal of preserving first-touch
+ * attribution.
  *
  * `bot_class` is `null` because the classifier needs the raw UA string,
  * which legacy `activity.origin` did not preserve. That is fine — the
@@ -232,7 +290,7 @@ function buildSyntheticEvent(user: IUserDocument, origin: ITrafficOrigin): ITraf
         candidate_uid: user.id,
 
         path: origin.landingPage ?? '/',
-        referer: origin.referrerDomain ?? null,
+        referer: origin.referrerDomain ? `https://${origin.referrerDomain}/` : null,
         original_referrer: null,
 
         user_agent: null,

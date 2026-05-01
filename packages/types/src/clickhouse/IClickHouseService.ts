@@ -58,8 +58,23 @@ export interface IClickHouseService {
      * rows at once rather than single-row inserts. For high-throughput
      * scenarios, buffer rows in memory and flush periodically.
      *
+     * **Default durability.** The implementation runs with `async_insert: 1`
+     * and `wait_for_async_insert: 0` so the promise resolves once rows are
+     * buffered server-side, *before* the async flush commits. Flush failures
+     * surface later via the `system.asynchronous_insert_log` poller, not the
+     * awaited promise. This is the right tradeoff for live request-path
+     * analytics (never block on persistence). Pass `{ waitForCommit: true }`
+     * for code paths that need true durable-commit semantics, such as
+     * one-shot data migrations whose downstream side-effects (e.g. deleting
+     * the source row) cannot tolerate a flush failure surfacing 30 seconds
+     * later in a different log stream.
+     *
      * @param table - Target table name (will be prefixed for plugins)
      * @param rows - Array of row objects matching table schema
+     * @param options - Optional per-call overrides. `waitForCommit: true`
+     *   forces the call to wait for the async-insert flush to commit
+     *   (`wait_for_async_insert: 1`) so a thrown error is the authoritative
+     *   "this row did not persist" signal.
      *
      * @example
      * ```typescript
@@ -67,11 +82,16 @@ export interface IClickHouseService {
      *     { txId: 'abc', timestamp: new Date(), poolAddress: 'T...' },
      *     { txId: 'def', timestamp: new Date(), poolAddress: 'T...' }
      * ]);
+     *
+     * // Durable insert before a downstream side-effect:
+     * await clickhouse.insert('traffic_events', [event], { waitForCommit: true });
+     * await mongoUsers.deleteOne({ _id });
      * ```
      */
     insert<T extends Record<string, unknown>>(
         table: string,
-        rows: T[]
+        rows: T[],
+        options?: { waitForCommit?: boolean }
     ): Promise<void>;
 
     /**
