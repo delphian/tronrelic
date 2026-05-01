@@ -41,6 +41,7 @@
 import type { Request } from 'express';
 import type { IClickHouseService, ISystemLogService } from '@/types';
 import { getClientIP, getCountryFromIP, getDeviceCategory } from './geo.service.js';
+import { classifyUserAgent } from './bot-classifier.js';
 
 /**
  * Categorical event types written to `traffic_events.event_type`.
@@ -350,11 +351,7 @@ export function buildTrafficEvent(
 
         country: getCountryFromIP(getClientIP({ ip: req.ip, headers })),
         device: getDeviceCategory(userAgent),
-        // bot_class deferred — see PLAN-traffic-events.md "Open Questions".
-        // Until the library-vs-regex decision lands, every row carries
-        // null. Future Phase 4+ work can backfill via a CH `ALTER TABLE
-        // ... UPDATE` over recent rows once the classifier exists.
-        bot_class: null,
+        bot_class: classifyUserAgent(userAgent),
 
         utm_source: utm.source ?? null,
         utm_medium: utm.medium ?? null,

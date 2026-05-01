@@ -13,6 +13,8 @@ export type {
     IGetEventsForUserOptions,
     ITrafficEventBuilderInputs
 } from './traffic.service.js';
+export { classifyUserAgent } from './bot-classifier.js';
+export type { BotClass } from './bot-classifier.js';
 export type { UserFilterType } from '@/types';
 export {
     initGeoIP,
