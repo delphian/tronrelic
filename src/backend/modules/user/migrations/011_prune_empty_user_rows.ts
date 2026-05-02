@@ -1,10 +1,27 @@
 import type { IMigration, IMigrationContext } from '@/types';
 import type { IUserDocument, ITrafficOrigin } from '../database/IUserDocument.js';
-import {
-    TRAFFIC_EVENTS_TABLE_NAME,
-    serializeTrafficEventForClickHouse,
-    type ITrafficEvent
-} from '../services/traffic.service.js';
+import type { ITrafficEvent } from '../services/traffic.service.js';
+
+// Inline constants and helpers from traffic.service.ts — migration files are
+// compiled with `bundle: false`, so they cannot import runtime values from
+// modules that are bundled into the main binary. Same pattern as migrations
+// 006 and 009 for UserIdentityState. Keep in sync with traffic.service.ts.
+const TRAFFIC_EVENTS_TABLE_NAME = 'traffic_events';
+
+function pad(value: number, length: number): string {
+    return String(value).padStart(length, '0');
+}
+
+function formatClickHouseDateTime64Utc(date: Date): string {
+    return (
+        `${pad(date.getUTCFullYear(), 4)}-${pad(date.getUTCMonth() + 1, 2)}-${pad(date.getUTCDate(), 2)} ` +
+        `${pad(date.getUTCHours(), 2)}:${pad(date.getUTCMinutes(), 2)}:${pad(date.getUTCSeconds(), 2)}.${pad(date.getUTCMilliseconds(), 3)}`
+    );
+}
+
+function serializeTrafficEventForClickHouse(event: ITrafficEvent): Record<string, unknown> {
+    return { ...event, timestamp: formatClickHouseDateTime64Utc(event.timestamp) };
+}
 
 // Inline string literal matching `UserIdentityState.Anonymous`. Migration
 // files are compiled with `bundle: false`, which does not resolve the
