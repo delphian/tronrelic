@@ -345,33 +345,45 @@ export class MigrationScanner {
     }
 
     /**
-     * Pick the runtime backend root: prefer `dist/backend`, fall back to `src/backend`.
+     * Pick the runtime backend root, gated on `NODE_ENV`.
      *
-     * Production images ship the compiled tree at `dist/backend` and omit
-     * `src/backend` entirely. Dev runs ESM-aware tsx/ts-node directly against
-     * `src/backend` and typically has no `dist/` until an explicit build.
-     * Picking dist when it exists guarantees Node loads `.js` it can actually
-     * execute and removes the previous Dockerfile workaround that mirrored
-     * compiled migrations back into source-shaped paths.
+     * **Production (`NODE_ENV === 'production'`):** always `dist/backend`. No
+     * fallback. Production images ship the compiled tree and omit `src/backend`;
+     * if `dist/` is somehow missing, the scanner returns no migrations rather
+     * than dropping back to `.ts` source files that Node's `import()` cannot
+     * load. The previous fallback masked exactly the packaging failure this
+     * PR is fixing.
+     *
+     * **Development (anything else):** prefer `src/backend` so hot-reloaded
+     * source edits are picked up immediately. A stale `dist/` left over from
+     * an earlier `npm run build` would otherwise shadow source changes —
+     * `dev:backend` does not clean it. Falls through to `dist/backend` only
+     * when `src/backend` is absent (rare; typically a misconfigured workspace).
      */
     private async resolveBackendRoot(): Promise<string> {
-        return (await this.directoryExists(this.distBackendRoot))
-            ? this.distBackendRoot
-            : this.srcBackendRoot;
+        if (process.env.NODE_ENV === 'production') {
+            return this.distBackendRoot;
+        }
+        return (await this.directoryExists(this.srcBackendRoot))
+            ? this.srcBackendRoot
+            : this.distBackendRoot;
     }
 
     /**
-     * Pick a plugin's migrations directory: prefer `<plugin>/dist/backend/migrations`,
-     * fall back to `<plugin>/src/backend/migrations`. Same rationale as
-     * {@link resolveBackendRoot} — the compiled `.js` is what Node can load,
-     * and the source path only resolves in dev where tsx/ts-node handles `.ts`.
+     * Pick a plugin's migrations directory, gated on `NODE_ENV`.
+     *
+     * Same production-strict / dev-prefer-src rule as {@link resolveBackendRoot}.
+     * In production the scanner only looks at `<plugin>/dist/backend/migrations`
+     * — a missing or empty compiled tree surfaces as "no migrations discovered"
+     * rather than silently loading `.ts` sources that fail at `import()` time.
      */
     private async resolvePluginMigrationsPath(pluginPath: string): Promise<string> {
         const distPath = join(pluginPath, 'dist', 'backend', 'migrations');
-        if (await this.directoryExists(distPath)) {
+        const srcPath = join(pluginPath, 'src', 'backend', 'migrations');
+        if (process.env.NODE_ENV === 'production') {
             return distPath;
         }
-        return join(pluginPath, 'src', 'backend', 'migrations');
+        return (await this.directoryExists(srcPath)) ? srcPath : distPath;
     }
 
     /**

@@ -14,17 +14,19 @@ Migrations change EXISTING production databases. If your module has never been d
 
 ### Discovery and Scanning
 
-`MigrationScanner` discovers files at startup. For each source it prefers the compiled `dist/` tree and falls back to `src/` so dev (`npm run dev`) keeps working without an explicit build:
+`MigrationScanner` discovers files at startup. Path resolution is gated on `NODE_ENV`: production reads only the compiled `dist/` tree, and dev prefers `src/` so hot-reloaded source edits are picked up immediately:
 
-| Source | Production (preferred) | Dev fallback | Use For |
-|--------|------------------------|--------------|---------|
+| Source | Production (`NODE_ENV=production`) | Development | Use For |
+|--------|------------------------------------|-------------|---------|
 | System | `dist/backend/services/database/migrations/` | `src/backend/services/database/migrations/` | Cross-cutting concerns with no single module owner |
 | Module | `dist/backend/modules/*/migrations/` | `src/backend/modules/*/migrations/` | Changes owned by a specific module |
 | Plugin | `src/plugins/*/dist/backend/migrations/` | `src/plugins/*/src/backend/migrations/` | Plugin-scoped changes |
 
-The dist-first rule exists because Node's dynamic `import()` cannot load TypeScript at runtime — production must execute the compiled `.js`. The backend itself runs from `dist/backend/index.js`, and migrations follow the same canonical location.
+Production has no `src/` fallback — Node's dynamic `import()` cannot load TypeScript at runtime, so falling back to `.ts` sources would let a missing or empty `dist/backend/migrations` silently skip migrations instead of surfacing a packaging error. The backend itself runs from `dist/backend/index.js`; migrations follow the same canonical location.
 
-**Filename pattern:** `/^\d{3}_[a-z0-9_-]+\.(ts|js)$/` — both `.ts` (dev fallback) and `.js` (production) accepted. The scanner also validates that `migration.id` matches the filename (minus extension) to catch copy-paste errors.
+Development falls through to `dist/` only when `src/backend` is absent (rare). This avoids stale-dist confusion: `npm run dev` does not clean `dist/`, so a `dist/` left over from an earlier `npm run build` would otherwise shadow live source edits.
+
+**Filename pattern:** `/^\d{3}_[a-z0-9_-]+\.(ts|js)$/` — both `.ts` (dev) and `.js` (production) accepted. The scanner also validates that `migration.id` matches the filename (minus extension) to catch copy-paste errors.
 
 **Scanning workflow:** filesystem traversal, filename validation, dynamic import, structure validation (`export const migration` implementing `IMigration`), SHA-256 checksum, dependency graph construction, circular dependency detection (DFS), topological sort.
 

@@ -1,9 +1,11 @@
 /// <reference types="vitest" />
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { join } from 'path';
 import {
     createMockFsModule,
-    clearMockFilesystem
+    clearMockFilesystem,
+    setMockDirectory
 } from '../../../../tests/vitest/mocks/fs.js';
 
 // Mock logger to prevent console output during tests
@@ -500,6 +502,79 @@ describe('MigrationScanner', () => {
             expect(metadata.id).toBe('001_create_subscriptions');
             expect(metadata.qualifiedId).toBe('plugin:whale-alerts:001_create_subscriptions');
             expect(metadata.source).toBe('plugin:whale-alerts');
+        });
+    });
+
+    /**
+     * The dist-vs-src branch decides whether migrations are discovered at all.
+     * The original bug — silent skip of plugin migrations because production
+     * shipped .ts source files at the path the scanner walked — turned on this
+     * exact resolution. Cover both production-strict and dev-prefer-src cases
+     * so a regression here cannot silently hide migrations again.
+     */
+    describe('Path Resolution (dist vs src)', () => {
+        afterEach(() => {
+            vi.unstubAllEnvs();
+        });
+
+        it('returns dist/ for system migrations in production', async () => {
+            vi.stubEnv('NODE_ENV', 'production');
+            const fresh = new MigrationScanner();
+            const root = await (fresh as any).resolveBackendRoot();
+            expect(root).toBe(join(process.cwd(), 'dist', 'backend'));
+        });
+
+        it('returns dist/ for system migrations in production even when src/ exists', async () => {
+            vi.stubEnv('NODE_ENV', 'production');
+            setMockDirectory(join(process.cwd(), 'src', 'backend'));
+            const fresh = new MigrationScanner();
+            const root = await (fresh as any).resolveBackendRoot();
+            expect(root).toBe(join(process.cwd(), 'dist', 'backend'));
+        });
+
+        it('returns src/ for system migrations in development when src/ exists', async () => {
+            vi.stubEnv('NODE_ENV', 'development');
+            setMockDirectory(join(process.cwd(), 'src', 'backend'));
+            const fresh = new MigrationScanner();
+            const root = await (fresh as any).resolveBackendRoot();
+            expect(root).toBe(join(process.cwd(), 'src', 'backend'));
+        });
+
+        it('falls through to dist/ in development when src/ is absent', async () => {
+            vi.stubEnv('NODE_ENV', 'development');
+            const fresh = new MigrationScanner();
+            const root = await (fresh as any).resolveBackendRoot();
+            expect(root).toBe(join(process.cwd(), 'dist', 'backend'));
+        });
+
+        it('returns dist/ for plugin migrations in production', async () => {
+            vi.stubEnv('NODE_ENV', 'production');
+            const fresh = new MigrationScanner();
+            const path = await (fresh as any).resolvePluginMigrationsPath('/app/src/plugins/my-plugin');
+            expect(path).toBe('/app/src/plugins/my-plugin/dist/backend/migrations');
+        });
+
+        it('returns dist/ for plugin migrations in production even when src/ exists', async () => {
+            vi.stubEnv('NODE_ENV', 'production');
+            setMockDirectory('/app/src/plugins/my-plugin/src/backend/migrations');
+            const fresh = new MigrationScanner();
+            const path = await (fresh as any).resolvePluginMigrationsPath('/app/src/plugins/my-plugin');
+            expect(path).toBe('/app/src/plugins/my-plugin/dist/backend/migrations');
+        });
+
+        it('returns src/ for plugin migrations in development when src/ exists', async () => {
+            vi.stubEnv('NODE_ENV', 'development');
+            setMockDirectory('/app/src/plugins/my-plugin/src/backend/migrations');
+            const fresh = new MigrationScanner();
+            const path = await (fresh as any).resolvePluginMigrationsPath('/app/src/plugins/my-plugin');
+            expect(path).toBe('/app/src/plugins/my-plugin/src/backend/migrations');
+        });
+
+        it('falls through to dist/ for plugin migrations in development when src/ is absent', async () => {
+            vi.stubEnv('NODE_ENV', 'development');
+            const fresh = new MigrationScanner();
+            const path = await (fresh as any).resolvePluginMigrationsPath('/app/src/plugins/my-plugin');
+            expect(path).toBe('/app/src/plugins/my-plugin/dist/backend/migrations');
         });
     });
 });
