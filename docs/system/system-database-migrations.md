@@ -14,15 +14,17 @@ Migrations change EXISTING production databases. If your module has never been d
 
 ### Discovery and Scanning
 
-`MigrationScanner` discovers files at startup from three locations:
+`MigrationScanner` discovers files at startup. For each source it prefers the compiled `dist/` tree and falls back to `src/` so dev (`npm run dev`) keeps working without an explicit build:
 
-| Source | Path | Use For |
-|--------|------|---------|
-| System | `src/backend/services/database/migrations/` | Cross-cutting concerns with no single module owner |
-| Module | `src/backend/modules/*/migrations/` | Changes owned by a specific module |
-| Plugin | `src/plugins/*/src/backend/migrations/` | Plugin-scoped changes |
+| Source | Production (preferred) | Dev fallback | Use For |
+|--------|------------------------|--------------|---------|
+| System | `dist/backend/services/database/migrations/` | `src/backend/services/database/migrations/` | Cross-cutting concerns with no single module owner |
+| Module | `dist/backend/modules/*/migrations/` | `src/backend/modules/*/migrations/` | Changes owned by a specific module |
+| Plugin | `src/plugins/*/dist/backend/migrations/` | `src/plugins/*/src/backend/migrations/` | Plugin-scoped changes |
 
-**Filename pattern:** `/^\d{3}_[a-z0-9_-]+\.(ts|js)$/` — both `.ts` (dev) and `.js` (Docker) accepted. The scanner also validates that `migration.id` matches the filename (minus extension) to catch copy-paste errors.
+The dist-first rule exists because Node's dynamic `import()` cannot load TypeScript at runtime — production must execute the compiled `.js`. The backend itself runs from `dist/backend/index.js`, and migrations follow the same canonical location.
+
+**Filename pattern:** `/^\d{3}_[a-z0-9_-]+\.(ts|js)$/` — both `.ts` (dev fallback) and `.js` (production) accepted. The scanner also validates that `migration.id` matches the filename (minus extension) to catch copy-paste errors.
 
 **Scanning workflow:** filesystem traversal, filename validation, dynamic import, structure validation (`export const migration` implementing `IMigration`), SHA-256 checksum, dependency graph construction, circular dependency detection (DFS), topological sort.
 

@@ -159,14 +159,11 @@ COPY --from=builder /app/dist/backend ./dist/backend
 
 # Plugin directories carry their installed (and dev-dep-pruned) node_modules
 # from the builder stage, which is how plugin runtime imports
-# (e.g. @delphian/trp-ai-assistant-types) resolve in production.
+# (e.g. @delphian/trp-ai-assistant-types) resolve in production. The scanner
+# discovers plugin migrations from each plugin's compiled dist/ tree, which
+# `npm run build:plugins` produces inside src/plugins/<id>/dist/.
 COPY --from=builder /app/src/shared ./src/shared
 COPY --from=builder /app/src/plugins ./src/plugins
-
-# MigrationScanner walks src/backend/... at runtime; mirror compiled .js files
-# from dist/ to the paths the scanner expects.
-COPY --from=builder /app/dist/backend/services/database/migrations ./src/backend/services/database/migrations
-COPY --from=builder /app/dist/backend/modules ./src/backend/modules
 
 EXPOSE 4000
 ENV NODE_ENV=production
