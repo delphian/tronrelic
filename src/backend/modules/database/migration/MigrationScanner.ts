@@ -56,25 +56,36 @@ export class MigrationScanner {
     private static readonly FILENAME_PATTERN = /^(\d{3})_([a-z0-9_-]+)\.(ts|js)$/;
 
     /**
-     * Base directory for backend source code.
+     * Project root anchor used to derive both compiled and source backend paths.
      *
-     * Computed from the current module's file path to support different deployment
-     * environments (development, Docker, etc.). All scan locations are relative to this.
+     * `process.cwd()` is stable across `npm run dev` (project root) and production
+     * Docker (`WORKDIR /app`). `import.meta.url` points at the esbuild bundle in
+     * production and is unreliable for filesystem navigation.
      */
-    private readonly backendRoot: string;
+    private readonly projectRoot: string;
 
     /**
-     * Create a new migration scanner.
+     * Compiled backend tree (`<root>/dist/backend`) — preferred at runtime.
      *
-     * Uses `process.cwd()` as the stable project root anchor, which works in both
-     * development (`npm run dev` from project root) and production Docker (`WORKDIR /app`).
-     *
-     * In the esbuild bundle (`dist/backend/index.js`), `import.meta.url` points to the
-     * bundle file, making `__dirname`-based navigation unreliable. `process.cwd()` always
-     * resolves to the project root in both environments.
+     * Node's dynamic `import()` cannot load TypeScript directly; the backend itself
+     * runs from `dist/backend/index.js` in production, and migrations must execute
+     * from the same compiled tree. `dist/` is the canonical runtime location.
      */
+    private readonly distBackendRoot: string;
+
+    /**
+     * Source backend tree (`<root>/src/backend`) — development fallback.
+     *
+     * Used when `dist/` has not been generated, so `npm run dev` (tsx/ts-node)
+     * keeps working without an explicit build step. Production images do not
+     * ship `src/backend/`, so this fallback never resolves there.
+     */
+    private readonly srcBackendRoot: string;
+
     constructor() {
-        this.backendRoot = join(process.cwd(), 'src', 'backend');
+        this.projectRoot = process.cwd();
+        this.distBackendRoot = join(this.projectRoot, 'dist', 'backend');
+        this.srcBackendRoot = join(this.projectRoot, 'src', 'backend');
     }
 
     /**
@@ -299,21 +310,22 @@ export class MigrationScanner {
 
         const migrations: IMigrationMetadata[] = [];
 
-        // Scan system migrations
+        // System and module migrations resolve under whichever backend tree
+        // exists — dist/ in production, src/ in dev. Plugin enumeration always
+        // walks src/plugins/ (the directory exists in both environments); the
+        // dist-vs-src choice happens per-plugin inside scanPlugins.
+        const backendRoot = await this.resolveBackendRoot();
+
         const systemMigrations = await this.scanDirectory(
-            join(this.backendRoot, 'services', 'database', 'migrations'),
+            join(backendRoot, 'services', 'database', 'migrations'),
             'system'
         );
         migrations.push(...systemMigrations);
 
-        // Scan module migrations
-        const modulesDir = join(this.backendRoot, 'modules');
-        const moduleMigrations = await this.scanModules(modulesDir);
+        const moduleMigrations = await this.scanModules(join(backendRoot, 'modules'));
         migrations.push(...moduleMigrations);
 
-        // Scan plugin migrations (src/plugins/ is sibling to src/backend/)
-        const pluginsDir = join(this.backendRoot, '..', 'plugins');
-        const pluginMigrations = await this.scanPlugins(pluginsDir);
+        const pluginMigrations = await this.scanPlugins(join(this.projectRoot, 'src', 'plugins'));
         migrations.push(...pluginMigrations);
 
         // Sort migrations by chosen strategy
@@ -330,6 +342,62 @@ export class MigrationScanner {
         }, 'Migration scan complete');
 
         return sorted;
+    }
+
+    /**
+     * Pick the runtime backend root, gated on `NODE_ENV`.
+     *
+     * **Production (`NODE_ENV === 'production'`):** always `dist/backend`. No
+     * fallback. Production images ship the compiled tree and omit `src/backend`;
+     * if `dist/` is somehow missing, the scanner returns no migrations rather
+     * than dropping back to `.ts` source files that Node's `import()` cannot
+     * load. The previous fallback masked exactly the packaging failure this
+     * PR is fixing.
+     *
+     * **Development (anything else):** prefer `src/backend` so hot-reloaded
+     * source edits are picked up immediately. A stale `dist/` left over from
+     * an earlier `npm run build` would otherwise shadow source changes —
+     * `dev:backend` does not clean it. Falls through to `dist/backend` only
+     * when `src/backend` is absent (rare; typically a misconfigured workspace).
+     */
+    private async resolveBackendRoot(): Promise<string> {
+        if (process.env.NODE_ENV === 'production') {
+            return this.distBackendRoot;
+        }
+        return (await this.directoryExists(this.srcBackendRoot))
+            ? this.srcBackendRoot
+            : this.distBackendRoot;
+    }
+
+    /**
+     * Pick a plugin's migrations directory, gated on `NODE_ENV`.
+     *
+     * Same production-strict / dev-prefer-src rule as {@link resolveBackendRoot}.
+     * In production the scanner only looks at `<plugin>/dist/backend/migrations`
+     * — a missing or empty compiled tree surfaces as "no migrations discovered"
+     * rather than silently loading `.ts` sources that fail at `import()` time.
+     */
+    private async resolvePluginMigrationsPath(pluginPath: string): Promise<string> {
+        const distPath = join(pluginPath, 'dist', 'backend', 'migrations');
+        const srcPath = join(pluginPath, 'src', 'backend', 'migrations');
+        if (process.env.NODE_ENV === 'production') {
+            return distPath;
+        }
+        return (await this.directoryExists(srcPath)) ? srcPath : distPath;
+    }
+
+    /**
+     * Test whether a path exists and is a directory. Returns false on any
+     * stat failure (ENOENT, permission errors, race conditions) so callers
+     * can treat "not present" and "not accessible" identically.
+     */
+    private async directoryExists(path: string): Promise<boolean> {
+        try {
+            const s = await stat(path);
+            return s.isDirectory();
+        } catch {
+            return false;
+        }
     }
 
     /**
@@ -435,8 +503,12 @@ export class MigrationScanner {
     /**
      * Scan all plugin directories for migrations.
      *
-     * Iterates through `src/plugins/*` and scans each plugin's
-     * `src/backend/migrations/` subdirectory.
+     * Iterates through `src/plugins/*` and resolves each plugin's migrations
+     * path via {@link resolvePluginMigrationsPath} — preferring the compiled
+     * `<plugin>/dist/backend/migrations` and falling back to the source path
+     * for dev. Plugin enumeration walks `src/plugins/` because that directory
+     * exists in both environments; the per-plugin pick selects compiled vs.
+     * source for the migration files themselves.
      *
      * @param pluginsDir - Path to plugins directory
      * @returns Promise resolving to array of all plugin migrations
@@ -455,7 +527,7 @@ export class MigrationScanner {
                     continue;
                 }
 
-                const migrationsPath = join(pluginPath, 'src', 'backend', 'migrations');
+                const migrationsPath = await this.resolvePluginMigrationsPath(pluginPath);
                 const pluginMigrations = await this.scanDirectory(migrationsPath, `plugin:${pluginId}`);
                 migrations.push(...pluginMigrations);
             }
