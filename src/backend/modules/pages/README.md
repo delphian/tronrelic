@@ -492,9 +492,12 @@ The pages module implements the `IModule` interface with two-phase initializatio
 - Create controller with service reference
 
 **Phase 2: run()** - Activate and integrate with application
+- Publish the storage provider on the service registry as `'storage'`
 - Register menu item in `system` namespace at `/system/pages`
 - Mount admin router at `/api/admin/pages` with `requireAdmin` middleware
 - Mount public router at `/api/pages` (no authentication)
+
+**Storage service registry entry.** Other modules and plugins discover the same `IStorageProvider` instance via `context.services.get<IStorageProvider>('storage')` (one-shot) or `watch('storage', ...)` (lifetime-bound). Publication happens in `run()`, not `init()`, so consumers must not look up `'storage'` from another module's `init()` phase. Plugins reusing this provider must self-namespace their filenames (e.g., the image-gen plugin writes under `image-gen/<...>`) to avoid colliding with Pages module attachments. When the underlying provider is later swapped (`LocalStorageProvider` → `S3StorageProvider`), every consumer continues working unchanged because the contract is the published interface, not the concrete class.
 
 **Module metadata:**
 ```typescript

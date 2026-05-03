@@ -181,7 +181,7 @@ export function useWhaleTransactions(threshold: number) {
 | `SITE_BACKEND`, other server vars | ✅ Available | ❌ Undefined |
 | `NEXT_PUBLIC_*` | ✅ Available | ✅ Available |
 
-**Use the runtime-config APIs.** In SSR (server components, `generateMetadata`) call `getServerConfig()` from `@/lib/serverConfig`; in client code call `getRuntimeConfig()` from `@/lib/runtimeConfig`. The legacy `@/lib/config` module is deprecated — it inlines `NEXT_PUBLIC_*` at build time and breaks universal Docker images. Never read `process.env.*` directly. See [frontend-architecture.md](../frontend-architecture.md#environment-configuration-and-runtime-contexts).
+**Use the runtime-config APIs.** In SSR (server components, `generateMetadata`) call `getServerConfig()` from `@/lib/serverConfig`; in client code call `getRuntimeConfig()` from `@/lib/runtimeConfig`. The legacy `@/lib/config` module is deprecated — it inlines `NEXT_PUBLIC_*` at build time and breaks universal Docker images. Never read `process.env.*` directly. See [frontend-architecture-runtime-config.md](../frontend-architecture-runtime-config.md).
 
 ## Composition Over Inheritance
 

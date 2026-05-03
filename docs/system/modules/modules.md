@@ -28,7 +28,7 @@ See [modules-creating.md](./modules-creating.md) for the step-by-step creation g
 
 When a module requires frontend code, place it in `src/frontend/modules/<module-name>/` with parallel structure (components, api, lib, types). Module-specific components belong here, not in `components/ui/` (reserved for generic primitives like Button and Badge).
 
-See [frontend-architecture.md](../../frontend/frontend-architecture.md#module-pattern) for frontend module structure, directory layout, import patterns, and the decision guide for where frontend code goes.
+See [frontend-architecture-modules.md](../../frontend/frontend-architecture-modules.md) for frontend module structure, directory layout, import patterns, and the decision guide for where frontend code goes.
 
 ## Module vs Plugin Decision Matrix
 
