@@ -44,7 +44,7 @@ export const migration: IMigration = {
     id: '004_files_inventory',
     description:
         'Migrate page_files to module_pages_files with UUID ids, source namespacing, and extended indexes; drop legacy page_files.',
-    dependencies: ['003_add_old_slugs_to_pages'],
+    dependencies: ['module:pages:003_add_old_slugs_to_pages'],
 
     async up(context: IMigrationContext): Promise<void> {
         const legacy = context.database.getCollection('page_files');

@@ -157,22 +157,11 @@ export class DatabaseModule implements IModule<IDatabaseModuleDependencies> {
         this.databaseService = new DatabaseService(this.logger, mongooseConnection);
         this.logger.info('Core DatabaseService instance created');
 
-        // Initialize migration system by scanning filesystem
+        // Fail-fast: a swallowed scan error leaves migrationsInitialized=false,
+        // which makes every /api/admin/migrations/* call 500 with no signal.
         this.logger.info('Initializing database migration system...');
-        try {
-            await this.databaseService.initializeMigrations();
-            this.logger.info('Database migration system initialized');
-        } catch (migrationError) {
-            this.logger.error(
-                {
-                    error: migrationError,
-                    stack: migrationError instanceof Error ? migrationError.stack : undefined
-                },
-                'Migration system initialization failed'
-            );
-            // Continue startup - migration system failure should not prevent app from running
-            // Admin can still access migration UI to diagnose issues
-        }
+        await this.databaseService.initializeMigrations();
+        this.logger.info('Database migration system initialized');
 
         // Create migrations service and controller
         this.migrationsService = new MigrationsService(this.databaseService, this.logger);
