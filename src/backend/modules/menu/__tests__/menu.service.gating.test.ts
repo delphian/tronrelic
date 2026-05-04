@@ -15,13 +15,12 @@ import { ObjectId } from 'mongodb';
 import type {
     IDatabaseService,
     IServiceRegistry,
-    IServiceWatchHandlers,
-    ServiceWatchDisposer,
     IUser,
     IUserGroupService,
     UserIdentityState as UserIdentityStateType
 } from '@/types';
 import { UserIdentityState } from '@/types';
+import { createMockServiceRegistry } from '../../../tests/vitest/mocks/service-registry.js';
 
 vi.mock('../../../../services/websocket.service.js', () => ({
     WebSocketService: {
@@ -79,25 +78,6 @@ function createDatabase(): IDatabaseService {
     } as unknown as IDatabaseService;
 }
 
-// In-memory IServiceRegistry. The MenuService only calls `get`, but a full
-// implementation lets test setup wire services in the standard way.
-function createRegistry(): IServiceRegistry {
-    const services = new Map<string, unknown>();
-    return {
-        register: <T,>(name: string, service: T) => {
-            services.set(name, service);
-        },
-        unregister: (name: string) => services.delete(name),
-        get: <T,>(name: string) => services.get(name) as T | undefined,
-        has: (name: string) => services.has(name),
-        getNames: () => Array.from(services.keys()),
-        watch: <T,>(name: string, handlers: IServiceWatchHandlers<T>): ServiceWatchDisposer => {
-            const svc = services.get(name) as T | undefined;
-            if (svc !== undefined && handlers.onAvailable) void handlers.onAvailable(svc);
-            return () => undefined;
-        }
-    };
-}
 
 // Stub IUserGroupService implementing only what the menu filter calls. The
 // admin predicate uses the user's `groups[]` array as an allow-list, since the
@@ -143,7 +123,7 @@ describe('MenuService gating filter', () => {
     beforeEach(async () => {
         vi.clearAllMocks();
         db = createDatabase();
-        registry = createRegistry();
+        registry = createMockServiceRegistry();
         MenuService.__resetForTests();
         MenuService.setDependencies(db, registry);
         svc = MenuService.getInstance();

@@ -60,12 +60,22 @@ For the complete Hello World walkthrough including the observer factory, see [pl
 
 **Detail documents:**
 
+- [plugins-catalog.md](./plugins-catalog.md) — Index of all installed plugins and per-market integrations
 - [plugins-system-architecture.md](./plugins-system-architecture.md) — Package layout, manifests, lifecycle hooks, runtime flow, admin interface
 - [plugins-blockchain-observers.md](./plugins-blockchain-observers.md) — Observer pattern, transaction processing, subscriptions
-- [plugins-page-registration.md](./plugins-page-registration.md) — Menu items, pages, routing, admin UI
+- [plugins-page-registration.md](./plugins-page-registration.md) — Menu and page system overview (gateway)
+- [plugins-page-registration-menu.md](./plugins-page-registration-menu.md) — `IMenuService.create()`, menu node fields, hierarchies, visibility gating
+- [plugins-page-registration-pages.md](./plugins-page-registration-pages.md) — `pages` array, `IPageConfig`, page component contract, registry bootstrap
+- [plugins-page-registration-admin.md](./plugins-page-registration-admin.md) — Admin page registration, System container auto-gate
 - [plugins-seo-and-ssr.md](./plugins-seo-and-ssr.md) — SEO metadata fields and `serverDataFetcher`
-- [plugins-widget-zones.md](./plugins-widget-zones.md) — Widget zones for injecting UI into existing pages
-- [plugins-frontend-context.md](./plugins-frontend-context.md) — Context injection, UI components, API client, WebSocket
+- [plugins-widget-zones.md](./plugins-widget-zones.md) — Widget zones index: zone catalog and SSR data flow
+- [plugins-widget-zones-registration.md](./plugins-widget-zones-registration.md) — Backend widget registration, route filtering, ordering, lifecycle, debugging
+- [plugins-widget-zones-ssr.md](./plugins-widget-zones-ssr.md) — Widget components, SSR + Live Updates, hydration gotchas
+- [plugins-frontend-context.md](./plugins-frontend-context.md) — `IFrontendPluginContext` index and shape (links to detail docs below)
+- [plugins-frontend-context-ui.md](./plugins-frontend-context-ui.md) — Layout, UI, charts, `useUser`, `useModal`
+- [plugins-frontend-context-api.md](./plugins-frontend-context-api.md) — `context.api` HTTP client and admin gating
+- [plugins-frontend-context-websocket.md](./plugins-frontend-context-websocket.md) — Auto-prefixed events/rooms and reliable subscriptions
+- [plugins-frontend-context-styling.md](./plugins-frontend-context-styling.md) — CSS Modules, design tokens, SSR + Live Updates
 - [plugins-api-registration.md](./plugins-api-registration.md) — REST routes, middleware, admin endpoints
 - [plugins-websocket-subscriptions.md](./plugins-websocket-subscriptions.md) — Real-time subscriptions, rooms, event namespacing
 - [plugins-service-registry.md](./plugins-service-registry.md) — Cross-component service sharing

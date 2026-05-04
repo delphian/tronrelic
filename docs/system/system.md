@@ -75,7 +75,13 @@ Inspect health from the `/system` dashboard (auth: `ADMIN_API_TOKEN`) — fastes
 | [system-database.md](./system-database.md) | `IDatabaseService`, three-tier access, namespace isolation |
 | [system-blockchain-sync-architecture.md](./system-blockchain-sync-architecture.md) | Block retrieval, enrichment pipeline, observer dispatch |
 | [system-scheduler-operations.md](./system-scheduler-operations.md) | Job control, cron syntax, persistence, troubleshooting |
-| [system-api.md](./system-api.md) | All admin endpoints, auth, examples |
+| [system-api.md](./system-api.md) | Admin API gateway — auth, conventions, troubleshooting, links to per-domain detail docs |
+| [system-api-overview.md](./system-api-overview.md) | `/overview`, `/health/*`, `/config` |
+| [system-api-blockchain.md](./system-api-blockchain.md) | Blockchain sync status, metrics, manual trigger |
+| [system-api-scheduler.md](./system-api-scheduler.md) | Scheduler status, health, job PATCH |
+| [system-api-markets.md](./system-api-markets.md) | Market platforms, freshness, refresh |
+| [system-api-logs.md](./system-api-logs.md) | System log query/resolve/delete endpoints |
+| [system-api-websockets.md](./system-api-websockets.md) | WebSocket admin metrics + real-time event catalog |
 | [system-dashboard.md](./system-dashboard.md) | Dashboard tabs and controls |
 | [system-database-migrations.md](./system-database-migrations.md) | Migration discovery, transactions, REST API, admin UI |
 | [system-logging.md](./system-logging.md) | Pino, MongoDB persistence, log queries |

@@ -99,7 +99,7 @@ Both endpoints require admin authority via the [dual-track admin gate](../../../
 
 - **`PATCH /api/admin/system/scheduler/job/:jobName`** - Updates `enabled` or `schedule` fields and persists to MongoDB
 
-See [system-api.md](../../system/system-api.md#scheduler-operations) for complete API documentation.
+See [system-api-scheduler.md](../../system/system-api-scheduler.md) for complete API documentation.
 
 ## Usage Examples
 
@@ -491,7 +491,7 @@ Before integrating SchedulerMonitor, verify:
 
 **Related documentation:**
 - [system-scheduler-operations.md](../../system/system-scheduler-operations.md) - Complete scheduler control guide with job management, troubleshooting, and cron syntax
-- [system-api.md](../../system/system-api.md#scheduler-operations) - API reference for scheduler endpoints with request/response examples
+- [system-api-scheduler.md](../../system/system-api-scheduler.md) - API reference for scheduler endpoints with request/response examples
 - [system-dashboard.md](../../system/system-dashboard.md) - Web dashboard usage (where SchedulerMonitor is used in production)
 
 **Related components:**

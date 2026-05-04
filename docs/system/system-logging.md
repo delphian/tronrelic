@@ -116,7 +116,7 @@ Navigate to `/system/logs` (requires admin token) for web-based log access:
 
 For programmatic access or custom dashboards, use the logs API:
 
-**See [system-api.md](./system-api.md#get-apiadminsystemlogs) for complete endpoint documentation including:**
+**See [system-api-logs.md](./system-api-logs.md) for complete endpoint documentation including:**
 - Query parameters (levels, service, resolved, date range, pagination)
 - Response structure (logs array, pagination metadata, statistics)
 - Request/response examples with curl and JavaScript

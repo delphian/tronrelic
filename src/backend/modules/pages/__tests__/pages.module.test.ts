@@ -4,10 +4,11 @@ import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { PagesModule } from '../index.js';
 import { MAIN_SYSTEM_CONTAINER_ID } from '../../menu/index.js';
 import { PageService } from '../services/page.service.js';
-import type { ICacheService, IMenuService } from '@/types';
+import type { ICacheService, IMenuService, IServiceRegistry } from '@/types';
 import { ObjectId } from 'mongodb';
 import type { Express, Router } from 'express';
 import { createMockDatabaseService } from '../../../tests/vitest/mocks/database-service.js';
+import { createMockServiceRegistry } from '../../../tests/vitest/mocks/service-registry.js';
 
 /**
  * Mock CacheService for testing.
@@ -82,6 +83,7 @@ describe('PagesModule', () => {
     let mockCache: MockCacheService;
     let mockMenu: MockMenuService;
     let mockApp: MockExpressApp;
+    let mockRegistry: IServiceRegistry;
 
     beforeEach(() => {
         vi.clearAllMocks();
@@ -93,6 +95,7 @@ describe('PagesModule', () => {
         mockCache = new MockCacheService();
         mockMenu = new MockMenuService();
         mockApp = new MockExpressApp();
+        mockRegistry = createMockServiceRegistry();
     });
 
     // ============================================================================
@@ -123,7 +126,8 @@ describe('PagesModule', () => {
                 database: mockDatabase,
                 cacheService: mockCache,
                 menuService: mockMenu,
-                app: mockApp as any
+                app: mockApp as any,
+                serviceRegistry: mockRegistry
             })).resolves.not.toThrow();
         });
 
@@ -134,7 +138,8 @@ describe('PagesModule', () => {
                 database: mockDatabase,
                 cacheService: mockCache,
                 menuService: mockMenu,
-                app: mockApp as any
+                app: mockApp as any,
+                serviceRegistry: mockRegistry
             });
 
             // Dependencies should be stored (tested indirectly via run() phase)
@@ -149,7 +154,8 @@ describe('PagesModule', () => {
                 database: mockDatabase,
                 cacheService: mockCache,
                 menuService: mockMenu,
-                app: mockApp as any
+                app: mockApp as any,
+                serviceRegistry: mockRegistry
             });
 
             // Verify app.use was NOT called during init
@@ -163,7 +169,8 @@ describe('PagesModule', () => {
                 database: mockDatabase,
                 cacheService: mockCache,
                 menuService: mockMenu,
-                app: mockApp as any
+                app: mockApp as any,
+                serviceRegistry: mockRegistry
             });
 
             // Verify menu.create was NOT called during init
@@ -183,6 +190,32 @@ describe('PagesModule', () => {
             await expect(module.run()).rejects.toThrow();
         });
 
+        it("should publish the storage provider on the service registry as 'storage'", async () => {
+            const module = new PagesModule();
+
+            await module.init({
+                database: mockDatabase,
+                cacheService: mockCache,
+                menuService: mockMenu,
+                app: mockApp as any,
+                serviceRegistry: mockRegistry
+            });
+
+            // Pre-run() the registry must not yet expose 'storage' — the
+            // module-architecture rule requires registration during run(),
+            // not init(), so other modules' init() phases never observe it.
+            expect(mockRegistry.has('storage')).toBe(false);
+
+            await module.run();
+
+            expect(mockRegistry.has('storage')).toBe(true);
+            const storage = mockRegistry.get('storage');
+            expect(storage).toBeDefined();
+            expect(typeof (storage as any).upload).toBe('function');
+            expect(typeof (storage as any).delete).toBe('function');
+            expect(typeof (storage as any).getUrl).toBe('function');
+        });
+
         it('should register menu item during run()', async () => {
             const module = new PagesModule();
 
@@ -190,7 +223,8 @@ describe('PagesModule', () => {
                 database: mockDatabase,
                 cacheService: mockCache,
                 menuService: mockMenu,
-                app: mockApp as any
+                app: mockApp as any,
+                serviceRegistry: mockRegistry
             });
 
             await module.run();
@@ -216,7 +250,8 @@ describe('PagesModule', () => {
                 database: mockDatabase,
                 cacheService: mockCache,
                 menuService: mockMenu,
-                app: mockApp as any
+                app: mockApp as any,
+                serviceRegistry: mockRegistry
             });
 
             await module.run();
@@ -246,7 +281,8 @@ describe('PagesModule', () => {
                 database: mockDatabase,
                 cacheService: mockCache,
                 menuService: mockMenu,
-                app: mockApp as any
+                app: mockApp as any,
+                serviceRegistry: mockRegistry
             });
 
             await module.run();
@@ -273,7 +309,8 @@ describe('PagesModule', () => {
                 database: mockDatabase,
                 cacheService: mockCache,
                 menuService: mockMenu,
-                app: mockApp as any
+                app: mockApp as any,
+                serviceRegistry: mockRegistry
             });
 
             // run() should throw if menu registration fails
@@ -294,7 +331,8 @@ describe('PagesModule', () => {
                 database: mockDatabase,
                 cacheService: mockCache,
                 menuService: mockMenu,
-                app: mockApp as any
+                app: mockApp as any,
+                serviceRegistry: mockRegistry
             });
 
             // Phase 2: run
@@ -306,32 +344,38 @@ describe('PagesModule', () => {
         });
 
         it('should handle multiple modules in sequence', async () => {
-            // Simulate multiple modules being initialized and run sequentially
+            // Simulate multiple modules being initialized and run sequentially.
+            // Each gets its own registry — in production there is one
+            // PagesModule per app boot wired against one registry, so sharing
+            // a registry across two modules would attempt a duplicate
+            // 'storage' registration that the real ServiceRegistry rejects.
             const module1 = new PagesModule();
             const module2 = new PagesModule();
+            const registry2 = createMockServiceRegistry();
 
-            // Initialize both
             await module1.init({
                 database: mockDatabase,
                 cacheService: mockCache,
                 menuService: mockMenu,
-                app: mockApp as any
+                app: mockApp as any,
+                serviceRegistry: mockRegistry
             });
 
             await module2.init({
                 database: mockDatabase,
                 cacheService: mockCache,
                 menuService: mockMenu,
-                app: mockApp as any
+                app: mockApp as any,
+                serviceRegistry: registry2
             });
 
-            // Run both
             await module1.run();
             await module2.run();
 
-            // Both should have registered menu items and mounted routes
             expect(mockMenu.create).toHaveBeenCalledTimes(2);
             expect(mockApp.use).toHaveBeenCalledTimes(4); // 2 routers per module
+            expect(mockRegistry.has('storage')).toBe(true);
+            expect(registry2.has('storage')).toBe(true);
         });
     });
 
@@ -347,7 +391,8 @@ describe('PagesModule', () => {
                 database: mockDatabase,
                 cacheService: mockCache,
                 menuService: mockMenu,
-                app: mockApp as any
+                app: mockApp as any,
+                serviceRegistry: mockRegistry
             });
 
             await module.run();
@@ -363,7 +408,8 @@ describe('PagesModule', () => {
                 database: mockDatabase,
                 cacheService: mockCache,
                 menuService: mockMenu,
-                app: mockApp as any
+                app: mockApp as any,
+                serviceRegistry: mockRegistry
             });
 
             await module.run();
@@ -379,7 +425,8 @@ describe('PagesModule', () => {
                 database: mockDatabase,
                 cacheService: mockCache,
                 menuService: mockMenu,
-                app: mockApp as any
+                app: mockApp as any,
+                serviceRegistry: mockRegistry
             });
 
             await module.run();
@@ -395,7 +442,8 @@ describe('PagesModule', () => {
                 database: mockDatabase,
                 cacheService: mockCache,
                 menuService: mockMenu,
-                app: mockApp as any
+                app: mockApp as any,
+                serviceRegistry: mockRegistry
             });
 
             await module.run();
@@ -418,7 +466,8 @@ describe('PagesModule', () => {
                 database: null as any,
                 cacheService: mockCache,
                 menuService: mockMenu,
-                app: mockApp as any
+                app: mockApp as any,
+                serviceRegistry: mockRegistry
             })).rejects.toThrow();
         });
 
@@ -431,7 +480,8 @@ describe('PagesModule', () => {
                 database: mockDatabase,
                 cacheService: mockCache,
                 menuService: mockMenu,
-                app: mockApp as any
+                app: mockApp as any,
+                serviceRegistry: mockRegistry
             });
 
             await expect(module.run()).rejects.toThrow();

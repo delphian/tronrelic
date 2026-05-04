@@ -13,12 +13,7 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { ObjectId } from 'mongodb';
-import type {
-    IDatabaseService,
-    IServiceRegistry,
-    IServiceWatchHandlers,
-    ServiceWatchDisposer
-} from '@/types';
+import type { IDatabaseService } from '@/types';
 
 vi.mock('../../../../services/websocket.service.js', () => ({
     WebSocketService: {
@@ -28,6 +23,7 @@ vi.mock('../../../../services/websocket.service.js', () => ({
 
 import { MenuService } from '../services/menu.service.js';
 import { MAIN_SYSTEM_CONTAINER_ID } from '../constants.js';
+import { createMockServiceRegistry } from '../../../tests/vitest/mocks/service-registry.js';
 
 function createDatabase(): IDatabaseService {
     const collections = new Map<string, any[]>();
@@ -73,25 +69,13 @@ function createDatabase(): IDatabaseService {
     } as unknown as IDatabaseService;
 }
 
-function createRegistry(): IServiceRegistry {
-    const services = new Map<string, unknown>();
-    return {
-        register: <T,>(name: string, service: T) => { services.set(name, service); },
-        unregister: (name: string) => services.delete(name),
-        get: <T,>(name: string) => services.get(name) as T | undefined,
-        has: (name: string) => services.has(name),
-        getNames: () => Array.from(services.keys()),
-        watch: <T,>(_name: string, _handlers: IServiceWatchHandlers<T>): ServiceWatchDisposer => () => undefined
-    };
-}
-
 describe('MenuService System container auto-requiresAdmin', () => {
     let svc: MenuService;
 
     beforeEach(async () => {
         vi.clearAllMocks();
         MenuService.__resetForTests();
-        MenuService.setDependencies(createDatabase(), createRegistry());
+        MenuService.setDependencies(createDatabase(), createMockServiceRegistry());
         svc = MenuService.getInstance();
         await svc.initialize();
     });

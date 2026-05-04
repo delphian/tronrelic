@@ -7,7 +7,7 @@
  */
 
 import type { Express } from 'express';
-import type { ICacheService, IDatabaseService, IMenuService, IModule, IModuleMetadata } from '@/types';
+import type { ICacheService, IDatabaseService, IMenuService, IModule, IModuleMetadata, IServiceRegistry, IStorageProvider } from '@/types';
 import path from 'path';
 import fs from 'fs/promises';
 import { logger } from '../../lib/logger.js';
@@ -47,6 +47,15 @@ export interface IPagesModuleDependencies {
      * The module will attach its admin and public routers using IoC pattern.
      */
     app: Express;
+
+    /**
+     * Service registry for publishing the storage provider as a platform-wide
+     * service. Plugins discover the storage backend with
+     * `context.services.get('storage')` instead of instantiating their own,
+     * which keeps file storage consistent when the underlying provider is
+     * later swapped (e.g., LocalStorageProvider to S3StorageProvider).
+     */
+    serviceRegistry: IServiceRegistry;
 }
 
 /**
@@ -87,7 +96,8 @@ export interface IPagesModuleDependencies {
  *     database: coreDatabase,
  *     cacheService: cacheService,
  *     menuService: MenuService.getInstance(),
- *     app: app
+ *     app: app,
+ *     serviceRegistry: serviceRegistry
  * });
  *
  * await pagesModule.run();
@@ -111,6 +121,8 @@ export class PagesModule implements IModule<IPagesModuleDependencies> {
     private cacheService!: ICacheService;
     private menuService!: IMenuService;
     private app!: Express;
+    private serviceRegistry!: IServiceRegistry;
+    private storageProvider!: IStorageProvider;
 
     /**
      * Services created during init() phase.
@@ -156,7 +168,7 @@ export class PagesModule implements IModule<IPagesModuleDependencies> {
      * dependencies for use in the run() phase. It does NOT mount routes or
      * register menu items yet.
      *
-     * @param dependencies - All required services (database, cache, menu, app)
+     * @param dependencies - All required services (database, cache, menu, app, serviceRegistry)
      * @throws {Error} If initialization fails (causes application shutdown)
      */
     async init(dependencies: IPagesModuleDependencies): Promise<void> {
@@ -167,18 +179,21 @@ export class PagesModule implements IModule<IPagesModuleDependencies> {
         this.cacheService = dependencies.cacheService;
         this.menuService = dependencies.menuService;
         this.app = dependencies.app;
+        this.serviceRegistry = dependencies.serviceRegistry;
 
         // Ensure uploads directory exists before Express static middleware tries to serve from it
         // This prevents 500 errors when accessing uploaded files
         await this.ensureUploadsDirectoryExists();
 
-        // Create storage provider (default: local filesystem)
-        const storageProvider = new LocalStorageProvider();
+        // Create storage provider (default: local filesystem). Held on the
+        // module so run() can publish it to the service registry once all
+        // modules have completed init().
+        this.storageProvider = new LocalStorageProvider();
 
         // Initialize PageService singleton with dependencies
         PageService.setDependencies(
             this.database,
-            storageProvider,
+            this.storageProvider,
             this.cacheService,
             this.logger
         );
@@ -206,6 +221,16 @@ export class PagesModule implements IModule<IPagesModuleDependencies> {
      */
     async run(): Promise<void> {
         this.logger.info('Running pages module...');
+
+        // Publish the storage provider on the service registry so other
+        // modules and plugins can discover the same instance via
+        // `services.get('storage')` instead of instantiating their own. This
+        // keeps file storage consistent when the underlying provider is later
+        // swapped (LocalStorageProvider to S3StorageProvider). Plugins that
+        // need file storage should self-namespace their filenames (e.g., the
+        // image-gen plugin writes under `image-gen/<...>`) to avoid colliding
+        // with Pages module attachments.
+        this.serviceRegistry.register<IStorageProvider>('storage', this.storageProvider);
 
         // Register menu item under the System container in `main`.
         // `requiresAdmin: true` is auto-applied by MenuService because the

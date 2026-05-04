@@ -1,311 +1,99 @@
 # Frontend Overview
 
-This document provides a high-level summary of TronRelic's frontend architecture and styling conventions. For detailed guidance on specific topics, refer to the specialized documentation linked throughout.
+TronRelic's frontend is a Next.js 14 App Router application: code organized by domain module under `src/frontend/modules/`, every public-facing component rendered SSR-first with WebSocket live updates after hydration, and styling flowed through SCSS Modules backed by a three-layer design token system.
 
 ## Why These Patterns Matter
 
-SSR-first rendering, module-based organization, scoped SCSS Modules, and container queries exist because their alternatives — client-side loading spinners, scattered component files, global CSS collisions, and viewport media queries in constrained contexts — all caused real production issues. Following these patterns keeps the frontend consistent and maintainable as the codebase grows.
+The conventions below are not preferences. SSR-first rendering, module-based organization, scoped SCSS Modules, container queries, and React layout primitives each exist because their alternatives — client-side loading spinners, scattered component files, global CSS collisions, viewport media queries that fail in modal/slideout/plugin contexts, and `<div>`-with-utility-classes layouts — caused production issues. Deviating from them tends to recreate those failures.
 
-## Core Architecture Principles
+## Project-Specific Rules
 
-### SSR + Live Updates Pattern
+### SSR + Live Updates is Mandatory
 
-**All public-facing components must render fully on the server with real data.** This is the foundational rendering pattern for TronRelic's frontend. Server components fetch data and pass it to client components as props. Client components initialize state from those props (not empty arrays), then establish WebSocket subscriptions for live updates after hydration.
+Every public-facing component must render fully on the server with real data, then hydrate for live updates. Server components fetch data and pass it as a prop; client components initialize `useState(initialData)` from the prop and attach WebSocket subscriptions in `useEffect` after hydration. Never initialize state with `useState([])` and fetch on mount — this breaks hydration (server HTML has content, client first render is empty) and reintroduces the loading flash the pattern exists to eliminate. Loading states are acceptable only for user-triggered actions, pagination, search, and secondary data — never for primary content on initial render. See [react.md](./react/react.md#ssr--live-updates-pattern).
 
-**The pattern eliminates loading spinners:**
-- Server component fetches data during SSR
-- Client component receives data as prop: `useState(initialData)`
-- HTML arrives with content, users see data immediately
-- After hydration, WebSocket provides real-time updates
+### Code Goes in `modules/`, Not `features/`
 
-**See [react.md](./react/react.md#ssr--live-updates-pattern) for complete implementation guide including:**
-- Step-by-step server/client component setup
-- Critical rules and common mistakes
-- When loading states ARE appropriate
-- SSR + Live Updates checklist
+New frontend code belongs in `src/frontend/modules/<name>/` with all related code colocated: `components/`, `hooks/`, `api/`, `lib/`, `types/`, `slice.ts`, and `index.ts`. The legacy `features/` directory still holds page-specific code from before this convention; treat it as read-only for existing features and avoid placing new work there. Before adding functionality, list `src/frontend/modules/` and grep for existing components — modules already cover user identity, menu, address labeling, and scheduler monitoring among others, and reimplementing existing capabilities is a common failure mode. See [frontend-architecture.md](./frontend-architecture.md).
 
-### Module-Based Organization
+### Layout Uses React Components, Not Utility Classes
 
-TronRelic organizes frontend code by domain module, not by file type. Each module contains all related components, state management, hooks, and API calls in a single directory:
-
-```
-modules/user/
-├── components/          # React components for this module
-├── hooks/              # Module-specific hooks
-├── api/                # API client functions
-├── lib/                # Utilities and helpers
-├── types/              # TypeScript types
-├── slice.ts            # Redux state slice
-└── index.ts            # Public API exports
-```
-
-This structure mirrors the backend's modular architecture and keeps related code colocated for easier discovery and maintenance.
-
-**Modules vs Features:** The `modules/` directory is the primary location for new frontend code. Use `modules/` for cross-cutting domain infrastructure used across multiple routes (user identity, menu system, address labels). The legacy `features/` directory contains page-specific code that serves limited routes and can be used for very small features that don't warrant a full module.
-
-**See [frontend-architecture.md](./frontend-architecture.md) for complete details on:**
-- Full directory structure and organization
-- Modules vs features decision matrix
-- Import patterns and best practices
-- Component folder organization (folder-based vs flat)
-- Migration guidance from old structures
-
-### React Component Architecture
-
-TronRelic uses React with Next.js 14 App Router for building interactive UI components. The architecture separates server and client components, uses context providers for dependency injection, and favors hooks over higher-order components for logic reuse.
-
-**Key React patterns:**
-
-- **Context providers** - ModalProvider, ToastProvider, FrontendPluginContextProvider for cross-cutting concerns
-- **Custom hooks** - Feature-specific hooks for WebSocket subscriptions, state management, and API calls
-- **Server vs client components** - Server components for SSR, client components for interactivity
-- **Composition patterns** - Component composition, render props, and plugin injection
-
-**See [react.md](./react/react.md) for complete React architecture overview including:**
-- Context provider system and composition order
-- Custom hooks patterns and best practices
-- Server vs client component decision matrix
-- Hydration error prevention
-- Component composition patterns
-- Detailed component guides (IconPickerModal, etc.)
-
-### UI Styling System
-
-  1. Primitives (primitives.scss) — Raw values and value-named scales: `--spacing-7: 1rem`, `--color-blue-500`, `--font-size-xs`. Forbidden in component code.
-  2. Semantics (semantic-tokens.scss) — Use-case-named tokens (`--card-padding-md`, `--font-size-heading-md`) plus curated t-shirt primitives (`--gap-md`, `--padding-md`) that component code may reference.
-  3. Components (.module.scss) — Select tokens by context (breakpoints, state); never redefine them.
-  4. Globals (globals.scss) — Utility classes for styling patterns that aren't tied to a specific component (`.surface`, `.btn`, `.badge`).
-
-TronRelic implements a comprehensive UI styling system with two core architectural layers:
-
-1. **`globals.scss`** - Design tokens (CSS variables), base resets, global animations, and styling utility classes (`.surface`, `.btn`, `.badge`)
-2. **SCSS Modules** - Component-specific styles with scoped class names that prevent naming collisions
-
-The design token system follows an industry-standard three-layer hierarchy (primitives → semantic tokens → application layer) used by Google Material Design, Adobe Spectrum, and GitHub Primer. This pattern enables consistent theming, predictable cascading updates, and single-source-of-truth maintenance.
-
-Every component should reference design tokens from `globals.scss` (like `var(--color-primary)` or `var(--radius-md)`) and implement component-specific layout in colocated `.module.scss` files.
-
-**See [ui.md](./ui/ui.md) for complete UI system overview including:**
-- Two-layer SCSS architecture (globals.scss vs SCSS Modules)
-- Three-layer design token hierarchy (primitives, semantic tokens, application layer)
-- Layout components for page structure
-- Container queries for responsive component behavior
-- Icon usage with `lucide-react`
-- SSR hydration patterns for timezone-sensitive data
-- Complete styling checklist and quick reference
-
-**See detailed implementation guides:**
-- [ui-scss-modules.md](./ui/ui-scss-modules.md) - SCSS architecture, naming conventions, and component styling workflow
-- [ui-responsive-design.md](./ui/ui-responsive-design.md) - Container queries, breakpoints, and responsive patterns
-- [ui-accessibility.md](./ui/ui-accessibility.md) - Semantic HTML, ARIA labels, and plugin styling rules
-- [ui-design-token-layers.md](./ui/ui-design-token-layers.md) - Token hierarchy, complete reference, and W3C alignment
-
-### Component-First Layout Architecture
-
-TronRelic uses **React components for layout primitives**, following the patterns established by major design systems like Chakra UI, Material UI, and Ant Design. This architectural decision provides TypeScript safety, IDE autocomplete, and encapsulated responsive behavior that utility classes cannot offer.
-
-**Layout Components** (from `components/layout/`):
-
-| Component | Purpose | Key Props |
-|-----------|---------|-----------|
-| `<Page>` | Page-level grid layout with responsive gap | - |
-| `<PageHeader>` | Title + subtitle section | `title`, `subtitle` |
-| `<Stack>` | Vertical/horizontal spacing | `gap`, `direction` |
-| `<Grid>` | Responsive grid layout | `gap`, `columns` |
-| `<Section>` | Content section with spacing | `gap` |
-
-**Why components over utility classes for layout:**
-
-- **Type safety** - `<Stack gap="md">` catches typos at compile time; `.stack--md` fails silently
-- **Encapsulation** - Responsive logic, accessibility attributes, and variants bundled in component
-- **Composition** - Aligns with React's component composition model
-- **Discoverability** - Props autocomplete in IDE; no memorizing class names
-
-```tsx
-import { Page, PageHeader, Stack, Grid } from '../../../components/layout';
-import { Card } from '../../../components/ui/Card';
-
-export default function DashboardPage() {
-    return (
-        <Page>
-            <PageHeader
-                title="Dashboard"
-                subtitle="Monitor your account activity"
-            />
-            <Grid columns="responsive">
-                <Card>...</Card>
-                <Card>...</Card>
-            </Grid>
-        </Page>
-    );
-}
-```
-
-**Styling utility classes** (`.surface`, `.btn`, `.badge`) remain in `globals.scss` for visual styling concerns that work well as composable modifiers. Layout primitives use React components; visual styling uses utility classes.
-
-## Quick Reference
-
-### Creating a New Component
-
-1. Create component folder: `modules/my-module/components/MyComponent/`
-2. Add files:
-   - `MyComponent.tsx` (implementation)
-   - `MyComponent.module.scss` (styles)
-   - `index.ts` (barrel export)
-3. Import SCSS Module: `import styles from './MyComponent.module.scss'`
-4. Use design tokens in SCSS: `color: var(--color-primary)`
-5. Apply scoped classes: `<div className={styles.container}>`
-6. Use layout components for structure: `<Stack gap="md">...</Stack>`
-7. Mix with styling utilities when appropriate: `<div className={`surface ${styles.card}`}>`
-
-### Layout Components
-
-Use layout components from `components/layout/` for page structure:
-
-```tsx
-import { Page, PageHeader, Stack, Grid, Section } from '../../../components/layout';
-
-<Page>
-    <PageHeader title="Dashboard" subtitle="Overview of activity" />
-    <Section>
-        <Grid columns="responsive">
-            <Card>...</Card>
-        </Grid>
-    </Section>
-</Page>
-```
+Page structure is built from layout primitives in `components/layout/`. They provide TypeScript-checked props, encapsulated responsive behavior, and IDE autocomplete that utility classes cannot. Visual styling — surfaces, buttons, badges — uses utility classes (`.surface`, `.btn`, `.badge`) from `globals.scss`. The split: components handle structure, utility classes handle appearance.
 
 | Component | Props | Purpose |
 |-----------|-------|---------|
-| `<Page>` | - | Page-level grid with responsive gap |
+| `<Page>` | — | Page-level grid with responsive gap |
 | `<PageHeader>` | `title`, `subtitle` | Page title section |
 | `<Stack>` | `gap="sm\|md\|lg"`, `direction="vertical\|horizontal"` | Flex container with gap |
 | `<Grid>` | `gap="sm\|md\|lg"`, `columns="2\|3\|responsive"` | Grid layout |
 | `<Section>` | `gap="sm\|md\|lg"` | Content section with spacing |
 
-### Container Queries Over Media Queries
+### Container Queries, Not Viewport Media Queries
 
-Always use container queries for component responsiveness:
+Component responsiveness uses `container-type: inline-size` and `@container` queries so a component adapts to whatever container it lives in (sidebar, modal, full page, plugin widget, slideout). Reserve `@media` queries for global layout in `app/layout.tsx` only. Breakpoint variables (`$breakpoint-mobile-md`, etc.) live in `app/breakpoints` and must be interpolated as `#{$breakpoint-mobile-md}` inside `@container` rules. See [ui-responsive-design.md](./ui/ui-responsive-design.md).
 
-```scss
-/* MyComponent.module.scss */
-@use '../../../app/breakpoints' as *;
+### Design Tokens and SCSS Modules — No Hardcoded Values
 
-.container {
-    container-type: inline-size;
-    container-name: my-component;
-}
+Component-specific styles live in colocated `Component.module.scss` files with scoped class names (use underscores for multi-word identifiers so TypeScript dot notation works: `styles.market_card`). Reference design tokens (`var(--color-primary)`, `var(--gap-md)`, `var(--card-padding-md)`) — never hardcoded colors, spacing, fonts, or sizes. The token system has three layers: foundation primitives in `primitives.scss` (forbidden in component code), use-case-named semantics and curated t-shirt-sized primitives in `semantic-tokens.scss` (preferred), and design-constant primitives like `--radius-md` and `--shadow-sm` (acceptable fallback). Full tier rules in [ui-design-token-layers.md](./ui/ui-design-token-layers.md); SCSS workflow in [ui-scss-modules.md](./ui/ui-scss-modules.md).
 
-@container my-component (min-width: #{$breakpoint-mobile-md}) {
-    .grid {
-        grid-template-columns: repeat(2, 1fr);
-    }
-}
-```
+### Modules Export Through `index.ts`
 
-Reserve viewport media queries (`@media`) exclusively for global layout changes in `app/layout.tsx`.
-
-### Common Styling Utilities
-
-| Pattern | Class | Example |
-|---------|-------|---------|
-| Surface background | `.surface` | `<div className="surface surface--padding-md">` |
-| Primary button | `.btn .btn--primary` | `<button className="btn btn--primary btn--md">` |
-| Status badge | `.badge .badge--success` | `<span className="badge badge--success">` |
-
-### Module Export Pattern
-
-Every module exports its public API through `index.ts`:
+Every module exposes its public API through a barrel `index.ts`. Consumers import from the module root, never internal paths.
 
 ```typescript
-// modules/user/index.ts
-
-// Components
-export { UserIdentityProvider } from './components/UserIdentityProvider';
-export { WalletButton } from './components/WalletButton';
-export { ProfilePage } from './components/Profile';
-
-// Redux slice
-export { default as userReducer } from './slice';
-export * from './slice';
-
-// Hooks
-export { useWallet } from './hooks/useWallet';
-```
-
-Import from the module root, not individual files:
-
-```typescript
-// Good
+// Good — uses public API
 import { WalletButton, useWallet } from '../../../modules/user';
 
-// Bad - bypasses public API
+// Bad — bypasses public API, couples to internal structure
 import { WalletButton } from '../../../modules/user/components/WalletButton/WalletButton';
 ```
 
-## Available Modules and Features
+### Providers Compose in One Place
 
-### Modules (Primary Pattern)
+All cross-cutting providers (Redux, ToastProvider, ModalProvider, FrontendPluginContextProvider) compose in `src/frontend/app/providers.tsx`. Consume them through hooks (`useToast`, `useModal`, `useDispatch`); do not introduce new global providers without updating that file. Outer providers must be available to inner ones — Redux first so every component can reach the store, then toast/modal so plugins can call their hooks. See [react.md](./react/react.md#provider-composition).
 
-Use `modules/` for cross-cutting domain infrastructure:
+### Environment Variables — Never Read `process.env.*` Directly
 
-| Module | Purpose | Key Components |
-|--------|---------|----------------|
-| **user** | User identity, wallet management, profiles | UserIdentityProvider, WalletButton, ProfilePage, useWallet |
-| **menu** | Navigation menu system | PriorityNav, useMenuConfig |
-| **address-labels** | Address labeling and display | AddressLabel |
-| **scheduler** | Scheduler monitoring UI | SchedulerMonitor |
+Server components and `generateMetadata` call `getServerConfig()` from `@/lib/serverConfig`; client code calls `getRuntimeConfig()` from `@/lib/runtimeConfig`. The legacy `@/lib/config` module and any `NEXT_PUBLIC_*` variables are deprecated — they inline at build time and break the universal Docker image. See [frontend-architecture-runtime-config.md](./frontend-architecture-runtime-config.md).
 
-### Features (Legacy/Small Features)
+### Timestamps Render Through `<ClientTime>`
 
-Use `features/` for page-specific code or small features that don't warrant a full module:
-
-| Feature | Purpose | Key Components |
-|---------|---------|----------------|
-| **accounts** | Account management, bookmarks | AccountSummary, BookmarkPanel |
-| **transactions** | Transaction feed, details, filtering | TransactionFeed, TransactionDetails |
-| **whales** | Whale transaction tracking | WhaleDashboard |
-| **blockchain** | Blockchain sync status | (state only) |
-| **charts** | Reusable chart components | LineChart, EnergyPriceChart |
-| **system** | System monitoring and administration | SystemOverview, BlockchainMonitor |
-| **realtime** | WebSocket connection and live data sync | useRealtimeStatus, useSocketSubscription |
-| **ui-state** | Global UI state (modals, toasts, loading) | (state only) |
+`new Date().toLocaleString()` in render returns UTC on the server (the container) and local time on the client, producing hydration mismatch. Use the `<ClientTime>` component for any timezone-sensitive display. See [ui-ssr-hydration.md](./ui/ui-ssr-hydration.md).
 
 ## Pre-Ship Checklist
 
-Before committing any UI component or plugin page, verify:
+Before committing a UI component or plugin page:
 
-- [ ] Uses layout components (`Page`, `PageHeader`, `Stack`, `Grid`, `Section`) for page structure
-- [ ] Uses CSS variables from `globals.scss` (no hardcoded colors or sizes)
-- [ ] Component-specific styles are in colocated SCSS Module file
-- [ ] Uses container queries for component-level responsiveness
-- [ ] Uses styling utility classes for visual patterns (`.surface`, `.btn`, `.badge`)
-- [ ] Uses `lucide-react` for all icons
-- [ ] Provides visual feedback for state changes (loading, error, success)
-- [ ] Uses semantic HTML (buttons, nav, lists, not generic divs)
-- [ ] Includes ARIA labels for icon buttons and interactive elements
-- [ ] Has visible focus states for all interactive elements
-- [ ] Tested in multiple contexts (full-page, slideout, modal, mobile)
-- [ ] JSDoc comments explain the "why" before showing the "how"
+- [ ] Server component fetches initial data; client receives it as a prop and initializes `useState(initialData)` (no loading flash on initial render)
+- [ ] Lives in `src/frontend/modules/<name>/` (or a plugin); public surface exported through `index.ts`; consumers import from module root
+- [ ] Page structure uses layout components (`<Page>`, `<Stack>`, `<Grid>`, `<Section>`), not raw `<div>` + utility classes
+- [ ] Component styles in colocated `.module.scss`; references design tokens — no hardcoded colors, spacing, fonts, or sizes
+- [ ] Responsive behavior uses container queries; viewport `@media` queries reserved for `app/layout.tsx` only
+- [ ] Icons from `lucide-react`; ARIA labels on icon-only buttons; visible focus states; semantic HTML (`<button>`, `<nav>`, `<ul>`)
+- [ ] Timestamps render via `<ClientTime>`; no `window`/`document`/`localStorage` in render body (only in `useEffect`)
+- [ ] Backend URLs read via `getServerConfig()` (SSR) or `getRuntimeConfig()` (client) — never `process.env.*` and never `NEXT_PUBLIC_*`
+- [ ] Tested in multiple contexts (full page, slideout, modal, mobile container width)
 
 ## Further Reading
 
-**Detailed documentation:**
-- [frontend-architecture.md](./frontend-architecture.md) - Complete file organization, modules vs features decision matrix, and import patterns
-- [react.md](./react/react.md) - React component architecture with context providers, hooks, and server/client component patterns
-- [ui.md](./ui/ui.md) - UI system overview with design tokens, CSS Modules, and styling standards
-- [ui-scss-modules.md](./ui/ui-scss-modules.md) - SCSS architecture, naming conventions, and component styling workflow
-- [ui-responsive-design.md](./ui/ui-responsive-design.md) - Container queries and breakpoints
-- [ui-icons-and-feedback.md](./ui/ui-icons-and-feedback.md) - Lucide icons, animations, and state feedback
-- [ui-accessibility.md](./ui/ui-accessibility.md) - Semantic HTML, ARIA labels, and plugin styling
-- [ui-ssr-hydration.md](./ui/ui-ssr-hydration.md) - Hydration error prevention and ClientTime
-- [ui-design-token-layers.md](./ui/ui-design-token-layers.md) - Industry-standard token hierarchy, complete token reference, and theming system
-- [documentation.md](../documentation.md) - Documentation standards and writing style
-
-**React component guides:**
-- [react/component-icon-picker-modal.md](./react/component-icon-picker-modal.md) - IconPickerModal component with ModalProvider integration
+| Document | Covers |
+|----------|--------|
+| [frontend-architecture.md](./frontend-architecture.md) | Index linking the architecture details below |
+| [frontend-architecture-modules.md](./frontend-architecture-modules.md) | Modules vs features decision matrix, module layout, public API barrels, thin route wrappers |
+| [frontend-architecture-runtime-config.md](./frontend-architecture-runtime-config.md) | `getServerConfig` vs `getRuntimeConfig`, env vars, why `NEXT_PUBLIC_*` is forbidden |
+| [react.md](./react/react.md) | SSR + Live Updates implementation, providers, hooks, server vs client components, hydration |
+| [ui.md](./ui/ui.md) | Layout components, design tokens, SCSS Modules, container queries — UI system overview |
+| [ui-scss-modules.md](./ui/ui-scss-modules.md) | SCSS architecture, naming conventions, component styling workflow |
+| [ui-responsive-design.md](./ui/ui-responsive-design.md) | Container queries, breakpoints, SCSS interpolation gotchas |
+| [ui-design-token-layers.md](./ui/ui-design-token-layers.md) | Token hierarchy, complete reference, theming |
+| [ui-icons-and-feedback.md](./ui/ui-icons-and-feedback.md) | Lucide icons, animations, state feedback |
+| [ui-accessibility.md](./ui/ui-accessibility.md) | Semantic HTML, ARIA labels, focus management, plugin styling rules |
+| [ui-ssr-hydration.md](./ui/ui-ssr-hydration.md) | Hydration error prevention, `<ClientTime>`, two-phase rendering |
+| [ui-theme.md](./ui/ui-theme.md) | Theme system, admin overrides, SSR injection |
+| [react/component-icon-picker-modal.md](./react/component-icon-picker-modal.md) | IconPickerModal + ModalProvider integration |
 
 **Related topics:**
-- [plugins.md](../plugins/plugins.md) - Plugin architecture (separate from features)
-- [plugins-page-registration.md](../plugins/plugins-page-registration.md) - How plugins register frontend pages
-- [plugins-frontend-context.md](../plugins/plugins-frontend-context.md) - Plugin frontend context and API access
+
+- [plugins.md](../plugins/plugins.md) — Plugin architecture (separate from modules and features)
+- [plugins-frontend-context.md](../plugins/plugins-frontend-context.md) — Plugin frontend DI: API client, WebSocket, charts
+- [documentation.md](../documentation.md) — Documentation standards and writing style

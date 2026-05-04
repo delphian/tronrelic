@@ -1,0 +1,92 @@
+# Plugin Admin Pages
+
+Admin surfaces — settings, internal dashboards, moderation tools — register through the same `IMenuService` and `pages` array as public pages, but parent under the System container so the menu engine and HTTP middleware auto-gate them.
+
+## Why This Matters
+
+Authorization that depends on plugin authors remembering to set `requiresAdmin: true` will eventually leak. The menu service walks the parent chain on every write and forces the flag on any node descending from the System container — a forgotten flag, a typo, or a copy-paste from a non-admin entry all still produce a properly gated node, as long as the parent relationship is correct. Admin HTTP routes mounted under `/api/plugins/<id>/system/**` get `requireAdmin` middleware automatically for the same reason. See [plugins-api-registration.md](./plugins-api-registration.md) for the dual-track HTTP gate.
+
+## How It Works
+
+Plugins parent admin menu entries under `MAIN_SYSTEM_CONTAINER_ID` — a fixed 24-hex sentinel exported from the menu module and seeded during `MenuModule.run()`, so it exists by the time `init()` runs. `MenuService.create/update` walks the parent chain and forces `requiresAdmin: true` on every descendant, overriding caller input either way. `MenuService.getTreeForUser` filters per-cookie at read time: anonymous and non-admin visitors never see the System subtree. There is no separate admin namespace and no separate API endpoint — the public read path returns the right shape for whoever asked.
+
+```typescript
+// src/backend/backend.ts
+import { MAIN_SYSTEM_CONTAINER_ID } from '../menu/index.js';
+
+await context.menuService.create({
+    namespace: 'main',
+    label: 'My Settings',
+    url: '/my-settings',
+    icon: 'Settings',
+    order: 150,
+    parent: MAIN_SYSTEM_CONTAINER_ID,
+    enabled: true
+    // Do not set requiresAdmin — the engine forces it.
+});
+```
+
+## Page Registration
+
+Declare the corresponding page in the frontend manifest. Set `requiresAdmin: true` for clarity even though the auto-gate enforces independently:
+
+```typescript
+// src/frontend/frontend.ts
+pages: [
+    {
+        path: '/my-settings',
+        component: MySettingsPage,
+        title: 'My Settings',
+        requiresAdmin: true
+    }
+]
+```
+
+Some plugins use a separate `adminPages` array (see `trp-ai-assistant`); both patterns work and both auto-guard via admin auth.
+
+## Component Pattern
+
+Admin pages receive `IFrontendPluginContext` like any plugin page:
+
+```typescript
+'use client';
+import type { IFrontendPluginContext } from '@/types';
+
+export function MySettingsPage({ context }: { context: IFrontendPluginContext }) {
+    return (
+        <context.ui.Card>
+            <h1>Settings</h1>
+        </context.ui.Card>
+    );
+}
+```
+
+## Why Auto-Gating Is Non-Bypassable
+
+Setting `requiresAdmin: false` explicitly in the create call does nothing — the engine overrides on every write. The id sentinel is hex so it satisfies the menu controller's `OBJECT_ID_REGEX` and the persistence layer's `new ObjectId(parent)` conversion without special-casing. Combined with the parent-chain walk, this means the only way to expose an admin entry to non-admins is to give it a non-System ancestor — which makes it not an admin entry by definition.
+
+## Migration from `adminUI`
+
+The deprecated `adminUI` property collapses into menu + page registration:
+
+```typescript
+// Old
+adminUI: { path: '/admin/x', icon: 'Activity', component: X }
+
+// New: backend menu + frontend page
+await context.menuService.create({
+    namespace: 'main', label: 'X', url: '/admin/x',
+    icon: 'Activity', order: 150,
+    parent: MAIN_SYSTEM_CONTAINER_ID, enabled: true
+});
+// pages: [{ path: '/admin/x', component: X, requiresAdmin: true }]
+```
+
+## Reference Files
+
+- `src/backend/src/modules/menu/menu.service.ts` — parent-chain walk and admin-flag enforcement
+- `src/backend/modules/menu/index.ts` — exports `MAIN_SYSTEM_CONTAINER_ID`
+- `src/plugins/trp-ai-assistant/` — canonical reference: `adminPages` registration, menu under System container, lifecycle teardown
+- [Menu Module README → Visibility Gating](../../src/backend/modules/menu/README.md#visibility-gating) — full visibility contract
+- [admin authentication — dual-track](../../src/backend/modules/user/README.md#admin-authentication--dual-track) — HTTP middleware admits cookie OR `x-admin-token`
+- [plugins-api-registration.md](./plugins-api-registration.md) — `/api/plugins/<id>/system/**` auto-gating

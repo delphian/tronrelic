@@ -537,7 +537,7 @@ Plugins often need secure settings screens without touching core admin code. Giv
 
 ### Where to dive deeper
 
-- **Step-by-step UI wiring:** See [Plugin Menu and Page System → Plugin Admin Pages](./plugins-page-registration.md#plugin-admin-pages) for the full walkthrough that covers navigation registration, page components, and styling conventions.
+- **Step-by-step UI wiring:** See [Plugin Admin Pages](./plugins-page-registration-admin.md) for the full walkthrough covering navigation registration, page components, and the System-container auto-gate.
 - **Route contracts:** Review [Plugin API Registration](./plugins-api-registration.md) for details on `adminRoutes`, middleware, and HTTP handler structure.
 - **Working example:** The whale-alerts plugin (`src/plugins/whale-alerts/`) shows the manifest, backend admin routes, and frontend admin pages working together.
 
