@@ -167,14 +167,15 @@ describe('DatabaseModule', () => {
         });
 
         /**
-         * Test: init should continue if migration initialization fails.
+         * Test: init should fail-fast when migration initialization fails.
          *
-         * Verifies that migration system failures don't prevent application startup.
-         * Note: This test is skipped because vi.mock hoisting makes it difficult to
-         * conditionally override the DatabaseService mock. The error handling is
-         * verified by integration tests.
+         * Verifies that scan errors (missing dep, circular dep, malformed file)
+         * propagate out of init() so a bad migration crashes smoke-boot rather
+         * than silently breaking /api/admin/migrations/* at runtime. Skipped
+         * because vi.mock hoisting makes it difficult to conditionally override
+         * the DatabaseService mock; covered by integration tests.
          */
-        it.skip('should continue if migration initialization fails', async () => {
+        it.skip('should fail-fast if migration initialization fails', async () => {
             // This test would require dynamically overriding the mocked DatabaseService
             // which conflicts with vi.mock hoisting. Tested in integration instead.
         });
