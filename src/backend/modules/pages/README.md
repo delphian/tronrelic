@@ -472,6 +472,21 @@ const unwatch = context.services.watch<IFileService>('files', {
 
 Source-tagging at upload time keeps each consumer's outputs separable for `list({ source })` filtering and operator disk-usage reporting. The underlying `IStorageProvider` stays internal to this module, so swapping local FS for S3 only touches provider construction here.
 
+### Consuming the File Inventory (Plugins and Modules)
+
+New code that needs to persist or read files **must** consume `IFileService` from the service registry and work with `IFileRecord`. Do not target the legacy `IPageFile` shape, the dropped `page_files` collection, or `IStorageProvider` directly — those are either deprecated or internal to this module.
+
+| Need | Use | Avoid |
+|------|-----|-------|
+| Upload bytes | `services.get<IFileService>('files').upload(buffer, name, mime, { source })` | `IPageService.uploadFile`, `IStorageProvider.upload` |
+| Read bytes | `IFileService.read(id)` | `IStorageProvider.read`, raw filesystem |
+| Render in browser | `record.url` from `IFileRecord` (resolved at upload/list time) | `record.path`, hand-built `/uploads/...` strings |
+| Delete | `IFileService.delete(id)` | `IStorageProvider.delete`, direct collection writes |
+| List own outputs | `IFileService.list({ source: { kind, id } })` | querying `module_pages_files` directly |
+| Map upload errors to HTTP | `instanceof FileSizeExceededError` → 413, `instanceof FileValidationError` → 400 | message-pattern matching on `Error.message` |
+
+`IPageFile` is JSDoc-marked `@deprecated` and exists only to keep the admin pages HTTP wire format stable. Plugins **never** see it — they receive `IFileRecord` directly from the registry.
+
 ### page_settings Collection
 
 Stores module configuration as a singleton document.

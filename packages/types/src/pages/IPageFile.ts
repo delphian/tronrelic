@@ -3,8 +3,13 @@
  *
  * The pages module no longer owns its own files collection — it delegates to
  * the unified `IFileService` published on the service registry as `'files'`.
- * `IPageFile` is the legacy adapter shape the admin UI consumes; new code
- * should prefer `IFileRecord` directly.
+ * `IPageFile` is the legacy adapter shape the admin HTTP wire format
+ * consumes; new code should prefer `IFileRecord` directly.
+ *
+ * @deprecated Use `IFileRecord` from `@/types`. `IPageFile` is retained only
+ * to keep the admin pages HTTP wire format stable; consumers reaching the
+ * file inventory through `services.get<IFileService>('files')` already
+ * receive `IFileRecord` and should not reshape it back into `IPageFile`.
  */
 export interface IPageFile {
     /**
