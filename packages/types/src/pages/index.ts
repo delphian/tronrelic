@@ -9,17 +9,17 @@
  * - Markdown parsing and rendering with caching
  */
 
-export type { IPage } from './IPage';
-export type { IPageFile } from './IPageFile';
-export type { IPageSettings } from './IPageSettings';
-export type { IStorageProvider } from './IStorageProvider';
-export type { IPageService } from './IPageService';
+export type { IPage } from './IPage.js';
+export type { IPageFile } from './IPageFile.js';
+export type { IPageSettings } from './IPageSettings.js';
+export type { IStorageProvider } from './IStorageProvider.js';
+export type { IPageService } from './IPageService.js';
 export type {
     IFileService,
     IFileRecord,
     IFileSource,
     IFileUploadOptions,
     IFileListFilter
-} from './IFileService';
-export { FileValidationError, FileSizeExceededError } from './IFileService';
-export type { IMarkdownService, IFrontmatterData, IParsedMarkdown } from './IMarkdownService';
+} from './IFileService.js';
+export { FileValidationError, FileSizeExceededError } from './IFileService.js';
+export type { IMarkdownService, IFrontmatterData, IParsedMarkdown } from './IMarkdownService.js';
