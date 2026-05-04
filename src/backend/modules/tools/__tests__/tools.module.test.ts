@@ -33,6 +33,7 @@ vi.mock('../../blockchain/tron-grid.client.js', () => ({
 import { ToolsModule } from '../index.js';
 import type { ICacheService, IChainParameters, IChainParametersService, IMenuService, IServiceRegistry } from '@/types';
 import { createMockDatabaseService } from '../../../tests/vitest/mocks/database-service.js';
+import { createMockServiceRegistry } from '../../../tests/vitest/mocks/service-registry.js';
 
 /**
  * Mock CacheService implementing ICacheService.
@@ -152,28 +153,6 @@ class MockChainParametersService implements IChainParametersService {
     }
 }
 
-/**
- * Mock ServiceRegistry implementing IServiceRegistry.
- *
- * Pre-loaded with a mock ChainParametersService so the tools module
- * can resolve it during init().
- */
-function createMockServiceRegistry(chainParams?: IChainParametersService): IServiceRegistry {
-    const services = new Map<string, unknown>();
-    if (chainParams) {
-        services.set('chain-parameters', chainParams);
-    }
-
-    return {
-        register: vi.fn((name: string, service: unknown) => { services.set(name, service); }),
-        get: vi.fn((name: string) => services.get(name)) as IServiceRegistry['get'],
-        has: vi.fn((name: string) => services.has(name)),
-        unregister: vi.fn((name: string) => services.delete(name)),
-        getNames: vi.fn(() => Array.from(services.keys())),
-        watch: vi.fn(() => () => { /* no-op disposer; tools module does not exercise watch in these tests */ }) as IServiceRegistry['watch']
-    };
-}
-
 describe('ToolsModule', () => {
     let mockDatabase: ReturnType<typeof createMockDatabaseService>;
     let mockCache: MockCacheService;
@@ -189,7 +168,7 @@ describe('ToolsModule', () => {
         mockCache = new MockCacheService();
         mockMenu = new MockMenuService();
         mockChainParams = new MockChainParametersService();
-        mockServiceRegistry = createMockServiceRegistry(mockChainParams);
+        mockServiceRegistry = createMockServiceRegistry({ 'chain-parameters': mockChainParams });
         mockApp = new MockExpressApp();
     });
 
@@ -284,6 +263,7 @@ describe('ToolsModule', () => {
 
         it('should look up chain-parameters from the service registry', async () => {
             const module = new ToolsModule();
+            const getSpy = vi.spyOn(mockServiceRegistry, 'get');
 
             await module.init({
                 database: mockDatabase,
@@ -293,7 +273,7 @@ describe('ToolsModule', () => {
                 app: mockApp as any
             });
 
-            expect(mockServiceRegistry.get).toHaveBeenCalledWith('chain-parameters');
+            expect(getSpy).toHaveBeenCalledWith('chain-parameters');
         });
     });
 
@@ -487,6 +467,7 @@ describe('ToolsModule', () => {
 
         it('should use ChainParametersService from service registry', async () => {
             const module = new ToolsModule();
+            const getSpy = vi.spyOn(mockServiceRegistry, 'get');
 
             await module.init({
                 database: mockDatabase,
@@ -497,7 +478,7 @@ describe('ToolsModule', () => {
             });
 
             // The module resolved chain-parameters during init
-            expect(mockServiceRegistry.get).toHaveBeenCalledWith('chain-parameters');
+            expect(getSpy).toHaveBeenCalledWith('chain-parameters');
         });
     });
 

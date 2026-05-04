@@ -36,9 +36,9 @@ Disable `ENABLE_SCHEDULER` during local dev to avoid this pressure entirely — 
 
 `NOTIFICATION_EMAIL_THROTTLE_MS` defaults to 300000 (5 minutes) where `NOTIFICATION_WEBSOCKET_THROTTLE_MS` defaults to 5000. Email costs more per send and inbox tolerance is much lower than UI tolerance — don't equalize them without thinking about user experience and provider cost.
 
-## Object Storage Fallback
+## Object Storage Reserved Vars
 
-If `STORAGE_BUCKET` is unset, page module file uploads silently fall back to a local filesystem provider rather than failing. Set the full S3 family (`STORAGE_ENDPOINT`, `STORAGE_REGION`, `STORAGE_BUCKET`, key, secret) to switch backends. Use `STORAGE_FORCE_PATH_STYLE=true` for MinIO, Backblaze B2, and other path-style providers.
+Page module file uploads currently always use the local filesystem provider — `PagesModule` instantiates `LocalStorageProvider` unconditionally. The `STORAGE_ENDPOINT`, `STORAGE_REGION`, `STORAGE_BUCKET`, `STORAGE_ACCESS_KEY_ID`, `STORAGE_SECRET_ACCESS_KEY`, and `STORAGE_FORCE_PATH_STYLE` env vars are reserved for a future S3-style provider that has not yet been wired up. Setting them today has no effect.
 
 ## Validation Is Fail-Fast
 

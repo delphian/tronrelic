@@ -4,10 +4,11 @@ import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { PagesModule } from '../index.js';
 import { MAIN_SYSTEM_CONTAINER_ID } from '../../menu/index.js';
 import { PageService } from '../services/page.service.js';
-import type { ICacheService, IMenuService, IServiceRegistry, IServiceWatchHandlers, ServiceWatchDisposer } from '@/types';
+import type { ICacheService, IMenuService, IServiceRegistry } from '@/types';
 import { ObjectId } from 'mongodb';
 import type { Express, Router } from 'express';
 import { createMockDatabaseService } from '../../../tests/vitest/mocks/database-service.js';
+import { createMockServiceRegistry } from '../../../tests/vitest/mocks/service-registry.js';
 
 /**
  * Mock CacheService for testing.
@@ -66,28 +67,6 @@ class MockMenuService implements IMenuService {
 }
 
 /**
- * In-memory IServiceRegistry. PagesModule.run() registers the storage
- * provider; tests verify registration via `get('storage')`.
- */
-function createMockRegistry(): IServiceRegistry {
-    const services = new Map<string, unknown>();
-    return {
-        register: <T,>(name: string, service: T) => {
-            services.set(name, service);
-        },
-        unregister: (name: string) => services.delete(name),
-        get: <T,>(name: string) => services.get(name) as T | undefined,
-        has: (name: string) => services.has(name),
-        getNames: () => Array.from(services.keys()),
-        watch: <T,>(name: string, handlers: IServiceWatchHandlers<T>): ServiceWatchDisposer => {
-            const svc = services.get(name) as T | undefined;
-            if (svc !== undefined && handlers.onAvailable) void handlers.onAvailable(svc);
-            return () => undefined;
-        }
-    };
-}
-
-/**
  * Mock Express app for testing.
  */
 class MockExpressApp {
@@ -116,7 +95,7 @@ describe('PagesModule', () => {
         mockCache = new MockCacheService();
         mockMenu = new MockMenuService();
         mockApp = new MockExpressApp();
-        mockRegistry = createMockRegistry();
+        mockRegistry = createMockServiceRegistry();
     });
 
     // ============================================================================
@@ -365,11 +344,15 @@ describe('PagesModule', () => {
         });
 
         it('should handle multiple modules in sequence', async () => {
-            // Simulate multiple modules being initialized and run sequentially
+            // Simulate multiple modules being initialized and run sequentially.
+            // Each gets its own registry — in production there is one
+            // PagesModule per app boot wired against one registry, so sharing
+            // a registry across two modules would attempt a duplicate
+            // 'storage' registration that the real ServiceRegistry rejects.
             const module1 = new PagesModule();
             const module2 = new PagesModule();
+            const registry2 = createMockServiceRegistry();
 
-            // Initialize both
             await module1.init({
                 database: mockDatabase,
                 cacheService: mockCache,
@@ -383,16 +366,16 @@ describe('PagesModule', () => {
                 cacheService: mockCache,
                 menuService: mockMenu,
                 app: mockApp as any,
-                serviceRegistry: mockRegistry
+                serviceRegistry: registry2
             });
 
-            // Run both
             await module1.run();
             await module2.run();
 
-            // Both should have registered menu items and mounted routes
             expect(mockMenu.create).toHaveBeenCalledTimes(2);
             expect(mockApp.use).toHaveBeenCalledTimes(4); // 2 routers per module
+            expect(mockRegistry.has('storage')).toBe(true);
+            expect(registry2.has('storage')).toBe(true);
         });
     });
 

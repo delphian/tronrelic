@@ -4,11 +4,11 @@
 
 ## Why This Matters
 
-TRON's energy-to-TRX ratio drifts daily with total staked TRX and network energy limits. Market fetchers, cost calculators, and APY displays all consume this ratio — hardcoding it produces wrong prices the moment the network shifts. Replaced the legacy static `TrEnergyAdapter` for this reason.
+TRON's energy-to-TRX ratio drifts daily with total staked TRX and network energy limits. Cost calculators, APY math, and any feature pricing energy in TRX consume this ratio — hardcoding it produces wrong prices the moment the network shifts.
 
 ## How It Works
 
-A scheduled fetcher polls TronGrid, derives `energyPerTrx`, and writes a snapshot to MongoDB. The service reads the latest snapshot, caches it in memory for 1 minute, and exposes conversion methods. Market fetchers receive the service via `MarketFetcherContext.trEnergy`.
+A scheduled fetcher polls TronGrid, derives `energyPerTrx`, and writes a snapshot to MongoDB. The service reads the latest snapshot, caches it in memory for 1 minute, and exposes conversion methods.
 
 ### Cached Fields
 
@@ -73,52 +73,10 @@ Never hardcode any of these formulas — call the service. All inputs/outputs ar
 
 `UsdtParametersService` is the parallel cache for USDT TRC20 transfer energy cost (`~65,000` units, dynamic). Always call `usdtParamsService.getUsdtTransferEnergyCost()` — never hardcode `65000`. USDT cost is fetched on its own scheduler (see `usdt-parameters:fetch`) and combines with `ChainParametersService` for transfer-cost normalization.
 
-## Market Fetcher Integration
-
-Fetchers receive the service through context:
-
-```typescript
-// src/backend/src/modules/markets/fetchers/types.ts
-export interface MarketFetcherContext {
-    http: AxiosInstance;
-    logger: Logger;
-    cacheTtlSeconds: number;
-    trEnergy: IChainParametersService | null;
-}
-```
-
-Markets quote prices in inconsistent units (TRX, SUN, per-hour, per-day, per-million-energy). The fetcher uses `trEnergy` to convert quotes to a common baseline (`sun` per energy unit, `minutes` of regeneration) and to compute APY for display:
-
-```typescript
-async pull(context: MarketFetcherContext): Promise<MarketSnapshot | null> {
-    const response = await context.http.get('https://market.com/api/pricing');
-    const sunPerUnit = (response.data.trx * 1_000_000) / response.data.energy;
-    const apy = context.trEnergy?.getAPY(
-        response.data.energy,
-        sunPerUnit,
-        response.data.days
-    ) ?? 0;
-    return {
-        guid: this.guid,
-        name: this.name,
-        fees: [{
-            minutes: response.data.days * 1440,
-            sun: sunPerUnit,
-            energyAmount: response.data.energy,
-            apy
-        }],
-        isActive: true
-    };
-}
-```
-
-The normalized snapshot then flows through the USDT transfer cost calculator (see [market-system-architecture.md](../markets/market-system-architecture.md)), which uses `fee.sun`, `fee.minutes`, and `usdtTransferEnergyCost` to produce per-transfer TRX cost across all markets.
-
 ## Rules
 
 - Never hardcode `energyPerTrx`, `energyFee`, or `5625` / `100` / `65000` literals — call the service.
 - Never bypass the in-memory cache; one method call per conversion is fine, the cache absorbs it.
-- Treat `trEnergy` as nullable in fetcher contexts (`context.trEnergy?.getAPY(...) ?? 0`); the field is null until the first successful fetch on fresh installs.
 - `IChainParametersService`, `IChainParameters`, `IChainParametersFetcher` live in `@/types` so frontend, backend, and plugins consume them without circular deps.
 
 ## Key Interfaces
@@ -155,15 +113,12 @@ interface IChainParametersFetcher {
 
 | File | Role |
 |---|---|
-| `src/backend/src/modules/chain-parameters/chain-parameters.service.ts` | Cached service + conversion methods + fallback |
-| `src/backend/src/modules/chain-parameters/chain-parameters-fetcher.ts` | Polls TronGrid, derives ratio, writes snapshot |
-| `src/backend/src/database/models/chain-parameters-model.ts` | Mongoose schema + indexes |
-| `src/backend/src/jobs/index.ts` | Registers `chain-parameters:fetch` cron `*/10 * * * *` |
-| `src/backend/src/modules/markets/fetchers/types.ts` | `MarketFetcherContext.trEnergy` injection point |
-| `src/backend/src/modules/markets/market-aggregator.ts` | Instantiates service, passes to fetcher context |
+| `src/backend/modules/chain-parameters/chain-parameters.service.ts` | Cached service + conversion methods + fallback |
+| `src/backend/modules/chain-parameters/chain-parameters-fetcher.ts` | Polls TronGrid, derives ratio, writes snapshot |
+| `src/backend/database/models/chain-parameters-model.ts` | Mongoose schema + indexes |
+| `src/backend/modules/scheduler/jobs/core-jobs.ts` | Registers `chain-parameters:fetch` cron `*/10 * * * *` |
 | `packages/types/src/chain-parameters/` | `IChainParameters`, `IChainParametersService`, `IChainParametersFetcher` |
 
 ## Related
 
-- [market-system-architecture.md](../markets/market-system-architecture.md) — how fetchers consume `trEnergy` for normalization
 - [environment.md](../environment.md) — TronGrid API keys and rate limiting

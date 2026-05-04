@@ -7,7 +7,6 @@
 - [@frontend.md](docs/frontend/frontend.md) - Frontend system overview
 - [@plugins.md](docs/plugins/plugins.md) - Plugin system overview
 - [@system.md](docs/system/system.md) - System architecture overview
-- [@TODO.md](docs/TODO.md) - Future requirements.
 - [@documentation.md](docs/documentation.md) - Documentation standards and writing conventions
 
 **Note:** These summary documents link to detailed implementation guides. Load additional detailed documentation as needed based on your specific task (e.g., load `frontend-architecture.md` when working on frontend file organization, load `plugins-blockchain-observers.md` when implementing transaction observers).
