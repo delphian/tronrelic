@@ -33,6 +33,7 @@ import type {
     IStorageProvider,
     ISystemLogService
 } from '@/types';
+import { FileValidationError, FileSizeExceededError } from '@/types';
 import type { IFileDocument, IPageSettingsDocument } from '../../database/index.js';
 import { DEFAULT_PAGE_SETTINGS } from '../../database/index.js';
 
@@ -112,7 +113,7 @@ export class FileService implements IFileService {
         const settings = await this.readSettings();
 
         if (bytes.length > settings.maxFileSize) {
-            throw new Error(
+            throw new FileSizeExceededError(
                 `File size (${bytes.length} bytes) exceeds maximum allowed (${settings.maxFileSize} bytes)`
             );
         }
@@ -122,7 +123,7 @@ export class FileService implements IFileService {
             settings.allowedFileExtensions.length > 0 &&
             !settings.allowedFileExtensions.includes(ext.toLowerCase())
         ) {
-            throw new Error(
+            throw new FileValidationError(
                 `File extension "${ext}" is not allowed. Allowed: ${settings.allowedFileExtensions.join(', ')}`
             );
         }
@@ -140,7 +141,7 @@ export class FileService implements IFileService {
             originalName,
             storedName,
             mimeType,
-            size: bytes.length,
+            sizeBytes: bytes.length,
             path: writtenPath,
             uploadedBy: options.uploadedBy ?? null,
             uploadedAt: new Date()
@@ -313,8 +314,8 @@ export class FileService implements IFileService {
             originalName: doc.originalName,
             storedName: doc.storedName,
             mimeType: doc.mimeType,
-            sizeBytes: doc.size,
-            path: doc.path,
+            sizeBytes: doc.sizeBytes,
+            url: this.storageProvider.getUrl(doc.path),
             uploadedBy: doc.uploadedBy,
             uploadedAt: doc.uploadedAt
         };

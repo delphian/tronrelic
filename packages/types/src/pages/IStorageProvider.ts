@@ -19,11 +19,16 @@ export interface IStorageProvider {
      *                       `module/pages/26/05/<uuid>.png`). The provider
      *                       creates any missing parent directories and writes
      *                       to that exact location. Must not include a
-     *                       leading slash; the provider prepends its own
-     *                       URL prefix on `getUrl()` if needed.
+     *                       leading slash.
      * @param mimeType - MIME type of the file (e.g., "image/png")
-     * @returns Promise resolving to the absolute URL-relative path where the
-     *          file can be accessed (e.g. `/uploads/module/pages/26/05/<uuid>.png`).
+     * @returns Promise resolving to a provider-specific storage handle that
+     *          must be passed back into `read()`, `delete()`, and `getUrl()`
+     *          to operate on the same file. The handle is **not** required
+     *          to be a public URL — callers must call `getUrl(handle)` to
+     *          obtain a browser-safe address. `LocalStorageProvider` echoes
+     *          the URL form (`/uploads/...`) because Express serves it
+     *          directly; an S3 provider would return an internal bucket key
+     *          and resolve a CDN URL through `getUrl()`.
      *
      * @throws Error if upload fails (storage full, permissions issue, etc.)
      */
@@ -35,10 +40,10 @@ export interface IStorageProvider {
      * Returns null when the file does not exist on the backend. Errors other
      * than "not found" (permissions, IO failure) propagate as exceptions.
      *
-     * @param path - Relative path to the file (as returned by upload())
+     * @param handle - Storage handle as returned by `upload()`
      * @returns Promise resolving to the file bytes, or null if missing
      */
-    read(path: string): Promise<Buffer | null>;
+    read(handle: string): Promise<Buffer | null>;
 
     /**
      * Delete a file from storage.
@@ -46,30 +51,23 @@ export interface IStorageProvider {
      * Implementations should gracefully handle missing files (return false)
      * rather than throwing errors, to support cleanup of orphaned database records.
      *
-     * @param path - Relative path to the file (as returned by upload())
+     * @param handle - Storage handle as returned by `upload()`
      * @returns Promise resolving to true if file was deleted, false if already missing
      *
      * @throws Error if deletion fails for reasons other than file not found
-     *
-     * @example
-     * const deleted = await provider.delete("/uploads/25/10/image-2025-10.png");
-     * // Returns: true if file existed and was deleted, false if already missing
      */
-    delete(path: string): Promise<boolean>;
+    delete(handle: string): Promise<boolean>;
 
     /**
-     * Get the public URL where a file can be accessed.
+     * Resolve the public, browser-safe URL for a previously stored file.
      *
-     * For local storage, this returns the relative path.
-     * For cloud storage (S3, Cloudflare), this might return a CDN URL.
+     * For local storage, the handle and the URL coincide (Express serves
+     * `/uploads/*` directly). For cloud storage (S3, Cloudflare R2), the
+     * handle is an internal bucket key and `getUrl()` returns the CDN URL
+     * the browser should fetch.
      *
-     * @param path - Relative path to the file
+     * @param handle - Storage handle as returned by `upload()`
      * @returns The URL where the file can be accessed by users
-     *
-     * @example
-     * const url = provider.getUrl("/uploads/25/10/image.png");
-     * // Local: "/uploads/25/10/image.png"
-     * // S3: "https://cdn.example.com/uploads/25/10/image.png"
      */
-    getUrl(path: string): string;
+    getUrl(handle: string): string;
 }

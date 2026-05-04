@@ -658,23 +658,6 @@ export class PageService implements IPageService {
     }
 
     /**
-     * Resolve the public URL for a record via `IFileService.getUrl(id)`.
-     * Treating `record.path` as opaque keeps URL formation in the inventory
-     * layer where storage backends decide their own URL form (local FS
-     * echoes the path; a future S3 provider returns a CDN URL). Throws if
-     * the id no longer resolves — the record was just produced by upload
-     * or list, so a null result indicates a concurrent delete the caller
-     * should know about.
-     */
-    private async resolveFileUrl(id: string): Promise<string> {
-        const url = await this.fileService.getUrl(id);
-        if (url === null) {
-            throw new Error(`File service did not resolve URL for id ${id}`);
-        }
-        return url;
-    }
-
-    /**
      * List uploaded files with optional filtering.
      *
      * Honor-system: filters to pages-module uploads by default. Admin tools
@@ -696,7 +679,7 @@ export class PageService implements IPageService {
             limit: options.limit,
             skip: options.skip
         });
-        return Promise.all(records.map((r) => this.fileRecordToIPageFile(r)));
+        return records.map((r) => this.fileRecordToIPageFile(r));
     }
 
     /**
@@ -887,22 +870,21 @@ export class PageService implements IPageService {
     /**
      * Adapt an `IFileRecord` (UUID-keyed unified inventory) to the legacy
      * `IPageFile` shape the admin UI consumes. The `_id` field on
-     * `IPageFile` now carries the FileService UUID — `deleteFile()` and
-     * the admin file browser pass the same string back through. The `path`
-     * field is resolved via `IFileService.getUrl(id)` so URL formation
-     * stays inside the inventory layer (local FS echoes the storage path
-     * today; a future S3 provider returns a CDN URL through the same
-     * call).
+     * `IPageFile` carries the FileService UUID — `deleteFile()` and the
+     * admin file browser pass the same string back through. The legacy
+     * `IPageFile.path` field maps to `IFileRecord.url`, which the inventory
+     * resolves once at record-construction time; that keeps a list of N
+     * files to a single DB query and survives concurrent deletes without
+     * 500ing the listing.
      */
-    private async fileRecordToIPageFile(record: IFileRecord): Promise<IPageFile> {
-        const url = await this.resolveFileUrl(record.id);
+    private fileRecordToIPageFile(record: IFileRecord): IPageFile {
         return {
             _id: record.id,
             originalName: record.originalName,
             storedName: record.storedName,
             mimeType: record.mimeType,
             size: record.sizeBytes,
-            path: url,
+            path: record.url,
             uploadedBy: record.uploadedBy,
             uploadedAt: record.uploadedAt,
         };

@@ -43,10 +43,12 @@ export interface IFileSource {
 }
 
 /**
- * Public file record returned by the service. The `id` is the only handle
- * consumers should retain — the internal storage `path` is exposed for
- * debugging and admin tooling but should never be passed back into other
- * `IFileService` methods (use the id instead).
+ * Public file record returned by the service. The `id` is the durable handle
+ * consumers retain; `url` is the browser-safe address resolved against the
+ * configured storage backend at the moment the record was produced. Internal
+ * storage handles (provider keys, on-disk paths) are deliberately not surfaced
+ * — they are an implementation detail of the active backend and would tempt
+ * consumers to bypass `IFileService`.
  */
 export interface IFileRecord {
     /** Globally unique UUID. Stable for the lifetime of the file. */
@@ -68,10 +70,13 @@ export interface IFileRecord {
     sizeBytes: number;
 
     /**
-     * Storage-relative path. Implementation detail; consumers should rely on
-     * `getUrl(id)` for browser display and `read(id)` for byte access.
+     * Public URL-relative address suitable for browser display. Resolved at
+     * record-construction time so callers can render listings without an
+     * extra `getUrl(id)` round-trip per row. Backends that surface CDN URLs
+     * (future S3/R2) populate this field with the public form; local FS
+     * echoes the `/uploads/...` path Express serves.
      */
-    path: string;
+    url: string;
 
     /** Optional uploader identity (user id, plugin context, etc.). */
     uploadedBy: string | null;
@@ -104,6 +109,33 @@ export interface IFileListFilter {
 }
 
 /**
+ * Validation failure raised by `IFileService.upload()` when caller-supplied
+ * bytes do not meet platform policy (extension whitelist, future content-type
+ * checks, etc.). Consumers map this to HTTP 400 (Bad Request) or its protocol
+ * equivalent. Extending plain `Error` keeps the contract dependency-free for
+ * downstream plugins.
+ */
+export class FileValidationError extends Error {
+    constructor(message: string) {
+        super(message);
+        this.name = 'FileValidationError';
+    }
+}
+
+/**
+ * Specialization of `FileValidationError` for size-policy violations.
+ * Consumers map this to HTTP 413 (Payload Too Large). Kept distinct from the
+ * base class so a generic `instanceof FileValidationError` catch still covers
+ * size errors when finer routing isn't needed.
+ */
+export class FileSizeExceededError extends FileValidationError {
+    constructor(message: string) {
+        super(message);
+        this.name = 'FileSizeExceededError';
+    }
+}
+
+/**
  * Service contract for the unified file inventory. Implemented inside the
  * Pages module and published on the service registry as `'files'` for module
  * and plugin consumers.
@@ -131,9 +163,11 @@ export interface IFileService {
     read(id: string): Promise<{ bytes: Buffer; mimeType: string } | null>;
 
     /**
-     * Resolve a public URL for browser display. Async because the path is
-     * looked up in the inventory rather than carried by the caller. Returns
-     * null when the id does not resolve.
+     * Resolve a public URL for browser display from the id alone. Convenience
+     * for callers that hold only an id; consumers that already have an
+     * `IFileRecord` from `list()`/`getRecord()` should read `record.url`
+     * directly to avoid an extra inventory lookup. Returns null when the id
+     * does not resolve.
      */
     getUrl(id: string): Promise<string | null>;
 

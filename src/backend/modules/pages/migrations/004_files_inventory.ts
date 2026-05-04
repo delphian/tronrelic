@@ -19,10 +19,11 @@ import type { IMigration, IMigrationContext } from '@/types';
  * 1. Read every existing row from `page_files`.
  * 2. Insert each into `module_pages_files` with `id: <uuid>`,
  *    `source: { kind: 'module', id: 'pages' }`, and the original metadata
- *    (path, originalName, storedName, mimeType, size, uploadedBy,
- *    uploadedAt). The on-disk bytes are not moved — the existing
- *    `/uploads/YY/MM/<filename>` paths remain valid and are served by the
- *    same Express static mount.
+ *    (path, originalName, storedName, mimeType, sizeBytes, uploadedBy,
+ *    uploadedAt). The legacy `size` field is renamed to `sizeBytes` to
+ *    match `IFileRecord.sizeBytes` exactly. The on-disk bytes are not
+ *    moved — the existing `/uploads/YY/MM/<filename>` paths remain valid
+ *    and are served by the same Express static mount.
  * 3. Create indexes on `id` (unique), `(source.kind, source.id, uploadedAt)`
  *    for source-filtered listings, and `uploadedAt` for the global feed.
  * 4. Drop the legacy `page_files` collection.
@@ -57,7 +58,7 @@ export const migration: IMigration = {
                 originalName: row.originalName ?? '',
                 storedName: row.storedName ?? '',
                 mimeType: row.mimeType ?? 'application/octet-stream',
-                size: typeof row.size === 'number' ? row.size : 0,
+                sizeBytes: typeof row.size === 'number' ? row.size : 0,
                 path: row.path ?? '',
                 uploadedBy: row.uploadedBy ?? null,
                 uploadedAt: row.uploadedAt instanceof Date ? row.uploadedAt : new Date()

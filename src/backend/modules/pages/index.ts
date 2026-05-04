@@ -25,5 +25,5 @@ export { createPagesRouter } from './api/pages.routes.js';
 export { createPublicPagesRouter } from './api/pages.public-routes.js';
 
 // Database types (for external consumers working with page data)
-export type { IPageDocument, IPageFileDocument, IPageSettingsDocument, IFileDocument } from './database/index.js';
+export type { IPageDocument, IPageSettingsDocument, IFileDocument } from './database/index.js';
 export { DEFAULT_PAGE_SETTINGS } from './database/index.js';

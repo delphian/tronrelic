@@ -35,8 +35,8 @@ export interface IFileDocument {
     /** Recorded MIME type. */
     mimeType: string;
 
-    /** Size of the stored bytes. */
-    size: number;
+    /** Size of the stored bytes. Mirrors `IFileRecord.sizeBytes`. */
+    sizeBytes: number;
 
     /**
      * Storage-relative path returned by `IStorageProvider.upload()`. Treated

@@ -2,6 +2,7 @@ import type { Request, Response } from 'express';
 import multer from 'multer';
 import type { IPageService } from '@/types';
 import type { ISystemLogService } from '@/types';
+import { FileValidationError, FileSizeExceededError } from '@/types';
 
 /**
  * Controller for pages module REST API endpoints.
@@ -300,17 +301,19 @@ export class PagesController {
         } catch (error) {
             this.logger.error('Failed to upload file', { error });
             const message = error instanceof Error ? error.message : 'Unknown error';
-            // Map FileService validation errors to the right HTTP status:
-            // size violations are 413 (Payload Too Large), other
-            // validation failures (extension, etc.) are 400 (Bad Request).
-            // Pattern-matching the message keeps the wire-status mapping
-            // consistent without introducing a structured-error subclass
-            // hierarchy for a single distinction.
-            const status = /exceeds maximum allowed/i.test(message) ? 413 : 400;
-            res.status(status).json({
-                error: status === 413 ? 'File too large' : 'Failed to upload file',
-                message,
-            });
+            // Route by the typed errors `IFileService.upload` exposes from
+            // `@/types`. Anything that is not a validation error is an
+            // operational failure (storage write, inventory insert) and
+            // surfaces as 500 rather than being misclassified as 400.
+            if (error instanceof FileSizeExceededError) {
+                res.status(413).json({ error: 'File too large', message });
+                return;
+            }
+            if (error instanceof FileValidationError) {
+                res.status(400).json({ error: 'Failed to upload file', message });
+                return;
+            }
+            res.status(500).json({ error: 'Failed to upload file', message });
         }
     }
 

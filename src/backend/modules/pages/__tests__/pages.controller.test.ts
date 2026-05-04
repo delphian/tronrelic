@@ -3,6 +3,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { PagesController } from '../api/pages.controller.js';
 import type { IPageService } from '@/types';
+import { FileValidationError, FileSizeExceededError } from '@/types';
 import type { Request, Response } from 'express';
 import { ObjectId } from 'mongodb';
 
@@ -380,12 +381,11 @@ describe('PagesController', () => {
         });
 
         it('maps a size-violation error from the service to 413', async () => {
-            // Size validation lives in IFileService now; the controller is
-            // only responsible for translating the resulting error string
-            // into the right HTTP status.
+            // Size validation lives in IFileService now; the controller
+            // routes by the typed error class exposed from `@/types`.
             const largeFileSize = 15 * 1024 * 1024;
             mockService.uploadFile.mockRejectedValue(
-                new Error(
+                new FileSizeExceededError(
                     `File size (${largeFileSize} bytes) exceeds maximum allowed (10485760 bytes)`
                 )
             );
@@ -447,13 +447,35 @@ describe('PagesController', () => {
             expect(res.json).toHaveBeenCalledWith(mockFile);
         });
 
-        it('should handle upload errors', async () => {
-            mockService.getSettings.mockResolvedValue({
-                maxFileSize: 10 * 1024 * 1024,
-                allowedMimeTypes: []
-            });
+        it('maps a non-size validation error from the service to 400', async () => {
+            mockService.uploadFile.mockRejectedValue(
+                new FileValidationError('File extension ".exe" is not allowed. Allowed: .png, .jpg')
+            );
 
-            mockService.uploadFile.mockRejectedValue(new Error('Storage error'));
+            const req = createMockRequest({
+                file: {
+                    buffer: Buffer.from('test'),
+                    originalname: 'test.exe',
+                    mimetype: 'application/x-msdownload',
+                    size: 4
+                } as any
+            });
+            const res = createMockResponse();
+
+            await controller.uploadFile(req, res);
+
+            expect(res.status).toHaveBeenCalledWith(400);
+            expect(res.json).toHaveBeenCalledWith({
+                error: 'Failed to upload file',
+                message: 'File extension ".exe" is not allowed. Allowed: .png, .jpg'
+            });
+        });
+
+        it('maps an unexpected operational error to 500', async () => {
+            // Storage / inventory failures are not validation errors —
+            // they should surface as 500 rather than be misclassified as
+            // 400. This is the behavior change reviewers asked for.
+            mockService.uploadFile.mockRejectedValue(new Error('disk full'));
 
             const req = createMockRequest({
                 file: {
@@ -467,10 +489,10 @@ describe('PagesController', () => {
 
             await controller.uploadFile(req, res);
 
-            expect(res.status).toHaveBeenCalledWith(400);
+            expect(res.status).toHaveBeenCalledWith(500);
             expect(res.json).toHaveBeenCalledWith({
                 error: 'Failed to upload file',
-                message: 'Storage error'
+                message: 'disk full'
             });
         });
     });
