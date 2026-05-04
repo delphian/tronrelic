@@ -14,4 +14,11 @@ export type { IPageFile } from './IPageFile';
 export type { IPageSettings } from './IPageSettings';
 export type { IStorageProvider } from './IStorageProvider';
 export type { IPageService } from './IPageService';
+export type {
+    IFileService,
+    IFileRecord,
+    IFileSource,
+    IFileUploadOptions,
+    IFileListFilter
+} from './IFileService';
 export type { IMarkdownService, IFrontmatterData, IParsedMarkdown } from './IMarkdownService';

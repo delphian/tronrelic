@@ -4,6 +4,7 @@ import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { PagesModule } from '../index.js';
 import { MAIN_SYSTEM_CONTAINER_ID } from '../../menu/index.js';
 import { PageService } from '../services/page.service.js';
+import { FileService } from '../services/files/FileService.js';
 import type { ICacheService, IMenuService, IServiceRegistry } from '@/types';
 import { ObjectId } from 'mongodb';
 import type { Express, Router } from 'express';
@@ -88,7 +89,10 @@ describe('PagesModule', () => {
     beforeEach(() => {
         vi.clearAllMocks();
 
-        // Reset PageService singleton before each test
+        // Reset both singletons before each test so PagesModule's
+        // setDependencies() actually configures fresh instances rather
+        // than no-oping on a leftover singleton from a prior case.
+        FileService.resetForTests();
         (PageService as any).instance = undefined;
 
         mockDatabase = createMockDatabaseService();
@@ -190,7 +194,7 @@ describe('PagesModule', () => {
             await expect(module.run()).rejects.toThrow();
         });
 
-        it("should publish the storage provider on the service registry as 'storage'", async () => {
+        it("should publish the unified file service on the registry as 'files'", async () => {
             const module = new PagesModule();
 
             await module.init({
@@ -201,19 +205,23 @@ describe('PagesModule', () => {
                 serviceRegistry: mockRegistry
             });
 
-            // Pre-run() the registry must not yet expose 'storage' — the
+            // Pre-run() the registry must not yet expose 'files' — the
             // module-architecture rule requires registration during run(),
             // not init(), so other modules' init() phases never observe it.
-            expect(mockRegistry.has('storage')).toBe(false);
+            expect(mockRegistry.has('files')).toBe(false);
 
             await module.run();
 
-            expect(mockRegistry.has('storage')).toBe(true);
-            const storage = mockRegistry.get('storage');
-            expect(storage).toBeDefined();
-            expect(typeof (storage as any).upload).toBe('function');
-            expect(typeof (storage as any).delete).toBe('function');
-            expect(typeof (storage as any).getUrl).toBe('function');
+            expect(mockRegistry.has('files')).toBe(true);
+            const files = mockRegistry.get('files');
+            expect(files).toBeDefined();
+            // Sanity-check the IFileService surface so a regression in the
+            // registration name or instance shape surfaces here.
+            expect(typeof (files as any).upload).toBe('function');
+            expect(typeof (files as any).read).toBe('function');
+            expect(typeof (files as any).getUrl).toBe('function');
+            expect(typeof (files as any).delete).toBe('function');
+            expect(typeof (files as any).list).toBe('function');
         });
 
         it('should register menu item during run()', async () => {
@@ -348,7 +356,7 @@ describe('PagesModule', () => {
             // Each gets its own registry — in production there is one
             // PagesModule per app boot wired against one registry, so sharing
             // a registry across two modules would attempt a duplicate
-            // 'storage' registration that the real ServiceRegistry rejects.
+            // 'files' registration that the real ServiceRegistry rejects.
             const module1 = new PagesModule();
             const module2 = new PagesModule();
             const registry2 = createMockServiceRegistry();
@@ -374,8 +382,8 @@ describe('PagesModule', () => {
 
             expect(mockMenu.create).toHaveBeenCalledTimes(2);
             expect(mockApp.use).toHaveBeenCalledTimes(4); // 2 routers per module
-            expect(mockRegistry.has('storage')).toBe(true);
-            expect(registry2.has('storage')).toBe(true);
+            expect(mockRegistry.has('files')).toBe(true);
+            expect(registry2.has('files')).toBe(true);
         });
     });
 

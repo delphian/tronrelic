@@ -379,15 +379,17 @@ describe('PagesController', () => {
             expect(res.json).toHaveBeenCalledWith({ error: 'No file provided' });
         });
 
-        it('should reject file exceeding configured size limit', async () => {
-            // Mock settings with 10MB limit
-            mockService.getSettings.mockResolvedValue({
-                maxFileSize: 10 * 1024 * 1024, // 10MB
-                allowedMimeTypes: []
-            });
-
-            // Create a file larger than 10MB (15MB)
+        it('maps a size-violation error from the service to 413', async () => {
+            // Size validation lives in IFileService now; the controller is
+            // only responsible for translating the resulting error string
+            // into the right HTTP status.
             const largeFileSize = 15 * 1024 * 1024;
+            mockService.uploadFile.mockRejectedValue(
+                new Error(
+                    `File size (${largeFileSize} bytes) exceeds maximum allowed (10485760 bytes)`
+                )
+            );
+
             const req = createMockRequest({
                 file: {
                     buffer: Buffer.alloc(largeFileSize),
@@ -400,17 +402,11 @@ describe('PagesController', () => {
 
             await controller.uploadFile(req, res);
 
-            // Should return 413 Payload Too Large
             expect(res.status).toHaveBeenCalledWith(413);
             expect(res.json).toHaveBeenCalledWith({
                 error: 'File too large',
-                message: 'File size 15.00MB exceeds the maximum allowed size of 10.00MB',
-                fileSize: largeFileSize,
-                maxFileSize: 10 * 1024 * 1024
+                message: `File size (${largeFileSize} bytes) exceeds maximum allowed (10485760 bytes)`
             });
-
-            // Should NOT call uploadFile service
-            expect(mockService.uploadFile).not.toHaveBeenCalled();
         });
 
         it('should accept file within configured size limit', async () => {

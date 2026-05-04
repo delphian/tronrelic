@@ -36,12 +36,17 @@ modules/pages/
 │   └── pages.public-routes.ts # Public router factory
 ├── database/                # MongoDB schemas and type definitions
 │   ├── IPageDocument.ts     # Page model with frontmatter fields
-│   ├── IPageFileDocument.ts # File upload tracking
+│   ├── IFileDocument.ts     # Unified file inventory document
 │   ├── IPageSettingsDocument.ts # Configuration model
 │   └── index.ts             # Barrel exports
+├── migrations/              # Schema evolution scripts
+│   ├── 003_add_old_slugs_to_pages.ts
+│   └── 004_files_inventory.ts # page_files → module_pages_files
 ├── services/                # Business logic layer
-│   ├── page.service.ts      # Page/file/settings CRUD orchestration
+│   ├── page.service.ts      # Page/settings CRUD orchestration
 │   ├── markdown.service.ts  # Frontmatter parsing and HTML rendering
+│   ├── files/               # Platform-wide file inventory
+│   │   └── FileService.ts   # IFileService implementation
 │   └── storage/             # Infrastructure abstraction layer
 │       ├── StorageProvider.ts      # Abstract provider interface
 │       └── LocalStorageProvider.ts # Local filesystem implementation
@@ -76,17 +81,23 @@ The storage layer uses "Provider" terminology to signal infrastructure abstracti
 
 **Example from the codebase:**
 ```typescript
-// PagesModule.init() - Provider injection into singleton service
+// PagesModule.init() - storage provider feeds the file inventory; PageService
+// receives the inventory rather than the raw provider so file CRUD policy
+// (size, extension, sanitization) lives in one place.
 const storageProvider = new LocalStorageProvider();
 
-// Configure singleton once during bootstrap
-PageService.setDependencies(database, storageProvider, cacheService, logger);
+FileService.setDependencies(database, storageProvider, logger);
+const fileService = FileService.getInstance();
 
-// All consumers use the same shared instance
+PageService.setDependencies(database, fileService, cacheService, logger);
 const pageService = PageService.getInstance();
+
+// PagesModule.run() publishes the inventory so plugins consume it via the
+// service registry, decoupling them from the module's bootstrap order.
+serviceRegistry.register<IFileService>('files', fileService);
 ```
 
-This pattern enables configuration-based provider switching without changing PageService code. Future S3 or Cloudflare providers can be swapped at module initialization.
+Swapping local FS for S3 means constructing a different `IStorageProvider` here — neither `FileService` nor `PageService` change. Plugins discover the inventory through `context.services.watch('files', ...)` and remain unaware of which backend serves the bytes.
 
 ## Core Components
 
@@ -114,17 +125,19 @@ PageService implements `IPageService` and orchestrates all page, file, and setti
 // Private constructor - cannot instantiate directly
 private constructor(
     database: IDatabaseService,          // MongoDB collections
-    storageProvider: IStorageProvider,   // File storage (local, S3, etc.)
+    fileService: IFileService,           // Unified file inventory (delegate)
     cacheService: ICacheService,         // Redis cache for HTML
     logger: ISystemLogService            // Error tracking
 )
 
 // Configure once during bootstrap
-static setDependencies(database, storageProvider, cacheService, logger): void
+static setDependencies(database, fileService, cacheService, logger): void
 
 // All consumers use this shared instance
 static getInstance(): PageService
 ```
+
+PageService no longer takes `IStorageProvider` directly — file uploads delegate to `IFileService`, which owns the inventory and the storage backend. `PagesModule.init()` builds the `FileService` singleton over the local storage provider, then injects it here.
 
 **Common operations:**
 ```typescript
@@ -143,7 +156,8 @@ if (redirectPage) {
 // Render cached HTML
 const html = await pageService.renderPageHtml(page);
 
-// Upload file with validation
+// Upload file with validation (delegates to IFileService under the
+// pages-module source namespace; URL is resolved via fileService.getUrl(id))
 const file = await pageService.uploadFile(buffer, filename, mimeType);
 
 // Update configuration
@@ -192,24 +206,29 @@ abstract class StorageProvider implements IStorageProvider {
 
 ### LocalStorageProvider (Default Implementation)
 
-LocalStorageProvider stores files in `/public/uploads/` organized by date (YY/MM structure). Files are served via Express static middleware at `/uploads/*` routes.
+LocalStorageProvider is a thin write/read/delete adapter over the local filesystem. Path layout (date-based, namespace-based) is the *caller's* responsibility — `FileService` builds `<kind>/<sourceId>/YY/MM/<uuid>.<ext>` and passes it in. The provider creates parent directories, writes the bytes, and returns the URL form. Files are served via Express static middleware at `/uploads/*` routes.
 
 **Directory structure example:**
 ```
 public/uploads/
-├── 25/
-│   ├── 01/
-│   │   ├── announcement.png
-│   │   └── hero-image.jpg
-│   └── 10/
-│       └── product-screenshot.webp
+├── module/
+│   └── pages/
+│       └── 26/05/
+│           └── <uuid>.png            # Admin-uploaded page attachments
+├── plugin/
+│   └── image-gen/
+│       └── 26/05/
+│           └── <uuid>.png            # Plugin-generated images
+└── 25/
+    └── 10/
+        └── legacy-name.png           # Pre-migration files (path preserved)
 ```
 
 **Key implementation details:**
-- Files organized by year/month to avoid directory bloat
-- Returns relative paths (`/uploads/25/10/image.png`) for database storage
-- Uses Node.js `fs/promises` API for async operations
-- Creates date-based directories recursively if they don't exist
+- Path policy lives in `FileService`; the provider only joins, mkdirs, and writes
+- Returns the URL-relative path (e.g. `/uploads/module/pages/26/05/<uuid>.png`)
+- Accepts both URL form (`/uploads/...`) and bare relative paths on read/delete so legacy and new entries coexist
+- Path traversal is rejected — resolved targets must stay under the storage root
 - Returns boolean from `delete()` indicating whether file existed
 
 **Adding new providers:**
@@ -351,19 +370,14 @@ The oldSlugs index enables sub-millisecond redirect lookups even with thousands 
 
 **File upload validation:**
 
-The controller uses a two-layer validation strategy for file uploads:
+Validation is single-source: `IFileService.upload` enforces both `maxFileSize` and `allowedFileExtensions` from `page_settings`, rejecting violations with descriptive errors. The controller is a thin status mapper — it converts a "exceeds maximum allowed" error into HTTP 413 (Payload Too Large) and other validation errors into 400 (Bad Request). Multer still applies a hard byte ceiling at the multipart parser to prevent memory exhaustion before validation runs.
 
-1. **Multer hard limit** - 100MB ceiling to prevent memory exhaustion
-2. **Database-configured limit** - Runtime validation using `page_settings.maxFileSize`
-
-This enables administrators to adjust the limit via settings API without restarting the backend. When validation fails, the controller returns a 413 Payload Too Large error with friendly JSON:
+This split lets administrators adjust the runtime limit via the settings API without restarting the backend, and ensures every consumer of the file inventory (pages module, plugins via `'files'`) honors the same policy.
 
 ```json
 {
     "error": "File too large",
-    "message": "File size 15.23MB exceeds the maximum allowed size of 10.00MB",
-    "fileSize": 15966208,
-    "maxFileSize": 10485760
+    "message": "File size (15966208 bytes) exceeds maximum allowed (10485760 bytes)"
 }
 ```
 
@@ -409,34 +423,54 @@ interface IPageDocument {
 - Title is required (enforced in service layer)
 - When slug changes, old slug automatically added to oldSlugs array (no duplicates)
 
-### page_files Collection
+### module_pages_files Collection (Unified File Inventory)
 
-Tracks uploaded files with metadata for storage provider coordination.
+Holds the platform-wide file inventory owned by the pages module and exposed to other modules and plugins through `IFileService` on the service registry as `'files'`. Migration `004_files_inventory` replaced the legacy `page_files` collection — admin-uploaded attachments carry `source: { kind: 'module', id: 'pages' }`, and plugin outputs (e.g. image-gen) appear in the same inventory under their own source namespace.
 
 **Schema:**
 ```typescript
-interface IPageFileDocument {
+interface IFileDocument {
     _id: ObjectId;
-    originalName: string;            // Original filename from user upload
-    storedName: string;              // Sanitized filename after validation
-    mimeType: string;                // Content-Type for serving files
+    id: string;                      // Globally unique UUID (public handle)
+    source: {
+        kind: 'core' | 'module' | 'plugin';
+        id: string;                  // 'pages', 'image-gen', etc.
+    };
+    originalName: string;            // Original filename for display
+    storedName: string;              // Sanitized filename written to storage
+    mimeType: string;                // Content-Type for serving
     size: number;                    // File size in bytes
-    path: string;                    // Storage provider path (relative or absolute)
-    uploadedBy: string | null;       // Always null (admin uploads, future expansion)
+    path: string;                    // Storage-internal handle (opaque to consumers)
+    uploadedBy: string | null;       // Optional uploader identity
     uploadedAt: Date;
 }
 ```
 
-**Indexes:**
-- `mimeType` - Filter by type (images, PDFs, videos, etc.)
-- `uploadedAt` - Sort by recency for file browser
+**Indexes (created by migration 004):**
+- `id` (unique) — Public handle lookup
+- `source.kind`, `source.id`, `uploadedAt` (compound, descending) — Source-scoped listings
+- `uploadedAt` (descending) — Cross-source admin feed
+
+**Public handles, opaque paths:** Consumers reference files by `id` (UUID) and resolve URLs via `IFileService.getUrl(id)`. The `path` field is the storage backend's internal handle (local FS echoes the URL form; a future S3 provider would return an internal key) — never read it directly. New uploads land at `/uploads/<kind>/<id>/YY/MM/<uuid>.<ext>`; rows migrated from the legacy collection retain their original `/uploads/YY/MM/<filename>` paths and remain accessible.
 
 **Filename sanitization:**
-- Converts to lowercase
-- Replaces spaces with hyphens
-- Applies regex pattern from settings (default: removes all non-alphanumeric except `-_.)
-- Preserves file extension
-- Example: `"My Cool Photo.PNG"` → `"my-cool-photo.png"`
+- `originalName` is preserved verbatim for display
+- `storedName` uses the UUID as the stem (`<uuid>.<ext>`) so storage paths are immune to attacker-controlled filenames
+- Extension is lowercased and pattern-cleaned from `filenameSanitizationPattern`
+
+### Service Registry Publication
+
+`PagesModule.run()` registers the `FileService` singleton on the service registry as `'files'` so plugins consume it without a hard dependency on the module's bootstrap order:
+
+```typescript
+// In a plugin's init() hook
+const unwatch = context.services.watch<IFileService>('files', {
+    onAvailable: (files) => myService.setFileService(files),
+    onUnavailable: () => myService.setFileService(null)
+});
+```
+
+Source-tagging at upload time keeps each consumer's outputs separable for `list({ source })` filtering and operator disk-usage reporting. The underlying `IStorageProvider` stays internal to this module, so swapping local FS for S3 only touches provider construction here.
 
 ### page_settings Collection
 
@@ -760,7 +794,11 @@ const pageFile = await pageService.uploadFile(
 );
 
 console.log(`Uploaded: ${pageFile.path}`);
-// Outputs: "Uploaded: /uploads/25/10/hero-image.png"
+// Outputs: "Uploaded: /uploads/module/pages/26/05/<uuid>.png"
+//
+// pageFile._id carries the IFileService UUID (not an ObjectId hex).
+// Pass it back to DELETE /api/admin/pages/files/:id or to plugins
+// that consume the unified inventory (e.g. image-gen edit operations).
 ```
 
 ### Rendering a Page (Public)

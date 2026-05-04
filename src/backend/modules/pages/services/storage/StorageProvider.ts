@@ -17,13 +17,31 @@ export abstract class StorageProvider implements IStorageProvider {
      * Concrete implementations handle provider-specific upload logic.
      *
      * @param file - Buffer containing file data
-     * @param filename - Sanitized filename to use for storage
+     * @param relativePath - Storage-relative path supplied by the consumer
+     *                       (e.g. `module/pages/26/05/<uuid>.png`). Includes
+     *                       any namespace prefixing the consumer wants on
+     *                       disk. The provider creates intermediate
+     *                       directories.
      * @param mimeType - MIME type of the file (e.g., "image/png")
-     * @returns Promise resolving to the relative path where the file can be accessed
+     * @returns Promise resolving to the URL-relative path where the file can
+     *          be accessed (e.g. `/uploads/module/pages/26/05/<uuid>.png`).
      *
      * @throws Error if upload fails (storage full, permissions issue, etc.)
      */
-    abstract upload(file: Buffer, filename: string, mimeType: string): Promise<string>;
+    abstract upload(file: Buffer, relativePath: string, mimeType: string): Promise<string>;
+
+    /**
+     * Read bytes for a previously stored file.
+     *
+     * Concrete implementations resolve the path against the backend and
+     * return the file bytes. Returns null when the file does not exist;
+     * other errors propagate so callers can distinguish "missing" from
+     * "broken backend".
+     *
+     * @param path - Relative path to the file (as returned by upload())
+     * @returns Promise resolving to file bytes, or null if missing
+     */
+    abstract read(path: string): Promise<Buffer | null>;
 
     /**
      * Delete a file from storage.

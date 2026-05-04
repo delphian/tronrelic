@@ -273,7 +273,11 @@ export class PagesController {
     /**
      * POST /api/admin/pages/files
      *
-     * Upload a file.
+     * Upload a file. Size and extension validation live inside
+     * `IFileService.upload` (one source of truth across every consumer);
+     * this handler only translates the resulting error into the right HTTP
+     * status. The Multer hard cap (configured at router setup) still
+     * catches absurdly oversized payloads before they reach the buffer.
      *
      * Request: multipart/form-data with "file" field
      *
@@ -286,24 +290,6 @@ export class PagesController {
                 return;
             }
 
-            // Validate against database-configured limit
-            const settings = await this.pageService.getSettings();
-            const fileSizeBytes = req.file.size;
-            const maxFileSizeBytes = settings.maxFileSize;
-
-            if (fileSizeBytes > maxFileSizeBytes) {
-                const fileSizeMB = (fileSizeBytes / (1024 * 1024)).toFixed(2);
-                const maxFileSizeMB = (maxFileSizeBytes / (1024 * 1024)).toFixed(2);
-
-                res.status(413).json({
-                    error: 'File too large',
-                    message: `File size ${fileSizeMB}MB exceeds the maximum allowed size of ${maxFileSizeMB}MB`,
-                    fileSize: fileSizeBytes,
-                    maxFileSize: maxFileSizeBytes,
-                });
-                return;
-            }
-
             const pageFile = await this.pageService.uploadFile(
                 req.file.buffer,
                 req.file.originalname,
@@ -313,9 +299,17 @@ export class PagesController {
             res.status(201).json(pageFile);
         } catch (error) {
             this.logger.error('Failed to upload file', { error });
-            res.status(400).json({
-                error: 'Failed to upload file',
-                message: error instanceof Error ? error.message : 'Unknown error',
+            const message = error instanceof Error ? error.message : 'Unknown error';
+            // Map FileService validation errors to the right HTTP status:
+            // size violations are 413 (Payload Too Large), other
+            // validation failures (extension, etc.) are 400 (Bad Request).
+            // Pattern-matching the message keeps the wire-status mapping
+            // consistent without introducing a structured-error subclass
+            // hierarchy for a single distinction.
+            const status = /exceeds maximum allowed/i.test(message) ? 413 : 400;
+            res.status(status).json({
+                error: status === 413 ? 'File too large' : 'Failed to upload file',
+                message,
             });
         }
     }
