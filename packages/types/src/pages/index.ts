@@ -21,5 +21,5 @@ export type {
     IFileUploadOptions,
     IFileListFilter
 } from './IFileService';
-export { FileValidationError, FileSizeExceededError } from './IFileService';
+export { FileValidationError, FileSizeExceededError } from './IFileService.js';
 export type { IMarkdownService, IFrontmatterData, IParsedMarkdown } from './IMarkdownService';
