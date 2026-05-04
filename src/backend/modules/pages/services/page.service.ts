@@ -3,13 +3,13 @@ import type {
     IPage,
     IPageFile,
     IPageSettings,
-    IStorageProvider,
+    IFileService,
+    IFileRecord,
     ICacheService,
     IDatabaseService,
 } from '@/types';
 import type {
     IPageDocument,
-    IPageFileDocument,
     IPageSettingsDocument,
 } from '../database/index.js';
 import { DEFAULT_PAGE_SETTINGS } from '../database/index.js';
@@ -35,51 +35,58 @@ export class PageService implements IPageService {
     private static instance: PageService;
     private readonly markdownService: MarkdownService;
     private readonly pagesCollection;
-    private readonly filesCollection;
     private readonly settingsCollection;
+
+    /**
+     * Pages-module source descriptor for FileService uploads. Every file the
+     * pages module persists carries this discriminator so the unified
+     * inventory can filter `kind=module, id=pages`.
+     */
+    private static readonly FILE_SOURCE = { kind: 'module' as const, id: 'pages' };
 
     /**
      * Private constructor enforcing singleton pattern with dependency injection.
      *
-     * Use setDependencies() to configure the singleton, then getInstance() to access it.
-     *
      * @param database - Database service for MongoDB operations
-     * @param storageProvider - Storage provider for file uploads (local, S3, etc.)
+     * @param fileService - Unified file inventory (owns storage + tracking)
      * @param cacheService - Redis cache for rendered HTML
      * @param logger - System log service for error tracking
      */
     private constructor(
         private readonly database: IDatabaseService,
-        private readonly storageProvider: IStorageProvider,
+        private readonly fileService: IFileService,
         private readonly cacheService: ICacheService,
         private readonly logger: ISystemLogService
     ) {
         this.markdownService = new MarkdownService(cacheService);
         this.pagesCollection = database.getCollection<IPageDocument>('pages');
-        this.filesCollection = database.getCollection<IPageFileDocument>('page_files');
         this.settingsCollection = database.getCollection<IPageSettingsDocument>('page_settings');
     }
 
     /**
-     * Set the dependencies for the singleton instance.
-     *
-     * Must be called once during application bootstrap before getInstance().
-     * This enables dependency injection while maintaining the singleton pattern.
+     * Set the dependencies for the singleton instance. Idempotent — second
+     * calls are no-ops to keep test bootstrapping safe; production calls
+     * exactly once.
      *
      * @param database - Database service for MongoDB operations
-     * @param storageProvider - Storage provider for file uploads
+     * @param fileService - File inventory provided by the same module
      * @param cacheService - Redis cache for rendered HTML
      * @param logger - System log service for error tracking
      */
     public static setDependencies(
         database: IDatabaseService,
-        storageProvider: IStorageProvider,
+        fileService: IFileService,
         cacheService: ICacheService,
         logger: ISystemLogService
     ): void {
         if (!PageService.instance) {
-            PageService.instance = new PageService(database, storageProvider, cacheService, logger);
+            PageService.instance = new PageService(database, fileService, cacheService, logger);
         }
+    }
+
+    /** Test-only singleton reset; production code must not call this. */
+    public static resetForTests(): void {
+        (PageService as unknown as { instance: PageService | undefined }).instance = undefined;
     }
 
     /**
@@ -640,50 +647,21 @@ export class PageService implements IPageService {
      * @throws Error if storage upload fails
      */
     async uploadFile(file: Buffer, originalName: string, mimeType: string): Promise<IPageFile> {
-        const settings = await this.getSettings();
-
-        // Validate file size
-        if (file.length > settings.maxFileSize) {
-            throw new Error(
-                `File size (${file.length} bytes) exceeds maximum allowed (${settings.maxFileSize} bytes)`
-            );
-        }
-
-        // Validate file extension
-        const ext = this.getFileExtension(originalName);
-        if (!settings.allowedFileExtensions.includes(ext.toLowerCase())) {
-            throw new Error(
-                `File extension "${ext}" is not allowed. Allowed: ${settings.allowedFileExtensions.join(', ')}`
-            );
-        }
-
-        // Sanitize filename
-        const sanitizedName = this.sanitizeFilename(originalName, settings.filenameSanitizationPattern);
-
-        // Upload via storage provider
-        const path = await this.storageProvider.upload(file, sanitizedName, mimeType);
-
-        // Track in database
-        const fileDoc: IPageFileDocument = {
-            _id: new ObjectId(),
-            originalName,
-            storedName: sanitizedName,
-            mimeType,
-            size: file.length,
-            path,
-            uploadedBy: null, // Always null for now (admin uploads)
-            uploadedAt: new Date(),
-        };
-
-        await this.filesCollection.insertOne(fileDoc);
-
-        this.logger.info(`Uploaded file: ${originalName} -> ${path}`);
-
-        return this.toIPageFile(fileDoc);
+        // Pages module is one consumer among several — delegate to the
+        // unified inventory so cross-cutting concerns (size, extension,
+        // sanitization) live in one place. Source-tagged so the admin file
+        // browser can filter to admin uploads.
+        const record = await this.fileService.upload(file, originalName, mimeType, {
+            source: PageService.FILE_SOURCE
+        });
+        return this.fileRecordToIPageFile(record);
     }
 
     /**
      * List uploaded files with optional filtering.
+     *
+     * Honor-system: filters to pages-module uploads by default. Admin tools
+     * that want a cross-source view should call `IFileService.list` directly.
      *
      * @param options - Filter and pagination options
      * @returns Promise resolving to array of file records
@@ -695,54 +673,28 @@ export class PageService implements IPageService {
             skip?: number;
         } = {}
     ): Promise<IPageFile[]> {
-        const { mimeType, limit = 100, skip = 0 } = options;
-
-        const query: Record<string, unknown> = {};
-
-        if (mimeType) {
-            query.mimeType = new RegExp(`^${mimeType}`);
-        }
-
-        const files = await this.filesCollection
-            .find(query)
-            .sort({ uploadedAt: -1 })
-            .limit(limit)
-            .skip(skip)
-            .toArray();
-
-        return files.map((file) => this.toIPageFile(file));
+        const records = await this.fileService.list({
+            source: PageService.FILE_SOURCE,
+            mimeType: options.mimeType,
+            limit: options.limit,
+            skip: options.skip
+        });
+        return records.map((r) => this.fileRecordToIPageFile(r));
     }
 
     /**
-     * Delete a file by ID.
+     * Delete a file by id.
      *
-     * Removes file from storage provider and database record.
+     * Accepts the unified `IFileRecord.id` (UUID). Returns to the caller
+     * normally on success; throws when the id does not resolve so HTTP
+     * controllers can map to 404.
      *
-     * @param id - File ID to delete
-     * @returns Promise resolving when deletion completes
-     *
-     * @throws Error if file not found
-     * @throws Error if storage deletion fails
+     * @param id - UUID issued by `IFileService` at upload time
      */
     async deleteFile(id: string): Promise<void> {
-        const file = await this.filesCollection.findOne({ _id: new ObjectId(id) });
-        if (!file) {
-            throw new Error(`File with ID ${id} not found`);
-        }
-
-        // Delete from storage provider (returns true if file existed, false if already missing)
-        const fileExisted = await this.storageProvider.delete(file.path);
-
-        // Delete database record
-        await this.filesCollection.deleteOne({ _id: new ObjectId(id) });
-
-        // Log appropriate message based on whether physical file existed
-        if (fileExisted) {
-            this.logger.info(`Deleted file: ${file.originalName} (${file.path})`);
-        } else {
-            this.logger.warn(
-                `Deleted database record for missing file: ${file.originalName} (${file.path})`
-            );
+        const removed = await this.fileService.delete(id);
+        if (!removed) {
+            throw new Error(`File with id ${id} not found`);
         }
     }
 
@@ -916,18 +868,25 @@ export class PageService implements IPageService {
     }
 
     /**
-     * Convert database document to IPageFile interface.
+     * Adapt an `IFileRecord` (UUID-keyed unified inventory) to the legacy
+     * `IPageFile` shape the admin UI consumes. The `_id` field on
+     * `IPageFile` carries the FileService UUID — `deleteFile()` and the
+     * admin file browser pass the same string back through. The legacy
+     * `IPageFile.path` field maps to `IFileRecord.url`, which the inventory
+     * resolves once at record-construction time; that keeps a list of N
+     * files to a single DB query and survives concurrent deletes without
+     * 500ing the listing.
      */
-    private toIPageFile(doc: IPageFileDocument): IPageFile {
+    private fileRecordToIPageFile(record: IFileRecord): IPageFile {
         return {
-            _id: doc._id.toString(),
-            originalName: doc.originalName,
-            storedName: doc.storedName,
-            mimeType: doc.mimeType,
-            size: doc.size,
-            path: doc.path,
-            uploadedBy: doc.uploadedBy,
-            uploadedAt: doc.uploadedAt,
+            _id: record.id,
+            originalName: record.originalName,
+            storedName: record.storedName,
+            mimeType: record.mimeType,
+            size: record.sizeBytes,
+            path: record.url,
+            uploadedBy: record.uploadedBy,
+            uploadedAt: record.uploadedAt,
         };
     }
 
@@ -946,40 +905,4 @@ export class PageService implements IPageService {
         };
     }
 
-    /**
-     * Extract file extension from filename.
-     */
-    private getFileExtension(filename: string): string {
-        const match = filename.match(/\.[^.]+$/);
-        return match ? match[0] : '';
-    }
-
-    /**
-     * Sanitize filename for storage.
-     *
-     * Converts to lowercase, replaces spaces with hyphens, applies sanitization pattern,
-     * and preserves file extension.
-     *
-     * @param filename - Original filename from user
-     * @param pattern - Regex pattern for characters to replace (from settings)
-     */
-    private sanitizeFilename(filename: string, pattern: string): string {
-        const ext = this.getFileExtension(filename);
-        const nameWithoutExt = filename.slice(0, -ext.length);
-
-        // Convert to lowercase and replace spaces
-        let sanitized = nameWithoutExt.toLowerCase().replace(/\s+/g, '-');
-
-        // Apply sanitization pattern from settings
-        const regex = new RegExp(pattern, 'g');
-        sanitized = sanitized.replace(regex, '-');
-
-        // Collapse multiple hyphens
-        sanitized = sanitized.replace(/-+/g, '-');
-
-        // Remove leading/trailing hyphens
-        sanitized = sanitized.replace(/^-+|-+$/g, '');
-
-        return sanitized + ext.toLowerCase();
-    }
 }

@@ -17,13 +17,36 @@ export abstract class StorageProvider implements IStorageProvider {
      * Concrete implementations handle provider-specific upload logic.
      *
      * @param file - Buffer containing file data
-     * @param filename - Sanitized filename to use for storage
+     * @param relativePath - Storage-relative path supplied by the consumer
+     *                       (e.g. `module/pages/26/05/<uuid>.png`). Includes
+     *                       any namespace prefixing the consumer wants on
+     *                       disk. The provider creates intermediate
+     *                       directories.
      * @param mimeType - MIME type of the file (e.g., "image/png")
-     * @returns Promise resolving to the relative path where the file can be accessed
+     * @returns Promise resolving to a provider-specific storage handle that
+     *          callers must pass back into `read()`, `delete()`, and
+     *          `getUrl()`. The handle is **not** required to be a public
+     *          URL — `LocalStorageProvider` happens to echo the URL form
+     *          (`/uploads/...`) because Express serves it directly, but a
+     *          future S3 provider would return an internal bucket key and
+     *          resolve a CDN URL through `getUrl()`.
      *
      * @throws Error if upload fails (storage full, permissions issue, etc.)
      */
-    abstract upload(file: Buffer, filename: string, mimeType: string): Promise<string>;
+    abstract upload(file: Buffer, relativePath: string, mimeType: string): Promise<string>;
+
+    /**
+     * Read bytes for a previously stored file.
+     *
+     * Concrete implementations resolve the handle against the backend and
+     * return the file bytes. Returns null when the file does not exist;
+     * other errors propagate so callers can distinguish "missing" from
+     * "broken backend".
+     *
+     * @param handle - Storage handle as returned by `upload()`
+     * @returns Promise resolving to file bytes, or null if missing
+     */
+    abstract read(handle: string): Promise<Buffer | null>;
 
     /**
      * Delete a file from storage.
@@ -31,21 +54,22 @@ export abstract class StorageProvider implements IStorageProvider {
      * Concrete implementations handle provider-specific deletion logic.
      * Should gracefully handle missing files by returning false.
      *
-     * @param path - Relative path to the file (as returned by upload())
+     * @param handle - Storage handle as returned by `upload()`
      * @returns Promise resolving to true if file was deleted, false if already missing
      *
      * @throws Error if deletion fails for reasons other than file not found
      */
-    abstract delete(path: string): Promise<boolean>;
+    abstract delete(handle: string): Promise<boolean>;
 
     /**
-     * Get the public URL where a file can be accessed.
+     * Resolve the public, browser-safe URL for a previously stored file.
      *
-     * Concrete implementations may return relative paths (local storage)
-     * or absolute URLs (CDN, S3, Cloudflare).
+     * Concrete implementations may return the handle unchanged (local
+     * storage, where Express serves the path) or convert it into an
+     * absolute CDN URL (S3, Cloudflare R2).
      *
-     * @param path - Relative path to the file
+     * @param handle - Storage handle as returned by `upload()`
      * @returns The URL where the file can be accessed by users
      */
-    abstract getUrl(path: string): string;
+    abstract getUrl(handle: string): string;
 }

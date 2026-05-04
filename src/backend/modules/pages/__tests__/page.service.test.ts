@@ -2,6 +2,7 @@
 
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { PageService } from '../services/page.service.js';
+import { FileService } from '../services/files/FileService.js';
 import type { ICacheService, IStorageProvider } from '@/types';
 import { ObjectId } from 'mongodb';
 import { createMockDatabaseService } from '../../../tests/vitest/mocks/database-service.js';
@@ -41,15 +42,22 @@ class MockCacheService implements ICacheService {
 }
 
 /**
- * Mock StorageProvider for testing file operations.
+ * Mock StorageProvider for testing file operations. Maps relative paths
+ * verbatim into the in-memory file map so tests can inspect what got
+ * written; FileService prepends `<kind>/<sourceId>/<YY>/<MM>/...` so test
+ * paths look like `/uploads/module/pages/26/05/<uuid>.png`.
  */
 class MockStorageProvider implements IStorageProvider {
     private files = new Map<string, Buffer>();
 
-    async upload(file: Buffer, filename: string, mimeType: string): Promise<string> {
-        const path = `/uploads/test/${filename}`;
+    async upload(file: Buffer, relativePath: string, _mimeType: string): Promise<string> {
+        const path = `/uploads/${relativePath}`;
         this.files.set(path, file);
         return path;
+    }
+
+    async read(path: string): Promise<Buffer | null> {
+        return this.files.get(path) ?? null;
     }
 
     async delete(path: string): Promise<boolean> {
@@ -93,14 +101,18 @@ describe('PageService', () => {
         mockCache = new MockCacheService();
         mockStorage = new MockStorageProvider();
 
-        // Reset singleton and inject mock dependencies
+        // Reset singletons and wire FileService over the mocks. PageService
+        // delegates file CRUD to FileService now, so the test stack mirrors
+        // production composition.
+        FileService.resetForTests();
         (PageService as any).instance = undefined;
-        PageService.setDependencies(mockDatabase, mockStorage, mockCache, mockLogger);
+        FileService.setDependencies(mockDatabase, mockStorage, mockLogger);
+        PageService.setDependencies(mockDatabase, FileService.getInstance(), mockCache, mockLogger);
         pageService = PageService.getInstance();
     });
 
     afterEach(() => {
-        // Reset singleton after each test
+        FileService.resetForTests();
         (PageService as any).instance = undefined;
         mockDatabase.clear();
         mockCache.clear();
@@ -562,40 +574,22 @@ slug: "/test"
             ).rejects.toThrow('File extension ".exe" is not allowed');
         });
 
-        it('should sanitize filenames', async () => {
+        it('should preserve original filename for display', async () => {
+            // FileService records originalName verbatim (display) and uses
+            // a UUID-derived storedName (storage); tests cover both.
             const buffer = Buffer.from('test');
-            const file = await pageService.uploadFile(buffer, 'My Test File!@#$.png', 'image/png');
+            const file = await pageService.uploadFile(buffer, 'My Test File.png', 'image/png');
 
-            expect(file.storedName).toBe('my-test-file.png');
+            expect(file.originalName).toBe('My Test File.png');
+            expect(file.storedName).toMatch(/^[0-9a-f-]{36}\.png$/);
+            expect(file.path).toMatch(/^\/uploads\/module\/pages\/\d{2}\/\d{2}\/[0-9a-f-]{36}\.png$/);
         });
 
-        it('should collapse multiple spaces and hyphens', async () => {
-            const buffer = Buffer.from('test');
-            const file = await pageService.uploadFile(buffer, 'My    Test---File.png', 'image/png');
-
-            expect(file.storedName).toBe('my-test-file.png');
-        });
-
-        it('should trim leading and trailing hyphens', async () => {
-            const buffer = Buffer.from('test');
-            const file = await pageService.uploadFile(buffer, '---test-file---.png', 'image/png');
-
-            expect(file.storedName).toBe('test-file.png');
-        });
-
-        it('should handle uppercase extension', async () => {
+        it('should record uppercase extensions in lowercase', async () => {
             const buffer = Buffer.from('test');
             const file = await pageService.uploadFile(buffer, 'TestFile.PNG', 'image/png');
 
-            expect(file.storedName).toBe('testfile.png');
-        });
-
-        it('should remove unicode characters', async () => {
-            const buffer = Buffer.from('test');
-            const file = await pageService.uploadFile(buffer, 'café-résumé.pdf', 'application/pdf');
-
-            // Pattern [^a-z0-9-.] removes accented chars, replaced with hyphens, then collapsed
-            expect(file.storedName).toBe('caf-r-sum.pdf');
+            expect(file.storedName).toMatch(/\.png$/);
         });
     });
 
@@ -634,10 +628,10 @@ slug: "/test"
         });
 
         it('should throw error if file not found', async () => {
-            const fakeId = new ObjectId().toString();
+            const fakeId = '00000000-0000-0000-0000-000000000000';
 
             await expect(pageService.deleteFile(fakeId)).rejects.toThrow(
-                `File with ID ${fakeId} not found`
+                `File with id ${fakeId} not found`
             );
         });
     });

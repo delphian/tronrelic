@@ -7,12 +7,13 @@
  */
 
 import type { Express } from 'express';
-import type { ICacheService, IDatabaseService, IMenuService, IModule, IModuleMetadata, IServiceRegistry, IStorageProvider } from '@/types';
+import type { ICacheService, IDatabaseService, IFileService, IMenuService, IModule, IModuleMetadata, IServiceRegistry, IStorageProvider } from '@/types';
 import path from 'path';
 import fs from 'fs/promises';
 import { logger } from '../../lib/logger.js';
 import { MAIN_SYSTEM_CONTAINER_ID } from '../menu/index.js';
 import { PageService } from './services/page.service.js';
+import { FileService } from './services/files/FileService.js';
 import { LocalStorageProvider } from './services/storage/LocalStorageProvider.js';
 import { PagesController } from './api/pages.controller.js';
 import { createPagesRouter } from './api/pages.routes.js';
@@ -49,11 +50,12 @@ export interface IPagesModuleDependencies {
     app: Express;
 
     /**
-     * Service registry for publishing the storage provider as a platform-wide
-     * service. Plugins discover the storage backend with
-     * `context.services.get('storage')` instead of instantiating their own,
-     * which keeps file storage consistent when the underlying provider is
-     * later swapped (e.g., LocalStorageProvider to S3StorageProvider).
+     * Service registry for publishing the unified file service as a
+     * platform-wide capability. Modules and plugins discover the inventory
+     * with `context.services.get('files')` and call its UUID-keyed API —
+     * the underlying storage provider stays internal to this module so
+     * swapping local FS for S3 only touches the provider construction
+     * here.
      */
     serviceRegistry: IServiceRegistry;
 }
@@ -127,6 +129,7 @@ export class PagesModule implements IModule<IPagesModuleDependencies> {
     /**
      * Services created during init() phase.
      */
+    private fileService!: FileService;
     private pageService!: PageService;
     private controller!: PagesController;
 
@@ -185,15 +188,22 @@ export class PagesModule implements IModule<IPagesModuleDependencies> {
         // This prevents 500 errors when accessing uploaded files
         await this.ensureUploadsDirectoryExists();
 
-        // Create storage provider (default: local filesystem). Held on the
-        // module so run() can publish it to the service registry once all
-        // modules have completed init().
+        // Create storage provider (default: local filesystem). Internal to
+        // this module — consumers never see it directly; they go through
+        // FileService which owns the inventory + storage policy.
         this.storageProvider = new LocalStorageProvider();
 
-        // Initialize PageService singleton with dependencies
+        // Initialize FileService singleton (the unified inventory). Built
+        // before PageService because page uploads delegate through it.
+        FileService.setDependencies(this.database, this.storageProvider, this.logger);
+        this.fileService = FileService.getInstance();
+
+        // Initialize PageService singleton with dependencies. PageService
+        // no longer touches the storage provider directly — file CRUD
+        // routes through the inventory.
         PageService.setDependencies(
             this.database,
-            this.storageProvider,
+            this.fileService,
             this.cacheService,
             this.logger
         );
@@ -222,15 +232,14 @@ export class PagesModule implements IModule<IPagesModuleDependencies> {
     async run(): Promise<void> {
         this.logger.info('Running pages module...');
 
-        // Publish the storage provider on the service registry so other
-        // modules and plugins can discover the same instance via
-        // `services.get('storage')` instead of instantiating their own. This
-        // keeps file storage consistent when the underlying provider is later
-        // swapped (LocalStorageProvider to S3StorageProvider). Plugins that
-        // need file storage should self-namespace their filenames (e.g., the
-        // image-gen plugin writes under `image-gen/<...>`) to avoid colliding
-        // with Pages module attachments.
-        this.serviceRegistry.register<IStorageProvider>('storage', this.storageProvider);
+        // Publish the unified file inventory on the service registry. Every
+        // module or plugin that needs to persist or read bytes consumes
+        // `'files'` and references files by the UUID `IFileRecord.id`.
+        // Source-tagging at upload time keeps each consumer's outputs
+        // separable for listing and disk-usage reporting; the raw storage
+        // provider stays internal to this module so swapping the backend
+        // (local FS → S3 → R2) doesn't ripple out.
+        this.serviceRegistry.register<IFileService>('files', this.fileService);
 
         // Register menu item under the System container in `main`.
         // `requiresAdmin: true` is auto-applied by MenuService because the

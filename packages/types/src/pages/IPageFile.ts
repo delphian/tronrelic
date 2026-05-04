@@ -1,12 +1,22 @@
 /**
- * Represents an uploaded file tracked by the pages module.
+ * Represents an uploaded file as surfaced by the Pages module's admin UI.
  *
- * Files are stored via configurable storage providers (local filesystem, S3, etc.)
- * and tracked in the database for admin management and usage tracking.
+ * The pages module no longer owns its own files collection — it delegates to
+ * the unified `IFileService` published on the service registry as `'files'`.
+ * `IPageFile` is the legacy adapter shape the admin HTTP wire format
+ * consumes; new code should prefer `IFileRecord` directly.
+ *
+ * @deprecated Use `IFileRecord` from `@/types`. `IPageFile` is retained only
+ * to keep the admin pages HTTP wire format stable; consumers reaching the
+ * file inventory through `services.get<IFileService>('files')` already
+ * receive `IFileRecord` and should not reshape it back into `IPageFile`.
  */
 export interface IPageFile {
     /**
-     * Unique MongoDB identifier for the file record.
+     * Unified file inventory id (UUID issued by `IFileService` at upload time).
+     * Pass this back to the admin file routes (e.g. `DELETE /api/admin/pages/files/:id`)
+     * to reference the file. Despite the legacy field name, this is *not* a
+     * MongoDB `ObjectId` — it is the same UUID that `IFileRecord.id` carries.
      */
     _id?: string;
 
@@ -35,9 +45,13 @@ export interface IPageFile {
     size: number;
 
     /**
-     * Relative path where the file can be accessed by users.
-     * Example: "/uploads/25/10/image-name.png"
-     * Used for generating markdown syntax and serving files.
+     * URL-relative path where the file can be accessed by users. Used for
+     * generating markdown syntax and serving files. Path layout depends on
+     * the upload era: new uploads land under the source-namespaced layout
+     * (`/uploads/module/pages/YY/MM/<uuid>.<ext>`) while files migrated from
+     * the legacy `page_files` collection retain their original
+     * `/uploads/YY/MM/<filename>` paths. Treat as opaque — derive UI URLs
+     * from this field directly rather than reconstructing the path.
      */
     path: string;
 

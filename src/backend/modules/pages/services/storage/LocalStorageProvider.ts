@@ -5,23 +5,28 @@ import { StorageProvider } from './StorageProvider.js';
 /**
  * Local filesystem storage provider.
  *
- * Stores uploaded files in the /public/uploads/ directory organized by date.
- * Files are accessible via Express static middleware at /uploads/* routes.
+ * Stores files under `/public/uploads/` at the relative path supplied by the
+ * caller. Does not invent its own date-based or namespace layout — path policy
+ * lives in `FileService` so the inventory rows and the on-disk paths agree.
  *
- * Directory structure: /public/uploads/YY/MM/filename.ext
- * Example: /public/uploads/25/10/my-image.png
+ * Files served via Express static middleware at `/uploads/*` routes.
  */
 export class LocalStorageProvider extends StorageProvider {
     /**
      * Base directory where files are stored.
-     * Defaults to /public/uploads relative to project root.
+     * Defaults to `<cwd>/public/uploads` relative to project root.
      */
     private readonly baseDir: string;
 
     /**
-     * Create a local storage provider.
-     *
-     * @param baseDir - Optional override for base storage directory (default: /public/uploads)
+     * URL prefix returned by upload()/getUrl(). Express serves /uploads/*
+     * via static middleware, so the URL form mirrors the on-disk subtree.
+     */
+    private readonly urlPrefix = '/uploads';
+
+    /**
+     * @param baseDir - Optional override for base storage directory.
+     *                  Defaults to `<cwd>/public/uploads`.
      */
     constructor(baseDir?: string) {
         super();
@@ -29,90 +34,89 @@ export class LocalStorageProvider extends StorageProvider {
     }
 
     /**
-     * Upload a file to local filesystem.
+     * Write bytes to the requested relative path under the storage root.
      *
-     * Creates date-based subdirectories (YY/MM) if they don't exist.
-     * Writes file buffer to disk with sanitized filename.
+     * The caller decides the entire layout (typically
+     * `<kind>/<sourceId>/YY/MM/<id>.<ext>`); this method does no path
+     * mangling beyond joining with the base directory and creating parent
+     * dirs. Path traversal is rejected — the resolved absolute path must
+     * remain under `baseDir`.
      *
      * @param file - Buffer containing file data
-     * @param filename - Sanitized filename to use for storage
-     * @param mimeType - MIME type of the file (not used for local storage)
-     * @returns Promise resolving to relative path where file can be accessed
-     *
-     * @throws Error if filesystem write fails (permissions, disk full, etc.)
-     *
-     * @example
-     * const path = await provider.upload(buffer, "my-image.png", "image/png");
-     * // Returns: "/uploads/25/10/my-image.png"
+     * @param relativePath - Path under /uploads/ (no leading slash)
+     * @param _mimeType - Recorded by the inventory; not used by local FS
+     * @returns URL-relative path (e.g. `/uploads/module/pages/26/05/abc.png`)
      */
-    async upload(file: Buffer, filename: string, mimeType: string): Promise<string> {
-        const now = new Date();
-        const year = now.getFullYear().toString().slice(-2); // Last 2 digits
-        const month = (now.getMonth() + 1).toString().padStart(2, '0');
-
-        // Create date-based directory structure: /public/uploads/YY/MM/
-        const uploadDir = path.join(this.baseDir, year, month);
+    async upload(file: Buffer, relativePath: string, _mimeType: string): Promise<string> {
+        const cleaned = this.normalizeRelativePath(relativePath);
+        const targetPath = path.join(this.baseDir, cleaned);
+        this.assertWithinBase(targetPath);
 
         try {
-            await fs.mkdir(uploadDir, { recursive: true });
+            await fs.mkdir(path.dirname(targetPath), { recursive: true });
         } catch (error) {
             throw new Error(
                 `Failed to create upload directory: ${error instanceof Error ? error.message : 'Unknown error'}`
             );
         }
 
-        // Full filesystem path where file will be stored
-        const filePath = path.join(uploadDir, filename);
-
         try {
-            await fs.writeFile(filePath, file);
+            await fs.writeFile(targetPath, file);
         } catch (error) {
             throw new Error(
                 `Failed to write file to disk: ${error instanceof Error ? error.message : 'Unknown error'}`
             );
         }
 
-        // Return relative path for database and URL generation
-        return `/uploads/${year}/${month}/${filename}`;
+        return `${this.urlPrefix}/${cleaned}`;
     }
 
     /**
-     * Delete a file from local filesystem.
+     * Read previously stored bytes. Returns null on ENOENT so callers can
+     * distinguish "missing file" (clean up the inventory row) from "broken
+     * filesystem" (escalate the error).
      *
-     * Converts relative path to absolute filesystem path and removes the file.
-     * Does not delete empty parent directories.
-     *
-     * Gracefully handles missing files by returning false instead of throwing an error.
-     * This allows database records to be cleaned up even when physical files are missing
-     * (e.g., due to container restarts, manual deletion, or incomplete uploads).
-     *
-     * @param relativePath - Relative path to the file (e.g., "/uploads/25/10/image.png")
-     * @returns Promise resolving to true if file was deleted, false if already missing
-     *
-     * @throws Error if file deletion fails for reasons other than file not found
-     *
-     * @example
-     * const deleted = await provider.delete("/uploads/25/10/my-image.png");
-     * // Returns: true if file existed and was deleted, false if already missing
+     * Accepts either the URL-form path returned by upload()
+     * (`/uploads/module/pages/...`) or the bare relative path.
      */
-    async delete(relativePath: string): Promise<boolean> {
-        // Convert relative path to absolute filesystem path
-        // relativePath: "/uploads/25/10/image.png"
-        // Remove leading "/uploads" and join with baseDir
-        const pathWithoutPrefix = relativePath.replace(/^\/uploads\//, '');
-        const filePath = path.join(this.baseDir, pathWithoutPrefix);
+    async read(storedPath: string): Promise<Buffer | null> {
+        const cleaned = this.normalizeStoredPath(storedPath);
+        const filePath = path.join(this.baseDir, cleaned);
+        this.assertWithinBase(filePath);
+
+        try {
+            return await fs.readFile(filePath);
+        } catch (error) {
+            if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT') {
+                return null;
+            }
+            throw new Error(
+                `Failed to read file: ${error instanceof Error ? error.message : 'Unknown error'}`
+            );
+        }
+    }
+
+    /**
+     * Delete a previously stored file.
+     *
+     * Returns true on success, false when the file did not exist (so the
+     * inventory row can still be removed cleanly). Other errors propagate.
+     *
+     * Accepts either the URL-form path returned by upload()
+     * (`/uploads/module/pages/...`) or the bare relative path.
+     */
+    async delete(storedPath: string): Promise<boolean> {
+        const cleaned = this.normalizeStoredPath(storedPath);
+        const filePath = path.join(this.baseDir, cleaned);
+        this.assertWithinBase(filePath);
 
         try {
             await fs.unlink(filePath);
-            return true; // File existed and was successfully deleted
+            return true;
         } catch (error) {
-            // Gracefully handle file-not-found errors
             if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT') {
-                // File already deleted or never existed - return false but don't throw
                 return false;
             }
-
-            // Re-throw other errors (permissions, disk errors, etc.)
             throw new Error(
                 `Failed to delete file: ${error instanceof Error ? error.message : 'Unknown error'}`
             );
@@ -120,19 +124,38 @@ export class LocalStorageProvider extends StorageProvider {
     }
 
     /**
-     * Get the public URL where a file can be accessed.
-     *
-     * For local storage, returns the relative path unchanged.
-     * Express static middleware serves files at /uploads/* routes.
-     *
-     * @param path - Relative path to the file
-     * @returns The same relative path for browser access
-     *
-     * @example
-     * const url = provider.getUrl("/uploads/25/10/image.png");
-     * // Returns: "/uploads/25/10/image.png"
+     * For local storage the URL is the same path Express static serves.
+     * Accepts either the URL form or a bare relative path.
      */
-    getUrl(path: string): string {
-        return path;
+    getUrl(storedPath: string): string {
+        if (storedPath.startsWith(this.urlPrefix + '/') || storedPath === this.urlPrefix) {
+            return storedPath;
+        }
+        return `${this.urlPrefix}/${this.normalizeRelativePath(storedPath)}`;
+    }
+
+    /** Strip a leading `/uploads/` or `/` so we land at a path under baseDir. */
+    private normalizeStoredPath(storedPath: string): string {
+        if (storedPath.startsWith(this.urlPrefix + '/')) {
+            return storedPath.slice(this.urlPrefix.length + 1);
+        }
+        return this.normalizeRelativePath(storedPath);
+    }
+
+    /** Drop any leading slashes so `path.join(base, ...)` does not escape. */
+    private normalizeRelativePath(relativePath: string): string {
+        return relativePath.replace(/^\/+/, '');
+    }
+
+    /**
+     * Reject path traversal: the resolved absolute path must remain inside
+     * baseDir. Catches `..` segments and absolute-path injections.
+     */
+    private assertWithinBase(absolutePath: string): void {
+        const resolvedBase = path.resolve(this.baseDir) + path.sep;
+        const resolvedTarget = path.resolve(absolutePath);
+        if (resolvedTarget !== path.resolve(this.baseDir) && !resolvedTarget.startsWith(resolvedBase)) {
+            throw new Error('Refusing to operate on path outside the storage root');
+        }
     }
 }

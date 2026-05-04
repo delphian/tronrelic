@@ -2,6 +2,7 @@ import type { Request, Response } from 'express';
 import multer from 'multer';
 import type { IPageService } from '@/types';
 import type { ISystemLogService } from '@/types';
+import { FileValidationError, FileSizeExceededError } from '@/types';
 
 /**
  * Controller for pages module REST API endpoints.
@@ -273,7 +274,11 @@ export class PagesController {
     /**
      * POST /api/admin/pages/files
      *
-     * Upload a file.
+     * Upload a file. Size and extension validation live inside
+     * `IFileService.upload` (one source of truth across every consumer);
+     * this handler only translates the resulting error into the right HTTP
+     * status. The Multer hard cap (configured at router setup) still
+     * catches absurdly oversized payloads before they reach the buffer.
      *
      * Request: multipart/form-data with "file" field
      *
@@ -286,24 +291,6 @@ export class PagesController {
                 return;
             }
 
-            // Validate against database-configured limit
-            const settings = await this.pageService.getSettings();
-            const fileSizeBytes = req.file.size;
-            const maxFileSizeBytes = settings.maxFileSize;
-
-            if (fileSizeBytes > maxFileSizeBytes) {
-                const fileSizeMB = (fileSizeBytes / (1024 * 1024)).toFixed(2);
-                const maxFileSizeMB = (maxFileSizeBytes / (1024 * 1024)).toFixed(2);
-
-                res.status(413).json({
-                    error: 'File too large',
-                    message: `File size ${fileSizeMB}MB exceeds the maximum allowed size of ${maxFileSizeMB}MB`,
-                    fileSize: fileSizeBytes,
-                    maxFileSize: maxFileSizeBytes,
-                });
-                return;
-            }
-
             const pageFile = await this.pageService.uploadFile(
                 req.file.buffer,
                 req.file.originalname,
@@ -313,10 +300,20 @@ export class PagesController {
             res.status(201).json(pageFile);
         } catch (error) {
             this.logger.error('Failed to upload file', { error });
-            res.status(400).json({
-                error: 'Failed to upload file',
-                message: error instanceof Error ? error.message : 'Unknown error',
-            });
+            const message = error instanceof Error ? error.message : 'Unknown error';
+            // Route by the typed errors `IFileService.upload` exposes from
+            // `@/types`. Anything that is not a validation error is an
+            // operational failure (storage write, inventory insert) and
+            // surfaces as 500 rather than being misclassified as 400.
+            if (error instanceof FileSizeExceededError) {
+                res.status(413).json({ error: 'File too large', message });
+                return;
+            }
+            if (error instanceof FileValidationError) {
+                res.status(400).json({ error: 'Failed to upload file', message });
+                return;
+            }
+            res.status(500).json({ error: 'Failed to upload file', message });
         }
     }
 
