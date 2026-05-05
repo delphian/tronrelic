@@ -211,8 +211,10 @@ export class PagesModule implements IModule<IPagesModuleDependencies> {
         // Get PageService singleton instance
         this.pageService = PageService.getInstance();
 
-        // Create controller with singleton service
-        this.controller = new PagesController(this.pageService, this.logger);
+        // Create controller with the page service plus a direct handle to
+        // the unified file inventory — the admin file browser lists across
+        // sources, which `PageService.listFiles` deliberately does not.
+        this.controller = new PagesController(this.pageService, this.fileService, this.logger);
 
         this.logger.info('Pages module initialized');
     }

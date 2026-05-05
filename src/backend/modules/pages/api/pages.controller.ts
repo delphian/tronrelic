@@ -1,8 +1,40 @@
 import type { Request, Response } from 'express';
 import multer from 'multer';
-import type { IPageService } from '@/types';
+import type { IFileRecord, IFileService, IFileSource, IPageFile, IPageService } from '@/types';
 import type { ISystemLogService } from '@/types';
-import { FileValidationError, FileSizeExceededError } from '@/types';
+import { FILE_SOURCE_KINDS, FileValidationError, FileSizeExceededError } from '@/types';
+
+/** Default source filter when the admin file browser receives no `source` query param. */
+const DEFAULT_FILE_SOURCE: IFileSource = { kind: 'module', id: 'pages' };
+
+/**
+ * Type-narrowing predicate that checks `kind` against the canonical
+ * `FILE_SOURCE_KINDS` table from the types package, so the runtime validator
+ * stays in lockstep with `IFileSource['kind']` automatically.
+ */
+function isFileSourceKind(kind: string): kind is IFileSource['kind'] {
+    return (FILE_SOURCE_KINDS as readonly string[]).includes(kind);
+}
+
+/**
+ * Adapt an `IFileRecord` (UUID-keyed unified inventory) to the legacy
+ * `IPageFile` shape the admin UI consumes. Mirrors the same conversion in
+ * `PageService.fileRecordToIPageFile` — kept here so cross-source listings
+ * do not have to round-trip through `PageService`, which deliberately
+ * filters to the pages-module source only.
+ */
+function fileRecordToIPageFile(record: IFileRecord): IPageFile {
+    return {
+        _id: record.id,
+        originalName: record.originalName,
+        storedName: record.storedName,
+        mimeType: record.mimeType,
+        size: record.sizeBytes,
+        path: record.url,
+        uploadedBy: record.uploadedBy,
+        uploadedAt: record.uploadedAt,
+    };
+}
 
 /**
  * Controller for pages module REST API endpoints.
@@ -28,11 +60,18 @@ export class PagesController {
     /**
      * Create a pages controller.
      *
-     * @param pageService - Service for page/file/settings operations
+     * The unified file inventory is injected directly so the admin file
+     * browser can list across sources (cross-source listing is the
+     * documented escape-hatch in `IFileService` — `IPageService.listFiles`
+     * stays scoped to pages-module uploads only).
+     *
+     * @param pageService - Service for page/settings/upload operations
+     * @param fileService - Unified file inventory for cross-source admin reads
      * @param logger - System log service for error tracking
      */
     constructor(
         private readonly pageService: IPageService,
+        private readonly fileService: IFileService,
         private readonly logger: ISystemLogService
     ) {}
 
@@ -240,9 +279,13 @@ export class PagesController {
     /**
      * GET /api/admin/pages/files
      *
-     * List uploaded files with optional filtering.
+     * List uploaded files with optional filtering. Consults the unified file
+     * inventory (`IFileService`) directly so admins can scope across sources.
      *
      * Query parameters:
+     * - source: `'all'` for unfiltered, `'<kind>:<id>'` for a specific source
+     *           (e.g. `module:pages`, `plugin:image-gen`). Omitted defaults
+     *           to `module:pages` so the existing wire contract is preserved.
      * - mimeType: Filter by MIME type prefix (e.g., "image/")
      * - limit: Maximum results (default: 100)
      * - skip: Skip results for pagination (default: 0)
@@ -251,17 +294,25 @@ export class PagesController {
      */
     async listFiles(req: Request, res: Response): Promise<void> {
         try {
-            const { mimeType, limit, skip } = req.query;
+            const { source, mimeType, limit, skip } = req.query;
 
-            const options: Parameters<IPageService['listFiles']>[0] = {
+            const sourceFilter = this.parseSourceQuery(source);
+            if (sourceFilter === 'invalid') {
+                res.status(400).json({
+                    error: 'Invalid source filter',
+                    message: `source must be "all" or "<kind>:<id>" with kind in {${FILE_SOURCE_KINDS.join(', ')}}`
+                });
+                return;
+            }
+
+            const records = await this.fileService.list({
+                ...(sourceFilter ? { source: sourceFilter } : {}),
                 mimeType: mimeType as string | undefined,
                 limit: limit ? parseInt(limit as string, 10) : undefined,
                 skip: skip ? parseInt(skip as string, 10) : undefined,
-            };
+            });
 
-            const files = await this.pageService.listFiles(options);
-
-            res.json({ files });
+            res.json({ files: records.map((r) => fileRecordToIPageFile(r)) });
         } catch (error) {
             this.logger.error('Failed to list files', { error });
             res.status(500).json({
@@ -269,6 +320,53 @@ export class PagesController {
                 message: error instanceof Error ? error.message : 'Unknown error',
             });
         }
+    }
+
+    /**
+     * GET /api/admin/pages/files/sources
+     *
+     * Distinct `(source.kind, source.id)` pairs present in the inventory.
+     * Powers the admin file browser's source dropdown — pairs not yet
+     * present (e.g. a freshly enabled plugin that hasn't uploaded anything)
+     * legitimately don't appear.
+     *
+     * Response: { sources: IFileSource[] }
+     */
+    async listFileSources(_req: Request, res: Response): Promise<void> {
+        try {
+            const sources = await this.fileService.distinctSources();
+            res.json({ sources });
+        } catch (error) {
+            this.logger.error('Failed to list file sources', { error });
+            res.status(500).json({
+                error: 'Failed to list file sources',
+                message: error instanceof Error ? error.message : 'Unknown error',
+            });
+        }
+    }
+
+    /**
+     * Decode the `source` query parameter into a filter for `IFileService.list`.
+     *
+     * Returns:
+     * - `IFileSource` to scope to a single source
+     * - `null` when the caller asked for `all` (no source filter)
+     * - the default pages-module source when the param is absent (preserves
+     *   the original wire contract)
+     * - `'invalid'` on malformed input — the handler maps this to HTTP 400
+     */
+    private parseSourceQuery(raw: unknown): IFileSource | null | 'invalid' {
+        if (raw === undefined || raw === null || raw === '') {
+            return DEFAULT_FILE_SOURCE;
+        }
+        if (typeof raw !== 'string') return 'invalid';
+        if (raw === 'all') return null;
+        const sep = raw.indexOf(':');
+        if (sep <= 0 || sep === raw.length - 1) return 'invalid';
+        const kind = raw.slice(0, sep);
+        const id = raw.slice(sep + 1);
+        if (!isFileSourceKind(kind)) return 'invalid';
+        return { kind, id };
     }
 
     /**

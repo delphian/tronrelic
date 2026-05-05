@@ -220,6 +220,25 @@ export class FileService implements IFileService {
         return this.filesCollection.countDocuments(query);
     }
 
+    /**
+     * Group the inventory by `(source.kind, source.id)` so admin tooling can
+     * populate a source-aware filter UI without hardcoding which modules and
+     * plugins have written files. The aggregation walks the existing
+     * compound index on `source.kind, source.id, uploadedAt` (migration 004),
+     * so cost stays bounded as the inventory grows. Results are sorted by
+     * `(kind, id)` ascending — the sort matches the same index prefix and
+     * spares every consumer from re-sorting for stable display order.
+     */
+    async distinctSources(): Promise<IFileSource[]> {
+        const rows = await this.filesCollection
+            .aggregate<{ _id: { kind: IFileSource['kind']; id: string } }>([
+                { $group: { _id: { kind: '$source.kind', id: '$source.id' } } },
+                { $sort: { '_id.kind': 1, '_id.id': 1 } }
+            ])
+            .toArray();
+        return rows.map((r) => ({ kind: r._id.kind, id: r._id.id }));
+    }
+
     async delete(id: string): Promise<boolean> {
         const doc = await this.filesCollection.findOne({ id });
         if (!doc) return false;

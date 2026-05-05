@@ -21,10 +21,11 @@
  */
 
 /**
- * Origin classification for a stored file. Used both as a list filter and as
- * the on-disk path namespace prefix (`/uploads/<kind>/<id>/...`), giving
- * operators a clear filesystem story for "which files came from which
- * subsystem".
+ * Origin classifications for stored files. Single source of truth — the
+ * `IFileSource['kind']` type union is derived from this constant, and runtime
+ * validators (e.g. the admin file-browser query parser) iterate it directly.
+ * Adding a new kind here is the only edit required to teach the platform
+ * about it; the type system and validators pick it up automatically.
  *
  * - `'core'` — Files written by the platform itself (rare; reserved).
  * - `'module'` — Files owned by a built-in module (e.g. Pages admin uploads
@@ -32,8 +33,17 @@
  * - `'plugin'` — Files produced by an installed plugin (e.g. image-gen uses
  *               `{ kind: 'plugin', id: 'image-gen' }`).
  */
+export const FILE_SOURCE_KINDS = ['core', 'module', 'plugin'] as const;
+
+/**
+ * Origin classification for a stored file. Used both as a list filter and as
+ * the on-disk path namespace prefix (`/uploads/<kind>/<id>/...`), giving
+ * operators a clear filesystem story for "which files came from which
+ * subsystem". The union is derived from `FILE_SOURCE_KINDS` so the type and
+ * the runtime kind list cannot drift.
+ */
 export interface IFileSource {
-    kind: 'core' | 'module' | 'plugin';
+    kind: (typeof FILE_SOURCE_KINDS)[number];
     /**
      * Stable identifier within the kind. For modules this is the module id
      * (`'pages'`, `'menu'`); for plugins the manifest id (`'image-gen'`,
@@ -189,6 +199,15 @@ export interface IFileService {
      * pagination fields).
      */
     count(filter?: Omit<IFileListFilter, 'limit' | 'skip'>): Promise<number>;
+
+    /**
+     * Enumerate the distinct `{kind, id}` pairs currently present in the
+     * inventory. Intended for admin tooling that builds source-aware UIs
+     * (e.g. a dropdown listing every source that has uploaded files).
+     * Results are sorted by `(kind, id)` ascending so consumers can render
+     * directly without re-sorting.
+     */
+    distinctSources(): Promise<IFileSource[]>;
 
     /**
      * Remove the inventory row and the underlying bytes. Returns true when a

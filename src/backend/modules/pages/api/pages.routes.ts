@@ -40,6 +40,13 @@ export function createPagesRouter(controller: PagesController): Router {
     // NOTE: These routes must come BEFORE /:id to avoid "files" being treated as an ID
 
     /**
+     * GET /api/admin/pages/files/sources
+     * List distinct (kind, id) source pairs in the unified inventory.
+     * NOTE: Must come BEFORE /files/:id so "sources" is not treated as an id.
+     */
+    router.get('/files/sources', controller.listFileSources.bind(controller));
+
+    /**
      * GET /api/admin/pages/files
      * List uploaded files
      */
