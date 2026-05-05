@@ -52,11 +52,10 @@ interface ContractActivityAccumulator {
 
 /**
  * Shared context passed through transaction enrichment pipeline.
- * Provides block-level data needed to enrich individual transactions with USD prices and relationship graphs.
+ * Provides block-level data needed to enrich individual transactions with USD prices.
  */
 interface TransactionBuildContext {
     priceUSD: number | null;
-    addressGraph: Map<string, Set<string>>;
     blockTime: Date;
 }
 
@@ -989,11 +988,8 @@ export class BlockchainService implements IBlockchainService {
             const priceUSD = await this.priceService.getTrxPriceUsd();
             timings.getTrxPrice = Date.now() - stageStart;
 
-            const addressGraph = new Map<string, Set<string>>();
-
             const buildContext: TransactionBuildContext = {
                 priceUSD,
-                addressGraph,
                 blockTime
             };
 
@@ -1245,10 +1241,9 @@ export class BlockchainService implements IBlockchainService {
      * Transform a raw TronGrid transaction into an enriched ProcessedTransaction model.
      *
      * This method converts hex addresses to Base58, resolves transaction amounts in both sun and TRX, applies USD pricing from the
-     * block context, enriches sender and receiver addresses with exchange/wallet labels, extracts memos and contract details, builds
-     * resource consumption metrics, and constructs a relationship graph connecting addresses within the block. The resulting ProcessedTransaction
-     * provides a complete, framework-independent view of the transaction that observers and the database layer can consume without touching
-     * raw TronGrid responses, making future blockchain provider swaps easier.
+     * block context, enriches sender and receiver addresses with exchange/wallet labels, extracts memos and contract details, and builds
+     * resource consumption metrics. The resulting ProcessedTransaction provides a complete, framework-independent view of the transaction
+     * that observers and the database layer can consume without touching raw TronGrid responses, making future blockchain provider swaps easier.
      */
     private buildTransactionRecord(
         block: TronGridBlock,
@@ -1316,20 +1311,14 @@ export class BlockchainService implements IBlockchainService {
             }
         };
 
-        const relatedTransactions = this.resolveRelatedTransactions(context.addressGraph, payload.txId, [ownerAddress, recipientAddress]);
-
-        // Build analysis with related addresses and transactions
         const relatedAddresses = new Set<string>(
             [ownerAddress, recipientAddress].filter(address => address && address !== 'unknown')
         );
 
         payload.analysis = {
             ...(payload.analysis ?? {}),
-            relatedTransactions,
             relatedAddresses: Array.from(relatedAddresses).slice(0, 50)
         };
-
-        payload.analysis.clusterId = this.deriveClusterId(payload, relatedTransactions, context.blockTime);
 
         const snapshot = this.toSnapshot(payload);
 
@@ -1350,54 +1339,6 @@ export class BlockchainService implements IBlockchainService {
         const rawTransaction: ITransaction = { payload, snapshot, categories: emptyCategories, rawValue, info };
 
         return new ProcessedTransaction(rawTransaction);
-    }
-
-    /**
-     * Build a list of related transactions by tracking address reuse within the block.
-     *
-     * Maintains an in-memory graph of addresses to transaction IDs, allowing detection of chained activity like exchange shuffles or
-     * arbitrage sequences. When the same address appears in multiple transactions within a block, those transactions are linked together
-     * for pattern analysis, capped at 25 relationships per transaction to prevent unbounded growth on high-volume addresses.
-     */
-    private resolveRelatedTransactions(
-        addressGraph: Map<string, Set<string>>,
-        txId: string,
-        participants: string[]
-    ): string[] {
-        const related = new Set<string>();
-
-        for (const participant of participants) {
-            if (!participant || participant === 'unknown') {
-                continue;
-            }
-
-            const existing = addressGraph.get(participant);
-
-            if (existing) {
-                existing.forEach(id => {
-                    if (id !== txId) {
-                        related.add(id);
-                    }
-                });
-                existing.add(txId);
-            } else {
-                addressGraph.set(participant, new Set([txId]));
-            }
-        }
-
-        return Array.from(related).slice(0, 25);
-    }
-
-    /**
-     * Derive a cluster ID for grouping related transactions across multiple blocks.
-     * Currently a placeholder that returns existing cluster IDs. Future implementation could use graph algorithms to identify whale activity clusters or exchange flow patterns.
-     */
-    private deriveClusterId(
-        payload: TransactionPersistencePayload,
-        relatedTransactions: string[],
-        blockTime: Date
-    ): string | undefined {
-        return payload.analysis?.clusterId;
     }
 
     /**
