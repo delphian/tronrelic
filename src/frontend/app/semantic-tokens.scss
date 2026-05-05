@@ -398,6 +398,20 @@
     --input-group-gap: var(--spacing-5);        /* 0.75rem */
 
     /* ========================================================================
+     * NAVIGATION COMPONENT TOKENS
+     * ======================================================================== */
+
+    /* Navigation - Tab Active State
+     *
+     * The selected/active tab in the main nav bar uses a pair of subtle
+     * white-alpha overlays — fill at 0.10 over the dark surface, border at
+     * 0.20 — that don't have a generic surface/border equivalent. They
+     * exist as use-case semantics so the active treatment can be themed
+     * (e.g. brand-tinted) without touching every nav component. */
+    --color-nav-tab-active-background: rgba(255, 255, 255, 0.1);
+    --color-nav-tab-active-border: rgba(255, 255, 255, 0.2);
+
+    /* ========================================================================
      * TABLE COMPONENT TOKENS
      * ======================================================================== */
 

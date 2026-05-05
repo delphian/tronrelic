@@ -20,7 +20,7 @@
 .container {
     display: flex;
     align-items: center;
-    gap: var(--spacing-2);
+    gap: var(--gap-xs);
     width: 100%;
     min-width: 0;
     overflow-x: clip;
@@ -37,7 +37,7 @@
 .primary {
     display: flex;
     align-items: center;
-    gap: var(--spacing-2);
+    gap: var(--gap-xs);
     flex: 1;
     min-width: 0;
     overflow-x: clip;
@@ -76,15 +76,15 @@
     display: none;
     align-items: center;
     justify-content: center;
-    gap: var(--spacing-1);
+    gap: var(--gap-2xs);
     flex-shrink: 0;
-    padding: var(--spacing-2) var(--spacing-3);
+    padding: var(--padding-xs) var(--padding-xs);
     border: none;
     background: transparent;
     color: var(--color-text-muted);
     cursor: pointer;
     border-radius: var(--radius-sm);
-    font-size: var(--font-size-sm);
+    font-size: var(--font-size-body-sm);
     transition: background-color var(--transition-base), color var(--transition-base);
 }
 
@@ -113,11 +113,11 @@
     justify-content: center;
     min-width: 18px;
     height: 18px;
-    padding: 0 var(--spacing-1);
+    padding: 0 var(--padding-2xs);
     background: var(--color-primary);
     color: var(--color-text-on-primary);
     border-radius: var(--radius-full);
-    font-size: var(--font-size-xs);
+    font-size: var(--font-size-caption);
     font-weight: var(--font-weight-medium);
 }
 
@@ -171,7 +171,7 @@
     box-shadow: var(--shadow-xl);
     backdrop-filter: blur(18px);
     z-index: var(--z-index-modal);
-    padding: var(--spacing-4);
+    padding: var(--padding-sm);
     animation: slideDown var(--transition-base) ease-out;
 }
 
@@ -210,8 +210,7 @@
         /* Bottom sheet styling */
         border-radius: var(--radius-xl) var(--radius-xl) 0 0;
         border-bottom: none;
-        padding: var(--spacing-6);
-        padding-top: var(--spacing-8);
+        padding: var(--padding-md);
 
         /* Slide up animation */
         animation: slideUp 0.3s ease-out;
@@ -243,7 +242,7 @@
     .drag_handle {
         display: block;
         position: absolute;
-        top: var(--spacing-3);
+        top: var(--padding-xs);
         left: 50%;
         transform: translateX(-50%);
         width: 36px;
@@ -258,8 +257,8 @@
  */
 .close_button {
     position: absolute;
-    top: var(--spacing-2);
-    right: var(--spacing-2);
+    top: var(--padding-xs);
+    right: var(--padding-xs);
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -290,8 +289,8 @@
 .dropdown_items {
     display: flex;
     flex-direction: column;
-    gap: var(--spacing-1);
-    padding-top: var(--spacing-6);
+    gap: var(--gap-2xs);
+    padding-top: var(--padding-md);
 }
 
 /**
@@ -307,10 +306,10 @@
 .dropdown_item > * {
     display: block;
     width: 100%;
-    padding: var(--spacing-3) var(--spacing-4);
+    padding: var(--padding-xs) var(--padding-sm);
     border-radius: var(--radius-sm);
     color: var(--color-text-muted);
-    font-size: var(--font-size-base);
+    font-size: var(--font-size-body);
     text-decoration: none;
     background: transparent;
     border: none;

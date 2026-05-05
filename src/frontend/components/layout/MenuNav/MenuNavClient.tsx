@@ -100,6 +100,11 @@ export function MenuNavClient({ namespace, items, generatedAt, ariaLabel }: IMen
     const dispatch = useAppDispatch();
     const menuConfig = useMenuConfig(namespace);
     const [expandedCategoryId, setExpandedCategoryId] = useState<string | null>(null);
+    // Tracks an open second-level submenu inside the currently expanded category
+    // dropdown. Single-open invariant matches top-level categories. Initial null
+    // is shared by server and first client render so this state never causes a
+    // hydration mismatch — both render the dropdown closed.
+    const [expandedSubcategoryId, setExpandedSubcategoryId] = useState<string | null>(null);
     const [isMounted, setIsMounted] = useState(false);
     const [hasInitialized, setHasInitialized] = useState(false);
     const hasInitializedRef = useRef(false);
@@ -169,6 +174,9 @@ export function MenuNavClient({ namespace, items, generatedAt, ariaLabel }: IMen
         if (expandedCategoryId) {
             const button = categoryButtonRefs.current.get(expandedCategoryId);
             setExpandedCategoryId(null);
+            // Reset nested submenu so reopening the parent never restores
+            // a stale second-level expansion.
+            setExpandedSubcategoryId(null);
             button?.focus();
         }
     }, [expandedCategoryId]);
@@ -213,9 +221,24 @@ export function MenuNavClient({ namespace, items, generatedAt, ariaLabel }: IMen
 
     /**
      * Toggles a category's expanded state.
+     *
+     * Reopening or switching the top-level category also collapses any open
+     * second-level submenu so the dropdown never restores stale nested state.
      */
     const toggleCategory = (categoryId: string) => {
         setExpandedCategoryId(prev => prev === categoryId ? null : categoryId);
+        setExpandedSubcategoryId(null);
+    };
+
+    /**
+     * Toggles the expanded state of a nested subcategory inside the open
+     * category dropdown. Mirrors the single-open invariant of toggleCategory:
+     * opening a different subcategory id collapses the previously expanded one.
+     *
+     * @param subcategoryId - Menu node id of the second-level container being toggled
+     */
+    const toggleSubcategory = (subcategoryId: string) => {
+        setExpandedSubcategoryId(prev => prev === subcategoryId ? null : subcategoryId);
     };
 
     /**
@@ -348,6 +371,82 @@ export function MenuNavClient({ namespace, items, generatedAt, ariaLabel }: IMen
     const navAriaLabel = ariaLabel || `${namespace} navigation`;
 
     /**
+     * Renders one row inside an expanded category dropdown.
+     *
+     * Leaf rows render as a navigation link. Rows whose node has its own
+     * children render as a second-level toggle paired with a sub-panel
+     * containing the node's own link (when it has a URL) plus its
+     * grandchildren. The sub-panel positions as a side flyout above the
+     * mobile breakpoint and as an inline accordion below it via CSS in
+     * MenuNav.module.scss — there is no JS branch for viewport.
+     *
+     * @param child - Menu node to render
+     * @returns Dropdown row JSX
+     */
+    const renderDropdownChild = (child: MenuNodeSerialized): JSX.Element => {
+        const hasChildren = !!(child.children && child.children.length > 0);
+
+        if (!hasChildren) {
+            return (
+                <div key={child._id} className={styles.categoryDropdownItem} role="none">
+                    {renderLinkItem(child, true)}
+                </div>
+            );
+        }
+
+        const isSubExpanded = expandedSubcategoryId === child._id;
+        const isActive = child.url
+            ? (pathname === child.url || pathname.startsWith(`${child.url}/`))
+            : false;
+
+        return (
+            <div key={child._id} className={styles.categoryDropdownItem} role="none">
+                <button
+                    type="button"
+                    className={`${styles.subcategoryButton} ${isActive ? styles.active : ''}`}
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        toggleSubcategory(child._id);
+                    }}
+                    role="menuitem"
+                    aria-expanded={isSubExpanded}
+                    aria-haspopup="menu"
+                    aria-label={`${isSubExpanded ? 'Collapse' : 'Expand'} ${child.label} submenu`}
+                >
+                    <span>{child.label}</span>
+                    {isSubExpanded ? (
+                        <ChevronDown size={14} className={styles.subcategoryChevron} />
+                    ) : (
+                        <ChevronRight size={14} className={styles.subcategoryChevron} />
+                    )}
+                </button>
+                {isSubExpanded && (
+                    <div
+                        className={styles.subcategoryPanel}
+                        role="menu"
+                        aria-label={`${child.label} submenu`}
+                    >
+                        {child.url && (
+                            <div className={styles.categoryDropdownItem} role="none">
+                                {renderLinkItem(child, true)}
+                            </div>
+                        )}
+                        {child.children!.map(grandchild => (
+                            <div
+                                key={grandchild._id}
+                                className={styles.categoryDropdownItem}
+                                role="none"
+                            >
+                                {renderLinkItem(grandchild, true)}
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </div>
+        );
+    };
+
+    /**
      * Renders the category dropdown portal.
      * Portaled to document.body to escape overflow:hidden constraints.
      */
@@ -386,15 +485,7 @@ export function MenuNavClient({ namespace, items, generatedAt, ariaLabel }: IMen
                             {renderLinkItem(expandedCategory, true)}
                         </div>
                     )}
-                    {expandedCategory.children.map(child => (
-                        <div
-                            key={child._id}
-                            className={styles.categoryDropdownItem}
-                            role="none"
-                        >
-                            {renderLinkItem(child, true)}
-                        </div>
-                    ))}
+                    {expandedCategory.children.map(child => renderDropdownChild(child))}
                 </div>
             </>,
             document.body

@@ -14,7 +14,7 @@
 
 .nav {
     display: flex;
-    gap: var(--spacing-4);
+    gap: var(--gap-sm);
     flex: 1;
     min-width: 0;
     overflow-x: clip;
@@ -46,7 +46,7 @@
 }
 
 .tab {
-    padding: var(--spacing-4) var(--spacing-7);
+    padding: var(--padding-sm) var(--padding-md);
     background: transparent;
     border: var(--border-width-thin) solid transparent;
     border-radius: var(--radius-sm);
@@ -55,18 +55,18 @@
     color: inherit;
     transition: all var(--transition-base);
     cursor: pointer;
-    font-size: var(--font-size-sm);
+    font-size: var(--font-size-body-sm);
     line-height: var(--line-height-normal);
 }
 
 .tab:hover {
     background: var(--color-surface-elevated);
-    border-color: rgba(255, 255, 255, 0.1);
+    border-color: var(--color-nav-tab-active-background);
 }
 
 .tab.active {
-    background: rgba(255, 255, 255, 0.1);
-    border-color: rgba(255, 255, 255, 0.2);
+    background: var(--color-nav-tab-active-background);
+    border-color: var(--color-nav-tab-active-border);
     font-weight: var(--font-weight-medium);
 }
 
@@ -86,8 +86,8 @@
 .categoryButton {
     display: inline-flex;
     align-items: center;
-    gap: var(--spacing-2);
-    padding: var(--spacing-4) var(--spacing-7);
+    gap: var(--gap-xs);
+    padding: var(--padding-sm) var(--padding-md);
     background: transparent;
     border: var(--border-width-thin) solid transparent;
     border-radius: var(--radius-sm);
@@ -95,7 +95,7 @@
     color: inherit;
     transition: all var(--transition-base);
     cursor: pointer;
-    font-size: var(--font-size-sm);
+    font-size: var(--font-size-body-sm);
     line-height: var(--line-height-normal);
     font-family: inherit;
     white-space: nowrap;
@@ -103,7 +103,7 @@
 
 .categoryButton:hover {
     background: var(--color-surface-elevated);
-    border-color: rgba(255, 255, 255, 0.1);
+    border-color: var(--color-nav-tab-active-background);
 }
 
 .categoryButton:focus-visible {
@@ -112,8 +112,8 @@
 }
 
 .categoryButton.active {
-    background: rgba(255, 255, 255, 0.1);
-    border-color: rgba(255, 255, 255, 0.2);
+    background: var(--color-nav-tab-active-background);
+    border-color: var(--color-nav-tab-active-border);
     font-weight: var(--font-weight-medium);
 }
 
@@ -125,7 +125,7 @@
     display: block;
     width: 100%;
     text-align: left;
-    margin-bottom: var(--spacing-1);
+    margin-bottom: var(--gap-2xs);
 }
 
 .nested:last-child {
@@ -155,7 +155,7 @@
     background: var(--modal-dialog-background);
     border: var(--modal-dialog-border);
     border-radius: var(--radius-md);
-    padding: var(--spacing-2);
+    padding: var(--padding-xs);
     box-shadow: var(--shadow-xl);
     backdrop-filter: blur(18px);
     z-index: calc(var(--z-index-modal) + 11);
@@ -201,8 +201,7 @@
         overscroll-behavior: contain;
         border-radius: var(--radius-xl) var(--radius-xl) 0 0;
         border-bottom: none;
-        padding: var(--spacing-6);
-        padding-top: var(--spacing-8);
+        padding: var(--padding-md);
         animation: categoryDropdown_slideUp 0.25s ease-out;
     }
 
@@ -216,19 +215,24 @@
             transform: translateY(0);
         }
     }
+
 }
 
 .categoryDropdownItem {
     display: block;
+    // Anchor for an absolutely-positioned `.subcategoryPanel` so a nested
+    // submenu flies out to the right of *its parent row*, not the dropdown.
+    // Inert when no sub-panel is rendered.
+    position: relative;
 }
 
 .categoryDropdownItem > a {
     display: block;
     width: 100%;
-    padding: var(--spacing-3) var(--spacing-4);
+    padding: var(--padding-xs) var(--padding-sm);
     border-radius: var(--radius-sm);
     color: var(--color-text-muted);
-    font-size: var(--font-size-sm);
+    font-size: var(--font-size-body-sm);
     text-decoration: none;
     transition: color var(--transition-base), background-color var(--transition-base);
 }
@@ -241,4 +245,105 @@
 .categoryDropdownItem > a:focus-visible {
     outline: var(--focus-outline-width) solid var(--focus-outline-color);
     outline-offset: var(--focus-outline-offset);
+}
+
+/**
+ * Second-level (subcategory) toggle inside a category dropdown.
+ *
+ * Visually matches a dropdown link row so leaf and toggle rows align.
+ * The button is full-width with the label on the left and a chevron on
+ * the right; clicking it opens the corresponding `.subcategoryPanel`.
+ */
+.subcategoryButton {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    padding: var(--padding-xs) var(--padding-sm);
+    background: transparent;
+    border: var(--border-width-thin) solid transparent;
+    border-radius: var(--radius-sm);
+    color: var(--color-text-muted);
+    font-size: var(--font-size-body-sm);
+    font-family: inherit;
+    text-align: left;
+    cursor: pointer;
+    transition: color var(--transition-base), background-color var(--transition-base);
+}
+
+.subcategoryButton:hover {
+    color: var(--color-text);
+    background: var(--color-surface-muted);
+}
+
+.subcategoryButton:focus-visible {
+    outline: var(--focus-outline-width) solid var(--focus-outline-color);
+    outline-offset: var(--focus-outline-offset);
+}
+
+.subcategoryButton.active {
+    color: var(--color-text);
+    background: var(--color-surface-muted);
+    font-weight: var(--font-weight-medium);
+}
+
+.subcategoryChevron {
+    opacity: 0.6;
+    flex-shrink: 0;
+    margin-left: var(--gap-sm);
+}
+
+/**
+ * Side-flyout panel rendered when a subcategory is expanded. Default
+ * styles target desktop (≥ mobile breakpoint): an absolutely-positioned
+ * panel anchored to the right edge of its parent row, with the same
+ * surface chrome as the parent dropdown so the two visually pair as one
+ * cascading menu.
+ *
+ * The mobile override further down in this file flattens the panel into
+ * an inline accordion that grows within the bottom-sheet, which has no
+ * horizontal room for a flyout. Switching modes is pure CSS; the React
+ * tree is identical at every viewport.
+ */
+.subcategoryPanel {
+    position: absolute;
+    top: 0;
+    left: 100%;
+    margin-left: var(--gap-2xs);
+    min-width: 200px;
+    background: var(--modal-dialog-background);
+    border: var(--modal-dialog-border);
+    border-radius: var(--radius-md);
+    padding: var(--padding-xs);
+    box-shadow: var(--shadow-xl);
+    backdrop-filter: blur(18px);
+    animation: categoryDropdown_fadeIn var(--transition-base) ease-out;
+    z-index: 1;
+}
+
+/**
+ * Inline-accordion variant of `.subcategoryPanel` for the mobile
+ * bottom-sheet, where there is no horizontal room for a side flyout.
+ * The panel returns to the normal flow, drops its surface chrome
+ * (which would compete with the bottom-sheet's own surface), and
+ * indents to communicate hierarchy. The bottom-sheet's `overflow-y:
+ * auto` handles the vertical growth.
+ *
+ * This block lives after the desktop default so equal-specificity
+ * rules cascade correctly inside the matching viewport.
+ */
+@media (max-width: $breakpoint-mobile) {
+    .subcategoryPanel {
+        position: static;
+        left: auto;
+        margin-left: 0;
+        margin-top: var(--gap-2xs);
+        min-width: 0;
+        padding: 0 0 0 var(--padding-sm);
+        background: transparent;
+        border: none;
+        box-shadow: none;
+        backdrop-filter: none;
+        animation: none;
+    }
 }
