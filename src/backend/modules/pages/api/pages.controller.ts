@@ -2,10 +2,19 @@ import type { Request, Response } from 'express';
 import multer from 'multer';
 import type { IFileRecord, IFileService, IFileSource, IPageFile, IPageService } from '@/types';
 import type { ISystemLogService } from '@/types';
-import { FileValidationError, FileSizeExceededError } from '@/types';
+import { FILE_SOURCE_KINDS, FileValidationError, FileSizeExceededError } from '@/types';
 
 /** Default source filter when the admin file browser receives no `source` query param. */
 const DEFAULT_FILE_SOURCE: IFileSource = { kind: 'module', id: 'pages' };
+
+/**
+ * Type-narrowing predicate that checks `kind` against the canonical
+ * `FILE_SOURCE_KINDS` table from the types package, so the runtime validator
+ * stays in lockstep with `IFileSource['kind']` automatically.
+ */
+function isFileSourceKind(kind: string): kind is IFileSource['kind'] {
+    return (FILE_SOURCE_KINDS as readonly string[]).includes(kind);
+}
 
 /**
  * Adapt an `IFileRecord` (UUID-keyed unified inventory) to the legacy
@@ -291,7 +300,7 @@ export class PagesController {
             if (sourceFilter === 'invalid') {
                 res.status(400).json({
                     error: 'Invalid source filter',
-                    message: 'source must be "all" or "<kind>:<id>" with kind in {core, module, plugin}'
+                    message: `source must be "all" or "<kind>:<id>" with kind in {${FILE_SOURCE_KINDS.join(', ')}}`
                 });
                 return;
             }
@@ -356,7 +365,7 @@ export class PagesController {
         if (sep <= 0 || sep === raw.length - 1) return 'invalid';
         const kind = raw.slice(0, sep);
         const id = raw.slice(sep + 1);
-        if (kind !== 'core' && kind !== 'module' && kind !== 'plugin') return 'invalid';
+        if (!isFileSourceKind(kind)) return 'invalid';
         return { kind, id };
     }
 
