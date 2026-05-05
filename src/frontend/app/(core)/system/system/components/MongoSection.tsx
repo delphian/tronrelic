@@ -2,26 +2,21 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
-    Database,
-    Activity,
-    Layers,
-    HardDrive,
-    Zap,
-    Play,
-    CheckCircle,
-    XCircle,
     AlertCircle,
-    RefreshCw
+    CheckCircle,
+    Play,
+    RefreshCw,
+    XCircle
 } from 'lucide-react';
 import { Button } from '../../../../../components/ui/Button';
 import { Badge } from '../../../../../components/ui/Badge';
 import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../../components/ui/Table';
-import { Stack, Grid } from '../../../../../components/layout';
 import { ClientTime } from '../../../../../components/ui/ClientTime';
 import { getRuntimeConfig } from '../../../../../lib/runtimeConfig';
-import { HealthMetric } from './HealthMetric';
+import { formatBytes } from '../../../../../lib/format';
+import { StatStrip } from './StatStrip';
 import { CollectionBrowser } from './CollectionBrowser';
-import styles from './DatabaseSection.module.scss';
+import styles from './MongoSection.module.scss';
 
 interface Props {
     token: string;
@@ -35,13 +30,6 @@ interface DatabaseStatus {
     databaseSize: number | null;
     collectionCount: number;
     recentErrors: string[];
-}
-
-interface ClickHouseStatus {
-    connected: boolean;
-    responseTime: number | null;
-    tableCount: number;
-    databaseSize: number | null;
 }
 
 interface IMigrationMetadata {
@@ -58,12 +46,6 @@ interface IMigrationExecution {
     migrationId: string;
     status: 'completed' | 'failed';
     source: string;
-    /**
-     * ISO-8601 timestamp string. Typed as `string` (not `Date`) because the
-     * value crosses the wire as JSON — `JSON.parse` never produces Date
-     * instances, and a stale `Date` typing would coerce to "[object Object]"
-     * inside template-literal keys.
-     */
     executedAt: string;
     executionDuration: number;
     error?: string;
@@ -84,64 +66,45 @@ interface IMigrationHistory {
 }
 
 /**
- * Database administration body — health, migrations, and collection browser.
+ * MongoDB administration body — health, migrations, and the collection browser.
  *
- * Rendered inside a CollapsibleSection — this component only mounts when
- * the section is expanded, which means health polling, migration status
- * fetches, and collection-browser stats stay quiet until the admin opens
- * the section.
+ * Migrations live here because the `migrations` audit log is stored in
+ * MongoDB; the executor still dispatches ClickHouse-targeted migrations
+ * to the ClickHouse engine, but the operator-facing record of what ran
+ * and when belongs to Mongo. ClickHouse health and the table browser
+ * are a separate console row (see ClickHouseSection).
  */
-export function DatabaseSection({ token }: Props) {
+export function MongoSection({ token }: Props) {
     return (
-        <Stack gap="lg">
-            <DatabaseHealth token={token} />
+        <div className={styles.subsection}>
+            <MongoHealth token={token} />
             <Migrations token={token} />
             <Browser token={token} />
-        </Stack>
+        </div>
     );
 }
 
-function DatabaseHealth({ token }: { token: string }) {
+function MongoHealth({ token }: { token: string }) {
     const [database, setDatabase] = useState<DatabaseStatus | null>(null);
-    const [clickhouse, setClickhouse] = useState<ClickHouseStatus | null>(null);
     const [error, setError] = useState<string | null>(null);
     const runtimeConfig = getRuntimeConfig();
 
     const fetchData = useCallback(async () => {
         try {
-            const [mongoResponse, clickhouseResponse] = await Promise.all([
-                fetch(`${runtimeConfig.apiUrl}/admin/system/health/database`, {
-                    headers: { 'X-Admin-Token': token }
-                }),
-                fetch(`${runtimeConfig.apiUrl}/admin/system/health/clickhouse`, {
-                    headers: { 'X-Admin-Token': token }
-                })
-            ]);
+            const response = await fetch(`${runtimeConfig.apiUrl}/admin/system/health/database`, {
+                headers: { 'X-Admin-Token': token }
+            });
 
-            // Each backend returns its own status independently; surface the
-            // failure (and clear stale data) per-backend so a transient
-            // outage doesn't keep showing "Connected" forever.
-            if (mongoResponse.ok) {
-                const mongoData = await mongoResponse.json();
-                setDatabase(mongoData.status);
+            if (response.ok) {
+                const data = await response.json();
+                setDatabase(data.status);
             } else {
                 setDatabase(null);
-            }
-            if (clickhouseResponse.ok) {
-                const clickhouseData = await clickhouseResponse.json();
-                setClickhouse(clickhouseData.status);
-            } else {
-                setClickhouse(null);
-            }
-
-            if (!mongoResponse.ok && !clickhouseResponse.ok) {
-                throw new Error(
-                    `Health endpoints unavailable (mongo ${mongoResponse.status}, clickhouse ${clickhouseResponse.status})`
-                );
+                throw new Error(`Health endpoint unavailable (${response.status})`);
             }
             setError(null);
         } catch (err) {
-            setError(err instanceof Error ? err.message : 'Failed to fetch database health');
+            setError(err instanceof Error ? err.message : 'Failed to fetch MongoDB health');
         }
     }, [token, runtimeConfig.apiUrl]);
 
@@ -152,81 +115,35 @@ function DatabaseHealth({ token }: { token: string }) {
     }, [fetchData]);
 
     return (
-        <section className={styles.subsection}>
-            <h3 className={styles.subsection_title}>Health</h3>
+        <div className={styles.block}>
+            <h4 className={styles.block_title}>Health</h4>
             {error && (
                 <div className="alert alert--danger" role="alert">
                     <span className={styles.error_inline}>
-                        <AlertCircle size={16} aria-hidden="true" />
+                        <AlertCircle size={14} aria-hidden="true" />
                         {error}
                     </span>
                 </div>
             )}
             {database && (
-                <Stack gap="sm">
-                    <h4 className={styles.subsection_subtitle}>MongoDB</h4>
-                    <Grid columns="responsive" gap="sm">
-                        <HealthMetric
-                            icon={<Database size={20} />}
-                            label="Status"
-                            value={database.connected ? 'Connected' : 'Disconnected'}
-                            tone={database.connected ? 'success' : 'danger'}
-                        />
-                        {database.responseTime !== null && (
-                            <HealthMetric
-                                icon={<Activity size={20} />}
-                                label="Response Time"
-                                value={`${database.responseTime}ms`}
-                            />
-                        )}
-                        <HealthMetric
-                            icon={<Layers size={20} />}
-                            label="Collections"
-                            value={database.collectionCount.toLocaleString()}
-                        />
-                        {database.databaseSize !== null && (
-                            <HealthMetric
-                                icon={<HardDrive size={20} />}
-                                label="Size"
-                                value={formatBytes(database.databaseSize)}
-                            />
-                        )}
-                    </Grid>
-                </Stack>
+                <StatStrip
+                    items={[
+                        {
+                            label: 'Status',
+                            value: database.connected ? 'Connected' : 'Disconnected',
+                            tone: database.connected ? 'success' : 'danger'
+                        },
+                        ...(database.responseTime !== null
+                            ? [{ label: 'Response', value: `${database.responseTime}ms` }]
+                            : []),
+                        { label: 'Collections', value: database.collectionCount.toLocaleString() },
+                        ...(database.databaseSize !== null
+                            ? [{ label: 'Size', value: formatBytes(database.databaseSize) }]
+                            : [])
+                    ]}
+                />
             )}
-            {clickhouse && (
-                <Stack gap="sm">
-                    <h4 className={styles.subsection_subtitle}>ClickHouse</h4>
-                    <Grid columns="responsive" gap="sm">
-                        <HealthMetric
-                            icon={<Zap size={20} />}
-                            label="Status"
-                            value={clickhouse.connected ? 'Connected' : 'Disconnected'}
-                            tone={clickhouse.connected ? 'success' : 'danger'}
-                        />
-                        {clickhouse.responseTime !== null && (
-                            <HealthMetric
-                                icon={<Activity size={20} />}
-                                label="Response Time"
-                                value={`${clickhouse.responseTime}ms`}
-                            />
-                        )}
-                        <HealthMetric
-                            icon={<Layers size={20} />}
-                            label="Tables"
-                            value={clickhouse.tableCount.toLocaleString()}
-                        />
-                        {clickhouse.databaseSize !== null && (
-                            <HealthMetric
-                                icon={<HardDrive size={20} />}
-                                label="Size"
-                                value={formatBytes(clickhouse.databaseSize)}
-                            />
-                        )}
-                    </Grid>
-                </Stack>
-            )}
-        </section>
+        </div>
     );
 }
 
@@ -240,10 +157,6 @@ function Migrations({ token }: { token: string }) {
     const [expandedErrors, setExpandedErrors] = useState<Set<string>>(new Set());
     const [error, setError] = useState<string | null>(null);
     const runtimeConfig = getRuntimeConfig();
-
-    // SystemAuthGate guarantees a non-empty token, so the helpers do not
-    // gate on token. URLs and the auth header follow docs/system/system-api.md
-    // (X-Admin-Token, ${runtimeConfig.apiUrl}/...).
 
     const fetchStatus = useCallback(async () => {
         try {
@@ -293,8 +206,6 @@ function Migrations({ token }: { token: string }) {
                 },
                 body: JSON.stringify(migrationId ? { migrationId } : {})
             });
-            // Best-effort JSON parse so structured backend error details
-            // (failed.error, error, message) survive non-2xx responses.
             let data: any = null;
             try {
                 data = await response.json();
@@ -318,10 +229,6 @@ function Migrations({ token }: { token: string }) {
                         ?? `Failed to execute migration: ${response.statusText}`
                 );
             }
-            // Per docs/system/system-database-migrations.md, a 2xx response
-            // always carries either `success` (on completion) or `failed` (on
-            // a tracked failure). Anything else is an unexpected shape — fail
-            // loudly rather than silently no-op.
             if (data?.success) {
                 await Promise.all([fetchStatus(), fetchHistory()]);
             } else if (data?.failed) {
@@ -346,12 +253,6 @@ function Migrations({ token }: { token: string }) {
         });
     };
 
-    // Single source of truth for fetches:
-    // - fetchStatus runs whenever its identity changes (token).
-    // - fetchHistory runs whenever its identity changes (token, statusFilter).
-    // Splitting them into separate effects prevents the previous bug where a
-    // statusFilter change re-fired fetchHistory twice (once via this effect,
-    // once via a second effect that also depended on fetchHistory).
     useEffect(() => {
         void fetchStatus();
     }, [fetchStatus]);
@@ -392,68 +293,57 @@ function Migrations({ token }: { token: string }) {
     );
 
     return (
-        <section className={styles.subsection}>
-            <div className={styles.subsection_header}>
-                <h3 className={styles.subsection_title}>Migrations</h3>
-                <Grid columns="responsive" gap="sm">
-                    <HealthMetric
-                        icon={<Database size={20} />}
-                        label="Pending"
-                        value={(status?.totalPending ?? 0).toLocaleString()}
-                    />
-                    <HealthMetric
-                        icon={<CheckCircle size={20} />}
-                        label="Completed"
-                        value={(status?.totalCompleted ?? 0).toLocaleString()}
-                    />
-                    <HealthMetric
-                        icon={<Activity size={20} />}
-                        label="Status"
-                        value={
-                            status?.isRunning ? (
-                                <Badge tone="warning">Running</Badge>
-                            ) : (
-                                <Badge tone="success">Ready</Badge>
-                            )
-                        }
-                    />
-                </Grid>
+        <div className={styles.block}>
+            <header className={styles.block_header}>
+                <h4 className={styles.block_title}>Migrations</h4>
                 <div className={styles.actions}>
                     <Button
                         variant="primary"
-                        size="md"
+                        size="xs"
                         onClick={() => void executeMigration()}
                         disabled={executing || status?.isRunning || !status?.totalPending}
                         loading={executing}
-                        icon={<Play size={18} />}
+                        icon={<Play size={14} />}
                     >
-                        Execute All Pending
+                        Execute Pending
                     </Button>
                     <Button
-                        variant="secondary"
-                        size="md"
+                        variant="ghost"
+                        size="xs"
                         onClick={() => setAutoRefresh((prev) => !prev)}
-                        icon={<RefreshCw size={16} />}
+                        icon={<RefreshCw size={14} />}
                     >
                         {autoRefresh ? 'Auto-refresh On' : 'Auto-refresh Off'}
                     </Button>
                 </div>
-            </div>
+            </header>
+
+            <StatStrip
+                items={[
+                    { label: 'Pending', value: (status?.totalPending ?? 0).toLocaleString() },
+                    { label: 'Completed', value: (status?.totalCompleted ?? 0).toLocaleString() },
+                    {
+                        label: 'Status',
+                        value: status?.isRunning ? 'Running' : 'Ready',
+                        tone: status?.isRunning ? 'warning' : 'success'
+                    }
+                ]}
+            />
 
             {error && (
                 <div className="alert alert--danger" role="alert">
                     <span className={styles.error_inline}>
-                        <AlertCircle size={16} aria-hidden="true" />
+                        <AlertCircle size={14} aria-hidden="true" />
                         {error}
                     </span>
                 </div>
             )}
 
-            <div>
-                <h4 className={styles.subsection_subtitle}>Pending</h4>
+            <div className={styles.subblock}>
+                <h5 className={styles.subblock_title}>Pending</h5>
                 {status && status.totalPending === 0 ? (
                     <p className={styles.empty}>
-                        <CheckCircle size={18} aria-hidden="true" />
+                        <CheckCircle size={14} aria-hidden="true" />
                         No pending migrations
                     </p>
                 ) : (
@@ -474,7 +364,7 @@ function Migrations({ token }: { token: string }) {
                                                 </span>
                                                 {migration.dependencies.length > 0 && (
                                                     <div className={styles.migration_deps}>
-                                                        <span className={styles.deps_label}>Depends on:</span>
+                                                        <span className={styles.deps_label}>Depends:</span>
                                                         {migration.dependencies.map((dep) => (
                                                             <Badge key={dep} tone="neutral">
                                                                 {dep}
@@ -485,10 +375,10 @@ function Migrations({ token }: { token: string }) {
                                             </div>
                                             <Button
                                                 variant="ghost"
-                                                size="sm"
+                                                size="xs"
                                                 onClick={() => void executeMigration(migration.id)}
                                                 disabled={executing || status?.isRunning}
-                                                icon={<Play size={14} />}
+                                                icon={<Play size={12} />}
                                             >
                                                 Execute
                                             </Button>
@@ -501,9 +391,9 @@ function Migrations({ token }: { token: string }) {
                 )}
             </div>
 
-            <div>
-                <div className={styles.history_header}>
-                    <h4 className={styles.subsection_subtitle}>History</h4>
+            <div className={styles.subblock}>
+                <header className={styles.history_header}>
+                    <h5 className={styles.subblock_title}>History</h5>
                     <div className={styles.filters}>
                         <select
                             value={statusFilter}
@@ -529,11 +419,11 @@ function Migrations({ token }: { token: string }) {
                             ))}
                         </select>
                     </div>
-                </div>
+                </header>
                 <div className={styles.history_table_wrap}>
                     {filteredHistory.length === 0 ? (
                         <p className={styles.empty}>
-                            <AlertCircle size={18} aria-hidden="true" />
+                            <AlertCircle size={14} aria-hidden="true" />
                             No migration history
                         </p>
                     ) : (
@@ -581,10 +471,10 @@ function Migrations({ token }: { token: string }) {
                                                     <div className={styles.error_cell}>
                                                         <Button
                                                             variant="ghost"
-                                                            size="sm"
+                                                            size="xs"
                                                             onClick={() => toggleErrorExpansion(migration.migrationId)}
                                                         >
-                                                            {isExpanded ? 'Hide' : 'Show'} Error
+                                                            {isExpanded ? 'Hide' : 'Show'}
                                                         </Button>
                                                         {isExpanded && (
                                                             <div className={styles.error_details}>
@@ -609,23 +499,16 @@ function Migrations({ token }: { token: string }) {
                     )}
                 </div>
             </div>
-        </section>
+        </div>
     );
 }
 
 function Browser({ token }: { token: string }) {
     return (
-        <section className={styles.subsection}>
-            <h3 className={styles.subsection_title}>Collection Browser</h3>
+        <div className={styles.block}>
+            <h4 className={styles.block_title}>Collection Browser</h4>
             <CollectionBrowser token={token} />
-        </section>
+        </div>
     );
 }
 
-function formatBytes(bytes: number): string {
-    if (bytes === 0) return '0 B';
-    const k = 1024;
-    const sizes = ['B', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return `${(bytes / Math.pow(k, i)).toFixed(2)} ${sizes[i]}`;
-}

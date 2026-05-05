@@ -1,9 +1,9 @@
 /**
- * ServerSection styles.
+ * ClickHouseSection styles.
  *
- * Slim sub-block layout used inside the system console row. Block titles
- * are tiny caps labels rather than display headings — they introduce a
- * stat strip rather than dominate it.
+ * Two-block layout (Health + Table Browser) inside the ClickHouse console
+ * row. Mirrors MongoSection's spacing so admins see one consistent
+ * skeleton across both database engines.
  */
 
 .subsection {
@@ -25,6 +25,12 @@
     text-transform: uppercase;
     letter-spacing: var(--letter-spacing-wide);
     color: var(--color-text-muted);
+}
+
+.empty {
+    margin: 0;
+    color: var(--color-text-muted);
+    font-size: var(--font-size-caption);
 }
 
 .error_inline {

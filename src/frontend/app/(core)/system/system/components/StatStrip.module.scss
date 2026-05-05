@@ -1,0 +1,85 @@
+/**
+ * StatStrip styles.
+ *
+ * Mission-control telemetry layout: dense auto-fit grid with hairline
+ * dividers between cells. Tone is communicated via a 2px left rule so the
+ * stripe consumes no horizontal real estate, keeping the value column
+ * monospace-aligned across the strip.
+ */
+
+.strip {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(var(--stat-col-min, 140px), 1fr));
+    gap: var(--gap-2xs);
+    background: var(--color-surface-base);
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-sm);
+    padding: var(--gap-2xs);
+}
+
+.cell {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-2xs);
+    padding: var(--padding-xs) var(--padding-sm);
+    border-radius: var(--radius-xs);
+    border-left: var(--border-width-medium) solid transparent;
+    background: var(--color-surface-muted);
+    min-width: 0;
+}
+
+.cell_success {
+    border-left-color: var(--color-success-alpha-45);
+    background: var(--color-success-alpha-18);
+}
+
+.cell_warning {
+    border-left-color: var(--color-warning-alpha-40);
+    background: var(--color-warning-alpha-15);
+}
+
+.cell_danger {
+    border-left-color: var(--color-danger-alpha-50);
+    background: var(--color-danger-alpha-18);
+}
+
+.label {
+    font-size: var(--font-size-caption);
+    text-transform: uppercase;
+    letter-spacing: var(--letter-spacing-wide);
+    color: var(--color-text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.value {
+    font-family: var(--font-mono);
+    font-size: var(--font-size-body);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text);
+    line-height: var(--line-height-tight);
+    word-break: break-word;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--gap-xs);
+    flex-wrap: wrap;
+}
+
+.cell_success .value {
+    color: var(--color-success-text);
+}
+
+.cell_danger .value {
+    color: var(--color-danger-text);
+}
+
+.cell_warning .value {
+    color: var(--color-warning-text);
+}
+
+.detail {
+    font-size: var(--font-size-caption);
+    color: var(--color-text-subtle);
+    line-height: var(--line-height-tight);
+}

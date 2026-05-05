@@ -1,0 +1,180 @@
+/**
+ * ClickHouseTableBrowser styles.
+ *
+ * Mirrors the dense list-of-tables layout used by the Mongo CollectionBrowser
+ * inside the same console row, with mono numerics and tone-neutral chrome
+ * so it sits inside a sub-block of the ClickHouse section without competing
+ * for attention.
+ */
+
+@use '../../../../../app/breakpoints' as *;
+
+.browser {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-xs);
+    container-type: inline-size;
+    container-name: clickhouse-browser;
+}
+
+.overview {
+    margin: 0;
+    display: inline-flex;
+    align-items: baseline;
+    gap: var(--gap-sm);
+    font-size: var(--font-size-caption);
+    color: var(--color-text-muted);
+    flex-wrap: wrap;
+}
+
+.db_name {
+    font-family: var(--font-mono);
+    color: var(--color-text);
+    font-weight: var(--font-weight-semibold);
+}
+
+.overview_meta {
+    color: var(--color-text-subtle);
+}
+
+.tables {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-2xs);
+}
+
+.table_item {
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface-muted);
+    overflow: hidden;
+}
+
+.table_header {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: var(--gap-xs);
+    background: transparent;
+    border: none;
+    padding: var(--padding-xs) var(--padding-sm);
+    cursor: pointer;
+    color: var(--color-text);
+    font-family: inherit;
+    text-align: left;
+}
+
+.table_header:hover {
+    background: var(--color-primary-alpha-10);
+}
+
+.table_name {
+    font-family: var(--font-mono);
+    font-size: var(--font-size-body-sm);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text);
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.table_stats {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--gap-2xs);
+    flex-wrap: wrap;
+}
+
+.rows_panel {
+    border-top: var(--border-width-thin) solid var(--color-border);
+    background: var(--color-surface);
+    padding: var(--padding-sm);
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-xs);
+}
+
+.rows_header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--gap-sm);
+    flex-wrap: wrap;
+    font-size: var(--font-size-caption);
+    color: var(--color-text-muted);
+}
+
+.pagination {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--gap-xs);
+}
+
+.page_info {
+    font-family: var(--font-mono);
+    font-size: var(--font-size-caption);
+    color: var(--color-text-subtle);
+}
+
+.rows_list {
+    overflow-x: auto;
+}
+
+.row {
+    cursor: pointer;
+}
+
+.row_index {
+    font-family: var(--font-mono);
+    font-size: var(--font-size-caption);
+    color: var(--color-text-subtle);
+}
+
+.row_preview {
+    font-family: var(--font-mono);
+    font-size: var(--font-size-caption);
+    color: var(--color-text);
+    word-break: break-all;
+}
+
+.row_detail {
+    background: var(--color-surface-muted);
+}
+
+.row_json {
+    margin: 0;
+    padding: var(--padding-sm);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-caption);
+    color: var(--color-text);
+    background: var(--color-background);
+    border-radius: var(--radius-xs);
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 320px;
+    overflow-y: auto;
+}
+
+.empty {
+    margin: 0;
+    color: var(--color-text-muted);
+    font-size: var(--font-size-caption);
+}
+
+.error_inline {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--gap-xs);
+}
+
+@container clickhouse-browser (max-width: #{$breakpoint-mobile-md}) {
+    .table_header {
+        flex-wrap: wrap;
+    }
+
+    .rows_header {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+}

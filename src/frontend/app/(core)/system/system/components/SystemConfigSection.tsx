@@ -19,13 +19,11 @@ interface SystemConfigPayload {
 /**
  * Site URL configuration body.
  *
- * Rendered inside a CollapsibleSection — this component only mounts when
- * the section is expanded, so the initial config fetch is deferred until
- * the admin actually opens the section. The save handler is intentionally
- * PATCH-only and sends just `siteUrl` so the other fields stored on the
- * same document (log retention, log level, etc., which are now edited
- * from the logs page) are not overwritten with stale values from this
- * form.
+ * Mounts only when its console row is expanded so the initial fetch is
+ * deferred until the admin opens the section. The save handler is
+ * PATCH-only and sends just `siteUrl` to avoid overwriting unrelated
+ * fields stored on the same document (log retention, log level, etc.,
+ * now edited from the logs page).
  */
 export function SystemConfigSection({ token }: Props) {
     const [siteUrl, setSiteUrl] = useState('');

@@ -1,10 +1,11 @@
 /**
- * DatabaseSection styles.
+ * MongoSection styles.
  *
- * Sub-block headings (Health, Migrations, Browser) reuse the same h3
- * + h4 ladder so the section reads as one coherent block instead of
- * three transplanted pages stitched together. The section header is
- * now provided by CollapsibleSection.
+ * Three blocks (Health, Migrations, Browser) inside the MongoDB console
+ * row. Block titles are tiny caps captions and second-level captions
+ * (Pending, History) drop another tier — the section reads as one tight
+ * panel rather than transplanted pages stitched together. ClickHouse
+ * lives in a sibling section (see ClickHouseSection.module.scss).
  */
 
 @use '../../../../../app/breakpoints' as *;
@@ -12,65 +13,77 @@
 .subsection {
     display: flex;
     flex-direction: column;
-    gap: var(--spacing-7);
+    gap: var(--gap-md);
     container-type: inline-size;
-    container-name: db-subsection;
+    container-name: mongo-subsection;
 }
 
-.subsection_header {
+.block {
     display: flex;
     flex-direction: column;
-    gap: var(--spacing-7);
+    gap: var(--gap-xs);
 }
 
-.subsection_title {
-    margin: 0;
-    font-size: var(--font-size-lg);
-    font-weight: var(--font-weight-semibold);
-    color: var(--color-text);
-    border-bottom: var(--border-width-thin) solid var(--color-border);
-    padding-bottom: var(--spacing-4);
+.block_header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--gap-sm);
+    flex-wrap: wrap;
 }
 
-.subsection_subtitle {
+.block_title {
     margin: 0;
-    font-size: var(--font-size-sm);
+    font-size: var(--font-size-caption);
     font-weight: var(--font-weight-semibold);
     text-transform: uppercase;
     letter-spacing: var(--letter-spacing-wide);
     color: var(--color-text-muted);
 }
 
+.subblock {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-xs);
+}
+
+.subblock_title {
+    margin: 0;
+    font-size: var(--font-size-caption);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text-subtle);
+}
+
 .actions {
     display: flex;
     flex-wrap: wrap;
-    gap: var(--spacing-5);
+    gap: var(--gap-xs);
 }
 
 .error_inline {
     display: inline-flex;
     align-items: center;
-    gap: var(--spacing-3);
+    gap: var(--gap-xs);
 }
 
 .empty {
     display: inline-flex;
     align-items: center;
-    gap: var(--spacing-4);
+    gap: var(--gap-xs);
     margin: 0;
     color: var(--color-text-muted);
-    font-size: var(--font-size-sm);
+    font-size: var(--font-size-caption);
 }
 
 .pending_groups {
     display: flex;
     flex-direction: column;
-    gap: var(--spacing-5);
+    gap: var(--gap-xs);
 }
 
 .group {
     border: var(--border-width-thin) solid var(--color-border);
-    border-radius: var(--radius-md);
+    border-radius: var(--radius-sm);
     background: var(--color-surface-muted);
     overflow: hidden;
 }
@@ -79,8 +92,8 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: var(--spacing-5);
-    padding: var(--spacing-6) var(--spacing-7);
+    gap: var(--gap-sm);
+    padding: var(--padding-xs) var(--padding-sm);
     cursor: pointer;
     user-select: none;
 }
@@ -90,9 +103,11 @@
 }
 
 .group_source {
-    font-size: var(--font-size-sm);
+    font-size: var(--font-size-caption);
     font-weight: var(--font-weight-semibold);
     color: var(--color-text);
+    text-transform: uppercase;
+    letter-spacing: var(--letter-spacing-wide);
 }
 
 .migration_list {
@@ -106,8 +121,8 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: var(--spacing-5);
-    padding: var(--spacing-6) var(--spacing-7);
+    gap: var(--gap-sm);
+    padding: var(--padding-xs) var(--padding-sm);
     border-bottom: var(--border-width-thin) solid var(--color-border);
 }
 
@@ -118,21 +133,21 @@
 .migration_info {
     display: flex;
     flex-direction: column;
-    gap: var(--spacing-3);
+    gap: var(--gap-2xs);
     flex: 1;
     min-width: 0;
 }
 
 .migration_id {
     font-family: var(--font-mono);
-    font-size: var(--font-size-sm);
+    font-size: var(--font-size-caption);
     font-weight: var(--font-weight-semibold);
     color: var(--color-text);
     word-break: break-all;
 }
 
 .migration_description {
-    font-size: var(--font-size-sm);
+    font-size: var(--font-size-caption);
     color: var(--color-text-muted);
 }
 
@@ -140,26 +155,27 @@
     display: flex;
     align-items: center;
     flex-wrap: wrap;
-    gap: var(--spacing-3);
+    gap: var(--gap-2xs);
 }
 
 .deps_label {
-    font-size: var(--font-size-xs);
+    font-size: var(--font-size-caption);
     color: var(--color-text-subtle);
+    text-transform: uppercase;
+    letter-spacing: var(--letter-spacing-wide);
 }
 
 .history_header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: var(--spacing-5);
+    gap: var(--gap-sm);
     flex-wrap: wrap;
-    margin-bottom: var(--spacing-5);
 }
 
 .filters {
     display: flex;
-    gap: var(--spacing-4);
+    gap: var(--gap-xs);
     flex-wrap: wrap;
 }
 
@@ -169,7 +185,7 @@
     border: var(--input-border);
     border-radius: var(--input-border-radius);
     color: var(--color-text);
-    font-size: var(--font-size-sm);
+    font-size: var(--font-size-caption);
     cursor: pointer;
     transition: var(--input-transition);
 }
@@ -190,7 +206,7 @@
 
 .cell_id {
     font-family: var(--font-mono);
-    font-size: var(--font-size-xs);
+    font-size: var(--font-size-caption);
     color: var(--color-text-muted);
     word-break: break-all;
 }
@@ -198,30 +214,30 @@
 .error_cell {
     display: flex;
     flex-direction: column;
-    gap: var(--spacing-3);
+    gap: var(--gap-2xs);
 }
 
 .error_details {
-    padding: var(--spacing-5);
+    padding: var(--padding-sm);
     background: var(--color-surface-muted);
     border-radius: var(--radius-sm);
     border-left: var(--border-width-medium) solid var(--color-danger);
 }
 
 .error_message {
-    margin: 0 0 var(--spacing-3);
-    font-size: var(--font-size-sm);
+    margin: 0 0 var(--gap-2xs);
+    font-size: var(--font-size-caption);
     color: var(--color-danger-text);
     font-weight: var(--font-weight-medium);
 }
 
 .error_stack {
     margin: 0;
-    padding: var(--spacing-4);
+    padding: var(--padding-xs);
     background: var(--color-background);
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius-xs);
     font-family: var(--font-mono);
-    font-size: var(--font-size-xs);
+    font-size: var(--font-size-caption);
     color: var(--color-text-muted);
     white-space: pre-wrap;
     word-break: break-all;
@@ -229,7 +245,7 @@
     overflow-y: auto;
 }
 
-@container db-subsection (max-width: #{$breakpoint-mobile-md}) {
+@container mongo-subsection (max-width: #{$breakpoint-mobile-md}) {
     .migration_row {
         flex-direction: column;
         align-items: stretch;

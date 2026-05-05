@@ -1,0 +1,131 @@
+/**
+ * ConsoleRow styles.
+ *
+ * Slim disclosure row that sits inside the outer console card, separated
+ * from siblings by a hairline rule rather than its own card chrome. The
+ * header keeps to a single short line (~36px) — status dot, title, mono
+ * summary, chevron — so the collapsed strip lists all five subsystems
+ * without scrolling.
+ */
+
+@use '../../../../../app/breakpoints' as *;
+
+.row {
+    border-bottom: var(--border-width-thin) solid var(--color-border);
+    container-type: inline-size;
+    container-name: console-row;
+}
+
+.row:last-child {
+    border-bottom: none;
+}
+
+.row_open {
+    background: var(--color-primary-alpha-10);
+}
+
+.header {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: var(--gap-sm);
+    background: transparent;
+    border: none;
+    padding: var(--padding-sm) var(--padding-md);
+    text-align: left;
+    cursor: pointer;
+    color: var(--color-text);
+    font-family: inherit;
+}
+
+.header:hover {
+    background: var(--color-primary-alpha-15);
+}
+
+.dot {
+    width: 8px;
+    height: 8px;
+    border-radius: var(--radius-full);
+    flex-shrink: 0;
+    background: var(--color-text-subtle);
+    box-shadow: 0 0 0 var(--border-width-thin) var(--color-border);
+}
+
+.dot_ok {
+    background: var(--color-success);
+    box-shadow: 0 0 8px var(--color-success-alpha-45);
+}
+
+.dot_warn {
+    background: var(--color-warning);
+    box-shadow: 0 0 8px var(--color-warning-alpha-40);
+}
+
+.dot_down {
+    background: var(--color-danger);
+    box-shadow: 0 0 8px var(--color-danger-alpha-50);
+    animation: console-row-down-pulse 1.6s ease-in-out infinite;
+}
+
+.dot_idle {
+    background: transparent;
+    box-shadow: inset 0 0 0 var(--border-width-thin) var(--color-border-strong);
+}
+
+@keyframes console-row-down-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+}
+
+.title {
+    font-size: var(--font-size-body-sm);
+    font-weight: var(--font-weight-semibold);
+    text-transform: uppercase;
+    letter-spacing: var(--letter-spacing-wide);
+    color: var(--color-text);
+    flex-shrink: 0;
+}
+
+.summary {
+    font-family: var(--font-mono);
+    font-size: var(--font-size-caption);
+    color: var(--color-text-muted);
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.chevron {
+    color: var(--color-text-muted);
+    display: flex;
+    flex-shrink: 0;
+    margin-left: auto;
+}
+
+.header:hover .chevron {
+    color: var(--color-text);
+}
+
+.body {
+    padding: var(--padding-sm) var(--padding-md) var(--padding-md);
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-md);
+}
+
+@container console-row (max-width: #{$breakpoint-mobile-md}) {
+    .header {
+        flex-wrap: wrap;
+    }
+
+    .summary {
+        flex-basis: 100%;
+        order: 3;
+    }
+
+    .chevron {
+        order: 2;
+    }
+}

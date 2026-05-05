@@ -21,9 +21,11 @@
  * getClickHouseService() returns undefined.
  */
 
-import type { Express } from 'express';
+import { Router, type Express } from 'express';
 import type { IModule, IModuleMetadata, ISystemLogService } from '@/types';
+import { requireAdmin } from '../../api/middleware/admin-auth.js';
 import { ClickHouseService } from './services/clickhouse.service.js';
+import { ClickHouseBrowserController } from './api/clickhouse-browser.controller.js';
 
 /**
  * Dependencies required by the ClickHouse module.
@@ -133,10 +135,10 @@ export class ClickHouseModule implements IModule<IClickHouseModuleDependencies> 
      *
      * Phase 2: Activate and integrate with the application.
      *
-     * Currently a no-op. Reserved for future admin routes such as:
-     * - GET /api/admin/clickhouse/status - Connection health
-     * - GET /api/admin/clickhouse/tables - List tables
-     * - POST /api/admin/clickhouse/query - Execute ad-hoc queries
+     * Mounts the admin browser routes that mirror the MongoDB browser
+     * surface so the system console can inspect ClickHouse tables. Skips
+     * mounting entirely when ClickHouse was not configured at boot — the
+     * feature simply does not appear.
      */
     async run(): Promise<void> {
         if (!this.enabled) {
@@ -145,9 +147,27 @@ export class ClickHouseModule implements IModule<IClickHouseModuleDependencies> 
 
         this.logger.info('ClickHouse module running');
 
-        // Future: Mount admin routes for ClickHouse status/browser
-        // const router = this.createAdminRouter();
-        // this.app.use('/api/admin/clickhouse', requireAdmin, router);
+        const browserRouter = this.createBrowserRouter();
+        this.app.use('/api/admin/clickhouse', requireAdmin, browserRouter);
+        this.logger.info('ClickHouse browser router mounted at /api/admin/clickhouse');
+    }
+
+    /**
+     * Create the admin browser router with the table-stats and row-listing
+     * endpoints. Internal helper for `run()`; admin auth is applied at the
+     * mount site rather than per-route to mirror the DatabaseModule pattern.
+     */
+    private createBrowserRouter(): Router {
+        const router = Router();
+        const controller = new ClickHouseBrowserController(
+            ClickHouseService.getInstance(),
+            this.logger
+        );
+
+        router.get('/stats', controller.getStats);
+        router.get('/tables/:name/rows', controller.getRows);
+
+        return router;
     }
 
     /**
