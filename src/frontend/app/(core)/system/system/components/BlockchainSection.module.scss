@@ -1,10 +1,10 @@
 /**
  * BlockchainSection styles.
  *
- * Mirrors the DatabaseSection sub-block ladder so the Sync Status,
- * Pipeline Metrics, and Observer Performance sub-headings match the
- * visual rhythm of the rest of the System admin page. The section
- * header is provided by CollapsibleSection.
+ * Compact sub-block layout used inside the system console row. Block
+ * titles are tiny caps labels and the block header carries either a
+ * trailing action (Trigger Sync) or a metadata note inline rather than
+ * forcing its own row.
  */
 
 @use '../../../../../app/breakpoints' as *;
@@ -12,74 +12,83 @@
 .subsection {
     display: flex;
     flex-direction: column;
-    gap: var(--spacing-7);
+    gap: var(--gap-md);
     container-type: inline-size;
     container-name: blockchain-subsection;
 }
 
-.subsection_header {
+.block {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-xs);
+}
+
+.block_header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: var(--spacing-5);
+    gap: var(--gap-sm);
     flex-wrap: wrap;
-    border-bottom: var(--border-width-thin) solid var(--color-border);
-    padding-bottom: var(--spacing-4);
 }
 
-.subsection_title {
+.block_title {
     margin: 0;
-    font-size: var(--font-size-lg);
+    font-size: var(--font-size-caption);
     font-weight: var(--font-weight-semibold);
-    color: var(--color-text);
+    text-transform: uppercase;
+    letter-spacing: var(--letter-spacing-wide);
+    color: var(--color-text-muted);
 }
 
-.subsection_note {
+.block_note {
     margin: 0;
-    font-size: var(--font-size-sm);
-    color: var(--color-text-muted);
+    font-size: var(--font-size-caption);
+    color: var(--color-text-subtle);
+    display: inline-flex;
+    align-items: center;
+    gap: var(--gap-xs);
 }
 
 .error_inline {
     display: inline-flex;
     align-items: center;
-    gap: var(--spacing-3);
+    gap: var(--gap-xs);
 }
 
 .error_message {
     margin: 0;
-    padding: var(--spacing-5);
+    padding: var(--padding-sm);
     background: var(--color-surface-muted);
     border-radius: var(--radius-sm);
     border: var(--border-width-thin) solid var(--color-danger-alpha-50);
     font-family: var(--font-mono);
-    font-size: var(--font-size-sm);
+    font-size: var(--font-size-caption);
     color: var(--color-danger-text);
     white-space: pre-wrap;
     word-break: break-word;
 }
 
 .error_timestamp {
-    font-size: var(--font-size-xs);
+    font-size: var(--font-size-caption);
     color: var(--color-text-subtle);
 }
 
 .observer_meta {
     display: block;
-    font-size: var(--font-size-xs);
+    font-size: var(--font-size-caption);
     color: var(--color-text-subtle);
-    margin-top: var(--spacing-1);
+    margin-top: var(--gap-2xs);
 }
 
 .cell_inline {
     display: inline-flex;
     align-items: center;
-    gap: var(--spacing-3);
+    gap: var(--gap-xs);
     flex-wrap: wrap;
 }
 
 @container blockchain-subsection (max-width: #{$breakpoint-mobile-md}) {
-    .subsection_header {
+    .block_header {
         flex-direction: column;
         align-items: stretch;
     }

@@ -3,26 +3,25 @@
  *
  * Field/input styles use the same semantic tokens as the rest of the
  * admin surface (input-* tokens, color-text-muted) so the section reads
- * identically to other forms on the system page. The section header is
- * now provided by CollapsibleSection.
+ * identically to other forms on the system page.
  */
 
 .field {
     display: flex;
     flex-direction: column;
-    gap: var(--spacing-4);
+    gap: var(--gap-2xs);
 }
 
 .field_label {
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-medium);
+    font-size: var(--font-size-caption);
+    font-weight: var(--font-weight-semibold);
     color: var(--color-text-muted);
     text-transform: uppercase;
     letter-spacing: var(--letter-spacing-wide);
 }
 
 .field_hint {
-    font-size: var(--font-size-xs);
+    font-size: var(--font-size-caption);
     color: var(--color-text-subtle);
 }
 
@@ -45,18 +44,18 @@
 }
 
 .input:disabled {
-    opacity: var(--opacity-55);
+    opacity: var(--button-disabled-opacity);
     cursor: not-allowed;
 }
 
 .actions {
     display: flex;
     justify-content: flex-end;
-    gap: var(--spacing-5);
+    gap: var(--gap-xs);
 }
 
 .error_inline {
     display: inline-flex;
     align-items: center;
-    gap: var(--spacing-3);
+    gap: var(--gap-xs);
 }

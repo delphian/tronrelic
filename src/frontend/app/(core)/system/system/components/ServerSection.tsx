@@ -1,19 +1,9 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import {
-    Activity,
-    AlertCircle,
-    AlertTriangle,
-    Clock,
-    Cpu,
-    Database,
-    HardDrive,
-    Server
-} from 'lucide-react';
-import { Stack, Grid } from '../../../../../components/layout';
+import { AlertCircle } from 'lucide-react';
 import { getRuntimeConfig } from '../../../../../lib/runtimeConfig';
-import { HealthMetric } from './HealthMetric';
+import { StatStrip } from './StatStrip';
 import styles from './ServerSection.module.scss';
 
 interface Props {
@@ -46,10 +36,9 @@ interface ServerMetrics {
 /**
  * Server / cache health body — Redis cache and Node.js process metrics.
  *
- * Restored from the legacy /system/config page so operators retain in-product
- * visibility into Redis liveness and backend memory/CPU during incidents.
- * Polls every 10 seconds and only mounts when the section is expanded so the
- * page does not poll until needed.
+ * Polls every 10s while mounted. Renders both subsystems as tight
+ * StatStrip rows so the section keeps to roughly two screen lines on
+ * a desktop console instead of two stacked tile grids.
  */
 export function ServerSection({ token }: Props) {
     const [redis, setRedis] = useState<RedisStatus | null>(null);
@@ -68,9 +57,6 @@ export function ServerSection({ token }: Props) {
                 })
             ]);
 
-            // Each backend returns its own status independently; surface the
-            // failure (and clear stale data) per-backend so a transient
-            // outage doesn't keep showing "Connected" forever.
             if (redisRes.ok) {
                 const redisData = await redisRes.json();
                 setRedis(redisData.status);
@@ -102,82 +88,59 @@ export function ServerSection({ token }: Props) {
     }, [fetchData]);
 
     return (
-        <section className={styles.subsection}>
+        <div className={styles.subsection}>
             {error && (
                 <div className="alert alert--danger" role="alert">
                     <span className={styles.error_inline}>
-                        <AlertCircle size={16} aria-hidden="true" />
+                        <AlertCircle size={14} aria-hidden="true" />
                         {error}
                     </span>
                 </div>
             )}
             {redis && (
-                <Stack gap="sm">
-                    <h4 className={styles.subsection_subtitle}>Redis Cache</h4>
-                    <Grid columns="responsive" gap="sm">
-                        <HealthMetric
-                            icon={<Database size={20} />}
-                            label="Status"
-                            value={redis.connected ? 'Connected' : 'Disconnected'}
-                            tone={redis.connected ? 'success' : 'danger'}
-                        />
-                        {redis.responseTime !== null && (
-                            <HealthMetric
-                                icon={<Activity size={20} />}
-                                label="Response Time"
-                                value={`${redis.responseTime}ms`}
-                            />
-                        )}
-                        <HealthMetric
-                            icon={<HardDrive size={20} />}
-                            label="Cached Keys"
-                            value={redis.keyCount.toLocaleString()}
-                        />
-                        {redis.memoryUsage !== null && (
-                            <HealthMetric
-                                icon={<HardDrive size={20} />}
-                                label="Memory Usage"
-                                value={formatBytes(redis.memoryUsage)}
-                            />
-                        )}
-                        <HealthMetric
-                            icon={<AlertTriangle size={20} />}
-                            label="Evictions"
-                            value={redis.evictions.toLocaleString()}
-                            tone={redis.evictions > 0 ? 'danger' : 'neutral'}
-                        />
-                    </Grid>
-                </Stack>
+                <div className={styles.block}>
+                    <h4 className={styles.block_title}>Redis Cache</h4>
+                    <StatStrip
+                        items={[
+                            {
+                                label: 'Status',
+                                value: redis.connected ? 'Connected' : 'Disconnected',
+                                tone: redis.connected ? 'success' : 'danger'
+                            },
+                            ...(redis.responseTime !== null
+                                ? [{ label: 'Response', value: `${redis.responseTime}ms` }]
+                                : []),
+                            { label: 'Cached Keys', value: redis.keyCount.toLocaleString() },
+                            ...(redis.memoryUsage !== null
+                                ? [{ label: 'Memory', value: formatBytes(redis.memoryUsage) }]
+                                : []),
+                            {
+                                label: 'Evictions',
+                                value: redis.evictions.toLocaleString(),
+                                tone: redis.evictions > 0 ? ('danger' as const) : undefined
+                            }
+                        ]}
+                    />
+                </div>
             )}
             {server && (
-                <Stack gap="sm">
-                    <h4 className={styles.subsection_subtitle}>Backend Server</h4>
-                    <Grid columns="responsive" gap="sm">
-                        <HealthMetric
-                            icon={<Clock size={20} />}
-                            label="Uptime"
-                            value={formatUptime(server.uptime)}
-                        />
-                        <HealthMetric
-                            icon={<Server size={20} />}
-                            label="Heap Memory"
-                            value={formatBytes(server.memoryUsage.heapUsed)}
-                            detail={`of ${formatBytes(server.memoryUsage.heapTotal)}`}
-                        />
-                        <HealthMetric
-                            icon={<HardDrive size={20} />}
-                            label="RSS Memory"
-                            value={formatBytes(server.memoryUsage.rss)}
-                        />
-                        <HealthMetric
-                            icon={<Cpu size={20} />}
-                            label="CPU Usage"
-                            value={`${server.cpuUsage.toFixed(1)}%`}
-                        />
-                    </Grid>
-                </Stack>
+                <div className={styles.block}>
+                    <h4 className={styles.block_title}>Backend Server</h4>
+                    <StatStrip
+                        items={[
+                            { label: 'Uptime', value: formatUptime(server.uptime) },
+                            {
+                                label: 'Heap',
+                                value: formatBytes(server.memoryUsage.heapUsed),
+                                detail: `of ${formatBytes(server.memoryUsage.heapTotal)}`
+                            },
+                            { label: 'RSS', value: formatBytes(server.memoryUsage.rss) },
+                            { label: 'CPU', value: `${server.cpuUsage.toFixed(1)}%` }
+                        ]}
+                    />
+                </div>
             )}
-        </section>
+        </div>
     );
 }
 

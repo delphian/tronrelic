@@ -1,29 +1,14 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import {
-    Activity,
-    AlertCircle,
-    AlertTriangle,
-    Blocks,
-    CheckCircle,
-    Clock,
-    Database,
-    Gauge,
-    Layers,
-    Network,
-    Play,
-    Timer,
-    TrendingDown,
-    Zap
-} from 'lucide-react';
-import { Stack, Grid } from '../../../../../components/layout';
+import { AlertCircle, AlertTriangle, Layers, Play } from 'lucide-react';
+import { Stack } from '../../../../../components/layout';
 import { Button } from '../../../../../components/ui/Button';
 import { Badge } from '../../../../../components/ui/Badge';
 import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../../components/ui/Table';
 import { ClientTime } from '../../../../../components/ui/ClientTime';
 import { getRuntimeConfig } from '../../../../../lib/runtimeConfig';
-import { HealthMetric } from './HealthMetric';
+import { StatStrip } from './StatStrip';
 import styles from './BlockchainSection.module.scss';
 
 interface Props {
@@ -84,16 +69,13 @@ interface ObserverStats {
 }
 
 /**
- * Blockchain monitoring body — sync status, pipeline timings, and observer performance.
+ * Blockchain monitoring body — sync status, pipeline timings, observer table.
  *
- * Rendered inside a CollapsibleSection; the polling interval and API
- * fetches do not start until the admin expands the section. All three
- * sub-blocks share a single fetch cycle so opening the section costs
- * one round-trip instead of three.
- *
- * Auth follows the canonical admin pattern from docs/system/system-api.md:
- * X-Admin-Token header against ${runtimeConfig.apiUrl}/admin/...
- * URLs. Token presence is guaranteed by SystemAuthGate higher in the tree.
+ * One fetch cycle hits four endpoints in parallel; sub-blocks render as
+ * tight StatStrip rows so all the data fits at desktop without forcing
+ * a tile-per-metric vertical stack. The observer block stays as a
+ * compact table because six numeric columns line up better than they
+ * would as stat tiles.
  */
 export function BlockchainSection({ token }: Props) {
     const [status, setStatus] = useState<BlockchainStatus | null>(null);
@@ -121,9 +103,6 @@ export function BlockchainSection({ token }: Props) {
                 })
             ]);
 
-            // Each backend returns its own status independently; surface a
-            // failure (and clear stale data) per-backend so a transient
-            // outage on one endpoint doesn't keep showing healthy values.
             setStatus(statusRes.ok ? (await statusRes.json()).status ?? null : null);
             setMetrics(metricsRes.ok ? (await metricsRes.json()).metrics ?? null : null);
             setObservers(observersRes.ok ? (await observersRes.json()).observers ?? [] : []);
@@ -157,8 +136,6 @@ export function BlockchainSection({ token }: Props) {
                 method: 'POST',
                 headers: { 'X-Admin-Token': token }
             });
-            // Best-effort JSON parse so structured backend error details
-            // survive non-2xx responses; fetch() only rejects on network errors.
             let data: any = null;
             try {
                 data = await response.json();
@@ -172,9 +149,6 @@ export function BlockchainSection({ token }: Props) {
                         ?? `Failed to trigger sync: ${response.statusText || response.status}`
                 );
             }
-            // Give the backend a moment to complete the sync cycle before
-            // fetching fresh state, otherwise the next poll would still
-            // show pre-trigger values.
             setTimeout(() => void fetchData(), 2000);
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Failed to trigger sync');
@@ -184,11 +158,11 @@ export function BlockchainSection({ token }: Props) {
     };
 
     return (
-        <Stack gap="lg">
+        <div className={styles.subsection}>
             {error && (
                 <div className="alert alert--danger" role="alert">
                     <span className={styles.error_inline}>
-                        <AlertCircle size={16} aria-hidden="true" />
+                        <AlertCircle size={14} aria-hidden="true" />
                         {error}
                     </span>
                 </div>
@@ -205,7 +179,7 @@ export function BlockchainSection({ token }: Props) {
             <PipelineMetricsBlock status={status} />
 
             <ObserverPerformanceBlock observers={observers} />
-        </Stack>
+        </div>
     );
 }
 
@@ -217,25 +191,18 @@ interface SyncStatusBlockProps {
     onTriggerSync: () => void;
 }
 
-/**
- * Top sync-state block: lag, throughput, success rate, and the manual sync trigger.
- *
- * The trigger button stays disabled while the scheduler job is running automatically;
- * exposing it during normal operation would let an operator stack a manual run on top
- * of an in-flight scheduled run, doubling write pressure for no benefit.
- */
 function SyncStatusBlock({ status, metrics, schedulerEnabled, syncing, onTriggerSync }: SyncStatusBlockProps) {
     const netCatchUpRate = status?.netCatchUpRate ?? null;
     const fallingBehind = netCatchUpRate !== null && netCatchUpRate < 0 && !status?.lastTimings?.throttle;
 
     return (
-        <section className={styles.subsection}>
-            <header className={styles.subsection_header}>
-                <h3 className={styles.subsection_title}>Sync Status</h3>
+        <div className={styles.block}>
+            <header className={styles.block_header}>
+                <h4 className={styles.block_title}>Sync Status</h4>
                 <Button
                     variant="primary"
-                    size="sm"
-                    icon={<Play size={16} />}
+                    size="xs"
+                    icon={<Play size={14} />}
                     onClick={onTriggerSync}
                     disabled={syncing || schedulerEnabled}
                     loading={syncing}
@@ -243,7 +210,7 @@ function SyncStatusBlock({ status, metrics, schedulerEnabled, syncing, onTrigger
                         ? 'Scheduler is running automatically every minute'
                         : 'Manually trigger blockchain sync'}
                 >
-                    Trigger Sync Now
+                    Trigger Sync
                 </Button>
             </header>
 
@@ -265,86 +232,64 @@ function SyncStatusBlock({ status, metrics, schedulerEnabled, syncing, onTrigger
             )}
 
             {status && (
-                <Grid columns="responsive" gap="sm">
-                    <HealthMetric
-                        icon={<Network size={20} />}
-                        label="Network Height"
-                        value={status.networkBlock.toLocaleString()}
-                        detail="Latest TRON block"
-                    />
-                    <HealthMetric
-                        icon={<Blocks size={20} />}
-                        label="Current Block"
-                        value={status.currentBlock.toLocaleString()}
-                        detail="Last indexed locally"
-                    />
-                    <HealthMetric
-                        icon={<TrendingDown size={20} />}
-                        label="Lag"
-                        value={
-                            <span className={styles.cell_inline}>
-                                <Badge tone={getLagTone(status.lag, status.liveChainThrottleBlocks)}>
-                                    {status.lag.toLocaleString()}
-                                </Badge>
-                            </span>
-                        }
-                        detail={status.averageProcessingDelaySeconds !== null
-                            ? `${formatDuration(status.averageProcessingDelaySeconds)} behind`
-                            : `${status.lag.toLocaleString()} blocks behind`}
-                        tone={getLagMetricTone(status.lag, status.liveChainThrottleBlocks)}
-                    />
-                    {status.processingBlocksPerMinute !== null && (
-                        <HealthMetric
-                            icon={<Activity size={20} />}
-                            label="Processing Rate"
-                            value={`${status.processingBlocksPerMinute.toFixed(1)} b/m`}
-                            detail="Blocks per minute"
-                        />
-                    )}
-                    {netCatchUpRate !== null && (
-                        <HealthMetric
-                            icon={<Gauge size={20} />}
-                            label="Net Catch-up Rate"
-                            value={
-                                <span className={styles.cell_inline}>
-                                    <Badge tone={netCatchUpRate >= 0 ? 'success' : 'danger'}>
-                                        {`${netCatchUpRate >= 0 ? '+' : ''}${netCatchUpRate.toFixed(1)} b/m`}
-                                    </Badge>
-                                </span>
-                            }
-                            detail={status.estimatedCatchUpTime !== null && status.estimatedCatchUpTime > 0
-                                ? `ETA: ${formatCatchUpEta(status.estimatedCatchUpTime)}`
-                                : 'Processing − network rate'}
-                            tone={netCatchUpRate < 0 ? 'danger' : 'neutral'}
-                        />
-                    )}
-                    {metrics && (
-                        <HealthMetric
-                            icon={<CheckCircle size={20} />}
-                            label="Success Rate"
-                            value={
-                                <span className={styles.cell_inline}>
-                                    <Badge tone={getSuccessRateTone(metrics.successRate)}>
-                                        {`${metrics.successRate.toFixed(1)}%`}
-                                    </Badge>
-                                </span>
-                            }
-                            detail="Last 180 blocks"
-                        />
-                    )}
-                </Grid>
+                <StatStrip
+                    items={[
+                        {
+                            label: 'Network Height',
+                            value: status.networkBlock.toLocaleString(),
+                            detail: 'Latest TRON block'
+                        },
+                        {
+                            label: 'Local Block',
+                            value: status.currentBlock.toLocaleString(),
+                            detail: 'Last indexed locally'
+                        },
+                        {
+                            label: 'Lag',
+                            value: status.lag.toLocaleString(),
+                            detail: status.averageProcessingDelaySeconds !== null
+                                ? `${formatDuration(status.averageProcessingDelaySeconds)} behind`
+                                : `${status.lag.toLocaleString()} blocks behind`,
+                            tone: getLagMetricTone(status.lag, status.liveChainThrottleBlocks)
+                        },
+                        ...(status.processingBlocksPerMinute !== null
+                            ? [{
+                                label: 'Process Rate',
+                                value: `${status.processingBlocksPerMinute.toFixed(1)} b/m`,
+                                detail: 'Blocks per minute'
+                            }]
+                            : []),
+                        ...(netCatchUpRate !== null
+                            ? [{
+                                label: 'Net Catch-up',
+                                value: `${netCatchUpRate >= 0 ? '+' : ''}${netCatchUpRate.toFixed(1)} b/m`,
+                                detail: status.estimatedCatchUpTime !== null && status.estimatedCatchUpTime > 0
+                                    ? `ETA ${formatCatchUpEta(status.estimatedCatchUpTime)}`
+                                    : 'Process − network',
+                                tone: (netCatchUpRate < 0 ? 'danger' : 'success') as 'danger' | 'success'
+                            }]
+                            : []),
+                        ...(metrics
+                            ? [{
+                                label: 'Success Rate',
+                                value: `${metrics.successRate.toFixed(1)}%`,
+                                detail: 'Last 180 blocks',
+                                tone: getSuccessRateTone(metrics.successRate)
+                            }]
+                            : [])
+                    ]}
+                />
             )}
 
             {fallingBehind && netCatchUpRate !== null && (
                 <div className="alert alert--warning" role="alert">
                     <span className={styles.error_inline}>
-                        <AlertTriangle size={16} aria-hidden="true" />
-                        Processing throughput is slower than the network ({netCatchUpRate.toFixed(1)} b/m).
-                        Lag may continue to grow until throughput improves.
+                        <AlertTriangle size={14} aria-hidden="true" />
+                        Processing throughput slower than network ({netCatchUpRate.toFixed(1)} b/m). Lag may grow.
                     </span>
                 </div>
             )}
-        </section>
+        </div>
     );
 }
 
@@ -352,24 +297,15 @@ interface PipelineMetricsBlockProps {
     status: BlockchainStatus | null;
 }
 
-/**
- * Per-block pipeline timing breakdown: fetch, process, write, throttle.
- *
- * Exposes which pipeline stage is slow so operators can attribute lag to a
- * specific cause (TronGrid latency vs Mongo write latency vs intentional throttle)
- * instead of guessing.
- */
 function PipelineMetricsBlock({ status }: PipelineMetricsBlockProps) {
     if (!status) return null;
 
     if (!status.lastTimings) {
         return (
-            <section className={styles.subsection}>
-                <header className={styles.subsection_header}>
-                    <h3 className={styles.subsection_title}>Pipeline Metrics</h3>
-                </header>
-                <p className={styles.subsection_note}>No timing data available yet.</p>
-            </section>
+            <div className={styles.block}>
+                <h4 className={styles.block_title}>Pipeline Metrics</h4>
+                <p className={styles.block_note}>No timing data available yet.</p>
+            </div>
         );
     }
 
@@ -377,50 +313,47 @@ function PipelineMetricsBlock({ status }: PipelineMetricsBlockProps) {
     const totalMs = status.lastTimings.total ?? 0;
 
     return (
-        <section className={styles.subsection}>
-            <header className={styles.subsection_header}>
-                <h3 className={styles.subsection_title}>Pipeline Metrics</h3>
-                <span className={styles.subsection_note}>
-                    Block {blockNumber.toLocaleString()} ({status.lastTransactionCount ?? 0} transactions)
+        <div className={styles.block}>
+            <header className={styles.block_header}>
+                <h4 className={styles.block_title}>Pipeline Metrics</h4>
+                <span className={styles.block_note}>
+                    Block {blockNumber.toLocaleString()} ({status.lastTransactionCount ?? 0} tx)
                 </span>
             </header>
 
-            <Grid columns="responsive" gap="sm">
-                <HealthMetric
-                    icon={<Network size={20} />}
-                    label="Fetch Block"
-                    value={`${(status.lastTimings.fetchBlock ?? 0).toFixed(0)} ms`}
-                    detail="TronGrid round trip"
-                />
-                <HealthMetric
-                    icon={<Zap size={20} />}
-                    label="Process Transactions"
-                    value={`${(status.lastTimings.processTransactions ?? 0).toFixed(0)} ms`}
-                    detail="Parse, enrich, notify observers"
-                />
-                <HealthMetric
-                    icon={<Database size={20} />}
-                    label="Bulk Write"
-                    value={`${(status.lastTimings.bulkWriteTransactions ?? 0).toFixed(0)} ms`}
-                    detail="Persist to MongoDB"
-                />
-                {status.lastTimings.throttle !== undefined && (
-                    <HealthMetric
-                        icon={<Timer size={20} />}
-                        label="Throttle"
-                        value={`${status.lastTimings.throttle.toFixed(0)} ms`}
-                        detail="Intentional pacing delay"
-                    />
-                )}
-                <HealthMetric
-                    icon={<Clock size={20} />}
-                    label="Total Time"
-                    value={`${totalMs.toFixed(0)} ms`}
-                    detail="End-to-end pipeline"
-                    tone={totalMs > 3000 ? 'danger' : 'neutral'}
-                />
-            </Grid>
-        </section>
+            <StatStrip
+                items={[
+                    {
+                        label: 'Fetch Block',
+                        value: `${(status.lastTimings.fetchBlock ?? 0).toFixed(0)} ms`,
+                        detail: 'TronGrid round trip'
+                    },
+                    {
+                        label: 'Process Tx',
+                        value: `${(status.lastTimings.processTransactions ?? 0).toFixed(0)} ms`,
+                        detail: 'Parse + notify'
+                    },
+                    {
+                        label: 'Bulk Write',
+                        value: `${(status.lastTimings.bulkWriteTransactions ?? 0).toFixed(0)} ms`,
+                        detail: 'Persist to MongoDB'
+                    },
+                    ...(status.lastTimings.throttle !== undefined
+                        ? [{
+                            label: 'Throttle',
+                            value: `${status.lastTimings.throttle.toFixed(0)} ms`,
+                            detail: 'Pacing delay'
+                        }]
+                        : []),
+                    {
+                        label: 'Total',
+                        value: `${totalMs.toFixed(0)} ms`,
+                        detail: 'End-to-end',
+                        tone: totalMs > 3000 ? ('danger' as const) : undefined
+                    }
+                ]}
+            />
+        </div>
     );
 }
 
@@ -428,27 +361,19 @@ interface ObserverPerformanceBlockProps {
     observers: ObserverStats[];
 }
 
-/**
- * Per-observer throughput, queue depth, and error tracking.
- *
- * Renders a compact table because each observer's row contains six numeric
- * fields that line up better column-aligned than they would as stacked metric
- * tiles.
- */
 function ObserverPerformanceBlock({ observers }: ObserverPerformanceBlockProps) {
     return (
-        <section className={styles.subsection}>
-            <header className={styles.subsection_header}>
-                <h3 className={styles.subsection_title}>Observer Performance</h3>
-                <span className={styles.subsection_note}>
-                    Observers process transactions asynchronously. High processing times or
-                    queue depths may indicate bottlenecks.
+        <div className={styles.block}>
+            <header className={styles.block_header}>
+                <h4 className={styles.block_title}>Observer Performance</h4>
+                <span className={styles.block_note}>
+                    Async transaction processors — high queue depth or processing time signals a bottleneck.
                 </span>
             </header>
 
             {observers.length === 0 ? (
-                <p className={styles.subsection_note}>
-                    <Layers size={16} aria-hidden="true" /> No observers registered.
+                <p className={styles.block_note}>
+                    <Layers size={14} aria-hidden="true" /> No observers registered.
                 </p>
             ) : (
                 <Table variant="compact">
@@ -513,20 +438,14 @@ function ObserverPerformanceBlock({ observers }: ObserverPerformanceBlockProps) 
                     </Tbody>
                 </Table>
             )}
-        </section>
+        </div>
     );
 }
 
-function getLagTone(lag: number, throttleThreshold: number): 'success' | 'warning' | 'danger' {
-    if (lag < throttleThreshold) return 'success';
-    if (lag < 100) return 'warning';
-    return 'danger';
-}
-
-function getLagMetricTone(lag: number, throttleThreshold: number): 'neutral' | 'success' | 'danger' {
+function getLagMetricTone(lag: number, throttleThreshold: number): 'success' | 'danger' | undefined {
     if (lag < throttleThreshold) return 'success';
     if (lag >= 100) return 'danger';
-    return 'neutral';
+    return undefined;
 }
 
 function getSuccessRateTone(rate: number): 'success' | 'warning' | 'danger' {

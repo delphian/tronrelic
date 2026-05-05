@@ -1,13 +1,12 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Radio, Activity, Users, Send, AlertTriangle, ChevronDown, ChevronRight } from 'lucide-react';
+import { ChevronDown, ChevronRight } from 'lucide-react';
 import type { IPluginWebSocketStats, IAggregatePluginWebSocketStats } from '@/types';
 import { Badge } from '../../../../../components/ui/Badge';
-import { Stack, Grid } from '../../../../../components/layout';
 import { ClientTime } from '../../../../../components/ui/ClientTime';
 import { getRuntimeConfig } from '../../../../../lib/runtimeConfig';
-import { HealthMetric } from './HealthMetric';
+import { StatStrip } from './StatStrip';
 import styles from './WebSocketsSection.module.scss';
 
 interface Props {
@@ -17,14 +16,9 @@ interface Props {
 /**
  * WebSocket monitoring body.
  *
- * Rendered inside a CollapsibleSection — this component only mounts when
- * the section is expanded, which means the 5-second polling interval
- * does not start until the admin opens the section. Per-plugin
- * breakdowns expand inline to show their rooms without a separate route.
- *
- * Auth follows the canonical admin pattern from docs/system/system-api.md:
- * X-Admin-Token header against ${runtimeConfig.apiUrl}/admin/...
- * URLs. Token presence is guaranteed by SystemAuthGate higher in the tree.
+ * Polls every 5s while mounted. Aggregate metrics render as a single
+ * StatStrip; per-plugin breakdowns expand inline as a flat list of mini
+ * strips so an admin can scan all sockets without nested cards.
  */
 export function WebSocketsSection({ token }: Props) {
     const [aggregate, setAggregate] = useState<IAggregatePluginWebSocketStats | null>(null);
@@ -65,7 +59,7 @@ export function WebSocketsSection({ token }: Props) {
     }, [fetchStats]);
 
     return (
-        <Stack gap="md">
+        <div className={styles.subsection}>
             {error && (
                 <div className="alert alert--danger" role="alert">
                     {error}
@@ -73,53 +67,53 @@ export function WebSocketsSection({ token }: Props) {
             )}
 
             {aggregate && (
-                <>
-                    <Grid columns="responsive" gap="sm">
-                        <HealthMetric
-                            icon={<Radio size={20} />}
-                            label="Plugins"
-                            value={aggregate.totalPlugins.toLocaleString()}
-                            detail="with WebSocket handlers"
-                        />
-                        <HealthMetric
-                            icon={<Users size={20} />}
-                            label="Active Subscriptions"
-                            value={aggregate.totalSubscriptions.toLocaleString()}
-                            detail={`across ${aggregate.totalRooms.toLocaleString()} rooms`}
-                        />
-                        <HealthMetric
-                            icon={<Send size={20} />}
-                            label="Events Emitted"
-                            value={aggregate.totalEventsEmitted.toLocaleString()}
-                            detail="since startup"
-                        />
-                        <HealthMetric
-                            icon={<AlertTriangle size={20} />}
-                            label="Subscription Errors"
-                            value={aggregate.totalSubscriptionErrors.toLocaleString()}
-                            tone={aggregate.totalSubscriptionErrors > 0 ? 'danger' : 'neutral'}
-                            detail="total failures"
-                        />
-                    </Grid>
-
+                <div className={styles.block}>
+                    <h4 className={styles.block_title}>Aggregate</h4>
+                    <StatStrip
+                        items={[
+                            {
+                                label: 'Plugins',
+                                value: aggregate.totalPlugins.toLocaleString(),
+                                detail: 'with handlers'
+                            },
+                            {
+                                label: 'Subscriptions',
+                                value: aggregate.totalSubscriptions.toLocaleString(),
+                                detail: `${aggregate.totalRooms.toLocaleString()} rooms`
+                            },
+                            {
+                                label: 'Events Emitted',
+                                value: aggregate.totalEventsEmitted.toLocaleString(),
+                                detail: 'since startup'
+                            },
+                            {
+                                label: 'Sub Errors',
+                                value: aggregate.totalSubscriptionErrors.toLocaleString(),
+                                detail: 'total failures',
+                                tone: aggregate.totalSubscriptionErrors > 0 ? 'danger' : undefined
+                            }
+                        ]}
+                    />
                     {aggregate.mostActivePlugin && (
-                        <p className={styles.most_active}>
-                            <strong>Most active plugin:</strong>{' '}
-                            {aggregate.mostActivePlugin.pluginId}{' '}
-                            ({aggregate.mostActivePlugin.subscriptionCount.toLocaleString()} subscriptions)
+                        <p className={styles.block_note}>
+                            Most active: <code>{aggregate.mostActivePlugin.pluginId}</code>{' '}
+                            ({aggregate.mostActivePlugin.subscriptionCount.toLocaleString()} subs)
                         </p>
                     )}
-                </>
+                </div>
             )}
 
-            <div className={styles.plugin_list}>
-                {pluginStats.length === 0 ? (
-                    <p className="text-muted">No plugins with WebSocket capabilities found.</p>
-                ) : (
-                    pluginStats.map((stats) => <PluginStats key={stats.pluginId} stats={stats} />)
-                )}
+            <div className={styles.block}>
+                <h4 className={styles.block_title}>Plugins</h4>
+                <div className={styles.plugin_list}>
+                    {pluginStats.length === 0 ? (
+                        <p className={styles.block_note}>No plugins with WebSocket capabilities found.</p>
+                    ) : (
+                        pluginStats.map((stats) => <PluginStats key={stats.pluginId} stats={stats} />)
+                    )}
+                </div>
             </div>
-        </Stack>
+        </div>
     );
 }
 
@@ -127,9 +121,6 @@ interface PluginStatsProps {
     stats: IPluginWebSocketStats;
 }
 
-/**
- * Per-plugin row with expandable room breakdown.
- */
 function PluginStats({ stats }: PluginStatsProps) {
     const [expanded, setExpanded] = useState(false);
     const hasErrors = stats.totalSubscriptionErrors > 0;
@@ -138,40 +129,26 @@ function PluginStats({ stats }: PluginStatsProps) {
         <article className={styles.plugin}>
             <header className={styles.plugin_header}>
                 <div className={styles.plugin_identity}>
-                    <h3 className={styles.plugin_title}>{stats.pluginTitle}</h3>
+                    <span className={styles.plugin_title}>{stats.pluginTitle}</span>
                     <code className={styles.plugin_id}>{stats.pluginId}</code>
                 </div>
                 {stats.hasSubscriptionHandler && <Badge tone="success">Active</Badge>}
             </header>
 
-            <Grid columns="responsive" gap="sm">
-                <HealthMetric
-                    icon={<Activity size={20} />}
-                    label="Active Rooms"
-                    value={stats.activeRooms.toLocaleString()}
-                />
-                <HealthMetric
-                    icon={<Users size={20} />}
-                    label="Subscriptions"
-                    value={stats.totalSubscriptions.toLocaleString()}
-                />
-                <HealthMetric
-                    icon={<Send size={20} />}
-                    label="Events Emitted"
-                    value={stats.totalEventsEmitted.toLocaleString()}
-                />
-                <HealthMetric
-                    icon={<Send size={20} />}
-                    label="Events / min"
-                    value={stats.eventsPerMinute.toLocaleString()}
-                />
-                <HealthMetric
-                    icon={<AlertTriangle size={20} />}
-                    label="Errors"
-                    value={stats.totalSubscriptionErrors.toLocaleString()}
-                    tone={hasErrors ? 'danger' : 'neutral'}
-                />
-            </Grid>
+            <StatStrip
+                minColWidth="100px"
+                items={[
+                    { label: 'Rooms', value: stats.activeRooms.toLocaleString() },
+                    { label: 'Subs', value: stats.totalSubscriptions.toLocaleString() },
+                    { label: 'Events', value: stats.totalEventsEmitted.toLocaleString() },
+                    { label: 'Events/min', value: stats.eventsPerMinute.toLocaleString() },
+                    {
+                        label: 'Errors',
+                        value: stats.totalSubscriptionErrors.toLocaleString(),
+                        tone: hasErrors ? 'danger' : undefined
+                    }
+                ]}
+            />
 
             {stats.roomStats.length > 0 && (
                 <div className={styles.rooms}>
@@ -181,7 +158,7 @@ function PluginStats({ stats }: PluginStatsProps) {
                         onClick={() => setExpanded((prev) => !prev)}
                         aria-expanded={expanded}
                     >
-                        {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                        {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
                         Room details ({stats.roomStats.length})
                     </button>
                     {expanded && (
@@ -194,7 +171,7 @@ function PluginStats({ stats }: PluginStatsProps) {
                                     </div>
                                     <Badge tone={room.memberCount > 0 ? 'success' : 'neutral'}>
                                         {room.memberCount.toLocaleString()}{' '}
-                                        {room.memberCount === 1 ? 'subscriber' : 'subscribers'}
+                                        {room.memberCount === 1 ? 'sub' : 'subs'}
                                     </Badge>
                                 </li>
                             ))}
