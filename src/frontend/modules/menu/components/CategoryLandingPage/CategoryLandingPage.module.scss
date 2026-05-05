@@ -1,7 +1,7 @@
 .card {
     display: flex;
     flex-direction: column;
-    gap: var(--spacing-4);
+    gap: var(--gap-sm);
     padding: var(--card-padding-md);
     background: var(--card-background);
     border: var(--card-border);
@@ -21,13 +21,13 @@
     }
 
     &__title {
-        font-size: var(--font-size-lg);
+        font-size: var(--font-size-heading-sm);
         font-weight: var(--font-weight-semibold);
         margin: 0;
     }
 
     &__description {
-        font-size: var(--font-size-sm);
+        font-size: var(--font-size-body-sm);
         color: var(--color-text-muted);
         margin: 0;
         line-height: var(--line-height-relaxed);
