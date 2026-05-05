@@ -191,6 +191,14 @@ export interface IFileService {
     count(filter?: Omit<IFileListFilter, 'limit' | 'skip'>): Promise<number>;
 
     /**
+     * Enumerate the distinct `{kind, id}` pairs currently present in the
+     * inventory. Intended for admin tooling that builds source-aware UIs
+     * (e.g. a dropdown listing every source that has uploaded files). Order
+     * is unspecified; callers that need a stable display order should sort.
+     */
+    distinctSources(): Promise<IFileSource[]>;
+
+    /**
      * Remove the inventory row and the underlying bytes. Returns true when a
      * record was deleted, false when the id did not exist. Storage-layer
      * "file already missing" is treated as success (returns true) so callers

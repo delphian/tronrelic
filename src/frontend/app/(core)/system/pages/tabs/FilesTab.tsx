@@ -5,7 +5,7 @@ import { Card } from '../../../../../components/ui/Card';
 import { Button } from '../../../../../components/ui/Button';
 import { Badge } from '../../../../../components/ui/Badge';
 import { Upload, Trash2, Copy, Image, File } from 'lucide-react';
-import type { IPageFile } from '@/types';
+import type { IFileSource, IPageFile } from '@/types';
 import styles from './FilesTab.module.css';
 
 /**
@@ -13,6 +13,28 @@ import styles from './FilesTab.module.css';
  */
 interface IFilesListResponse {
     files: IPageFile[];
+}
+
+/**
+ * API response for the distinct file-sources endpoint that powers the
+ * source-filter dropdown.
+ */
+interface IFileSourcesResponse {
+    sources: IFileSource[];
+}
+
+/**
+ * Wire encoding for the `source` query parameter. `'all'` drops the filter
+ * entirely (cross-source view); `'<kind>:<id>'` scopes to one source. The
+ * default `module:pages` preserves the original list-files behavior so this
+ * tab still shows admin uploads first.
+ */
+const ALL_SOURCES = 'all';
+const DEFAULT_SOURCE = 'module:pages';
+
+/** Encode an `IFileSource` for use as the dropdown value and server query param. */
+function encodeSource(source: IFileSource): string {
+    return `${source.kind}:${source.id}`;
 }
 
 /**
@@ -38,16 +60,24 @@ export function FilesTab({ token }: FilesTabProps) {
     const [uploading, setUploading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [mimeTypeFilter, setMimeTypeFilter] = useState<string>('all');
+    const [sourceFilter, setSourceFilter] = useState<string>(DEFAULT_SOURCE);
+    // Seed with the pages-module default so the dropdown shows a matching
+    // option on first paint, before the /sources fetch lands. The fetch
+    // replaces the list with the live inventory snapshot.
+    const [availableSources, setAvailableSources] = useState<IFileSource[]>([
+        { kind: 'module', id: 'pages' }
+    ]);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     /**
      * Fetch files list from API.
      *
-     * Applies current MIME type filter and updates component state.
+     * Applies current source and MIME type filters and updates component state.
      */
     const fetchFiles = useCallback(async () => {
         try {
             const params = new URLSearchParams();
+            params.append('source', sourceFilter);
             if (mimeTypeFilter !== 'all') {
                 params.append('mimeType', mimeTypeFilter);
             }
@@ -71,7 +101,37 @@ export function FilesTab({ token }: FilesTabProps) {
         } finally {
             setLoading(false);
         }
-    }, [token, mimeTypeFilter]);
+    }, [token, mimeTypeFilter, sourceFilter]);
+
+    /**
+     * Fetch the list of distinct file sources to populate the source dropdown.
+     *
+     * The list is derived live from the inventory, so a freshly enabled
+     * plugin that has not yet uploaded anything legitimately won't appear
+     * until its first write. On fetch failure the seeded default
+     * (`module:pages`) stays in place so the dropdown remains usable.
+     */
+    const fetchSources = useCallback(async () => {
+        try {
+            const response = await fetch('/api/admin/pages/files/sources', {
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-admin-token': token
+                }
+            });
+
+            if (!response.ok) {
+                throw new Error(`Failed to fetch sources: ${response.statusText}`);
+            }
+
+            const data: IFileSourcesResponse = await response.json();
+            if (data.sources.length > 0) {
+                setAvailableSources(data.sources);
+            }
+        } catch {
+            // Keep the seeded default.
+        }
+    }, [token]);
 
     /**
      * Upload a file to the server.
@@ -199,6 +259,14 @@ export function FilesTab({ token }: FilesTabProps) {
         void fetchFiles();
     }, [fetchFiles]);
 
+    // Populate the source dropdown once on mount, and refresh after a
+    // successful upload so a brand-new source becomes selectable. The
+    // refresh is wired to the `files` list length as a cheap proxy for
+    // "the inventory may have changed".
+    useEffect(() => {
+        void fetchSources();
+    }, [fetchSources, files.length]);
+
     if (loading) {
         return (
             <Card padding="lg">
@@ -235,6 +303,22 @@ export function FilesTab({ token }: FilesTabProps) {
                     >
                         Upload File
                     </Button>
+                    <select
+                        value={sourceFilter}
+                        onChange={e => setSourceFilter(e.target.value)}
+                        className={styles.filter_select}
+                        aria-label="Filter by file source"
+                    >
+                        <option value={ALL_SOURCES}>All Sources</option>
+                        {availableSources.map(source => {
+                            const value = encodeSource(source);
+                            return (
+                                <option key={value} value={value}>
+                                    {source.kind}: {source.id}
+                                </option>
+                            );
+                        })}
+                    </select>
                     <select
                         value={mimeTypeFilter}
                         onChange={e => setMimeTypeFilter(e.target.value)}

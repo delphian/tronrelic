@@ -2,7 +2,7 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { PagesController } from '../api/pages.controller.js';
-import type { IPageService } from '@/types';
+import type { IFileService, IPageService } from '@/types';
 import { FileValidationError, FileSizeExceededError } from '@/types';
 import type { Request, Response } from 'express';
 import { ObjectId } from 'mongodb';
@@ -30,6 +30,23 @@ class MockPageService implements IPageService {
     updateSettings = vi.fn();
     sanitizeSlug = vi.fn();
     isSlugBlacklisted = vi.fn();
+}
+
+/**
+ * Mock IFileService for testing the cross-source admin file browser path.
+ * The controller now consults `IFileService` directly for `listFiles` and
+ * `listFileSources`, bypassing `PageService` so admins can scope across
+ * sources (the documented escape-hatch in the IFileService contract).
+ */
+class MockFileService implements IFileService {
+    upload = vi.fn();
+    read = vi.fn();
+    getUrl = vi.fn();
+    getRecord = vi.fn();
+    list = vi.fn().mockResolvedValue([]);
+    count = vi.fn();
+    delete = vi.fn();
+    distinctSources = vi.fn().mockResolvedValue([]);
 }
 
 /**
@@ -72,11 +89,13 @@ function createMockResponse(): Response {
 describe('PagesController', () => {
     let controller: PagesController;
     let mockService: MockPageService;
+    let mockFileService: MockFileService;
 
     beforeEach(() => {
         vi.clearAllMocks();
         mockService = new MockPageService();
-        controller = new PagesController(mockService as any, mockLogger);
+        mockFileService = new MockFileService();
+        controller = new PagesController(mockService as any, mockFileService, mockLogger);
     });
 
     // ============================================================================
@@ -293,41 +312,123 @@ describe('PagesController', () => {
     // ============================================================================
 
     describe('listFiles', () => {
-        it('should list uploaded files', async () => {
-            const mockFiles = [
-                { _id: '1', originalName: 'file1.png', mimeType: 'image/png' },
-                { _id: '2', originalName: 'file2.pdf', mimeType: 'application/pdf' }
-            ];
+        const baseRecord = {
+            id: '1',
+            source: { kind: 'module' as const, id: 'pages' },
+            originalName: 'file1.png',
+            storedName: '1.png',
+            mimeType: 'image/png',
+            sizeBytes: 100,
+            url: '/uploads/module/pages/26/05/1.png',
+            uploadedBy: null,
+            uploadedAt: new Date('2026-05-04T00:00:00Z')
+        };
 
-            mockService.listFiles.mockResolvedValue(mockFiles);
+        it('should list uploaded files mapped to IPageFile shape', async () => {
+            mockFileService.list.mockResolvedValue([baseRecord]);
 
             const req = createMockRequest();
             const res = createMockResponse();
 
             await controller.listFiles(req, res);
 
-            expect(res.json).toHaveBeenCalledWith({ files: mockFiles });
+            expect(res.json).toHaveBeenCalledWith({
+                files: [
+                    {
+                        _id: '1',
+                        originalName: 'file1.png',
+                        storedName: '1.png',
+                        mimeType: 'image/png',
+                        size: 100,
+                        path: '/uploads/module/pages/26/05/1.png',
+                        uploadedBy: null,
+                        uploadedAt: baseRecord.uploadedAt
+                    }
+                ]
+            });
         });
 
-        it('should handle query parameters', async () => {
-            mockService.listFiles.mockResolvedValue([]);
+        it('should default to module:pages source when source query is absent', async () => {
+            mockFileService.list.mockResolvedValue([]);
 
-            const req = createMockRequest({
-                query: {
-                    mimeType: 'image/',
-                    limit: '50',
-                    skip: '10'
-                }
-            });
-            const res = createMockResponse();
+            await controller.listFiles(
+                createMockRequest({ query: { mimeType: 'image/', limit: '50', skip: '10' } }),
+                createMockResponse()
+            );
 
-            await controller.listFiles(req, res);
-
-            expect(mockService.listFiles).toHaveBeenCalledWith({
+            expect(mockFileService.list).toHaveBeenCalledWith({
+                source: { kind: 'module', id: 'pages' },
                 mimeType: 'image/',
                 limit: 50,
                 skip: 10
             });
+        });
+
+        it('should drop source filter when source=all', async () => {
+            mockFileService.list.mockResolvedValue([]);
+
+            await controller.listFiles(
+                createMockRequest({ query: { source: 'all' } }),
+                createMockResponse()
+            );
+
+            const call = mockFileService.list.mock.calls[0][0];
+            expect(call.source).toBeUndefined();
+        });
+
+        it('should pass through a specific source', async () => {
+            mockFileService.list.mockResolvedValue([]);
+
+            await controller.listFiles(
+                createMockRequest({ query: { source: 'plugin:image-gen' } }),
+                createMockResponse()
+            );
+
+            expect(mockFileService.list).toHaveBeenCalledWith({
+                source: { kind: 'plugin', id: 'image-gen' },
+                mimeType: undefined,
+                limit: undefined,
+                skip: undefined
+            });
+        });
+
+        it('should reject malformed source values with 400', async () => {
+            const res = createMockResponse();
+
+            await controller.listFiles(
+                createMockRequest({ query: { source: 'bogus' } }),
+                res
+            );
+
+            expect(res.status).toHaveBeenCalledWith(400);
+            expect(mockFileService.list).not.toHaveBeenCalled();
+        });
+
+        it('should reject unknown source kinds with 400', async () => {
+            const res = createMockResponse();
+
+            await controller.listFiles(
+                createMockRequest({ query: { source: 'evil:hack' } }),
+                res
+            );
+
+            expect(res.status).toHaveBeenCalledWith(400);
+            expect(mockFileService.list).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('listFileSources', () => {
+        it('should return distinct sources from the inventory', async () => {
+            const sources = [
+                { kind: 'module' as const, id: 'pages' },
+                { kind: 'plugin' as const, id: 'image-gen' }
+            ];
+            mockFileService.distinctSources.mockResolvedValue(sources);
+
+            const res = createMockResponse();
+            await controller.listFileSources(createMockRequest(), res);
+
+            expect(res.json).toHaveBeenCalledWith({ sources });
         });
     });
 
