@@ -29,7 +29,6 @@ export interface ContractDetails {
 
 export interface TransactionAnalysis {
   relatedAddresses?: string[];
-  relatedTransactions?: string[];
   pattern?:
     | 'accumulation'
     | 'distribution'
@@ -45,7 +44,6 @@ export interface TransactionAnalysis {
     | 'token_creation'
     | 'unknown';
   riskScore?: number;
-  clusterId?: string;
   confidence?: number;
 }
 

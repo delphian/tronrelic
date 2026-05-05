@@ -232,7 +232,6 @@ export interface WhaleHighlightRecord {
   toAddress: string;
   memo?: string;
   pattern?: string;
-  clusterId?: string;
   confidence?: number;
 }
 

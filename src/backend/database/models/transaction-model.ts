@@ -55,18 +55,14 @@ const TransactionSchema = new Schema<TransactionDoc>({
   notifications: [String],
   analysis: {
     relatedAddresses: [String],
-    relatedTransactions: [String],
     pattern: String,
     riskScore: Number,
-    clusterId: String,
     confidence: Number
   }
 }, { timestamps: true, versionKey: false });
 
 TransactionSchema.index({ timestamp: -1 });
 TransactionSchema.index({ 'analysis.pattern': 1 });
-TransactionSchema.index({ 'analysis.clusterId': 1, timestamp: -1 });
-TransactionSchema.index({ 'analysis.relatedTransactions': 1 });
 TransactionSchema.index({ memo: 1, timestamp: -1 });
 TransactionSchema.index({ 'internalTransactions.hash': 1 });
 TransactionSchema.index({ type: 1, timestamp: -1 });
