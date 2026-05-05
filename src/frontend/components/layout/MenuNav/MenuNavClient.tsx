@@ -408,8 +408,9 @@ export function MenuNavClient({ namespace, items, generatedAt, ariaLabel }: IMen
                         e.stopPropagation();
                         toggleSubcategory(child._id);
                     }}
+                    role="menuitem"
                     aria-expanded={isSubExpanded}
-                    aria-haspopup="true"
+                    aria-haspopup="menu"
                     aria-label={`${isSubExpanded ? 'Collapse' : 'Expand'} ${child.label} submenu`}
                 >
                     <span>{child.label}</span>

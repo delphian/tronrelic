@@ -202,7 +202,6 @@
         border-radius: var(--radius-xl) var(--radius-xl) 0 0;
         border-bottom: none;
         padding: var(--padding-md);
-        padding-top: var(--padding-md);
         animation: categoryDropdown_slideUp 0.25s ease-out;
     }
 
@@ -316,7 +315,7 @@
     border: var(--modal-dialog-border);
     border-radius: var(--radius-md);
     padding: var(--padding-xs);
-    box-shadow: var(--shadow-lg);
+    box-shadow: var(--shadow-xl);
     backdrop-filter: blur(18px);
     animation: categoryDropdown_fadeIn var(--transition-base) ease-out;
     z-index: 1;
