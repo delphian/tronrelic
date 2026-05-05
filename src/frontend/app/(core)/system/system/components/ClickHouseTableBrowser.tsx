@@ -11,12 +11,13 @@
  * is the only operation needed for ops debugging.
  */
 
-import { useState, useEffect, useCallback, useMemo, Fragment } from 'react';
+import { useState, useEffect, useCallback, Fragment } from 'react';
 import { Button } from '../../../../../components/ui/Button';
 import { Badge } from '../../../../../components/ui/Badge';
 import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../../components/ui/Table';
 import { CopyButton } from '../../../../../components/ui/CopyButton';
 import { getRuntimeConfig } from '../../../../../lib/runtimeConfig';
+import { formatBytes } from '../../../../../lib/format';
 import { ChevronDown, ChevronRight, FileText, AlertCircle } from 'lucide-react';
 import styles from './ClickHouseTableBrowser.module.scss';
 
@@ -126,18 +127,7 @@ export function ClickHouseTableBrowser({ token }: ClickHouseTableBrowserProps) {
         setExpandedRowKey((prev) => (prev === rowKey ? null : rowKey));
     };
 
-    const formatBytes = (bytes: number): string => {
-        if (bytes === 0) return '0 B';
-        const k = 1024;
-        const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
-        const i = Math.floor(Math.log(bytes) / Math.log(k));
-        return `${(bytes / Math.pow(k, i)).toFixed(2)} ${sizes[i]}`;
-    };
-
-    const sortedTables = useMemo(
-        () => [...(stats?.tables ?? [])].sort((a, b) => b.sizeBytes - a.sizeBytes),
-        [stats?.tables]
-    );
+    const sortedTables = stats?.tables ?? [];
 
     if (loading) {
         return <p className={styles.empty}>Loading ClickHouse statistics…</p>;

@@ -21,6 +21,7 @@ import { ClientTime } from '../../../../../components/ui/ClientTime';
 import { CopyButton } from '../../../../../components/ui/CopyButton';
 import { useToast } from '../../../../../components/ui/ToastProvider/ToastProvider';
 import { getRuntimeConfig } from '../../../../../lib/runtimeConfig';
+import { formatBytes } from '../../../../../lib/format';
 import { Database, ChevronDown, ChevronRight, FileText, Trash2 } from 'lucide-react';
 import styles from './CollectionBrowser.module.scss';
 
@@ -187,14 +188,6 @@ export function CollectionBrowser({ token }: CollectionBrowserProps) {
             setDeletingDocumentId(null);
         }
     }, [token, pushToast, expandedDocumentId, documents?.page, fetchDocuments, fetchStats, runtimeConfig.apiUrl]);
-
-    const formatBytes = (bytes: number): string => {
-        if (bytes === 0) return '0 B';
-        const k = 1024;
-        const sizes = ['B', 'KB', 'MB', 'GB'];
-        const i = Math.floor(Math.log(bytes) / Math.log(k));
-        return `${(bytes / Math.pow(k, i)).toFixed(2)} ${sizes[i]}`;
-    };
 
     const sortedCollections = useMemo(
         () => [...(stats?.collections ?? [])].sort((a, b) => a.name.localeCompare(b.name)),

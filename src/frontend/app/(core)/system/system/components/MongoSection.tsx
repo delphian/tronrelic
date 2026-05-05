@@ -13,6 +13,7 @@ import { Badge } from '../../../../../components/ui/Badge';
 import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../../components/ui/Table';
 import { ClientTime } from '../../../../../components/ui/ClientTime';
 import { getRuntimeConfig } from '../../../../../lib/runtimeConfig';
+import { formatBytes } from '../../../../../lib/format';
 import { StatStrip } from './StatStrip';
 import { CollectionBrowser } from './CollectionBrowser';
 import styles from './MongoSection.module.scss';
@@ -511,10 +512,3 @@ function Browser({ token }: { token: string }) {
     );
 }
 
-function formatBytes(bytes: number): string {
-    if (bytes === 0) return '0 B';
-    const k = 1024;
-    const sizes = ['B', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return `${(bytes / Math.pow(k, i)).toFixed(2)} ${sizes[i]}`;
-}

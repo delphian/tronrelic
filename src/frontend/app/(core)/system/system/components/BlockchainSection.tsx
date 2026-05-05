@@ -266,7 +266,7 @@ function SyncStatusBlock({ status, metrics, schedulerEnabled, syncing, onTrigger
                                 detail: status.estimatedCatchUpTime !== null && status.estimatedCatchUpTime > 0
                                     ? `ETA ${formatCatchUpEta(status.estimatedCatchUpTime)}`
                                     : 'Process − network',
-                                tone: (netCatchUpRate < 0 ? 'danger' : 'success') as 'danger' | 'success'
+                                tone: (netCatchUpRate < 0 ? 'warning' : 'success') as 'warning' | 'success'
                             }]
                             : []),
                         ...(metrics
@@ -442,10 +442,10 @@ function ObserverPerformanceBlock({ observers }: ObserverPerformanceBlockProps) 
     );
 }
 
-function getLagMetricTone(lag: number, throttleThreshold: number): 'success' | 'danger' | undefined {
+function getLagMetricTone(lag: number, throttleThreshold: number): 'success' | 'warning' | 'danger' {
     if (lag < throttleThreshold) return 'success';
     if (lag >= 100) return 'danger';
-    return undefined;
+    return 'warning';
 }
 
 function getSuccessRateTone(rate: number): 'success' | 'warning' | 'danger' {

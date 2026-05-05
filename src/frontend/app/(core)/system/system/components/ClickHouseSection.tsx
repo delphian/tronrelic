@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { AlertCircle } from 'lucide-react';
 import { getRuntimeConfig } from '../../../../../lib/runtimeConfig';
+import { formatBytes } from '../../../../../lib/format';
 import { StatStrip } from './StatStrip';
 import { ClickHouseTableBrowser } from './ClickHouseTableBrowser';
 import styles from './ClickHouseSection.module.scss';
@@ -106,10 +107,3 @@ export function ClickHouseSection({ token }: Props) {
     );
 }
 
-function formatBytes(bytes: number): string {
-    if (bytes === 0) return '0 B';
-    const k = 1024;
-    const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return `${(bytes / Math.pow(k, i)).toFixed(2)} ${sizes[i]}`;
-}

@@ -73,7 +73,7 @@ export class ClickHouseBrowserController {
             const dbInfo = await this.clickhouse.query<{ dbName: string }>(
                 `SELECT currentDatabase() AS dbName`
             );
-            const dbName = dbInfo[0]?.dbName ?? 'tronrelic';
+            const dbName = dbInfo[0]?.dbName ?? process.env.CLICKHOUSE_DATABASE ?? '';
 
             const tables: ITableStat[] = rawTables.map((row) => ({
                 name: row.name,
