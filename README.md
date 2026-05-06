@@ -34,7 +34,9 @@ AGPL-3.0-or-later with plugin exception. Third-party plugins may use any license
 | [Documentation Standards](docs/documentation.md) | Writing style, structure, cross-references |
 | [Environment Variables](docs/environment.md) | All backend/frontend configuration options |
 
-### System Architecture
+### Backend (System Architecture)
+
+Everything under `src/backend/` — modules, blockchain sync, scheduler, database access, system API, admin dashboard. For the frontend, see [Frontend Development](#frontend-development) below.
 
 | Document | Purpose |
 |----------|---------|

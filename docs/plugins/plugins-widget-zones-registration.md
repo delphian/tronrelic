@@ -89,12 +89,12 @@ Widgets registered in `init()` (or declaratively) are torn down when the plugin 
 
 ## Admin Introspection
 
-All `/all` and `/zones/:zone` endpoints require `X-Admin-Token`.
+`/all` and `/zones/:zone` go through `requireAdmin` — admits the signed `tronrelic_uid` cookie OR the `x-admin-token` header. Same-origin browser requests pass automatically; tooling sends the header.
 
 | Endpoint | Auth | Returns |
 |----------|------|---------|
-| `GET /api/widgets/all` | Admin | All registered widgets (no fetchData run) |
-| `GET /api/widgets/zones/:zone` | Admin | Widgets in a specific zone |
+| `GET /api/widgets/all` | Admin (cookie or `x-admin-token`) | All registered widgets (no fetchData run) |
+| `GET /api/widgets/zones/:zone` | Admin (cookie or `x-admin-token`) | Widgets in a specific zone |
 | `GET /api/widgets?route=/path` | None | Widgets matching route, with fetched data |
 
 Example: `curl -H "X-Admin-Token: $ADMIN_API_TOKEN" http://localhost:4000/api/widgets/all`.

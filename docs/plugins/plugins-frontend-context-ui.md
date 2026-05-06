@@ -1,12 +1,29 @@
 # Plugin Frontend Context — UI and Layout
 
-`context.layout` and `context.ui` for plugin pages and components.
+`context.layout`, `context.ui`, `context.charts`, `context.system`, and the identity/modal/toast hooks. Source of truth: `packages/types/src/plugin/IFrontendPluginContext.ts`.
 
 ## Why Inject Components
 
 Plugins live in `src/plugins/`. Importing from `src/frontend/` crosses the workspace boundary, breaks Next.js module resolution, and couples plugins to app internals. Context injection mirrors the backend `IPluginContext` pattern.
 
 Layout components carry typed props — `<layout.Stack gap="md">` fails compilation if `gap` is wrong; the equivalent `.stack--md` class fails silently.
+
+## Context Shape
+
+```typescript
+interface IFrontendPluginContext {
+    pluginId: string;              // Used internally for namespacing events and API routes
+    layout: ILayoutComponents;     // Page, PageHeader, Stack, Grid, Section
+    ui: IUIComponents;             // Card, Badge, Button, IconButton, Switch, Input, Skeleton, ClientTime, Tooltip, IconPickerModal, Table family
+    charts: IChartComponents;      // LineChart
+    system: ISystemComponents;     // SchedulerMonitor (admin)
+    api: IApiClient;               // get/post/put/patch/delete
+    websocket: IWebSocketClient;   // socket + auto-prefixed helpers
+    useUser: () => IPluginUserState;
+    useModal: () => { open, close, closeAll };
+    useToast: () => { push, dismiss };
+}
+```
 
 ## Layout (`context.layout`)
 
@@ -15,28 +32,62 @@ Page structure. Use these for all structural markup.
 | Component | Props | Purpose |
 |-----------|-------|---------|
 | `Page` | `children`, `className?` | Page-level grid with responsive gap |
-| `PageHeader` | `title`, `subtitle?`, `children?`, `className?` | Page title section |
+| `PageHeader` | `title: ReactNode`, `subtitle?: ReactNode`, `children?`, `className?` | Page title section (title accepts ReactNode for skeletons) |
 | `Stack` | `gap?: 'sm'\|'md'\|'lg'`, `direction?: 'vertical'\|'horizontal'`, `children`, `className?` | Flex container with gap |
 | `Grid` | `gap?: 'sm'\|'md'\|'lg'`, `columns?: 2\|3\|'responsive'`, `children`, `className?` | Grid layout |
 | `Section` | `gap?: 'sm'\|'md'\|'lg'`, `children`, `className?` | Spaced content section |
 
 ## UI (`context.ui`)
 
-Pre-styled primitives.
+| Component | Props |
+|-----------|-------|
+| `Card` | `tone?: 'default'\|'muted'\|'accent'`, `padding?: 'sm'\|'md'\|'lg'`, `elevated?`, `className?`, `style?`, `children?` |
+| `Badge` | `tone?: 'neutral'\|'info'\|'success'\|'warning'\|'danger'`, `title?`, `className?`, `children?` |
+| `Skeleton` | `width?`, `height?`, `className?`, `style?` |
+| `Button` | `variant?: 'primary'\|'secondary'\|'ghost'\|'danger'\|'warning'`, `size?: 'xs'\|'sm'\|'md'\|'lg'`, `loading?`, `icon?: ReactNode`, `disabled?`, `onClick?`, `type?`, `aria-label?`, `className?`, `children?` |
+| `IconButton` | `variant?: 'ghost'\|'primary'\|'danger'\|'success'`, `size?: 'sm'\|'md'\|'lg'`, `onClick?: (event) => void`, `disabled?`, `title?`, `type?`, **`aria-label` (required)**, `className?`, `children?` |
+| `Switch` | `on: boolean`, `onChange: (next) => void`, `onClick?: (event) => void`, `size?: 'sm'\|'md'\|'lg'`, `disabled?`, `title?`, `type?`, **`aria-label` (required)**, `className?` |
+| `Input` | `value?`, `onChange?`, `onKeyDown?`, `placeholder?`, `disabled?`, `required?`, `variant?: 'default'\|'ghost'`, `type?`, `min?`, `max?`, `step?`, `id?`, `name?`, `aria-label?`, `className?` |
+| `ClientTime` | `date: Date \| string \| null \| undefined`, `format?: 'time'\|'datetime'\|'date'`, `fallback?` |
+| `Tooltip` | `content: string`, `children: ReactNode`, `placement?: 'top'\|'bottom'` |
+| `IconPickerModal` | `selectedIcon?`, `onSelect: (iconName) => void`, `onClose: () => void` |
+
+`IconButton` is for inline row actions where a bordered `Button` would dominate. `aria-label` is required because there's no visible text. The click handler receives the full event so plugin code can call `event.stopPropagation()` to avoid firing an enclosing row's click handler.
+
+`Switch` carries `role="switch"` + `aria-checked` so assistive tech reads it as a toggle. The optional `onClick` runs before `onChange` — calling `event.preventDefault()` vetoes the toggle; `event.stopPropagation()` keeps the click off an enclosing row.
+
+`ClientTime` is the canonical fix for SSR/client timezone hydration mismatches — never call `new Date().toLocaleString()` directly.
+
+### Table Family
+
+Six related components matching the `/system/*` admin tables. Compose them to inherit the same visual treatment plugins see on the system plugins page.
 
 | Component | Props |
 |-----------|-------|
-| `Card` | `tone?: 'default'\|'muted'\|'accent'`, `padding?: 'none'\|'sm'\|'md'\|'lg'`, `children?` |
-| `Badge` | `tone?: 'default'\|'neutral'\|'success'\|'warning'\|'danger'`, `children?` |
-| `Skeleton` | `width?`, `height?` |
-| `Button` | `variant?: 'primary'\|'secondary'\|'ghost'`, `onClick?`, `disabled?`, `children?` |
-| `Input` | standard input props |
+| `Table` | `variant?: 'default'\|'compact'`, `className?`, `style?`, `children?` |
+| `Thead` | `className?`, `children?` |
+| `Tbody` | `className?`, `children?` |
+| `Tr` | `hasError?`, `isExpanded?`, `onClick?`, `className?`, `children?` |
+| `Th` | `width?: 'auto'\|'shrink'\|'expand'`, `colSpan?`, `rowSpan?`, `className?`, `children?` |
+| `Td` | `muted?`, `colSpan?`, `rowSpan?`, `className?`, `children?` |
+
+`Tr.hasError` applies the error surface tone; `Tr.isExpanded` renders the muted "details drawer" background. `Th.width="shrink"` sizes a column to its content (good for status badges/action buttons); `"expand"` forces it to fill remaining space. `Td.muted` dims secondary metadata.
 
 ## Charts (`context.charts`)
 
 | Component | Props |
 |-----------|-------|
-| `LineChart` | `series: { id, label, data: { date, value }[], color? }[]`, `yAxisFormatter?`, `emptyLabel?` |
+| `LineChart` | `series: { id, label, data: { date, value, max?, count? }[], color?, fill? }[]`, `yAxisFormatter?`, `xAxisFormatter?`, `emptyLabel?`, `height?`, `minDate?`, `maxDate?`, `yAxisMin?`, `yAxisMax?`, `className?` |
+
+`minDate`/`maxDate`/`yAxisMin`/`yAxisMax` are fixed-axis overrides for sparse data — without them the chart auto-scales tightly.
+
+## System (`context.system`) — Admin Only
+
+| Component | Props |
+|-----------|-------|
+| `SchedulerMonitor` | `token: string`, `jobFilter?: string[] \| (job) => boolean`, `sectionTitle?`, `hideHealth?` |
+
+`SchedulerMonitor` renders job status, enable/disable controls, and schedule edits. `jobFilter` lets a plugin admin page show only its own jobs (e.g., `['markets:refresh']`).
 
 ## User State (`context.useUser`)
 
@@ -48,7 +99,7 @@ interface IPluginUserState {
     hasLinkedWallet: boolean;     // wallets.length > 0
     isVerified: boolean;          // identityState === Verified (live session)
     wallets: IPluginWalletLink[];
-    primaryWallet: string | null;
+    primaryWallet: string | null; // most-recent verified wallet, else most-recent unverified
     initialized: boolean;
 }
 
@@ -68,7 +119,21 @@ Identity progression: Anonymous (`!hasLinkedWallet`) → Registered (`hasLinkedW
 
 ## Modal (`context.useModal`)
 
-Hook returning `{ open, close }`. Use for confirmations and gated-feature prompts.
+```typescript
+const { open, close, closeAll } = context.useModal();
+```
+
+`open(options)` returns a string id. Hold the id and pass it to `close(id)` — there is no implicit "close the current modal."
+
+`open` options: `title?`, `content: ReactNode` (required), `size?: 'sm'|'md'|'lg'|'xl'`, `dismissible?`, `onClose?`. `closeAll()` clears every open modal — useful on route changes.
+
+## Toast (`context.useToast`)
+
+```typescript
+const { push, dismiss } = context.useToast();
+```
+
+`push(toast)` returns the toast id; pass to `dismiss(id)` to remove early. Fields: `id?` (auto-generated if omitted), `tone?: 'info'|'success'|'warning'|'danger'`, `title` (required), `description?`, `duration?` (ms), `actionLabel?`, `onAction?`.
 
 ## Example — Page With Layout, UI, and Gating
 
@@ -76,20 +141,26 @@ Hook returning `{ open, close }`. Use for confirmations and gated-feature prompt
 import type { IFrontendPluginContext } from '@/types';
 
 export function MyPluginPage({ context }: { context: IFrontendPluginContext }) {
-    const { layout, ui, useUser, useModal } = context;
+    const { layout, ui, useUser, useModal, useToast } = context;
     const { isVerified } = useUser();
     const modal = useModal();
+    const toast = useToast();
 
     const handlePremium = () => {
         if (!isVerified) {
-            modal.open({
+            const id = modal.open({
                 title: 'Wallet Verification Required',
-                content: <p>Sign with your wallet via the header WalletButton.</p>,
-                size: 'sm'
+                size: 'sm',
+                content: (
+                    <p>
+                        Sign with your wallet via the header WalletButton.{' '}
+                        <ui.Button variant="ghost" onClick={() => modal.close(id)}>Dismiss</ui.Button>
+                    </p>
+                )
             });
             return;
         }
-        // proceed
+        toast.push({ tone: 'success', title: 'Premium activated' });
     };
 
     return (
@@ -107,7 +178,9 @@ export function MyPluginPage({ context }: { context: IFrontendPluginContext }) {
 
 - Import from `apps/frontend` or `src/frontend/` — cross-workspace builds fail.
 - Use CSS classes for layout (`.page`, `.stack`, `.grid`) — use `context.layout`.
-- Define types by importing from frontend — define inline or in plugin.
+- Define types by importing from frontend — define inline or in plugin shared types.
+- Render timestamps with `new Date().toLocaleString()` — use `ui.ClientTime`.
+- Build raw `<table>` markup for admin lists — use the `Table`/`Tr`/`Td` family for visual parity with `/system/*`.
 
 ## Further Reading
 
@@ -116,3 +189,4 @@ export function MyPluginPage({ context }: { context: IFrontendPluginContext }) {
 - [plugins-frontend-context-websocket.md](./plugins-frontend-context-websocket.md) — WebSocket subscriptions
 - [plugins-frontend-context-styling.md](./plugins-frontend-context-styling.md) — CSS Modules and SSR
 - [ui.md](../frontend/ui/ui.md) — design tokens and layout primitives reference
+- [ui-ssr-hydration.md](../frontend/ui/ui-ssr-hydration.md) — `ClientTime` semantics

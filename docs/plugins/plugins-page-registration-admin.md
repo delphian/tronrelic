@@ -10,9 +10,12 @@ Authorization that depends on plugin authors remembering to set `requiresAdmin: 
 
 Plugins parent admin menu entries under `MAIN_SYSTEM_CONTAINER_ID` — a fixed 24-hex sentinel exported from the menu module and seeded during `MenuModule.run()`, so it exists by the time `init()` runs. `MenuService.create/update` walks the parent chain and forces `requiresAdmin: true` on every descendant, overriding caller input either way. `MenuService.getTreeForUser` filters per-cookie at read time: anonymous and non-admin visitors never see the System subtree. There is no separate admin namespace and no separate API endpoint — the public read path returns the right shape for whoever asked.
 
+The sentinel is the literal 24-hex string `'000000000000000000000001'`. The menu module exports it as `MAIN_SYSTEM_CONTAINER_ID` from `src/backend/modules/menu/constants.ts`, but plugins live outside the backend module-resolution graph and cannot import it through a `paths` alias. Hardcode the value; it is a fixed design-time contract that will not change.
+
 ```typescript
 // src/backend/backend.ts
-import { MAIN_SYSTEM_CONTAINER_ID } from '../menu/index.js';
+// Stable sentinel — see src/backend/modules/menu/constants.ts.
+const MAIN_SYSTEM_CONTAINER_ID = '000000000000000000000001';
 
 await context.menuService.create({
     namespace: 'main',
@@ -84,9 +87,9 @@ await context.menuService.create({
 
 ## Reference Files
 
-- `src/backend/src/modules/menu/menu.service.ts` — parent-chain walk and admin-flag enforcement
-- `src/backend/modules/menu/index.ts` — exports `MAIN_SYSTEM_CONTAINER_ID`
-- `src/plugins/trp-ai-assistant/` — canonical reference: `adminPages` registration, menu under System container, lifecycle teardown
+- `src/backend/modules/menu/services/menu.service.ts` — parent-chain walk and admin-flag enforcement
+- `src/backend/modules/menu/constants.ts` — `MAIN_SYSTEM_CONTAINER_ID` definition and the rationale for the hex sentinel
+- `src/plugins/trp-ai-assistant/` — canonical reference for `adminPages` + `manifest.adminUrl` (the plugin intentionally surfaces only via the System Plugins page, not a custom System nav entry; also demonstrates teardown of stale legacy menu nodes during `init`)
 - [Menu Module README → Visibility Gating](../../src/backend/modules/menu/README.md#visibility-gating) — full visibility contract
 - [admin authentication — dual-track](../../src/backend/modules/user/README.md#admin-authentication--dual-track) — HTTP middleware admits cookie OR `x-admin-token`
 - [plugins-api-registration.md](./plugins-api-registration.md) — `/api/plugins/<id>/system/**` auto-gating

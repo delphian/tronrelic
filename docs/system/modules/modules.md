@@ -2,11 +2,9 @@
 
 TronRelic's module system provides a structured pattern for permanent, core backend components that initialize during application bootstrap and remain active for the application's lifetime. Unlike plugins (which can be enabled/disabled at runtime), modules are essential infrastructure the application cannot function without.
 
-## Why This System Matters
+## Why This Matters
 
-Before the module system, core features like custom pages, navigation menus, and system logging lived in scattered locations with dependencies hardcoded in the bootstrap file. Initialization order was implicit (causing race conditions), services imported concrete implementations (making testing difficult), and related code fragmented across `services/`, `api/`, and `models/` directories.
-
-The module system solves these problems with a two-phase lifecycle (`init()` prepares resources, `run()` activates), dependency injection via typed interfaces, Inversion of Control (modules mount their own routes), and colocated file organization where all module code lives in `modules/<name>/`.
+The module system replaces scattered core code, implicit init order, and concrete-class imports with a two-phase lifecycle (`init()` prepares, `run()` activates), dependency injection via typed interfaces, IoC routing (modules mount their own routes), and colocated file organization where everything for a module lives in `modules/<name>/`.
 
 ## Core Architecture
 
@@ -41,7 +39,7 @@ See [frontend-architecture-modules.md](../../frontend/frontend-architecture-modu
 | Deep integration | Express app, core database | Injected `IPluginContext` only |
 | Frontend UI | Optional | Typically included |
 
-**Module examples:** Pages, Menu, User, Migrations. **Plugin examples:** Telegram Bot, Whale Alerts, Energy Delegation, AI Assistant.
+**Module examples:** Pages, Menu, User, Scheduler, Logs, Database.
 
 The deciding factor between module and plugin is no longer "does it provide shared services?" but "can the application function without it?" If the answer is no, it's a module. If yes — even if other components optionally consume its services — it's a plugin. The service registry (`context.services`) makes this possible by enabling plugins to expose shared capabilities at runtime without requiring promotion to a module.
 
@@ -64,18 +62,7 @@ See [modules-architecture.md](./modules-architecture.md#service-types-and-single
 
 ## Pre-Implementation Checklist
 
-Before creating a new module, verify:
-
-- [ ] Feature is essential infrastructure (cannot be a plugin)
-- [ ] Dependencies are clearly identified and typed as interfaces
-- [ ] Module directory structure matches standard pattern
-- [ ] `IModule` interface implemented with metadata, `init()`, and `run()`
-- [ ] `init()` creates services but does NOT mount routes
-- [ ] `run()` mounts routes and completes integration
-- [ ] Tests cover both lifecycle phases and error handling
-- [ ] Public API exports via `index.ts`; module-level `README.md` documents architecture
-- [ ] Bootstrap code updated in correct sequence
-- [ ] Frontend code (if any) in `src/frontend/modules/<name>/`, NOT `components/ui/`
+Before creating a new module, confirm the feature is essential infrastructure (otherwise build it as a plugin) and follow [modules-creating.md](./modules-creating.md) for the standard directory structure, lifecycle hook split (init creates services, run mounts routes), and tests covering both phases.
 
 ## Further Reading
 

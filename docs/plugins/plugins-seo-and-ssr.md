@@ -4,9 +4,7 @@ This document covers how plugin pages declare SEO metadata and pre-fetch data se
 
 ## Why This Matters
 
-Plugin pages used to render entirely client-side: the catch-all route delegated to a polling client component that waited for the registry to populate, then rendered the plugin component, which then fetched its own data in `useEffect`. The result was empty `<head>` tags, empty `<body>` content in the initial HTML, and a loading flash on every visit. Crawlers saw nothing meaningful, social link previews failed, and the SEO footprint was effectively zero.
-
-The solution is twofold. First, every plugin page declares SEO fields directly in its `IPageConfig` so the catch-all route's `generateMetadata` can read them server-side and emit a fully populated `<head>`. Second, plugins that need pre-fetched body data declare a `serverDataFetcher` that the catch-all route awaits during SSR, passing the result as `initialData` to the plugin component. The plugin component initializes its state from `initialData` instead of fetching in `useEffect`. The result: real content in the initial HTML, no loading flash, and no JavaScript required for crawlers.
+Plugin pages used to render entirely client-side: the catch-all route delegated to a polling client component that waited for the registry to populate, then rendered the plugin component, which fetched its own data in `useEffect`. The initial HTML carried empty `<head>` tags and an empty `<body>`, every visit flashed a loading state, crawlers saw nothing meaningful, and social link previews failed. SEO fields on `IPageConfig` plus an optional `serverDataFetcher` solve both halves: metadata and body content arrive in the SSR response with no JavaScript required.
 
 ## How It Works
 
@@ -24,7 +22,7 @@ Disabled plugins return `null` from the resolver and the catch-all route calls `
 
 ## SEO Fields Reference
 
-All fields live in `IPageConfig` (`src/types/plugin/IPageConfig.ts`). Every field is optional. If `title` and `description` are both present, the catch-all route emits a full `<head>` populated via `buildMetadata()`. If they're absent, the route emits an empty metadata object and Next.js falls back to the layout-level defaults.
+All fields live in `IPageConfig` (`packages/types/src/plugin/IPageConfig.ts`). Every field is optional. If `title` and `description` are both present, the catch-all route emits a full `<head>` populated via `buildMetadata()`. If they're absent, the route emits an empty metadata object and Next.js falls back to the layout-level defaults.
 
 | Field | Purpose |
 |-------|---------|

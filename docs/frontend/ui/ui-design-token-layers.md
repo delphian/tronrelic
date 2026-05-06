@@ -1,278 +1,97 @@
-# Design Tokens and Site Theming
+# Design Tokens
 
-This document provides comprehensive guidance on TronRelic's design token system and standardized theming approach. Design tokens are named design decisions (colors, spacing, typography) implemented as CSS variables that ensure visual consistency across all components, features, and plugins.
+TronRelic's design tokens are CSS variables that name design decisions (colors, spacing, typography, radii, shadows). The system follows the three-layer pattern used by W3C-DTCG, Material Design, Adobe Spectrum, and Shopify Polaris — primitives at the bottom, semantic aliases in the middle, component code on top.
 
 ## Why This Matters
 
-Hardcoded color and spacing values scattered across components make theming impossible and palette updates a multi-file chore. The three-layer token hierarchy establishes a single source of truth at each level — primitives define raw values, semantic tokens assign purpose, and components select tokens based on context — so a single change cascades correctly everywhere.
+Hardcoded values fragment the UI and make theming impossible. Three layers give a single source of truth at each level: change one semantic token and every component that aliases it updates; theme switching is a remap, not a rewrite. The price of breaking the layering is exactly what it sounds like — token names that lie, themes that don't propagate, mobile breakpoints that redefine "medium" until the word means nothing.
 
-## The Token Hierarchy (Industry Standard)
+## The Three Layers
 
-TronRelic implements a **three-layer design token system** following the architecture used by Material Design, Adobe Spectrum, Shopify Polaris, GitHub Primer, and the W3C Design Tokens Community Group specification. This pattern separates concerns and enables flexible theming without duplicating values or creating maintenance nightmares.
+### Layer 1 — Foundation Primitives (`primitives.scss`)
 
-### Layer 1: Foundation Tokens (Primitives)
+Raw values with no use-case meaning. Color palette (`--color-blue-500`), spacing scale (`--spacing-1` through `--spacing-20`), raw t-shirt font sizes (`--font-size-xs/sm/md/lg/xl/2xl/3xl`), font weights, line heights, radii, shadows.
 
-**File:** `primitives.scss`
+### Layer 2 — Semantic Tokens (`semantic-tokens.scss`)
 
-Foundation tokens define primitive design values—the raw materials of the design system. These are context-free, reusable values with no semantic meaning attached.
+Use-case names that alias primitives: `--color-text`, `--color-danger`, `--card-padding-md`, `--button-padding-md`, `--button-border-radius`, `--card-shadow`, `--card-border-radius`, `--font-size-heading-md`, `--font-size-body`, `--max-width-prose`. These are the chokepoint themes remap to switch dark/light/brand variants.
 
-**Industry terminology:**
-- "Primitives" (Material Design, Shopify Polaris)
-- "Foundation tokens" (Adobe Spectrum)
-- "Base tokens" (W3C Design Tokens Community Group)
+`semantic-tokens.scss` also hosts curated t-shirt-sized scales — `--gap-2xs/xs/sm/md/lg/xl`, `--padding-2xs/xs/sm/md/lg/xl`, `--avatar-size-sm/md/lg`. **By industry convention these are still primitives** (the names describe values, not use cases — Spectrum, Tailwind v4, Carbon, Atlassian classify their equivalents the same way). They live in this file because it is the curated chokepoint of *tokens component code may reference*, not a strict semantic-only collection.
 
-**Purpose:**
-- Define the lowest-level design decisions (color palette, spacing scale, typography scale)
-- Provide raw values that semantic tokens reference
-- Establish the visual foundation independent of usage context
+### Layer 3 — Component Code (`.module.scss`, `globals.scss` utilities)
 
-**Examples:**
-```css
-/* Colors - raw palette values */
---color-blue-500: #4b8cff;
---color-gray-100: #f5f5f5;
---color-red-600: #dc2626;
+Where tokens meet markup. Component CSS Modules consume tokens; `globals.scss` defines the small set of global utility classes (`.text-muted`, `.chip`, `.alert`, etc.).
 
-/* Spacing - base scale */
---spacing-1: 0.25rem;  /* 4px */
---spacing-7: 1.75rem;  /* 28px */
+## The Four-Tier Rule for Component Code
 
-/* Typography - primitive scales */
---font-size-base: 1rem;
---font-weight-semibold: 600;
+Component CSS reaches for tokens in this order:
 
-/* Radius - curvature scale */
---radius-md: 0.375rem;
---radius-full: 9999px;
-```
+1. **Use-case-named semantic tokens** when one exists — `--color-text`, `--color-danger`, `--card-padding-md`, `--button-gap`, `--stack-gap-md`, `--font-size-heading-md`, `--font-size-body`, `--max-width-prose`. **Always preferred.**
+2. **Curated t-shirt primitives in `semantic-tokens.scss`** — `--gap-*`, `--padding-*`, `--avatar-size-*`. Acceptable when no use-case-named semantic fits.
+3. **Design-constant primitives in `primitives.scss`** — `--border-width-thin/medium/thick`, `--radius-xs/sm/md/lg/full`, `--shadow-sm/md/lg`, `--font-weight-*`, `--line-height-*`, `--letter-spacing-*`, `--max-width-*`. These don't shift between themes; aliasing them through Layer 2 adds ceremony without value, so reach for them directly.
+4. **Forbidden in component code** — the foundation scales: `--spacing-1`...`--spacing-20`, raw color palette (`--color-blue-500`), raw t-shirt font sizes (`--font-size-xs/sm/md/lg/xl/2xl/3xl`).
 
-**Usage:**
-Referenced by semantic tokens (Layer 2). Foundation tokens whose name describes a *value* (`--spacing-*`, raw color palette `--color-blue-500`, raw t-shirt font sizes `--font-size-xs/sm/md/lg/xl/2xl/3xl`) are forbidden in component code — those tokens exist only as the substrate the curated tokens alias. Foundation tokens whose name already describes a *purpose* — design constants like `--border-width-thin`, `--radius-md`, `--shadow-sm`, `--font-weight-bold`, `--line-height-tight`, `--max-width-prose` — *are* acceptable directly in component code; they don't shift between themes, so aliasing them through Layer 2 adds ceremony without value.
+If no token in tiers 1–3 fits, **flag the gap so a use-case-named semantic can be added**. Don't silently drop to a forbidden foundation primitive.
 
-**Industry classification of t-shirt-sized tokens.** A category prefix like `gap-`, `space-`, `padding-`, `font-size-` does *not* promote a t-shirt-sized token to semantic status. Spectrum classifies `spacing-100/200` as global. Tailwind v4 classifies `--spacing-2` as primitive. Carbon's `spacing-01...spacing-13` is a raw scale. Atlassian's `space.100/200` is foundation. The W3C DTCG spec deliberately stays out of it — group prefixes "SHOULD NOT be used to infer purpose." Semantic status is earned only when the name encodes a use case (`--card-padding-md`, `--button-gap`). TronRelic follows this convention: t-shirt-sized scales are primitives regardless of where they live in the source files.
+## Size-Variant Convention
 
-### Layer 2: Semantic Tokens (Alias Tokens)
+Component-scoped semantic tokens that vary by density use the `xs | sm | md | lg` suffix uniformly. Buttons expose `--button-padding-xs/sm/md/lg`, `--button-font-size-xs/sm/md/lg`, `--button-height-xs/sm/md/lg`. Cards expose `--card-padding-xs/sm/md/lg`. Inputs expose `--input-padding` and `--input-padding-sm` (dense inline variant). When adding a new component-scoped density, extend the same four-step ladder rather than inventing a parallel scale — callers then pick the step that matches the visual weight they need, and responsive rules swap tokens instead of redefining them.
 
-**File:** `semantic-tokens.scss`
+## Token Immutability — Components Select, Tokens Don't Redefine
 
-Semantic tokens compose foundation tokens into meaningful, context-aware variables. They answer "what is this for?" rather than "what does this look like?"
-
-**Industry terminology:**
-- "Semantic tokens" (Adobe Spectrum, W3C)
-- "Alias tokens" (Material Design)
-- "Component tokens" (GitHub Primer)
-- "Decision tokens" (Shopify Polaris)
-
-**Purpose:**
-- Assign semantic meaning to primitive values (e.g., `--button-bg-primary` instead of `--color-blue-500`)
-- Enable theme switching by remapping semantic tokens to different primitives
-- Provide component-specific theming decisions built from Layer 1 primitives
-
-**Examples — truly semantic (use-case-named):**
-```css
-/* Color roles */
---color-text: var(--color-gray-900);
---color-danger: var(--color-red-600);
-
-/* Component-scoped semantics */
---button-bg-primary: var(--color-blue-500);
---button-padding-md: var(--spacing-3) var(--spacing-7);
---card-bg: var(--color-white);
---card-shadow: var(--shadow-md);
-
-/* Type roles */
---font-size-heading-md: var(--font-size-xl);
---font-size-body: var(--font-size-base);
-
-/* Layout roles */
---max-width-prose: 64ch;
-```
-
-**Note — `semantic-tokens.scss` also hosts curated primitives.** TronRelic places the t-shirt-sized scales `--gap-2xs/xs/sm/md/lg/xl`, `--padding-2xs/xs/sm/md/lg/xl`, and `--avatar-size-*` in `semantic-tokens.scss` even though, by industry definition, they are primitives (the names describe values, not use cases). They live in this file because it serves as the curated chokepoint of *tokens component code may reference* — not as a strict semantic-only collection. Truly semantic spacing tokens would be use-case-named (e.g. `--gap-list-item`, `--gap-page-section`); those don't yet exist as a complete set, so the curated t-shirt tier is the practical fallback. Treat them as primitives when reasoning about classification, even though they share a file with semantics.
-
-**Usage:**
-Provide consistent theming for specific UI components. When you need dark mode, you remap semantic tokens (e.g., `--card-bg: var(--color-gray-900)`) without touching foundation tokens.
-
-**Size-variant convention:**
-Component-scoped semantic tokens that vary by density follow the `xs | sm | md | lg` suffix convention across the design system. Buttons expose `--button-padding-xs/sm/md/lg`, `--button-font-size-xs/sm/md/lg`, and `--button-height-xs/sm/md/lg`; cards expose `--card-padding-xs/sm/md/lg`; inputs expose `--input-padding` and `--input-padding-sm` (dense inline variant). When adding a new component-scoped density, extend the same four-step ladder rather than inventing a parallel scale — callers then pick the step that matches the visual weight they need, and responsive rules swap tokens instead of redefining them.
-
-### Layer 3: Utility Classes (Application Layer)
-
-**File:** `globals.scss`
-
-Utility classes apply design tokens to create reusable UI patterns. This is where tokens meet markup—the presentation layer that developers interact with most often.
-
-**Industry terminology:**
-- "Utility classes" (Tailwind CSS, Primer)
-- "Component classes" (Bootstrap, Material Design)
-- "Pattern library" (Carbon Design System)
-
-**Purpose:**
-- Provide ready-to-use classes for common patterns (buttons, cards, badges, layouts)
-- Apply semantic tokens to HTML elements consistently
-- Reduce CSS duplication by standardizing implementation
-
-**Examples:**
-```css
-/* Button utilities - apply semantic tokens */
-.btn {
-    padding: var(--button-padding-md);
-    background: var(--button-bg-primary);
-    border-radius: var(--button-border-radius);
-}
-
-/* Card utilities - surface patterns */
-.card {
-    background: var(--card-bg);
-    border-radius: var(--card-border-radius);
-    box-shadow: var(--card-shadow);
-}
-
-/* Layout utilities - spacing patterns */
-.stack {
-    display: flex;
-    flex-direction: column;
-    gap: var(--spacing-4);
-}
-```
-
-**Usage:**
-Applied directly in component markup or mixed with CSS Module classes for component-specific customization.
-
-### Why This Architecture Matters
-
-This three-layer approach is **not a TronRelic invention**—it's an industry-proven pattern that solves real scaling problems:
-
-**Single source of truth:**
-When you need to change button padding across the entire application, you modify one semantic token (`--button-padding-md`) instead of hunting through dozens of CSS Module files.
-
-**Theme switching without rewrites:**
-Dark mode, accessibility variants, and brand customization become configuration changes (remap semantic tokens) instead of code changes (rewrite component styles).
-
-**Predictable cascading updates:**
-When you adjust the spacing scale in foundation tokens, all dependent semantic tokens inherit the change automatically. This prevents the fragmentation that occurs when components hardcode values or duplicate CSS variables locally.
-
-**Proven at scale:**
-Google (Material Design), Adobe (Spectrum), Shopify (Polaris), and GitHub (Primer) all use this pattern to maintain visual consistency across massive design systems with hundreds of components.
-
-### Token Naming Conventions
-
-TronRelic follows semantic naming patterns used across industry design systems:
-
-**Foundation tokens (primitives):**
-```
---{category}-{variant}-{scale}
---color-blue-500
---spacing-7
---font-size-lg
-```
-
-**Semantic tokens (aliases):**
-```
---{component}-{property}-{variant}
---button-bg-primary
---card-border-radius
---modal-backdrop-blur
-```
-
-**Component tokens can also use:**
-```
---{context}-{element}-{property}
---sidebar-header-padding
---modal-content-bg
-```
-
-This naming strategy makes intent clear at a glance and prevents naming collisions between layers.
-
-### Token Immutability Principle
-
-**Design tokens are immutable**—their values never change based on breakpoint or context. Components select different tokens at different breakpoints instead of redefining what tokens mean.
-
-This principle keeps token names honest and prevents semantic drift where `--card-padding-md` stops meaning "medium" and starts meaning "whatever size we need at this viewport."
-
-**Why this matters:**
-
-When tokens redefine themselves across breakpoints, naming becomes meaningless. If `--card-padding-md` equals `1.5rem` on desktop but `0.75rem` on mobile, "medium" no longer describes the value—it describes nothing. This semantic drift makes debugging impossible and forces developers to check token definitions at every breakpoint.
-
-Immutable tokens maintain semantic integrity. When `--card-padding-md` always means `1.5rem`, developers can trust the name. Components that need smaller padding on mobile select `--card-padding-sm` explicitly, making responsive behavior visible in the component code instead of hidden in token definitions.
-
-**How components select tokens:**
-
-Components use media queries or container queries to switch which token they reference, not to redefine tokens:
+A token's value never changes based on breakpoint or context. Components switch *which token they reference* at each breakpoint instead of redefining what tokens mean.
 
 ```scss
-/* CORRECT - component selects appropriate token at each breakpoint */
+/* CORRECT — component selects the appropriate token at each breakpoint */
 .card--padding-md {
-    padding: var(--card-padding-md);  /* 1.5rem (24px) */
+    padding: var(--card-padding-md);  /* 1.5rem */
 }
 
 @media (max-width: $breakpoint-mobile-lg) {
     .card--padding-md {
-        padding: var(--card-padding-sm);  /* 1rem (16px) - select smaller token */
+        padding: var(--card-padding-sm);  /* 1rem */
     }
 }
 
 @media (max-width: $breakpoint-mobile-sm) {
     .card--padding-md {
-        padding: var(--card-padding-xs);  /* 0.5rem (8px) - select even smaller token */
+        padding: var(--card-padding-xs);  /* 0.5rem */
     }
 }
 ```
-
-**Anti-pattern (NEVER do this):**
 
 ```scss
-/* WRONG - redefines what "md" means across breakpoints */
+/* WRONG — redefines what "md" means across breakpoints */
 :root {
-    --card-padding-md: 1.5rem;  /* "Medium" means 24px */
+    --card-padding-md: 1.5rem;
 }
-
 @media (max-width: $breakpoint-mobile-lg) {
     :root {
-        --card-padding-md: 0.75rem;  /* Now "medium" means 12px? */
+        --card-padding-md: 0.75rem;  /* "Medium" now means 12px? */
     }
 }
-
-/* Result: --card-padding-md is meaningless, debugging is impossible */
 ```
 
-**Reference implementation:**
+Why this matters: when `--card-padding-md` always means the same value, the name stays honest and developers can trust it. The moment tokens redefine across breakpoints, "medium" describes nothing and debugging requires checking definitions at every viewport.
 
-See `/src/frontend/components/ui/Card/Card.module.scss` (lines 43-79) for how the Card component implements this pattern with a cascade across three breakpoints. The component explicitly selects `--card-padding-sm`, `--card-padding-xs`, and other tokens at different breakpoints—tokens themselves never change.
+**Reference implementation:** `src/frontend/components/ui/Card/Card.module.scss` (lines 43–79) cascades `--card-padding-lg → -md → -sm → -xs` across three breakpoints. Tokens themselves never change.
 
-## Design Token Reference
+## Breakpoints
 
-TronRelic's design tokens are implemented as CSS custom properties (CSS variables) in `globals.scss`. Breakpoints are defined as SCSS variables in `_breakpoints.scss` for use in media queries. All tokens use semantic naming that describes their purpose rather than their appearance.
+Breakpoints are **SCSS variables** in `_breakpoints.scss`, not CSS custom properties — CSS variables cannot be used in `@media` or `@container` queries. Asia-optimized: 360px is the dominant mobile width in Asia (~13.73% market share vs. 10.12% globally), so the mobile tier splits into three steps to handle mid-range Android density.
 
-[Placeholder: Complete reference of all design tokens from globals.css]
-
-### Color System
-
-[Placeholder: Color palette with usage guidelines]
-
-### Spacing and Layout
-
-[Placeholder: Spacing scale, radius scale, shadow scale]
-
-### Typography
-
-[Placeholder: Font families, sizes, weights, line heights]
-
-### Breakpoints
-
-TronRelic uses an Asia-optimized breakpoint system designed for the dominant mobile viewport widths in Asian markets, where 360px devices represent 13.73% market share (vs 10.12% globally) due to mid-range Android popularity.
-
-Breakpoints are defined as **SCSS variables** in `_breakpoints.scss` (the single source of truth), not CSS custom properties. This enables their use in media queries, which cannot use CSS variables.
-
-| SCSS Variable | Value | Target Devices |
-|-------|-------|----------------|
-| `$breakpoint-mobile-sm` | 360px | Legacy and very small devices |
+| SCSS Variable | Value | Target |
+|---------------|-------|--------|
+| `$breakpoint-mobile-sm` | 360px | Legacy / very small devices |
 | `$breakpoint-mobile-md` | 480px | Primary mobile target (mid-range Android) |
-| `$breakpoint-mobile-lg` | 768px | Large phones, landscape orientation |
+| `$breakpoint-mobile-lg` | 768px | Large phones, landscape |
 | `$breakpoint-tablet` | 1024px | Tablets, small laptops |
-| `$breakpoint-desktop` | 1200px | Desktop displays and larger |
+| `$breakpoint-desktop` | 1200px | Desktop displays |
+| `$breakpoint-desktop-xl` | 1920px | Full HD |
+| `$breakpoint-mobile` *(alias)* | = `$breakpoint-mobile-lg` (768px) | Convenience for the common mobile cutoff |
 
-**Usage in container queries (preferred):**
+Container queries are preferred over viewport media queries; reserve `@media` for global layout in `app/layout.tsx`. The variable interpolation gotcha (`#{$breakpoint-mobile-md}` inside `@container`) lives in [ui-responsive-design.md](./ui-responsive-design.md).
+
 ```scss
 @use '../../../app/breakpoints' as *;
 
@@ -281,156 +100,23 @@ Breakpoints are defined as **SCSS variables** in `_breakpoints.scss` (the single
 }
 
 @container (max-width: #{$breakpoint-mobile-md}) {
-    .component { /* Mobile-md (480px) and below */ }
-}
-
-@container (min-width: #{$breakpoint-mobile}) {
-    .component { /* Mobile-lg (768px) and above */ }
+    .component { /* 480px and below */ }
 }
 ```
 
-**Usage in viewport media queries (global layout or component modules):**
-```scss
-@use '../../../app/breakpoints' as *;
+## Theme Customization
 
-@media (max-width: $breakpoint-mobile) {
-    /* Mobile layout - use sparingly, prefer container queries */
-}
-```
-
-**Key design decisions:**
-- SCSS variables enable breakpoints in media queries (CSS variables cannot be used in media queries)
-- Single source of truth in `_breakpoints.scss` ensures consistency
-- Container queries preferred over viewport media queries for component responsiveness
-- Mobile tiers (sm/md/lg) enable granular control for Asian market device diversity
-- 360px baseline captures the dominant mobile viewport in target markets
-
-## Standardized Utility Classes
-
-[Placeholder: Complete list of utility classes with examples]
-
-### Layout Utilities
-
-[Placeholder: Stack, grid, flex patterns]
-
-### Surface Utilities
-
-[Placeholder: Card, panel, surface modifiers]
-
-### Interactive Utilities
-
-[Placeholder: Button, badge, chip patterns]
-
-### State Utilities
-
-[Placeholder: Loading, error, success states]
-
-## Usage Guidelines
-
-[Placeholder: Best practices and anti-patterns]
-
-### Component-Specific Styles
-
-[Placeholder: When to use CSS Modules vs utilities]
-
-### Container Queries
-
-[Placeholder: Responsive design patterns]
-
-### Theme Customization
-
-**Read [ui-theme.md](./ui-theme.md) before creating or modifying themes.** The theme system enables custom CSS that overrides design tokens without modifying source files. Themes persist in MongoDB, apply via SSR injection, and use the `[data-theme="UUID"]` selector pattern to achieve higher CSS specificity than `:root` defaults. The admin interface at `/system/theme` provides CRUD operations, CSS validation, dependency management, and auto-generated templates containing all available tokens.
-
-## Migration Guide
-
-[Placeholder: Migrating legacy styles to use CSS variables]
-
-## Industry Alignment and Resources
-
-TronRelic's design token system follows widely-adopted patterns from major design systems. Understanding how other teams solve similar problems helps you recognize best practices and avoid reinventing solutions.
-
-### Design Systems Using This Pattern
-
-**Material Design (Google):**
-- Uses primitives (color palette, spacing scale) and semantic tokens (primary color, surface color)
-- Theme switching through token remapping
-- Comprehensive documentation: https://m3.material.io/foundations/design-tokens/overview
-
-**Adobe Spectrum:**
-- Foundation tokens (primitives) → Semantic tokens → Component-specific tokens
-- Cross-platform consistency (web, iOS, Android)
-- Token documentation: https://spectrum.adobe.com/page/design-tokens/
-
-**Shopify Polaris:**
-- Base tokens (primitives) → Decision tokens (semantic) → Component styles
-- Tokio tooling for token management
-- Design tokens guide: https://polaris.shopify.com/tokens/colors
-
-**GitHub Primer:**
-- Functional variables (primitives) → Component variables → Utilities
-- CSS variable-based theming
-- Token reference: https://primer.style/foundations/primitives
-
-**Carbon Design System (IBM):**
-- Foundation layer → Theme layer → Component layer
-- Extensive token documentation and tooling
-- Token overview: https://carbondesignsystem.com/guidelines/color/overview
-
-### W3C Design Tokens Community Group
-
-The W3C Design Tokens Community Group is working on a formal specification for design token formats, interchange, and tooling. TronRelic's approach aligns with the draft specification's principles:
-
-- **Token types:** Primitive values (color, dimension, duration) and composite values (border, shadow, typography)
-- **Token hierarchy:** Foundation tokens reference raw values; semantic tokens reference foundation tokens
-- **Naming conventions:** Semantic, purpose-driven names instead of appearance-based names
-- **Format agnostic:** Tokens can be authored in JSON, YAML, or CSS and converted to platform-specific formats
-
-Learn more: https://www.w3.org/community/design-tokens/
-
-### Tooling and Automation
-
-**Style Dictionary (Amazon):**
-- Transform design tokens from source format (JSON) to platform-specific outputs (CSS, SCSS, iOS, Android)
-- Used by Amazon, Salesforce, and many others
-- TronRelic currently uses hand-authored CSS but could adopt Style Dictionary for automation
-- Repository: https://github.com/amzn/style-dictionary
-
-**Figma Tokens:**
-- Sync design tokens between Figma designs and codebase
-- Bridge design and development workflows
-- Plugin: https://www.figma.com/community/plugin/843461159747178978
-
-**Theo (Salesforce):**
-- Design token transformation and validation
-- Multi-platform token generation
-- Repository: https://github.com/salesforce-ux/theo
-
-### Adopting Best Practices
-
-When working with TronRelic's design tokens, remember:
-
-1. **This is not custom architecture** - You're working with patterns proven at Google, Adobe, Shopify, and GitHub scale
-2. **Semantic naming prevents chaos** - `--button-bg-primary` beats `--blue-500` when refactoring themes
-3. **Token layers enable flexibility** - Foundation tokens stay stable; semantic tokens adapt to context
-4. **Industry tooling exists** - Consider Style Dictionary if token management becomes complex
-5. **Documentation matters** - Major design systems invest heavily in token documentation (as should we)
+Themes override semantic tokens via custom CSS attached to a `[data-theme="UUID"]` selector — no source-file changes needed. Themes persist in MongoDB and apply via SSR injection. See [ui-theme.md](./ui-theme.md) before creating or modifying a theme.
 
 ## Further Reading
 
-**TronRelic documentation:**
-- [ui-scss-modules.md](./ui-scss-modules.md) - SCSS Module architecture, naming conventions, and component styling workflow
-- [frontend-architecture.md](./frontend-architecture.md) - Frontend file organization and structure
+**Source files:**
+- [primitives.scss](../../../src/frontend/app/primitives.scss) — Foundation primitives
+- [semantic-tokens.scss](../../../src/frontend/app/semantic-tokens.scss) — Semantic tokens + curated t-shirt scales
+- [globals.scss](../../../src/frontend/app/globals.scss) — Global utility classes
+- [_breakpoints.scss](../../../src/frontend/app/_breakpoints.scss) — Breakpoint variables (single source of truth)
 
-**TronRelic source files:**
-- [src/frontend/app/primitives.scss](../../src/frontend/app/primitives.scss) - Foundation tokens (primitives)
-- [src/frontend/app/semantic-tokens.scss](../../src/frontend/app/semantic-tokens.scss) - Semantic tokens (aliases)
-- [src/frontend/app/globals.scss](../../src/frontend/app/globals.scss) - Utility classes and global styles
-- [src/frontend/app/_breakpoints.scss](../../src/frontend/app/_breakpoints.scss) - SCSS breakpoint variables (single source of truth)
-
-**External resources:**
-- Material Design Tokens: https://m3.material.io/foundations/design-tokens/overview
-- Adobe Spectrum Tokens: https://spectrum.adobe.com/page/design-tokens/
-- Shopify Polaris Tokens: https://polaris.shopify.com/tokens/colors
-- GitHub Primer Tokens: https://primer.style/foundations/primitives
-- W3C Design Tokens Community Group: https://www.w3.org/community/design-tokens/
-- Style Dictionary (Amazon): https://github.com/amzn/style-dictionary
+**Related docs:**
+- [ui-scss-modules.md](./ui-scss-modules.md) — How component CSS Modules consume these tokens
+- [ui-responsive-design.md](./ui-responsive-design.md) — Container queries and the SCSS interpolation gotcha
+- [ui-theme.md](./ui-theme.md) — Theme system, admin overrides, SSR injection

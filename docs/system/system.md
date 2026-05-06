@@ -1,5 +1,7 @@
 # System Architecture Overview
 
+These documents cover the **backend** — everything under `src/backend/`. For the frontend, see [docs/frontend/frontend.md](../frontend/frontend.md).
+
 The system layer orchestrates blockchain sync, job scheduling, observer notification, real-time metrics, and runtime configuration — the data pipelines every TronRelic feature depends on.
 
 ## Why This Matters
@@ -14,7 +16,7 @@ Solves Next.js build-time env inlining so a single Docker image runs on any doma
 
 ### Backend Modules
 
-Essential, non-toggleable infrastructure (Pages, Menu, User, Migrations) initialized during bootstrap. Two-phase lifecycle — `init()` resolves typed DI dependencies, `run()` mounts routes — with fail-fast errors and no degraded mode. Plugins, by contrast, are optional and runtime-toggleable. See [modules.md](./modules/modules.md), [modules-architecture.md](./modules/modules-architecture.md), [modules-creating.md](./modules/modules-creating.md).
+Non-toggleable infrastructure (Pages, Menu, User, Migrations) initialized during bootstrap. Two-phase lifecycle — `init()` resolves typed DI dependencies, `run()` mounts routes — fail-fast, no degraded mode. Plugins, by contrast, are optional and runtime-toggleable. See [modules.md](./modules/modules.md), [modules-architecture.md](./modules/modules-architecture.md), [modules-creating.md](./modules/modules-creating.md).
 
 ### Database Access
 
@@ -26,11 +28,11 @@ Pulls TronGrid blocks serially with a 200ms throttle (~5 req/s) to avoid burst r
 
 ### Scheduler
 
-Runs six built-in cron jobs, each toggleable at runtime without restart. Critical jobs — `blockchain:sync` (1m), `markets:refresh` (10m), `chain-parameters:fetch` (10m), `usdt-parameters:fetch` (10m) — drive every downstream feature; disabling any of them stales data. Safe to disable temporarily: `cache:cleanup` (memory only) and `alerts:*` (notifications only, not data collection). Global kill via `ENABLE_SCHEDULER=false`. See [system-scheduler-operations.md](./system-scheduler-operations.md).
+Runs six built-in cron jobs, each toggleable at runtime without restart. Critical jobs — `blockchain:sync` (1m), `chain-parameters:fetch` (10m), `usdt-parameters:fetch` (10m) — drive every downstream feature; disabling any of them stales data. Safe to disable temporarily: `cache:cleanup` and `system-logs:cleanup`. Global kill via `ENABLE_SCHEDULER=false`. See [system-scheduler-operations.md](./system-scheduler-operations.md).
 
 ### Monitoring API
 
-16+ admin-token-gated endpoints covering sync status, scheduler control, market freshness, DB/Redis/server health, env config, and WebSocket diagnostics. Powers the dashboard and any custom automation. See [system-api.md](./system-api.md).
+Admin-token-gated endpoints covering sync status, scheduler control, DB/Redis/server health, env config, and WebSocket diagnostics. Powers the dashboard. See [system-api.md](./system-api.md).
 
 ### Dashboard
 
@@ -38,11 +40,11 @@ Tabbed web UI at `/system` (requires `ADMIN_API_TOKEN`) for live metrics, job to
 
 ### Menu
 
-Centralized navigation service that aggregates menu nodes from core and plugins. Supports DB-backed and memory-only entries, multiple namespaces, and emits WebSocket events when structure changes; plugins register through lifecycle hooks — no core edits. See [Menu Module README](../../src/backend/modules/menu/README.md).
+Navigation service that aggregates menu nodes from core and plugins. Supports DB-backed and memory-only entries, multiple namespaces, and emits WebSocket events when structure changes; plugins register through lifecycle hooks — no core edits. See [Menu Module README](../../src/backend/modules/menu/README.md).
 
 ### Migrations
 
-Schema evolution discovered automatically from system, module, and plugin directories; topologically sorted by dependency; executed serially with MongoDB transaction wrapping (replica set required) and full audit history. Admin UI at `/system/database`. See [system-database-migrations.md](./system-database-migrations.md).
+Schema evolution discovered automatically from system, module, and plugin directories; topologically sorted by dependency; executed serially with MongoDB transaction wrapping (replica set required) and full audit history. See [system-database-migrations.md](./system-database-migrations.md).
 
 ### Pages
 
@@ -62,7 +64,7 @@ Vitest with shared Mongoose mocking utilities — in-memory collections, chainab
 
 ## Operations Quick Start
 
-Inspect health from the `/system` dashboard (auth: `ADMIN_API_TOKEN`) — fastest path to blockchain status, scheduler jobs, and queue depth. For programmatic access, every endpoint is documented in [system-api.md](./system-api.md). For full troubleshooting runbooks (sync stalled, jobs not firing, queue saturation), see [system-scheduler-operations.md](./system-scheduler-operations.md).
+Inspect health at `/system` (auth: `ADMIN_API_TOKEN`) — fastest path to blockchain status, scheduler jobs, queue depth. Programmatic equivalents in [system-api.md](./system-api.md); troubleshooting runbooks (sync stalled, jobs not firing, queue saturation) in [system-scheduler-operations.md](./system-scheduler-operations.md).
 
 ## Detail Documents
 
@@ -76,10 +78,9 @@ Inspect health from the `/system` dashboard (auth: `ADMIN_API_TOKEN`) — fastes
 | [system-blockchain-sync-architecture.md](./system-blockchain-sync-architecture.md) | Block retrieval, enrichment pipeline, observer dispatch |
 | [system-scheduler-operations.md](./system-scheduler-operations.md) | Job control, cron syntax, persistence, troubleshooting |
 | [system-api.md](./system-api.md) | Admin API gateway — auth, conventions, troubleshooting, links to per-domain detail docs |
-| [system-api-overview.md](./system-api-overview.md) | `/overview`, `/health/*`, `/config` |
+| [system-api-overview.md](./system-api-overview.md) | `/health/*` (database, clickhouse, redis, server), `/config`, `/config/system` |
 | [system-api-blockchain.md](./system-api-blockchain.md) | Blockchain sync status, metrics, manual trigger |
 | [system-api-scheduler.md](./system-api-scheduler.md) | Scheduler status, health, job PATCH |
-| [system-api-markets.md](./system-api-markets.md) | Market platforms, freshness, refresh |
 | [system-api-logs.md](./system-api-logs.md) | System log query/resolve/delete endpoints |
 | [system-api-websockets.md](./system-api-websockets.md) | WebSocket admin metrics + real-time event catalog |
 | [system-dashboard.md](./system-dashboard.md) | Dashboard tabs and controls |
@@ -93,6 +94,5 @@ Inspect health from the `/system` dashboard (auth: `ADMIN_API_TOKEN`) — fastes
 ## Related
 
 - [plugins-blockchain-observers.md](../plugins/plugins-blockchain-observers.md) — building observers that react to transactions
-- [market-system-architecture.md](../markets/market-system-architecture.md) — market fetcher pipeline
 - [tron-chain-parameters.md](../tron/tron-chain-parameters.md) — chain parameter caching
 - [environment.md](../environment.md) — `ENABLE_SCHEDULER`, `TRONGRID_API_KEY`, `SESSION_SECRET`

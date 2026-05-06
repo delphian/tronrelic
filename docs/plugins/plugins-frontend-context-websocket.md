@@ -12,13 +12,14 @@ Use the helpers. Touch `context.websocket.socket` only when a third-party API de
 
 ```typescript
 interface IWebSocketClient {
-    socket: Socket;                                    // raw access
+    socket: Socket;                                      // raw access
     isConnected(): boolean;
-    on(event: string, handler: Fn): void;              // auto-prefixed
+    on(event: string, handler: Fn): void;                // auto-prefixed
     off(event: string, handler: Fn): void;
     once(event: string, handler: Fn): void;
-    subscribe(roomName: string, payload?: any): void;  // joins plugin:<id>:<room>
-    onConnect(handler: Fn): void;                      // fires on (re)connect
+    subscribe(roomName: string, payload?: any): void;    // joins plugin:<id>:<room>
+    unsubscribe(roomName: string, payload?: any): void;  // leaves the same room — pass the matching payload
+    onConnect(handler: Fn): void;                        // fires on (re)connect
     offConnect(handler: Fn): void;
 }
 ```
@@ -40,11 +41,12 @@ React Strict Mode double-mounts in dev, and Socket.IO buffers emits before trans
 ```typescript
 useEffect(() => {
     const { websocket } = context;
+    const subscribePayload = { minAmount: 500_000 };
 
     const handler = (payload: any) => { /* update state */ };
 
     const subscribe = () => {
-        websocket.subscribe('large-transfer', { minAmount: 500_000 });
+        websocket.subscribe('large-transfer', subscribePayload);
     };
 
     websocket.on('large-transfer', handler);
@@ -52,6 +54,7 @@ useEffect(() => {
     subscribe();  // capture the first handshake
 
     return () => {
+        websocket.unsubscribe('large-transfer', subscribePayload);  // leave the room — pass the matching payload
         websocket.off('large-transfer', handler);
         websocket.offConnect(subscribe);
     };

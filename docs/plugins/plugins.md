@@ -1,44 +1,44 @@
 # Plugin System Overview
 
-TronRelic's plugin system enables self-contained blockchain features that own everything they need — observers, REST routes, pages, widgets, real-time subscriptions, shared services — without touching the platform core.
+Self-contained blockchain features that own observers, REST routes, pages, widgets, real-time subscriptions, and shared services — without touching the platform core.
 
 ## Why This Matters
 
-Plugins ship as isolated workspaces that fail in isolation, depend on interfaces, and register their own surfaces dynamically. The pattern lets features like whale alerts and delegation tracking iterate without rewriting shared infrastructure, and lets operators toggle features at runtime without restarts.
+Plugins fail in isolation, depend on interfaces, and register their own surfaces dynamically. Features like whale alerts and delegation tracking iterate without rewriting shared infrastructure; operators toggle them at runtime without restarts.
 
 ## Plugin Lifecycle
 
-Plugins move through five states, controlled from the `/system/plugins` admin interface without restarts:
+Five states, controlled from `/system/plugins` without restarts:
 
-1. **Discovered** — found in `src/plugins/` and registered (default: uninstalled, disabled)
-2. **Installed** — `install()` runs; create indexes, seed defaults
-3. **Enabled** — `enable()` and `init()` run; register observers, routes, services
-4. **Disabled** — `disable()` runs; stop background tasks, keep data intact
-5. **Uninstalled** — `uninstall()` runs; clean up persistent state
+1. **Discovered** — registered from `src/plugins/` (default: uninstalled, disabled)
+2. **Installed** — `install()` runs: create indexes, seed defaults
+3. **Enabled** — `enable()` then `init()` run: register observers, routes, services
+4. **Disabled** — `disable()` runs: stop background tasks, keep data
+5. **Uninstalled** — `uninstall()` runs: clean up persistent state
 
-Only plugins that are **installed AND enabled** load at runtime. See [plugins-system-architecture.md](./plugins-system-architecture.md) for package layout, manifest contracts, runtime initialization, hot reload, the new-plugin walkthrough, and admin interface usage.
+Only **installed AND enabled** plugins load at runtime. See [plugins-system-architecture.md](./plugins-system-architecture.md) for package layout, manifests, runtime init, hot reload, and admin UI.
 
 ## Extension Surfaces
 
-**Blockchain transaction processing.** Plugins subscribe to TRON contract types (`TransferContract`, `DelegateResourceContract`, etc.) by extending the injected `BaseObserver`. Observers inherit queue management, overflow protection, and error isolation — failures stay contained without blocking blockchain sync. See [plugins-blockchain-observers.md](./plugins-blockchain-observers.md) for the observer pattern, subscription mechanics, and statistics tracking.
+**Blockchain transaction processing.** Subscribe to TRON contract types (`TransferContract`, `DelegateResourceContract`, etc.) by extending the injected `BaseObserver`. Inherits queue management, overflow protection, and error isolation — observer failures cannot block sync. See [plugins-blockchain-observers.md](./plugins-blockchain-observers.md).
 
-**Frontend UI extension.** Plugins register menu items, full pages, and widgets that inject into zones on existing pages. Components receive an `IFrontendPluginContext` providing UI primitives, charts, the API client, and WebSocket access — no cross-workspace imports. All visible plugin UI must follow the [SSR + Live Updates pattern](../frontend/react/react.md#ssr--live-updates-pattern): server renders with real data, client hydrates and subscribes. See [plugins-page-registration.md](./plugins-page-registration.md) for menu and page registration, [plugins-widget-zones.md](./plugins-widget-zones.md) for zone injection, [plugins-frontend-context.md](./plugins-frontend-context.md) for the context API and CSS Modules, and [plugins-seo-and-ssr.md](./plugins-seo-and-ssr.md) for SEO fields and `serverDataFetcher`.
+**Frontend UI extension.** Register menu items, full pages, and widgets injecting into zones on existing pages. Components receive `IFrontendPluginContext` (UI primitives, charts, api, websocket) — no cross-workspace imports. All plugin UI must follow [SSR + Live Updates](../frontend/react/react.md#ssr--live-updates-pattern). See [plugins-page-registration.md](./plugins-page-registration.md), [plugins-widget-zones.md](./plugins-widget-zones.md), [plugins-frontend-context.md](./plugins-frontend-context.md), [plugins-seo-and-ssr.md](./plugins-seo-and-ssr.md).
 
-**REST API routes.** Plugins expose endpoints under `/api/plugins/<plugin-id>/` using framework-agnostic request/response objects, with auto-namespacing, middleware composition (auth, validation, rate limiting), and lifecycle-coupled registration. Admin routes mounted under `/api/plugins/<plugin-id>/system/**` get the `requireAdmin` middleware automatically. See [plugins-api-registration.md](./plugins-api-registration.md) for route definitions, the dual-track admin gate, and handler contracts.
+**REST API routes.** Endpoints mount under `/api/plugins/<plugin-id>/` via framework-agnostic request/response objects. Routes under `/api/plugins/<plugin-id>/system/**` auto-receive `requireAdmin` middleware. See [plugins-api-registration.md](./plugins-api-registration.md).
 
-**Database storage.** Each plugin gets an isolated MongoDB sandbox via `IDatabaseService` with collection names auto-prefixed `plugin_<id>_` to prevent collisions. The helper provides scoped collections, key-value config storage, and lifecycle-aware setup (indexes in `install()`, config load in `init()`). See [system-database.md](../system/system-database.md#plugins) for usage patterns and modeling guidance.
+**Database storage.** Each plugin gets a MongoDB sandbox via `IDatabaseService` with collections auto-prefixed `plugin_<id>_`. Indexes belong in `install()`, config load in `init()`. See [system-database.md](../system/system-database.md#plugins).
 
-**WebSocket real-time events.** Plugins manage custom subscriptions through a namespaced WebSocket manager. Room names and event names are auto-prefixed with the plugin ID; subscription handlers can validate payloads and reject invalid requests; the manager exposes metrics for room membership and emission rates. See [plugins-websocket-subscriptions.md](./plugins-websocket-subscriptions.md) for handler registration, room management, and frontend subscription patterns.
+**WebSocket real-time events.** Custom subscriptions through a namespaced manager — room and event names auto-prefixed with plugin ID. Handlers may validate and reject payloads. See [plugins-websocket-subscriptions.md](./plugins-websocket-subscriptions.md).
 
-**Cross-component service sharing.** The service registry (`context.services`) lets plugins publish named services that other plugins and modules discover at runtime — TronRelic's mechanism for plugin-to-plugin and plugin-to-module collaboration. Providers register on `init()` and unregister on `disable()`; consumers look up by name with `get()` (one-shot) or `watch()` (continuous presence). The registry shifts the module vs plugin decision: a feature exposing a shared service can stay a plugin if the application functions without it. See [plugins-service-registry.md](./plugins-service-registry.md) for the types-only-package convention, get/watch semantics, and the `IUserGroupService` permission-gating pattern.
+**Cross-component service sharing.** The service registry (`context.services`) lets plugins publish named services that other plugins and modules discover at runtime. Providers register on `init()`, unregister on `disable()`; consumers call `get()` (one-shot) or `watch()` (continuous). This shifts the module-vs-plugin decision: a feature exposing a shared service can stay a plugin as long as the app functions without it. See [plugins-service-registry.md](./plugins-service-registry.md).
 
 ## Quick Reference
 
-For the new-plugin walkthrough — directory layout, copy `trp-ai-assistant` as baseline, manifest fields, build commands — see [plugins-system-architecture.md → Adding or updating a plugin](./plugins-system-architecture.md#adding-or-updating-a-plugin). The canonical reference implementation that exercises every pattern in this guide (lifecycle hooks, scheduler jobs, service registry publication, admin routes, SSR-first pages) is `src/plugins/trp-ai-assistant/`.
+Canonical reference implementation: `src/plugins/trp-ai-assistant/` — exercises lifecycle hooks, scheduler jobs, service registry publication, admin routes, and SSR-first pages. New-plugin walkthrough: [plugins-system-architecture.md → Adding or updating a plugin](./plugins-system-architecture.md#adding-or-updating-a-plugin).
 
 ### Common Pattern: Backend Plugin Init
 
-Wire observers — and any service-registry publication — inside `init()` using only the injected `IPluginContext`:
+Wire observers and service-registry publication inside `init()` using only the injected `IPluginContext`:
 
 ```typescript
 export const myPluginBackendPlugin = definePlugin({

@@ -1,330 +1,77 @@
 # Scheduler Operations
 
-This document explains how TronRelic's scheduler works, how to control individual jobs at runtime, and how to troubleshoot scheduling issues.
+How TronRelic's scheduler runs core jobs, how to control them at runtime, and how to diagnose stalls.
 
 ## Why This Matters
 
-The scheduler drives market refreshes, blockchain sync, cache cleanup, and alert dispatch. When jobs fail or fall behind, data goes stale silently. This document explains how to control individual jobs at runtime and troubleshoot scheduling issues without restarting the backend.
+The scheduler drives blockchain sync, chain-parameter refresh, prune, and cache cleanup. When a job stops, downstream data goes stale silently — no banner, no alert. Per-job control at runtime (no restart, no redeploy) is the operator's only line of defense.
 
-## Scheduler Architecture
+## Architecture
 
-### Global Enable/Disable
+### Global Kill Switch
 
-The scheduler is controlled globally by the `ENABLE_SCHEDULER` environment variable:
-
-```bash
-# Enable scheduler (all jobs run on schedule)
-ENABLE_SCHEDULER=true
-
-# Disable scheduler (no jobs run)
-ENABLE_SCHEDULER=false
-```
-
-**When to disable globally:**
-- During development to avoid API rate limits
-- During troubleshooting to isolate problems
-- When running tests
+`ENABLE_SCHEDULER=false` disables every job, core or plugin-registered. The scheduler reads this once at boot; flipping it requires a backend restart. Use during local dev to avoid TronGrid pressure, during incident triage to isolate noise, or in tests.
 
 ### Per-Job Configuration
 
-Each scheduler job can be controlled independently **at runtime** without requiring a restart:
+Each job has an enabled flag and a cron expression, both persisted in the `scheduler_configs` MongoDB collection. Changes from the dashboard or the admin API write to that collection and take effect on the **next tick** — no restart. Settings survive restarts because they live in the database, not in env or memory.
 
-```
-Job: markets:refresh
-├── Enabled: true/false (checkbox in UI)
-├── Schedule: */5 * * * * (cron expression, editable)
-├── Status: success/failed/running/never_run
-├── Last Run: 2025-10-16T14:25:00Z
-└── Duration: 1.234 seconds
-```
+## Core Jobs
 
-Jobs persist their configuration in MongoDB (`scheduler_configs` collection), so settings survive backend restarts.
+Six jobs registered in `src/backend/modules/scheduler/jobs/core-jobs.ts`:
 
-## Scheduler Jobs
+| Job | Default Schedule | Purpose | Impact if Down |
+|---|---|---|---|
+| `blockchain:sync` | `*/1 * * * *` | Retrieve TRON blocks, enrich, dispatch to observers | Transaction feed and observers go silent |
+| `blockchain:prune` | `0 * * * *` | Drop transactions older than retention window | `transactions` collection grows unbounded |
+| `chain-parameters:fetch` | `*/10 * * * *` | Pull `energyPerTrx`, `energyFee` from TRON | Energy/TRX conversions drift from network truth |
+| `usdt-parameters:fetch` | `*/10 * * * *` | Pull current USDT transfer energy cost | USDT pricing drifts |
+| `cache:cleanup` | `0 * * * *` | Evict expired cache entries | Memory usage grows |
+| `system-logs:cleanup` | `0 * * * *` | Delete logs past retention | Log storage grows |
 
-TronRelic includes six built-in scheduler jobs. Plugins can register additional jobs (e.g., `resource-markets:refresh`).
-
-| Job Name | Default Schedule | Purpose | Impact if Down |
-|----------|------------------|---------|-----------------|
-| `blockchain:sync` | Every 1 min | Retrieve new TRON blocks and index transactions | Whale alerts, transaction data stale |
-| `blockchain:prune` | Every 60 min | Remove old transactions (>7 days) | Database grows unbounded |
-| `chain-parameters:fetch` | Every 10 min | Fetch TRON chain parameters (energy costs) | Energy cost calculations become inaccurate |
-| `usdt-parameters:fetch` | Every 10 min | Fetch USDT transfer energy cost | USDT transfer pricing becomes inaccurate |
-| `cache:cleanup` | Every 60 min | Remove expired cache entries | Memory usage grows unbounded |
-| `system-logs:cleanup` | Every 60 min | Remove old system logs beyond retention | Log storage grows unbounded |
-
-**Critical jobs** (disable only if you understand the consequences):
-- `blockchain:sync` - Core data pipeline
-- `chain-parameters:fetch` - Energy pricing calculations
-
-**Safe to disable temporarily:**
-- `cache:cleanup` - Only impacts performance, not functionality
-- `system-logs:cleanup` - Only impacts log retention
+Plugins register additional jobs via `context.scheduler.register(name, cron, fn)`; the dashboard and admin API treat them identically to core jobs.
 
 ## Controlling Jobs at Runtime
 
-### Using the System Monitor Dashboard
+### Dashboard
 
-The easiest way to control scheduler jobs:
+Toggle, edit, and inspect every job at `/system` → Scheduler section. Visual states (enabled/disabled, run status, last duration) and the auth path are documented in [system-dashboard.md](./system-dashboard.md).
 
-1. **Navigate to `/system`** - Requires cookie-based admin authority (verified wallet + `admin` group membership). See [Authentication Workflow](./system-dashboard.md#authentication-workflow) for the full sign-in path and the service-token alternative for CI/scripts.
-2. **Find the "Scheduled Jobs" section**
-3. **For each job:**
-   - **Toggle enabled/disabled** - Checkbox shows job state (bright background = enabled, dim = disabled)
-   - **Modify schedule** - Click schedule input, enter new cron expression, press Enter
-   - **Monitor status** - Badge shows: success (green), failed (red), running (blue), never_run (gray)
-   - **View last run** - Timestamp and duration displayed below job name
+### Admin API
 
-**Visual indicators:**
-- ✅ **Bright background** - Job is enabled and will run on schedule
-- ❌ **Dim background** - Job is disabled and will NOT run
-- 🟢 **Green badge** - Last execution succeeded
-- 🔴 **Red badge** - Last execution failed
-- 🔵 **Blue badge** - Currently running
-- ⚪ **Gray badge** - Never run since server started
+`PATCH /api/admin/system/scheduler/job/{jobName}` accepts `{enabled, schedule}` (either or both):
 
-### Using the Admin API
-
-Alternatively, control jobs programmatically:
-
-**Check scheduler status:**
-```bash
-curl -H "X-Admin-Token: your-token" \
-  http://localhost:4000/api/admin/system/scheduler/status
-```
-
-Response includes all jobs with their enabled state and last execution details.
-
-**Enable a job:**
 ```bash
 curl -X PATCH \
-  -H "X-Admin-Token: your-token" \
+  -H "X-Admin-Token: $ADMIN_API_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"enabled": true}' \
-  http://localhost:4000/api/admin/system/scheduler/job/markets:refresh
-```
-
-**Disable a job:**
-```bash
-curl -X PATCH \
-  -H "X-Admin-Token: your-token" \
-  -H "Content-Type: application/json" \
-  -d '{"enabled": false}' \
+  -d '{"enabled": true, "schedule": "*/3 * * * *"}' \
   http://localhost:4000/api/admin/system/scheduler/job/blockchain:sync
 ```
 
-**Modify schedule (every 10 minutes instead of every 5):**
-```bash
-curl -X PATCH \
-  -H "X-Admin-Token: your-token" \
-  -H "Content-Type: application/json" \
-  -d '{"schedule": "*/10 * * * *"}' \
-  http://localhost:4000/api/admin/system/scheduler/job/markets:refresh
-```
+`GET /api/admin/system/scheduler/status` returns all jobs with enabled state and last-execution metadata. See [system-api-scheduler.md](./system-api-scheduler.md) for the full endpoint reference.
 
-**Both enable AND modify schedule:**
-```bash
-curl -X PATCH \
-  -H "X-Admin-Token: your-token" \
-  -H "Content-Type: application/json" \
-  -d '{"enabled": true, "schedule": "*/3 * * * *"}' \
-  http://localhost:4000/api/admin/system/scheduler/job/markets:refresh
-```
+## Cron Expressions
 
-## Cron Expression Syntax
-
-Jobs use standard cron format: `minute hour day-of-month month day-of-week`
-
-**Examples:**
-
-```bash
-*/5 * * * *      # Every 5 minutes
-*/1 * * * *      # Every 1 minute (same as * * * * *)
-0 * * * *        # Every hour at :00
-0 0 * * *        # Every day at midnight
-0 0 * * 0        # Every Sunday at midnight
-*/15 9-17 * * *  # Every 15 min, 9 AM to 5 PM
-```
-
-**Common modifications:**
-
-| Current | Change To | Effect | When to Use |
-|---------|-----------|--------|-------------|
-| `*/5 * * * *` | `*/2 * * * *` | Run twice as often (every 2 min instead of 5) | Catching up after downtime, need faster updates |
-| `*/5 * * * *` | `*/10 * * * *` | Run half as often (every 10 min instead of 5) | Reducing API load, data doesn't need frequent updates |
-| `*/1 * * * *` | `0 * * * *` | Run once per hour instead of every minute | Maintenance window, temporarily reduce frequency |
-| `* * * * *` | `0 9 * * *` | Run once daily at 9 AM instead of every minute | Job only needs to run once per day |
-
-**Validation:** Invalid cron expressions are rejected with an error message. The expression must have exactly 5 space-separated fields.
+Standard 5-field cron (`minute hour day-of-month month day-of-week`). The backend rejects expressions that don't have exactly 5 space-separated fields with a 400 error — there is no degraded mode for malformed schedules.
 
 ## Troubleshooting
 
-### Market Data Not Updating
+Most stalls reduce to four checks: is the global flag on (`echo $ENABLE_SCHEDULER`), is the specific job enabled in `/system`, did the last run fail (red badge → tail backend logs for the job name), and is `last run` ancient (job never fired — wait one tick or trigger via API).
 
-**Symptoms:**
-- Market leaderboard shows old prices
-- `lastUpdated` timestamp is more than 10 minutes old
+| Symptom | Likely cause |
+|---|---|
+| All jobs `never_run` | `ENABLE_SCHEDULER=false` at boot, or scheduler module failed to initialize (check startup logs for `Scheduler started`) |
+| One job stuck on red badge | Upstream failure — TronGrid rate limit, MongoDB slow, plugin bug; tail logs filtered by job name |
+| One job runs but data still stale | Wrong job — confirm the right job feeds the data (e.g., `chain-parameters:fetch` not `blockchain:sync` for energy ratios) |
+| Job duration grows over time | Backlog catching up (acceptable) or unbounded query (open a ticket); check `/system` Blockchain Status if it's `blockchain:sync` |
+| Cron edit didn't take effect | Invalid expression rejected with 400, or the next tick hasn't fired yet — settings persist in `scheduler_configs`; verify via `GET /scheduler/status` |
 
-**Diagnosis:**
+For pipeline-specific failures in `blockchain:sync`, see [system-blockchain-sync-architecture.md](./system-blockchain-sync-architecture.md).
 
-- [ ] Check if scheduler is globally enabled:
-   ```bash
-   echo $ENABLE_SCHEDULER
-   ```
+## Further Reading
 
-- [ ] Check market job status in `/system`:
-   - Find `markets:refresh` job card
-   - Check if it's enabled (bright background) or disabled (dim)
-   - Look at "Last run" timestamp and status badge
-
-- [ ] Check logs for errors:
-   ```bash
-   tail -100 .run/backend.log | grep -i market
-   ```
-
-**Resolution:**
-
-- **If globally disabled:** Set `ENABLE_SCHEDULER=true` and restart backend
-- **If job disabled:** Toggle the checkbox in `/system` to enable
-- **If job failed:** Check logs for API errors, verify market endpoints are accessible
-- **If job never ran:** Wait 5 minutes for next scheduled execution, or manually trigger via API
-
-### Blockchain Data Stale
-
-**Symptoms:**
-- `/system` shows blockchain lag (current block far behind network block)
-- New whale transactions don't appear immediately
-- Whale alerts are delayed
-
-**Diagnosis:**
-
-- [ ] Check blockchain job status in `/system`:
-   - Find `blockchain:sync` job card
-   - Verify it's enabled (bright background)
-   - Check if status is "success" (green) or "failed" (red)
-
-- [ ] Check blockchain sync metrics in `/system`:
-   - Under "Blockchain Status" section
-   - Compare "Current Block" vs "Network Block"
-   - Check "Processing Rate" (blocks per minute)
-
-- [ ] Check logs:
-   ```bash
-   tail -100 .run/backend.log | grep -i blockchain
-   ```
-
-**Resolution:**
-
-- **If job disabled:** Enable in `/system` dashboard
-- **If lag is high:** Verify TronGrid API key is set (`TRONGRID_API_KEY` in `.env`)
-- **If status is "failed":** Check logs for network errors, TronGrid rate limits
-- **If job never ran:** Wait 1 minute for next execution
-
-### Job Schedule Too Aggressive
-
-**Symptoms:**
-- Excessive API requests (hitting rate limits)
-- High database load
-- Backend CPU usage is very high
-
-**Resolution:**
-
-Increase the job schedule interval in `/system`:
-
-- Find the job (e.g., `markets:refresh`)
-- Click the schedule input field
-- Change `*/5 * * * *` to `*/10 * * * *` (now runs every 10 min instead of 5)
-- Press Enter to save
-
-Changes take effect immediately without restarting the backend.
-
-### Need to Pause a Job Temporarily
-
-**Example scenario:** Running database maintenance, don't want job to interfere
-
-**Solution:**
-
-1. Open `/system`
-2. Find the job
-3. Uncheck the "Enabled" checkbox
-4. Do your maintenance
-5. Re-enable the job when done
-
-No restart needed. Job resumes normally.
-
-### Scheduler Jobs Never Execute
-
-**Symptoms:**
-- All jobs show status "never_run"
-- No execution timestamps
-
-**Diagnosis:**
-
-- [ ] Is scheduler globally enabled?
-   ```bash
-   echo $ENABLE_SCHEDULER
-   ```
-
-- [ ] Check backend logs for initialization:
-   ```bash
-   tail -50 .run/backend.log | grep -i scheduler
-   ```
-   Should show: "Scheduler started with configuration from MongoDB"
-
-**Resolution:**
-
-1. If scheduler disabled globally: Set `ENABLE_SCHEDULER=true`
-2. Check that `ENABLE_SCHEDULER` is set **before** backend starts
-3. Restart backend (Ctrl+C then `npm run dev`)
-4. Wait for jobs to execute on their schedule
-
-### Job Execution Takes Too Long
-
-**Symptoms:**
-- Job status shows "running" for extended period
-- "Duration" field shows very high value (e.g., 30+ seconds)
-
-**Diagnosis:**
-
-- [ ] Check what job is slow:
-   - Find job in `/system` dashboard
-   - Note the duration value
-
-- [ ] Check logs:
-   ```bash
-   tail -100 .run/backend.log | grep "jobName"
-   ```
-
-**Common causes:**
-- **Market fetch:** Upstream API is slow or network is congested
-- **Blockchain sync:** Processing many transactions in a full block
-- **Database query:** MongoDB is slow or overloaded
-
-**Resolution:**
-
-- For market fetch: Check market API status, verify network connectivity
-- For blockchain sync: Check database performance, consider increasing job interval if lag is acceptable
-- Generally: Monitor and wait, most slow executions recover on next run
-
-## Configuration Persistence
-
-**Important:** When you enable/disable a job or modify its schedule in `/system`, the change is **persisted to MongoDB** and **survives backend restarts**.
-
-```
-User clicks "enable" in /system
-    ↓
-PATCH request to /api/admin/system/scheduler/job/{jobName}
-    ↓
-Backend updates scheduler_configs MongoDB collection
-    ↓
-Job takes effect immediately (no restart needed)
-    ↓
-On backend restart: Config is loaded from MongoDB
-    ↓
-Job state preserved as configured
-```
-
-## Related Documentation
-
-- [system-blockchain-sync-architecture.md](./system-blockchain-sync-architecture.md) - How the `blockchain:sync` job processes transactions
-- [environment.md](../environment.md) - `ENABLE_SCHEDULER` and `TRONGRID_API_KEY` configuration
+- [system-blockchain-sync-architecture.md](./system-blockchain-sync-architecture.md) — what `blockchain:sync` actually does each tick
+- [system-api-scheduler.md](./system-api-scheduler.md) — full admin API reference for status, health, PATCH
+- [system-dashboard.md](./system-dashboard.md) — `/system` UI walkthrough and authentication
+- [environment.md](../environment.md) — `ENABLE_SCHEDULER`, `TRONGRID_API_KEY*`, `BLOCK_SYNC_*`

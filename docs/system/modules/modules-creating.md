@@ -9,8 +9,8 @@ Modules are fail-fast infrastructure — deviations from the standard patterns c
 ## Directory Structure
 
 ```bash
-mkdir -p src/backend/src/modules/my-feature/{api,database,services,__tests__}
-touch src/backend/src/modules/my-feature/{MyFeatureModule.ts,index.ts,README.md}
+mkdir -p src/backend/modules/my-feature/{api,database,services,__tests__}
+touch src/backend/modules/my-feature/{MyFeatureModule.ts,index.ts,README.md}
 ```
 
 This creates the standard layout:
@@ -84,29 +84,32 @@ export { MyService } from './services/my.service.js';
 
 Create services that handle business logic, controllers that handle HTTP request/response, and database interfaces that define your MongoDB document shapes. Collection names must follow the `module_{module-id}_{collection}` convention (see [system-database.md](../system-database.md#namespace-isolation) for details). Follow standard Express and MongoDB patterns — the pages module source files demonstrate all three:
 
-- **Service:** `src/backend/src/modules/pages/services/page.service.ts`
-- **Controller:** `src/backend/src/modules/pages/api/pages.controller.ts`
-- **Schema:** `src/backend/src/modules/pages/database/IPageDocument.ts`
+- **Service:** `src/backend/modules/pages/services/page.service.ts`
+- **Controller:** `src/backend/modules/pages/api/pages.controller.ts`
+- **Schema:** `src/backend/modules/pages/database/IPageDocument.ts`
 
 If your service implements an `IXxxService` interface, it must be a singleton (see [modules.md#service-types-and-singleton-usage](./modules.md#service-types-and-singleton-usage)).
 
 ### 4. Register in Bootstrap
 
-Add module initialization to `src/backend/src/index.ts` after MenuService initialization and before plugin loading:
+Add the module to `src/backend/index.ts`. Construct and `init()` it alongside the other module inits in `bootstrapInit()` (after `MenuModule.init()`, in the same block as Logs/Pages/Theme/Scheduler/User/AddressLabels/Tools); call its `run()` from `bootstrapRun()` before `loadPlugins(...)`:
 
 ```typescript
 import { MyFeatureModule } from './modules/my-feature/index.js';
 
+// In bootstrapInit:
 const myFeatureModule = new MyFeatureModule();
 await myFeatureModule.init({ database: coreDatabase, cacheService, app });
-await myFeatureModule.run();
+
+// In bootstrapRun:
+await modules.myFeature.run();
 ```
 
-See [modules-architecture.md](./modules-architecture.md) for the complete bootstrap sequence and where modules fit.
+See [modules-architecture.md](./modules-architecture.md#bootstrap-sequence) for the complete order.
 
 ### 5. Write Tests
 
-Every module needs tests covering metadata validation, phase separation (routes NOT mounted during `init()`), lifecycle validation (`run()` before `init()` throws), and dependency injection. Use the pages module test suite as a template: `src/backend/src/modules/pages/__tests__/pages.module.test.ts`. See [system-testing.md](../system-testing.md) for the Mongoose mocking system and test patterns.
+Every module needs tests covering metadata validation, phase separation (routes NOT mounted during `init()`), lifecycle validation (`run()` before `init()` throws), and dependency injection. Use the pages module test suite as a template: `src/backend/modules/pages/__tests__/pages.module.test.ts`. See [system-testing.md](../system-testing.md) for the Mongoose mocking system and test patterns.
 
 ### 6. Document the Module
 
@@ -132,22 +135,18 @@ Every module must have: metadata validation test, `init()` phase test verifying 
 
 ### Documentation Standards
 
-Every module must have JSDoc comments on all classes, methods, and interfaces, a module-level `README.md`, inline code comments explaining "why" not "what", and public API exports documented in `index.ts`. Follow TronRelic's documentation standards: lead with "why", follow with "how", close with code.
+JSDoc on classes, methods, and interfaces; module-level `README.md`; inline comments explaining "why," not "what." Full writing standards in [documentation.md](../../documentation.md).
 
-## Pre-Implementation Checklist
+## Pre-Implementation Decision Points
 
-- [ ] Feature confirmed as essential infrastructure (not a plugin)
-- [ ] Dependencies identified and typed as interfaces
-- [ ] Directory structure created with standard layout
-- [ ] `IModule` implemented with metadata, `init()`, `run()`
-- [ ] `init()` creates services without mounting routes
-- [ ] `run()` mounts routes and registers menu items
-- [ ] Services with `IXxxService` interfaces use singleton pattern
-- [ ] Bootstrap updated in `src/backend/src/index.ts`
-- [ ] Tests cover both lifecycle phases and error handling
-- [ ] Public API exported via `index.ts`
-- [ ] Module `README.md` documents architecture
-- [ ] Frontend code (if any) in `src/frontend/modules/<name>/`
+Before writing code, settle the questions that determine whether the rest of the work is correct:
+
+- [ ] Feature is essential infrastructure (otherwise build a plugin instead).
+- [ ] Dependencies are typed as interfaces, not concrete classes.
+- [ ] Any `IXxxService` you create is a singleton (consumed by others, not customized per-call-site).
+- [ ] Frontend code (if any) belongs in `src/frontend/modules/<name>/`, not `components/ui/`.
+
+The mechanical steps (directory creation, `init`/`run` split, route mounting, tests, README) are the body of this guide above.
 
 ## Further Reading
 

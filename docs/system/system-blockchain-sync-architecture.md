@@ -1,318 +1,107 @@
 # Blockchain Sync Architecture
 
-This document explains how TronRelic retrieves blocks from the TRON network, processes transactions, and notifies observers through the blockchain observer pattern.
+How TronRelic retrieves blocks from TRON, enriches transactions, dispatches them to observers, and persists everything to MongoDB.
 
 ## Why This Matters
 
-The sync pipeline controls how blocks reach the database and how observers receive transactions. Misunderstanding the rate-limiting strategy, enrichment sequence, or observer notification flow leads to misdiagnosed stalls, redundant API calls, or broken feature additions.
-
-## Architecture Overview
-
-The blockchain sync system consists of three main components:
-
-```
-┌──────────────────────────────────────────────────────┐
-│ 1. Block Retrieval                                   │
-│    TronGrid API → Serial requests, 200ms throttling  │
-└────────────────────┬─────────────────────────────────┘
-                     │
-                     ▼
-┌──────────────────────────────────────────────────────┐
-│ 2. Transaction Enrichment                            │
-│    Parse, categorize, add USD prices, energy costs   │
-└────────────────────┬─────────────────────────────────┘
-                     │
-                     ▼
-┌──────────────────────────────────────────────────────┐
-│ 3. Observer Notification                             │
-│    Route enriched transactions to subscribed         │
-│    observers (whale alerts, delegations, etc.)       │
-└────────────────────┬─────────────────────────────────┘
-                     │
-                     ▼
-┌──────────────────────────────────────────────────────┐
-│ 4. Persistence & Events                              │
-│    Write ALL transactions to MongoDB, emit events    │
-└──────────────────────────────────────────────────────┘
-```
+The sync pipeline controls how blocks reach the database and how observers receive transactions. Misunderstanding the distributed lock, the adaptive throttle, the three observer types, or the notify-then-persist ordering leads to misdiagnosed stalls, double-processed blocks across instances, dropped transactions, or feature additions that block sync.
 
-## Block Retrieval Strategy
+## Pipeline Overview
 
-### Why Serial Requests?
+A scheduled `blockchain:sync` job (1-minute cron) acquires a Redis lock, fetches up to 60 blocks per invocation from TronGrid, processes each block through 11 numbered stages — fetch → enrich → notify observers → bulk-write to Mongo → emit WebSocket events — and adaptively throttles to a 3-second target interval when caught up to the chain head. Backfill of missed blocks runs alongside, scanning a 240-block window behind the cursor. Source: `src/backend/modules/blockchain/blockchain.service.ts`.
 
-TronRelic fetches blocks **serially** (one at a time) rather than in parallel because:
+## Block Retrieval
 
-1. **Rate limit preservation** - TronGrid allows ~1,000 requests/second with an API key, but serial requests ensure consistent throughput without burst limits
-2. **Queue predictability** - Serial processing makes request ordering deterministic and easier to debug
-3. **Backpressure handling** - If a block takes longer to process, the system automatically slows down rather than flooding the network with requests
+### Distributed Lock
 
-### Rate Limiting: 200ms Between Requests
+Sync acquires a Redis lock at `${REDIS_NAMESPACE}:locks:blockchain-sync` with a 55-second TTL before processing. This prevents concurrent syncs across multiple backend instances or scheduler restarts — without it, two workers would race to advance the same cursor and double-write transactions.
 
-Each block retrieval is throttled to a **minimum of 200ms between requests**:
+### Per-Tick Batch
 
-```typescript
-// Simplified flow
-for (let blockNum = cursor; blockNum < networkHeight; blockNum++) {
-    const block = await tronGrid.getBlockByNumber(blockNum);  // API call
-    await sleep(200);  // Always wait 200ms before next request
-    // Process block transactions...
-}
-```
-
-**Why 200ms?**
-- At 200ms per block: ~5 requests/second sustained
-- Network produces ~20 blocks/minute on TRON
-- At 5 req/sec: System can catch up to live in ~4 seconds if behind
-- Leaves headroom for TronGrid rate limits (1,000 req/sec with key)
-
-### Rotating API Keys
-
-If three TronGrid API keys are configured, requests rotate between them:
-
-```
-Request 1 → Key 1
-Request 2 → Key 2
-Request 3 → Key 3
-Request 4 → Key 1 (cycles back)
-```
+`blockchainConfig.batchSize = 60` caps how many blocks process in one scheduler invocation. The scheduler runs every minute, so steady-state throughput tops out at ~60 blocks/min — comfortably above TRON's ~20 blocks/min production rate, leaving headroom to catch up after a stall.
 
-This distributes load and provides fallback if one key hits rate limits.
-
-### Block Overflow Protection
-
-If the system falls behind and blocks accumulate, the sync service:
-
-1. **Monitors queue depth** - Tracks how many blocks are waiting to be processed
-2. **Implements backfill strategy** - Prioritizes catching up to the live chain height
-3. **Caps queue size** - Prevents unbounded memory growth (default: 100 blocks max pending)
-4. **Logs warnings** - Alerts administrators if queue exceeds thresholds
+### Backfill Window
 
-## Transaction Enrichment Pipeline
+`maxBackfillPerRun = 240` blocks. Before advancing the main cursor, sync prioritizes the backfill queue — blocks that previously failed processing or arrived out of order — scanning back up to 240 blocks. Gap-free historical coverage is the goal; the cursor only advances once the backfill queue is empty for the window.
 
-Once a block is retrieved, each transaction goes through enrichment:
+### TronGrid API Throttle and Key Rotation
 
-### 1. Parse Raw Transaction
+The TronGrid HTTP client (`tron-grid.client.ts`) enforces a **200ms minimum gap between requests** (`REQUEST_THROTTLE_MS`) regardless of which sync stage triggered the call. With three keys configured (`TRONGRID_API_KEY`, `_2`, `_3`), requests round-robin through them; a single populated key uses that key alone. Per-key, this stays well under TronGrid's ~1,000 req/sec ceiling.
 
-Extract transaction type, parties, amounts, and contract data from the raw block:
+### Retry
 
-```typescript
-interface RawTransaction {
-    txID: string;
-    blockNumber: number;
-    timestamp: number;
-    contractType: string;  // e.g., "TransferContract"
-    contractData: {
-        owner_address: string;
-        to_address: string;
-        amount: number;
-    };
-}
-```
+Block fetches use exponential backoff: `retries: 3, delayMs: 750, factor: 2`. Transient TronGrid 5xx or network errors retry at 750ms → 1500ms → 3000ms before failing the block (which lands it in the backfill queue for the next tick).
 
-### 2. Categorize by Type
+## Adaptive Block Throttle
 
-Classify into business categories:
+After a block finishes processing, sync applies an *adaptive* throttle — not a fixed delay:
 
-- **TransferContract** → "Transfer" (whale tracking)
-- **DelegateResourceContract** → "Delegation" (energy/bandwidth tracking)
-- **FreezeBalanceV2Contract** → "Stake" (staking tracking)
-- **TriggerSmartContract** → "SmartContract" (contract interactions)
+- **Caught up** (within `liveChainThrottleBlocks = 20` of network height): targets a 3-second total per block (TRON's native block time). If processing already took ≥3 seconds, no extra wait. If it took 1s, sleeps 2s. This keeps the live feed cadence smooth and predictable on the frontend.
+- **Behind** (more than 20 blocks lag): no throttle. Sync runs flat-out, bounded only by the `batchSize=60` ceiling and the 200ms TronGrid request gap.
 
-### 3. Calculate USD Value
+This replaces an earlier fixed 3-second post-block delay that compounded with processing time and produced 4–5 second intervals.
 
-For each transaction, calculate equivalent USD cost:
+## Per-Block Pipeline Stages
 
-```typescript
-const usdAmount = transaction.amount * (tronPrice / 1_000_000);
-```
+Each block runs through 11 stages, instrumented for timing:
 
-The TRON price is fetched from market data (updated every 10 minutes via scheduler).
+| Stage | Action |
+|---|---|
+| 1 | Fetch block from TronGrid (`getblockbynum`) |
+| 2 | Get cached TRX/USD price |
+| 4 | Process transactions loop — parse contract data, build records, call observers, queue Mongo upserts |
+| 4b | Flush batch observers, notify block observers with assembled `IBlockData` |
+| 5 | Bulk-write transactions to Mongo (`bulkWrite` unordered) |
+| 6 | Calculate block statistics (totals by contract type) |
+| 7 | Upsert block document |
+| 8 | Update sync state cursor (`$max` to advance, `$pull` to clear backfill entry) |
+| 9 | Emit WebSocket events |
+| 10 | Alert ingestion (matches transactions against alert rules) |
+| 11 | Adaptive throttle (only if caught up) |
 
-### 4. Calculate Energy Costs
+Stage 3 is intentionally absent — `null` is passed in place of a transaction-info fetch (see Energy Cost Limitation below).
 
-**⚠️ Known Limitation:** Energy cost calculations are **not currently implemented** in transaction processing. This is a deliberate tradeoff:
+## Observer Dispatch
 
-- **Why disabled:** Fetching detailed transaction receipts would require 1 API call per transaction (~200+ extra requests/minute), consuming significant TronGrid rate limit allocation
-- **Current behavior:** `energyUsed` and `energyCostTrx` fields are always `undefined`
-- **Tradeoff:** We prioritize syncing all transactions at volume over calculating energy costs for each one
-- **Future improvement:** If rate limits allow or separate rate-limited pool is provisioned, this can be re-enabled
+Observers receive transactions **before** the bulk-write at stage 5. This ordering lets observers transform or reject data before persistence, and isolates a slow observer from blocking the write — the dispatch is fire-and-forget per observer.
 
-Chain parameters (energy cost per unit) ARE fetched periodically from the blockchain via `triggerconstantcontract` and stored in the system, but are not used in transaction enrichment at this time.
+### Three Observer Types
 
-```typescript
-// Current implementation always passes null for transaction receipt info
-const energyUsed = undefined;  // Not available
-const energyCostTrx = undefined;  // Not calculated
-```
+| Base class | Receives | Queue cap | Overflow behavior |
+|---|---|---|---|
+| `BaseObserver` | Single enriched transaction | 1000 | Logs error and **clears the entire queue** |
+| `BaseBatchObserver` | Accumulated batch (one call per block) | 100 batches | Drops the **incoming** batch, logs |
+| `BaseBlockObserver` | Whole `IBlockData` (one call per block) | 50 blocks | Drops the **incoming** block, logs |
 
-### 5. Build ProcessedTransaction
+Each observer runs its own async queue. The blockchain service does not await the queue drain; it awaits only `enqueue()`, which is fast.
 
-Combine all enriched data:
+### Error Isolation
 
-```typescript
-interface ProcessedTransaction {
-    txID: string;
-    blockNumber: number;
-    timestamp: Date;
-    type: string;  // "Transfer", "Delegation", etc.
-    from: string;
-    to: string;
-    amount: number;
-    amountUsd: number;  // Calculated
-    energyUsed: number;
-    energyCostTrx: number;  // Calculated
-    isWhale: boolean;  // Based on whale threshold
-    isDelegation: boolean;
-    isStaking: boolean;
-}
-```
+If `observer.enqueue()` throws, the error is logged with the observer name and tx context, and the loop continues. Other observers still receive the transaction. Sync continues to the next transaction. A crashing observer cannot block sync or starve siblings.
 
-## Observer Notification Flow
+### Persistence Is Unconditional
 
-After enrichment, the transaction is broadcast to all subscribed observers:
+Every transaction in every block is written to the `transactions` collection regardless of which observers subscribed. Observer subscriptions filter *notifications*, not storage.
 
-### 1. Registry Lookup
+## Fresh Install
 
-The blockchain service queries the observer registry: "Who cares about this transaction type?"
+On first boot with no sync state, the cursor initializes to the **current network height**, not block 0. Indexing starts forward from the live chain tip. There is no automatic historical backfill — at TRON's ~5 blocks/sec produced over years, that would mean weeks of catch-up. Historical data, if needed, requires a separate one-time process or manual cursor seed.
 
-```typescript
-const observers = registry.getObserversFor(transaction.type);
-// Returns all observers subscribed to this transaction type
-```
+## Energy Cost Limitation
 
-### 2. Queue Each Observer
+Per-transaction `energyUsed` and `energyCostTrx` fields are always `undefined`. The `buildTransactionRecord` call passes `info=null` deliberately:
 
-Each observer receives the transaction independently:
+> Fetching transaction info would require one extra TronGrid call per transaction. A 200-tx block becomes 200 extra requests — at the 200ms client throttle, that's 40 seconds of additional latency per block, easily exceeding the 3-second target.
 
-```typescript
-for (const observer of observers) {
-    observer.enqueue(transaction);  // Fire-and-forget, async
-}
-```
+Chain parameters (`energyPerTrx`, `energyFee`) *are* fetched periodically by `chain-parameters:fetch` (every 10 min) and exposed to the frontend via runtime config — but they describe the network, not what a specific transaction consumed. If per-tx energy ever becomes essential, the answer is a separate rate-limited pool, not lifting the 200ms throttle.
 
-**Key property:** Observers process **asynchronously**. The blockchain service does NOT wait for observers to complete before moving to the next block.
+## Monitoring
 
-### 3. Async Processing
+Sync metrics — current block, network block, lag, processing rate, per-stage timings, error counts — surface through `/system` and the admin API. See [system-api-blockchain.md](./system-api-blockchain.md) for endpoints and [system-api-scheduler.md](./system-api-scheduler.md) for the `blockchain:sync` job controls.
 
-Each observer has its own queue and processes transactions in order:
+## Further Reading
 
-```typescript
-// Observer internal queue processing
-while (queue.length > 0) {
-    const tx = queue.shift();
-    try {
-        await this.process(tx);
-    } catch (error) {
-        logger.error(`Observer ${this.name} failed:`, error);
-        // Continue with next transaction (error isolation)
-    }
-}
-```
-
-**Timing guarantee:** Observers are notified **after** enrichment but **before** the transaction is written to MongoDB. This allows observers to validate or transform data before persistence.
-
-### 4. Error Isolation
-
-If one observer crashes:
-
-- ✅ Other observers still receive the transaction
-- ✅ Blockchain service continues processing
-- ✅ Error is logged but doesn't block sync
-- ✅ Next transaction is queued normally
-
-### 5. Queue Overflow Protection
-
-If an observer's queue exceeds 1,000 transactions:
-
-1. Log warning about processing lag
-2. Clear queue to prevent memory leak
-3. Skip oldest transactions (may lose some data)
-4. Continue with incoming transactions
-
-This is a deliberate safety mechanism - we prioritize system stability over guaranteed delivery during extreme lag. If an observer falls too far behind, dropping old transactions prevents unbounded memory growth that could crash the entire system.
-
-## Blockchain Service Lifecycle
-
-### Startup
-
-1. **Load sync state** - Query MongoDB for last processed block
-2. **Fetch network height** - Get current network block number from TronGrid
-3. **Calculate lag** - Difference between last processed and current
-4. **Start sync loop** - Begin fetching from last processed block + 1
-
-### During Sync
-
-```
-while (true) {
-    1. Fetch next block from TronGrid (with 200ms throttle)
-    2. For each transaction in block:
-        a. Parse and enrich
-        b. Notify subscribed observers (async)
-    3. Save block and ALL transactions to MongoDB
-    4. Update sync state (cursor = blockNumber)
-    5. Emit WebSocket events (if enabled)
-    6. Wait 200ms before next block
-}
-```
-
-**Important:** Every transaction from every block is persisted to the `transactions` collection unconditionally. Observer subscriptions filter which transactions plugins *receive notifications* for, but do not affect what gets stored. No transactions are filtered by type, amount, or other criteria.
-
-### Monitoring
-
-The system tracks and exposes:
-
-- **Current block** - Last processed block number
-- **Network block** - Current network height
-- **Lag** - Difference between them
-- **Processing rate** - Blocks per minute
-- **Estimated catch-up time** - Minutes to reach live state
-- **Error tracking** - Failed blocks and reasons
-
-Access these metrics via `/system` dashboard or `/api/admin/system/scheduler/status`.
-
-## Performance Characteristics
-
-### Throughput
-
-Under normal conditions:
-
-- **Blocks per minute:** ~3 (200ms per block + processing)
-- **Transactions per minute:** ~1,500-3,000 (varies by block fullness)
-- **API calls per minute:** ~3 (one per block)
-
-### Scalability
-
-**Bottlenecks:**
-1. **API rate limiting** - TronGrid max ~1,000 req/sec, we use ~5 req/sec (high headroom)
-2. **Database write speed** - MongoDB can handle thousands of inserts/second
-3. **Observer processing** - Each observer runs async independently
-
-**To improve throughput:**
-- Increase parallelism (fetch multiple blocks simultaneously) - **not recommended** due to complexity
-- Reduce 200ms throttle - **only if** rate limits allow
-- Optimize observer logic - process transactions faster
-
-## Fresh Install Optimization
-
-On fresh installation, instead of starting from block 0 (which would take months), TronRelic:
-
-1. Fetches current network height at startup
-2. **Begins sync from the current network block (live chain tip)**
-3. Starts indexing all NEW transactions going forward
-
-**Important:** Fresh installs do NOT backfill historical data automatically. This is by design to:
-- Start the system immediately with zero delay
-- Avoid weeks of historical sync on first launch
-- Process live transactions the moment the system starts
-
-**If you need historical data**, you can:
-- Manually configure a backfill job to sync historical blocks after launch
-- Use MongoDB queries to look up historical transactions from existing APIs
-- Run a separate one-time sync process for specific date ranges
-
-## Related Documentation
-
-- [plugins-blockchain-observers.md](../plugins/plugins-blockchain-observers.md) - How to build observers that react to transactions
-- [system-scheduler-operations.md](./system-scheduler-operations.md) - How the `blockchain:sync` job is scheduled and controlled
-- [environment.md](../environment.md) - `ENABLE_SCHEDULER` and `TRONGRID_API_KEY` configuration
-- [tron-chain-parameters.md](../tron/tron-chain-parameters.md) - How chain parameters (energy costs) are fetched and cached
+- [plugins-blockchain-observers.md](../plugins/plugins-blockchain-observers.md) — building observers (`BaseObserver`, `BaseBatchObserver`, `BaseBlockObserver`)
+- [system-scheduler-operations.md](./system-scheduler-operations.md) — how `blockchain:sync` is scheduled and toggled
+- [tron-chain-parameters.md](../tron/tron-chain-parameters.md) — chain parameter fetch and caching
+- [environment.md](../environment.md) — `ENABLE_SCHEDULER`, `TRONGRID_API_KEY*`, `BLOCK_SYNC_*` env vars

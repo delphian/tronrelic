@@ -15,6 +15,7 @@ interface IApiClient {
     get<T>(path: string, params?: Record<string, any>): Promise<T>;
     post<T>(path: string, body?: any): Promise<T>;
     put<T>(path: string, body?: any): Promise<T>;
+    patch<T>(path: string, body?: any): Promise<T>;
     delete<T>(path: string): Promise<T>;
 }
 ```
@@ -71,7 +72,7 @@ Initial-render data should arrive via `serverDataFetcher`, not a `useEffect` fet
 
 **CORS errors.** The client uses runtime config; verify backend `SITE_URL`/`SITE_BACKEND` are set correctly in MongoDB and the backend CORS allowlist includes the frontend origin. Do not set `NEXT_PUBLIC_API_URL` — it is deprecated.
 
-**404 on plugin route.** Confirm your plugin is enabled at `/system/plugins` and the route is registered in your backend `init()` via `context.routes.register(...)`.
+**404 on plugin route.** Confirm your plugin is enabled at `/system/plugins` and the route is declared on the plugin definition — `definePlugin({ routes: [...], adminRoutes: [...] })` or assigned before mount (e.g. `myPlugin.adminRoutes = createAdminRoutes(context)` inside `init()`). The platform mounts these under `/api/plugins/<id>/` and `/api/plugins/<id>/system/` automatically.
 
 **401/403 on admin route.** Admin paths must be `/plugins/<id>/system/...` and the caller must be authenticated as admin — see [plugins-api-registration.md](./plugins-api-registration.md).
 

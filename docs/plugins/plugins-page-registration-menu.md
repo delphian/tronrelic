@@ -105,8 +105,8 @@ socket.on('menu:updated', async () => {
 
 ## Reference Files
 
-- `src/backend/src/modules/menu/menu.service.ts` — service implementation
-- `src/backend/src/modules/menu/menu.routes.ts` — REST endpoints
+- `src/backend/modules/menu/services/menu.service.ts` — service implementation
+- `src/backend/modules/menu/api/menu.controller.ts` — REST endpoints
 - `packages/types/src/menu/IMenuService.ts` — service interface
 - `packages/types/src/menu/IMenuNode.ts` — node data structure
 - [Menu Module README](../../src/backend/modules/menu/README.md) — full module documentation

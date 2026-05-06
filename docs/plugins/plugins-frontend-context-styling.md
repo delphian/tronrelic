@@ -110,8 +110,8 @@ If a legacy plugin imports from `apps/frontend` or `src/frontend/`:
 
 1. Change the component signature to accept `{ context }: { context: IFrontendPluginContext }`.
 2. Replace UI imports with `context.ui.*`, `context.layout.*`, `context.charts.*`.
-3. Replace API imports with `context.api.get/post/put/delete`.
-4. Replace `getSocket()` with `context.websocket.on/subscribe`.
+3. Replace API imports with `context.api.get/post/put/patch/delete`.
+4. Replace `getSocket()` with `context.websocket.on/subscribe`; pair every `subscribe` with an `unsubscribe` in the cleanup so server-side room state doesn't leak.
 5. Replace inline styles or global classes with a colocated `.module.css` file using design tokens.
 6. Replace any frontend type imports with locally-defined interfaces.
 

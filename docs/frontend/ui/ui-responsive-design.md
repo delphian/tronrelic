@@ -4,9 +4,7 @@ TronRelic components adapt to their container's width using CSS container querie
 
 ## Why This Matters
 
-Viewport media queries (`@media`) assume components occupy the full viewport. When a component renders in a sidebar (45% width), a modal, or a plugin card, viewport breakpoints apply the wrong responsive rules. Container queries solve this by letting each component define responsive behavior based on its own container width.
-
-Without container queries, components that look correct on full pages collapse in narrow contexts. Plugins loaded into cards or slideouts inherit wrong responsive rules and must be rewritten for each context.
+Viewport media queries assume components occupy the full viewport, so a component rendered in a sidebar, modal, or plugin card applies the wrong responsive rules and collapses in narrow contexts. Container queries fix this by letting each component respond to its own container width — write it once, drop it anywhere.
 
 ## How Container Queries Work
 
@@ -46,13 +44,9 @@ Use `@container` instead of `@media`. Import breakpoints from `_breakpoints.scss
 }
 ```
 
-### 3. Use Semantic Container Names
+### 3. Conventions
 
-Choose descriptive names matching the component's purpose: `market-card`, `transaction-panel`, `whale-dashboard`. This makes debugging straightforward.
-
-### 4. Reserve @media for Global Layout Only
-
-Use viewport media queries exclusively for layout shells (navigation, page chrome) defined in `app/layout.tsx`. Component-level responsiveness always uses `@container`.
+Name containers after the component's purpose (`market-card`, `transaction-panel`, `whale-dashboard`) so debugging stays grep-friendly. Reserve `@media` for layout shells in `app/layout.tsx` — component-level responsiveness always uses `@container`.
 
 ## SCSS Variable Interpolation Gotcha
 
@@ -95,6 +89,8 @@ TronRelic uses an Asia-optimized breakpoint system. Breakpoints are SCSS variabl
 | `$breakpoint-mobile-lg` | 768px | Large phones, landscape |
 | `$breakpoint-tablet` | 1024px | Tablets, small laptops |
 | `$breakpoint-desktop` | 1200px | Desktop displays |
+| `$breakpoint-desktop-xl` | 1920px | Full HD |
+| `$breakpoint-mobile` *(alias)* | = `$breakpoint-mobile-lg` (768px) | Convenience for the common mobile cutoff |
 
 Import with `@use '../../../app/breakpoints' as *;` at the top of any SCSS Module that uses them.
 
@@ -126,7 +122,7 @@ export function TransactionCard({ transaction }: { transaction: ITransaction }) 
 
 .card { container-type: inline-size; container-name: transaction-card; }
 .grid { display: grid; grid-template-columns: 1fr; gap: var(--grid-gap-sm); }
-.stat { font-size: var(--font-size-sm); color: var(--color-text-muted); }
+.stat { font-size: var(--font-size-body-sm); color: var(--color-text-muted); }
 
 @container transaction-card (min-width: #{$breakpoint-mobile-md}) {
     .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--grid-gap-sm); }

@@ -102,9 +102,7 @@ For container queries on the page wrapper, add a module class alongside the Page
 }
 ```
 
-### Always Use Container Queries
-
-Plugins render in various contexts (full pages, cards, modals, slideouts). Never use viewport media queries for plugin styling — always use container queries. See [ui-responsive-design.md](./ui-responsive-design.md) for the full pattern.
+Plugins render in full pages, cards, modals, and slideouts — always use container queries, never viewport media queries. See [ui-responsive-design.md](./ui-responsive-design.md).
 
 ### Use Context Components Over Raw Divs
 
@@ -132,13 +130,9 @@ Access design system components through `context.ui` and `context.layout`. Never
 
 ### Use SCSS Modules for Plugin Styles
 
-Add custom styling via colocated `.module.scss` files on top of context components. Never add plugin styles to `globals.scss`. CSS Modules automatically scope class names to prevent conflicts between plugins and with the core app.
+Add custom styling via colocated `.module.scss` files on top of context components. Never add plugin styles to `globals.scss` — CSS Modules auto-scope to prevent conflicts between plugins and with the core app. Verify the result in full page, narrow slideout (~45% width), modal, and mobile viewport (< 768px) before shipping.
 
-See [plugins-frontend-context.md](../../plugins/plugins-frontend-context.md) for complete context API documentation and migration guidance.
-
-### Test in Multiple Contexts
-
-Verify plugin UI renders correctly in full-page view, narrow slideout (45% width), modal dialog, and mobile viewport (< 768px).
+See [plugins-frontend-context.md](../../plugins/plugins-frontend-context.md) for the full context API.
 
 ## Further Reading
 

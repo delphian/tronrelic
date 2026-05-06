@@ -1,325 +1,130 @@
 # System Logging
 
-TronRelic's logging system wraps Pino with automatic MongoDB persistence for operational visibility and troubleshooting.
+TronRelic's logging system wraps Pino with automatic MongoDB persistence so production errors don't vanish into rotating log files.
 
 ## Why This Matters
 
-Production errors vanish when they only exist in rotating log files. `ISystemLogService` wraps Pino with automatic MongoDB persistence so logs above a configured severity are searchable, filterable by plugin or time range, and visible in the admin UI — without changing how you write log statements.
+`ISystemLogService` is a Pino wrapper that mirrors every accepted log statement to both the file/console and the `system_logs` MongoDB collection. Operators query historical logs by severity, service, and time range without grepping containers or pulling rotated files. Plugin loggers carry their `pluginId` automatically, so cross-plugin filtering works without manual tagging.
 
-## Core Concept
+## Persistence Model
 
-`ISystemLogService` is a Pino wrapper that saves logs to MongoDB when they meet the configured severity threshold. Every log statement flows through this sequence:
+There is **one threshold** — the configured log level — and it gates both file output and MongoDB persistence simultaneously. Every level method (`info`, `warn`, `error`, `fatal`, `debug`, `trace`) checks `shouldLog(level, this.level)` and, when allowed, both writes to Pino *and* fires `saveLogFromArgs(...)` asynchronously (non-blocking, via `void`). There is **no separate floor** like "ERROR/WARN always persist regardless of level."
 
-1. **Severity check** - Is the log level enabled? (e.g., if level is `info`, skip `debug` logs)
-2. **MongoDB persistence** - Save to database asynchronously (non-blocking)
-3. **Pino delegation** - Write to console/file as usual
-
-The key differentiator: **ERROR, WARN, and higher levels persist to MongoDB automatically**. INFO, DEBUG, and TRACE only go to files unless you change the log level configuration.
-
-## Log Levels and Persistence
-
-TronRelic uses standard Pino log levels with automatic persistence based on the configured threshold:
-
-| Level | Numeric Priority | Persisted to MongoDB? | Common Use Case |
-|-------|-----------------|----------------------|-----------------|
-| `trace` | 10 | Only if level ≤ trace | Deep debugging (function entry/exit) |
-| `debug` | 20 | Only if level ≤ debug | Development diagnostics |
-| `info` | 30 | Only if level ≤ info | Operational milestones (server started, job completed) |
-| `warn` | 40 | Only if level ≤ warn | Recoverable issues (retry attempts, fallback behavior) |
-| `error` | 50 | Only if level ≤ error | Failures requiring investigation |
-| `fatal` | 60 | Always | Catastrophic errors (process crash imminent) |
+| Level | Numeric | When persisted | Common use |
+|---|---|---|---|
+| `trace` | 10 | Only if `level <= trace` | Function entry/exit |
+| `debug` | 20 | Only if `level <= debug` | Development diagnostics |
+| `info` | 30 | Only if `level <= info` | Operational milestones |
+| `warn` | 40 | Only if `level <= warn` | Recoverable issues |
+| `error` | 50 | Only if `level <= error` | Failures requiring investigation |
+| `fatal` | 60 | Always except when level is `silent` | Catastrophic |
 | `silent` | ∞ | Never | Suppresses all output |
 
-**Default production level:** `info` (INFO, WARN, ERROR, FATAL all persist to MongoDB)
+**Default production level:** `info` — info/warn/error/fatal all persist. Set `level = 'warn'` to drop info noise from the database; set to `debug` temporarily for deep diagnosis. The level is mutable at runtime:
 
-**Common adjustments:**
-- Set to `warn` to reduce database writes and focus on problems
-- Set to `debug` temporarily when troubleshooting specific issues
-- Set to `trace` only for deep debugging (high volume, short durations)
-
-**Change log level at runtime:**
 ```typescript
-import { SystemLogService } from '@/services/system-log/system-log.service.js';
-
 const logger = SystemLogService.getInstance();
-logger.level = 'warn'; // Only warn/error/fatal persist to MongoDB now
+logger.level = 'warn'; // Subsequent info logs no longer persist or print
 ```
 
-## Structured Logging Best Practices
+## Structured Logging
 
-Always use object-first logging to provide searchable context:
+Always pass an object first so MongoDB stores searchable context fields:
 
-**Good - Structured with context:**
 ```typescript
-logger.error({
-    userId: '123',
-    transactionId: 'abc',
-    error: err.message
-}, 'Transaction processing failed');
+// Good — { error, txId } become queryable fields
+logger.error({ error: err.message, stack: err.stack, txId }, 'Transaction failed');
+
+// Bad — string concatenation loses structure
+logger.error(`Transaction failed for ${txId}: ${err.message}`);
 ```
 
-**Bad - String concatenation:**
-```typescript
-logger.error(`Transaction processing failed for user 123: ${err.message}`);
-```
+Project-specific metadata patterns:
 
-**Why:** Structured logs store `userId` and `transactionId` as queryable fields in MongoDB's `context` object. String concatenation loses this structure.
-
-**Common metadata patterns:**
 - **Errors:** `{ error: err.message, stack: err.stack, code: err.code }`
-- **API requests:** `{ method: 'GET', path: '/api/markets', userId: 123 }`
-- **Blockchain events:** `{ blockNumber: 12345, txHash: '0xabc...', contractType: 'TransferContract' }`
-- **Plugin operations:** `{ pluginId: 'whale-alerts', observerName: 'WhaleObserver', txCount: 50 }`
+- **Blockchain events:** `{ blockNumber, txHash, contractType }`
+- **Plugin operations:** `{ pluginId, observerName, txCount }` (the first two get added automatically by plugin/observer scoped loggers — don't duplicate)
 
 ## Plugin Logger Scoping
 
-Plugins receive pre-scoped loggers via `IPluginContext` that automatically include plugin metadata in every log statement:
+Plugins receive a pre-scoped logger via `IPluginContext.logger`. The service field is automatically set to `plugin:<pluginId>` (see `system-log.service.ts:627-630`), and the bindings include `pluginId` and `pluginTitle`:
 
 ```typescript
-export const myPluginBackend = definePlugin({
-    manifest: myManifest,
-
-    init: async (context: IPluginContext) => {
-        // Logger is already scoped with { pluginId: 'my-plugin', pluginTitle: 'My Plugin' }
-        context.logger.info('Plugin initialized');
-        // Saved as: { level: 'info', message: 'Plugin initialized', service: 'plugin:my-plugin', context: { pluginId: 'my-plugin', pluginTitle: 'My Plugin' } }
-
-        context.logger.warn({ retryCount: 3 }, 'API request failed, retrying');
-        // Saved with merged metadata: { pluginId: 'my-plugin', pluginTitle: 'My Plugin', retryCount: 3 }
-    }
-});
+init: async (context: IPluginContext) => {
+    context.logger.info('Plugin initialized');
+    // Persisted as: { service: 'plugin:my-plugin', context: { pluginId: 'my-plugin', pluginTitle: 'My Plugin', ... } }
+}
 ```
 
-**No manual plugin identification required.** The logger knows it belongs to your plugin and prefixes the `service` field with `plugin:` for easy filtering.
+`child(bindings)` returns a `SystemLogService` (not a bare `pino.Logger`) so the persistence path is preserved:
 
-**Creating child loggers for additional context:**
 ```typescript
 const observerLogger = context.logger.child({ observerName: 'WhaleObserver' });
-observerLogger.info('Processing block 12345');
-// Context now includes: { pluginId: 'my-plugin', observerName: 'WhaleObserver' }
+observerLogger.info({ blockNumber: 12345 }, 'Processing block');
+// Context merged: { pluginId, pluginTitle, observerName, blockNumber }
 ```
+
+Backend services in core follow the same pattern via `SystemLogService.getInstance().child({ service: 'my-service' })`.
+
+For high-volume observer loops: log once per block, not per transaction. A 200-tx block with `logger.debug({txId}, ...)` per tx at debug level produces 200 file writes *and* 200 Mongo writes per block — at 20 blocks/min that's 4000 records/min just for one observer.
 
 ## Accessing Historical Logs
 
-### System Logs Monitor UI
+| Channel | Use case |
+|---|---|
+| `/system/logs` admin page | Day-to-day operator triage; filter by severity/service/time, mark resolved |
+| Admin API | Programmatic / dashboard ingestion — see [system-api-logs.md](./system-api-logs.md) for endpoints, query params, response shape, and the 30-second stats cache |
+| MongoDB direct | Bulk analysis: `db.system_logs.find({...})`, `db.system_logs.aggregate([...])` |
 
-Navigate to `/system/logs` (requires admin token) for web-based log access:
-
-- **Filter by severity** - Checkboxes for ERROR, WARN, INFO, DEBUG, TRACE
-- **Filter by service/plugin** - Dropdown to isolate specific components
-- **Time range selection** - View logs from last hour, day, week, or custom range
-- **Live polling** - Auto-refreshes every 10 seconds for real-time monitoring
-- **Resolve/unresolve** - Mark errors as acknowledged without deleting them
-- **Statistics cards** - See total counts by severity and service
-
-### Admin API Endpoint
-
-For programmatic access or custom dashboards, use the logs API:
-
-**See [system-api-logs.md](./system-api-logs.md) for complete endpoint documentation including:**
-- Query parameters (levels, service, resolved, date range, pagination)
-- Response structure (logs array, pagination metadata, statistics)
-- Request/response examples with curl and JavaScript
-
-**Quick example:**
-```bash
-curl -H "X-Admin-Token: $ADMIN_API_TOKEN" \
-  "http://localhost:4000/api/admin/system/logs?levels=error,warn&page=1&limit=50"
-```
-
-### MongoDB Direct Access
-
-For advanced queries or bulk analysis, query the `system_logs` collection directly:
-
-```bash
-docker exec -it tronrelic-mongo mongosh tronrelic
-```
+Direct-query example (errors from one plugin in last 24 hours):
 
 ```javascript
-// Find all errors from whale-alerts plugin in last 24 hours
 db.system_logs.find({
     level: 'error',
     service: 'plugin:whale-alerts',
     timestamp: { $gte: new Date(Date.now() - 86400000) }
 }).sort({ timestamp: -1 });
-
-// Count warnings by service
-db.system_logs.aggregate([
-    { $match: { level: 'warn' } },
-    { $group: { _id: '$service', count: { $sum: 1 } } },
-    { $sort: { count: -1 } }
-]);
 ```
+
+Indexes on `level`, `service`, `timestamp`, and `resolved` keep these queries fast — also the `byLevel` and `byService` aggregations behind `/logs/stats` (cached 30s; see [system-api-logs.md](./system-api-logs.md)).
 
 ## Retention and Cleanup
 
-The scheduler runs hourly cleanup to enforce retention policies configured in SystemConfig:
+Default retention is **30 days** *and* a hard cap of **100,000** entries (whichever bound is hit first). Both are stored in `SystemConfig` (Mongo) and editable at runtime. The `system-logs:cleanup` scheduler job runs at minute 0 of every hour:
 
-**Default retention settings:**
-- `systemLogsRetentionDays: 30` - Delete logs older than 30 days
-- `systemLogsMaxCount: 100000` - Keep only 100,000 most recent logs
+1. Deletes logs with `timestamp < now - retentionDays`.
+2. If total count still exceeds `maxCount`, drops oldest until under the limit.
+3. Reports deletion counts in scheduler logs.
 
-**How cleanup works:**
-1. Deletes logs with `timestamp < (now - retentionDays)`
-2. If total log count exceeds `maxCount`, deletes oldest logs until under limit
-3. Reports deletion count in scheduler logs
-
-**Adjust retention via System Config:**
 ```typescript
-import { SystemConfigService } from '@/services/system-config/system-config.service.js';
-
 const config = SystemConfigService.getInstance();
 await config.updateConfig({
-    systemLogsRetentionDays: 90, // Keep logs for 90 days
-    systemLogsMaxCount: 500000   // Allow up to 500k log entries
+    systemLogsRetentionDays: 90,
+    systemLogsMaxCount: 500_000
 });
 ```
 
-**Scheduler job:** `system-logs:cleanup` runs at minute 0 of every hour (`:00`)
+Or edit via the System Config section at `/system/system` (PATCH `/admin/system/config/system` accepts both fields — see [system-api-overview.md](./system-api-overview.md#patch-configsystem)).
 
-## Performance Considerations
+## Configuration
 
-**INFO/DEBUG/TRACE are cheap:**
-- Only written to files (no MongoDB overhead)
-- Pino is extremely fast at file logging (async by design)
-- Use liberally for development visibility
-
-**WARN/ERROR have storage cost:**
-- MongoDB write happens asynchronously (non-blocking)
-- Each log entry consumes database storage (cleaned up by retention policy)
-- Indexes on `level`, `service`, `timestamp` keep queries fast
-- Avoid error logging in tight loops (e.g., per-transaction in high-volume observers)
-
-**When to avoid logging at high frequency:**
-```typescript
-// Bad - logs 1000s of times per block
-transactions.forEach(tx => {
-    logger.debug({ txId: tx.id }, 'Processing transaction'); // Creates massive log volume
-});
-
-// Good - log summary after batch
-logger.debug({ txCount: transactions.length, blockNumber }, 'Processed block transactions');
-```
-
-## Integration Points
-
-### Plugin Context Injection
-
-Plugins receive scoped loggers automatically—no imports required:
-
-**See [plugins-system-architecture.md](../plugins/plugins-system-architecture.md) for complete details on:**
-- Plugin lifecycle hooks and dependency injection
-- How `IPluginContext.logger` is scoped with plugin metadata
-- Creating child loggers for additional context
-
-### Blockchain Observers
-
-Observers receive loggers in constructors for consistent scoping:
-
-**See [plugins-blockchain-observers.md](../plugins/plugins-blockchain-observers.md) for complete details on:**
-- Observer pattern architecture
-- Constructor logger injection
-- Logging best practices for high-volume transaction processing (ERROR and WARN logs are automatically persisted to MongoDB, so avoid logging errors in tight loops)
-
-### System Services
-
-All backend services use the singleton `SystemLogService` instance:
-
-```typescript
-import { SystemLogService } from '@/services/system-log/system-log.service.js';
-
-const logger = SystemLogService.getInstance();
-
-export class MyService {
-    private logger = logger.child({ service: 'my-service' });
-
-    async doWork() {
-        this.logger.info('Starting work');
-        try {
-            await this.performTask();
-        } catch (err) {
-            this.logger.error({ error: err.message, stack: err.stack }, 'Task failed');
-            throw err;
-        }
-    }
-}
-```
-
-## Quick Reference
-
-### Common Logging Patterns
-
-```typescript
-// Info - operational milestones
-logger.info({ blockNumber: 12345 }, 'Block processed successfully');
-
-// Warn - recoverable issues
-logger.warn({ retryCount: 3, maxRetries: 5 }, 'API request failed, will retry');
-
-// Error - failures requiring investigation
-logger.error({ error: err.message, stack: err.stack, txId: '0xabc' }, 'Transaction processing failed');
-
-// Debug - development diagnostics
-logger.debug({ cacheHit: true, key: 'market:price' }, 'Cache lookup result');
-
-// Trace - deep debugging
-logger.trace({ fnName: 'processBlock', args: [12345] }, 'Function entry');
-```
-
-### Severity Decision Matrix
-
-| Situation | Level | Rationale |
-|-----------|-------|-----------|
-| Server started | INFO | Operational milestone |
-| API request completed | DEBUG | High frequency, low value in production |
-| Cache miss | DEBUG | Expected behavior, only useful during debugging |
-| Retry attempt (temporary) | WARN | Indicates transient issue, may need investigation if frequent |
-| API rate limit hit | WARN | Operational concern, may need config adjustment |
-| Database query failed | ERROR | Data unavailable, requires investigation |
-| Plugin initialization failed | ERROR | Feature unavailable, requires code fix |
-| Process crash imminent | FATAL | Critical failure, immediate attention required |
-
-### Accessing Logs
-
-| Method | Use Case | How to Access |
-|--------|----------|---------------|
-| **Live console** | Local development | `tail -f .run/backend.log` |
-| **Web UI** | Troubleshooting production | `/system/logs` (requires admin token) |
-| **API** | Custom dashboards | `GET /api/admin/system/logs` |
-| **MongoDB direct** | Bulk analysis | `docker exec -it tronrelic-mongo mongosh tronrelic` |
-
-### Configuration
-
-| Setting | Default | Description |
-|---------|---------|-------------|
-| `logLevel` | `info` | Minimum severity to persist (trace/debug/info/warn/error/fatal/silent) |
-| `systemLogsRetentionDays` | `30` | Delete logs older than N days |
-| `systemLogsMaxCount` | `100000` | Maximum total log entries (oldest deleted first) |
-
-Change via System Config API or `/system/config` admin UI.
+| Setting | Default | Notes |
+|---|---|---|
+| `logLevel` | `info` | Mutable at runtime via `logger.level = ...` or PATCH `/config/system` |
+| `systemLogsRetentionDays` | `30` | Hourly cleanup job |
+| `systemLogsMaxCount` | `100000` | Drops oldest beyond this cap |
 
 ## Troubleshooting
 
-**Logs not appearing in MongoDB:**
-- Check log level: `logger.level` must permit the severity (e.g., if level is `warn`, info logs won't persist)
-- Verify initialization: `SystemLogService.initialize(pinoLogger)` must be called after database connection
-- Check retention: Logs may have been cleaned up by scheduler if older than retention period
+**Logs not appearing in MongoDB.** Most likely the configured level excludes them — `info` logs vanish at `level: 'warn'`. Also confirm `SystemLogService.initialize(pinoLogger)` ran after the database connection (the persistence path checks `this.initialized`); a logger used before init only writes to console.
 
-**High database storage usage:**
-- Lower log level to `warn` to reduce volume
-- Decrease retention period: `systemLogsRetentionDays: 7`
-- Decrease max count: `systemLogsMaxCount: 50000`
-- Identify noisy services via statistics API and reduce logging frequency in those components
+**High database storage.** Raise `level` to `warn`, lower `systemLogsRetentionDays`, or lower `systemLogsMaxCount`. Identify noisy services via `/logs/stats` (`byService`); often one observer logging per-tx is the culprit.
 
-**Missing plugin logs:**
-- Ensure plugin uses injected logger from `IPluginContext`, not a separate Pino instance
-- Check that plugin is enabled (disabled plugins don't log)
-- Verify plugin's service name appears in filters dropdown at `/system/logs`
+**Missing plugin logs.** The plugin must use `context.logger`, not a separately-instantiated Pino. Disabled plugins don't log. Verify the plugin's `service` value (`plugin:<pluginId>`) appears in the `/system/logs` filter dropdown.
 
 ## Further Reading
 
-**Related documentation:**
-- [system-api.md](./system-api.md) - Complete API reference for logs endpoint
-- [plugins-system-architecture.md](../plugins/plugins-system-architecture.md) - Plugin context and logger injection
-- [plugins-blockchain-observers.md](../plugins/plugins-blockchain-observers.md) - Observer logging patterns
-- [system-dashboard.md](./system-dashboard.md) - Web UI for log access
+- [system-api-logs.md](./system-api-logs.md) — Endpoint reference, query parameters, stats cache
+- [plugins-system-architecture.md](../plugins/plugins-system-architecture.md) — `IPluginContext.logger` injection and lifecycle
+- [plugins-blockchain-observers.md](../plugins/plugins-blockchain-observers.md) — Observer logging patterns and high-volume guidance
+- Source: `src/backend/modules/logs/services/system-log.service.ts`
