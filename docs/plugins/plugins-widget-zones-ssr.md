@@ -48,7 +48,7 @@ The full pattern lives in [react.md](../frontend/react/react.md#ssr--live-update
 5. Subscribe to plugin-namespaced event names through the WebSocket on `context`.
 
 ```tsx
-// src/plugins/whale-alerts/src/frontend/widgets/RecentWhalesWidget.tsx
+// src/plugins/trp-whale-alerts/src/frontend/widgets/RecentWhalesWidget.tsx
 'use client';
 import { useEffect, useState } from 'react';
 import type { IWidgetComponentProps } from '@/types';

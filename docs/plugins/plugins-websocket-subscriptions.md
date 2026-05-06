@@ -1,520 +1,197 @@
 # Plugin WebSocket Subscription Management
 
-TronRelic's plugin WebSocket system enables plugins to manage custom real-time subscriptions without modifying core WebSocket infrastructure. Each plugin controls its own subscription logic, room membership, and event emission through a namespaced manager that prevents collisions while maintaining the illusion of direct Socket.IO access.
+Plugins manage custom real-time subscriptions through a per-plugin manager that auto-prefixes room and event names, validates subscription payloads, and exposes per-plugin statistics — without modifying core WebSocket infrastructure.
 
-## Understanding Plugin WebSocket Isolation (Plain English)
+## Why This Matters
 
-Think of the WebSocket system like an office building with many tenants. Without proper organization, everyone would be shouting in the hallways and nobody would know who's talking to whom.
+Socket.IO has a single global event namespace. Two plugins both emitting `'update'` would collide; clients would receive events from plugins they never asked for. The plugin WebSocket manager prefixes every room and event with the plugin id, so plugin code reads cleanly (`emit('update', payload)`) while the wire protocol stays collision-safe and per-plugin metrics stay attributable.
 
-**The Problem:** Socket.IO has a single global namespace for all events. If two plugins both emit an event called `'update'`, clients listening for updates wouldn't know which plugin sent which message. Even worse, clients could accidentally receive events from plugins they're not subscribed to.
+## Auto-Prefixing Rules
 
-**The Solution:** We automatically prefix everything with the plugin ID:
+Plugin code uses unprefixed names everywhere. The manager rewrites them at the boundary:
 
-- **Room names**: `'large-transfer'` becomes `'plugin:whale-alerts:large-transfer'`
-- **Event names**: `'large-transfer'` becomes `'whale-alerts:large-transfer'`
-- **Plugin code stays clean**: You write `'large-transfer'`, the system adds the prefix
+| Surface | Plugin writes | Wire value |
+|---------|---------------|------------|
+| Room | `large-transfer` | `plugin:<plugin-id>:large-transfer` |
+| Event (emit) | `update` | `<plugin-id>:update` |
+| Event (listen, frontend) | `update` | `<plugin-id>:update` |
 
-This means:
-1. Each plugin has its own "office" (namespaced rooms)
-2. Each plugin's messages are clearly labeled (prefixed event names)
-3. Clients only receive events from plugins they're subscribed to
-4. No plugin can accidentally interfere with another plugin's communication
+Touch raw names only when calling `getRawIO()` for cross-plugin or system-wide broadcasts.
 
-**As a plugin author, you never see these prefixes.** You write simple code like `emitToRoom('alerts', 'new-whale', data)` and the system handles all the namespacing behind the scenes. Your code stays readable, and the system stays safe.
+## How It Works
 
-## Why Plugin-Managed WebSockets Exist
+1. Plugin registers handlers in `init()` via `context.websocket.onSubscribe()` / `onUnsubscribe()`.
+2. Client calls `websocket.subscribe('room-name', payload?)`.
+3. WebSocketService routes by plugin id and room name.
+4. Client is **auto-joined** to `plugin:<plugin-id>:room-name` *before* the subscribe handler runs.
+5. Subscribe handler validates and processes the payload (or throws to reject).
+6. Plugin emits via `emitToRoom(roomName, eventName, payload)` when relevant data arrives.
+7. Clients receive `<plugin-id>:eventName` and update UI.
 
-Plugins need custom real-time subscription logic without colliding with each other in Socket.IO's global namespace. The plugin WebSocket manager automatically prefixes room names and event names with the plugin ID, lets plugins validate subscription payloads, and tracks all activity for admin monitoring — while plugin code stays unaware of the namespacing.
+## Subscription Handlers
 
-## How WebSocket Subscriptions Work
-
-1. **Plugin registers subscription handler** during initialization using `context.websocket.onSubscribe()`
-2. **Client subscribes to a room** by calling `websocket.subscribe('room-name', optionalPayload)`
-3. **WebSocketService routes to plugin** by matching plugin ID and room name
-4. **Client is auto-joined** to prefixed room: `plugin:{pluginId}:{roomName}`
-5. **Plugin handler validates and processes** subscription request with optional payload
-6. **Plugin emits events to rooms** using `context.websocket.emitToRoom()` when relevant data arrives
-7. **Clients receive namespaced events** named `{pluginId}:{eventName}` and update UI accordingly
-
-**Important:** Both room names AND event names are automatically prefixed with the plugin ID to prevent collisions in the global Socket.IO namespace.
-
-## Core Capabilities
-
-### 1. Subscription Handlers
-
-Register a custom handler that runs when clients subscribe to a room:
+Both handlers receive `(socket, roomName, payload)`. The room name is unprefixed. The client has already been auto-joined (subscribe) or auto-left (unsubscribe) before the handler runs — so handlers exist for validation, side-effects, and per-socket state, not membership management.
 
 ```typescript
 context.websocket.onSubscribe(async (socket, roomName, payload) => {
-    // roomName comes from client (e.g., 'large-transfer')
-    // Client is already auto-joined to 'plugin:whale-alerts:{roomName}'
-
     const { minAmount = 500_000 } = payload || {};
 
-    // Validate subscription request
     if (minAmount < 0 || minAmount > 100_000_000) {
         throw new Error('Invalid minAmount threshold');
     }
 
-    // Store preferences for per-socket filtering (optional)
+    // Per-socket state (e.g., for filtering inside emitToRoom)
     socket.data.filters = { minAmount };
 
-    // Send confirmation (event auto-prefixed as 'whale-alerts:subscribed')
+    // Confirmation event auto-prefixed as '<plugin-id>:subscribed'
     context.websocket.emitToSocket(socket, 'subscribed', { roomName, minAmount });
 });
-```
 
-**Key points:**
-- Handler receives socket, room name (without prefix), and optional payload
-- **Client is auto-joined** to the room before handler is called
-- Throwing errors rejects the subscription and emits error event to client
-- Room names are automatically prefixed (`plugin:whale-alerts:{roomName}`)
-- Event names are automatically prefixed (`{pluginId}:{eventName}`)
-- Plugins remain unaware of prefixing
-
-### 2. Unsubscribe Handlers
-
-Register cleanup logic when clients unsubscribe:
-
-```typescript
 context.websocket.onUnsubscribe(async (socket, roomName, payload) => {
-    // roomName comes from client (e.g., 'large-transfer')
-    // Client is auto-left from room before this handler runs
-
-    // Clean up socket-specific data
     delete socket.data.filters;
-
-    logger.debug({ socketId: socket.id, roomName }, 'Client unsubscribed');
+    context.logger.debug({ socketId: socket.id, roomName }, 'Client unsubscribed');
 });
 ```
 
-**Key points:**
-- Handler receives socket, room name (without prefix), and optional payload
-- **Client is auto-left** from the room before handler runs
-- Errors are logged but don't prevent unsubscription from completing
-- Cleanup is best-effort - clients disconnect without always sending unsubscribe events
+Behavior to know: throwing inside `onSubscribe` rejects the subscription and emits a plugin-prefixed error event to the client. Throws inside `onUnsubscribe` are logged but don't prevent unsubscribe completion — clients sometimes disconnect without ever sending `unsubscribe`, so cleanup is best-effort.
 
-### 3. Room Management
+## Manual Room Management (Rare)
 
-**NOTE:** With the new auto-join/auto-leave system, manual room management is rarely needed.
-Clients are automatically joined/left when subscribing/unsubscribing.
-
-Only use manual room management for advanced scenarios:
+Auto-join/auto-leave handle the common case. Reach for these only when registering a single socket into multiple rooms based on payload, or when implementing custom membership rules:
 
 ```typescript
-// Manually join a room (rarely needed - auto-join handles this)
-context.websocket.joinRoom(socket, 'high-value-transfers');
-// Actual room: 'plugin:my-plugin:high-value-transfers'
-
-// Manually leave a room (rarely needed - auto-leave handles this)
+context.websocket.joinRoom(socket, 'high-value-transfers');     // → plugin:<id>:high-value-transfers
 context.websocket.leaveRoom(socket, 'high-value-transfers');
-
-// Check room membership
 const members = await context.websocket.getSocketsInRoom('high-value-transfers');
-console.log(`${members.size} clients subscribed`);
 ```
 
-**Key points:**
-- **Auto-join/auto-leave** handles most room management automatically
-- All room names are plugin-local (no need to manually add plugin ID)
-- Rooms are created on-demand when first client joins
-- Empty rooms are automatically cleaned up by Socket.IO
+Empty rooms are cleaned up by Socket.IO automatically.
 
-### 4. Event Emission
-
-Emit events to rooms or specific sockets:
+## Event Emission
 
 ```typescript
-// Emit to all clients in a room
+// Broadcast to all clients in a room
 context.websocket.emitToRoom('large-transfer', 'large-transfer', {
-    txId: '...',
-    amountTRX: 1_500_000
+    txId, amountTRX
 });
-// Actual room: 'plugin:whale-alerts:large-transfer'
-// Actual event: 'whale-alerts:large-transfer' (BOTH PREFIXED)
+// Wire room:  plugin:<plugin-id>:large-transfer
+// Wire event: <plugin-id>:large-transfer
 
-// Emit to specific socket (e.g., confirmation)
-context.websocket.emitToSocket(socket, 'subscribed', {
-    roomName: 'large-transfer',
-    status: 'subscribed'
-});
-// Actual event: 'whale-alerts:subscribed' (PREFIXED)
+// Send to one socket (e.g., subscribe confirmation)
+context.websocket.emitToSocket(socket, 'subscribed', { roomName, status: 'subscribed' });
 ```
 
-**Key points:**
-- **Both room names AND event names** are automatically prefixed with plugin ID
-- This prevents collisions in the global Socket.IO event namespace
-- Payload can be any JSON-serializable data
-- Emit operations are fire-and-forget (no confirmation of receipt)
+Both room and event names are auto-prefixed. Payloads must be JSON-serializable. Emits are fire-and-forget — no delivery confirmation.
 
-### 5. Advanced: Raw Socket.IO Access
-
-For rare cases requiring global operations:
+## Raw Socket.IO Escape Hatch
 
 ```typescript
 const io = context.websocket.getRawIO();
-
-// Broadcast to ALL connected clients (bypasses rooms)
-io.emit('system:maintenance', { message: 'System restart in 5 minutes' });
-
-// Access server-wide socket count
+io.emit('system:maintenance', { message: 'Restart in 5 minutes' });   // bypasses rooms
 const sockets = await io.fetchSockets();
-console.log(`${sockets.length} total connected clients`);
 ```
 
-**Warning:** Only use raw IO for advanced scenarios. Prefer namespaced methods for normal plugin operations.
+Only use for genuinely global operations. Anything plugin-scoped should go through the namespaced helpers.
 
-## Frontend Client Usage
-
-Clients subscribe using the `websocket.subscribe()` helper method:
+## Frontend Usage
 
 ```typescript
-import { useEffect } from 'react';
-
 function MyPluginComponent({ context }: { context: IFrontendPluginContext }) {
     useEffect(() => {
         const { websocket } = context;
+        const payload = { minAmount: 500_000 };
 
-        // Subscribe to room with configuration
-        websocket.subscribe('large-transfer', { minAmount: 500_000 });
+        const subscribe = () => websocket.subscribe('large-transfer', payload);
 
-        // Listen for events (auto-prefixed with plugin ID)
-        const handler = (payload: any) => {
-            console.log('Large transfer:', payload);
-        };
-        websocket.on('large-transfer', handler);
-
-        // Handle subscription confirmation (auto-prefixed)
-        const confirmedHandler = (data: any) => {
-            console.log('Subscribed successfully:', data);
-        };
-        websocket.on('subscribed', confirmedHandler);
-
-        // Handle subscription errors (auto-prefixed)
-        const errorHandler = (error: any) => {
-            console.error('Subscription failed:', error);
-        };
-        websocket.on('subscription-error', errorHandler);
-
-        // Resubscribe on reconnect
-        const reconnectHandler = () => {
-            websocket.subscribe('large-transfer', { minAmount: 500_000 });
-        };
-        websocket.onConnect(reconnectHandler);
-
-        return () => {
-            // Unsubscribe and clean up
-            websocket.unsubscribe('large-transfer', { minAmount: 500_000 });
-            websocket.off('large-transfer', handler);
-            websocket.off('subscribed', confirmedHandler);
-            websocket.off('subscription-error', errorHandler);
-            websocket.offConnect(reconnectHandler);
-        };
-    }, [context.websocket]);
-
-    return null; // Side-effect only component
-}
-```
-
-**Best practices:**
-- Use `websocket.subscribe()` and `websocket.unsubscribe()` helper methods instead of raw socket.emit
-- Always emit subscription immediately (before checking `socket.connected`) so Socket.IO buffers it
-- Resubscribe on reconnect using `websocket.onConnect()` to handle automatic reconnections
-- Clean up all event listeners in the effect return function
-- Event names are automatically prefixed with plugin ID - write clean code without manual prefixing
-
-## Complete Example: Whale Alerts
-
-**Backend (plugin init):**
-
-```typescript
-init: async (context: IPluginContext) => {
-    // Register subscription handler
-    context.websocket.onSubscribe(async (socket, payload) => {
-        const { minAmount = 500_000 } = payload;
-
-        if (typeof minAmount !== 'number' || minAmount < 0 || minAmount > 100_000_000) {
-            throw new Error('Invalid minAmount threshold (must be 0-100,000,000 TRX)');
-        }
-
-        const roomName = `whale-${minAmount}`;
-        context.websocket.joinRoom(socket, roomName);
-
-        context.logger.debug({ socketId: socket.id, minAmount }, 'Client subscribed');
-
-        context.websocket.emitToSocket(socket, 'subscribed', {
-            minAmount,
-            status: 'subscribed'
-        });
-    });
-
-    // Register unsubscribe handler
-    context.websocket.onUnsubscribe(async (socket, payload) => {
-        const { minAmount = 500_000 } = payload;
-        const roomName = `whale-${minAmount}`;
-
-        context.websocket.leaveRoom(socket, roomName);
-
-        context.logger.debug({ socketId: socket.id }, 'Client unsubscribed');
-    });
-
-    // Observer emits to rooms when whale transactions occur
-    const observer = createWhaleObserver(context);
-}
-```
-
-**Backend (observer):**
-
-```typescript
-protected async process(transaction: ITransaction): Promise<void> {
-    const amount = Number(transaction.payload.amountTRX ?? 0);
-
-    // Emit to all threshold rooms that match
-    const thresholds = [500_000, 1_000_000, 2_000_000, 5_000_000, 10_000_000];
-
-    for (const threshold of thresholds) {
-        if (amount >= threshold) {
-            const roomName = `whale-${threshold}`;
-            context.websocket.emitToRoom(roomName, 'large-transfer', transaction.snapshot);
-        }
-    }
-}
-```
-
-**Frontend:**
-
-```typescript
-export function WhaleAlertsHandler({ context }: { context: IFrontendPluginContext }) {
-    const [minAmount, setMinAmount] = useState(500_000);
-
-    useEffect(() => {
-        const { websocket } = context;
-
-        const subscribe = () => {
-            websocket.subscribe('large-transfer', { minAmount });
-        };
-
-        const handleTransfer = (payload: any) => {
-            // Show toast, update Redux, etc.
-            console.log('Whale transaction:', payload);
-        };
+        const handleTransfer = (tx: any) => { /* update state */ };
+        const handleConfirmed = (data: any) => { /* show subscribed status */ };
+        const handleError = (err: any) => { /* surface error */ };
 
         websocket.on('large-transfer', handleTransfer);
+        websocket.on('subscribed', handleConfirmed);
+        websocket.on('subscription-error', handleError);
         websocket.onConnect(subscribe);
-        subscribe();
+
+        subscribe();  // capture the first handshake — Socket.IO buffers if not yet connected
 
         return () => {
-            websocket.unsubscribe('large-transfer', { minAmount });
+            websocket.unsubscribe('large-transfer', payload);
             websocket.off('large-transfer', handleTransfer);
+            websocket.off('subscribed', handleConfirmed);
+            websocket.off('subscription-error', handleError);
             websocket.offConnect(subscribe);
         };
-    }, [context.websocket, minAmount]);
+    }, [context.websocket]);
 
     return null;
 }
 ```
 
-## Monitoring and Debugging
+Subscribe immediately *and* on connect — the first handshake may have already fired, and re-subscribing on reconnect is necessary because Socket.IO doesn't remember rooms across reconnects. Always pair `subscribe(roomName, payload)` with `unsubscribe(roomName, payload)` using the matching payload so the backend can release server-side state.
 
-### Admin API Endpoints
+The `IWebSocketClient` shape (frontend) is documented in [plugins-frontend-context-websocket.md](./plugins-frontend-context-websocket.md).
 
-The system exposes admin-only endpoints for monitoring WebSocket activity:
+## Monitoring
 
-- `GET /api/system/websockets/stats` - All plugin statistics
-- `GET /api/system/websockets/aggregate` - System-wide aggregates
-- `GET /api/system/websockets/plugin/:pluginId` - Specific plugin stats
+Admin-gated endpoints expose per-plugin statistics:
 
-### Admin UI
+| Endpoint | Returns |
+|----------|---------|
+| `GET /api/system/websockets/stats` | All plugin statistics |
+| `GET /api/system/websockets/aggregate` | System-wide aggregates |
+| `GET /api/system/websockets/plugin/:pluginId` | Specific plugin stats |
 
-Access `/system/websockets` to view:
+Admin UI at `/system/websockets` shows plugin counts, active subscriptions, events emitted since startup, per-plugin room breakdowns, emission rates, and subscription error counts.
 
-- Total plugins with WebSocket handlers
-- Active subscriptions across all plugins
-- Events emitted since startup
-- Per-plugin room breakdowns
-- Event emission rates
-- Subscription error counts
-
-### Backend Logs
-
-All WebSocket activity is logged with structured metadata:
+Backend logs include structured plugin metadata:
 
 ```json
-{
-  "pluginId": "whale-alerts",
-  "socketId": "abc123",
-  "minAmount": 500000,
-  "roomName": "whale-500000",
-  "msg": "Client subscribed to whale alerts"
-}
+{ "pluginId": "trp-whale-alerts", "socketId": "abc123", "minAmount": 500000, "roomName": "whale-500000", "msg": "Client subscribed" }
 ```
 
-Filter logs by plugin ID or socket ID for debugging specific issues.
-
-## Migration from Legacy System
-
-Old centralized subscriptions (still supported):
-
-```typescript
-// Old: Hardcoded in WebSocketService.handleSubscription()
-if (payload.transactions?.minAmount !== undefined) {
-    socket.join(`transactions:large:${payload.transactions.minAmount}`);
-}
-
-// Old: Hardcoded emission in observer
-websocketService.emit({
-    event: 'transaction:large',
-    payload: transaction.snapshot
-});
-
-// Old: Frontend cleanup with raw socket.emit
-socket.emit('unsubscribe', { 'whale-alerts': { minAmount } });
-```
-
-New plugin-managed subscriptions:
-
-```typescript
-// New: Plugin owns subscription logic
-context.websocket.onSubscribe(async (socket, roomName, payload) => {
-    const { minAmount } = payload;
-    // Client is auto-joined to room before this handler runs
-    context.logger.debug({ socketId: socket.id, roomName, minAmount }, 'Client subscribed');
-});
-
-// New: Plugin owns unsubscribe logic
-context.websocket.onUnsubscribe(async (socket, roomName, payload) => {
-    // Client is auto-left from room before this handler runs
-    context.logger.debug({ socketId: socket.id, roomName }, 'Client unsubscribed');
-});
-
-// New: Plugin emits to namespaced rooms
-context.websocket.emitToRoom(`whale-${threshold}`, 'large-transfer', transaction.snapshot);
-
-// New: Frontend cleanup with helper methods
-websocket.unsubscribe('large-transfer', { minAmount });
-```
-
-**Benefits of migration:**
-- Subscription logic lives with the feature code
-- Validation and error handling are plugin-specific
-- Room names are automatically isolated
-- Helper methods simplify frontend code and prevent manual prefixing errors
-- No core service modifications needed for new subscription types
+Filter by `pluginId` or `socketId` to debug specific issues.
 
 ## Best Practices
 
-1. **Use helper methods** - Prefer `websocket.subscribe()` and `websocket.unsubscribe()` over raw socket.emit for cleaner code and automatic prefixing
-2. **Validate subscription payloads** - Throw descriptive errors for invalid thresholds, missing fields, or malformed data
-3. **Use semantic room names** - `whale-500000`, `delegation-energy`, `stake-freeze` are clearer than `room1`, `room2`
-4. **Emit to multiple rooms** - A single event can go to multiple threshold rooms (e.g., 500k, 1M, 2M)
-5. **Log subscription activity** - Use `context.logger.debug()` for subscription/unsubscribe events
-6. **Handle edge cases** - Negative thresholds, missing required fields, type mismatches should throw errors
-7. **Send confirmation events** - Emit `subscribed` event back to client so UI can show subscription status
-8. **Always unsubscribe in cleanup** - Call `websocket.unsubscribe()` in useEffect return function to properly clean up server-side state
-9. **Clean up on disable** - If plugin uses intervals or timers, clear them in the `disable` hook
+Validate every payload — throw descriptive errors for invalid thresholds, missing fields, or type mismatches. Use semantic room names (`whale-500000`, `delegation-energy`, `stake-freeze`) over numbered slots. A single observation can `emitToRoom` to multiple threshold rooms (500k, 1M, 2M) when it qualifies for each. Send a `subscribed` confirmation event so the client UI knows the room is live. Always pair frontend `subscribe` with `unsubscribe` in cleanup. Clean up timers and intervals in the plugin's `disable()` hook.
 
 ## Common Patterns
 
 ### Dynamic Threshold Rooms
 
 ```typescript
-context.websocket.onSubscribe(async (socket, payload) => {
-    const { minAmount = 500_000 } = payload;
-
+context.websocket.onSubscribe(async (socket, roomName, payload) => {
+    const { minAmount = 500_000 } = payload || {};
     // Round to nearest 100k for room consolidation
-    const roundedAmount = Math.round(minAmount / 100_000) * 100_000;
-    const roomName = `whale-${roundedAmount}`;
-
-    context.websocket.joinRoom(socket, roomName);
+    const rounded = Math.round(minAmount / 100_000) * 100_000;
+    context.websocket.joinRoom(socket, `whale-${rounded}`);
 });
 ```
 
 ### Multi-Room Subscriptions
 
 ```typescript
-context.websocket.onSubscribe(async (socket, payload) => {
-    const { tokens = [] } = payload;
-
-    // Join one room per token
+context.websocket.onSubscribe(async (socket, roomName, payload) => {
+    const { tokens = [] } = payload || {};
     for (const token of tokens) {
         context.websocket.joinRoom(socket, `token-${token}`);
     }
 });
 ```
 
-### User-Specific Rooms
-
-```typescript
-// Future: When user authentication exists
-context.websocket.onSubscribe(async (socket, payload) => {
-    const { userId } = payload;
-
-    // Validate user owns this subscription
-    const user = await validateUser(userId);
-    if (!user) {
-        throw new Error('Invalid user ID');
-    }
-
-    context.websocket.joinRoom(socket, `user-${userId}`);
-});
-```
-
 ## Troubleshooting
 
-### Subscription not working
+**Subscription not working.** Check backend logs for handler errors; verify the plugin id matches between frontend and backend; confirm payload shape matches handler expectations.
 
-1. Check backend logs for subscription errors
-2. Verify plugin ID matches between frontend and backend
-3. Confirm payload structure matches handler expectations
-4. Test subscription handler throws on invalid input
+**Events not received.** Frontend listeners use unprefixed names (`websocket.on('large-transfer', h)`) — the manager adds the `<plugin-id>:` prefix at the boundary. Verify membership with `getSocketsInRoom()`. Confirm the observer actually emits.
 
-### Events not received
+**Memory leaks.** Ensure every event listener registered on mount has an `off` in cleanup; pair every `subscribe` with `unsubscribe`; watch the room count in the admin UI for unbounded growth on remount.
 
-1. Check event name includes plugin prefix (`whale-alerts:large-transfer`)
-2. Verify room membership using `getSocketsInRoom()`
-3. Confirm observer actually emits events (check logs)
-4. Test with raw Socket.IO tools (e.g., socket.io-client CLI)
+**High error counts.** Review subscription handler validation; log full payloads when investigating; cover null/undefined/type-mismatch cases in tests.
 
-### Memory leaks
+## Further Reading
 
-1. Ensure all event listeners are removed in cleanup functions
-2. Verify unsubscribe calls `leaveRoom()` for all joined rooms
-3. Monitor room count in admin UI - should not grow indefinitely
-4. Check for duplicate subscriptions on component remounts
-
-### High error counts
-
-1. Review subscription handler validation logic
-2. Check frontend sends correctly formatted payloads
-3. Add error logging with full payload for debugging
-4. Test edge cases (null, undefined, wrong types)
-
-## Future Enhancements
-
-- **User authentication** - Restrict subscriptions based on user permissions
-- **Rate limiting** - Prevent abuse by limiting subscription requests per socket
-- **Persistent subscriptions** - Store user preferences in database for auto-resubscribe
-- **Subscription quotas** - Limit number of concurrent subscriptions per user/plugin
-- **Wildcard rooms** - Support patterns like `whale-*` for bulk subscriptions
-- **Subscription analytics** - Track popular thresholds, peak subscription times, churn rates
-
-## Reference Files
-
-**Type definitions:**
-- `packages/types/src/observer/IPluginWebSocketManager.ts` - Manager interface
-- `packages/types/src/observer/IPluginWebSocketStats.ts` - Statistics interfaces
-- `packages/types/src/observer/IPluginContext.ts` - Updated context with websocket field
-
-**Backend infrastructure:**
-- `src/backend/src/services/plugin-websocket-manager.ts` - Manager implementation
-- `src/backend/src/services/plugin-websocket-registry.ts` - Statistics registry
-- `src/backend/src/services/websocket.service.ts` - Updated routing logic
-- `src/backend/src/loaders/plugins.ts` - Manager injection during plugin load
-
-**Frontend:**
-- `src/frontend/app/(core)/system/websockets/page.tsx` - Admin monitoring UI
-- `src/plugins/whale-alerts/src/frontend/WhaleAlertsToastHandler.tsx` - Example client implementation showing direct Socket.IO event handling with toast notifications
-
-**Example plugin:**
-- `src/plugins/whale-alerts/src/backend/backend.ts` - Subscription handler registration
-- `src/plugins/whale-alerts/src/backend/whale-detection.observer.ts` - Room-based event emission
+- [plugins-frontend-context-websocket.md](./plugins-frontend-context-websocket.md) — `IWebSocketClient` (frontend) interface and reliable-subscription pattern
+- [plugins-blockchain-observers.md](./plugins-blockchain-observers.md) — observer-driven `emitToRoom` flow
+- [plugins-system-architecture.md](./plugins-system-architecture.md) — plugin runtime and `IPluginContext`
+- Reference: `src/plugins/trp-whale-alerts/` — multi-threshold room registration

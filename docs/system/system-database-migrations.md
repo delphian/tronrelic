@@ -4,7 +4,7 @@ Forward-only schema evolution with dependency tracking, transaction support, and
 
 ## Why This Matters
 
-Migrations keep database schemas consistent across environments without downtime. Without them, manual changes drift between dev/staging/production, schema updates require restarts, breaking changes corrupt data silently, and there is no audit trail for debugging.
+Migrations keep schemas consistent across dev/staging/production without downtime. Without them, manual changes drift between environments, breaking changes corrupt data silently, and there is no audit trail for debugging.
 
 ## When to Use Migrations
 
@@ -112,7 +112,7 @@ export const migration: IMigration = {
 
 ### REST API
 
-All endpoints require `x-admin-token` header.
+All endpoints require admin auth — see [system-api.md](./system-api.md#authentication) for cookie-vs-token path semantics.
 
 | Endpoint | Method | Purpose |
 |----------|--------|---------|

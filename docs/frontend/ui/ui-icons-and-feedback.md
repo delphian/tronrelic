@@ -61,52 +61,54 @@ Always use CSS variables for theme consistency:
 
 Acceptable alternative for subtle icons: `style={{ opacity: 0.6 }}`. Never hardcode hex colors like `color="#999"`.
 
-## State Feedback Animations
+## State Feedback
 
-Always provide visual feedback for state changes using the built-in animation classes from `globals.scss`.
+Always feed state changes back to the user. Most patterns ship as React components — reach for those before utility classes.
 
-### Flash Animations
+### Flash on Update
 
-Draw attention to newly added or updated content:
+`.table-row--flash` (in `globals.scss`) animates a newly arrived or updated row with a 2.4s fade. Use on `<tr>` elements when a real-time update lands.
 
 ```tsx
-<tr className="table-row--flash">
-    <td>New transaction data</td>
+<tr className={isNew ? 'table-row--flash' : undefined}>
+    <td>{tx.hash}</td>
 </tr>
-
-<div className="surface surface--flash">
-    Updated content
-</div>
 ```
 
-### Loading States
-
-Show pending states with visual feedback:
+`.live-indicator` (also in `globals.scss`) applies a green pulsing glow for "live" status badges and buttons.
 
 ```tsx
-<div className="surface surface--pending">
-    Content loading...
-</div>
-
-<button className="btn btn--primary btn--loading" disabled>
-    Processing...
+<button className="live-indicator">
+    <Radio size={16} /> Live
 </button>
-
-<div className="skeleton" style={{ width: '200px', height: '1.2em' }} />
 ```
 
-### Error States
+> Known orphan: `surface--flash` and `surface--pending` are referenced as string literals in some `.tsx` files (e.g. `TransactionFeed.tsx`) but have no CSS definition — the animations never fire. Either define them in `globals.scss` or remove the call sites.
 
-Indicate errors visually:
+### Loading
+
+Buttons expose a built-in loading state via a prop — they disable themselves and swap the label automatically:
 
 ```tsx
-<div className="surface surface--error">
-    Error loading data
-</div>
+<Button variant="primary" loading={isSubmitting}>Save</Button>
+```
 
-<div className="alert alert--danger">
-    Failed to process transaction
-</div>
+For content placeholders during fetch, use the `<Skeleton>` primitive (see [ui-components.md](./ui-components.md)):
+
+```tsx
+<Skeleton style={{ width: '200px', height: '1.2em' }} />
+```
+
+### Errors
+
+The base `.alert` utility class in `globals.scss` renders an alert surface (no tone modifiers currently exist — extend the class name in a CSS Module if you need variants). For row-level errors in tables, `<Tr hasError>` from the `<Table>` family applies built-in error styling.
+
+```tsx
+<div className="alert">Failed to process transaction.</div>
+
+<Tr hasError>
+    <Td colSpan={3}>{message}</Td>
+</Tr>
 ```
 
 ## Further Reading

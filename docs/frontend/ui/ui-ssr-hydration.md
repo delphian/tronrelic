@@ -30,7 +30,7 @@ import { ClientTime } from '../../components/ui/ClientTime';
 
 `ClientTime` renders a placeholder (`—`) during SSR, then shows the formatted time after mounting on the client. Server and client HTML match perfectly.
 
-**Available formats:** `"time"` (2:30:15 PM), `"datetime"` (1/15/2025, 2:30:15 PM), `"date"` (1/15/2025).
+**Available formats:** `"time"` (2:30:15 PM, default), `"datetime"` (1/15/2025, 2:30:15 PM), `"date"` (1/15/2025), `"relative"` ("5m ago", "2h ago"), `"short"` (compact display).
 
 ## Other Common Hydration Causes
 

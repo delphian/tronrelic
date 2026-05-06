@@ -1,247 +1,114 @@
 # Testing Framework
 
-TronRelic uses Vitest for unit testing with comprehensive mocking utilities for database (Mongoose) and filesystem (fs/promises) operations, enabling full service testing without requiring external dependencies.
+TronRelic uses Vitest with shared mock implementations of MongoDB/Mongoose, the filesystem, and core services so every unit test runs in isolation — no live database, no disk, no network.
 
 ## Why This Matters
 
-The shared mocking utilities let every service test run in isolation — no MongoDB, no filesystem, no network. Without them, tests become slow, flaky, and impossible to run in CI without spinning up infrastructure containers.
+Without these shared mocks, service tests either spin up MongoDB/filesystem fixtures (slow, flaky in CI) or each suite re-implements its own mocks (inconsistent, easy to drift). The repo provides one canonical set of mocks; every test imports from the same `src/backend/tests/vitest/mocks/` directory.
 
-## Vitest Test Runner
+## Vitest
 
-TronRelic uses [Vitest](https://vitest.dev/) as the test framework for all unit tests. Key features:
+Familiar Jest-style API (`describe`, `it`, `expect`), Vite-native ESM, `vi.mock()` for hoisted module mocks. Run `npm test` for the full suite, `npm test -- <path>` for a single file, `npm test -- --watch` while iterating.
 
-- **Compatible with Jest API** - Uses familiar `describe()`, `it()`, `expect()` syntax
-- **Fast execution** - Vite-powered with native ESM support
-- **Built-in mocking** - `vi.mock()` and `vi.fn()` for dependency injection
-- **Watch mode** - Run tests on file changes during development
+## Available Mocks
 
-**Run tests:**
-```bash
-# All tests
-npm test
+All under `src/backend/tests/vitest/mocks/`:
 
-# Watch mode
-npm test -- --watch
+| Mock file | Purpose | Key exports |
+|---|---|---|
+| `mongoose.ts` | Replaces the `mongoose` module with in-memory collections + chainable queries | `createMockMongooseModule`, `clearMockCollections`, `getMockCollections`, `createMockCollectionWithData`, `injectCollectionError`, `spyOnCollectionOperation` |
+| `fs.ts` | Replaces `fs/promises` with an in-memory filesystem (proper ENOENT codes) | `createMockFsModule`, `clearMockFilesystem`, `setMockFile`, `setMockDirectory`, `removeMockPath`, `mockPathExists`, `getMockPaths` |
+| `database-service.ts` | Mock `IDatabaseService` for tests that consume the abstraction directly | `createMockDatabaseService` |
+| `service-registry.ts` | Mock `IServiceRegistry` for tests that look up services by name | `createMockServiceRegistry(seed?)` |
+| `chain-parameters.ts` | Mock chain parameters (energyPerTrx, energyFee) and full plugin context | `createMockChainParameters`, `createMockContextWithChainParameters` |
 
-# Specific test file
-npm test -- src/services/database/__tests__/database.service.test.ts
-```
+For most service tests, prefer `createMockDatabaseService()` over the raw `mongoose.ts` mock — it's faster and matches how production code consumes `IDatabaseService` via DI. The Mongoose mock is for exercising `DatabaseService` itself or anything that has not yet migrated to the abstraction.
 
-## Mongoose Mocking System
+## Hoisting Trap
 
-The shared Mongoose mocking utilities provide complete mock implementations of:
-
-- **MongoDB collections** - CRUD operations with chainable query builders
-- **Mongoose models** - Model registry with lean queries and hooks
-- **Query builders** - Full support for `find().sort().skip().limit()` chains
-- **Error injection** - Simulate database failures for testing error paths
-
-**Location:** `src/backend/src/tests/vitest/mocks/mongoose.ts`
-
-## Filesystem Mocking System
-
-The shared filesystem mocking utilities provide complete mock implementations of Node.js `fs/promises` operations:
-
-- **In-memory filesystem** - Fast, isolated file operations without touching real disk
-- **Full fs/promises API** - readFile, writeFile, stat, readdir, mkdir, unlink, rmdir, access
-- **Automatic directory creation** - Parent directories created automatically when setting files
-- **ENOENT error simulation** - Proper error codes for missing files/directories
-
-**Location:** `src/backend/src/tests/vitest/mocks/fs.ts`
-
-## Quick Start Examples
-
-### Mongoose Mock Example
+`vi.mock('mongoose', ...)` and `vi.mock('fs/promises', ...)` **must run before any import that pulls those modules transitively**. Vitest hoists `vi.mock` calls to the top of the file, but you still need to dynamic-import the mock factory to avoid module-resolution cycles. Pattern:
 
 ```typescript
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { createMockMongooseModule, clearMockCollections, getMockCollections } from '../../../tests/vitest/mocks/mongoose.js';
+import { clearMockCollections, getMockCollections } from '../../../tests/vitest/mocks/mongoose.js';
 
-// Mock mongoose module BEFORE importing services
 vi.mock('mongoose', async (importOriginal) => {
     const { createMockMongooseModule } = await import('../../../tests/vitest/mocks/mongoose.js');
     return createMockMongooseModule()(importOriginal);
 });
 
-// Import service AFTER mocking dependencies
 import { DatabaseService } from '../database.service.js';
-
-describe('MyDatabaseService', () => {
-    let service: DatabaseService;
-
-    beforeEach(() => {
-        clearMockCollections();
-        service = new DatabaseService();
-    });
-
-    it('should store key-value data', async () => {
-        await service.set('config-key', 'config-value');
-
-        const collections = getMockCollections();
-        const kvData = collections.get('_kv');
-
-        expect(kvData).toHaveLength(1);
-        expect(kvData[0]).toMatchObject({
-            key: 'config-key',
-            value: 'config-value'
-        });
-    });
-
-    it('should retrieve stored values', async () => {
-        await service.set('user-name', 'Alice');
-        const result = await service.get('user-name');
-
-        expect(result).toBe('Alice');
-    });
-});
 ```
 
-### Filesystem Mock Example
+The same shape applies for `fs/promises` — `createMockFsModule` is imported statically (see `MigrationScanner.test.ts` for a real example):
 
 ```typescript
-import { createMockFsModule, clearMockFilesystem, setMockFile } from '../../../tests/vitest/mocks/fs.js';
+import { createMockFsModule } from '../../../tests/vitest/mocks/fs.js';
 
 vi.mock('fs/promises', () => createMockFsModule()());
-import { MigrationScanner } from '../MigrationScanner.js';
+```
 
-beforeEach(() => clearMockFilesystem());
+Forgetting this order is the most common cause of "real Mongo connection attempt during test" errors.
 
-it('should validate filenames', () => {
-    const scanner = new MigrationScanner();
-    expect(scanner.isValidFilename('001_test.ts')).toBe(true);
-    expect(scanner.isValidFilename('invalid.ts')).toBe(false);
-});
+## Quick Patterns
 
-it('should calculate checksums', () => {
-    const scanner = new MigrationScanner();
-    const checksum = scanner.calculateChecksum('file content');
-    expect(checksum).toHaveLength(64); // SHA-256 hex
+**Reset between tests:**
+
+```typescript
+beforeEach(() => {
+    clearMockCollections();
+    clearMockFilesystem();
 });
 ```
 
-## Available Mock Helpers
+**Pre-populate fixtures:**
 
-### Mongoose Helpers
+```typescript
+createMockCollectionWithData('users', [
+    { _id: new ObjectId(), name: 'Alice', role: 'admin' },
+    { _id: new ObjectId(), name: 'Bob', role: 'user' }
+]);
+```
 
-**Collection Management:**
-- `clearMockCollections()` - Clear all mock data (use in `beforeEach`)
-- `getMockCollections()` - Access underlying data for assertions
-- `createMockCollectionWithData(name, docs)` - Pre-populate test fixtures
+**Inject a failure to exercise the error path:**
 
-**Error Injection:**
-- `injectCollectionError(collection, operation, error)` - Force operation failures
+```typescript
+injectCollectionError('users', 'findOne', new Error('Connection lost'));
+await expect(service.getUser('123')).rejects.toThrow('Connection lost');
+```
 
-**Spying:**
-- `spyOnCollectionOperation(collection, operation)` - Verify operation calls
+**Spy on a specific operation:**
 
-**[Complete API →](../../src/backend/src/tests/vitest/mocks/mongoose.ts)**
+```typescript
+const spy = spyOnCollectionOperation('users', 'createIndex');
+await service.ensureIndexes();
+expect(spy).toHaveBeenCalledWith({ email: 1 });
+```
 
-### Filesystem Helpers
+**Assert via the underlying store:**
 
-**Filesystem Management:**
-- `clearMockFilesystem()` - Clear all mock files/dirs (use in `beforeEach`)
-- `setMockFile(path, content, mtime?)` - Create a file with content
-- `setMockDirectory(path, mtime?)` - Create a directory
-- `removeMockPath(path)` - Delete a file or directory
-- `getMockPaths()` - List all paths (for debugging)
-- `mockPathExists(path)` - Check if path exists
-
-**[Complete API →](../../src/backend/src/tests/vitest/mocks/fs.ts)**
+```typescript
+await service.set('config-key', 'config-value');
+const kv = getMockCollections().get('_kv');
+expect(kv).toHaveLength(1);
+expect(kv[0]).toMatchObject({ key: 'config-key', value: 'config-value' });
+```
 
 ## Supported MongoDB Operations
 
-The mock system supports all common MongoDB operations:
+- Queries: `find()` (filtering, sort, skip, limit chains), `findOne()` (ObjectId + equality), `countDocuments()`
+- Mutations: `insertOne()` (auto-generates `_id`), `updateOne()` (with upsert), `updateMany()`, `deleteOne()`, `deleteMany()`
+- Indexes: `createIndex()` (no-op but tracked, so spies work)
+- Mongoose-specific: `Model.create()` with hooks, `.lean()`, `.exec()` materialization
 
-**Queries:**
-- `find()` with filtering, sorting, skip, limit
-- `findOne()` with ObjectId and equality matching
-- `countDocuments()` with filter support
+## Reference Implementations
 
-**Mutations:**
-- `insertOne()` with automatic `_id` generation
-- `updateOne()` with upsert support
-- `updateMany()` with filter matching
-- `deleteOne()` and `deleteMany()`
+Real test files exercising the mock system:
 
-**Indexes:**
-- `createIndex()` (no-op but tracked)
-
-**Mongoose-specific:**
-- `Model.create()` with hooks
-- `.lean()` queries for performance
-- `.exec()` query materialization
-
-## Common Testing Patterns
-
-**Testing error handling:**
-```typescript
-it('should handle database errors gracefully', async () => {
-    injectCollectionError('users', 'findOne', new Error('Connection lost'));
-
-    await expect(service.getUser('123'))
-        .rejects
-        .toThrow('Connection lost');
-});
-```
-
-**Verifying operation calls:**
-```typescript
-it('should create index on collection', async () => {
-    const spy = spyOnCollectionOperation('users', 'createIndex');
-
-    await service.ensureIndexes();
-
-    expect(spy).toHaveBeenCalledWith({ email: 1 });
-});
-```
-
-**Testing with pre-populated data:**
-```typescript
-beforeEach(() => {
-    createMockCollectionWithData('users', [
-        { _id: new ObjectId(), name: 'Alice', role: 'admin' },
-        { _id: new ObjectId(), name: 'Bob', role: 'user' }
-    ]);
-});
-
-it('should find admin users', async () => {
-    const admins = await service.findUsers({ role: 'admin' });
-
-    expect(admins).toHaveLength(1);
-    expect(admins[0].name).toBe('Alice');
-});
-```
-
-## Real-World Usage
-
-**Complete test files using the mock system:**
-- [database.service.test.ts](../../src/backend/src/services/database/__tests__/database.service.test.ts) - 37 tests covering all IDatabaseService operations
-- [plugin-database.service.test.ts](../../src/backend/src/services/database/__tests__/plugin-database.service.test.ts) - 25 tests validating plugin storage isolation
-
-These files demonstrate:
-- Proper mock setup and teardown
-- Testing CRUD operations with assertions
-- Error injection for failure paths
-- Verifying collection prefixing for plugin isolation
-- Testing chainable query builders
-
-## Pre-Test Checklist
-
-Before writing new database service tests:
-
-- [ ] Import mock helpers from `../../../tests/vitest/mocks/mongoose.js`
-- [ ] Call `vi.mock('mongoose', ...)` BEFORE importing services
-- [ ] Call `clearMockCollections()` in `beforeEach()` for test isolation
-- [ ] Use `getMockCollections()` for direct data assertions
-- [ ] Test error paths using `injectCollectionError()`
-- [ ] Verify all MongoDB operations are covered by test cases
-- [ ] Run tests with `npm test` to ensure 100% pass rate
+- `src/backend/modules/database/__tests__/database.service.test.ts` — exhaustive `IDatabaseService` operation coverage including key-value, three-tier access, and error paths
+- `src/backend/modules/database/__tests__/plugin-database.service.test.ts` — plugin namespace isolation, prefixed collection names
 
 ## Further Reading
 
-**Mock implementation:**
-- [mongoose.ts](../../src/backend/src/tests/vitest/mocks/mongoose.ts) - Complete API reference and implementation details
-
-**Related topics:**
-- [system-database.md](./system-database.md) - Database access architecture and IDatabaseService usage
-- [system.md](./system.md) - System architecture overview
+- [system-database.md](./system-database.md) — `IDatabaseService` design that the mock implements
+- Source: `src/backend/tests/vitest/mocks/` — import each helper directly from the file that defines it (`mongoose.ts`, `fs.ts`, `database-service.ts`, `service-registry.ts`, `chain-parameters.ts`); JSDoc on every export documents usage.

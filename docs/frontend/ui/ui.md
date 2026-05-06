@@ -1,22 +1,22 @@
 # UI System Overview
 
-Summary of TronRelic's UI styling system: design tokens, SCSS Modules, layout components, and styling standards. For implementation details, follow the links to specialized documents.
+Gateway to TronRelic's UI styling system: design tokens, SCSS Modules, layout components. Detail docs linked below.
 
 ## Why These Standards Matter
 
-Hardcoded values fragment the interface and prevent theming. Global CSS classes cause naming collisions. Viewport media queries fail in constrained contexts like plugin cards or modals. TronRelic's UI system solves these with a three-layer token hierarchy, scoped SCSS Modules, and container queries.
+Hardcoded values prevent theming. Global classes collide. Viewport media queries break inside plugin cards, modals, and slideouts. The system answers with a three-layer token hierarchy, scoped SCSS Modules, container queries, and React layout primitives.
 
 ## Core Principles
 
-**Two-layer SCSS architecture.** `globals.scss` provides design tokens (CSS variables) and utility classes (`.surface`, `.btn`, `.badge`). SCSS Modules (`.module.scss`) provide scoped, component-specific styles. See [ui-scss-modules.md](./ui-scss-modules.md) for the complete workflow.
+**Two-layer SCSS.** `globals.scss` defines tokens and a small set of global utilities; `.module.scss` files scope component styles. See [ui-scss-modules.md](./ui-scss-modules.md).
 
-**Component-first layout.** React components (`<Page>`, `<Stack>`, `<Grid>`) handle page structure with TypeScript safety and IDE autocomplete. Styling utility classes handle visual patterns. See [ui-scss-modules.md](./ui-scss-modules.md#component-first-architecture) for the decision hierarchy.
+**Component-first layout.** Page structure uses `<Page>`, `<Stack>`, `<Grid>`, `<Section>`, `<PageHeader>` from `components/layout/` — typed props beat utility classes. See [ui-scss-modules.md](./ui-scss-modules.md#component-first-architecture).
 
-**Three-layer token hierarchy.** Primitives (`primitives.scss`) define raw values. Semantic tokens (`semantic-tokens.scss`) assign purpose. Components and utility classes (`globals.scss`) apply tokens to markup. See [ui-design-token-layers.md](./ui-design-token-layers.md) for the full reference.
+**Three-layer tokens.** Primitives → semantic tokens → component code. See [ui-design-token-layers.md](./ui-design-token-layers.md).
 
-**Container queries over viewport media queries.** Components adapt to their container width, not the viewport. See [ui-responsive-design.md](./ui-responsive-design.md) for breakpoints and the SCSS interpolation gotcha.
+**Container queries, not viewport media queries.** Components adapt to whatever container they live in. See [ui-responsive-design.md](./ui-responsive-design.md).
 
-**SSR-first rendering.** All public-facing components render with real data on the server. See [react.md](../react/react.md#ssr--live-updates-pattern) for the pattern and [ui-ssr-hydration.md](./ui-ssr-hydration.md) for hydration error prevention.
+**SSR-first rendering.** Server renders with real data; client hydrates and subscribes. See [react.md](../react/react.md#ssr--live-updates-pattern) and [ui-ssr-hydration.md](./ui-ssr-hydration.md).
 
 ## Quick Reference
 
@@ -32,16 +32,7 @@ Hardcoded values fragment the interface and prevent theming. Global CSS classes 
 
 ### Common Design Tokens
 
-A token is **semantic** when its name encodes a use case (`--card-padding-md`, `--button-gap`, `--font-size-heading-md`, `--max-width-prose`). It is **primitive** when its name describes a value (`--spacing-7`, `--gap-md`, `--font-size-xs`, `--radius-md`). Industry consensus — Spectrum, Tailwind v4, Carbon, Atlassian — treats t-shirt-sized scales (`xs/sm/md/lg/xl`) as primitives regardless of category prefix. TronRelic follows that classification.
-
-**The rule for component code (`.module.scss`):**
-
-1. **Prefer use-case-named semantic tokens** when one exists — `--color-text`, `--color-danger`, `--card-padding-md`, `--button-gap`, `--stack-gap-md`, `--font-size-heading-md`, `--font-size-body`, `--max-width-prose`.
-2. **Acceptable fallback — curated primitives in `semantic-tokens.scss`** when no use-case-named semantic fits: `--gap-2xs/xs/sm/md/lg/xl`, `--padding-2xs/xs/sm/md/lg/xl`, `--avatar-size-*`. These are primitives by industry definition, but the file curates them as the chokepoint component code may reach for.
-3. **Acceptable fallback — design-constant primitives in `primitives.scss`**: `--border-width-thin/medium/thick`, `--radius-xs/sm/md/lg/full`, `--shadow-sm/md/lg`, `--font-weight-*`, `--line-height-*`, `--letter-spacing-*`, `--max-width-*`. These don't shift between themes; aliasing them adds ceremony.
-4. **Forbidden in component code** — the foundation scales: `--spacing-1`...`--spacing-20`, raw color palette (`--color-blue-500`), raw t-shirt font sizes (`--font-size-xs/sm/md/lg/xl/2xl/3xl`).
-
-If no token in tiers 1–3 fits, flag the gap so a use-case-named semantic can be added — don't silently drop to a forbidden foundation primitive.
+Component code (`.module.scss`) reaches for use-case-named semantics first (`--card-padding-md`, `--button-gap`), falls back to curated t-shirt primitives (`--gap-md`, `--padding-md`) and design-constant primitives (`--radius-md`, `--shadow-sm`), and never touches foundation scales (`--spacing-7`, `--color-blue-500`, raw `--font-size-xs/sm/md/lg/xl/2xl/3xl`). Tier definitions and full token reference live in [ui-design-token-layers.md](./ui-design-token-layers.md).
 
 | Category | Tokens component code may reference |
 |----------|--------------------------------------|
@@ -66,14 +57,15 @@ Use underscores for multi-word identifiers to enable TypeScript dot notation:
 | BEM element | `.card__header` | `styles.card__header` |
 | BEM modifier | `.card--selected` | `styles['card--selected']` |
 
-### Common Utilities
+### Common UI Primitives
 
-| Pattern | Class |
-|---------|-------|
-| Surface | `.surface`, `.surface--padding-sm/md/lg` |
-| Button | `.btn .btn--primary/secondary/ghost/danger/warning .btn--xs/sm/md/lg` |
-| Badge | `.badge .badge--neutral/info/success/warning/danger` |
-| Muted text | `.text-muted` |
+Buttons and badges are React components with scoped CSS Modules — apply them via `<Button>` and `<Badge>`, not raw class names. The only generally-usable global utility is `.text-muted`.
+
+| Pattern | Use |
+|---------|-----|
+| Button | `<Button>` from `components/ui/Button` (variants: `primary/secondary/ghost/danger/warning`; sizes: `xs/sm/md/lg`) |
+| Badge | `<Badge>` from `components/ui/Badge` (tones: `neutral/info/success/warning/danger`) |
+| Muted text | class `text-muted` |
 
 ### Icons
 

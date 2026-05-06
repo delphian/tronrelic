@@ -4,11 +4,11 @@ A complete catalog of TronRelic's standard React components shipped from `compon
 
 ## Why This Matters
 
-Without a single inventory, developers reinvent primitives (buttons, modals, copy-to-clipboard) inline, producing drift across pages and plugins. Every duplicate also duplicates its bugs: inconsistent focus rings, off-palette colors, missing ARIA, forgotten hydration guards. This document is the one place to look first. If a component appears here, do not reimplement it — compose it, or extend it in place.
+Without a single inventory, developers reinvent primitives (buttons, modals, copy-to-clipboard) inline. Drift follows: inconsistent focus rings, off-palette colors, missing ARIA, forgotten hydration guards. If a component appears here, compose it or extend it in place — don't reimplement.
 
 ## How To Use This Catalog
 
-Reach for layout components first for page structure, UI primitives next for semantic elements, and SCSS Modules only for component-specific customization on top. Import paths are stable (`'../../../components/layout'` for layout, `'../../../components/ui/<Name>'` for primitives) — do not deep-import internal files. When a primitive almost fits but needs a variant, add the variant to the primitive rather than forking it. When no primitive fits, build a new one inside `components/ui/<Name>/` with a colocated `.module.scss` and add a row to this document in the same PR.
+Reach for layout components first, UI primitives next, then SCSS Modules for component-specific customization. Import from the barrel (`'../../../components/layout'`, `'../../../components/ui/<Name>'`) — never deep-import internals. When a primitive almost fits, add the variant rather than fork it. When nothing fits, add a new primitive under `components/ui/<Name>/` with a colocated `.module.scss` and a row in this catalog in the same PR.
 
 ## Layout Primitives
 
@@ -70,7 +70,7 @@ See [react.md](../react/react.md#context-provider-system) for composition order 
 
 ## Styling Utility Classes (Not Components)
 
-For one-off visual treatments where a component is overkill, use the utility classes defined in [globals.scss](../../../src/frontend/app/globals.scss): `.surface`, `.btn .btn--primary`, `.badge .badge--success`, `.chip`, `.pill`, `.segmented-control`, `.stat-grid`, `.stat-card__*`, `.alert`, `.text-muted`, `.text-subtle`, `.link`, `.live-indicator`, `.table-row--flash`. Prefer the React components above; utility classes exist for legacy call sites and rare compositional needs.
+For one-off visual treatments, use the utility classes in [globals.scss](../../../src/frontend/app/globals.scss): `.chip`, `.pill`, `.segmented-control`, `.stat-grid`, `.stat-card__label/value/delta`, `.alert`, `.text-muted`, `.text-subtle`, `.link`, `.live-indicator`, `.table-row--flash`. Prefer the React primitives above; these utilities exist for legacy call sites and rare compositional needs. `.btn` and `.badge` are *not* global utilities — they live in `Button.module.css` and `Badge.module.css` and are reachable only through `<Button>` / `<Badge>`.
 
 ## When To Add A New Component
 

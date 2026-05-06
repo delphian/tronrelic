@@ -30,16 +30,15 @@ When both succeed, the cookie wins: `req.adminVia = 'user'`. Token-only is tagge
 
 **Response envelope.** Every endpoint returns `{ success: true, ... }` or `{ success: false, error: "..." }`. Data sits at a top-level key named for the resource (`overview`, `jobs`, `platforms`, `stats`, `log`, etc.).
 
-**Async actions.** `POST /blockchain/sync` and `POST /markets/refresh` are fire-and-forget — they enqueue and return immediately. Verify completion via the corresponding status endpoint or WebSocket.
+**Async actions.** `POST /blockchain/sync` is fire-and-forget — it enqueues and returns immediately. Verify completion via `/blockchain/status` or WebSocket.
 
 ## Detail Documents
 
 | Document | Covers |
 |---|---|
-| [system-api-overview.md](./system-api-overview.md) | `/overview`, health (`/health/database`, `/health/redis`, `/health/server`), `/config` |
-| [system-api-blockchain.md](./system-api-blockchain.md) | `/blockchain/status`, `/blockchain/transactions`, `/blockchain/metrics`, `POST /blockchain/sync` |
+| [system-api-overview.md](./system-api-overview.md) | Health (`/health/database`, `/health/clickhouse`, `/health/redis`, `/health/server`) and `/config` |
+| [system-api-blockchain.md](./system-api-blockchain.md) | `/blockchain/status`, `/blockchain/transactions`, `/blockchain/metrics`, `/blockchain/observers`, `POST /blockchain/sync` |
 | [system-api-scheduler.md](./system-api-scheduler.md) | `/scheduler/status`, `/scheduler/health`, `PATCH /scheduler/job/:jobName` |
-| [system-api-markets.md](./system-api-markets.md) | `/markets/platforms`, `/markets/freshness`, `POST /markets/refresh` |
 | [system-api-logs.md](./system-api-logs.md) | `/logs` query/stats/get/resolve/unresolve/delete |
 | [system-api-websockets.md](./system-api-websockets.md) | WebSocket monitoring endpoints + real-time event reference (`transaction:large`, `delegation:new`, `block:new`, `comments:new`, `chat:update`) |
 
@@ -57,7 +56,7 @@ When both succeed, the cookie wins: `req.adminVia = 'user'`. Token-only is tagge
 
 **Slow responses.** `/health/database` should be <50ms, `/health/redis` <10ms. Check `/health/server` for memory/CPU pressure.
 
-## Related Documentation
+## Further Reading
 
 - [system-dashboard.md](./system-dashboard.md) — Web UI for these endpoints
 - [system-scheduler-operations.md](./system-scheduler-operations.md) — Cron syntax, job persistence, runbooks

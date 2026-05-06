@@ -1,10 +1,10 @@
 # Plugin API Registration
 
-Plugins expose REST endpoints so the frontend, automation scripts, and third-party tools can work with feature-specific data. The API registration layer keeps those endpoints isolated under `/api/plugins/<plugin-id>/` and forces every handler to use framework-agnostic request/response objects. Plugins focus on business logic while the platform handles routing, auth middleware, and error handling.
+Plugins expose REST endpoints so the frontend, automation scripts, and third-party tools can work with feature-specific data.
 
-## Why the API Layer Matters
+## Why This Matters
 
-The API registration layer isolates each plugin under `/api/plugins/<plugin-id>/`, uses framework-agnostic request/response objects from `@/types`, and ties route lifecycle to plugin enable/disable state. Plugins focus on business logic while the platform handles routing, auth middleware, and error handling.
+The platform isolates each plugin under `/api/plugins/<plugin-id>/`, uses framework-agnostic request/response objects from `@/types`, and ties route lifecycle to plugin enable/disable state. Plugins focus on business logic; the platform handles routing, auth middleware, and error handling. Without the layer, plugins would couple to Express, leak global routes, and outlive their disable state.
 
 ## Registration Flow
 
@@ -14,7 +14,7 @@ The API registration layer isolates each plugin under `/api/plugins/<plugin-id>/
 4. **`PluginApiService` mounts the routes** under `/api/plugins/<plugin-id>/`.
 5. **Express adapts the framework-agnostic handler** to its own primitives behind the scenes.
 
-## Defining Routes with Plain English
+## Defining Routes
 
 Every route entry uses the `IApiRouteConfig` contract. Focus on these fields:
 
@@ -27,7 +27,11 @@ Every route entry uses the `IApiRouteConfig` contract. Focus on these fields:
 
 Remember: `req.params`, `req.query`, `req.body`, and `req.ip` are plain objects; `res.status()`, `res.json()`, `res.send()`, and `res.setHeader()` mirror familiar Express methods but stay framework-agnostic.
 
-**`requiresAdmin` runs the dual-track admin gate.** When set, the platform applies the `requireAdmin` middleware, which admits the call when *either* (a) the signed `tronrelic_uid` cookie identifies a Verified user in the `admin` group, *or* (b) the request carries `ADMIN_API_TOKEN` via `x-admin-token` / `Authorization: Bearer`. The cookie path is tried first; the middleware tags the request with `req.adminVia = 'user' | 'service-token'` so handlers and audit logs can attribute the call. See [admin authentication — dual-track](../../src/backend/modules/user/README.md#admin-authentication--dual-track) for the canonical specification. The middleware itself answers "is this caller authorized?" and short-circuits failures with 401 (or 503 when `ADMIN_API_TOKEN` is unset and no admin user resolves). It overlaps with `IUserGroupService.isAdmin(req.userId)` — both confirm a human is admin via group membership — but the middleware also accepts the service token, while `isAdmin` is a pure predicate the handler consults to vary response shape. Combine them when an admin SPA route both rejects unauthenticated callers and renders different UI per operator: protect with `requiresAdmin: true`, then call `isAdmin(req.userId)` inside the handler. See [plugins-service-registry.md](./plugins-service-registry.md) and the [User Module README](../../src/backend/modules/user/README.md#user-groups-and-admin-status) for the consumption side.
+**`requiresAdmin` runs the dual-track admin gate.** The `requireAdmin` middleware admits the call when *either* (a) the signed `tronrelic_uid` cookie identifies a Verified user in the `admin` group, *or* (b) the request carries `ADMIN_API_TOKEN` via `x-admin-token` / `Authorization: Bearer`. The cookie path is tried first; the middleware tags the request with `req.adminVia = 'user' | 'service-token'` so handlers and audit logs can attribute the call.
+
+The middleware short-circuits failures with **401**, or **503 when `ADMIN_API_TOKEN` is unset and no admin user resolves** — that 503 is the deliberate "admin surface disabled" signal, not a misconfiguration to retry. See [admin authentication — dual-track](../../src/backend/modules/user/README.md#admin-authentication--dual-track) for the canonical specification.
+
+The middleware overlaps with `IUserGroupService.isAdmin(req.userId)` — both confirm a human is admin via group membership — but the middleware *also* accepts the service token, while `isAdmin` is a pure predicate the handler consults to vary response shape. Combine them when an admin SPA route both rejects unauthenticated callers and renders different UI per operator: gate with `requiresAdmin: true`, then call `isAdmin(req.userId)` inside the handler. See [plugins-service-registry.md](./plugins-service-registry.md) and the [User Module README](../../src/backend/modules/user/README.md#user-groups-and-admin-status) for the consumption side.
 
 **User context is automatically available.** Middleware populates `req.userId` (from the `tronrelic_uid` cookie) and `req.user` (the resolved user record) before your handler runs. For feature gating, check wallet states:
 - `req.user?.wallets?.length > 0` — user has linked a wallet (may be unverified)
@@ -41,6 +45,7 @@ See [User Module README](../../src/backend/modules/user/README.md#plugin-access-
 import { definePlugin, type IHttpRequest, type IHttpResponse, type IHttpNext } from '@/types';
 import { whaleAlertsManifest } from '../manifest.js';
 
+// Mounts at /api/plugins/trp-whale-alerts/subscriptions
 export const whaleAlertsBackendPlugin = definePlugin({
     manifest: whaleAlertsManifest,
 
@@ -80,9 +85,9 @@ function createSubscriptionHandlers(database: IPluginDatabase) {
 }
 ```
 
-The loader reads this configuration, attaches the handler to `GET /api/plugins/whale-alerts/subscriptions`, and takes care of serialising errors if `next(error)` is called.
+The loader reads this configuration, attaches the handler to `GET /api/plugins/trp-whale-alerts/subscriptions`, and takes care of serialising errors if `next(error)` is called.
 
-## Building Middleware in Plain English
+## Building Middleware
 
 ```typescript
 const rateLimit = (limit: number, windowMs: number): ApiMiddleware => {
@@ -134,6 +139,3 @@ Add it to any route via `middleware: [rateLimit(20, 60_000)]`.
 | Add validation or rate limiting    | Supply `middleware: [validateBody, rateLimit(...)]`          |
 | Send success/error responses       | `return res.status(201).json({ … })`, `next(new Error(message))` |
 | Document behaviour                 | Fill in `description` and/or README for the plugin           |
-
-By leading with “why” and keeping the handler contract small, plugins can publish durable APIs without worrying about the HTTP server underneath. Define routes declaratively, lean on middleware for cross-cutting concerns, and let the platform keep everything under the right namespace. The result: predictable endpoints, happy clients, and no accidental coupling to Express.
-

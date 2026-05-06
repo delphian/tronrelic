@@ -24,21 +24,30 @@ The generic `TDependencies` parameter lets each module declare exactly what it n
 
 ## Bootstrap Sequence
 
-The application bootstrap (`src/backend/src/index.ts`) follows a strict ordering that guarantees dependency availability:
+The application bootstrap (`src/backend/index.ts`) splits into `bootstrapInit()` and `bootstrapRun()`. Every module finishes `init()` before any module starts `run()`, and plugins load after both phases.
 
-1. Database and Redis connections
-2. Logger initialization
-3. System config, migration system, blockchain observer service
-4. Express app and HTTP server creation
-5. WebSocket initialization
-6. MenuService initialization
-7. **Module `init()` phase** — prepare resources, create services
-8. **Module `run()` phase** — mount routes, register menu items
-9. Plugin loading
-10. Job scheduler initialization
-11. Server starts listening
+**`bootstrapInit()`** — in this order:
 
-This sequence guarantees modules can safely use MenuService, WebSocketService, and other core infrastructure during `run()`. The two-phase split ensures all modules finish preparing before any module begins interacting with shared services.
+1. `connectDatabase()` (Mongo)
+2. Redis connect
+3. Pino logger
+4. Express app + HTTP server
+5. `WebSocketService.initialize(server)` (gated by `ENABLE_WEBSOCKETS`)
+6. **`DatabaseModule.init()`** — first because everything else depends on it
+7. **`ClickHouseModule.init()`** — optional; skipped without `CLICKHOUSE_HOST`
+8. Mount `/api` router
+9. `initializeCoreServices(coreDatabase)` — system config, migrations, blockchain observer service
+10. `new ServiceRegistry(logger)` — registry constructed *before* MenuModule so MenuService can publish itself for late-binding consumers during `run()`
+11. `serviceRegistry.register('chain-parameters', ChainParametersService.getInstance())`
+12. **`MenuModule.init()`**
+13. `new CacheService(redis, coreDatabase)` and assemble `sharedDeps`
+14. **Remaining module inits in this order:** Logs, Pages, Theme, Scheduler, User, AddressLabels, Tools (User receives `scheduler`, `systemConfig`, and `clickhouse` on top of `sharedDeps`)
+
+**`bootstrapRun()`** — in this order:
+
+Database, ClickHouse, Menu, Logs, Pages, Theme, User, AddressLabels, Tools, **Scheduler last** (so it doesn't tick before its peers are integrated).
+
+After `bootstrapRun()`, `loadPlugins(coreDatabase, scheduler, serviceRegistry)` runs and the HTTP server starts listening. The two-phase split lets modules safely use MenuService, WebSocketService, ChainParametersService, and the service registry during `run()`. The order above is the source of truth — see the `bootstrapInit` and `bootstrapRun` calls in `src/backend/index.ts`.
 
 ## Dependency Injection Pattern
 
@@ -87,45 +96,11 @@ The registry exposes two lookup shapes, and the choice between them is about con
 
 ## Service Types and Singleton Usage
 
-Services implementing `IXxxService` interfaces are public APIs with shared single state. All consumers use the same instance configured once at bootstrap. Utilities (no `IXxxService` interface) are tools each consumer configures independently.
+Services implementing `IXxxService` interfaces are public APIs with shared single state — one instance configured once at bootstrap, consumed by all callers. They follow the `setDependencies(...)` / `getInstance()` pattern (see `PageService` in `src/backend/modules/pages/services/`); the first call wires concrete dependencies, every subsequent call returns the same instance, and `getInstance()` before `setDependencies()` throws.
 
-**Singleton service pattern:**
+Utilities — small helpers without an `IXxxService` interface — are not singletons. Each consumer constructs and configures their own, e.g. `new ValidationHelper({ pattern: /^[a-z]+$/ })`. The distinction is *who configures it and when*: services at bootstrap, utilities at the call site.
 
-```typescript
-export class PageService implements IPageService {
-    private static instance: PageService;
-
-    private constructor(
-        private readonly database: IDatabaseService,
-        private readonly storageProvider: IStorageProvider
-    ) { }
-
-    public static setDependencies(database: IDatabaseService, provider: IStorageProvider): void {
-        if (!PageService.instance) {
-            PageService.instance = new PageService(database, provider);
-        }
-    }
-
-    public static getInstance(): PageService {
-        if (!PageService.instance) throw new Error('setDependencies() must be called first');
-        return PageService.instance;
-    }
-}
-```
-
-**Utility pattern (not a singleton):**
-
-```typescript
-export class ValidationHelper {
-    constructor(private readonly config: ValidationConfig) { }
-    validate(input: string): boolean { return this.config.pattern.test(input); }
-}
-// Each consumer creates their own: new ValidationHelper({ pattern: /^[a-z]+$/ })
-```
-
-Services must be singletons because they expose functionality to external consumers (modules, plugins), maintain shared state, and are configured immutably at bootstrap. Utilities have no `IXxxService` interface because each consumer customizes them independently.
-
-`ISystemLogService` appears to break this rule with its `child()` method, but `child()` creates scoped views of the same underlying logging system — not true per-consumer customization.
+`ISystemLogService` appears to break the rule with `child()`, but `child()` returns a scoped *view* of the same underlying logging system — not a per-consumer customized service.
 
 ## Migration Considerations
 

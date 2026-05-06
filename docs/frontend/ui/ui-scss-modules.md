@@ -34,7 +34,7 @@ export function MarketCard({ market }: Props) {
 
 ## Two-Layer SCSS Architecture
 
-**Layer 1 — `globals.scss`** contains design tokens (CSS variables), utility classes (`.surface`, `.btn`, `.badge`), base resets, global animations, and viewport-level responsive styles. Layout primitives use React components instead of CSS classes.
+**Layer 1 — `globals.scss`** contains design tokens (CSS variables), a small set of global utility classes (`.text-muted`, `.chip`, `.alert`, `.live-indicator`, `.stat-grid`, etc.), base resets, global animations, and viewport-level responsive styles. Buttons and badges are *not* global utilities — they live in `Button.module.css` / `Badge.module.css` and ship through the `<Button>` / `<Badge>` components.
 
 **Layer 2 — SCSS Modules** (`.module.scss` files) contain component-specific class names, internal layout rules, hover/focus/active states, container queries, and component-scoped animations.
 
@@ -43,7 +43,7 @@ export function MarketCard({ market }: Props) {
 | Belongs in `globals.scss` | Belongs in SCSS Modules |
 |--------------------------|------------------------|
 | CSS variables (`--color-*`, `--spacing-*`) | Component grid/flex layout |
-| Utility classes (`.surface`, `.btn`) | Component hover/focus states |
+| Global utility classes (`.text-muted`, `.chip`) | Component hover/focus states |
 | Base resets, element defaults | Container queries |
 | Global keyframe animations | Component-scoped transitions |
 | Viewport layout breakpoints | Anything used by only one component |
@@ -120,11 +120,7 @@ Reach for tokens in `semantic-tokens.scss` first. Tokens are immutable — selec
 }
 ```
 
-**Token classification rule.** A token is *semantic* when its name describes a use case (`--card-padding-md`, `--button-gap`, `--font-size-heading-md`, `--max-width-prose`). It is *primitive* when its name describes a value — including category-prefixed t-shirt scales like `--gap-md`, `--padding-md`, `--font-size-xs`. This matches Spectrum, Tailwind v4, Carbon, and Atlassian convention.
-
-**Component code rule.** Prefer use-case-named semantics first (`--card-padding-*`, `--button-gap`, `--font-size-heading-*`, `--font-size-body`). Fall back to curated primitives that live in `semantic-tokens.scss` (`--gap-*`, `--padding-*`, `--avatar-size-*`) for one-off layouts where no use-case-named semantic fits. Design constants from `primitives.scss` (`--border-width-*`, `--radius-*`, `--shadow-*`, `--font-weight-*`, `--line-height-*`, `--max-width-*`) are also acceptable directly. **Never** reach into the foundation scales: `--spacing-*` and the raw t-shirt `--font-size-xs/sm/md/lg/xl/2xl/3xl` are forbidden in component code — those exist as the substrate the curated tokens alias.
-
-If no token in those tiers fits, flag the gap so a new semantic can be added; don't silently drop to a foundation scale. Never hardcode colors, spacing, fonts, or sizes. Never redefine tokens across breakpoints — that makes names meaningless and debugging impossible.
+**Token tiering** (full rules in [ui-design-token-layers.md](./ui-design-token-layers.md#the-four-tier-rule-for-component-code)): prefer use-case-named semantics (`--card-padding-md`, `--button-gap`); fall back to curated t-shirt primitives (`--gap-*`, `--padding-*`) and design constants (`--radius-*`, `--shadow-*`, `--font-weight-*`); never touch foundation scales (`--spacing-*`, raw color palette, raw `--font-size-xs/sm/md/lg/xl/2xl/3xl`). If nothing fits, add a new use-case-named semantic — don't drop to a forbidden scale. Never hardcode values, never redefine tokens across breakpoints.
 
 ## Complete Example
 

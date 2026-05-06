@@ -2,25 +2,13 @@
 
 TronRelic uses runtime configuration to enable universal Docker images that work on any domain without rebuilding.
 
-## The Problem: Next.js Build-Time Inlining
+## Why This Matters
 
-Next.js inlines `NEXT_PUBLIC_*` environment variables into JavaScript bundles at build time. When GitHub Actions builds Docker images, it bakes in whatever values exist during the build (typically `localhost`). These hardcoded values cannot be changed at container runtime, breaking WebSocket connections when the same image is deployed to different domains.
+Next.js inlines `NEXT_PUBLIC_*` environment variables into JavaScript bundles at build time via webpack's static replacement — client JS can't access server env at runtime. GitHub Actions bakes in whatever values exist during build (typically `localhost`); container-runtime overrides cannot change them. The same image deployed to different domains breaks WebSocket connections because the bundle is frozen.
 
-**Why Next.js does this:** Client-side JavaScript runs in the browser and cannot access server environment variables. Next.js performs static replacement of `NEXT_PUBLIC_*` references with literal strings during webpack compilation for performance and security.
+## How It Works
 
-**The consequence:** Traditional environment variable overrides in docker-compose don't work for client-side code because the values are already frozen in the bundle.
-
-## The Solution: SSR-Injected Runtime Config
-
-Instead of relying on build-time environment variables, TronRelic:
-
-1. **Backend stores siteUrl** in MongoDB (editable via `/system/config` admin UI)
-2. **Backend fetches chain parameters** from TRON network (updated every 10 minutes)
-3. **SSR fetches config** from backend API once at container startup, caches in memory
-4. **SSR injects config** into HTML as `<script>window.__RUNTIME_CONFIG__={...}</script>`
-5. **Client reads from global** - No hardcoded values, no separate fetch, instant access
-
-This enables the same Docker image to work on `tronrelic.com`, `dev.tronrelic.com`, or any domain, and provides instant access to TRON network parameters for energy/TRX conversions in the browser.
+Backend stores `siteUrl` in MongoDB (editable via `/system/config`) and fetches TRON chain parameters every 10 minutes. SSR fetches config from `/api/config/public` once at container startup, caches in memory, and injects into HTML as `<script>window.__RUNTIME_CONFIG__={...}</script>`. The client reads the global synchronously — no separate fetch, no hardcoded values, no rebuild to switch domains.
 
 ## Architecture
 
@@ -31,166 +19,62 @@ Backend Database → /api/config/public → SSR Cache → HTML Injection → Cli
 
 ### Backend (Single Source of Truth)
 
-**SystemConfigService** (`src/backend/src/services/system-config/system-config.service.ts`):
-- Stores `siteUrl` in MongoDB `system_config` collection
-- Derives `apiUrl` and `socketUrl` from `siteUrl` deterministically
-- Exposes via public `/api/config/public` endpoint (no auth required)
-- Caches in memory (1 minute TTL)
+`SystemConfigService` (`src/backend/src/services/system-config/system-config.service.ts`) stores `siteUrl` in MongoDB `system_config`, derives `apiUrl` and `socketUrl` deterministically, exposes via no-auth `/api/config/public`, caches in memory with a 1-minute TTL.
 
-**ChainParametersService** (`src/backend/src/modules/chain-parameters/chain-parameters.service.ts`):
-- Fetches TRON network parameters from blockchain every 10 minutes (via scheduled job)
-- Stores in MongoDB `chain_parameters` collection
-- Provides energy/TRX conversion ratios (`energyPerTrx`, `energyFee`)
-- Included in `/api/config/public` response for instant client access
-- Caches in memory (1 minute TTL)
-- Singleton pattern ensures all consumers share same cache
+`ChainParametersService` (`src/backend/src/modules/chain-parameters/chain-parameters.service.ts`) is a singleton that fetches TRON parameters every 10 minutes via a scheduled job, stores them in MongoDB `chain_parameters`, exposes `energyPerTrx` and `energyFee`, rides along in the `/api/config/public` response so the client gets them without an extra round-trip. 1-minute TTL.
 
-**Initial database default:**
-- Reads from `NEXT_PUBLIC_SITE_URL` backend environment variable (set via docker-compose)
-- Falls back to `http://localhost:3000` if not set
-- Created automatically on first backend startup when database is empty
-- Chain parameters use fallback values until first TRON network fetch completes
+**Initial database default:** reads `NEXT_PUBLIC_SITE_URL` from the backend env (set via docker-compose), falls back to `http://localhost:3000`. Created on first boot when the DB is empty. Chain parameters use fallback values until the first TRON fetch completes.
 
 ### Frontend SSR (Server-Side)
 
-**getServerConfig()** (`src/frontend/lib/serverConfig.ts`):
-- Fetches from backend `/api/config/public` on first SSR request
-- Caches in memory for container lifetime (zero overhead after first fetch)
-- Falls back to environment variables if backend unavailable
-- Used by all SSR code: `layout.tsx`, `sitemap.ts`, `generateMetadata()`, etc.
-
-**Pattern:** All server components and SSR functions call `await getServerConfig()`.
+`getServerConfig()` (`src/frontend/lib/serverConfig.ts`) fetches `/api/config/public` on first SSR request, caches in memory for the container's lifetime (zero overhead after), falls back to env vars if backend unavailable. All server components, `generateMetadata`, `sitemap.ts`, and `layout.tsx` `await getServerConfig()`.
 
 ### Frontend Client (Browser)
 
-**getRuntimeConfig()** (`src/frontend/lib/runtimeConfig.ts`):
-- Reads from `window.__RUNTIME_CONFIG__` (injected by SSR)
-- Synchronous - no async fetch needed, config already in DOM
-- Falls back to environment variables if injection failed (shouldn't happen)
-- Used by all client code: components, hooks, event handlers
-
-**Pattern:** All client components call `getRuntimeConfig()` (no await).
+`getRuntimeConfig()` (`src/frontend/lib/runtimeConfig.ts`) reads `window.__RUNTIME_CONFIG__` synchronously — config is already in the DOM, no fetch. Fallback to env vars only if injection failed. All client components call it without `await`.
 
 ## Deployment Workflow
 
-### Fresh Install
-
-1. **Deploy containers** with docker-compose
-2. **Backend reads** `NEXT_PUBLIC_SITE_URL` from backend environment (docker-compose)
-3. **Database initializes** with default siteUrl from environment
-4. **Frontend SSR fetches** config from backend automatically
-5. **WebSocket connects** to correct domain immediately
-
-**No manual configuration needed** if `SITE_URL` is set in `.env` file on the server.
-
 ### Environment Configuration
 
-**Production server** (`.env` file):
+Production and dev `.env` files set `SITE_URL`; local sets `NEXT_PUBLIC_SITE_URL` (the asymmetry exists because docker-compose interpolates `SITE_URL` into the backend's `NEXT_PUBLIC_SITE_URL` env var, while local development reads `NEXT_PUBLIC_SITE_URL` directly).
+
 ```bash
-SITE_URL=https://tronrelic.com
+SITE_URL=https://tronrelic.com           # production
+SITE_URL=https://dev.tronrelic.com       # dev
+NEXT_PUBLIC_SITE_URL=http://localhost:3000  # local
 ```
 
-**Dev server** (`.env` file):
-```bash
-SITE_URL=https://dev.tronrelic.com
-```
-
-**Local development** (`.env` file):
-```bash
-NEXT_PUBLIC_SITE_URL=http://localhost:3000
-```
-
-The docker-compose files use `${SITE_URL}` (prod/dev) or `${NEXT_PUBLIC_SITE_URL}` (local) to set the backend's `NEXT_PUBLIC_SITE_URL` environment variable.
+With `SITE_URL` set on the server, no further configuration is needed — the database initializes with the env value on first boot, SSR fetches and caches, WebSocket connects to the correct domain.
 
 ### Runtime Reconfiguration
 
-If the domain changes after deployment:
-
-1. Visit `/system/config` admin UI
-2. Update `siteUrl` field
-3. Restart frontend container: `docker restart tronrelic-frontend-prod`
-4. SSR cache refreshes with new config
-5. WebSocket connects to new domain
+To change the domain after deployment: edit `siteUrl` at `/system/config`, then **restart the frontend container** (`docker restart tronrelic-frontend-prod`) to refresh the SSR cache. Updating the DB without a restart leaves the cached config in place.
 
 ## Using Chain Parameters in Frontend
 
-The runtime config includes TRON blockchain parameters for instant energy/TRX conversions without additional API calls.
+The runtime config includes `chainParameters` for instant energy/TRX conversions without additional API calls.
 
-**Available parameters:**
 ```typescript
 const { chainParameters } = getRuntimeConfig();
-
-// Calculate energy from TRX
 const energy = trxAmount * chainParameters.energyPerTrx;
-
-// Calculate TRX from energy
 const trx = energyAmount / chainParameters.energyPerTrx;
-
-// Get burn cost per energy unit
 const burnCost = chainParameters.energyFee; // SUN per energy unit
 ```
 
-**Example usage (whale threshold conversion):**
-```typescript
-import { getRuntimeConfig } from '@/lib/runtimeConfig';
-
-export function WhaleSettings() {
-    const { chainParameters } = getRuntimeConfig();
-    const [thresholdTrx, setThresholdTrx] = useState(1_000_000);
-
-    // Convert TRX to energy for display
-    const energyAmount = Math.floor(thresholdTrx * chainParameters.energyPerTrx);
-
-    return (
-        <div>
-            <input
-                type="number"
-                value={thresholdTrx}
-                onChange={(e) => setThresholdTrx(parseInt(e.target.value))}
-            />
-            <small>≈ {energyAmount.toLocaleString()} Energy</small>
-        </div>
-    );
-}
-```
-
-**Data freshness:**
-- Parameters update every 10 minutes from TRON network
-- Frontend receives snapshot at page load (SSR injection)
-- For most UI calculations, page-load snapshot is sufficient
-- If real-time accuracy is critical, fetch from `/api/config/public` directly
-
-## Key Points
-
-✅ **Universal Docker images** - Same image works on any domain
-✅ **Runtime configuration** - Change domain via admin UI or .env file
-✅ **No client-side fetch** - Config injected in initial HTML (zero overhead)
-✅ **Backend env vars work** - Node.js reads `process.env` at runtime (not build time)
-✅ **Frontend env vars DON'T work** - Next.js inlines `NEXT_PUBLIC_*` at build time (webpack limitation)
-
-❌ **Why not use NEXT_PUBLIC_* in frontend docker-compose?** Next.js already compiled the bundle with hardcoded values. Setting the variable at container runtime doesn't change the JavaScript bundle.
+Parameters refresh every 10 minutes server-side; the frontend gets a snapshot at page load via SSR injection. Sufficient for most UI calculations. For real-time accuracy, fetch `/api/config/public` directly.
 
 ## Files Reference
 
-**Backend:**
-- `src/backend/src/api/routes/config.router.ts` - Public config endpoint
-- `src/backend/src/services/system-config/system-config.service.ts` - Config storage and retrieval
-- `src/backend/src/modules/chain-parameters/chain-parameters.service.ts` - TRON network parameters (singleton)
-- `src/backend/src/modules/chain-parameters/chain-parameters-fetcher.ts` - Scheduled fetch from TRON network
+Core file paths are cited inline above. Additional references:
 
-**Frontend:**
-- `src/frontend/lib/serverConfig.ts` - SSR single source of truth (use in server components)
-- `src/frontend/lib/runtimeConfig.ts` - Client single source of truth (use in client components)
-- `src/frontend/app/layout.tsx` - Injects `window.__RUNTIME_CONFIG__` into HTML
-- `src/frontend/lib/socketClient.ts` - WebSocket uses runtime config
-
-**Docker:**
-- `docker-compose.prod.yml` - Production environment (SITE_URL from .env)
-- `docker-compose.dev.yml` - Dev environment (SITE_URL from .env)
-- `docker-compose.yml` - Local development (NEXT_PUBLIC_SITE_URL from .env)
-
-**Deprecated:**
-- `src/frontend/lib/config.ts` - Old static config (do not use in new code)
+- `src/backend/src/api/routes/config.router.ts` — public config endpoint
+- `src/backend/src/modules/chain-parameters/chain-parameters-fetcher.ts` — scheduled fetch from TRON
+- `src/frontend/app/layout.tsx` — injects `window.__RUNTIME_CONFIG__`
+- `src/frontend/lib/socketClient.ts` — WebSocket consumer
+- `docker-compose.{prod,dev}.yml` — interpolate `SITE_URL` into backend env
+- `docker-compose.yml` — local dev, reads `NEXT_PUBLIC_SITE_URL`
+- `src/frontend/lib/config.ts` — **deprecated**, do not use in new code
 
 ## Troubleshooting
 

@@ -1,90 +1,32 @@
 # IconPickerModal Component
 
-A searchable, responsive icon selection interface that displays all available Lucide React icons in a browsable grid. Enables visual icon discovery and selection without requiring users to memorize icon names.
-
-## Who This Component Is For
-
-Frontend developers implementing forms, configuration interfaces, or any feature requiring users to select icons visually. Particularly useful for theme management, menu item configuration, plugin settings, and user-customizable navigation.
+A searchable grid of all renderable Lucide React icons. Drop-in content for a `ModalProvider` modal — does not manage its own modal lifecycle.
 
 ## Why This Matters
 
-Text input fields for icon names force users to guess available options and produce typos that fail silently. IconPickerModal replaces this with a browsable grid, real-time search, and guaranteed valid selections.
+Free-text icon-name fields force users to guess available exports and produce typos that fail silently at render. IconPickerModal replaces that with a browsable grid, real-time search, and a returned name that is guaranteed to be a valid Lucide export.
 
-## Core Features
+## How It Works
 
-### Visual Icon Browser
+The component is **content-only** — it renders inside a modal opened via `useModal()`. It accepts the current icon name (for highlighting), an `onSelect` callback that fires the chosen icon's PascalCase export name, and an `onClose` callback that the parent uses to dismiss the modal.
 
-Displays all Lucide React icons (400+ components) in a responsive grid with icon previews and names. The grid uses container queries to adapt column count based on modal width, ensuring consistent appearance regardless of where the modal is rendered.
+Internally it enumerates `lucide-react`'s exports and filters out non-renderable entries — utilities (`createLucideIcon`, `icons`, `Icon`), the `LucideXxx` and `XxxIcon` alias families, and anything missing a `displayName`. The visible grid is the de-aliased list, so the names you receive in `onSelect` are the canonical exports (e.g. `Snowflake`, never `LucideSnowflake` or `SnowflakeIcon`).
 
-### Real-Time Search
+`ModalProvider` is composed once in `src/frontend/app/providers.tsx` (see [react.md → Provider Composition](./react.md#provider-composition)) — do not add a second one. If `useModal()` throws "must be used within a ModalProvider," check that you are inside the global provider tree, not that you need to wrap your component in another one.
 
-Filter icons by name using case-insensitive substring matching. As users type, the grid updates instantly to show matching icons. Search results include a count indicator (e.g., "47 icons found") and an empty state with a "Clear search" button when no matches exist.
-
-### Selection State Management
-
-Highlights the currently selected icon with primary color accent and border styling. When users click an icon, the selection handler fires and the modal closes automatically. The component supports pre-selection, allowing forms to display the current choice when reopening the picker.
-
-### Accessible Design
-
-- Keyboard navigation with visible focus states for all icon buttons
-- ARIA labels on interactive elements ("Select [IconName] icon")
-- Proper semantic HTML with button elements for selections
-- Screen reader announcements for result counts and empty states
-
-## Props Interface
+## Props
 
 ```typescript
 export interface IconPickerModalProps {
-    /** Currently selected icon name (e.g., 'Sparkles') */
-    selectedIcon?: string;
-    /** Callback invoked when user selects an icon */
-    onSelect: (iconName: string) => void;
-    /** Callback to close the modal */
-    onClose: () => void;
+    selectedIcon?: string;          // PascalCase Lucide export name to highlight
+    onSelect: (name: string) => void; // Receives PascalCase name; component then calls onClose()
+    onClose: () => void;            // Must invoke ModalProvider's close(modalId)
 }
 ```
 
-**Prop descriptions:**
+The component invokes `onSelect` then `onClose` on every selection — there is no confirm step, no multi-select.
 
-- `selectedIcon` - Optional. Highlights the specified icon in the grid. Use this when editing existing configurations to show the user's current selection.
-- `onSelect` - Required. Receives the selected icon's component name (e.g., `'Sparkles'`, `'Settings'`, `'CheckCircle'`). The modal closes automatically after invoking this callback.
-- `onClose` - Required. Called when the user clicks "Cancel" or when selection completes. Must close the modal by calling the ModalProvider's `close()` method.
-
-## Integration Requirements
-
-### ModalProvider Dependency
-
-IconPickerModal **must** be rendered within a modal opened via `ModalProvider`. It does not manage its own modal state—it expects to receive `onClose` from a parent modal context.
-
-**Required setup in application root** (`app/layout.tsx`):
-
-```tsx
-import { ModalProvider } from '../components/ui/ModalProvider';
-
-export default function RootLayout({ children }: { children: ReactNode }) {
-    return (
-        <html>
-            <body>
-                <ReduxProvider>
-                    <ModalProvider>
-                        {children}
-                    </ModalProvider>
-                </ReduxProvider>
-            </body>
-        </html>
-    );
-}
-```
-
-If `ModalProvider` is not present, the `useModal()` hook will throw an error at runtime.
-
-### Icon Rendering Requirements
-
-The component uses dynamic imports from `lucide-react` to access all icon components. No additional icon configuration or registration is required—all Lucide icons are automatically available.
-
-## Usage Examples
-
-### Basic Usage with Form State
+## Example
 
 ```tsx
 'use client';
@@ -94,427 +36,59 @@ import { useModal } from '../../../components/ui/ModalProvider';
 import { IconPickerModal } from '../../../components/ui/IconPickerModal';
 import { Button } from '../../../components/ui/Button';
 
-export function ThemeForm() {
-    const { open: openModal, close: closeModal } = useModal();
-    const [iconName, setIconName] = useState('Sparkles');
+export function IconField() {
+    const { open, close } = useModal();
+    const [icon, setIcon] = useState('Sparkles');
 
-    const handleOpenIconPicker = () => {
-        const modalId = openModal({
+    const pick = () => {
+        const id = open({                   // capture id — needed to close later
             title: 'Select Icon',
-            size: 'lg',
+            size: 'lg',                     // sm/md crowd the grid; lg or xl recommended
             content: (
                 <IconPickerModal
-                    selectedIcon={iconName}
-                    onSelect={(name) => setIconName(name)}
-                    onClose={() => closeModal(modalId)}
+                    selectedIcon={icon}
+                    onSelect={setIcon}
+                    onClose={() => close(id)} // closure over id, not a stale ref
                 />
             ),
             dismissible: true
         });
     };
 
-    return (
-        <div>
-            <label>Icon</label>
-            <Button onClick={handleOpenIconPicker}>
-                Choose Icon
-            </Button>
-            <p>Selected: {iconName}</p>
-        </div>
-    );
+    return <Button onClick={pick}>Choose Icon ({icon})</Button>;
 }
 ```
 
-### With Pre-Selected Icon
+## Gotchas
 
-```tsx
-const handleEditMenuItem = (menuItem: MenuItem) => {
-    const modalId = openModal({
-        title: 'Edit Menu Item',
-        size: 'lg',
-        content: (
-            <IconPickerModal
-                selectedIcon={menuItem.icon} // Show current selection
-                onSelect={(iconName) => {
-                    updateMenuItem({ ...menuItem, icon: iconName });
-                }}
-                onClose={() => closeModal(modalId)}
-            />
-        ),
-        dismissible: true
-    });
-};
-```
+**Capture the modal id.** `useModal().open()` returns the id; `close()` requires it. A common bug is writing `onClose={close}` — that closes nothing because `close` needs an argument. Wrap it as `() => close(id)` inside the `open()` call so the closure captures the freshly-returned id.
 
-### Integration with Redux Form State
+**Names are PascalCase Lucide exports.** `selectedIcon` only highlights when it matches the export exactly: `'CheckCircle'`, not `'checkCircle'` or `'check-circle'`. If your storage layer uses kebab-case, transform inside `onSelect` before persisting.
 
-```tsx
-import { useAppDispatch, useAppSelector } from '../../../../store/hooks';
-import { updateThemeIcon } from '../../../../features/system/themeSlice';
+**Use `size: 'lg'` or `'xl'`.** Smaller modal sizes still render but reduce the grid to 1–2 columns and force excessive scrolling.
 
-export function ThemeEditor() {
-    const dispatch = useAppDispatch();
-    const theme = useAppSelector((state) => state.theme.selectedTheme);
-    const { open: openModal, close: closeModal } = useModal();
+**No virtualization.** All filtered icons render to the DOM. Lucide's ~1500 exports filter down to ~700 renderable icons — fast enough on modern devices but worth knowing if you profile.
 
-    const handleSelectIcon = () => {
-        const modalId = openModal({
-            title: 'Select Theme Icon',
-            size: 'lg',
-            content: (
-                <IconPickerModal
-                    selectedIcon={theme?.icon}
-                    onSelect={(iconName) => {
-                        dispatch(updateThemeIcon({ id: theme.id, icon: iconName }));
-                    }}
-                    onClose={() => closeModal(modalId)}
-                />
-            ),
-            dismissible: true
-        });
-    };
+**No multi-select.** Selecting closes the modal immediately. If you need multiple selections, wrap the component yourself and reopen between picks.
 
-    return <Button onClick={handleSelectIcon}>Pick Icon</Button>;
-}
-```
+## Styling
 
-### Custom onSelect Handler with Validation
+CSS Modules (`IconPickerModal.module.css`) scoped to the component, container queries on `container-name: icon-picker` to adapt grid columns to modal width (not viewport).
 
-```tsx
-const handleOpenIconPicker = () => {
-    const modalId = openModal({
-        title: 'Select Plugin Icon',
-        size: 'lg',
-        content: (
-            <IconPickerModal
-                selectedIcon={formData.icon}
-                onSelect={async (iconName) => {
-                    // Validate icon name against backend API
-                    const isValid = await validateIcon(iconName);
-                    if (isValid) {
-                        setFormData({ ...formData, icon: iconName });
-                    } else {
-                        console.error('Invalid icon selected:', iconName);
-                    }
-                }}
-                onClose={() => closeModal(modalId)}
-            />
-        ),
-        dismissible: true
-    });
-};
-```
+The component's existing SCSS predates the project's 4-tier token rule and references foundation primitives (`--spacing-N`, `--font-size-xs/sm/md`). When adding new component CSS in this codebase, prefer the use-case semantics and curated t-shirt primitives — see [ui-design-token-layers.md](../ui/ui-design-token-layers.md) for the tier rules and [ui-scss-modules.md](../ui/ui-scss-modules.md) for the component-styling workflow.
 
-## Styling System
+## Pre-Use Checklist
 
-### Design Token Usage
+- [ ] Caller is a client component (`'use client'`)
+- [ ] `useModal()` resolves — i.e. caller is inside the global `Providers` tree
+- [ ] `open()` called with `size: 'lg'` or `'xl'`
+- [ ] Returned id captured and passed to `close(id)` inside `onClose`
+- [ ] `selectedIcon` value is the exact PascalCase Lucide export
 
-IconPickerModal uses semantic tokens from `semantic-tokens.css` for all styling. This ensures consistent visual appearance across themes and makes the component automatically adapt to dark mode and custom color schemes.
+## Further Reading
 
-**Key design tokens used:**
-
-- **Colors**: `--color-primary`, `--color-text`, `--color-text-muted`, `--color-border`, `--color-surface`, `--color-background`
-- **Spacing**: `--spacing-4`, `--spacing-5`, `--spacing-7`, `--spacing-12`
-- **Typography**: `--font-size-xs`, `--font-size-sm`, `--font-size-md`
-- **Borders**: `--radius-md`, `--border-width-thin`, `--border-width-medium`
-- **Transitions**: `--transition-base`
-- **Shadows**: `--shadow-sm`, `--focus-shadow`
-
-### CSS Modules Scope
-
-All component styles are scoped using CSS Modules (`IconPickerModal.module.css`). This prevents style conflicts with other components and ensures the picker renders consistently in any context.
-
-### Container Queries for Responsiveness
-
-The component uses container queries instead of viewport media queries, allowing it to respond to the modal's width rather than the viewport size. This ensures proper layout whether the modal is rendered on mobile, desktop, or within constrained contexts like sidebars.
-
-**Responsive breakpoints:**
-
-```css
-/* Default: 2-3 columns (100px minimum) */
-.icon_grid {
-    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
-}
-
-/* 600px+: 3-4 columns (110px minimum) */
-@container icon-picker (min-width: 600px) {
-    .icon_grid {
-        grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
-    }
-}
-
-/* 800px+: 4-5 columns (120px minimum) */
-@container icon-picker (min-width: 800px) {
-    .icon_grid {
-        grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-    }
-}
-```
-
-### Customization Options
-
-The component does not support custom className props to maintain visual consistency. If you need to customize appearance:
-
-1. Use modal size variants (`sm`, `md`, `lg`, `xl`) to control overall width
-2. Modify design tokens in `semantic-tokens.css` to change colors system-wide
-3. Override CSS Module classes using CSS specificity (not recommended—prefer token changes)
-
-## Accessibility Features
-
-### Keyboard Navigation
-
-- **Tab**: Navigate between search input, icon buttons, and Cancel button
-- **Enter/Space**: Select focused icon or activate Cancel button
-- **Escape**: Close modal (when dismissible)
-- **Arrow keys**: Navigate within icon grid (browser default focus behavior)
-
-### Screen Reader Support
-
-- Search input has `aria-label="Search icons"`
-- Each icon button has descriptive `aria-label="Select [IconName] icon"`
-- Icon SVGs have `aria-hidden={true}` to prevent duplicate announcements
-- Results count announces number of matching icons
-- Empty state provides clear "No icons found" messaging
-
-### Focus Management
-
-- All interactive elements have visible focus states using `--focus-outline-width`, `--color-focus`, and `--focus-shadow` design tokens
-- Focus states use high-contrast colors meeting WCAG AA standards
-- Focus outline offset prevents overlap with element borders
-
-### Color Contrast
-
-- Text meets WCAG AA contrast requirements against backgrounds
-- Selected state uses `--color-primary` with sufficient contrast
-- Hover states increase surface elevation without reducing contrast
-
-## Known Limitations
-
-### Performance with Large Icon Sets
-
-Lucide React currently provides 400+ icons. Rendering all icons simultaneously may cause brief delay on low-end devices. The component mitigates this by:
-
-- Using `useMemo` to avoid unnecessary filtering recalculations
-- Rendering icons on-demand (only visible icons in scrollable container)
-- Deferring modal rendering until opened (not pre-rendered)
-
-If performance becomes an issue with larger icon sets, consider implementing virtualization using `react-window` or `react-virtual`.
-
-### Icon Name Format
-
-The component returns icon names exactly as exported from `lucide-react` (PascalCase, e.g., `'CheckCircle'`, not `'check-circle'`). If your API expects kebab-case or other formats, transform the name in your `onSelect` handler:
-
-```tsx
-onSelect={(iconName) => {
-    const kebabCase = iconName
-        .replace(/([A-Z])/g, '-$1')
-        .toLowerCase()
-        .replace(/^-/, '');
-    saveIcon(kebabCase);
-}}
-```
-
-### Modal Size Recommendation
-
-Always use `size: 'lg'` or `size: 'xl'` when opening IconPickerModal. Smaller sizes (`sm`, `md`) will render correctly but provide suboptimal user experience due to reduced grid columns and excessive scrolling.
-
-### No Multi-Select Support
-
-IconPickerModal supports selecting a single icon only. If you need multi-select functionality, implement a custom wrapper component that tracks multiple selections and reopens the modal for additional picks.
-
-## Related Components
-
-- **ModalProvider** - Required modal context provider (see `src/frontend/components/ui/ModalProvider`)
-- **Button** - Used for modal triggers and Cancel action (see `src/frontend/components/ui/Button`)
-- **Input** - Search input field (see `src/frontend/components/ui/Input`)
-
-## Related Documentation
-
-- [SCSS Modules and Component Styling](../../ui/ui-scss-modules.md) - CSS Modules and design token reference
-- [Frontend Architecture](../../frontend-architecture.md) - Component organization patterns
-- [System Theme Management](../../../system/system-theme.md) - Example usage in theme editor (if exists)
-
-## Pre-Implementation Checklist
-
-Before using IconPickerModal in a new feature, verify:
-
-- [ ] `ModalProvider` is present in application root (`app/layout.tsx`)
-- [ ] Modal is opened with `size: 'lg'` or larger for optimal experience
-- [ ] `onSelect` handler updates form state or dispatches Redux action
-- [ ] `onClose` handler calls `closeModal(modalId)` to properly close the modal
-- [ ] Pre-selected icon name (if any) matches Lucide React export exactly (PascalCase)
-- [ ] Icon name is stored and retrieved consistently (not transformed mid-lifecycle)
-- [ ] Component is rendered client-side (uses `'use client'` directive if in Server Component tree)
-- [ ] Tested in both light and dark themes to verify design token usage
-- [ ] Tested with keyboard navigation to ensure focus states are visible
-- [ ] Verified behavior on mobile viewports with touch interactions
-
-## Common Integration Patterns
-
-### Pattern: Icon Preview in Form
-
-Display the selected icon next to the picker button:
-
-```tsx
-import * as LucideIcons from 'lucide-react';
-
-function IconField({ value, onChange }: { value: string; onChange: (name: string) => void }) {
-    const { open: openModal, close: closeModal } = useModal();
-    const IconComponent = LucideIcons[value as keyof typeof LucideIcons] as React.ComponentType<{ size?: number }>;
-
-    const handleOpenPicker = () => {
-        const modalId = openModal({
-            title: 'Select Icon',
-            size: 'lg',
-            content: (
-                <IconPickerModal
-                    selectedIcon={value}
-                    onSelect={onChange}
-                    onClose={() => closeModal(modalId)}
-                />
-            )
-        });
-    };
-
-    return (
-        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-            {IconComponent && <IconComponent size={24} />}
-            <span>{value || 'No icon selected'}</span>
-            <Button onClick={handleOpenPicker}>Change Icon</Button>
-        </div>
-    );
-}
-```
-
-### Pattern: Icon Selection with Save Confirmation
-
-Defer saving until user confirms changes:
-
-```tsx
-function EditMenuItemModal({ item }: { item: MenuItem }) {
-    const [draft, setDraft] = useState({ ...item });
-    const { open: openModal, close: closeModal } = useModal();
-
-    const handleOpenIconPicker = () => {
-        const modalId = openModal({
-            title: 'Select Icon',
-            size: 'lg',
-            content: (
-                <IconPickerModal
-                    selectedIcon={draft.icon}
-                    onSelect={(iconName) => {
-                        setDraft({ ...draft, icon: iconName });
-                    }}
-                    onClose={() => closeModal(modalId)}
-                />
-            )
-        });
-    };
-
-    const handleSave = async () => {
-        await updateMenuItem(draft);
-        // Parent modal closes after save
-    };
-
-    return (
-        <div>
-            <label>Icon</label>
-            <Button onClick={handleOpenIconPicker}>Choose Icon</Button>
-            <p>Selected: {draft.icon}</p>
-            <Button onClick={handleSave}>Save Changes</Button>
-        </div>
-    );
-}
-```
-
-### Pattern: Reset to Default Icon
-
-Allow users to clear selection or reset to system default:
-
-```tsx
-const handleResetIcon = () => {
-    setFormData({ ...formData, icon: 'Sparkles' }); // Default icon
-};
-
-return (
-    <div>
-        <Button onClick={handleOpenIconPicker}>Choose Icon</Button>
-        <Button variant="ghost" onClick={handleResetIcon}>Reset to Default</Button>
-    </div>
-);
-```
-
-## Troubleshooting
-
-### Modal Not Opening
-
-**Symptom:** Clicking the button does nothing, no modal appears.
-
-**Cause:** `ModalProvider` is missing or not wrapping the component tree.
-
-**Solution:** Verify `ModalProvider` is present in `app/layout.tsx`:
-
-```tsx
-<ModalProvider>
-    {children}
-</ModalProvider>
-```
-
-### Icon Not Highlighted
-
-**Symptom:** Previously selected icon doesn't show highlighted state when modal opens.
-
-**Cause:** `selectedIcon` prop value doesn't match Lucide export name (wrong case or spelling).
-
-**Solution:** Ensure icon name is exact PascalCase match:
-
-```tsx
-// Correct
-selectedIcon="CheckCircle"
-
-// Incorrect
-selectedIcon="checkCircle"
-selectedIcon="check-circle"
-```
-
-### Modal Doesn't Close on Selection
-
-**Symptom:** After clicking an icon, the modal stays open.
-
-**Cause:** `onClose` handler not calling `closeModal(modalId)`.
-
-**Solution:** Capture modal ID and pass it to `onClose`:
-
-```tsx
-const modalId = openModal({ /* ... */ });
-
-<IconPickerModal
-    onClose={() => closeModal(modalId)} // Must close the modal
-/>
-```
-
-### Icons Not Rendering
-
-**Symptom:** Grid shows empty buttons with labels but no icon graphics.
-
-**Cause:** Lucide React package not installed or imported incorrectly.
-
-**Solution:** Verify `lucide-react` is installed:
-
-```bash
-npm list lucide-react
-```
-
-If missing, install it:
-
-```bash
-npm install lucide-react
-```
-
-### Search Not Working
-
-**Symptom:** Typing in search box doesn't filter icons.
-
-**Cause:** Component state issue or React rendering problem.
-
-**Solution:** Check browser console for errors. Ensure component is rendered client-side (not SSR) by adding `'use client'` directive to parent component.
+- [react.md](./react.md) — Provider composition, where `ModalProvider` lives
+- [ui-scss-modules.md](../ui/ui-scss-modules.md) — Component styling workflow
+- [ui-design-token-layers.md](../ui/ui-design-token-layers.md) — Token tier rules
+- [ui-accessibility.md](../ui/ui-accessibility.md) — ARIA, focus, keyboard navigation rules
+- [ui-theme.md](../ui/ui-theme.md) — Theme system using IconPickerModal in admin
