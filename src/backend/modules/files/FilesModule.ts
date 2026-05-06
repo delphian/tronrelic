@@ -28,8 +28,9 @@ import { createFilesRouter } from './api/files.routes.js';
 import { requireAdmin } from '../../api/middleware/admin-auth.js';
 
 /**
- * Files module dependencies. Initialized before Pages so PagesModule can
- * receive `IFileService` as a constructor-style dep.
+ * Files module dependencies. Initialized before Pages so the
+ * `/system/files` menu item and `/api/admin/files` routes exist by the
+ * time the Pages editor links to stored files.
  */
 export interface IFilesModuleDependencies {
     database: IDatabaseService;
