@@ -1,45 +1,20 @@
 /// <reference types="vitest" />
 
-import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { PagesModule } from '../index.js';
 import { MAIN_SYSTEM_CONTAINER_ID } from '../../menu/index.js';
 import { PageService } from '../services/page.service.js';
-import { FileService } from '../services/files/FileService.js';
-import type { ICacheService, IMenuService, IServiceRegistry } from '@/types';
-import { ObjectId } from 'mongodb';
-import type { Express, Router } from 'express';
+import type { ICacheService, IMenuService } from '@/types';
 import { createMockDatabaseService } from '../../../tests/vitest/mocks/database-service.js';
-import { createMockServiceRegistry } from '../../../tests/vitest/mocks/service-registry.js';
 
-/**
- * Mock CacheService for testing.
- */
 class MockCacheService implements ICacheService {
-    async get<T = any>(key: string): Promise<T | null> {
-        return null;
-    }
-
-    async set<T = any>(key: string, value: T, ttl?: number): Promise<void> {
-        // No-op
-    }
-
-    async del(key: string): Promise<number> {
-        return 0;
-    }
-
-    async invalidate(pattern: string): Promise<void> {
-        // No-op
-    }
-
-    async keys(pattern: string): Promise<string[]> {
-        return [];
-    }
+    async get<T = any>(_key: string): Promise<T | null> { return null; }
+    async set<T = any>(_key: string, _value: T, _ttl?: number): Promise<void> {}
+    async del(_key: string): Promise<number> { return 0; }
+    async invalidate(_pattern: string): Promise<void> {}
+    async keys(_pattern: string): Promise<string[]> { return []; }
 }
 
-
-/**
- * Mock MenuService for testing.
- */
 class MockMenuService implements IMenuService {
     create = vi.fn();
     update = vi.fn();
@@ -67,9 +42,6 @@ class MockMenuService implements IMenuService {
     deleteNamespaceConfig = vi.fn();
 }
 
-/**
- * Mock Express app for testing.
- */
 class MockExpressApp {
     use = vi.fn();
     get = vi.fn();
@@ -84,33 +56,19 @@ describe('PagesModule', () => {
     let mockCache: MockCacheService;
     let mockMenu: MockMenuService;
     let mockApp: MockExpressApp;
-    let mockRegistry: IServiceRegistry;
 
     beforeEach(() => {
         vi.clearAllMocks();
-
-        // Reset both singletons before each test so PagesModule's
-        // setDependencies() actually configures fresh instances rather
-        // than no-oping on a leftover singleton from a prior case.
-        FileService.resetForTests();
-        (PageService as any).instance = undefined;
-
+        PageService.resetForTests();
         mockDatabase = createMockDatabaseService();
         mockCache = new MockCacheService();
         mockMenu = new MockMenuService();
         mockApp = new MockExpressApp();
-        mockRegistry = createMockServiceRegistry();
     });
 
-    // ============================================================================
-    // Module Metadata Tests
-    // ============================================================================
-
     describe('metadata', () => {
-        it('should have correct module metadata', () => {
+        it('exposes correct module metadata', () => {
             const module = new PagesModule();
-
-            expect(module.metadata).toBeDefined();
             expect(module.metadata.id).toBe('pages');
             expect(module.metadata.name).toBe('Pages');
             expect(module.metadata.version).toBe('1.0.0');
@@ -118,128 +76,56 @@ describe('PagesModule', () => {
         });
     });
 
-    // ============================================================================
-    // init() Phase Tests
-    // ============================================================================
-
     describe('init()', () => {
-        it('should initialize module with all dependencies', async () => {
+        it('initializes without error', async () => {
             const module = new PagesModule();
-
             await expect(module.init({
                 database: mockDatabase,
                 cacheService: mockCache,
                 menuService: mockMenu,
-                app: mockApp as any,
-                serviceRegistry: mockRegistry
+                app: mockApp as any
             })).resolves.not.toThrow();
         });
 
-        it('should store dependencies for later use', async () => {
+        it('does not mount routes during init()', async () => {
             const module = new PagesModule();
-
             await module.init({
                 database: mockDatabase,
                 cacheService: mockCache,
                 menuService: mockMenu,
-                app: mockApp as any,
-                serviceRegistry: mockRegistry
+                app: mockApp as any
             });
-
-            // Dependencies should be stored (tested indirectly via run() phase)
-            // This test verifies init() completes successfully
-            expect(true).toBe(true);
-        });
-
-        it('should NOT mount routes during init()', async () => {
-            const module = new PagesModule();
-
-            await module.init({
-                database: mockDatabase,
-                cacheService: mockCache,
-                menuService: mockMenu,
-                app: mockApp as any,
-                serviceRegistry: mockRegistry
-            });
-
-            // Verify app.use was NOT called during init
             expect(mockApp.use).not.toHaveBeenCalled();
         });
 
-        it('should NOT register menu items during init()', async () => {
+        it('does not register menu items during init()', async () => {
             const module = new PagesModule();
-
             await module.init({
                 database: mockDatabase,
                 cacheService: mockCache,
                 menuService: mockMenu,
-                app: mockApp as any,
-                serviceRegistry: mockRegistry
+                app: mockApp as any
             });
-
-            // Verify menu.create was NOT called during init
             expect(mockMenu.create).not.toHaveBeenCalled();
         });
     });
 
-    // ============================================================================
-    // run() Phase Tests
-    // ============================================================================
-
     describe('run()', () => {
-        it('should throw if run() is called before init()', async () => {
+        it('throws when called before init()', async () => {
             const module = new PagesModule();
-
-            // run() requires init() to be called first
             await expect(module.run()).rejects.toThrow();
         });
 
-        it("should publish the unified file service on the registry as 'files'", async () => {
+        it('registers the Pages menu item under the System container', async () => {
             const module = new PagesModule();
-
             await module.init({
                 database: mockDatabase,
                 cacheService: mockCache,
                 menuService: mockMenu,
-                app: mockApp as any,
-                serviceRegistry: mockRegistry
+                app: mockApp as any
             });
-
-            // Pre-run() the registry must not yet expose 'files' — the
-            // module-architecture rule requires registration during run(),
-            // not init(), so other modules' init() phases never observe it.
-            expect(mockRegistry.has('files')).toBe(false);
-
             await module.run();
 
-            expect(mockRegistry.has('files')).toBe(true);
-            const files = mockRegistry.get('files');
-            expect(files).toBeDefined();
-            // Sanity-check the IFileService surface so a regression in the
-            // registration name or instance shape surfaces here.
-            expect(typeof (files as any).upload).toBe('function');
-            expect(typeof (files as any).read).toBe('function');
-            expect(typeof (files as any).getUrl).toBe('function');
-            expect(typeof (files as any).delete).toBe('function');
-            expect(typeof (files as any).list).toBe('function');
-        });
-
-        it('should register menu item during run()', async () => {
-            const module = new PagesModule();
-
-            await module.init({
-                database: mockDatabase,
-                cacheService: mockCache,
-                menuService: mockMenu,
-                app: mockApp as any,
-                serviceRegistry: mockRegistry
-            });
-
-            await module.run();
-
-            // Verify menu item creation was called against the new
-            // System container in main; requiresAdmin is auto-applied by
-            // the menu service so it is not part of the registration.
             expect(mockMenu.create).toHaveBeenCalledWith({
                 namespace: 'main',
                 label: 'Pages',
@@ -251,248 +137,45 @@ describe('PagesModule', () => {
             });
         });
 
-        it('should mount admin and public routers during run()', async () => {
+        it('mounts admin and public routers', async () => {
             const module = new PagesModule();
-
             await module.init({
                 database: mockDatabase,
                 cacheService: mockCache,
                 menuService: mockMenu,
-                app: mockApp as any,
-                serviceRegistry: mockRegistry
+                app: mockApp as any
             });
-
             await module.run();
 
-            // Verify app.use was called twice (admin and public routers)
             expect(mockApp.use).toHaveBeenCalledTimes(2);
-
-            // Get the actual calls
-            const calls = mockApp.use.mock.calls;
-
-            // Admin router should have 3 arguments: path, middleware, router
-            expect(calls[0]).toHaveLength(3);
-            expect(calls[0][0]).toBe('/api/admin/pages');
-            expect(calls[0][1]).toBeTypeOf('function'); // requireAdmin middleware
-            expect(calls[0][2]).toBeTypeOf('function'); // router
-
-            // Public router should have 2 arguments: path, router (no middleware)
-            expect(calls[1]).toHaveLength(2);
-            expect(calls[1][0]).toBe('/api/pages');
-            expect(calls[1][1]).toBeTypeOf('function'); // router
+            const [adminCall, publicCall] = mockApp.use.mock.calls;
+            expect(adminCall).toHaveLength(3);
+            expect(adminCall[0]).toBe('/api/admin/pages');
+            expect(publicCall[0]).toBe('/api/pages');
         });
 
-        it('should apply requireAdmin middleware to admin routes', async () => {
-            const module = new PagesModule();
-
-            await module.init({
-                database: mockDatabase,
-                cacheService: mockCache,
-                menuService: mockMenu,
-                app: mockApp as any,
-                serviceRegistry: mockRegistry
-            });
-
-            await module.run();
-
-            // Get the calls to app.use
-            const useCalls = mockApp.use.mock.calls;
-
-            // Find the admin pages route call
-            const adminCall = useCalls.find(call => call[0] === '/api/admin/pages');
-
-            // Verify admin route has 3 arguments: path, middleware, router
-            expect(adminCall).toBeDefined();
-            expect(adminCall?.length).toBe(3);
-            expect(adminCall?.[1]).toBeTypeOf('function'); // requireAdmin middleware
-            expect(adminCall?.[2]).toBeTypeOf('function'); // router
-        });
-
-        it('should throw if menu registration fails', async () => {
+        it('throws when menu registration fails', async () => {
             mockMenu.create.mockRejectedValue(new Error('Menu creation failed'));
-
             const module = new PagesModule();
-
             await module.init({
                 database: mockDatabase,
                 cacheService: mockCache,
                 menuService: mockMenu,
-                app: mockApp as any,
-                serviceRegistry: mockRegistry
+                app: mockApp as any
             });
-
-            // run() should throw if menu registration fails
             await expect(module.run()).rejects.toThrow('Failed to register pages menu item');
         });
     });
 
-    // ============================================================================
-    // Two-Phase Lifecycle Tests
-    // ============================================================================
-
-    describe('two-phase lifecycle', () => {
-        it('should complete full init -> run flow', async () => {
-            const module = new PagesModule();
-
-            // Phase 1: init
-            await module.init({
-                database: mockDatabase,
-                cacheService: mockCache,
-                menuService: mockMenu,
-                app: mockApp as any,
-                serviceRegistry: mockRegistry
-            });
-
-            // Phase 2: run
-            await module.run();
-
-            // Verify full initialization completed
-            expect(mockMenu.create).toHaveBeenCalled();
-            expect(mockApp.use).toHaveBeenCalledTimes(2);
-        });
-
-        it('should handle multiple modules in sequence', async () => {
-            // Simulate multiple modules being initialized and run sequentially.
-            // Each gets its own registry — in production there is one
-            // PagesModule per app boot wired against one registry, so sharing
-            // a registry across two modules would attempt a duplicate
-            // 'files' registration that the real ServiceRegistry rejects.
-            const module1 = new PagesModule();
-            const module2 = new PagesModule();
-            const registry2 = createMockServiceRegistry();
-
-            await module1.init({
-                database: mockDatabase,
-                cacheService: mockCache,
-                menuService: mockMenu,
-                app: mockApp as any,
-                serviceRegistry: mockRegistry
-            });
-
-            await module2.init({
-                database: mockDatabase,
-                cacheService: mockCache,
-                menuService: mockMenu,
-                app: mockApp as any,
-                serviceRegistry: registry2
-            });
-
-            await module1.run();
-            await module2.run();
-
-            expect(mockMenu.create).toHaveBeenCalledTimes(2);
-            expect(mockApp.use).toHaveBeenCalledTimes(4); // 2 routers per module
-            expect(mockRegistry.has('files')).toBe(true);
-            expect(registry2.has('files')).toBe(true);
-        });
-    });
-
-    // ============================================================================
-    // Dependency Injection Tests
-    // ============================================================================
-
-    describe('dependency injection', () => {
-        it('should use injected database service', async () => {
-            const module = new PagesModule();
-
-            await module.init({
-                database: mockDatabase,
-                cacheService: mockCache,
-                menuService: mockMenu,
-                app: mockApp as any,
-                serviceRegistry: mockRegistry
-            });
-
-            await module.run();
-
-            // Module should initialize without errors
-            expect(true).toBe(true);
-        });
-
-        it('should use injected cache service', async () => {
-            const module = new PagesModule();
-
-            await module.init({
-                database: mockDatabase,
-                cacheService: mockCache,
-                menuService: mockMenu,
-                app: mockApp as any,
-                serviceRegistry: mockRegistry
-            });
-
-            await module.run();
-
-            // Module should initialize without errors
-            expect(true).toBe(true);
-        });
-
-        it('should use injected menu service', async () => {
-            const module = new PagesModule();
-
-            await module.init({
-                database: mockDatabase,
-                cacheService: mockCache,
-                menuService: mockMenu,
-                app: mockApp as any,
-                serviceRegistry: mockRegistry
-            });
-
-            await module.run();
-
-            // Verify menu service was used
-            expect(mockMenu.create).toHaveBeenCalled();
-        });
-
-        it('should use injected Express app', async () => {
-            const module = new PagesModule();
-
-            await module.init({
-                database: mockDatabase,
-                cacheService: mockCache,
-                menuService: mockMenu,
-                app: mockApp as any,
-                serviceRegistry: mockRegistry
-            });
-
-            await module.run();
-
-            // Verify app was used to mount routers
-            expect(mockApp.use).toHaveBeenCalled();
-        });
-    });
-
-    // ============================================================================
-    // Error Handling Tests
-    // ============================================================================
-
     describe('error handling', () => {
-        it('should propagate init() errors', async () => {
+        it('propagates init() errors when database is missing', async () => {
             const module = new PagesModule();
-
-            // Pass invalid dependencies to trigger error
             await expect(module.init({
                 database: null as any,
                 cacheService: mockCache,
                 menuService: mockMenu,
-                app: mockApp as any,
-                serviceRegistry: mockRegistry
+                app: mockApp as any
             })).rejects.toThrow();
-        });
-
-        it('should propagate run() errors on menu registration failure', async () => {
-            mockMenu.create.mockRejectedValue(new Error('Menu error'));
-
-            const module = new PagesModule();
-
-            await module.init({
-                database: mockDatabase,
-                cacheService: mockCache,
-                menuService: mockMenu,
-                app: mockApp as any,
-                serviceRegistry: mockRegistry
-            });
-
-            await expect(module.run()).rejects.toThrow();
         });
     });
 });

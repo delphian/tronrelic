@@ -1,0 +1,55 @@
+/**
+ * Files admin page styles.
+ *
+ * Tabbed layout matching the pattern established by `/system/users` and
+ * `/system/pages`. Tab strip on top, content area below. Tokens follow
+ * the four-tier rule from `ui-design-token-layers.md` — use-case
+ * semantics first, curated t-shirt primitives where no semantic fits,
+ * design constants for radii/borders/shadows.
+ */
+
+.container {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-lg);
+    container-type: inline-size;
+    container-name: files-admin;
+}
+
+.tabs {
+    display: flex;
+    gap: var(--gap-sm);
+    border-bottom: var(--border-width-thin) solid var(--color-border);
+}
+
+.tab,
+.tab__active {
+    padding: var(--gap-sm) var(--gap-md);
+    background: none;
+    border: none;
+    border-bottom: var(--border-width-medium) solid transparent;
+    cursor: pointer;
+    font-size: var(--font-size-body-lg);
+    font-weight: var(--font-weight-medium);
+    color: var(--color-text-muted);
+    transition: color var(--transition-base), border-color var(--transition-base);
+}
+
+.tab:hover {
+    color: var(--color-text);
+}
+
+.tab:focus-visible,
+.tab__active:focus-visible {
+    outline: var(--focus-outline-width) solid var(--color-focus);
+    outline-offset: var(--focus-outline-offset);
+}
+
+.tab__active {
+    color: var(--color-primary);
+    border-bottom-color: var(--color-primary);
+}
+
+.content {
+    flex: 1;
+}

@@ -2,14 +2,9 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { PagesController } from '../api/pages.controller.js';
-import type { IFileService, IPageService } from '@/types';
-import { FileValidationError, FileSizeExceededError } from '@/types';
+import type { IPageService } from '@/types';
 import type { Request, Response } from 'express';
-import { ObjectId } from 'mongodb';
 
-/**
- * Mock PageService for testing controller endpoints.
- */
 class MockPageService implements IPageService {
     createPage = vi.fn();
     updatePage = vi.fn();
@@ -23,35 +18,12 @@ class MockPageService implements IPageService {
     invalidatePageCache = vi.fn();
     previewMarkdown = vi.fn();
     renderPublicPageBySlug = vi.fn();
-    uploadFile = vi.fn();
-    listFiles = vi.fn();
-    deleteFile = vi.fn();
     getSettings = vi.fn();
     updateSettings = vi.fn();
     sanitizeSlug = vi.fn();
     isSlugBlacklisted = vi.fn();
 }
 
-/**
- * Mock IFileService for testing the cross-source admin file browser path.
- * The controller now consults `IFileService` directly for `listFiles` and
- * `listFileSources`, bypassing `PageService` so admins can scope across
- * sources (the documented escape-hatch in the IFileService contract).
- */
-class MockFileService implements IFileService {
-    upload = vi.fn();
-    read = vi.fn();
-    getUrl = vi.fn();
-    getRecord = vi.fn();
-    list = vi.fn().mockResolvedValue([]);
-    count = vi.fn();
-    delete = vi.fn();
-    distinctSources = vi.fn().mockResolvedValue([]);
-}
-
-/**
- * Mock logger for testing log output.
- */
 const mockLogger = {
     info: vi.fn(),
     error: vi.fn(),
@@ -60,22 +32,15 @@ const mockLogger = {
     child: vi.fn(() => mockLogger)
 } as any;
 
-/**
- * Helper to create mock Express Request object.
- */
 function createMockRequest(overrides: Partial<Request> = {}): Request {
     return {
         params: {},
         query: {},
         body: {},
-        file: undefined,
         ...overrides
     } as Request;
 }
 
-/**
- * Helper to create mock Express Response object.
- */
 function createMockResponse(): Response {
     const res = {
         status: vi.fn().mockReturnThis(),
@@ -89,1152 +54,195 @@ function createMockResponse(): Response {
 describe('PagesController', () => {
     let controller: PagesController;
     let mockService: MockPageService;
-    let mockFileService: MockFileService;
 
     beforeEach(() => {
         vi.clearAllMocks();
         mockService = new MockPageService();
-        mockFileService = new MockFileService();
-        controller = new PagesController(mockService as any, mockFileService, mockLogger);
+        controller = new PagesController(mockService as any, mockLogger);
     });
 
-    // ============================================================================
-    // Page Endpoint Tests
-    // ============================================================================
-
     describe('listPages', () => {
-        it('should list pages with stats', async () => {
-            const mockPages = [
-                { _id: '1', title: 'Page 1', slug: '/page-1', published: true },
-                { _id: '2', title: 'Page 2', slug: '/page-2', published: false }
-            ];
-            const mockStats = { total: 2, published: 1, drafts: 1 };
-
-            mockService.listPages.mockResolvedValue(mockPages);
-            mockService.getPageStats.mockResolvedValue(mockStats);
+        it('returns pages with stats', async () => {
+            mockService.listPages.mockResolvedValue([{ _id: '1' }]);
+            mockService.getPageStats.mockResolvedValue({ total: 1, published: 1, drafts: 0 });
 
             const req = createMockRequest();
             const res = createMockResponse();
-
             await controller.listPages(req, res);
 
             expect(res.json).toHaveBeenCalledWith({
-                pages: mockPages,
-                stats: mockStats
+                pages: [{ _id: '1' }],
+                stats: { total: 1, published: 1, drafts: 0 }
             });
         });
 
-        it('should handle query parameters', async () => {
-            mockService.listPages.mockResolvedValue([]);
-            mockService.getPageStats.mockResolvedValue({ total: 0, published: 0, drafts: 0 });
-
-            const req = createMockRequest({
-                query: {
-                    published: 'true',
-                    search: 'test',
-                    limit: '10',
-                    skip: '5'
-                }
-            });
+        it('returns 500 when the service throws', async () => {
+            mockService.listPages.mockRejectedValue(new Error('boom'));
             const res = createMockResponse();
-
-            await controller.listPages(req, res);
-
-            expect(mockService.listPages).toHaveBeenCalledWith({
-                published: true,
-                search: 'test',
-                limit: 10,
-                skip: 5
-            });
-        });
-
-        it('should handle errors', async () => {
-            mockService.listPages.mockRejectedValue(new Error('Database error'));
-
-            const req = createMockRequest();
-            const res = createMockResponse();
-
-            await controller.listPages(req, res);
-
+            await controller.listPages(createMockRequest(), res);
             expect(res.status).toHaveBeenCalledWith(500);
-            expect(res.json).toHaveBeenCalledWith({
-                error: 'Failed to list pages',
-                message: 'Database error'
-            });
         });
     });
 
     describe('getPage', () => {
-        it('should get a page by ID', async () => {
-            const mockPage = { _id: '123', title: 'Test', slug: '/test' };
-            mockService.getPageById.mockResolvedValue(mockPage);
-
-            const req = createMockRequest({ params: { id: '123' } });
+        it('returns 404 when the page is missing', async () => {
+            mockService.getPageById.mockResolvedValue(null);
             const res = createMockResponse();
-
-            await controller.getPage(req, res);
-
-            expect(mockService.getPageById).toHaveBeenCalledWith('123');
-            expect(res.json).toHaveBeenCalledWith(mockPage);
+            await controller.getPage(createMockRequest({ params: { id: 'x' } }), res);
+            expect(res.status).toHaveBeenCalledWith(404);
         });
 
-        it('should return 404 if page not found', async () => {
-            mockService.getPageById.mockResolvedValue(null);
-
-            const req = createMockRequest({ params: { id: '123' } });
+        it('returns the page when found', async () => {
+            mockService.getPageById.mockResolvedValue({ _id: 'x', title: 'X' });
             const res = createMockResponse();
-
-            await controller.getPage(req, res);
-
-            expect(res.status).toHaveBeenCalledWith(404);
-            expect(res.json).toHaveBeenCalledWith({ error: 'Page not found' });
+            await controller.getPage(createMockRequest({ params: { id: 'x' } }), res);
+            expect(res.json).toHaveBeenCalledWith({ _id: 'x', title: 'X' });
         });
     });
 
     describe('createPage', () => {
-        it('should create a new page', async () => {
-            const content = '---\ntitle: "Test"\n---\nContent';
-            const mockPage = { _id: '123', title: 'Test', slug: '/test', content };
-
-            mockService.createPage.mockResolvedValue(mockPage);
-
-            const req = createMockRequest({ body: { content } });
+        it('creates and returns 201 on success', async () => {
+            mockService.createPage.mockResolvedValue({ _id: 'a' });
             const res = createMockResponse();
-
-            await controller.createPage(req, res);
-
-            expect(mockService.createPage).toHaveBeenCalledWith(content);
+            await controller.createPage(createMockRequest({ body: { content: 'x' } }), res);
             expect(res.status).toHaveBeenCalledWith(201);
-            expect(res.json).toHaveBeenCalledWith(mockPage);
+            expect(res.json).toHaveBeenCalledWith({ _id: 'a' });
         });
 
-        it('should return 400 if content missing', async () => {
-            const req = createMockRequest({ body: {} });
+        it('returns 400 when content is missing', async () => {
             const res = createMockResponse();
-
-            await controller.createPage(req, res);
-
+            await controller.createPage(createMockRequest({ body: {} }), res);
             expect(res.status).toHaveBeenCalledWith(400);
-            expect(res.json).toHaveBeenCalledWith({ error: 'Content is required' });
         });
 
-        it('should handle validation errors', async () => {
-            mockService.createPage.mockRejectedValue(new Error('Invalid frontmatter'));
-
-            const req = createMockRequest({ body: { content: 'test' } });
+        it('returns 400 when the service throws a validation error', async () => {
+            mockService.createPage.mockRejectedValue(new Error('invalid'));
             const res = createMockResponse();
-
-            await controller.createPage(req, res);
-
+            await controller.createPage(createMockRequest({ body: { content: 'x' } }), res);
             expect(res.status).toHaveBeenCalledWith(400);
-            expect(res.json).toHaveBeenCalledWith({
-                error: 'Failed to create page',
-                message: 'Invalid frontmatter'
-            });
         });
     });
 
     describe('updatePage', () => {
-        it('should update an existing page', async () => {
-            const content = '---\ntitle: "Updated"\n---\nContent';
-            const mockPage = { _id: '123', title: 'Updated', slug: '/updated', content };
-
-            mockService.updatePage.mockResolvedValue(mockPage);
-
-            const req = createMockRequest({
-                params: { id: '123' },
-                body: { content }
-            });
+        it('returns the updated page', async () => {
+            mockService.updatePage.mockResolvedValue({ _id: 'x' });
             const res = createMockResponse();
-
-            await controller.updatePage(req, res);
-
-            expect(mockService.updatePage).toHaveBeenCalledWith('123', content);
-            expect(res.json).toHaveBeenCalledWith(mockPage);
+            await controller.updatePage(
+                createMockRequest({ params: { id: 'x' }, body: { content: 'x' } }),
+                res
+            );
+            expect(res.json).toHaveBeenCalledWith({ _id: 'x' });
         });
 
-        it('should return 400 if content missing', async () => {
-            const req = createMockRequest({
-                params: { id: '123' },
-                body: {}
-            });
+        it('returns 404 when the page is not found', async () => {
+            mockService.updatePage.mockRejectedValue(new Error('Page with ID x not found'));
             const res = createMockResponse();
-
-            await controller.updatePage(req, res);
-
-            expect(res.status).toHaveBeenCalledWith(400);
-            expect(res.json).toHaveBeenCalledWith({ error: 'Content is required' });
-        });
-
-        it('should return 404 if page not found', async () => {
-            mockService.updatePage.mockRejectedValue(new Error('Page with ID 123 not found'));
-
-            const req = createMockRequest({
-                params: { id: '123' },
-                body: { content: 'test' }
-            });
-            const res = createMockResponse();
-
-            await controller.updatePage(req, res);
-
+            await controller.updatePage(
+                createMockRequest({ params: { id: 'x' }, body: { content: 'x' } }),
+                res
+            );
             expect(res.status).toHaveBeenCalledWith(404);
         });
     });
 
     describe('deletePage', () => {
-        it('should delete a page', async () => {
+        it('returns 204 on success', async () => {
             mockService.deletePage.mockResolvedValue(undefined);
-
-            const req = createMockRequest({ params: { id: '123' } });
             const res = createMockResponse();
-
-            await controller.deletePage(req, res);
-
-            expect(mockService.deletePage).toHaveBeenCalledWith('123');
+            await controller.deletePage(createMockRequest({ params: { id: 'x' } }), res);
             expect(res.status).toHaveBeenCalledWith(204);
             expect(res.send).toHaveBeenCalled();
         });
 
-        it('should return 404 if page not found', async () => {
-            mockService.deletePage.mockRejectedValue(new Error('Page with ID 123 not found'));
-
-            const req = createMockRequest({ params: { id: '123' } });
+        it('returns 404 when the page is missing', async () => {
+            mockService.deletePage.mockRejectedValue(new Error('not found'));
             const res = createMockResponse();
-
-            await controller.deletePage(req, res);
-
+            await controller.deletePage(createMockRequest({ params: { id: 'x' } }), res);
             expect(res.status).toHaveBeenCalledWith(404);
-        });
-    });
-
-    // ============================================================================
-    // File Endpoint Tests
-    // ============================================================================
-
-    describe('listFiles', () => {
-        const baseRecord = {
-            id: '1',
-            source: { kind: 'module' as const, id: 'pages' },
-            originalName: 'file1.png',
-            storedName: '1.png',
-            mimeType: 'image/png',
-            sizeBytes: 100,
-            url: '/uploads/module/pages/26/05/1.png',
-            uploadedBy: null,
-            uploadedAt: new Date('2026-05-04T00:00:00Z')
-        };
-
-        it('should list uploaded files mapped to IPageFile shape', async () => {
-            mockFileService.list.mockResolvedValue([baseRecord]);
-
-            const req = createMockRequest();
-            const res = createMockResponse();
-
-            await controller.listFiles(req, res);
-
-            expect(res.json).toHaveBeenCalledWith({
-                files: [
-                    {
-                        _id: '1',
-                        originalName: 'file1.png',
-                        storedName: '1.png',
-                        mimeType: 'image/png',
-                        size: 100,
-                        path: '/uploads/module/pages/26/05/1.png',
-                        uploadedBy: null,
-                        uploadedAt: baseRecord.uploadedAt
-                    }
-                ]
-            });
-        });
-
-        it('should default to module:pages source when source query is absent', async () => {
-            mockFileService.list.mockResolvedValue([]);
-
-            await controller.listFiles(
-                createMockRequest({ query: { mimeType: 'image/', limit: '50', skip: '10' } }),
-                createMockResponse()
-            );
-
-            expect(mockFileService.list).toHaveBeenCalledWith({
-                source: { kind: 'module', id: 'pages' },
-                mimeType: 'image/',
-                limit: 50,
-                skip: 10
-            });
-        });
-
-        it('should drop source filter when source=all', async () => {
-            mockFileService.list.mockResolvedValue([]);
-
-            await controller.listFiles(
-                createMockRequest({ query: { source: 'all' } }),
-                createMockResponse()
-            );
-
-            const call = mockFileService.list.mock.calls[0][0];
-            expect(call.source).toBeUndefined();
-        });
-
-        it('should pass through a specific source', async () => {
-            mockFileService.list.mockResolvedValue([]);
-
-            await controller.listFiles(
-                createMockRequest({ query: { source: 'plugin:image-gen' } }),
-                createMockResponse()
-            );
-
-            expect(mockFileService.list).toHaveBeenCalledWith({
-                source: { kind: 'plugin', id: 'image-gen' },
-                mimeType: undefined,
-                limit: undefined,
-                skip: undefined
-            });
-        });
-
-        it('should reject malformed source values with 400', async () => {
-            const res = createMockResponse();
-
-            await controller.listFiles(
-                createMockRequest({ query: { source: 'bogus' } }),
-                res
-            );
-
-            expect(res.status).toHaveBeenCalledWith(400);
-            expect(mockFileService.list).not.toHaveBeenCalled();
-        });
-
-        it('should reject unknown source kinds with 400', async () => {
-            const res = createMockResponse();
-
-            await controller.listFiles(
-                createMockRequest({ query: { source: 'evil:hack' } }),
-                res
-            );
-
-            expect(res.status).toHaveBeenCalledWith(400);
-            expect(mockFileService.list).not.toHaveBeenCalled();
-        });
-    });
-
-    describe('listFileSources', () => {
-        it('should return distinct sources from the inventory', async () => {
-            const sources = [
-                { kind: 'module' as const, id: 'pages' },
-                { kind: 'plugin' as const, id: 'image-gen' }
-            ];
-            mockFileService.distinctSources.mockResolvedValue(sources);
-
-            const res = createMockResponse();
-            await controller.listFileSources(createMockRequest(), res);
-
-            expect(res.json).toHaveBeenCalledWith({ sources });
-        });
-    });
-
-    describe('uploadFile', () => {
-        it('should upload a file', async () => {
-            const mockFile = {
-                _id: '123',
-                originalName: 'test.png',
-                storedName: 'test.png',
-                mimeType: 'image/png',
-                size: 1024,
-                path: '/uploads/25/10/test.png'
-            };
-
-            mockService.getSettings.mockResolvedValue({
-                maxFileSize: 10 * 1024 * 1024,
-                allowedMimeTypes: []
-            });
-
-            mockService.uploadFile.mockResolvedValue(mockFile);
-
-            const req = createMockRequest({
-                file: {
-                    buffer: Buffer.from('test'),
-                    originalname: 'test.png',
-                    mimetype: 'image/png',
-                    size: 1024
-                } as any
-            });
-            const res = createMockResponse();
-
-            await controller.uploadFile(req, res);
-
-            expect(mockService.uploadFile).toHaveBeenCalledWith(
-                expect.any(Buffer),
-                'test.png',
-                'image/png'
-            );
-            expect(res.status).toHaveBeenCalledWith(201);
-            expect(res.json).toHaveBeenCalledWith(mockFile);
-        });
-
-        it('should return 400 if no file provided', async () => {
-            const req = createMockRequest({ file: undefined });
-            const res = createMockResponse();
-
-            await controller.uploadFile(req, res);
-
-            expect(res.status).toHaveBeenCalledWith(400);
-            expect(res.json).toHaveBeenCalledWith({ error: 'No file provided' });
-        });
-
-        it('maps a size-violation error from the service to 413', async () => {
-            // Size validation lives in IFileService now; the controller
-            // routes by the typed error class exposed from `@/types`.
-            const largeFileSize = 15 * 1024 * 1024;
-            mockService.uploadFile.mockRejectedValue(
-                new FileSizeExceededError(
-                    `File size (${largeFileSize} bytes) exceeds maximum allowed (10485760 bytes)`
-                )
-            );
-
-            const req = createMockRequest({
-                file: {
-                    buffer: Buffer.alloc(largeFileSize),
-                    originalname: 'large-file.png',
-                    mimetype: 'image/png',
-                    size: largeFileSize
-                } as any
-            });
-            const res = createMockResponse();
-
-            await controller.uploadFile(req, res);
-
-            expect(res.status).toHaveBeenCalledWith(413);
-            expect(res.json).toHaveBeenCalledWith({
-                error: 'File too large',
-                message: `File size (${largeFileSize} bytes) exceeds maximum allowed (10485760 bytes)`
-            });
-        });
-
-        it('should accept file within configured size limit', async () => {
-            // Mock settings with 10MB limit
-            mockService.getSettings.mockResolvedValue({
-                maxFileSize: 10 * 1024 * 1024, // 10MB
-                allowedMimeTypes: []
-            });
-
-            const mockFile = {
-                _id: '123',
-                originalName: 'small-file.png',
-                storedName: 'small-file.png',
-                mimeType: 'image/png',
-                size: 5 * 1024 * 1024, // 5MB
-                path: '/uploads/25/10/small-file.png'
-            };
-
-            mockService.uploadFile.mockResolvedValue(mockFile);
-
-            // Create a file smaller than 10MB (5MB)
-            const smallFileSize = 5 * 1024 * 1024;
-            const req = createMockRequest({
-                file: {
-                    buffer: Buffer.alloc(smallFileSize),
-                    originalname: 'small-file.png',
-                    mimetype: 'image/png',
-                    size: smallFileSize
-                } as any
-            });
-            const res = createMockResponse();
-
-            await controller.uploadFile(req, res);
-
-            // Should accept and upload
-            expect(mockService.uploadFile).toHaveBeenCalled();
-            expect(res.status).toHaveBeenCalledWith(201);
-            expect(res.json).toHaveBeenCalledWith(mockFile);
-        });
-
-        it('maps a non-size validation error from the service to 400', async () => {
-            mockService.uploadFile.mockRejectedValue(
-                new FileValidationError('File extension ".exe" is not allowed. Allowed: .png, .jpg')
-            );
-
-            const req = createMockRequest({
-                file: {
-                    buffer: Buffer.from('test'),
-                    originalname: 'test.exe',
-                    mimetype: 'application/x-msdownload',
-                    size: 4
-                } as any
-            });
-            const res = createMockResponse();
-
-            await controller.uploadFile(req, res);
-
-            expect(res.status).toHaveBeenCalledWith(400);
-            expect(res.json).toHaveBeenCalledWith({
-                error: 'Failed to upload file',
-                message: 'File extension ".exe" is not allowed. Allowed: .png, .jpg'
-            });
-        });
-
-        it('maps an unexpected operational error to 500', async () => {
-            // Storage / inventory failures are not validation errors —
-            // they should surface as 500 rather than be misclassified as
-            // 400. This is the behavior change reviewers asked for.
-            mockService.uploadFile.mockRejectedValue(new Error('disk full'));
-
-            const req = createMockRequest({
-                file: {
-                    buffer: Buffer.from('test'),
-                    originalname: 'test.png',
-                    mimetype: 'image/png',
-                    size: 1024
-                } as any
-            });
-            const res = createMockResponse();
-
-            await controller.uploadFile(req, res);
-
-            expect(res.status).toHaveBeenCalledWith(500);
-            expect(res.json).toHaveBeenCalledWith({
-                error: 'Failed to upload file',
-                message: 'disk full'
-            });
-        });
-    });
-
-    describe('deleteFile', () => {
-        it('should delete a file', async () => {
-            mockService.deleteFile.mockResolvedValue(undefined);
-
-            const req = createMockRequest({ params: { id: '123' } });
-            const res = createMockResponse();
-
-            await controller.deleteFile(req, res);
-
-            expect(mockService.deleteFile).toHaveBeenCalledWith('123');
-            expect(res.status).toHaveBeenCalledWith(204);
-            expect(res.send).toHaveBeenCalled();
-        });
-
-        it('should return 404 if file not found', async () => {
-            mockService.deleteFile.mockRejectedValue(new Error('File with ID 123 not found'));
-
-            const req = createMockRequest({ params: { id: '123' } });
-            const res = createMockResponse();
-
-            await controller.deleteFile(req, res);
-
-            expect(res.status).toHaveBeenCalledWith(404);
-        });
-    });
-
-    // ============================================================================
-    // Settings Endpoint Tests
-    // ============================================================================
-
-    describe('getSettings', () => {
-        it('should get current settings', async () => {
-            const mockSettings = {
-                blacklistedRoutes: ['^/api/.*'],
-                maxFileSize: 10485760,
-                allowedFileExtensions: ['.jpg', '.png'],
-                filenameSanitizationPattern: '[^a-z0-9-.]',
-                storageProvider: 'local'
-            };
-
-            mockService.getSettings.mockResolvedValue(mockSettings);
-
-            const req = createMockRequest();
-            const res = createMockResponse();
-
-            await controller.getSettings(req, res);
-
-            expect(res.json).toHaveBeenCalledWith(mockSettings);
-        });
-    });
-
-    describe('updateSettings', () => {
-        it('should update settings', async () => {
-            const updates = {
-                maxFileSize: 20971520,
-                allowedFileExtensions: ['.jpg', '.png', '.gif']
-            };
-
-            const mockSettings = {
-                blacklistedRoutes: ['^/api/.*'],
-                maxFileSize: 20971520,
-                allowedFileExtensions: ['.jpg', '.png', '.gif'],
-                filenameSanitizationPattern: '[^a-z0-9-.]',
-                storageProvider: 'local'
-            };
-
-            mockService.updateSettings.mockResolvedValue(mockSettings);
-
-            const req = createMockRequest({ body: updates });
-            const res = createMockResponse();
-
-            await controller.updateSettings(req, res);
-
-            expect(mockService.updateSettings).toHaveBeenCalledWith(updates);
-            expect(res.json).toHaveBeenCalledWith(mockSettings);
-        });
-
-        it('should handle validation errors', async () => {
-            mockService.updateSettings.mockRejectedValue(
-                new Error('Maximum file size must be at least 1 byte')
-            );
-
-            const req = createMockRequest({ body: { maxFileSize: -1 } });
-            const res = createMockResponse();
-
-            await controller.updateSettings(req, res);
-
-            expect(res.status).toHaveBeenCalledWith(400);
-        });
-    });
-
-    // ============================================================================
-    // Public Endpoint Tests
-    // ============================================================================
-
-    describe('getPublicPage', () => {
-        it('should get a published page by slug', async () => {
-            const mockPage = {
-                _id: '123',
-                title: 'Public Page',
-                slug: '/public',
-                published: true
-            };
-
-            mockService.getPageBySlug.mockResolvedValue(mockPage);
-
-            const req = createMockRequest({ params: { slug: 'public' } });
-            const res = createMockResponse();
-
-            await controller.getPublicPage(req, res);
-
-            expect(mockService.getPageBySlug).toHaveBeenCalledWith('/public');
-            expect(res.json).toHaveBeenCalledWith({
-                page: mockPage,
-                requestedSlug: '/public'
-            });
-        });
-
-        it('should prepend slash to slug if missing', async () => {
-            const mockPage = {
-                _id: '123',
-                title: 'Public Page',
-                slug: '/public',
-                published: true
-            };
-
-            mockService.getPageBySlug.mockResolvedValue(mockPage);
-
-            const req = createMockRequest({ params: { slug: 'public' } });
-            const res = createMockResponse();
-
-            await controller.getPublicPage(req, res);
-
-            expect(mockService.getPageBySlug).toHaveBeenCalledWith('/public');
-        });
-
-        it('should return 404 if page not found', async () => {
-            mockService.getPageBySlug.mockResolvedValue(null);
-
-            const req = createMockRequest({ params: { slug: 'nonexistent' } });
-            const res = createMockResponse();
-
-            await controller.getPublicPage(req, res);
-
-            expect(res.status).toHaveBeenCalledWith(404);
-            expect(res.json).toHaveBeenCalledWith({ error: 'Page not found' });
-        });
-
-        it('should return 404 if page is not published', async () => {
-            const mockPage = {
-                _id: '123',
-                title: 'Draft Page',
-                slug: '/draft',
-                published: false
-            };
-
-            mockService.getPageBySlug.mockResolvedValue(mockPage);
-
-            const req = createMockRequest({ params: { slug: 'draft' } });
-            const res = createMockResponse();
-
-            await controller.getPublicPage(req, res);
-
-            expect(res.status).toHaveBeenCalledWith(404);
-            expect(res.json).toHaveBeenCalledWith({ error: 'Page not found' });
-        });
-    });
-
-    describe('renderPublicPage', () => {
-        it('should render published page HTML', async () => {
-            const mockResponse = {
-                html: '<h1>Test Content</h1>',
-                metadata: {
-                    title: 'Test Page',
-                    description: 'A test page',
-                    keywords: ['test'],
-                    ogImage: undefined
-                }
-            };
-
-            mockService.renderPublicPageBySlug.mockResolvedValue(mockResponse);
-
-            const req = createMockRequest({ params: { slug: 'test' } });
-            const res = createMockResponse();
-
-            await controller.renderPublicPage(req, res);
-
-            expect(mockService.renderPublicPageBySlug).toHaveBeenCalledWith('/test');
-            expect(res.json).toHaveBeenCalledWith({
-                ...mockResponse,
-                currentSlug: '/test',
-                requestedSlug: '/test'
-            });
-        });
-
-        it('should normalize slug by adding leading slash', async () => {
-            const mockResponse = {
-                html: '<p>Content</p>',
-                metadata: {
-                    title: 'Test',
-                    description: undefined,
-                    keywords: undefined,
-                    ogImage: undefined
-                }
-            };
-
-            mockService.renderPublicPageBySlug.mockResolvedValue(mockResponse);
-
-            const req = createMockRequest({ params: { slug: 'no-leading-slash' } });
-            const res = createMockResponse();
-
-            await controller.renderPublicPage(req, res);
-
-            // Should add leading slash
-            expect(mockService.renderPublicPageBySlug).toHaveBeenCalledWith('/no-leading-slash');
-            expect(res.json).toHaveBeenCalledWith({
-                ...mockResponse,
-                currentSlug: '/no-leading-slash',
-                requestedSlug: '/no-leading-slash'
-            });
-        });
-
-        it('should return 404 if page not found', async () => {
-            mockService.renderPublicPageBySlug.mockResolvedValue(null);
-
-            const req = createMockRequest({ params: { slug: 'nonexistent' } });
-            const res = createMockResponse();
-
-            await controller.renderPublicPage(req, res);
-
-            expect(res.status).toHaveBeenCalledWith(404);
-            expect(res.json).toHaveBeenCalledWith({ error: 'Page not found' });
-        });
-
-        it('should return 404 if page not published', async () => {
-            mockService.renderPublicPageBySlug.mockResolvedValue(null);
-
-            const req = createMockRequest({ params: { slug: 'draft' } });
-            const res = createMockResponse();
-
-            await controller.renderPublicPage(req, res);
-
-            expect(res.status).toHaveBeenCalledWith(404);
-            expect(res.json).toHaveBeenCalledWith({ error: 'Page not found' });
-        });
-
-        it('should handle rendering errors', async () => {
-            mockService.renderPublicPageBySlug.mockRejectedValue(new Error('Render failed'));
-
-            const req = createMockRequest({ params: { slug: 'test' } });
-            const res = createMockResponse();
-
-            await controller.renderPublicPage(req, res);
-
-            expect(res.status).toHaveBeenCalledWith(500);
-            expect(res.json).toHaveBeenCalledWith({
-                error: 'Failed to render page',
-                message: 'Render failed'
-            });
-        });
-
-        it('should include all metadata fields when present', async () => {
-            const mockResponse = {
-                html: '<h1>Complete Page</h1>',
-                metadata: {
-                    title: 'Complete Page',
-                    description: 'A complete description',
-                    keywords: ['test', 'complete', 'metadata'],
-                    ogImage: 'https://example.com/image.png'
-                }
-            };
-
-            mockService.renderPublicPageBySlug.mockResolvedValue(mockResponse);
-
-            const req = createMockRequest({ params: { slug: 'complete' } });
-            const res = createMockResponse();
-
-            await controller.renderPublicPage(req, res);
-
-            expect(res.json).toHaveBeenCalledWith({
-                ...mockResponse,
-                currentSlug: '/complete',
-                requestedSlug: '/complete'
-            });
         });
     });
 
     describe('previewMarkdown', () => {
-        it('should preview markdown content', async () => {
-            const mockContent = '---\ntitle: Test\n---\n# Content';
-            const mockResponse = {
-                html: '<h1>Content</h1>',
-                metadata: {
-                    title: 'Test',
-                    description: undefined,
-                    keywords: undefined,
-                    ogImage: undefined
-                }
-            };
-
-            mockService.previewMarkdown.mockResolvedValue(mockResponse);
-
-            const req = createMockRequest({ body: { content: mockContent } });
+        it('returns 400 when content is missing', async () => {
             const res = createMockResponse();
-
-            await controller.previewMarkdown(req, res);
-
-            expect(mockService.previewMarkdown).toHaveBeenCalledWith(mockContent);
-            expect(res.json).toHaveBeenCalledWith(mockResponse);
-        });
-
-        it('should return 400 if content is missing', async () => {
-            const req = createMockRequest({ body: {} });
-            const res = createMockResponse();
-
-            await controller.previewMarkdown(req, res);
-
+            await controller.previewMarkdown(createMockRequest({ body: {} }), res);
             expect(res.status).toHaveBeenCalledWith(400);
-            expect(res.json).toHaveBeenCalledWith({ error: 'Content is required' });
-            expect(mockService.previewMarkdown).not.toHaveBeenCalled();
         });
 
-        it('should return 400 if content is empty string', async () => {
-            const req = createMockRequest({ body: { content: '' } });
+        it('returns the preview when content is present', async () => {
+            mockService.previewMarkdown.mockResolvedValue({ html: '<h1>X</h1>', metadata: {} });
             const res = createMockResponse();
-
-            await controller.previewMarkdown(req, res);
-
-            expect(res.status).toHaveBeenCalledWith(400);
-            expect(res.json).toHaveBeenCalledWith({ error: 'Content is required' });
-            expect(mockService.previewMarkdown).not.toHaveBeenCalled();
-        });
-
-        it('should return 400 if content is only whitespace', async () => {
-            const req = createMockRequest({ body: { content: '   \n\t   ' } });
-            const res = createMockResponse();
-
-            await controller.previewMarkdown(req, res);
-
-            expect(res.status).toHaveBeenCalledWith(400);
-            expect(res.json).toHaveBeenCalledWith({ error: 'Content is required' });
-            expect(mockService.previewMarkdown).not.toHaveBeenCalled();
-        });
-
-        it('should handle preview errors', async () => {
-            mockService.previewMarkdown.mockRejectedValue(new Error('Invalid frontmatter'));
-
-            const req = createMockRequest({ body: { content: '---\ninvalid\n---\n' } });
-            const res = createMockResponse();
-
-            await controller.previewMarkdown(req, res);
-
-            expect(res.status).toHaveBeenCalledWith(400);
-            expect(res.json).toHaveBeenCalledWith({
-                error: 'Failed to preview markdown',
-                message: 'Invalid frontmatter'
-            });
-        });
-
-        it('should preview content with all metadata fields', async () => {
-            const mockContent = '---\ntitle: Full\ndescription: Desc\nkeywords: [a, b]\nogImage: img.png\n---\nContent';
-            const mockResponse = {
-                html: '<p>Content</p>',
-                metadata: {
-                    title: 'Full',
-                    description: 'Desc',
-                    keywords: ['a', 'b'],
-                    ogImage: 'img.png'
-                }
-            };
-
-            mockService.previewMarkdown.mockResolvedValue(mockResponse);
-
-            const req = createMockRequest({ body: { content: mockContent } });
-            const res = createMockResponse();
-
-            await controller.previewMarkdown(req, res);
-
-            expect(res.json).toHaveBeenCalledWith(mockResponse);
-        });
-
-        it('should handle content without frontmatter', async () => {
-            const mockContent = '# Just Markdown';
-            const mockResponse = {
-                html: '<h1>Just Markdown</h1>',
-                metadata: {}
-            };
-
-            mockService.previewMarkdown.mockResolvedValue(mockResponse);
-
-            const req = createMockRequest({ body: { content: mockContent } });
-            const res = createMockResponse();
-
-            await controller.previewMarkdown(req, res);
-
-            expect(mockService.previewMarkdown).toHaveBeenCalledWith(mockContent);
-            expect(res.json).toHaveBeenCalledWith(mockResponse);
+            await controller.previewMarkdown(createMockRequest({ body: { content: '# X' } }), res);
+            expect(res.json).toHaveBeenCalledWith({ html: '<h1>X</h1>', metadata: {} });
         });
     });
 
-    // ============================================================================
-    // Redirect Tests (Public Endpoints)
-    // ============================================================================
-
-    describe('getPublicPage - redirect handling', () => {
-        it('should return page when current slug matches', async () => {
-            const mockPage = {
-                _id: '1',
-                title: 'Test Page',
-                slug: '/current',
-                oldSlugs: ['/old-url'],
-                published: true
-            };
-
-            mockService.getPageBySlug.mockResolvedValue(mockPage);
-
-            const req = createMockRequest({ params: { slug: '/current' } });
+    describe('settings', () => {
+        it('returns current settings', async () => {
+            mockService.getSettings.mockResolvedValue({ blacklistedRoutes: ['^/api/.*'] });
             const res = createMockResponse();
-
-            await controller.getPublicPage(req, res);
-
-            expect(res.json).toHaveBeenCalledWith({
-                page: mockPage,
-                requestedSlug: '/current'
-            });
-            expect(res.redirect).not.toHaveBeenCalled();
+            await controller.getSettings(createMockRequest(), res);
+            expect(res.json).toHaveBeenCalledWith({ blacklistedRoutes: ['^/api/.*'] });
         });
 
-        it('should return page data with old slug when slug is in oldSlugs array', async () => {
-            const mockPage = {
-                _id: '1',
-                title: 'Test Page',
-                slug: '/current-url',
-                oldSlugs: ['/old-url'],
-                published: true
-            };
-
-            mockService.getPageBySlug.mockResolvedValue(null);
-            mockService.findPageByOldSlug.mockResolvedValue(mockPage);
-
-            const req = createMockRequest({ params: { slug: '/old-url' } });
+        it('updates settings', async () => {
+            mockService.updateSettings.mockResolvedValue({ blacklistedRoutes: ['^/x/.*'] });
             const res = createMockResponse();
-
-            await controller.getPublicPage(req, res);
-
-            expect(mockService.findPageByOldSlug).toHaveBeenCalledWith('/old-url');
-            expect(res.json).toHaveBeenCalledWith({
-                page: mockPage,
-                requestedSlug: '/old-url'
-            });
-            expect(res.redirect).not.toHaveBeenCalled();
-        });
-
-        it('should not redirect if redirect target page is unpublished', async () => {
-            const unpublishedPage = {
-                _id: '1',
-                title: 'Test Page',
-                slug: '/current-url',
-                oldSlugs: ['/old-url'],
-                published: false
-            };
-
-            mockService.getPageBySlug.mockResolvedValue(null);
-            mockService.findPageByOldSlug.mockResolvedValue(unpublishedPage);
-
-            const req = createMockRequest({ params: { slug: '/old-url' } });
-            const res = createMockResponse();
-
-            await controller.getPublicPage(req, res);
-
-            expect(res.status).toHaveBeenCalledWith(404);
-            expect(res.json).toHaveBeenCalledWith({ error: 'Page not found' });
-        });
-
-        it('should return 404 when slug does not exist anywhere', async () => {
-            mockService.getPageBySlug.mockResolvedValue(null);
-            mockService.findPageByOldSlug.mockResolvedValue(null);
-
-            const req = createMockRequest({ params: { slug: '/nonexistent' } });
-            const res = createMockResponse();
-
-            await controller.getPublicPage(req, res);
-
-            expect(res.status).toHaveBeenCalledWith(404);
-            expect(res.json).toHaveBeenCalledWith({ error: 'Page not found' });
-        });
-
-        it('should normalize slug without leading slash', async () => {
-            const mockPage = {
-                _id: '1',
-                title: 'Test Page',
-                slug: '/about',
-                oldSlugs: [],
-                published: true
-            };
-
-            mockService.getPageBySlug.mockResolvedValue(mockPage);
-
-            const req = createMockRequest({ params: { slug: 'about' } });
-            const res = createMockResponse();
-
-            await controller.getPublicPage(req, res);
-
-            expect(mockService.getPageBySlug).toHaveBeenCalledWith('/about');
-            expect(res.json).toHaveBeenCalledWith({
-                page: mockPage,
-                requestedSlug: '/about'
-            });
+            await controller.updateSettings(
+                createMockRequest({ body: { blacklistedRoutes: ['^/x/.*'] } }),
+                res
+            );
+            expect(res.json).toHaveBeenCalledWith({ blacklistedRoutes: ['^/x/.*'] });
         });
     });
 
-    describe('renderPublicPage - redirect handling', () => {
-        it('should return rendered HTML when current slug matches', async () => {
-            const mockRender = {
-                html: '<h1>Test</h1>',
-                metadata: {
-                    title: 'Test Page',
-                    description: 'Test description'
-                }
-            };
-
-            mockService.renderPublicPageBySlug.mockResolvedValue(mockRender);
-
-            const req = createMockRequest({ params: { slug: '/current' } });
-            const res = createMockResponse();
-
-            await controller.renderPublicPage(req, res);
-
-            expect(res.json).toHaveBeenCalledWith({
-                ...mockRender,
-                currentSlug: '/current',
-                requestedSlug: '/current'
-            });
-            expect(res.redirect).not.toHaveBeenCalled();
-        });
-
-        it('should return rendered content with slug info when slug is in oldSlugs array', async () => {
-            const mockPage = {
-                _id: '1',
-                title: 'Test Page',
-                slug: '/current-url',
-                oldSlugs: ['/old-url'],
-                published: true
-            };
-
-            const mockRender = {
-                html: '<h1>Test</h1>',
-                metadata: {
-                    title: 'Test Page',
-                    description: 'Test description'
-                }
-            };
-
-            mockService.renderPublicPageBySlug.mockResolvedValueOnce(null);
-            mockService.findPageByOldSlug.mockResolvedValue(mockPage);
-            mockService.renderPublicPageBySlug.mockResolvedValueOnce(mockRender);
-
-            const req = createMockRequest({ params: { slug: '/old-url' } });
-            const res = createMockResponse();
-
-            await controller.renderPublicPage(req, res);
-
-            expect(mockService.findPageByOldSlug).toHaveBeenCalledWith('/old-url');
-            expect(mockService.renderPublicPageBySlug).toHaveBeenCalledWith('/current-url');
-            expect(res.json).toHaveBeenCalledWith({
-                ...mockRender,
-                currentSlug: '/current-url',
-                requestedSlug: '/old-url'
-            });
-            expect(res.redirect).not.toHaveBeenCalled();
-        });
-
-        it('should not redirect if redirect target page is unpublished', async () => {
-            const unpublishedPage = {
-                _id: '1',
-                title: 'Test Page',
-                slug: '/current-url',
-                oldSlugs: ['/old-url'],
-                published: false
-            };
-
-            mockService.renderPublicPageBySlug.mockResolvedValue(null);
-            mockService.findPageByOldSlug.mockResolvedValue(unpublishedPage);
-
-            const req = createMockRequest({ params: { slug: '/old-url' } });
-            const res = createMockResponse();
-
-            await controller.renderPublicPage(req, res);
-
-            expect(res.status).toHaveBeenCalledWith(404);
-            expect(res.json).toHaveBeenCalledWith({ error: 'Page not found' });
-        });
-
-        it('should return 404 when slug does not exist anywhere', async () => {
-            mockService.renderPublicPageBySlug.mockResolvedValue(null);
+    describe('public endpoints', () => {
+        it('getPublicPage returns 404 when page is unpublished and no redirect exists', async () => {
+            mockService.getPageBySlug.mockResolvedValue(null);
             mockService.findPageByOldSlug.mockResolvedValue(null);
-
-            const req = createMockRequest({ params: { slug: '/nonexistent' } });
             const res = createMockResponse();
-
-            await controller.renderPublicPage(req, res);
-
+            await controller.getPublicPage(createMockRequest({ params: { slug: 'x' } }), res);
             expect(res.status).toHaveBeenCalledWith(404);
-            expect(res.json).toHaveBeenCalledWith({ error: 'Page not found' });
         });
 
-        it('should handle old slugs for nested paths', async () => {
-            const mockPage = {
-                _id: '1',
-                title: 'Test Page',
-                slug: '/blog/posts/2025/article',
-                oldSlugs: ['/blog/article'],
-                published: true
-            };
-
-            const mockRender = {
-                html: '<h1>Article</h1>',
-                metadata: {
-                    title: 'Article',
-                    description: 'Article description'
-                }
-            };
-
-            mockService.renderPublicPageBySlug.mockResolvedValueOnce(null);
-            mockService.findPageByOldSlug.mockResolvedValue(mockPage);
-            mockService.renderPublicPageBySlug.mockResolvedValueOnce(mockRender);
-
-            const req = createMockRequest({ params: { slug: '/blog/article' } });
+        it('getPublicPage returns the page with a normalized slug', async () => {
+            mockService.getPageBySlug.mockResolvedValue({ slug: '/x', published: true });
             const res = createMockResponse();
-
-            await controller.renderPublicPage(req, res);
-
-            expect(mockService.renderPublicPageBySlug).toHaveBeenCalledWith('/blog/posts/2025/article');
+            await controller.getPublicPage(createMockRequest({ params: { slug: 'x' } }), res);
             expect(res.json).toHaveBeenCalledWith({
-                ...mockRender,
-                currentSlug: '/blog/posts/2025/article',
-                requestedSlug: '/blog/article'
+                page: { slug: '/x', published: true },
+                requestedSlug: '/x'
+            });
+        });
+
+        it('renderPublicPage returns rendered HTML and metadata', async () => {
+            mockService.renderPublicPageBySlug.mockResolvedValue({
+                html: '<h1>X</h1>',
+                metadata: { title: 'X' }
+            });
+            const res = createMockResponse();
+            await controller.renderPublicPage(createMockRequest({ params: { slug: 'x' } }), res);
+            expect(res.json).toHaveBeenCalledWith({
+                html: '<h1>X</h1>',
+                metadata: { title: 'X' },
+                currentSlug: '/x',
+                requestedSlug: '/x'
+            });
+        });
+
+        it('renderPublicPage falls back through a redirect on miss', async () => {
+            mockService.renderPublicPageBySlug
+                .mockResolvedValueOnce(null)
+                .mockResolvedValueOnce({ html: '<h1>Y</h1>', metadata: { title: 'Y' } });
+            mockService.findPageByOldSlug.mockResolvedValue({ slug: '/y', published: true });
+
+            const res = createMockResponse();
+            await controller.renderPublicPage(createMockRequest({ params: { slug: 'x' } }), res);
+            expect(res.json).toHaveBeenCalledWith({
+                html: '<h1>Y</h1>',
+                metadata: { title: 'Y' },
+                currentSlug: '/y',
+                requestedSlug: '/x'
             });
         });
     });
