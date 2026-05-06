@@ -40,9 +40,11 @@ vi.mock('mongoose', async (importOriginal) => {
 import { DatabaseService } from '../database.service.js';
 ```
 
-The same shape applies for `fs/promises`:
+The same shape applies for `fs/promises` — `createMockFsModule` is imported statically (see `MigrationScanner.test.ts` for a real example):
 
 ```typescript
+import { createMockFsModule } from '../../../tests/vitest/mocks/fs.js';
+
 vi.mock('fs/promises', () => createMockFsModule()());
 ```
 
@@ -109,4 +111,4 @@ Real test files exercising the mock system:
 ## Further Reading
 
 - [system-database.md](./system-database.md) — `IDatabaseService` design that the mock implements
-- Source: `src/backend/tests/vitest/mocks/` (every file is exported via the index — JSDoc on each export)
+- Source: `src/backend/tests/vitest/mocks/` — import each helper directly from the file that defines it (`mongoose.ts`, `fs.ts`, `database-service.ts`, `service-registry.ts`, `chain-parameters.ts`); JSDoc on every export documents usage.

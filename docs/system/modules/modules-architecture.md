@@ -47,7 +47,7 @@ The application bootstrap (`src/backend/index.ts`) splits into `bootstrapInit()`
 
 Database, ClickHouse, Menu, Logs, Pages, Theme, User, AddressLabels, Tools, **Scheduler last** (so it doesn't tick before its peers are integrated).
 
-After `bootstrapRun()`, `loadPlugins(coreDatabase, scheduler, serviceRegistry)` runs and the HTTP server starts listening. The two-phase split lets modules safely use MenuService, WebSocketService, ChainParametersService, and the service registry during `run()`. The order above is the source of truth — see `src/backend/index.ts:243+`.
+After `bootstrapRun()`, `loadPlugins(coreDatabase, scheduler, serviceRegistry)` runs and the HTTP server starts listening. The two-phase split lets modules safely use MenuService, WebSocketService, ChainParametersService, and the service registry during `run()`. The order above is the source of truth — see the `bootstrapInit` and `bootstrapRun` calls in `src/backend/index.ts`.
 
 ## Dependency Injection Pattern
 

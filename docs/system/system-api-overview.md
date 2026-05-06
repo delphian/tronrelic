@@ -4,7 +4,7 @@ Per-subsystem health probes and runtime configuration introspection. All endpoin
 
 ## Why This Matters
 
-There is no aggregating "overview" endpoint. The `/system` dashboard fans out to dedicated probes (`/health/database`, `/health/redis`, `/health/server`, `/health/clickhouse`) and joins results client-side, so on-call can isolate exactly which dependency is degraded — a single endpoint would mask which one timed out. `/config` reveals which integrations actually loaded (TronGrid keys, object storage) without grepping container env, and `/config/system` is the runtime-editable sibling backing `/system/config`.
+There is no aggregating "overview" endpoint. The `/system` dashboard fans out to dedicated probes (`/health/database`, `/health/redis`, `/health/server`, `/health/clickhouse`) and joins results client-side, so on-call can isolate exactly which dependency is degraded — a single endpoint would mask which one timed out. `/config` reveals which integrations actually loaded (TronGrid keys, object storage) without grepping container env, and `/config/system` is the runtime-editable sibling backing the System Config section.
 
 ## Endpoints
 

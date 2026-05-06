@@ -128,7 +128,7 @@ Full plugin database patterns: [plugins-system-architecture.md](../plugins/plugi
 
 Legacy unprefixed collections (`users`, `pages`, `menu_nodes`, `themes`) predate the convention and will be migrated over time.
 
-**How isolation actually works:** plugin databases prepend `plugin_<id>_` to *every* logical name passed to `getCollection`. A plugin calling `database.getCollection('system_config')` does **not** throw — it silently rewrites to `plugin_<id>_system_config`, a new namespaced collection. The plugin literally cannot reach the system's `system_config`, but isolation is enforced by transparent rewriting, not by error. The defensive throw at `database.service.ts:146-152` only fires if a physical name somehow bypasses prefixing, which the public API never does. Two plugins using the same logical name (`subscriptions`) get separate physical collections.
+**How isolation actually works:** plugin databases prepend `plugin_<id>_` to *every* logical name passed to `getCollection`. A plugin calling `database.getCollection('system_config')` does **not** throw — it silently rewrites to `plugin_<id>_system_config`, a new namespaced collection. The plugin literally cannot reach the system's `system_config`, but isolation is enforced by transparent rewriting, not by error. The defensive throw inside `DatabaseService.getCollection` only fires if a physical name somehow bypasses prefixing, which the public API never does. Two plugins using the same logical name (`subscriptions`) get separate physical collections.
 
 ## Quick Reference
 

@@ -57,7 +57,7 @@ import io from 'socket.io-client';
 const socket = io('http://localhost:4000', { transports: ['websocket'] });
 ```
 
-The `subscribe` handler accepts three formats (`websocket.service.ts:135-156`):
+The `subscribe` handler in `WebSocketService` accepts three formats:
 
 ```javascript
 // 1. Room-based (preferred for plugins)
@@ -84,7 +84,7 @@ Subscribe failures surface as `subscription:error` with `{ message }`. Standard 
 
 ## Core Events
 
-The full union is `TronRelicSocketEvent` (`src/shared/types/socket.ts:168`).
+The full union is `TronRelicSocketEvent` exported from `src/shared/types/socket.ts`.
 
 ### `transaction:large`, `delegation:new`, `stake:new`
 
