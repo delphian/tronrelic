@@ -73,14 +73,9 @@ import type { IModuleMetadata } from './IModuleMetadata.js';
  *         this.database = deps.database;
  *         this.app = deps.app;
  *
- *         // Create services
- *         const storageProvider = new LocalStorageProvider();
- *         this.pageService = new PageService(
- *             deps.database,
- *             storageProvider,
- *             deps.cacheService,
- *             logger
- *         );
+ *         // Configure the singleton service
+ *         PageService.setDependencies(deps.database, deps.cacheService, logger);
+ *         this.pageService = PageService.getInstance();
  *     }
  *
  *     async run(): Promise<void> {

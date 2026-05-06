@@ -1,0 +1,42 @@
+/**
+ * ConfirmDialog styles.
+ *
+ * Container query so action buttons stack on narrow modals (the small
+ * modal size variant is `min(420px, 100vw)`, so this fires when the
+ * containing modal collapses to mobile width).
+ */
+
+@use '../../../app/breakpoints' as *;
+
+.confirm {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-md);
+    container-type: inline-size;
+    container-name: confirm-dialog;
+}
+
+.confirm_message {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--gap-sm);
+    font-size: var(--font-size-body);
+    color: var(--color-text);
+    line-height: var(--line-height-relaxed);
+}
+
+.confirm_actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--gap-sm);
+}
+
+@container confirm-dialog (max-width: #{$breakpoint-mobile-md}) {
+    .confirm_actions {
+        flex-direction: column-reverse;
+
+        > * {
+            width: 100%;
+        }
+    }
+}

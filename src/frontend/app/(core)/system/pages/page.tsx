@@ -4,21 +4,18 @@ import { useState } from 'react';
 import { useSystemAuth } from '../../../../features/system';
 import styles from './page.module.css';
 import { PagesTab } from './tabs/PagesTab';
-import { FilesTab } from './tabs/FilesTab';
 import { SettingsTab } from './tabs/SettingsTab';
 
 /**
  * Pages administration interface.
  *
- * Provides tools for creating and managing custom content pages:
- * - Page list with search/filter
- * - Markdown editor with frontmatter
- * - File upload manager
- * - Module settings configuration
+ * Pages-only concerns: page CRUD, markdown editing, and the route
+ * blacklist that protects core URLs from being shadowed by custom slugs.
+ * File browsing and upload-policy settings live at /system/files.
  */
 export default function PagesAdminPage() {
     const { token } = useSystemAuth();
-    const [activeTab, setActiveTab] = useState<'pages' | 'files' | 'settings'>('pages');
+    const [activeTab, setActiveTab] = useState<'pages' | 'settings'>('pages');
 
     return (
         <div className={styles.container}>
@@ -30,12 +27,6 @@ export default function PagesAdminPage() {
                     Pages
                 </button>
                 <button
-                    className={activeTab === 'files' ? styles.tabActive : styles.tab}
-                    onClick={() => setActiveTab('files')}
-                >
-                    Files
-                </button>
-                <button
                     className={activeTab === 'settings' ? styles.tabActive : styles.tab}
                     onClick={() => setActiveTab('settings')}
                 >
@@ -45,7 +36,6 @@ export default function PagesAdminPage() {
 
             <div className={styles.content}>
                 {activeTab === 'pages' && <PagesTab token={token} />}
-                {activeTab === 'files' && <FilesTab token={token} />}
                 {activeTab === 'settings' && <SettingsTab token={token} />}
             </div>
         </div>

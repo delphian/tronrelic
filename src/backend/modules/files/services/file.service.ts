@@ -1,24 +1,17 @@
 /**
- * @file FileService.ts
+ * @file file.service.ts
  *
- * Singleton implementation of `IFileService`, owned by the Pages module and
- * published on the service registry as `'files'`. Becomes the single source
- * of truth for every file the platform stores: admin page attachments,
- * plugin-generated images (image-gen), and any future file producer. Each
- * row carries an `IFileSource` discriminator so consumers can list their own
- * outputs without colliding with siblings.
+ * Singleton implementation of `IFileService`, owned by the Files module
+ * and published on the service registry as `'files'`. Becomes the single
+ * source of truth for every file the platform stores: admin page
+ * attachments, plugin-generated images, and any future producer. Each
+ * row carries an `IFileSource` discriminator so consumers can list their
+ * own outputs without colliding with siblings.
  *
- * Why a singleton: services implementing `IXxxService` interfaces are
- * configured once at bootstrap and shared across all consumers. Each module
- * or plugin that publishes bytes uses the same inventory and the same
- * storage policy.
- *
- * Why path layout lives here, not in the storage provider: keeping the
- * `<kind>/<sourceId>/YY/MM/<uuid>.<ext>` layout in `FileService` means the
- * inventory rows and the on-disk paths are designed together — operators
- * can `du` per source, the URL stable identifier mirrors the database
- * record, and storage backends stay narrow (write bytes at a path, read
- * bytes at a path).
+ * Path layout policy (`<kind>/<sourceId>/YY/MM/<uuid>.<ext>`) lives here
+ * rather than in the storage provider so the inventory rows and on-disk
+ * paths are designed together — operators can `du` per source, and storage
+ * backends stay narrow (write bytes at a path, read bytes at a path).
  */
 
 import { ObjectId, type Collection } from 'mongodb';
@@ -30,54 +23,46 @@ import type {
     IFileSource,
     IFileUploadOptions,
     IFileListFilter,
+    IFilesSettingsService,
     IStorageProvider,
     ISystemLogService
 } from '@/types';
 import { FileValidationError, FileSizeExceededError } from '@/types';
-import type { IFileDocument, IPageSettingsDocument } from '../../database/index.js';
-import { DEFAULT_PAGE_SETTINGS } from '../../database/index.js';
+import type { IFileDocument } from '../database/index.js';
 
-/** Collection holding the unified file inventory. */
+/**
+ * Collection holding the unified file inventory. Historical name retained
+ * — the rows already exist from migration `module:pages:004_files_inventory`
+ * and renaming would cost downtime for no architectural gain.
+ */
 export const FILES_COLLECTION = 'module_pages_files';
 
 /**
- * Settings live in the existing pages-module settings document for now —
- * `maxFileSize`, `allowedFileExtensions`, and `filenameSanitizationPattern`
- * govern every consumer of FileService until per-source policy lands.
- */
-const PAGE_SETTINGS_COLLECTION = 'page_settings';
-
-/**
  * Concrete service. Construct via `setDependencies()` then access via
- * `getInstance()` — the platform calls `setDependencies()` from
- * `PagesModule.init()`.
+ * `getInstance()` — `FilesModule.init()` calls `setDependencies()`.
  */
 export class FileService implements IFileService {
     private static instance: FileService;
 
     private readonly filesCollection: Collection<IFileDocument>;
-    private readonly settingsCollection: Collection<IPageSettingsDocument>;
 
     private constructor(
         private readonly database: IDatabaseService,
         private readonly storageProvider: IStorageProvider,
+        private readonly settings: IFilesSettingsService,
         private readonly logger: ISystemLogService
     ) {
         this.filesCollection = database.getCollection<IFileDocument>(FILES_COLLECTION);
-        this.settingsCollection = database.getCollection<IPageSettingsDocument>(PAGE_SETTINGS_COLLECTION);
     }
 
-    /**
-     * Configure the singleton. Idempotent — second calls are no-ops to keep
-     * test bootstrapping safe; production code calls this exactly once.
-     */
     public static setDependencies(
         database: IDatabaseService,
         storageProvider: IStorageProvider,
+        settings: IFilesSettingsService,
         logger: ISystemLogService
     ): void {
         if (!FileService.instance) {
-            FileService.instance = new FileService(database, storageProvider, logger);
+            FileService.instance = new FileService(database, storageProvider, settings, logger);
         }
     }
 
@@ -88,15 +73,7 @@ export class FileService implements IFileService {
         return FileService.instance;
     }
 
-    /**
-     * Reset for tests. Production callers must not invoke this. Tests that
-     * configure their own database/storage mocks call it before
-     * `setDependencies()` to avoid bleeding state between cases.
-     */
     public static resetForTests(): void {
-        // Cast through unknown to bypass private-member access — tests legitimately
-        // need to clear the singleton between cases without exposing a setter
-        // on the public API.
         (FileService as unknown as { instance: FileService | undefined }).instance = undefined;
     }
 
@@ -110,7 +87,7 @@ export class FileService implements IFileService {
             throw new Error('upload() requires options.source.{kind,id}');
         }
 
-        const settings = await this.readSettings();
+        const settings = await this.settings.getSettings();
 
         if (bytes.length > settings.maxFileSize) {
             throw new FileSizeExceededError(
@@ -147,10 +124,6 @@ export class FileService implements IFileService {
             uploadedAt: new Date()
         };
 
-        // Roll back the bytes if the inventory insert fails, otherwise the
-        // file lingers on disk with no row pointing at it. Cleanup failures
-        // are logged but never rethrown — the original insert error is what
-        // the caller needs to see.
         try {
             await this.filesCollection.insertOne(doc);
         } catch (insertErr) {
@@ -220,15 +193,6 @@ export class FileService implements IFileService {
         return this.filesCollection.countDocuments(query);
     }
 
-    /**
-     * Group the inventory by `(source.kind, source.id)` so admin tooling can
-     * populate a source-aware filter UI without hardcoding which modules and
-     * plugins have written files. The aggregation walks the existing
-     * compound index on `source.kind, source.id, uploadedAt` (migration 004),
-     * so cost stays bounded as the inventory grows. Results are sorted by
-     * `(kind, id)` ascending — the sort matches the same index prefix and
-     * spares every consumer from re-sorting for stable display order.
-     */
     async distinctSources(): Promise<IFileSource[]> {
         const rows = await this.filesCollection
             .aggregate<{ _id: { kind: IFileSource['kind']; id: string } }>([
@@ -243,8 +207,6 @@ export class FileService implements IFileService {
         const doc = await this.filesCollection.findOne({ id });
         if (!doc) return false;
 
-        // Treat "already missing on disk" as success so callers can clean up
-        // orphaned inventory rows without exception handling.
         const bytesExisted = await this.storageProvider.delete(doc.path);
         await this.filesCollection.deleteOne({ id });
 
@@ -259,30 +221,6 @@ export class FileService implements IFileService {
         return true;
     }
 
-    /**
-     * Read the file-related portion of the pages-module settings document,
-     * filling in defaults when no row exists yet (fresh installs).
-     */
-    private async readSettings(): Promise<{
-        maxFileSize: number;
-        allowedFileExtensions: string[];
-        filenameSanitizationPattern: string;
-    }> {
-        const persisted = await this.settingsCollection.findOne({});
-        if (persisted) {
-            return {
-                maxFileSize: persisted.maxFileSize,
-                allowedFileExtensions: persisted.allowedFileExtensions,
-                filenameSanitizationPattern: persisted.filenameSanitizationPattern
-            };
-        }
-        return {
-            maxFileSize: DEFAULT_PAGE_SETTINGS.maxFileSize,
-            allowedFileExtensions: DEFAULT_PAGE_SETTINGS.allowedFileExtensions,
-            filenameSanitizationPattern: DEFAULT_PAGE_SETTINGS.filenameSanitizationPattern
-        };
-    }
-
     private buildQuery(filter: IFileListFilter | Omit<IFileListFilter, 'limit' | 'skip'>): Record<string, unknown> {
         const query: Record<string, unknown> = {};
         if (filter.source) {
@@ -290,7 +228,6 @@ export class FileService implements IFileService {
             query['source.id'] = filter.source.id;
         }
         if (filter.mimeType) {
-            // MIME prefix match (e.g. "image/" matches "image/png").
             query.mimeType = { $regex: `^${escapeRegex(filter.mimeType)}`, $options: 'i' };
         }
         return query;
@@ -307,9 +244,6 @@ export class FileService implements IFileService {
 
     private buildStoredName(id: string, originalName: string, pattern: string): string {
         const ext = this.getFileExtension(originalName).toLowerCase();
-        // Use the UUID as the stem so storage paths are not influenced by
-        // attacker-controlled originalName content. The inventory still
-        // records originalName verbatim for display.
         return `${id}${this.applyPattern(ext, pattern)}`;
     }
 
@@ -341,7 +275,6 @@ export class FileService implements IFileService {
     }
 }
 
-/** Allow only `[a-z0-9-]` in path segments; anything else collapses to `-`. */
 function sanitizeSegment(value: string): string {
     return value
         .toLowerCase()

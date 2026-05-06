@@ -1,7 +1,7 @@
 /**
  * @file IFileService.ts
  *
- * Shared file inventory contract published by the Pages module under the
+ * Shared file inventory contract published by the Files module under the
  * service registry name `'files'`. Every file the platform stores — admin
  * page attachments, plugin-generated images, future imports — flows through
  * this interface so there is a single source of truth for file bytes,
@@ -24,23 +24,11 @@
  * Origin classifications for stored files. Single source of truth — the
  * `IFileSource['kind']` type union is derived from this constant, and runtime
  * validators (e.g. the admin file-browser query parser) iterate it directly.
- * Adding a new kind here is the only edit required to teach the platform
- * about it; the type system and validators pick it up automatically.
- *
- * - `'core'` — Files written by the platform itself (rare; reserved).
- * - `'module'` — Files owned by a built-in module (e.g. Pages admin uploads
- *               use `{ kind: 'module', id: 'pages' }`).
- * - `'plugin'` — Files produced by an installed plugin (e.g. image-gen uses
- *               `{ kind: 'plugin', id: 'image-gen' }`).
  */
 export const FILE_SOURCE_KINDS = ['core', 'module', 'plugin'] as const;
 
 /**
- * Origin classification for a stored file. Used both as a list filter and as
- * the on-disk path namespace prefix (`/uploads/<kind>/<id>/...`), giving
- * operators a clear filesystem story for "which files came from which
- * subsystem". The union is derived from `FILE_SOURCE_KINDS` so the type and
- * the runtime kind list cannot drift.
+ * Origin classification for a stored file.
  */
 export interface IFileSource {
     kind: (typeof FILE_SOURCE_KINDS)[number];
@@ -55,10 +43,7 @@ export interface IFileSource {
 /**
  * Public file record returned by the service. The `id` is the durable handle
  * consumers retain; `url` is the browser-safe address resolved against the
- * configured storage backend at the moment the record was produced. Internal
- * storage handles (provider keys, on-disk paths) are deliberately not surfaced
- * — they are an implementation detail of the active backend and would tempt
- * consumers to bypass `IFileService`.
+ * configured storage backend at the moment the record was produced.
  */
 export interface IFileRecord {
     /** Globally unique UUID. Stable for the lifetime of the file. */
@@ -79,13 +64,7 @@ export interface IFileRecord {
     /** Size of the stored bytes. */
     sizeBytes: number;
 
-    /**
-     * Public URL-relative address suitable for browser display. Resolved at
-     * record-construction time so callers can render listings without an
-     * extra `getUrl(id)` round-trip per row. Backends that surface CDN URLs
-     * (future S3/R2) populate this field with the public form; local FS
-     * echoes the `/uploads/...` path Express serves.
-     */
+    /** Public URL-relative address suitable for browser display. */
     url: string;
 
     /** Optional uploader identity (user id, plugin context, etc.). */
@@ -97,8 +76,7 @@ export interface IFileRecord {
 
 /**
  * Caller-supplied options on `upload()`. The `source` field is required so
- * every file is namespaced; there is no implicit fallback. `uploadedBy` is
- * optional and meant for systems that have a user identity to attach.
+ * every file is namespaced; there is no implicit fallback.
  */
 export interface IFileUploadOptions {
     source: IFileSource;
@@ -107,9 +85,7 @@ export interface IFileUploadOptions {
 
 /**
  * Filter shape for `list()`. All fields are optional and combine as AND
- * predicates. Pass `source` to scope results to your own files (the expected
- * default for plugins and modules). Pass `mimeType` as a prefix (`'image/'`)
- * to constrain by format family.
+ * predicates.
  */
 export interface IFileListFilter {
     source?: IFileSource;
@@ -120,10 +96,7 @@ export interface IFileListFilter {
 
 /**
  * Validation failure raised by `IFileService.upload()` when caller-supplied
- * bytes do not meet platform policy (extension whitelist, future content-type
- * checks, etc.). Consumers map this to HTTP 400 (Bad Request) or its protocol
- * equivalent. Extending plain `Error` keeps the contract dependency-free for
- * downstream plugins.
+ * bytes do not meet platform policy. Consumers map this to HTTP 400.
  */
 export class FileValidationError extends Error {
     constructor(message: string) {
@@ -134,9 +107,7 @@ export class FileValidationError extends Error {
 
 /**
  * Specialization of `FileValidationError` for size-policy violations.
- * Consumers map this to HTTP 413 (Payload Too Large). Kept distinct from the
- * base class so a generic `instanceof FileValidationError` catch still covers
- * size errors when finer routing isn't needed.
+ * Consumers map this to HTTP 413.
  */
 export class FileSizeExceededError extends FileValidationError {
     constructor(message: string) {
@@ -147,7 +118,7 @@ export class FileSizeExceededError extends FileValidationError {
 
 /**
  * Service contract for the unified file inventory. Implemented inside the
- * Pages module and published on the service registry as `'files'` for module
+ * Files module and published on the service registry as `'files'` for module
  * and plugin consumers.
  */
 export interface IFileService {
@@ -156,8 +127,6 @@ export interface IFileService {
      * the UUID, sanitizes the filename, validates against module-level
      * settings (max size, allowed extensions), writes to storage under the
      * source-namespaced path, and inserts the inventory row.
-     *
-     * @throws Error when validation fails (size, extension) or storage write fails.
      */
     upload(
         bytes: Buffer,
@@ -167,53 +136,41 @@ export interface IFileService {
     ): Promise<IFileRecord>;
 
     /**
-     * Read bytes for a previously uploaded file. Cross-source by design —
-     * holding the id is sufficient. Returns null if the id does not resolve.
+     * Read bytes for a previously uploaded file. Cross-source by design.
+     * Returns null if the id does not resolve.
      */
     read(id: string): Promise<{ bytes: Buffer; mimeType: string } | null>;
 
     /**
-     * Resolve a public URL for browser display from the id alone. Convenience
-     * for callers that hold only an id; consumers that already have an
-     * `IFileRecord` from `list()`/`getRecord()` should read `record.url`
-     * directly to avoid an extra inventory lookup. Returns null when the id
-     * does not resolve.
+     * Resolve a public URL for browser display from the id alone. Returns
+     * null when the id does not resolve.
      */
     getUrl(id: string): Promise<string | null>;
 
     /**
-     * Fetch a single record without reading bytes. Useful for displaying
-     * metadata (mime, size, uploader) without loading the file.
+     * Fetch a single record without reading bytes.
      */
     getRecord(id: string): Promise<IFileRecord | null>;
 
     /**
      * Enumerate records matching the filter, sorted by `uploadedAt` desc.
-     * Honor system: callers should pass their own `source` unless they have
-     * a defensible reason (admin tooling, cross-source dashboards).
      */
     list(filter?: IFileListFilter): Promise<IFileRecord[]>;
 
     /**
-     * Count records matching the filter (same semantics as `list()` minus the
-     * pagination fields).
+     * Count records matching the filter.
      */
     count(filter?: Omit<IFileListFilter, 'limit' | 'skip'>): Promise<number>;
 
     /**
      * Enumerate the distinct `{kind, id}` pairs currently present in the
-     * inventory. Intended for admin tooling that builds source-aware UIs
-     * (e.g. a dropdown listing every source that has uploaded files).
-     * Results are sorted by `(kind, id)` ascending so consumers can render
-     * directly without re-sorting.
+     * inventory. Sorted by `(kind, id)` ascending.
      */
     distinctSources(): Promise<IFileSource[]>;
 
     /**
      * Remove the inventory row and the underlying bytes. Returns true when a
-     * record was deleted, false when the id did not exist. Storage-layer
-     * "file already missing" is treated as success (returns true) so callers
-     * can clean up orphaned references without exception handling.
+     * record was deleted, false when the id did not exist.
      */
     delete(id: string): Promise<boolean>;
 }

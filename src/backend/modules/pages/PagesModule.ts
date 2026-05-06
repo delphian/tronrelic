@@ -1,114 +1,47 @@
 /**
- * Pages module implementation.
- *
- * Provides custom page creation, markdown rendering, and file upload capabilities
- * for administrator-authored content. The module follows TronRelic's two-phase
- * initialization pattern with dependency injection.
+ * Pages module — markdown CMS for admin-authored content. File handling
+ * is no longer part of this module; the Files module owns the unified
+ * inventory and publishes `IFileService` on the service registry as
+ * `'files'`. Pages consumes file URLs through inline markdown that the
+ * admin produces in the Files admin page.
  */
 
-import type { Express } from 'express';
-import type { ICacheService, IDatabaseService, IFileService, IMenuService, IModule, IModuleMetadata, IServiceRegistry, IStorageProvider } from '@/types';
-import path from 'path';
-import fs from 'fs/promises';
+import type { Express, Router } from 'express';
+import type {
+    ICacheService,
+    IDatabaseService,
+    IMenuService,
+    IModule,
+    IModuleMetadata,
+} from '@/types';
 import { logger } from '../../lib/logger.js';
 import { MAIN_SYSTEM_CONTAINER_ID } from '../menu/index.js';
 import { PageService } from './services/page.service.js';
-import { FileService } from './services/files/FileService.js';
-import { LocalStorageProvider } from './services/storage/LocalStorageProvider.js';
 import { PagesController } from './api/pages.controller.js';
 import { createPagesRouter } from './api/pages.routes.js';
 import { createPublicPagesRouter } from './api/pages.public-routes.js';
 import { requireAdmin } from '../../api/middleware/admin-auth.js';
-import type { Router } from 'express';
 
-/**
- * Pages module dependencies for initialization.
- *
- * All required services for the pages module to function properly, injected
- * at application bootstrap time.
- */
 export interface IPagesModuleDependencies {
-    /**
-     * Database service for MongoDB operations (page, file, settings storage).
-     */
     database: IDatabaseService;
-
-    /**
-     * Cache service for rendered HTML and computed values.
-     */
     cacheService: ICacheService;
-
-    /**
-     * Menu service for registering /system/pages navigation entry.
-     */
     menuService: IMenuService;
-
-    /**
-     * Express application instance for mounting routers.
-     * The module will attach its admin and public routers using IoC pattern.
-     */
     app: Express;
-
-    /**
-     * Service registry for publishing the unified file service as a
-     * platform-wide capability. Modules and plugins discover the inventory
-     * with `context.services.get('files')` and call its UUID-keyed API —
-     * the underlying storage provider stays internal to this module so
-     * swapping local FS for S3 only touches the provider construction
-     * here.
-     */
-    serviceRegistry: IServiceRegistry;
 }
 
 /**
- * Pages module for custom content management.
+ * Pages module class.
  *
- * Implements the IModule interface to provide:
- * - Custom page creation with markdown authoring
- * - File upload and management with pluggable storage providers
- * - Markdown rendering with frontmatter extraction and Redis caching
- * - Admin interface for page/file/settings management
- * - Public API for viewing published pages
+ * Lifecycle:
+ * - `init()` — store deps, configure `PageService` singleton, build controller.
+ * - `run()` — register `/system/pages` menu item, mount admin and public routers.
  *
- * ## Lifecycle
- *
- * ### init() phase:
- * - Stores injected dependencies (database, cache, menu service, app)
- * - Creates storage provider (default: LocalStorageProvider)
- * - Instantiates PageService, MarkdownService, and PagesController
- * - Does NOT mount routes or register menu items yet
- *
- * ### run() phase:
- * - Registers menu item in 'system' namespace for admin UI
- * - Creates and mounts admin router at /api/admin/pages
- * - Creates and mounts public router at /api/pages
- *
- * ## Inversion of Control
- *
- * The module uses IoC by injecting the Express app and mounting its own routes,
- * rather than returning routers for the bootstrap process to mount. This makes
- * the module responsible for its own integration.
- *
- * @example
- * ```typescript
- * // In backend bootstrap (apps/backend/src/index.ts)
- * const pagesModule = new PagesModule();
- *
- * await pagesModule.init({
- *     database: coreDatabase,
- *     cacheService: cacheService,
- *     menuService: MenuService.getInstance(),
- *     app: app,
- *     serviceRegistry: serviceRegistry
- * });
- *
- * await pagesModule.run();
- * ```
+ * No file dependencies — uploads go through the Files module's
+ * `/api/admin/files` admin surface, which is registered before Pages so
+ * its menu and routes already exist by the time a page editor links to a
+ * stored file.
  */
 export class PagesModule implements IModule<IPagesModuleDependencies> {
-    /**
-     * Module metadata for introspection and logging.
-     */
     readonly metadata: IModuleMetadata = {
         id: 'pages',
         name: 'Pages',
@@ -116,136 +49,34 @@ export class PagesModule implements IModule<IPagesModuleDependencies> {
         description: 'Custom page creation and markdown rendering for admin-authored content'
     };
 
-    /**
-     * Stored dependencies from init() phase.
-     */
     private database!: IDatabaseService;
     private cacheService!: ICacheService;
     private menuService!: IMenuService;
     private app!: Express;
-    private serviceRegistry!: IServiceRegistry;
-    private storageProvider!: IStorageProvider;
-
-    /**
-     * Services created during init() phase.
-     */
-    private fileService!: FileService;
     private pageService!: PageService;
     private controller!: PagesController;
 
-    /**
-     * Logger instance for this module.
-     */
     private readonly logger = logger.child({ module: 'pages' });
 
-    /**
-     * Ensure the uploads directory exists before Express static middleware starts.
-     *
-     * Creates /public/uploads directory structure if missing. This prevents
-     * Express static middleware from failing with 500 errors when trying to
-     * serve uploaded files.
-     *
-     * The directory is created at {cwd}/public/uploads where cwd is the project
-     * root (where package.json resides).
-     *
-     * @throws {Error} If directory creation fails due to permissions or disk issues
-     */
-    private async ensureUploadsDirectoryExists(): Promise<void> {
-        const uploadsDir = path.join(process.cwd(), 'public', 'uploads');
-
-        try {
-            await fs.mkdir(uploadsDir, { recursive: true });
-            this.logger.info({ uploadsDir }, 'Uploads directory created or already exists');
-        } catch (error) {
-            this.logger.error({ error, uploadsDir }, 'Failed to create uploads directory');
-            throw new Error(
-                `Failed to create uploads directory: ${error instanceof Error ? error.message : 'Unknown error'}`
-            );
-        }
-    }
-
-    /**
-     * Initialize the pages module with injected dependencies.
-     *
-     * This phase prepares the module by creating service instances and storing
-     * dependencies for use in the run() phase. It does NOT mount routes or
-     * register menu items yet.
-     *
-     * @param dependencies - All required services (database, cache, menu, app, serviceRegistry)
-     * @throws {Error} If initialization fails (causes application shutdown)
-     */
     async init(dependencies: IPagesModuleDependencies): Promise<void> {
         this.logger.info('Initializing pages module...');
 
-        // Store dependencies for use in run() phase
         this.database = dependencies.database;
         this.cacheService = dependencies.cacheService;
         this.menuService = dependencies.menuService;
         this.app = dependencies.app;
-        this.serviceRegistry = dependencies.serviceRegistry;
 
-        // Ensure uploads directory exists before Express static middleware tries to serve from it
-        // This prevents 500 errors when accessing uploaded files
-        await this.ensureUploadsDirectoryExists();
-
-        // Create storage provider (default: local filesystem). Internal to
-        // this module — consumers never see it directly; they go through
-        // FileService which owns the inventory + storage policy.
-        this.storageProvider = new LocalStorageProvider();
-
-        // Initialize FileService singleton (the unified inventory). Built
-        // before PageService because page uploads delegate through it.
-        FileService.setDependencies(this.database, this.storageProvider, this.logger);
-        this.fileService = FileService.getInstance();
-
-        // Initialize PageService singleton with dependencies. PageService
-        // no longer touches the storage provider directly — file CRUD
-        // routes through the inventory.
-        PageService.setDependencies(
-            this.database,
-            this.fileService,
-            this.cacheService,
-            this.logger
-        );
-
-        // Get PageService singleton instance
+        PageService.setDependencies(this.database, this.cacheService, this.logger);
         this.pageService = PageService.getInstance();
 
-        // Create controller with the page service plus a direct handle to
-        // the unified file inventory — the admin file browser lists across
-        // sources, which `PageService.listFiles` deliberately does not.
-        this.controller = new PagesController(this.pageService, this.fileService, this.logger);
+        this.controller = new PagesController(this.pageService, this.logger);
 
         this.logger.info('Pages module initialized');
     }
 
-    /**
-     * Run the pages module after all modules have initialized.
-     *
-     * This phase activates the module by:
-     * - Registering menu item in 'system' namespace
-     * - Creating and mounting admin router
-     * - Creating and mounting public router
-     *
-     * By this point, MenuService is guaranteed to be ready (no need for 'ready' event).
-     *
-     * @throws {Error} If runtime setup fails (causes application shutdown)
-     */
     async run(): Promise<void> {
         this.logger.info('Running pages module...');
 
-        // Publish the unified file inventory on the service registry. Every
-        // module or plugin that needs to persist or read bytes consumes
-        // `'files'` and references files by the UUID `IFileRecord.id`.
-        // Source-tagging at upload time keeps each consumer's outputs
-        // separable for listing and disk-usage reporting; the raw storage
-        // provider stays internal to this module so swapping the backend
-        // (local FS → S3 → R2) doesn't ripple out.
-        this.serviceRegistry.register<IFileService>('files', this.fileService);
-
-        // Register menu item under the System container in `main`.
-        // `requiresAdmin: true` is auto-applied by MenuService because the
-        // parent chain reaches the container.
         try {
             await this.menuService.create({
                 namespace: 'main',
@@ -255,7 +86,6 @@ export class PagesModule implements IModule<IPagesModuleDependencies> {
                 order: 40,
                 parent: MAIN_SYSTEM_CONTAINER_ID,
                 enabled: true
-                // persist defaults to false (memory-only entry)
             });
 
             this.logger.info('Pages menu item registered under the System container');
@@ -264,14 +94,11 @@ export class PagesModule implements IModule<IPagesModuleDependencies> {
             throw new Error(`Failed to register pages menu item: ${error instanceof Error ? error.message : 'Unknown error'}`);
         }
 
-        // Create and mount admin router (IoC - module attaches itself to app)
-        // Apply requireAdmin middleware to all admin routes
-        const adminRouter = this.createAdminRouter();
+        const adminRouter: Router = createPagesRouter(this.controller);
         this.app.use('/api/admin/pages', requireAdmin, adminRouter);
         this.logger.info('Admin pages router mounted at /api/admin/pages');
 
-        // Create and mount public router (IoC - module attaches itself to app)
-        const publicRouter = this.createPublicRouter();
+        const publicRouter: Router = createPublicPagesRouter(this.controller);
         this.app.use('/api/pages', publicRouter);
         this.logger.info('Public pages router mounted at /api/pages');
 
@@ -279,40 +106,8 @@ export class PagesModule implements IModule<IPagesModuleDependencies> {
     }
 
     /**
-     * Create the admin router with all authenticated endpoints.
-     *
-     * This is an internal helper method called during the run() phase.
-     * The router is then mounted by the module itself using IoC pattern.
-     *
-     * @returns Express router with admin endpoints
-     * @internal
-     */
-    private createAdminRouter(): Router {
-        return createPagesRouter(this.controller);
-    }
-
-    /**
-     * Create the public router with unauthenticated endpoints.
-     *
-     * This is an internal helper method called during the run() phase.
-     * The router is then mounted by the module itself using IoC pattern.
-     *
-     * @returns Express router with public endpoints
-     * @internal
-     */
-    private createPublicRouter(): Router {
-        return createPublicPagesRouter(this.controller);
-    }
-
-    /**
-     * Get the PageService singleton instance for external consumers.
-     *
-     * This allows other modules and plugins to access the PageService after
-     * the module has been initialized. Should only be called after init()
-     * completes successfully.
-     *
-     * @returns PageService singleton instance
-     * @throws {Error} If called before init() completes
+     * Accessor for the `PageService` singleton, exposed for tests and
+     * tooling. Should only be called after `init()` completes.
      */
     getPageService(): PageService {
         if (!this.pageService) {

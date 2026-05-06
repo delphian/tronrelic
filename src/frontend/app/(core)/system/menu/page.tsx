@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
-import { AlertTriangle, ChevronRight, Pencil, Plus, Trash2 } from 'lucide-react';
+import { ChevronRight, Pencil, Plus, Trash2 } from 'lucide-react';
 import type { IMenuNamespaceConfig, IMenuNode, IMenuTree, IUserGroup } from '@/types';
 import { UserIdentityState } from '@/types';
 
@@ -14,6 +14,7 @@ import { Switch } from '../../../../components/ui/Switch';
 import { Tbody, Td, Th, Thead, Tr, Table } from '../../../../components/ui/Table';
 import { useModal } from '../../../../components/ui/ModalProvider';
 import { useToast } from '../../../../components/ui/ToastProvider';
+import { ConfirmDialog } from '../../../../components/ui/ConfirmDialog';
 import { LazyIconPickerModal } from '../../../../components/ui/IconPickerModal';
 import { useSystemAuth } from '../../../../features/system';
 import { cn } from '../../../../lib/cn';
@@ -1183,51 +1184,3 @@ function NamespaceForm({ existing, onSubmit, onCancel }: NamespaceFormProps) {
     );
 }
 
-interface ConfirmDialogProps {
-    label: string;
-    message?: string;
-    confirmLabel?: string;
-    onConfirm: () => Promise<void> | void;
-    onCancel: () => void;
-}
-
-function ConfirmDialog({
-    label,
-    message,
-    confirmLabel = 'Delete',
-    onConfirm,
-    onCancel
-}: ConfirmDialogProps) {
-    const [working, setWorking] = useState(false);
-    const handleConfirm = async () => {
-        setWorking(true);
-        try {
-            await onConfirm();
-        } finally {
-            setWorking(false);
-        }
-    };
-
-    return (
-        <div className={styles.confirm}>
-            <div className={styles.confirm_message}>
-                <AlertTriangle size={20} style={{ color: 'var(--color-warning)', flexShrink: 0 }} />
-                <span>
-                    {message ?? (
-                        <>
-                            Delete <strong>{label}</strong>? This action cannot be undone.
-                        </>
-                    )}
-                </span>
-            </div>
-            <div className={styles.confirm_actions}>
-                <Button variant="ghost" onClick={onCancel} disabled={working}>
-                    Cancel
-                </Button>
-                <Button variant="danger" onClick={handleConfirm} loading={working}>
-                    {confirmLabel}
-                </Button>
-            </div>
-        </div>
-    );
-}

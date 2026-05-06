@@ -28,6 +28,7 @@ import { MenuModule, MAIN_SYSTEM_CONTAINER_ID } from './modules/menu/index.js';
 import { LogsModule } from './modules/logs/index.js';
 import { DatabaseModule } from './modules/database/index.js';
 import { ClickHouseModule } from './modules/clickhouse/index.js';
+import { FilesModule } from './modules/files/index.js';
 import { PagesModule } from './modules/pages/index.js';
 import { ThemeModule } from './modules/theme/index.js';
 import { UserModule } from './modules/user/index.js';
@@ -216,6 +217,7 @@ interface BootstrapContext {
         clickhouse: ClickHouseModule;
         menu: MenuModule;
         logs: LogsModule;
+        files: FilesModule;
         pages: PagesModule;
         theme: ThemeModule;
         user: UserModule;
@@ -294,6 +296,7 @@ async function bootstrapInit(): Promise<BootstrapContext> {
     const sharedDeps = { database: coreDatabase, cacheService, menuService, serviceRegistry, app };
 
     const logsModule = new LogsModule();
+    const filesModule = new FilesModule();
     const pagesModule = new PagesModule();
     const themeModule = new ThemeModule();
     const userModule = new UserModule();
@@ -302,6 +305,7 @@ async function bootstrapInit(): Promise<BootstrapContext> {
     const schedulerModule = new SchedulerModule();
 
     await logsModule.init({ pinoLogger, database: coreDatabase, app });
+    await filesModule.init({ database: coreDatabase, menuService, app, serviceRegistry });
     await pagesModule.init(sharedDeps);
     await themeModule.init(sharedDeps);
     await schedulerModule.init({ database: coreDatabase, menuService, app });
@@ -322,6 +326,7 @@ async function bootstrapInit(): Promise<BootstrapContext> {
             clickhouse: clickHouseModule,
             menu: menuModule,
             logs: logsModule,
+            files: filesModule,
             pages: pagesModule,
             theme: themeModule,
             user: userModule,
@@ -353,6 +358,7 @@ async function bootstrapRun(ctx: BootstrapContext): Promise<void> {
     await modules.clickhouse.run();
     await modules.menu.run();
     await modules.logs.run();
+    await modules.files.run();
     await modules.pages.run();
     await modules.theme.run();
     await modules.user.run();
@@ -419,6 +425,7 @@ async function registerTemporaryMenuItems(menuService: IMenuService): Promise<vo
         { label: 'Overview', url: '/system/system', icon: 'SlidersHorizontal', order: 5 },
         // Logs (30), Scheduler (35) registered by their modules
         // Pages (40) registered by PagesModule
+        // Files (42) registered by FilesModule
         // Markets (50) registered by resource-markets plugin
         // Plugins (65) registered by registerPluginsAdminMenu — dropdown of enabled plugin settings
         // All admin items live under the System container; requiresAdmin is auto-applied
