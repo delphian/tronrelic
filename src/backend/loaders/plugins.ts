@@ -24,19 +24,19 @@ import { AddressLabelService } from '../modules/address-labels/services/address-
 import { UserService } from '../modules/user/services/user.service.js';
 import { SignatureService } from '../modules/auth/signature.service.js';
 import { getRedisClient } from './redis.js';
-import { discoveredPlugins } from './plugins.generated.js';
+import { loadDiscoveredPlugins } from './plugins.generated.js';
 
 /**
- * Returns all discovered plugins from the generated registry.
+ * Loads all discovered plugins from the generated registry.
  *
- * Plugins are discovered at build time by scripts/generate-backend-plugin-registry.mjs
- * which scans src/plugins/ and generates static imports. This eliminates runtime
- * filesystem scanning and enables on-the-fly TypeScript compilation during development.
- *
- * @returns Array of discovered plugins with their manifests and lifecycle hooks
+ * The registry is produced at build time by scripts/generate-backend-plugin-registry.mjs
+ * which scans src/plugins/ and emits dynamic-import call sites — one per plugin —
+ * so esbuild does not crawl plugin source into the backend bundle. Each plugin
+ * file is loaded at its own filesystem location at runtime, so its bare-specifier
+ * dependencies resolve via the plugin's own node_modules.
  */
-function loadAllPlugins(): IPlugin[] {
-    return discoveredPlugins;
+async function loadAllPlugins(): Promise<IPlugin[]> {
+    return loadDiscoveredPlugins();
 }
 
 /**
