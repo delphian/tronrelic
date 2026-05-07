@@ -1,15 +1,20 @@
 /**
  * Backend Plugin Registry Generator.
  *
- * Scans src/plugins/ for directories containing backend entry points and generates
- * a TypeScript registry file with static imports. This enables on-the-fly compilation
- * during development (tsx compiles imported source files) while keeping the core
- * plugin loader unaware of specific plugin names.
+ * Scans src/plugins/ for directories containing backend entry points and emits
+ * a TypeScript registry that loads each plugin via dynamic import() at runtime.
+ *
+ * Why dynamic instead of static: esbuild bundles src/backend/index.ts into a
+ * single dist/backend/index.js. With static imports, esbuild crawls into each
+ * plugin's source and inlines its module body into the bundle — but with
+ * `packages: 'external'` it leaves bare specifiers (e.g. 'isomorphic-dompurify')
+ * pointing at the bundle's location. Node ESM then resolves those specifiers
+ * by walking up from /app/dist/backend/index.js, never reaching a plugin's
+ * sibling node_modules at /app/src/plugins/<id>/node_modules/. Dynamic import
+ * keeps the plugin file as the importer at runtime, so its nested node_modules
+ * is on the resolution path.
  *
  * Usage: node scripts/generate-backend-plugin-registry.mjs
- *
- * The generated registry is imported by src/backend/loaders/plugins.ts which then
- * initializes all discovered plugins without hardcoding any plugin paths.
  */
 
 import { promises as fs } from 'fs';
@@ -21,7 +26,6 @@ const __dirname = dirname(__filename);
 const repoRoot = join(__dirname, '..');
 const pluginsRoot = join(repoRoot, 'src', 'plugins');
 const outputPath = join(repoRoot, 'src', 'backend', 'loaders', 'plugins.generated.ts');
-const outputDir = dirname(outputPath);
 
 /**
  * Discovers plugin directories with backend entry points.
@@ -124,7 +128,12 @@ async function hasBackend(directory) {
 /**
  * Collects metadata for all discovered plugins.
  *
- * @returns {Promise<Array<{id: string, manifestImportPath: string, backendImportPath: string|null}>>}
+ * Paths are emitted relative to the repository root with a `.js` extension. The
+ * generated runtime swaps `/src/` to `/dist/` when NODE_ENV=production so the
+ * same registry works against the source tree under tsx watch and the compiled
+ * tree inside the production image.
+ *
+ * @returns {Promise<Array<{id: string, manifestSrcPath: string, backendSrcPath: string|null}>>}
  */
 async function collectPluginMetadata() {
     const directories = await discoverPluginDirectories();
@@ -144,27 +153,15 @@ async function collectPluginMetadata() {
 
         const pluginId = await readPluginId(manifestPath, packageJson.name.split('/').at(-1));
 
-        // Generate relative import path for manifest
-        const manifestRelative = relative(outputDir, manifestPath).replace(/\\/g, '/');
-        const manifestImportPath = manifestRelative.startsWith('.')
-            ? manifestRelative.replace(/\.ts$/, '.js')
-            : `./${manifestRelative.replace(/\.ts$/, '.js')}`;
+        const manifestSrcPath = relative(repoRoot, manifestPath).replace(/\\/g, '/').replace(/\.ts$/, '.js');
 
-        // Generate relative import path for backend (if exists)
-        let backendImportPath = null;
+        let backendSrcPath = null;
         if (await hasBackend(directory)) {
             const backendPath = join(directory, 'src', 'backend', 'backend.ts');
-            const backendRelative = relative(outputDir, backendPath).replace(/\\/g, '/');
-            backendImportPath = backendRelative.startsWith('.')
-                ? backendRelative.replace(/\.ts$/, '.js')
-                : `./${backendRelative.replace(/\.ts$/, '.js')}`;
+            backendSrcPath = relative(repoRoot, backendPath).replace(/\\/g, '/').replace(/\.ts$/, '.js');
         }
 
-        metadata.push({
-            id: pluginId,
-            manifestImportPath,
-            backendImportPath
-        });
+        metadata.push({ id: pluginId, manifestSrcPath, backendSrcPath });
     }
 
     return metadata;
@@ -173,55 +170,68 @@ async function collectPluginMetadata() {
 /**
  * Renders the TypeScript source for the backend plugin registry.
  *
- * Generates static imports for all discovered plugins, creating an array
- * of IPlugin objects that the loader can iterate without filesystem scanning.
+ * Emits an async loader that dynamic-imports each plugin's backend (or manifest
+ * for frontend-only plugins) at runtime. The dynamic import keeps the plugin
+ * file as the bare-specifier importer at runtime — see the file header comment
+ * on this script for the resolution-locality rationale.
  *
- * @param {Array<{id: string, manifestImportPath: string, backendImportPath: string|null}>} metadata
+ * @param {Array<{id: string, manifestSrcPath: string, backendSrcPath: string|null}>} metadata
  * @returns {string} TypeScript source code
  */
 function renderModule(metadata) {
     const header = `/**
  * AUTO-GENERATED FILE. DO NOT EDIT.
  *
- * This module is produced by scripts/generate-backend-plugin-registry.mjs
- * and provides static imports for all discovered backend plugins.
+ * Produced by scripts/generate-backend-plugin-registry.mjs.
+ *
+ * Plugins are loaded via dynamic import() so esbuild does not crawl plugin
+ * source into the backend bundle. Each plugin file therefore stays in its own
+ * directory at runtime, and Node ESM resolves the plugin's bare-specifier
+ * dependencies from the plugin's own node_modules — not from /app/node_modules.
  *
  * Regenerate by running: node scripts/generate-backend-plugin-registry.mjs
  */
 
-import type { IPlugin, IPluginManifest } from '@/types';
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
+import type { IPlugin, IPluginManifest } from '@/types';
 `;
 
     if (metadata.length === 0) {
-        return `${header}/**
+        return `${header}
+/**
  * No plugins discovered.
  */
-export const discoveredPlugins: IPlugin[] = [];
+export async function loadDiscoveredPlugins(): Promise<IPlugin[]> {
+    return [];
+}
 `;
     }
 
-    // Generate imports for manifests and backends
-    const imports = [];
-    const pluginEntries = [];
-
-    for (const { id, manifestImportPath, backendImportPath } of metadata) {
-        const safeId = id.replace(/[^a-zA-Z0-9_]/g, '_');
-
-        imports.push(`import * as ${safeId}_manifest_module from '${manifestImportPath}';`);
-
-        if (backendImportPath) {
-            imports.push(`import * as ${safeId}_backend_module from '${backendImportPath}';`);
-            pluginEntries.push(`    resolvePlugin('${id}', ${safeId}_manifest_module, ${safeId}_backend_module),`);
-        } else {
-            pluginEntries.push(`    resolveManifestOnlyPlugin('${id}', ${safeId}_manifest_module),`);
+    const entries = metadata.map(({ id, manifestSrcPath, backendSrcPath }) => {
+        if (backendSrcPath) {
+            return `    () => resolvePlugin(${JSON.stringify(id)}, ${JSON.stringify(backendSrcPath)})`;
         }
-    }
+        return `    () => resolveManifestOnlyPlugin(${JSON.stringify(id)}, ${JSON.stringify(manifestSrcPath)})`;
+    }).join(',\n');
 
-    const resolver = `
+    const body = `
+const isProduction = process.env.NODE_ENV === 'production';
+
 /**
- * Finds the manifest export from a module.
+ * Resolves a repo-relative plugin source path to a runtime file:// URL.
+ *
+ * In dev, paths point at src/ and tsx transparently rewrites .js→.ts. In
+ * production, src/ is swapped to dist/ so Node ESM loads the plugin's
+ * compiled JavaScript directly. process.cwd() is /app inside the production
+ * image (Dockerfile WORKDIR) and the project root in dev.
  */
+function pluginUrl(srcRelPath: string): string {
+    const runtimePath = isProduction ? srcRelPath.replace(/\\/src\\//, '/dist/') : srcRelPath;
+    return pathToFileURL(join(process.cwd(), runtimePath)).href;
+}
+
 function findManifest(module: Record<string, unknown>): IPluginManifest | undefined {
     return Object.values(module).find(
         (exp): exp is IPluginManifest =>
@@ -233,9 +243,6 @@ function findManifest(module: Record<string, unknown>): IPluginManifest | undefi
     );
 }
 
-/**
- * Finds the plugin export from a backend module.
- */
 function findPlugin(module: Record<string, unknown>): IPlugin | undefined {
     return Object.values(module).find(
         (exp): exp is IPlugin =>
@@ -246,14 +253,8 @@ function findPlugin(module: Record<string, unknown>): IPlugin | undefined {
     );
 }
 
-/**
- * Resolves a full plugin from manifest and backend modules.
- */
-function resolvePlugin(
-    pluginId: string,
-    manifestModule: Record<string, unknown>,
-    backendModule: Record<string, unknown>
-): IPlugin {
+async function resolvePlugin(pluginId: string, backendSrcPath: string): Promise<IPlugin> {
+    const backendModule = (await import(pluginUrl(backendSrcPath))) as Record<string, unknown>;
     const plugin = findPlugin(backendModule);
     if (!plugin) {
         throw new Error(\`Failed to resolve plugin export for '\${pluginId}'. Ensure backend.ts exports an IPlugin.\`);
@@ -261,13 +262,8 @@ function resolvePlugin(
     return plugin;
 }
 
-/**
- * Resolves a frontend-only plugin from its manifest module.
- */
-function resolveManifestOnlyPlugin(
-    pluginId: string,
-    manifestModule: Record<string, unknown>
-): IPlugin {
+async function resolveManifestOnlyPlugin(pluginId: string, manifestSrcPath: string): Promise<IPlugin> {
+    const manifestModule = (await import(pluginUrl(manifestSrcPath))) as Record<string, unknown>;
     const manifest = findManifest(manifestModule);
     if (!manifest) {
         throw new Error(\`Failed to resolve manifest for '\${pluginId}'. Ensure manifest.ts exports an IPluginManifest.\`);
@@ -275,20 +271,21 @@ function resolveManifestOnlyPlugin(
     return { manifest };
 }
 
-`;
-
-    const registry = `/**
- * All discovered plugins with their compiled exports.
- *
- * This array is populated at import time with statically-imported plugins.
- * The loader iterates this array instead of scanning the filesystem.
- */
-export const discoveredPlugins: IPlugin[] = [
-${pluginEntries.join('\n')}
+const pluginLoaders: Array<() => Promise<IPlugin>> = [
+${entries}
 ];
+
+/**
+ * Loads every discovered plugin via dynamic import. Failures in one plugin
+ * reject the whole batch; the caller's per-plugin try/catch in plugins.ts
+ * still runs against the resolved IPlugin objects.
+ */
+export async function loadDiscoveredPlugins(): Promise<IPlugin[]> {
+    return Promise.all(pluginLoaders.map((load) => load()));
+}
 `;
 
-    return `${header}${imports.join('\n')}\n${resolver}${registry}`;
+    return `${header}${body}`;
 }
 
 /**
@@ -330,8 +327,8 @@ async function run() {
     }
 
     console.log(`  Discovered ${metadata.length} plugins`);
-    for (const { id, backendImportPath } of metadata) {
-        const type = backendImportPath ? 'backend' : 'frontend-only';
+    for (const { id, backendSrcPath } of metadata) {
+        const type = backendSrcPath ? 'backend' : 'frontend-only';
         console.log(`    - ${id} (${type})`);
     }
 }
