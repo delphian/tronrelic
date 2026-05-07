@@ -135,7 +135,7 @@ Accessible at `/system/database` (requires admin token). Displays pending/comple
 
 **Circular dependency:** Error message shows cycle path. Remove one dependency to break the cycle.
 
-**Missing dependency:** Check for typos, ensure dependency file exists with valid filename, use qualified IDs for module/plugin dependencies.
+**Missing dependency:** Check for typos, ensure dependency file exists with valid filename, use qualified IDs for module/plugin dependencies. A dep need not be on disk if its qualified ID is recorded as `completed` in the `migrations` collection — the scanner treats history-completed deps as satisfied so retiring an old migration source is safe in environments that have already run it. A `failed` record does not satisfy the dep; restore the source or rewrite the dependent migration.
 
 **Crash without transactions:** Application exits with `process.exit(1)` when migration fails on standalone MongoDB. Data may be partially modified. Verify database state manually, make migration idempotent, or use replica set for transaction support.
 

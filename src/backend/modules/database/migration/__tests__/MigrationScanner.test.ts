@@ -207,6 +207,73 @@ describe('MigrationScanner', () => {
         });
     });
 
+    describe('Phantom Dependency Resolution', () => {
+        /**
+         * Test: A dep absent from disk but listed in completed history is
+         * accepted as already-executed. Lets operators retire old
+         * migration source files once every environment has run them.
+         */
+        it('should accept dep recorded as completed even when not on disk', async () => {
+            const migrations = [
+                createMigrationFixture('002_dependent', { dependencies: ['001_retired'] })
+            ];
+            const completed = new Set(['001_retired']);
+
+            const sorted = await (scanner as any).topologicalSort(migrations, completed);
+            expect(sorted).toHaveLength(1);
+            expect(sorted[0].id).toBe('002_dependent');
+        });
+
+        /**
+         * Test: A dep that is neither on disk nor in completed history
+         * still throws — fresh environments without history see the same
+         * fail-fast behavior as before.
+         */
+        it('should throw when dep is absent from both disk and history', async () => {
+            const migrations = [
+                createMigrationFixture('002_dependent', { dependencies: ['999_phantom'] })
+            ];
+            const completed = new Set<string>();
+
+            await expect(async () => {
+                await (scanner as any).topologicalSort(migrations, completed);
+            }).rejects.toThrow(/depends on '999_phantom'/);
+        });
+
+        /**
+         * Test: Phantom deps act as leaves — DFS does not recurse into
+         * them. Regression check: the previous code did
+         * `migrationMap.get(lookupId)!` and would have crashed.
+         */
+        it('should treat phantom deps as DFS leaves without crashing', async () => {
+            const migrations = [
+                createMigrationFixture('A', { dependencies: ['phantom'] }),
+                createMigrationFixture('B', { dependencies: ['A'] })
+            ];
+            const completed = new Set(['phantom']);
+
+            const sorted = await (scanner as any).topologicalSort(migrations, completed);
+            expect(sorted).toHaveLength(2);
+            expect(sorted.findIndex((m: any) => m.id === 'A'))
+                .toBeLessThan(sorted.findIndex((m: any) => m.id === 'B'));
+        });
+
+        /**
+         * Test: Backward compatibility — calling topologicalSort without
+         * the completed-IDs argument behaves exactly as the legacy code
+         * did. Every dep must be on disk.
+         */
+        it('should require deps on disk when no completed set is passed', async () => {
+            const migrations = [
+                createMigrationFixture('002_dependent', { dependencies: ['001_missing'] })
+            ];
+
+            await expect(async () => {
+                await (scanner as any).topologicalSort(migrations);
+            }).rejects.toThrow(/depends on '001_missing'/);
+        });
+    });
+
     describe('Circular Dependency Detection', () => {
         /**
          * Test: Scanner should detect direct circular dependencies.
