@@ -276,12 +276,22 @@ ${entries}
 ];
 
 /**
- * Loads every discovered plugin via dynamic import. Failures in one plugin
- * reject the whole batch; the caller's per-plugin try/catch in plugins.ts
- * still runs against the resolved IPlugin objects.
+ * Loads every discovered plugin via dynamic import. Resolution failures are
+ * isolated per plugin: a broken module-level import or evaluation throw in one
+ * plugin logs a warning and is dropped from the returned set, leaving the rest
+ * of the registry — and backend startup — unaffected.
  */
 export async function loadDiscoveredPlugins(): Promise<IPlugin[]> {
-    return Promise.all(pluginLoaders.map((load) => load()));
+    const results = await Promise.allSettled(pluginLoaders.map((load) => load()));
+    const plugins: IPlugin[] = [];
+    for (const result of results) {
+        if (result.status === 'fulfilled') {
+            plugins.push(result.value);
+        } else {
+            console.error('[plugins.generated] Plugin failed to load:', result.reason);
+        }
+    }
+    return plugins;
 }
 `;
 
