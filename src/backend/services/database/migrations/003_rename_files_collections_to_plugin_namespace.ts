@@ -85,17 +85,36 @@ async function renameIfPresent(
         const message = error instanceof Error ? error.message : String(error);
         const code = (error as { code?: number } | undefined)?.code;
 
-        if (/ns not found/i.test(message)) {
+        // MongoDB error code 26 — NamespaceNotFound. The source is missing
+        // either because we're on a fresh install or a previous run already
+        // moved the data. Regex fallback covers older drivers that surface
+        // the message without a structured code.
+        if (code === 26 || /ns not found/i.test(message)) {
             console.log(`[Migration] Source collection ${from} does not exist; skipping`);
             return;
         }
 
-        // MongoDB error code 48 — NamespaceExists. The destination is
-        // already populated, which means an earlier run of this
-        // migration already moved the data.
+        // MongoDB error code 48 — NamespaceExists. Two valid causes for
+        // this branch: (1) an earlier run of this migration already moved
+        // the data and the source is empty/missing, or (2) the trp-files
+        // plugin wrote to the destination before the operator triggered
+        // this migration — migrations are operator-triggered, not auto-run
+        // at boot, so this race is real. The first is a benign no-op; the
+        // second would silently orphan historical rows under the legacy
+        // name. Inspect the source and fail loudly when it still holds
+        // documents so the operator can resolve manually.
         if (code === 48 || /target namespace exists/i.test(message) || /already exists/i.test(message)) {
-            console.log(`[Migration] Destination collection ${to} already exists; treating as already-renamed`);
-            return;
+            const sourceCount = await source.countDocuments();
+            if (sourceCount === 0) {
+                console.log(`[Migration] Destination collection ${to} already exists and ${from} is empty; treating as already-renamed`);
+                return;
+            }
+            throw new Error(
+                `Cannot rename ${from} → ${to}: destination already exists and ${from} still holds ${sourceCount} document(s). ` +
+                `This typically means the trp-files plugin wrote to ${to} before this migration ran. ` +
+                `Resolve manually — either drop the (presumed empty) ${to} so this migration can complete, ` +
+                `or merge ${from}'s rows into ${to} and drop ${from} — then re-run this migration.`
+            );
         }
 
         throw error;
