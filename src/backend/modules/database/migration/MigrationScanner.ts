@@ -289,7 +289,14 @@ export class MigrationScanner {
      * - Circular dependencies cause scan to fail with cycle path
      * - File read errors are logged as errors and skipped
      *
+     * **Phantom dependencies.** Pass `completedQualifiedIds` to satisfy
+     * declared dependencies whose source has been retired but whose execution
+     * is still recorded in the `migrations` collection. The graph then
+     * accepts them as already-completed leaves and the scan no longer fails
+     * just because an old migration file was deleted — see `topologicalSort`.
+     *
      * @param sortStrategy - How to order migrations before dependency resolution (default: 'id')
+     * @param completedQualifiedIds - Qualified IDs of migrations recorded as completed in history. Empty by default; pass from {@link MigrationTracker.getCompletedMigrationIds} for production use.
      * @returns Promise resolving to array of validated migration metadata in execution order
      * @throws Error if circular dependencies detected or required dependencies missing
      *
@@ -298,14 +305,18 @@ export class MigrationScanner {
      * const scanner = new MigrationScanner();
      *
      * try {
-     *     const migrations = await scanner.scan();
+     *     const completed = new Set(await tracker.getCompletedMigrationIds());
+     *     const migrations = await scanner.scan('id', completed);
      *     console.log(`Ready to execute ${migrations.length} migrations`);
      * } catch (error) {
      *     console.error('Migration scan failed:', error.message);
      * }
      * ```
      */
-    public async scan(sortStrategy: MigrationSortStrategy = 'id'): Promise<IMigrationMetadata[]> {
+    public async scan(
+        sortStrategy: MigrationSortStrategy = 'id',
+        completedQualifiedIds: Set<string> = new Set()
+    ): Promise<IMigrationMetadata[]> {
         logger.info('Scanning for database migrations...');
 
         const migrations: IMigrationMetadata[] = [];
@@ -332,7 +343,7 @@ export class MigrationScanner {
         this.sortMigrations(migrations, sortStrategy);
 
         // Validate dependencies and build execution order
-        const sorted = this.topologicalSort(migrations);
+        const sorted = this.topologicalSort(migrations, completedQualifiedIds);
 
         logger.info({
             total: sorted.length,
@@ -654,18 +665,34 @@ export class MigrationScanner {
      * 4. Detect cycles if we encounter a gray node during traversal
      * 5. Add migrations to result in post-order (dependencies first)
      *
+     * **Phantom dependencies.** A dep listed in `completedQualifiedIds`
+     * but absent from the discovered set is treated as an already-executed
+     * leaf: the validation accepts it, and the DFS does not recurse into
+     * it (it has no further deps to traverse and cannot participate in a
+     * cycle of currently-discoverable migrations). This lets operators
+     * delete migration source files once every environment has run them
+     * without breaking downstream migrations that still declare the
+     * retired ID as a dependency.
+     *
      * @param migrations - Array of migrations to sort
+     * @param completedQualifiedIds - Qualified IDs of migrations recorded as completed in history. Empty by default — every dep must then be on disk.
      * @returns Array of migrations in topological order (dependencies before dependents)
-     * @throws Error if circular dependencies detected or dependency not found
+     * @throws Error if circular dependencies detected or dependency not found on disk and not completed historically
      */
-    private topologicalSort(migrations: IMigrationMetadata[]): IMigrationMetadata[] {
+    private topologicalSort(
+        migrations: IMigrationMetadata[],
+        completedQualifiedIds: Set<string> = new Set()
+    ): IMigrationMetadata[] {
         // Build map for fast lookup using qualified IDs
         const migrationMap = new Map<string, IMigrationMetadata>();
         for (const migration of migrations) {
             migrationMap.set(migration.qualifiedId, migration);
         }
 
-        // Validate all dependencies exist
+        // Validate every dep either exists on disk or is recorded as
+        // completed historically. The completed branch is what makes
+        // retiring an old migration file safe in environments that have
+        // already executed it.
         for (const migration of migrations) {
             for (const depId of migration.dependencies || []) {
                 // Support both plain IDs (resolve to system) and qualified IDs
@@ -673,11 +700,11 @@ export class MigrationScanner {
                 // Qualified dependency ID like 'module:menu:001_add_namespace' is explicit
                 const lookupId = depId.includes(':') ? depId : depId; // Plain ID assumes system
 
-                if (!migrationMap.has(lookupId)) {
+                if (!migrationMap.has(lookupId) && !completedQualifiedIds.has(lookupId)) {
                     throw new Error(
-                        `Migration '${migration.qualifiedId}' depends on '${depId}', but that migration was not found. ` +
+                        `Migration '${migration.qualifiedId}' depends on '${depId}', but that migration was not found on disk and has no completed record in the migrations collection. ` +
                         `Available migrations: ${Array.from(migrationMap.keys()).join(', ')}. ` +
-                        `Ensure the dependency exists or remove it from the dependencies array.`
+                        `Ensure the dependency exists, has been completed historically, or remove it from the dependencies array.`
                     );
                 }
             }
@@ -709,8 +736,13 @@ export class MigrationScanner {
             for (const depId of migration.dependencies || []) {
                 // Support both plain and qualified dependency IDs
                 const lookupId = depId.includes(':') ? depId : depId;
-                const dep = migrationMap.get(lookupId)!;
-                visit(dep, [...path]);
+                const dep = migrationMap.get(lookupId);
+                // Phantom deps (recorded as completed but absent from disk)
+                // are leaves: already executed, no further deps to traverse,
+                // can't participate in a cycle of discoverable migrations.
+                if (dep) {
+                    visit(dep, [...path]);
+                }
             }
 
             visiting.delete(migration.qualifiedId);

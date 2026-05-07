@@ -498,8 +498,20 @@ export class DatabaseService implements IDatabaseService {
             // Ensure migration tracker indexes exist
             await this.migrationTracker.ensureIndexes();
 
+            // Load qualified IDs of migrations recorded as completed. The
+            // scanner uses this set to satisfy dependency declarations
+            // whose source has been retired but whose execution is
+            // preserved in history — without this, deleting an old
+            // migration file breaks the dep graph for every downstream
+            // migration that still references it. Failed records are
+            // intentionally excluded so a deleted-and-failed migration
+            // continues to surface as "missing dependency."
+            const completedQualifiedIds = new Set(
+                await this.migrationTracker.getCompletedMigrationIds()
+            );
+
             // Scan filesystem for migrations
-            this.discoveredMigrations = await this.migrationScanner.scan();
+            this.discoveredMigrations = await this.migrationScanner.scan('id', completedQualifiedIds);
 
             // Remove orphaned pending migrations (code deleted but record exists)
             await this.migrationTracker.removeOrphanedPending(this.discoveredMigrations);
