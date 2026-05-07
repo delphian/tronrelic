@@ -1,9 +1,9 @@
 /**
  * Pages module — markdown CMS for admin-authored content. File handling
- * is no longer part of this module; the Files module owns the unified
+ * lives outside this module; the `trp-files` plugin owns the unified
  * inventory and publishes `IFileService` on the service registry as
- * `'files'`. Pages consumes file URLs through inline markdown that the
- * admin produces in the Files admin page.
+ * `'files'` during plugin load. Pages consumes file URLs through inline
+ * markdown that the admin produces in the Files admin UI.
  */
 
 import type { Express, Router } from 'express';
