@@ -38,6 +38,8 @@ If a topic requires more than 300 lines, split it into multiple focused document
 
 **Exception: Module and plugin README.md files.** A `README.md` colocated in a module directory (`src/backend/modules/*/README.md`) or plugin directory (`src/plugins/*/README.md`) serves as the *complete* documentation for that feature — architecture, API reference, database schema, usage examples, and troubleshooting in a single file. These files are intentionally exempt from the 300-line limit because they are the canonical source of truth for their feature and splitting them would scatter context that developers need in one place.
 
+**Plugin and module READMEs are AI-agent reference, not narrative.** Their primary consumer is an AI coding agent that needs to interface with or modify the feature. Lead with the surfaces an agent must locate fast — plugin id, service registry name, admin URL, types package, manifest path, and a source map — then publish the contract (service signatures, REST endpoints, WebSocket events, storage schema, scheduler jobs, lifecycle obligations) as scannable tables. Keep prose only where the contract alone cannot carry the "why" (e.g., why a tool description dominates selection accuracy, why `services.watch()` beats `services.get()`). Drop narrative onboarding, marketing prose, implementation trivia ("markdown rendered via remark processSync"), and rationale repetition — agents read source for behavior. The line-limit waiver is not a license for verbosity; brevity still applies. See `src/plugins/trp-ai-assistant/README.md` for the reference implementation.
+
 ## Structure Template
 
 Every document should follow the "why → how → example" rhythm. Adapt headings as needed, but maintain this flow:

@@ -5,9 +5,22 @@
  * Max-width constrained for readability, centered within the page layout.
  */
 
+/*
+ * `<main>` and `.core-layout` are nested flex columns. `align-self: center`
+ * opts the section out of `align-items: stretch` so width can be capped by
+ * `max-width: 80ch`. Horizontal margins must NOT be `auto` — auto cross-axis
+ * margins on a flex item override `align-self` and combine with this element's
+ * own `container-type: inline-size` (which forces inline size to be computed
+ * without descendant contribution) to collapse the box to min-content. Use
+ * explicit horizontal margins (0) and rely on `align-self: center` for
+ * centering.
+ */
 .seo_section {
+    align-self: center;
+    width: 100%;
     max-width: 80ch;
-    margin: var(--spacing-14) auto var(--spacing-10);
+    box-sizing: border-box;
+    margin: var(--spacing-14) 0 var(--spacing-10);
     padding: 0 var(--spacing-8);
     color: var(--color-text-muted);
     container-type: inline-size;
