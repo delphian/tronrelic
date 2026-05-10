@@ -253,7 +253,7 @@
      * ======================================================================== */
 
     /* Input - Base Properties */
-    --input-background: rgba(10, 15, 26, 0.85);
+    --input-background: rgba(3, 6, 15, 0.9);
     --input-border: var(--border-width-thin) solid rgba(110, 160, 255, 0.18);
     --input-border-radius: var(--radius-sm);
     --input-padding: var(--spacing-5) var(--spacing-7); /* 0.75rem 1rem */
@@ -491,7 +491,7 @@
     --color-primary-alpha-38: rgba(79, 140, 255, 0.38);
 
     /* Surface Colors */
-    --color-surface: rgba(10, 15, 26, 0.88);      /* Card/surface background */
+    --color-surface: rgba(20, 28, 48, 0.88);      /* Card/surface background */
     --color-surface-base: rgba(6, 11, 20, 0.55);  /* Table base background */
     --color-surface-elevated: rgba(255, 255, 255, 0.05); /* Elevated surfaces */
     --color-surface-muted: rgba(11, 16, 28, 0.6); /* Muted backgrounds */
