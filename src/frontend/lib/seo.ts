@@ -57,7 +57,10 @@ export function buildMetadata(options: BuildMetadataOptions): Metadata {
     canonical
   } = options;
 
-  const url = canonical ?? absoluteUrl(siteUrl, path);
+  // Resolve relative canonical paths (e.g. '/resource-markets') against
+  // siteUrl so the rendered <link rel="canonical"> is always absolute.
+  // absoluteUrl() passes through values that are already absolute.
+  const url = absoluteUrl(siteUrl, canonical ?? path);
   const ogImage = image ?? `${siteUrl}/images/og-image.jpg`;
 
   return {
