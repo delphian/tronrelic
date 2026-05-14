@@ -5,7 +5,7 @@ import { Page } from '../../components/layout';
 import { PluginPageWithZones } from '../../components/PluginPageWithZones';
 import { CategoryLandingPage } from '../../modules/menu';
 import { getServerSideApiUrlWithPath } from '../../lib/api-url';
-import { buildMetadata, buildArticleStructuredData } from '../../lib/seo';
+import { buildMetadata, buildArticleStructuredData, absoluteUrl } from '../../lib/seo';
 import { getServerConfig } from '../../lib/serverConfig';
 import { getEnabledPluginPageConfig } from '../../lib/serverPluginRegistry';
 import styles from './page.module.css';
@@ -222,8 +222,13 @@ export async function generateMetadata({ params }: { params: Promise<IPageParams
             if (pluginPage.keywords) {
                 metadata.keywords = pluginPage.keywords;
             }
-            if (pluginPage.canonical) {
-                metadata.alternates = { canonical: pluginPage.canonical };
+            // Resolve relative canonical paths against siteUrl so the rendered
+            // <link rel="canonical"> and og:url are always absolute.
+            const canonicalUrl = pluginPage.canonical
+                ? absoluteUrl(siteUrl, pluginPage.canonical)
+                : undefined;
+            if (canonicalUrl) {
+                metadata.alternates = { canonical: canonicalUrl };
             }
             // Build openGraph only when at least one OG-relevant field is
             // present, so we don't synthesize an empty default OG block for
@@ -233,7 +238,7 @@ export async function generateMetadata({ params }: { params: Promise<IPageParams
                     type: pluginPage.ogType ?? 'website',
                     ...(pluginPage.title ? { title: pluginPage.title } : {}),
                     ...(pluginPage.description ? { description: pluginPage.description } : {}),
-                    ...(pluginPage.canonical ? { url: pluginPage.canonical } : {}),
+                    ...(canonicalUrl ? { url: canonicalUrl } : {}),
                     ...(pluginPage.ogImage
                         ? {
                             images: [{
