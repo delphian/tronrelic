@@ -74,7 +74,8 @@ main {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  width: min($breakpoint-desktop-lg, 100%);
+  max-width: $breakpoint-desktop-lg;
+  width: 100%;
   margin: 0 auto;
   padding: var(--main-padding-lg);
 }

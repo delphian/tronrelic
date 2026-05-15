@@ -44,7 +44,7 @@ Component code (`.module.scss`) reaches for use-case-named semantics first (`--c
 | Shadows | `--shadow-sm/md/lg` |
 | Avatars | `--avatar-size-sm/md/lg` |
 | Max Widths | `--max-width-prose` (64ch), `--max-width-xs/sm/md/lg/xl` (320–1080px) |
-| Breakpoints | `$breakpoint-mobile-sm` (360px), `$breakpoint-mobile-md` (480px), `$breakpoint-mobile-lg` (768px), `$breakpoint-tablet` (1024px), `$breakpoint-desktop` (1200px), `$breakpoint-desktop-lg` (1440px) |
+| Breakpoints | `$breakpoint-mobile-sm` (360px), `$breakpoint-mobile-md` (480px), `$breakpoint-mobile-lg` (768px), `$breakpoint-tablet` (1024px), `$breakpoint-desktop` (1200px), `$breakpoint-desktop-lg` (1440px), `$breakpoint-desktop-xl` (1920px); alias `$breakpoint-mobile` = `$breakpoint-mobile-lg` (768px) |
 
 ### SCSS Module Naming
 
