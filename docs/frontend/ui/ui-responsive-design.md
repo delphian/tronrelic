@@ -89,6 +89,7 @@ TronRelic uses an Asia-optimized breakpoint system. Breakpoints are SCSS variabl
 | `$breakpoint-mobile-lg` | 768px | Large phones, landscape |
 | `$breakpoint-tablet` | 1024px | Tablets, small laptops |
 | `$breakpoint-desktop` | 1200px | Desktop displays |
+| `$breakpoint-desktop-lg` | 1440px | Wide desktop / 1440p monitors; site-wide content cap |
 | `$breakpoint-desktop-xl` | 1920px | Full HD |
 | `$breakpoint-mobile` *(alias)* | = `$breakpoint-mobile-lg` (768px) | Convenience for the common mobile cutoff |
 
