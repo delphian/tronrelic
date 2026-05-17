@@ -1,7 +1,22 @@
 'use client';
 
-import { useEffect, useRef, useState, type PointerEvent, type ReactNode } from 'react';
+import {
+    useEffect,
+    useLayoutEffect,
+    useRef,
+    useState,
+    type CSSProperties,
+    type PointerEvent,
+    type ReactNode
+} from 'react';
 import styles from './Tooltip.module.css';
+
+/**
+ * Minimum horizontal gap between the tooltip and the viewport edges. Picks
+ * up just enough breathing room so the tooltip never visually butts against
+ * a window border but stays close to the trigger when one edge is tight.
+ */
+const VIEWPORT_PADDING_PX = 8;
 
 /**
  * Tooltip props interface defining trigger and content configuration.
@@ -32,6 +47,13 @@ interface TooltipProps {
  * overflow constraints (like table headers with horizontal scroll) to
  * prevent clipping.
  *
+ * Horizontal viewport clamping: after the tooltip mounts the layout effect
+ * measures it via `getBoundingClientRect()` and, if it would overflow the
+ * viewport on either side, sets `--tooltip-shift-x` on the content element
+ * so CSS shifts the tooltip back inside (and the arrow stays anchored to
+ * the trigger). Trigger-centered tooltips near a screen edge would
+ * otherwise be clipped or pushed off-screen.
+ *
  * @example
  * ```tsx
  * <Tooltip content="Click to refresh data">
@@ -41,7 +63,9 @@ interface TooltipProps {
  */
 export function Tooltip({ content, children, placement = 'top' }: TooltipProps) {
     const [isVisible, setIsVisible] = useState(false);
+    const [shiftX, setShiftX] = useState(0);
     const triggerRef = useRef<HTMLSpanElement | null>(null);
+    const contentRef = useRef<HTMLSpanElement | null>(null);
 
     function handlePointerEnter(event: PointerEvent<HTMLSpanElement>) {
         if (event.pointerType === 'mouse') {
@@ -74,6 +98,41 @@ export function Tooltip({ content, children, placement = 'top' }: TooltipProps) 
         return () => document.removeEventListener('pointerdown', handleDocumentPointerDown);
     }, [isVisible]);
 
+    // Measure the rendered tooltip against the viewport and shift it inward
+    // if either edge would clip. Runs in `useLayoutEffect` so the corrected
+    // position is in place before the browser paints — measuring after paint
+    // would briefly show the tooltip clipped. Re-runs when `content`
+    // changes since the rendered width depends on it.
+    useLayoutEffect(() => {
+        if (!isVisible) {
+            setShiftX(0);
+            return;
+        }
+        const el = contentRef.current;
+        if (!el) return;
+        // Measure with shift cleared so each pass starts from the
+        // trigger-centered position rather than the previous offset.
+        el.style.setProperty('--tooltip-shift-x', '0px');
+        const rect = el.getBoundingClientRect();
+        const viewportWidth = document.documentElement.clientWidth;
+        const overflowLeft = Math.max(0, VIEWPORT_PADDING_PX - rect.left);
+        const overflowRight = Math.max(
+            0,
+            rect.right - (viewportWidth - VIEWPORT_PADDING_PX)
+        );
+        // `overflowLeft - overflowRight` is the net inward nudge: positive
+        // when the left edge overflows (shift right), negative when the
+        // right edge overflows (shift left). When the tooltip is wider
+        // than the available room both sides overflow and we bias left,
+        // which keeps the tooltip's leading text visible.
+        setShiftX(overflowLeft - overflowRight);
+    }, [isVisible, content]);
+
+    const contentStyle =
+        shiftX !== 0
+            ? ({ ['--tooltip-shift-x']: `${shiftX}px` } as CSSProperties)
+            : undefined;
+
     return (
         <span
             ref={triggerRef}
@@ -85,8 +144,10 @@ export function Tooltip({ content, children, placement = 'top' }: TooltipProps) 
             {children}
             {isVisible && (
                 <span
+                    ref={contentRef}
                     role="tooltip"
                     className={`${styles.content} ${placement === 'bottom' ? styles.content_bottom : ''}`}
+                    style={contentStyle}
                 >
                     {content}
                     <span className={`${styles.arrow} ${placement === 'bottom' ? styles.arrow_bottom : ''}`} />
