@@ -3,6 +3,13 @@
  *
  * Scoped styles for contextual tooltip overlays that appear on hover with
  * arrow indicators and responsive positioning.
+ *
+ * Horizontal viewport clamping: the `--tooltip-shift-x` custom property is
+ * applied by Tooltip.tsx after measuring the rendered overlay against the
+ * viewport. A positive value shifts the tooltip right (to clear a left-edge
+ * overflow); a negative value shifts it left (right-edge overflow). The
+ * arrow uses the same variable with the opposite sign so it stays anchored
+ * to the trigger no matter how the tooltip body has been nudged inward.
  */
 
 .trigger {
@@ -15,7 +22,7 @@
     position: absolute;
     bottom: 100%;
     left: 50%;
-    transform: translateX(-50%);
+    transform: translateX(calc(-50% + var(--tooltip-shift-x, 0px)));
     margin-bottom: var(--spacing-6);
     background-color: rgba(0, 0, 0, 0.95);
     color: var(--color-text);
@@ -44,22 +51,22 @@
 @keyframes fadeIn {
     from {
         opacity: 0;
-        transform: translateX(-50%) translateY(4px);
+        transform: translateX(calc(-50% + var(--tooltip-shift-x, 0px))) translateY(4px);
     }
     to {
         opacity: 1;
-        transform: translateX(-50%) translateY(0);
+        transform: translateX(calc(-50% + var(--tooltip-shift-x, 0px))) translateY(0);
     }
 }
 
 @keyframes fadeInBottom {
     from {
         opacity: 0;
-        transform: translateX(-50%) translateY(-4px);
+        transform: translateX(calc(-50% + var(--tooltip-shift-x, 0px))) translateY(-4px);
     }
     to {
         opacity: 1;
-        transform: translateX(-50%) translateY(0);
+        transform: translateX(calc(-50% + var(--tooltip-shift-x, 0px))) translateY(0);
     }
 }
 
@@ -67,7 +74,7 @@
     position: absolute;
     top: 100%;
     left: 50%;
-    transform: translateX(-50%);
+    transform: translateX(calc(-50% - var(--tooltip-shift-x, 0px)));
     width: 0;
     height: 0;
     border-left: 6px solid transparent;
