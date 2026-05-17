@@ -102,30 +102,54 @@ export function Tooltip({ content, children, placement = 'top' }: TooltipProps) 
     // if either edge would clip. Runs in `useLayoutEffect` so the corrected
     // position is in place before the browser paints — measuring after paint
     // would briefly show the tooltip clipped. Re-runs when `content`
-    // changes since the rendered width depends on it.
+    // changes since the rendered width depends on it, and re-runs on window
+    // resize so a tooltip that stays open through a viewport change does
+    // not become stale.
     useLayoutEffect(() => {
         if (!isVisible) {
             setShiftX(0);
             return;
         }
-        const el = contentRef.current;
-        if (!el) return;
-        // Measure with shift cleared so each pass starts from the
-        // trigger-centered position rather than the previous offset.
-        el.style.setProperty('--tooltip-shift-x', '0px');
-        const rect = el.getBoundingClientRect();
-        const viewportWidth = document.documentElement.clientWidth;
-        const overflowLeft = Math.max(0, VIEWPORT_PADDING_PX - rect.left);
-        const overflowRight = Math.max(
-            0,
-            rect.right - (viewportWidth - VIEWPORT_PADDING_PX)
-        );
-        // `overflowLeft - overflowRight` is the net inward nudge: positive
-        // when the left edge overflows (shift right), negative when the
-        // right edge overflows (shift left). When the tooltip is wider
-        // than the available room both sides overflow and we bias left,
-        // which keeps the tooltip's leading text visible.
-        setShiftX(overflowLeft - overflowRight);
+
+        function updateShift() {
+            const el = contentRef.current;
+            if (!el) return;
+            // Measure with shift cleared so each pass starts from the
+            // trigger-centered position rather than the previous offset.
+            el.style.setProperty('--tooltip-shift-x', '0px');
+            const rect = el.getBoundingClientRect();
+            const viewportWidth = document.documentElement.clientWidth;
+            const overflowLeft = Math.max(0, VIEWPORT_PADDING_PX - rect.left);
+            const overflowRight = Math.max(
+                0,
+                rect.right - (viewportWidth - VIEWPORT_PADDING_PX)
+            );
+            // Bias left: a left-edge overflow always wins, shifting right
+            // so the leading text becomes visible. When only the right
+            // edge overflows, shift left just enough to clear it, but
+            // never further than the available room on the left — that
+            // way the tooltip's start stays on-screen even when the
+            // tooltip is wider than the viewport.
+            let nextShift = 0;
+            if (overflowLeft > 0) {
+                nextShift = overflowLeft;
+            } else if (overflowRight > 0) {
+                const maxShiftLeft = Math.max(0, rect.left - VIEWPORT_PADDING_PX);
+                nextShift = -Math.min(overflowRight, maxShiftLeft);
+            }
+            // Write the final shift to the DOM imperatively, then sync
+            // React state. The imperative write matters: if `nextShift`
+            // equals the current `shiftX` state, `setShiftX` bails out
+            // without re-rendering, so React's inline-style branch (which
+            // only emits the property when `shiftX !== 0`) would otherwise
+            // leave the DOM stuck at the `0px` reset above.
+            el.style.setProperty('--tooltip-shift-x', `${nextShift}px`);
+            setShiftX(nextShift);
+        }
+
+        updateShift();
+        window.addEventListener('resize', updateShift);
+        return () => window.removeEventListener('resize', updateShift);
     }, [isVisible, content]);
 
     const contentStyle =
