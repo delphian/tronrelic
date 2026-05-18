@@ -19,8 +19,16 @@ export interface IAiQueryResult {
     /** Model that was used for this query. */
     model: string;
 
-    /** Why the response ended: 'end_turn', 'max_tokens', or 'tool_use' (round limit hit). */
-    stopReason: string;
+    /**
+     * Why the response ended. Mirrors Anthropic's `StopReason` union:
+     * - `end_turn` — model naturally completed
+     * - `max_tokens` — hit the output token budget
+     * - `stop_sequence` — matched a configured stop sequence
+     * - `tool_use` — pausing to invoke a tool (or tool-use round limit hit)
+     * - `pause_turn` — long-running turn paused for continuation
+     * - `refusal` — model declined to respond
+     */
+    stopReason: 'end_turn' | 'max_tokens' | 'stop_sequence' | 'tool_use' | 'pause_turn' | 'refusal';
 
     /** Token usage summed across all tool-use rounds. */
     usage: {
