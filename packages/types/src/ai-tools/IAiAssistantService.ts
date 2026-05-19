@@ -18,8 +18,9 @@ import type { IModelInfo } from './IModelInfo.js';
  * ```typescript
  * const ai = context.services.get<IAiAssistantService>('ai-assistant');
  * if (ai) {
- *     // Register tools for the model
- *     ai.registerTool(myTool);
+ *     // Register tools for the model — pass your plugin's manifest id so
+ *     // the admin UI can group tools by their source.
+ *     ai.registerTool(myTool, 'my-plugin');
  *
  *     // Submit a programmatic query using configured defaults
  *     const result = await ai.ask('How many transactions in the last hour?');
