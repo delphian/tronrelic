@@ -40,10 +40,18 @@ export interface IAiAssistantService {
     /**
      * Register a tool for the model to use during AI-assisted queries.
      *
+     * `providerId` attributes the tool to a plugin or module so the admin UI
+     * can group tools by their source. Pass your plugin's manifest id (e.g.
+     * `'telegram-bot'`); omit only for legacy callers — the registry will tag
+     * those as `'unknown'`. Attribution is captured at registration time, not
+     * inferred from the tool name.
+     *
      * @param tool - Tool definition including name, schema, and handler.
+     * @param providerId - Plugin/module id that owns this tool (e.g. the
+     *                     caller's `manifest.id`). Defaults to `'unknown'`.
      * @throws If a tool with the same name is already registered.
      */
-    registerTool(tool: IAiTool): void;
+    registerTool(tool: IAiTool, providerId?: string): void;
 
     /**
      * Remove a previously registered tool by name.
