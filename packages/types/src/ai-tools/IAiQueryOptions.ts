@@ -65,9 +65,6 @@ export interface IAiQueryOptions {
     /** Whether to include thinking blocks in the final response text. Falls back to configured default. */
     persistThinking?: boolean;
 
-    /** Whether to format DB query template variable output as YAML. Default: false. */
-    formatAsYaml?: boolean;
-
     /** Execution mode for history tracking. Default: 'programmatic'. Use 'stream' for admin UI queries. */
     mode?: 'stream' | 'programmatic';
 
