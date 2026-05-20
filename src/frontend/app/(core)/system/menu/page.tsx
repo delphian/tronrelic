@@ -164,14 +164,14 @@ export default function MenuAdminPage() {
 
     const fetchTree = useCallback(
         async (namespace: string) => {
-            const res = await fetch(`/api/menu?namespace=${encodeURIComponent(namespace)}`, {
+            const res = await fetch(`/api/menu/manage?namespace=${encodeURIComponent(namespace)}`, {
                 headers: authHeaders
             });
             if (!res.ok) throw new Error('Failed to load menu tree');
             const data = await res.json();
-            // Admin reads return the origin-tagged projection (controller
-            // branches on `isAdmin`). The page is admin-only, so the cast
-            // is always valid for callers reaching this code path.
+            // `/api/menu/manage` returns the origin-tagged projection.
+            // The route is `requireAdmin`-gated so the cast is always
+            // valid for callers reaching this code path.
             return data.tree as IMenuTreeAdminView;
         },
         [authHeaders]

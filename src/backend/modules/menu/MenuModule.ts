@@ -298,6 +298,11 @@ export class MenuModule implements IModule<IMenuModuleDependencies> {
         router.get('/namespace/:namespace/config', this.controller.getNamespaceConfig);
         router.get('/', userContextMiddleware, this.controller.getTree);
 
+        // Admin management read — origin-tagged, includes disabled and gated
+        // rows. Distinct from `GET /` (the universal navigation read) so
+        // privilege never changes the shape of the navigation tree.
+        router.get('/manage', requireAdmin, this.controller.getManageView);
+
         // Admin-only routes (mutating operations require authentication)
         router.post('/', requireAdmin, this.controller.create);
         router.patch('/:id', requireAdmin, this.controller.update);
