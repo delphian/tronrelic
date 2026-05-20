@@ -325,17 +325,24 @@ export class MenuController {
     constructor(private readonly service: MenuService) {}
 
     /**
-     * Get the complete menu tree structure.
+     * Get the user-visible menu tree for the navigation chrome.
      *
-     * Returns hierarchical representation of all menu nodes organized by parent-child
-     * relationships. Root nodes are in the `roots` array, each potentially containing
-     * nested children. The `all` array provides a flat list for quick lookups.
+     * Returns the hierarchical menu projected through the cookie-resolved
+     * visitor's gating: nodes with `enabled: false` are stripped, and per-node
+     * gating fields (`allowedIdentityStates`, `requiresGroups`, `requiresAdmin`)
+     * narrow the tree to what this visitor may see. Admins receive the same
+     * shape as everyone else — the origin-tagged management view lives at
+     * `GET /api/menu/manage`. Root nodes are in the `roots` array, each
+     * potentially containing nested children; the `all` array provides a
+     * flat list for quick lookups.
      *
      * **Route:** GET /api/menu
      *
-     * **Authentication:** Public (no authentication required)
+     * **Authentication:** Public — `userContextMiddleware` resolves the
+     *                     `tronrelic_uid` cookie so per-user gating applies.
+     *                     Anonymous callers see only ungated nodes.
      *
-     * **Response:**
+     * **Response:** (shape after filtering; concrete fields depend on caller's identity)
      * ```json
      * {
      *   "success": true,
@@ -375,24 +382,53 @@ export class MenuController {
 
             if (await denyIfAdminNamespace(req, res, namespace)) return;
 
-            // Admins see the full unfiltered tree (including disabled
-            // nodes and gated entries) so the admin UI can render and
-            // edit them. The admin variant additionally tags each node
-            // with an `origin` field (`manual` / `plugin` /
-            // `plugin-overridden`) so the UI can render an origin badge
-            // and gate destructive UX on plugin-owned rows. Admin status
-            // resolves either via the user cookie (verified wallet +
-            // admin group) or via service token. Regular visitors get
-            // the per-user filtered view: enabled-only AND gating-aware,
-            // with no origin metadata leaked.
-            if (await isAdmin(req)) {
-                res.json({ success: true, tree: this.service.getTreeAdminView(namespace) });
-                return;
-            }
-
+            // Universal navigation read: every caller — admin or not —
+            // receives the same per-user filtered, enabled-only tree.
+            // Admins do not get a privileged shape here; the admin
+            // management surface lives at `GET /api/menu/manage`. Node
+            // visibility is controlled exclusively by per-node gating
+            // (`allowedIdentityStates`, `requiresGroups`, `requiresAdmin`).
             const user = (req as Request & { user?: IUser }).user;
             const filtered = await this.service.getTreeForUser(namespace, user);
             res.json({ success: true, tree: publicTreeView(filtered) });
+        } catch (error) {
+            const message = error instanceof Error ? error.message : 'Failed to get menu tree';
+            res.status(500).json({ success: false, error: message });
+        }
+    };
+
+    /**
+     * Admin management read: full origin-tagged tree.
+     *
+     * Returns every node in the namespace — including disabled rows and
+     * gated entries — with each node tagged `manual` / `plugin` /
+     * `plugin-overridden` so the admin UI can render origin badges and
+     * gate destructive actions on plugin-owned rows.
+     *
+     * Distinct from `GET /api/menu` by design. The navigation read is
+     * universal and gated only by per-node permissions; this endpoint
+     * is the menu-editing surface, not a privileged navigation view.
+     *
+     * **Route:** GET /api/menu/manage
+     *
+     * **Authentication:** Requires admin (via `requireAdmin` middleware).
+     *
+     * @param req - Express request object
+     * @param res - Express response object
+     */
+    getManageView = async (req: Request, res: Response) => {
+        try {
+            const rawNamespace = req.query.namespace;
+            const namespace = typeof rawNamespace === 'string' && rawNamespace.length > 0
+                ? rawNamespace
+                : undefined;
+
+            if (namespace !== undefined && !NAMESPACE_REGEX.test(namespace)) {
+                res.status(400).json({ success: false, error: 'Invalid namespace' });
+                return;
+            }
+
+            res.json({ success: true, tree: this.service.getTreeAdminView(namespace) });
         } catch (error) {
             const message = error instanceof Error ? error.message : 'Failed to get menu tree';
             res.status(500).json({ success: false, error: message });

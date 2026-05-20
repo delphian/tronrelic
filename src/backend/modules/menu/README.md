@@ -96,7 +96,7 @@ Override persistence applies to `order`, `label`, `description`, `icon`, and `en
 | `plugin` | Memory-only, no override row. Delete removes only the in-memory copy — the plugin re-registers on next boot. |
 | `plugin-overridden` | Memory-only with an admin customization in `menu_node_overrides`. Plugin still owns lifecycle; `order`/`label`/`icon`/`description`/`enabled` survive restarts. |
 
-The controller branches on `isAdmin(req)` — admin callers receive `IMenuTreeAdminView`, public callers receive the unchanged `IMenuTree`. Origin is computed at read time, so it never goes stale. The admin UI at `/system/menu` renders the tag as a badge and gates the delete confirm dialog with a "will reappear on next plugin load" warning for `plugin` and `plugin-overridden` rows.
+The origin-tagged projection is served exclusively from `GET /api/menu/manage`, a `requireAdmin`-gated endpoint. `GET /api/menu` is the universal navigation read and never changes shape based on caller privilege — every visitor, admin or not, gets the same per-user filtered, enabled-only tree. Splitting reads this way keeps the navigation chrome consistent for admin operators and confines disabled / gated rows to the editing surface where they belong. Origin is computed at read time, so it never goes stale. The admin UI at `/system/menu` renders the tag as a badge and gates the delete confirm dialog with a "will reappear on next plugin load" warning for `plugin` and `plugin-overridden` rows.
 
 ### Auto-Derived URLs for Container Nodes
 
@@ -231,7 +231,7 @@ the server returns the filtered view.
 
 ## REST API Reference
 
-Read endpoints are public so the frontend can render navigation without an admin token; mutating endpoints require `ADMIN_API_TOKEN` via `x-admin-token` or `Authorization: Bearer`. See [system-api.md](../../../../docs/system/system-api.md) for complete authentication patterns.
+Navigation reads are public — the frontend chrome fetches them without an admin token, with per-user gating applied from the `tronrelic_uid` cookie. The admin management read (`GET /api/menu/manage`) and every mutating endpoint go through `requireAdmin`, which accepts either the cookie path (verified wallet + admin group) or `ADMIN_API_TOKEN` via `x-admin-token` / `Authorization: Bearer`. See [system-api.md](../../../../docs/system/system-api.md) for complete authentication patterns.
 
 **Public (no auth):**
 
@@ -246,6 +246,7 @@ Read endpoints are public so the frontend can render navigation without an admin
 
 | Endpoint | Method | Purpose | Key Fields |
 |----------|--------|---------|------------|
+| `/api/menu/manage` | GET | Origin-tagged tree for the menu admin UI — includes disabled and gated rows | Query: `namespace` (optional, defaults to 'main') |
 | `/api/menu` | POST | Create persisted menu node | Body: `label` (required), `description`, `url`, `icon`, `order`, `parent`, `enabled`, `allowedIdentityStates`, `requiresGroups`, `requiresAdmin` |
 | `/api/menu/:id` | PATCH | Update menu node | Body: any fields to update |
 | `/api/menu/:id` | DELETE | Delete menu node | Does **not** cascade — children become orphans unless a `before:delete` subscriber handles them |
