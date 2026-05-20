@@ -38,7 +38,16 @@ export function resolveIcon(name: string): LucideIcon | undefined {
 
     const candidate = (LucideIcons as Record<string, unknown>)[name];
 
-    if (typeof candidate !== 'function') {
+    // lucide-react ≥ 0.300 wraps every icon in `React.forwardRef(...)`, whose
+    // result is a `ForwardRefExoticComponent` — `typeof` reports `'object'`,
+    // not `'function'`. A plain `typeof === 'function'` guard rejects every
+    // icon and silently returns undefined, so menu nav and category landing
+    // pages render no icons at all. Accept both shapes: function components
+    // (legacy) and exotic component objects (forwardRef / memo wrappers).
+    if (candidate == null) {
+        return undefined;
+    }
+    if (typeof candidate !== 'function' && typeof candidate !== 'object') {
         return undefined;
     }
 

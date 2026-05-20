@@ -573,7 +573,12 @@ export function MenuNavClient({ namespace, items, generatedAt, ariaLabel }: IMen
         );
     };
 
-    const navClassName = `${styles.nav} ${hasInitialized ? styles['nav--initialized'] : ''}`;
+    const isCompact = menuConfig.styling?.compact ?? false;
+    const navClassName = [
+        styles.nav,
+        hasInitialized ? styles['nav--initialized'] : '',
+        isCompact ? styles['nav--compact'] : ''
+    ].filter(Boolean).join(' ');
 
     // Always render PriorityNav to maintain consistent single-row layout.
     // The fallback wrapped layout caused vertical overflow during loading,

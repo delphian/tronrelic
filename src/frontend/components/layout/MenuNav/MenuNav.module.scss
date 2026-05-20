@@ -45,6 +45,25 @@
     overflow: visible;
 }
 
+/**
+ * Compact variant — tighter spacing and smaller text.
+ *
+ * Driven by the namespace config `styling.compact` toggle. Tightens
+ * the inter-tab gap and drops padding / font-size one step on the
+ * curated t-shirt scale for descendant tab and category buttons.
+ * Token tier stays on use-case semantics and curated primitives.
+ */
+.nav--compact {
+    gap: var(--gap-xs);
+
+    .tab,
+    .categoryButton,
+    .subcategoryButton {
+        padding: var(--padding-xs) var(--padding-sm);
+        font-size: var(--font-size-caption);
+    }
+}
+
 .tab {
     padding: var(--padding-sm) var(--padding-md);
     background: transparent;
