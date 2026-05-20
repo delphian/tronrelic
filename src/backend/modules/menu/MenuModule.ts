@@ -19,6 +19,7 @@ import { MenuController } from './api/menu.controller.js';
 import { MAIN_SYSTEM_CONTAINER_ID } from './constants.js';
 import { Router as ExpressRouter } from 'express';
 import { requireAdmin } from '../../api/middleware/admin-auth.js';
+import { createRateLimiter } from '../../api/middleware/rate-limit.js';
 import { userContextMiddleware } from '../../api/middleware/user-context.js';
 
 /**
@@ -301,7 +302,16 @@ export class MenuModule implements IModule<IMenuModuleDependencies> {
         // Admin management read — origin-tagged, includes disabled and gated
         // rows. Distinct from `GET /` (the universal navigation read) so
         // privilege never changes the shape of the navigation tree.
-        router.get('/manage', requireAdmin, this.controller.getManageView);
+        // Rate-limited per-IP using the same 60s/60req shape as the other
+        // rate-limited core routes (tokens, transactions) to satisfy
+        // CodeQL's missing-rate-limiting rule and bound brute-force cost
+        // against the `requireAdmin` token check.
+        const manageRateLimiter = createRateLimiter({
+            windowSeconds: 60,
+            maxRequests: 60,
+            keyPrefix: 'menu-manage'
+        });
+        router.get('/manage', manageRateLimiter, requireAdmin, this.controller.getManageView);
 
         // Admin-only routes (mutating operations require authentication)
         router.post('/', requireAdmin, this.controller.create);
