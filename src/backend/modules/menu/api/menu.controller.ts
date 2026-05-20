@@ -325,17 +325,24 @@ export class MenuController {
     constructor(private readonly service: MenuService) {}
 
     /**
-     * Get the complete menu tree structure.
+     * Get the user-visible menu tree for the navigation chrome.
      *
-     * Returns hierarchical representation of all menu nodes organized by parent-child
-     * relationships. Root nodes are in the `roots` array, each potentially containing
-     * nested children. The `all` array provides a flat list for quick lookups.
+     * Returns the hierarchical menu projected through the cookie-resolved
+     * visitor's gating: nodes with `enabled: false` are stripped, and per-node
+     * gating fields (`allowedIdentityStates`, `requiresGroups`, `requiresAdmin`)
+     * narrow the tree to what this visitor may see. Admins receive the same
+     * shape as everyone else — the origin-tagged management view lives at
+     * `GET /api/menu/manage`. Root nodes are in the `roots` array, each
+     * potentially containing nested children; the `all` array provides a
+     * flat list for quick lookups.
      *
      * **Route:** GET /api/menu
      *
-     * **Authentication:** Public (no authentication required)
+     * **Authentication:** Public — `userContextMiddleware` resolves the
+     *                     `tronrelic_uid` cookie so per-user gating applies.
+     *                     Anonymous callers see only ungated nodes.
      *
-     * **Response:**
+     * **Response:** (shape after filtering; concrete fields depend on caller's identity)
      * ```json
      * {
      *   "success": true,
@@ -405,6 +412,9 @@ export class MenuController {
      * **Route:** GET /api/menu/manage
      *
      * **Authentication:** Requires admin (via `requireAdmin` middleware).
+     *
+     * @param req - Express request object
+     * @param res - Express response object
      */
     getManageView = async (req: Request, res: Response) => {
         try {

@@ -231,7 +231,7 @@ the server returns the filtered view.
 
 ## REST API Reference
 
-Read endpoints are public so the frontend can render navigation without an admin token; mutating endpoints require `ADMIN_API_TOKEN` via `x-admin-token` or `Authorization: Bearer`. See [system-api.md](../../../../docs/system/system-api.md) for complete authentication patterns.
+Navigation reads are public — the frontend chrome fetches them without an admin token, with per-user gating applied from the `tronrelic_uid` cookie. The admin management read (`GET /api/menu/manage`) and every mutating endpoint go through `requireAdmin`, which accepts either the cookie path (verified wallet + admin group) or `ADMIN_API_TOKEN` via `x-admin-token` / `Authorization: Bearer`. See [system-api.md](../../../../docs/system/system-api.md) for complete authentication patterns.
 
 **Public (no auth):**
 
