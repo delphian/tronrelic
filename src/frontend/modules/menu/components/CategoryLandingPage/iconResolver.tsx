@@ -32,13 +32,41 @@ const NON_ICON_EXPORTS = new Set(['icons', 'Icon', 'createLucideIcon']);
  * @returns The LucideIcon component or undefined if not found
  */
 export function resolveIcon(name: string): LucideIcon | undefined {
+    // Predicate mirrors `isRenderableLucideExport` in
+    // `components/ui/IconPickerModal/IconPickerModal.tsx` so both surfaces
+    // accept the same set: picker can never offer a name the resolver
+    // would later reject (or vice versa). If the predicate is extended
+    // there, mirror the change here.
+
+    // Icon exports start with an uppercase letter; everything else
+    // (e.g. `createLucideIcon`, `icons`) is a utility.
+    if (!/^[A-Z]/.test(name)) {
+        return undefined;
+    }
+
     if (NON_ICON_EXPORTS.has(name) || name.startsWith('Lucide') || name.endsWith('Icon')) {
         return undefined;
     }
 
     const candidate = (LucideIcons as Record<string, unknown>)[name];
 
-    if (typeof candidate !== 'function') {
+    // lucide-react ≥ 0.300 wraps every icon in `React.forwardRef(...)`, whose
+    // result is a `ForwardRefExoticComponent` — `typeof` reports `'object'`,
+    // not `'function'`. Accept both shapes: function components (legacy)
+    // and exotic component objects (forwardRef / memo wrappers).
+    if (candidate == null) {
+        return undefined;
+    }
+    if (typeof candidate !== 'function' && typeof candidate !== 'object') {
+        return undefined;
+    }
+
+    // Lucide icons carry a `displayName: string` set by `createLucideIcon`.
+    // Non-component exports that happen to be objects (utility helpers,
+    // future additions) will not, so requiring it closes the
+    // non-renderable-cast risk Copilot flagged.
+    const component = candidate as { displayName?: unknown };
+    if (typeof component.displayName !== 'string') {
         return undefined;
     }
 

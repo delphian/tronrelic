@@ -150,6 +150,7 @@ export function MenuNavClient({ namespace, items, generatedAt, ariaLabel }: IMen
     const iconsEnabled = menuConfig.icons?.enabled ?? true;
     const iconPosition: IconPosition = (menuConfig.icons?.position as IconPosition) ?? 'left';
     const showLabelsConfigured = menuConfig.styling?.showLabels ?? true;
+    const isCompact = menuConfig.styling?.compact ?? false;
     // `MenuNodeIcon` uses `next/dynamic({ ssr: false })`, so the icon
     // glyph renders nothing during SSR, nothing during the first client
     // paint, and nothing for no-JS users. Keeping labels visible until
@@ -538,11 +539,22 @@ export function MenuNavClient({ namespace, items, generatedAt, ariaLabel }: IMen
 
         const position = getDropdownPosition();
 
+        // The portal lives under <body>, outside the <nav> that carries the
+        // compact class — descendant selectors anchored on `.nav--compact`
+        // would never match the dropdown contents. Tagging the dropdown root
+        // and the backdrop with the same compact class brings the rule scope
+        // into the portal so `.subcategoryButton` and other dropdown rows
+        // honor `styling.compact`.
+        const dropdownClassName = [styles.categoryDropdown, isCompact ? styles['nav--compact'] : '']
+            .filter(Boolean).join(' ');
+        const backdropClassName = [styles.categoryBackdrop, isCompact ? styles['nav--compact'] : '']
+            .filter(Boolean).join(' ');
+
         return createPortal(
             <>
                 {/* Backdrop - prevents interaction with page behind sheet */}
                 <div
-                    className={styles.categoryBackdrop}
+                    className={backdropClassName}
                     aria-hidden="true"
                     onClick={closeDropdown}
                     onTouchMove={(e) => e.preventDefault()}
@@ -550,7 +562,7 @@ export function MenuNavClient({ namespace, items, generatedAt, ariaLabel }: IMen
                 {/* Dropdown panel */}
                 <div
                     ref={dropdownRef}
-                    className={styles.categoryDropdown}
+                    className={dropdownClassName}
                     role="menu"
                     aria-label={`${expandedCategory.label} submenu`}
                     style={{
@@ -573,7 +585,11 @@ export function MenuNavClient({ namespace, items, generatedAt, ariaLabel }: IMen
         );
     };
 
-    const navClassName = `${styles.nav} ${hasInitialized ? styles['nav--initialized'] : ''}`;
+    const navClassName = [
+        styles.nav,
+        hasInitialized ? styles['nav--initialized'] : '',
+        isCompact ? styles['nav--compact'] : ''
+    ].filter(Boolean).join(' ');
 
     // Always render PriorityNav to maintain consistent single-row layout.
     // The fallback wrapped layout caused vertical overflow during loading,
