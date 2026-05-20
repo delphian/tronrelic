@@ -54,18 +54,28 @@ const DEFAULT_CONFIG: IMenuNamespaceConfig = {
 export function useMenuConfig(namespace: string = 'main'): IUseMenuConfigResult {
     const dispatch = useAppDispatch();
     const stored = useAppSelector(state => state.menu.namespaces[namespace]?.config);
+    const status = useAppSelector(state => state.menu.namespaces[namespace]?.configStatus);
 
     useEffect(() => {
-        if (!stored) {
-            // Thunk middleware fires the network call once even if
-            // multiple consumers mount in the same tick — the second
-            // dispatch finds a fulfilled promise in the action cache.
+        // Dispatch only on the first idle state. The thunk's `condition`
+        // option also blocks duplicate work, but checking here keeps the
+        // hook honest about its own intent and saves an unnecessary
+        // dispatch on every render after the first fetch resolves.
+        if (status === undefined || status === 'idle') {
             void dispatch(fetchNamespaceConfig({ namespace }));
         }
-    }, [namespace, stored, dispatch]);
+    }, [namespace, status, dispatch]);
 
-    if (!stored) {
-        return { ...DEFAULT_CONFIG, namespace, loading: true };
+    // Treat 'failed' as a terminal state and surface defaults with
+    // loading:false so consumers stop showing fallback chrome. The
+    // thunk's `condition` guard prevents re-dispatch from this hook,
+    // so a transient failure is sticky until the page reloads — a
+    // deliberate trade so we don't retry on every render.
+    if (stored) {
+        return { ...stored, loading: false };
     }
-    return { ...stored, loading: false };
+    if (status === 'failed') {
+        return { ...DEFAULT_CONFIG, namespace, loading: false };
+    }
+    return { ...DEFAULT_CONFIG, namespace, loading: true };
 }

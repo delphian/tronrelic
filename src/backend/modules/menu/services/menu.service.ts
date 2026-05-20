@@ -1405,8 +1405,18 @@ export class MenuService implements IMenuService {
 
             // Keep the in-memory override-keys cache in sync so the next
             // admin tree read tags the node as `plugin-overridden` without
-            // waiting on a Mongo round-trip.
+            // waiting on a Mongo round-trip. The override row is keyed by
+            // the plugin's canonical URL (passed in as `url`), but the
+            // in-memory node may carry a renamed URL after the same
+            // update — `resolveOrigin` matches against `node.url`, so we
+            // also seed the cache with `updates.url` to keep the badge
+            // consistent in-session. The rename itself does not survive
+            // restart (only the override fields persist), so the spare
+            // cache entry is naturally cleaned up on the next init.
             this.overrideKeys.add(this.overrideKey(namespace, url));
+            if (updates.url && updates.url !== url) {
+                this.overrideKeys.add(this.overrideKey(namespace, updates.url));
+            }
 
             logger.debug({ namespace, url, overrideFields }, 'Menu node override saved');
         } catch (error) {

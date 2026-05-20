@@ -150,7 +150,15 @@ export function MenuNavClient({ namespace, items, generatedAt, ariaLabel }: IMen
     const iconsEnabled = menuConfig.icons?.enabled ?? true;
     const iconPosition: IconPosition = (menuConfig.icons?.position as IconPosition) ?? 'left';
     const showLabelsConfigured = menuConfig.styling?.showLabels ?? true;
-    const showLabels = showLabelsConfigured || !iconsEnabled;
+    // `MenuNodeIcon` uses `next/dynamic({ ssr: false })`, so the icon
+    // glyph renders nothing during SSR, nothing during the first client
+    // paint, and nothing for no-JS users. Keeping labels visible until
+    // `isMounted` flips post-hydration guarantees every tab has visible
+    // content in all three of those states. Once mounted, the configured
+    // `showLabels` value takes over — and if the operator turned icons
+    // off entirely we always keep labels visible as a last-resort
+    // fallback (otherwise the tab has nothing to render).
+    const showLabels = !iconsEnabled || !isMounted ? true : showLabelsConfigured;
 
     // Track mount state for portal rendering (SSR safety)
     useEffect(() => {
@@ -371,9 +379,22 @@ export function MenuNavClient({ namespace, items, generatedAt, ariaLabel }: IMen
                     aria-label={`${isExpanded ? 'Collapse' : 'Expand'} ${item.label} submenu`}
                 >
                     {iconPosition !== 'right' && icon}
-                    {label}
-                    {iconPosition === 'right' && icon}
-                    {chevron}
+                    {iconStackTop ? (
+                        // In icon-top mode the button is `flex-direction: column`,
+                        // so each child sits on its own line. Group label+chevron
+                        // in a row span so the chevron stays inline with the
+                        // label instead of stacking under it.
+                        <span className={styles.categoryButton__row}>
+                            {label}
+                            {chevron}
+                        </span>
+                    ) : (
+                        <>
+                            {label}
+                            {iconPosition === 'right' && icon}
+                            {chevron}
+                        </>
+                    )}
                 </button>
             </div>
         );

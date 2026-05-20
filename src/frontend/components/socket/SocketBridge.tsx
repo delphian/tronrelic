@@ -215,12 +215,30 @@ export function SocketBridge() {
 
     const handleMenuNamespaceConfigUpdate = (payload: MenuNamespaceConfigUpdatePayload['payload']) => {
       // Namespace config has no per-user variance, so the server emits the
-      // full normalized config inline — no refetch needed. Cast at the
-      // boundary because the wire type is `Record<string, unknown>` to
-      // keep the shared socket types decoupled from the menu types.
+      // full normalized config inline — no refetch needed. The wire type
+      // is `Record<string, unknown>` to keep the shared socket types
+      // decoupled from the menu types, so this is the validation
+      // boundary: drop the event if the payload is not an object or its
+      // namespace disagrees with the envelope. Nested fields (icons,
+      // styling, layout, overflow) are intentionally not validated here
+      // — `useMenuConfig` and `MenuNavClient` already degrade gracefully
+      // with `?? defaults`, so a partial shape is harmless. A flat-out
+      // bogus payload is what would poison the store.
+      const raw = payload.config;
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+        console.warn('Dropped menu:namespace-config:update with non-object config', payload);
+        return;
+      }
+      const configNamespace = (raw as { namespace?: unknown }).namespace;
+      if (typeof configNamespace !== 'string' || configNamespace !== payload.namespace) {
+        console.warn(
+          `Dropped menu:namespace-config:update — namespace mismatch (envelope=${payload.namespace}, config=${String(configNamespace)})`
+        );
+        return;
+      }
       dispatch(namespaceConfigSet({
         namespace: payload.namespace,
-        config: payload.config as unknown as IMenuNamespaceConfig
+        config: raw as unknown as IMenuNamespaceConfig
       }));
     };
 

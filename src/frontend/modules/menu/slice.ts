@@ -14,22 +14,35 @@
 import { createSlice, createAsyncThunk, type PayloadAction } from '@reduxjs/toolkit';
 import type { MenuNodeSerialized } from '@/shared';
 import { getApiUrl } from '../../lib/config';
+import { getRuntimeConfig } from '../../lib/runtimeConfig';
 import type { IMenuNamespaceConfig } from './types';
+
+/**
+ * Lifecycle of the initial namespace-config fetch.
+ *
+ * Tracked per-namespace so the hook can stop dispatching after a
+ * terminal state — without this, a rejected fetch leaves `config`
+ * undefined and every subsequent render of any consumer would re-fire
+ * the thunk, leaking requests until the user reloads.
+ */
+export type NamespaceConfigStatus = 'idle' | 'loading' | 'succeeded' | 'failed';
 
 /**
  * Per-namespace menu state.
  *
- * Tree (`roots` + `lastUpdated`) and rendering config (`config`) are
- * tracked independently so a tree mutation broadcast doesn't blow away a
- * previously-loaded config (and vice versa). All three are optional —
- * the namespace can show up via any of the three entry points (SSR tree
- * seed, config fetch, WebSocket update) and the reducers merge into
- * whatever is already there.
+ * Tree (`roots` + `lastUpdated`) and rendering config (`config` plus its
+ * fetch `configStatus`/`configError`) are tracked independently so a
+ * tree mutation broadcast doesn't blow away a previously-loaded config
+ * (and vice versa). All fields are optional — the namespace can show up
+ * via any of the entry points (SSR tree seed, config fetch, WebSocket
+ * update) and the reducers merge into whatever is already there.
  */
 interface MenuNamespaceState {
     roots?: MenuNodeSerialized[];
     lastUpdated?: string;
     config?: IMenuNamespaceConfig;
+    configStatus?: NamespaceConfigStatus;
+    configError?: string;
 }
 
 export interface MenuState {
@@ -80,10 +93,14 @@ export const refetchMenuTree = createAsyncThunk<
 export const fetchNamespaceConfig = createAsyncThunk<
     { namespace: string; config: IMenuNamespaceConfig },
     { namespace: string },
-    { rejectValue: string }
+    { rejectValue: string; state: { menu: MenuState } }
 >('menu/fetchNamespaceConfig', async ({ namespace }, { rejectWithValue }) => {
     try {
-        const url = getApiUrl(`/menu/namespace/${encodeURIComponent(namespace)}/config`);
+        // Use the runtime config helper (not the deprecated build-time
+        // `getApiUrl`) so the same Docker image works across domains —
+        // see `docs/frontend/frontend.md` for the universal-image rule.
+        const { apiUrl } = getRuntimeConfig();
+        const url = `${apiUrl}/menu/namespace/${encodeURIComponent(namespace)}/config`;
         const response = await fetch(url, { credentials: 'include' });
         if (!response.ok) {
             return rejectWithValue(`config fetch failed: ${response.status}`);
@@ -93,9 +110,31 @@ export const fetchNamespaceConfig = createAsyncThunk<
         if (!config || !config.namespace) {
             return rejectWithValue('config payload missing or invalid');
         }
+        // Reject if the response's namespace doesn't match what we
+        // asked for — otherwise we would store mismatched config under
+        // the requested key and consumers would silently render the
+        // wrong namespace's settings.
+        if (config.namespace !== namespace) {
+            return rejectWithValue(
+                `namespace mismatch: requested "${namespace}", server returned "${config.namespace}"`
+            );
+        }
         return { namespace, config };
     } catch (error) {
         return rejectWithValue(error instanceof Error ? error.message : 'config fetch failed');
+    }
+}, {
+    /**
+     * Skip the dispatch if a fetch for this namespace is already in
+     * flight or has already produced a terminal result. Without this,
+     * concurrent mounts of `useMenuConfig` (which RTK does not dedupe
+     * by default) would each fire the request, and a rejected attempt
+     * would be retried on every render where the consumer's hook
+     * dispatches again.
+     */
+    condition: ({ namespace }, { getState }) => {
+        const status = getState().menu.namespaces[namespace]?.configStatus;
+        return status !== 'loading' && status !== 'succeeded' && status !== 'failed';
     }
 });
 
@@ -134,10 +173,37 @@ const menuSlice = createSlice({
             const existing = state.namespaces[namespace] ?? {};
             state.namespaces[namespace] = { ...existing, roots, lastUpdated: timestamp };
         });
+        builder.addCase(fetchNamespaceConfig.pending, (state, action) => {
+            const { namespace } = action.meta.arg;
+            const existing = state.namespaces[namespace] ?? {};
+            state.namespaces[namespace] = {
+                ...existing,
+                configStatus: 'loading',
+                configError: undefined
+            };
+        });
         builder.addCase(fetchNamespaceConfig.fulfilled, (state, action) => {
             const { namespace, config } = action.payload;
             const existing = state.namespaces[namespace] ?? {};
-            state.namespaces[namespace] = { ...existing, config };
+            state.namespaces[namespace] = {
+                ...existing,
+                config,
+                configStatus: 'succeeded',
+                configError: undefined
+            };
+        });
+        builder.addCase(fetchNamespaceConfig.rejected, (state, action) => {
+            const { namespace } = action.meta.arg;
+            const existing = state.namespaces[namespace] ?? {};
+            // Terminal failure — record the error and let the hook fall
+            // back to defaults with loading:false. We do not auto-retry
+            // because retry on a permanently-bad endpoint would burn
+            // requests on every consumer render.
+            state.namespaces[namespace] = {
+                ...existing,
+                configStatus: 'failed',
+                configError: action.payload ?? action.error.message ?? 'config fetch failed'
+            };
         });
     }
 });

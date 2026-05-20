@@ -87,13 +87,20 @@ export interface IMenuNamespaceConfig {
 
     /**
      * Timestamp when configuration was created.
+     *
+     * ISO 8601 string on the wire. The frontend type intentionally
+     * differs from the backend `IMenuNamespaceConfig` (which carries
+     * `Date`) because the JSON transport strips the prototype — typing
+     * this as `Date` here would silently fail at the first `.toISOString()`
+     * call.
      */
-    createdAt?: Date;
+    createdAt?: string;
 
     /**
-     * Timestamp when configuration was last updated.
+     * Timestamp when configuration was last updated. See `createdAt`
+     * above for the string-not-Date rationale.
      */
-    updatedAt?: Date;
+    updatedAt?: string;
 }
 
 /**

@@ -78,16 +78,25 @@
     text-align: center;
 }
 
-/* Same top-stack treatment for category toggle buttons. The chevron
- * still follows the label horizontally inside the bottom row, since the
- * categoryButton's default `display: inline-flex; gap: var(--gap-xs)`
- * already lays children out — switching to `column` stacks the icon
- * above without affecting the label/chevron pairing. */
+/* Top-stack treatment for category toggle buttons. `flex-direction:
+ * column` stacks the button's direct children vertically, so the
+ * markup pairs `label` and `chevron` inside a `.categoryButton__row`
+ * span — the row sits below the icon and keeps the chevron inline with
+ * the label. Without the row wrapper, the column would stack icon,
+ * label, and chevron as three separate atoms. */
 .categoryButton--iconTop {
     flex-direction: column;
     align-items: center;
     gap: var(--gap-2xs);
     text-align: center;
+}
+
+/* Row container used only inside `.categoryButton--iconTop` to keep
+ * label+chevron on a single line below the stacked icon. */
+.categoryButton__row {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--gap-xs);
 }
 
 /* Accessible-name-only label, used when `styling.showLabels === false`
