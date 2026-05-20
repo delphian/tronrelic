@@ -40,11 +40,11 @@
  * token so consumers can override it at their own scope (per-section
  * `--grid-responsive-min: 320px;` on a wrapping selector) and themes can
  * remap it globally via `[data-theme="UUID"]` — both behaviours match the
- * rest of the design-token system. The 280px default lives in
+ * rest of the design-token system. The default value lives in
  * semantic-tokens.scss; do not hardcode it here.
  */
 .grid_responsive {
-    grid-template-columns: repeat(auto-fit, minmax(var(--grid-responsive-min), 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(min(var(--grid-responsive-min), 100%), 1fr));
 }
 
 /* Tablet and below: collapse fixed columns to single column */
