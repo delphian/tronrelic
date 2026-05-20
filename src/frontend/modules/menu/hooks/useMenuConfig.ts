@@ -1,134 +1,81 @@
 /**
- * Hook for fetching and managing menu namespace configuration.
+ * Redux-backed hook for the namespace rendering configuration.
  *
- * Provides access to namespace-specific menu settings including Priority+
- * overflow behavior, icon display, layout orientation, and styling hints.
- * Configuration is fetched once on mount and cached for the component lifecycle.
+ * The slice is the single source of truth: `fetchNamespaceConfig` seeds
+ * it on first consumer mount and the
+ * `menu:namespace-config:update` WebSocket handler in `SocketBridge`
+ * keeps it live. Every component that calls `useMenuConfig(ns)` reads
+ * the same store entry, so a config saved in `/system/menu` propagates
+ * to every connected tab without a refresh.
+ *
+ * Keeping the fetch inside a thunk (rather than a per-hook
+ * `useEffect`) means multiple consumers of the same namespace share one
+ * network call — Redux Toolkit's thunk middleware fires the underlying
+ * fetch once and the slice merges the result for everyone.
  *
  * @example
  * ```tsx
  * function MyMenu() {
  *     const config = useMenuConfig('main');
- *
- *     if (config.loading) {
- *         return <div>Loading menu...</div>;
- *     }
- *
- *     return (
- *         <PriorityNav
- *             enabled={config.overflow?.enabled ?? true}
- *             collapseAtCount={config.overflow?.collapseAtCount}
- *         >
- *             {menuItems}
- *         </PriorityNav>
- *     );
+ *     if (config.loading) return null;
+ *     return <PriorityNav enabled={config.overflow?.enabled ?? true}>{items}</PriorityNav>;
  * }
  * ```
  */
 'use client';
 
-import { useEffect, useState } from 'react';
-import { apiClient } from '../../../lib/api';
+import { useEffect } from 'react';
+import { useAppDispatch, useAppSelector } from '../../../store/hooks';
+import { fetchNamespaceConfig } from '../slice';
 import type { IMenuNamespaceConfig, IUseMenuConfigResult } from '../types';
 
 /**
- * Default configuration used when API hasn't responded yet.
+ * Defaults returned while the initial fetch is in flight.
  *
- * Provides sensible defaults matching backend behavior (see MenuService.getNamespaceConfig).
- * Priority+ overflow enabled by default, icons enabled on left, horizontal layout.
+ * Mirror `MenuService.getNamespaceConfig`'s defaults so the rendered
+ * navigation looks identical before and after the store hydrates.
  */
 const DEFAULT_CONFIG: IMenuNamespaceConfig = {
     namespace: 'main',
-    overflow: {
-        enabled: true
-    },
-    icons: {
-        enabled: true,
-        position: 'left'
-    },
-    layout: {
-        orientation: 'horizontal'
-    }
+    overflow: { enabled: true },
+    icons: { enabled: true, position: 'left' },
+    layout: { orientation: 'horizontal' }
 };
 
 /**
- * Fetches and manages menu namespace configuration from the backend.
+ * Read a namespace's rendering configuration from Redux, fetching it
+ * on first consumer mount if the store doesn't have it yet. Subsequent
+ * updates flow through SocketBridge's
+ * `menu:namespace-config:update` handler.
  *
- * Makes a GET request to /api/menu/namespace/{namespace}/config on mount and
- * caches the result. If the request fails, falls back to default configuration.
- * The hook automatically handles loading states and provides type-safe access
- * to all configuration fields.
- *
- * @param namespace - Menu namespace to fetch config for (defaults to 'main')
- * @returns Configuration object with loading state
+ * @param namespace - Menu namespace to read (defaults to 'main')
+ * @returns Configuration plus a `loading` flag (true until first fetch resolves)
  */
 export function useMenuConfig(namespace: string = 'main'): IUseMenuConfigResult {
-    const [config, setConfig] = useState<IMenuNamespaceConfig>({
-        ...DEFAULT_CONFIG,
-        namespace
-    });
-    const [loading, setLoading] = useState(true);
+    const dispatch = useAppDispatch();
+    const stored = useAppSelector(state => state.menu.namespaces[namespace]?.config);
+    const status = useAppSelector(state => state.menu.namespaces[namespace]?.configStatus);
 
     useEffect(() => {
-        /**
-         * Validates that the config object has required structure.
-         *
-         * @param config - Configuration object to validate
-         * @throws Error if required fields are missing or invalid
-         */
-        function validateConfig(config: unknown): asserts config is IMenuNamespaceConfig {
-            if (!config || typeof config !== 'object') {
-                throw new Error('Config must be an object');
-            }
-
-            const c = config as Partial<IMenuNamespaceConfig>;
-
-            if (!c.namespace) {
-                throw new Error('Config missing required field: namespace');
-            }
-
-            // Validate optional overflow field structure if present
-            if (c.overflow !== undefined) {
-                if (typeof c.overflow !== 'object' || c.overflow === null) {
-                    throw new Error('Config overflow must be an object');
-                }
-                if (typeof c.overflow.enabled !== 'boolean') {
-                    throw new Error('Config overflow.enabled must be a boolean');
-                }
-                if (c.overflow.collapseAtCount !== undefined && typeof c.overflow.collapseAtCount !== 'number') {
-                    throw new Error('Config overflow.collapseAtCount must be a number');
-                }
-            }
+        // Dispatch only on the first idle state. The thunk's `condition`
+        // option also blocks duplicate work, but checking here keeps the
+        // hook honest about its own intent and saves an unnecessary
+        // dispatch on every render after the first fetch resolves.
+        if (status === undefined || status === 'idle') {
+            void dispatch(fetchNamespaceConfig({ namespace }));
         }
+    }, [namespace, status, dispatch]);
 
-        /**
-         * Fetches namespace configuration from backend API.
-         */
-        async function fetchConfig() {
-            try {
-                const response = await apiClient.get<{ success: boolean; config: IMenuNamespaceConfig }>(
-                    `/menu/namespace/${namespace}/config`
-                );
-
-                if (!response.data || !response.data.config) {
-                    throw new Error('Invalid API response structure: missing config property');
-                }
-
-                validateConfig(response.data.config);
-                setConfig(response.data.config);
-            } catch (error) {
-                console.error(`Failed to fetch menu config for namespace '${namespace}':`, error);
-                // Keep default config on error
-            } finally {
-                setLoading(false);
-            }
-        }
-
-        void fetchConfig();
-    }, [namespace]);
-
-    return {
-        ...config,
-        loading
-    };
+    // Treat 'failed' as a terminal state and surface defaults with
+    // loading:false so consumers stop showing fallback chrome. The
+    // thunk's `condition` guard prevents re-dispatch from this hook,
+    // so a transient failure is sticky until the page reloads — a
+    // deliberate trade so we don't retry on every render.
+    if (stored) {
+        return { ...stored, loading: false };
+    }
+    if (status === 'failed') {
+        return { ...DEFAULT_CONFIG, namespace, loading: false };
+    }
+    return { ...DEFAULT_CONFIG, namespace, loading: true };
 }

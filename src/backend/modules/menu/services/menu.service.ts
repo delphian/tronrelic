@@ -12,7 +12,11 @@ import type {
     IServiceRegistry,
     IUserGroupService,
     IUser,
-    UserIdentityState as UserIdentityStateType
+    UserIdentityState as UserIdentityStateType,
+    MenuNodeOrigin,
+    IMenuNodeAdminView,
+    IMenuNodeAdminViewWithChildren,
+    IMenuTreeAdminView
 } from '@/types';
 import { UserIdentityState } from '@/types';
 import { logger } from '../../../lib/logger.js';
@@ -77,6 +81,20 @@ export class MenuService implements IMenuService {
     private readonly DEFAULT_NAMESPACE = 'main';
     private readonly OVERRIDES_COLLECTION = 'menu_node_overrides';
     private persistedNodeIds = new Set<string>();
+
+    /**
+     * Cache of override coordinates `${namespace}|${url}` for memory-only menu
+     * nodes that carry admin customizations in the `menu_node_overrides`
+     * collection. Populated on `initialize()` and kept in sync by
+     * `saveOverride()`. Used by `resolveOrigin()` to distinguish a vanilla
+     * plugin registration from one whose label/order/icon/etc. an admin has
+     * customized through the admin UI.
+     *
+     * We cache the keys rather than re-querying Mongo on every admin tree
+     * read because the admin UI calls `getTreeAdminView` synchronously and
+     * a per-node round-trip would scale linearly with tree size.
+     */
+    private overrideKeys = new Set<string>();
 
     // Admin-only namespace list lives in `../constants.ts` so the HTTP
     // gate (controller) and the WebSocket suppression (this service) can
@@ -202,6 +220,19 @@ export class MenuService implements IMenuService {
                 { namespace: 1, url: 1 },
                 { unique: true }
             ).catch(err => logger.debug({ err }, 'Overrides index already exists'));
+
+            // Hydrate the override-keys cache so admin reads can resolve a
+            // node's origin (`plugin` vs `plugin-overridden`) without a
+            // round-trip per node. Cheap — one full scan of a tiny collection.
+            this.overrideKeys.clear();
+            const overrideDocs = await overridesCollection.find({}, {
+                projection: { namespace: 1, url: 1 }
+            }).toArray();
+            for (const doc of overrideDocs) {
+                if (doc.namespace && doc.url) {
+                    this.overrideKeys.add(this.overrideKey(doc.namespace, doc.url));
+                }
+            }
 
             // Build in-memory tree organized by namespace
             this.menuTree.clear();
@@ -819,6 +850,34 @@ export class MenuService implements IMenuService {
     }
 
     /**
+     * Admin-only view of the menu tree with each node's `origin` resolved.
+     *
+     * Returns the unfiltered tree — disabled nodes, gated nodes, every
+     * namespace member — projected to `IMenuNodeAdminView` so the admin UI
+     * can render a per-row "manual / plugin / plugin-overridden" badge and
+     * gate destructive UX accordingly (e.g. warning that deleting a plugin
+     * row will reappear on the next plugin load). The `origin` field is
+     * computed at read time from `persistedNodeIds` and the override-keys
+     * cache, so it is always consistent with the current state of the
+     * tree and never goes stale.
+     *
+     * Callers MUST authenticate as admin before invoking this method. The
+     * controller already gates this behind `isAdmin(req)`; no per-method
+     * authorization happens here.
+     *
+     * @param namespace - Menu namespace (defaults to 'main')
+     * @returns Origin-tagged tree mirroring `IMenuTree`'s shape
+     */
+    public getTreeAdminView(namespace?: string): IMenuTreeAdminView {
+        const tree = this.getTree(namespace);
+        return {
+            roots: tree.roots.map((root) => this.toAdminViewWithChildren(root)),
+            all: tree.all.map((node) => this.toAdminView(node)),
+            generatedAt: tree.generatedAt
+        };
+    }
+
+    /**
      * Get a single child of the named parent that the given user may see.
      *
      * Same gating rules as {@link getTreeForUser}; returns the user-filtered
@@ -1344,6 +1403,21 @@ export class MenuService implements IMenuService {
                 { upsert: true }
             );
 
+            // Keep the in-memory override-keys cache in sync so the next
+            // admin tree read tags the node as `plugin-overridden` without
+            // waiting on a Mongo round-trip. The override row is keyed by
+            // the plugin's canonical URL (passed in as `url`), but the
+            // in-memory node may carry a renamed URL after the same
+            // update — `resolveOrigin` matches against `node.url`, so we
+            // also seed the cache with `updates.url` to keep the badge
+            // consistent in-session. The rename itself does not survive
+            // restart (only the override fields persist), so the spare
+            // cache entry is naturally cleaned up on the next init.
+            this.overrideKeys.add(this.overrideKey(namespace, url));
+            if (updates.url && updates.url !== url) {
+                this.overrideKeys.add(this.overrideKey(namespace, updates.url));
+            }
+
             logger.debug({ namespace, url, overrideFields }, 'Menu node override saved');
         } catch (error) {
             logger.error({ error, namespace, url }, 'Failed to save menu node override');
@@ -1402,6 +1476,58 @@ export class MenuService implements IMenuService {
         sortChildren(roots);
 
         return roots;
+    }
+
+    /**
+     * Cache key for the `menu_node_overrides` collection. Joined with `|`
+     * because both `namespace` (NAMESPACE_REGEX-bounded) and `url` (slash-
+     * leading) cannot themselves contain the pipe character.
+     */
+    private overrideKey(namespace: string, url: string): string {
+        return `${namespace}|${url}`;
+    }
+
+    /**
+     * Classify a node as `manual`, `plugin`, or `plugin-overridden`.
+     *
+     * Resolution rules:
+     * - In `persistedNodeIds` → `manual` (lives in `menu_nodes`)
+     * - Otherwise, if a `(namespace, url)` override row exists → `plugin-overridden`
+     * - Otherwise → `plugin`
+     *
+     * A memory-only node without a `url` cannot have an override (overrides
+     * are keyed by url), so it falls through to plain `plugin`.
+     */
+    private resolveOrigin(node: IMenuNode): MenuNodeOrigin {
+        if (node._id && this.persistedNodeIds.has(node._id)) {
+            return 'manual';
+        }
+        const namespace = node.namespace || this.DEFAULT_NAMESPACE;
+        if (node.url && this.overrideKeys.has(this.overrideKey(namespace, node.url))) {
+            return 'plugin-overridden';
+        }
+        return 'plugin';
+    }
+
+    /**
+     * Project an `IMenuNode` to its admin-view shape by tagging the
+     * computed origin. Pure — does not touch the in-memory tree.
+     */
+    private toAdminView(node: IMenuNode): IMenuNodeAdminView {
+        return { ...node, origin: this.resolveOrigin(node) };
+    }
+
+    /**
+     * Project an `IMenuNodeWithChildren` recursively, tagging the entire
+     * subtree with origin. Children come from `buildTree`'s output so the
+     * recursion bottoms out at the leaves naturally.
+     */
+    private toAdminViewWithChildren(node: IMenuNodeWithChildren): IMenuNodeAdminViewWithChildren {
+        return {
+            ...node,
+            origin: this.resolveOrigin(node),
+            children: node.children.map((child) => this.toAdminViewWithChildren(child))
+        };
     }
 
     /**

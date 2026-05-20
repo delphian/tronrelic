@@ -7,7 +7,8 @@ import { useAppDispatch, useAppSelector } from '../../store/hooks';
 import { prependMemo } from '../../store/slices/memoSlice';
 import { blockReceived } from '../../features/blockchain/slice';
 import { setUserData, selectUserId } from '../../modules/user';
-import { refetchMenuTree } from '../../modules/menu/slice';
+import { refetchMenuTree, namespaceConfigSet } from '../../modules/menu/slice';
+import type { IMenuNamespaceConfig } from '../../modules/menu/types';
 import {
   connectionDeferred,
   deferredCountdownTick,
@@ -24,6 +25,7 @@ import type {
   BlockNotificationPayload,
   MemoUpdatePayload,
   MenuUpdatePayload,
+  MenuNamespaceConfigUpdatePayload,
   SocketSubscriptions
 } from '@/shared';
 import type { IUserData } from '../../modules/user';
@@ -211,6 +213,35 @@ export function SocketBridge() {
       dispatch(refetchMenuTree({ namespace: payload.namespace, timestamp: payload.timestamp }));
     };
 
+    const handleMenuNamespaceConfigUpdate = (payload: MenuNamespaceConfigUpdatePayload['payload']) => {
+      // Namespace config has no per-user variance, so the server emits the
+      // full normalized config inline — no refetch needed. The wire type
+      // is `Record<string, unknown>` to keep the shared socket types
+      // decoupled from the menu types, so this is the validation
+      // boundary: drop the event if the payload is not an object or its
+      // namespace disagrees with the envelope. Nested fields (icons,
+      // styling, layout, overflow) are intentionally not validated here
+      // — `useMenuConfig` and `MenuNavClient` already degrade gracefully
+      // with `?? defaults`, so a partial shape is harmless. A flat-out
+      // bogus payload is what would poison the store.
+      const raw = payload.config;
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+        console.warn('Dropped menu:namespace-config:update with non-object config', payload);
+        return;
+      }
+      const configNamespace = (raw as { namespace?: unknown }).namespace;
+      if (typeof configNamespace !== 'string' || configNamespace !== payload.namespace) {
+        console.warn(
+          `Dropped menu:namespace-config:update — namespace mismatch (envelope=${payload.namespace}, config=${String(configNamespace)})`
+        );
+        return;
+      }
+      dispatch(namespaceConfigSet({
+        namespace: payload.namespace,
+        config: raw as unknown as IMenuNamespaceConfig
+      }));
+    };
+
     const handleVisibility = () => {
       if (document.visibilityState === 'visible' && !socket.connected && !manualDisconnectRef.current) {
         // If connection was initiated, try to reconnect
@@ -239,6 +270,7 @@ export function SocketBridge() {
     socket.on('block:new', handleBlockUpdate);
     socket.on('user:update', handleUserUpdate);
     socket.on('menu:update', handleMenuUpdate);
+    socket.on('menu:namespace-config:update', handleMenuNamespaceConfigUpdate);
 
     // Set up browser event handlers
     window.addEventListener('online', handleOnline);
@@ -275,6 +307,7 @@ export function SocketBridge() {
       socket.off('block:new', handleBlockUpdate);
       socket.off('user:update', handleUserUpdate);
       socket.off('menu:update', handleMenuUpdate);
+      socket.off('menu:namespace-config:update', handleMenuNamespaceConfigUpdate);
       socket.off('connect', handleConnect);
       socket.off('disconnect', handleDisconnect);
       socket.off('connect_error', handleConnectError);

@@ -59,6 +59,64 @@
     line-height: var(--line-height-normal);
 }
 
+/* Inline-flex layout used only when an icon is rendered next to the
+ * label. Keeping it opt-in preserves the legacy label-only layout for
+ * tabs whose menu node has no icon string. */
+.tab--withIcon {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--gap-xs);
+}
+
+/* Icon-above-label stack when the namespace config asks for
+ * `icons.position: 'top'`. Tighter gap and centered column so the icon
+ * and label read as a single hit target. */
+.tab--iconTop {
+    flex-direction: column;
+    align-items: center;
+    gap: var(--gap-2xs);
+    text-align: center;
+}
+
+/* Top-stack treatment for category toggle buttons. `flex-direction:
+ * column` stacks the button's direct children vertically, so the
+ * markup pairs `label` and `chevron` inside a `.categoryButton__row`
+ * span — the row sits below the icon and keeps the chevron inline with
+ * the label. Without the row wrapper, the column would stack icon,
+ * label, and chevron as three separate atoms. */
+.categoryButton--iconTop {
+    flex-direction: column;
+    align-items: center;
+    gap: var(--gap-2xs);
+    text-align: center;
+}
+
+/* Row container used only inside `.categoryButton--iconTop` to keep
+ * label+chevron on a single line below the stacked icon. */
+.categoryButton__row {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--gap-xs);
+}
+
+/* Accessible-name-only label, used when `styling.showLabels === false`
+ * so screen readers and the link's accessible name stay intact while
+ * the visible text is hidden. Standard sr-only pattern; kept scoped to
+ * the module because `.text-muted` is the project's only general
+ * global utility — we don't bolt visually-hidden onto globals.scss
+ * for one caller. */
+.sr_only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
 .tab:hover {
     background: var(--color-surface-elevated);
     border-color: var(--color-nav-tab-active-background);

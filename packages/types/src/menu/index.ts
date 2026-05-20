@@ -8,6 +8,12 @@
  */
 
 export type { IMenuNode, IMenuNodeWithChildren } from './IMenuNode.js';
+export type {
+    MenuNodeOrigin,
+    IMenuNodeAdminView,
+    IMenuNodeAdminViewWithChildren,
+    IMenuTreeAdminView
+} from './IMenuNodeAdminView.js';
 export type { IMenuTree } from './IMenuTree.js';
 export type {
     IMenuValidation,
