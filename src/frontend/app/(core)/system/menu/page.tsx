@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
-import { ChevronRight, Pencil, Plus, Trash2 } from 'lucide-react';
+import { Bot, ChevronRight, Pencil, Plus, Trash2, User, type LucideIcon } from 'lucide-react';
 import type {
     IMenuNamespaceConfig,
     IMenuNode,
@@ -36,18 +36,30 @@ interface FlatNode {
     parentLabel: string | null;
 }
 
-/**
- * Per-origin label + tone for the badge column. `manual` is neutral so it
- * doesn't compete visually with the plugin states; `plugin` is info (this
- * is the row's lifecycle, not a warning); `plugin-overridden` is warning to
- * signal the row carries admin customizations that the plugin's defaults
- * no longer fully describe.
- */
-const ORIGIN_BADGE: Record<MenuNodeOrigin, { label: string; tone: 'neutral' | 'info' | 'warning' }> = {
-    manual: { label: 'Manual', tone: 'neutral' },
-    plugin: { label: 'Plugin', tone: 'info' },
-    'plugin-overridden': { label: 'Plugin (overridden)', tone: 'warning' }
+// `plugin-overridden` keeps the warning tone (and `Plugin` label) so an
+// operator can spot rows that carry admin customizations without needing
+// extra suffix text. Default `plugin` and `manual` both read as success —
+// the row is in a clean, expected state. Override state is conveyed via
+// `aria-label` on the warning variant so screen readers can distinguish
+// the two `Plugin` rows even though their visible text matches (WCAG 1.4.1).
+const ORIGIN_BADGE: Record<
+    MenuNodeOrigin,
+    { label: string; tone: 'success' | 'warning'; icon: LucideIcon; ariaLabel?: string }
+> = {
+    manual: { label: 'Manual', tone: 'success', icon: User },
+    plugin: { label: 'Plugin', tone: 'success', icon: Bot },
+    'plugin-overridden': { label: 'Plugin', tone: 'warning', icon: Bot, ariaLabel: 'Plugin (overridden)' }
 };
+
+function OriginBadge({ origin }: { origin: MenuNodeOrigin }) {
+    const { label, tone, icon: Icon, ariaLabel } = ORIGIN_BADGE[origin];
+    return (
+        <Badge tone={tone} aria-label={ariaLabel}>
+            <Icon size={12} aria-hidden />
+            {label}
+        </Badge>
+    );
+}
 
 /**
  * Flatten a parent-child node list into a depth-aware sequence so a single
@@ -635,9 +647,7 @@ function ItemsTab({ flatNodes, busyNodeId, onCreate, onEdit, onDelete, onToggleE
                                 <Td>{node.order}</Td>
                                 <Td muted>{parentLabel ?? '—'}</Td>
                                 <Td>
-                                    <Badge tone={ORIGIN_BADGE[node.origin].tone}>
-                                        {ORIGIN_BADGE[node.origin].label}
-                                    </Badge>
+                                    <OriginBadge origin={node.origin} />
                                 </Td>
                                 <Td>
                                     <Switch
