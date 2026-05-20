@@ -1,5 +1,6 @@
 import type { IMenuNode } from './IMenuNode.js';
 import type { IMenuTree } from './IMenuTree.js';
+import type { IMenuTreeAdminView } from './IMenuNodeAdminView.js';
 import type { MenuEventType, MenuEventSubscriber } from './IMenuEvent.js';
 import type { IMenuNamespaceConfig } from './IMenuNamespaceConfig.js';
 import type { IUser } from '../user/IUser.js';
@@ -231,6 +232,24 @@ export interface IMenuService {
      * ```
      */
     getTree(namespace?: string): IMenuTree;
+
+    /**
+     * Admin-only view of the menu tree with each node's `origin` resolved.
+     *
+     * Returns the unfiltered tree projected to `IMenuNodeAdminView`, tagging
+     * every node as `manual` (persisted in `menu_nodes`), `plugin`
+     * (memory-only), or `plugin-overridden` (memory-only with an admin
+     * customization in `menu_node_overrides`). The admin UI uses this to
+     * render an origin badge and to gate destructive actions on plugin
+     * rows (which reappear on next plugin load).
+     *
+     * Callers must authenticate as admin before invoking — there is no
+     * per-method authorization. Origin is computed at read time, so it is
+     * always consistent with the current state of the tree.
+     *
+     * @param namespace - Menu namespace (defaults to 'main')
+     */
+    getTreeAdminView(namespace?: string): IMenuTreeAdminView;
 
     /**
      * Get the menu tree filtered to nodes the given user is permitted to see.

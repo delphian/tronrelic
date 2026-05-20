@@ -59,6 +59,55 @@
     line-height: var(--line-height-normal);
 }
 
+/* Inline-flex layout used only when an icon is rendered next to the
+ * label. Keeping it opt-in preserves the legacy label-only layout for
+ * tabs whose menu node has no icon string. */
+.tab--withIcon {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--gap-xs);
+}
+
+/* Icon-above-label stack when the namespace config asks for
+ * `icons.position: 'top'`. Tighter gap and centered column so the icon
+ * and label read as a single hit target. */
+.tab--iconTop {
+    flex-direction: column;
+    align-items: center;
+    gap: var(--gap-2xs);
+    text-align: center;
+}
+
+/* Same top-stack treatment for category toggle buttons. The chevron
+ * still follows the label horizontally inside the bottom row, since the
+ * categoryButton's default `display: inline-flex; gap: var(--gap-xs)`
+ * already lays children out — switching to `column` stacks the icon
+ * above without affecting the label/chevron pairing. */
+.categoryButton--iconTop {
+    flex-direction: column;
+    align-items: center;
+    gap: var(--gap-2xs);
+    text-align: center;
+}
+
+/* Accessible-name-only label, used when `styling.showLabels === false`
+ * so screen readers and the link's accessible name stay intact while
+ * the visible text is hidden. Standard sr-only pattern; kept scoped to
+ * the module because `.text-muted` is the project's only general
+ * global utility — we don't bolt visually-hidden onto globals.scss
+ * for one caller. */
+.sr_only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
 .tab:hover {
     background: var(--color-surface-elevated);
     border-color: var(--color-nav-tab-active-background);

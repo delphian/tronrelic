@@ -7,7 +7,8 @@ import { useAppDispatch, useAppSelector } from '../../store/hooks';
 import { prependMemo } from '../../store/slices/memoSlice';
 import { blockReceived } from '../../features/blockchain/slice';
 import { setUserData, selectUserId } from '../../modules/user';
-import { refetchMenuTree } from '../../modules/menu/slice';
+import { refetchMenuTree, namespaceConfigSet } from '../../modules/menu/slice';
+import type { IMenuNamespaceConfig } from '../../modules/menu/types';
 import {
   connectionDeferred,
   deferredCountdownTick,
@@ -24,6 +25,7 @@ import type {
   BlockNotificationPayload,
   MemoUpdatePayload,
   MenuUpdatePayload,
+  MenuNamespaceConfigUpdatePayload,
   SocketSubscriptions
 } from '@/shared';
 import type { IUserData } from '../../modules/user';
@@ -211,6 +213,17 @@ export function SocketBridge() {
       dispatch(refetchMenuTree({ namespace: payload.namespace, timestamp: payload.timestamp }));
     };
 
+    const handleMenuNamespaceConfigUpdate = (payload: MenuNamespaceConfigUpdatePayload['payload']) => {
+      // Namespace config has no per-user variance, so the server emits the
+      // full normalized config inline — no refetch needed. Cast at the
+      // boundary because the wire type is `Record<string, unknown>` to
+      // keep the shared socket types decoupled from the menu types.
+      dispatch(namespaceConfigSet({
+        namespace: payload.namespace,
+        config: payload.config as unknown as IMenuNamespaceConfig
+      }));
+    };
+
     const handleVisibility = () => {
       if (document.visibilityState === 'visible' && !socket.connected && !manualDisconnectRef.current) {
         // If connection was initiated, try to reconnect
@@ -239,6 +252,7 @@ export function SocketBridge() {
     socket.on('block:new', handleBlockUpdate);
     socket.on('user:update', handleUserUpdate);
     socket.on('menu:update', handleMenuUpdate);
+    socket.on('menu:namespace-config:update', handleMenuNamespaceConfigUpdate);
 
     // Set up browser event handlers
     window.addEventListener('online', handleOnline);
@@ -275,6 +289,7 @@ export function SocketBridge() {
       socket.off('block:new', handleBlockUpdate);
       socket.off('user:update', handleUserUpdate);
       socket.off('menu:update', handleMenuUpdate);
+      socket.off('menu:namespace-config:update', handleMenuNamespaceConfigUpdate);
       socket.off('connect', handleConnect);
       socket.off('disconnect', handleDisconnect);
       socket.off('connect_error', handleConnectError);

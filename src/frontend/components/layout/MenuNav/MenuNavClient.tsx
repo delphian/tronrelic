@@ -39,7 +39,10 @@ import { PriorityNav, useMenuConfig, useBodyScrollLock } from '../../../modules/
 import { menuTreeSeeded } from '../../../modules/menu/slice';
 import { useAppDispatch, useAppSelector } from '../../../store/hooks';
 import { ChevronDown, ChevronRight } from 'lucide-react';
+import { MenuNodeIcon } from './MenuNodeIcon';
 import styles from './MenuNav.module.scss';
+
+type IconPosition = 'left' | 'right' | 'top';
 
 /**
  * Props for MenuNavClient component.
@@ -138,6 +141,16 @@ export function MenuNavClient({ namespace, items, generatedAt, ariaLabel }: IMen
 
     // Whether overflow handling (Priority+ nav) is enabled for this namespace
     const overflowEnabled = menuConfig.overflow?.enabled ?? true;
+
+    // Icon + label rendering controls. Defaults match `useMenuConfig`'s
+    // DEFAULT_CONFIG so behavior is identical when the admin has not saved
+    // a namespace config yet. If both icons and labels are disabled the
+    // link would render empty, so labels win the fallback — operators can
+    // still see and click the items they just hid.
+    const iconsEnabled = menuConfig.icons?.enabled ?? true;
+    const iconPosition: IconPosition = (menuConfig.icons?.position as IconPosition) ?? 'left';
+    const showLabelsConfigured = menuConfig.styling?.showLabels ?? true;
+    const showLabels = showLabelsConfigured || !iconsEnabled;
 
     // Track mount state for portal rendering (SSR safety)
     useEffect(() => {
@@ -254,13 +267,39 @@ export function MenuNavClient({ namespace, items, generatedAt, ariaLabel }: IMen
             ? pathname === '/'
             : pathname.startsWith(item.url!);
 
+        // Nested rows (inside category dropdowns) are vertical-list items
+        // where icon-top and label-hiding both degrade readability. Force
+        // left position and always-on labels for that surface; top-level
+        // PriorityNav items honor the configured position and
+        // `showLabels` toggle.
+        const rowIconEnabled = iconsEnabled && !!item.icon;
+        const rowIconPosition: IconPosition = isNested ? 'left' : iconPosition;
+        const rowShowLabels = isNested ? true : showLabels;
+        const iconStackTop = rowIconEnabled && rowIconPosition === 'top';
+
+        const className = [
+            styles.tab,
+            isActive ? styles.active : '',
+            isNested ? styles.nested : '',
+            rowIconEnabled ? styles['tab--withIcon'] : '',
+            iconStackTop ? styles['tab--iconTop'] : ''
+        ].filter(Boolean).join(' ');
+
+        const icon = rowIconEnabled
+            ? <MenuNodeIcon name={item.icon!} size={16} />
+            : null;
+        const label = rowShowLabels
+            ? <span>{item.label}</span>
+            : <span className={styles.sr_only}>{item.label}</span>;
+
         return (
             <Link
                 key={item._id}
                 href={item.url!}
-                className={`${styles.tab} ${isActive ? styles.active : ''} ${isNested ? styles.nested : ''}`}
+                className={className}
                 role={isNested ? 'menuitem' : undefined}
                 aria-current={isActive ? 'page' : undefined}
+                aria-label={rowShowLabels ? undefined : item.label}
                 onClick={() => {
                     if (isNested) {
                         closeDropdown();
@@ -269,7 +308,9 @@ export function MenuNavClient({ namespace, items, generatedAt, ariaLabel }: IMen
                     }
                 }}
             >
-                {item.label}
+                {rowIconPosition !== 'right' && icon}
+                {label}
+                {rowIconPosition === 'right' && icon}
             </Link>
         );
     };
@@ -288,6 +329,27 @@ export function MenuNavClient({ namespace, items, generatedAt, ariaLabel }: IMen
             ? (item.url === '/' ? pathname === '/' : pathname === item.url || pathname.startsWith(`${item.url}/`))
             : false;
 
+        const rowIconEnabled = iconsEnabled && !!item.icon;
+        const iconStackTop = rowIconEnabled && iconPosition === 'top';
+
+        const buttonClassName = [
+            styles.categoryButton,
+            isActive ? styles.active : '',
+            iconStackTop ? styles['categoryButton--iconTop'] : ''
+        ].filter(Boolean).join(' ');
+
+        const icon = rowIconEnabled
+            ? <MenuNodeIcon name={item.icon!} size={16} />
+            : null;
+        const label = showLabels
+            ? <span>{item.label}</span>
+            : <span className={styles.sr_only}>{item.label}</span>;
+        const chevron = isExpanded ? (
+            <ChevronDown size={16} className={styles.categoryChevron} />
+        ) : (
+            <ChevronRight size={16} className={styles.categoryChevron} />
+        );
+
         return (
             <div key={item._id} className={styles.category}>
                 <button
@@ -299,7 +361,7 @@ export function MenuNavClient({ namespace, items, generatedAt, ariaLabel }: IMen
                             categoryButtonRefs.current.delete(item._id);
                         }
                     }}
-                    className={`${styles.categoryButton} ${isActive ? styles.active : ''}`}
+                    className={buttonClassName}
                     onClick={(e) => {
                         e.stopPropagation();
                         toggleCategory(item._id);
@@ -308,12 +370,10 @@ export function MenuNavClient({ namespace, items, generatedAt, ariaLabel }: IMen
                     aria-haspopup="true"
                     aria-label={`${isExpanded ? 'Collapse' : 'Expand'} ${item.label} submenu`}
                 >
-                    {item.label}
-                    {isExpanded ? (
-                        <ChevronDown size={16} className={styles.categoryChevron} />
-                    ) : (
-                        <ChevronRight size={16} className={styles.categoryChevron} />
-                    )}
+                    {iconPosition !== 'right' && icon}
+                    {label}
+                    {iconPosition === 'right' && icon}
+                    {chevron}
                 </button>
             </div>
         );

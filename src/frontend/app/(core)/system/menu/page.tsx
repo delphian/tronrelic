@@ -2,7 +2,14 @@
 
 import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import { ChevronRight, Pencil, Plus, Trash2 } from 'lucide-react';
-import type { IMenuNamespaceConfig, IMenuNode, IMenuTree, IUserGroup } from '@/types';
+import type {
+    IMenuNamespaceConfig,
+    IMenuNode,
+    IMenuNodeAdminView,
+    IMenuTreeAdminView,
+    IUserGroup,
+    MenuNodeOrigin
+} from '@/types';
 import { UserIdentityState } from '@/types';
 
 import { Page, Stack } from '../../../../components/layout';
@@ -24,10 +31,23 @@ import styles from './menu.module.scss';
 type Tab = 'items' | 'config';
 
 interface FlatNode {
-    node: IMenuNode;
+    node: IMenuNodeAdminView;
     depth: number;
     parentLabel: string | null;
 }
+
+/**
+ * Per-origin label + tone for the badge column. `manual` is neutral so it
+ * doesn't compete visually with the plugin states; `plugin` is info (this
+ * is the row's lifecycle, not a warning); `plugin-overridden` is warning to
+ * signal the row carries admin customizations that the plugin's defaults
+ * no longer fully describe.
+ */
+const ORIGIN_BADGE: Record<MenuNodeOrigin, { label: string; tone: 'neutral' | 'info' | 'warning' }> = {
+    manual: { label: 'Manual', tone: 'neutral' },
+    plugin: { label: 'Plugin', tone: 'info' },
+    'plugin-overridden': { label: 'Plugin (overridden)', tone: 'warning' }
+};
 
 /**
  * Flatten a parent-child node list into a depth-aware sequence so a single
@@ -40,13 +60,13 @@ interface FlatNode {
  * admin table a complete view of state so operators can see (and fix or
  * delete) orphans instead of having them silently disappear.
  */
-function flattenTree(nodes: IMenuNode[]): FlatNode[] {
+function flattenTree(nodes: IMenuNodeAdminView[]): FlatNode[] {
     const knownIds = new Set<string>();
     for (const node of nodes) {
         if (node._id) knownIds.add(node._id);
     }
 
-    const byParent = new Map<string | null, IMenuNode[]>();
+    const byParent = new Map<string | null, IMenuNodeAdminView[]>();
     for (const node of nodes) {
         const key = node.parent && knownIds.has(node.parent) ? node.parent : null;
         const bucket = byParent.get(key) ?? [];
@@ -99,7 +119,7 @@ export default function MenuAdminPage() {
     const [namespaces, setNamespaces] = useState<string[]>([]);
     const [activeNamespace, setActiveNamespace] = useState<string>('main');
 
-    const [menuTree, setMenuTree] = useState<IMenuTree | null>(null);
+    const [menuTree, setMenuTree] = useState<IMenuTreeAdminView | null>(null);
     const [config, setConfig] = useState<IMenuNamespaceConfig | null>(null);
     const [loading, setLoading] = useState(false);
     const [savingConfig, setSavingConfig] = useState(false);
@@ -137,7 +157,10 @@ export default function MenuAdminPage() {
             });
             if (!res.ok) throw new Error('Failed to load menu tree');
             const data = await res.json();
-            return data.tree as IMenuTree;
+            // Admin reads return the origin-tagged projection (controller
+            // branches on `isAdmin`). The page is admin-only, so the cast
+            // is always valid for callers reaching this code path.
+            return data.tree as IMenuTreeAdminView;
         },
         [authHeaders]
     );
@@ -333,14 +356,33 @@ export default function MenuAdminPage() {
     );
 
     const openDeleteModal = useCallback(
-        (node: IMenuNode) => {
+        (node: IMenuNodeAdminView) => {
             if (!node._id) return;
+            // Plugin-owned rows re-register on the next plugin load, so a
+            // delete here only removes the in-memory copy until restart.
+            // Surface that fact up front instead of leaving operators to
+            // discover it the hard way after a deploy.
+            const isPluginOwned = node.origin === 'plugin' || node.origin === 'plugin-overridden';
+            const message = isPluginOwned ? (
+                <>
+                    Delete <strong>{node.label}</strong>?
+                    {' '}This row is owned by a plugin and will reappear on the next plugin load.
+                    {node.origin === 'plugin-overridden' && (
+                        <>
+                            {' '}The saved override (label, order, icon, description, enabled) will also persist.
+                            {' '}To remove the row permanently, disable the plugin.
+                        </>
+                    )}
+                </>
+            ) : undefined;
+
             const id = openModal({
                 title: 'Delete menu item',
                 size: 'sm',
                 content: (
                     <ConfirmDialog
                         label={node.label}
+                        message={message}
                         onCancel={() => closeModal(id)}
                         onConfirm={async () => {
                             try {
@@ -540,9 +582,9 @@ interface ItemsTabProps {
     flatNodes: FlatNode[];
     busyNodeId: string | null;
     onCreate: () => void;
-    onEdit: (node: IMenuNode) => void;
-    onDelete: (node: IMenuNode) => void;
-    onToggleEnabled: (node: IMenuNode, next: boolean) => void;
+    onEdit: (node: IMenuNodeAdminView) => void;
+    onDelete: (node: IMenuNodeAdminView) => void;
+    onToggleEnabled: (node: IMenuNodeAdminView, next: boolean) => void;
 }
 
 function ItemsTab({ flatNodes, busyNodeId, onCreate, onEdit, onDelete, onToggleEnabled }: ItemsTabProps) {
@@ -569,6 +611,7 @@ function ItemsTab({ flatNodes, busyNodeId, onCreate, onEdit, onDelete, onToggleE
                             <Th>URL</Th>
                             <Th width="shrink">Order</Th>
                             <Th width="shrink">Parent</Th>
+                            <Th width="shrink">Origin</Th>
                             <Th width="shrink">Enabled</Th>
                             <Th width="shrink">Actions</Th>
                         </Tr>
@@ -591,6 +634,11 @@ function ItemsTab({ flatNodes, busyNodeId, onCreate, onEdit, onDelete, onToggleE
                                 </Td>
                                 <Td>{node.order}</Td>
                                 <Td muted>{parentLabel ?? '—'}</Td>
+                                <Td>
+                                    <Badge tone={ORIGIN_BADGE[node.origin].tone}>
+                                        {ORIGIN_BADGE[node.origin].label}
+                                    </Badge>
+                                </Td>
                                 <Td>
                                     <Switch
                                         size="sm"

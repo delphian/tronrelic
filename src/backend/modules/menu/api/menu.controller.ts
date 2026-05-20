@@ -377,12 +377,16 @@ export class MenuController {
 
             // Admins see the full unfiltered tree (including disabled
             // nodes and gated entries) so the admin UI can render and
-            // edit them. Admin status now resolves either via the user
-            // cookie (verified wallet + admin group) or via service token.
-            // Regular visitors get the per-user filtered view: enabled-
-            // only AND gating-aware.
+            // edit them. The admin variant additionally tags each node
+            // with an `origin` field (`manual` / `plugin` /
+            // `plugin-overridden`) so the UI can render an origin badge
+            // and gate destructive UX on plugin-owned rows. Admin status
+            // resolves either via the user cookie (verified wallet +
+            // admin group) or via service token. Regular visitors get
+            // the per-user filtered view: enabled-only AND gating-aware,
+            // with no origin metadata leaked.
             if (await isAdmin(req)) {
-                res.json({ success: true, tree: this.service.getTree(namespace) });
+                res.json({ success: true, tree: this.service.getTreeAdminView(namespace) });
                 return;
             }
 

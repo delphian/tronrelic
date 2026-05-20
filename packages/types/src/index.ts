@@ -15,7 +15,7 @@ export type { IUsdtParametersFetcher } from './usdt-parameters/IUsdtParametersFe
 export type { ICacheService } from './services/ICacheService.js';
 export type { IServiceRegistry, IServiceWatchHandlers, ServiceWatchDisposer } from './services/IServiceRegistry.js';
 export type { ISignatureService } from './services/ISignatureService.js';
-export type { IMenuNode, IMenuNodeWithChildren, IMenuTree, IMenuValidation, MenuEventType, IMenuEvent, MenuEventSubscriber, IMenuService, IMenuNamespaceConfig } from './menu/index.js';
+export type { IMenuNode, IMenuNodeWithChildren, IMenuTree, IMenuValidation, MenuEventType, IMenuEvent, MenuEventSubscriber, IMenuService, IMenuNamespaceConfig, MenuNodeOrigin, IMenuNodeAdminView, IMenuNodeAdminViewWithChildren, IMenuTreeAdminView } from './menu/index.js';
 export { WIDGET_ZONES } from './widget/index.js';
 export type { IWidgetConfig, WidgetZone, IWidgetData, IWidgetService, IWidgetComponentProps, WidgetComponent } from './widget/index.js';
 export type { ISystemConfig, ISystemConfigService } from './system-config/index.js';

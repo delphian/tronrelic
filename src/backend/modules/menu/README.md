@@ -86,6 +86,18 @@ When an admin reorders a memory-only menu item (e.g., changes a plugin's menu po
 
 Override persistence applies to `order`, `label`, `description`, `icon`, and `enabled` fields. Only nodes with a URL are eligible for overrides since the URL serves as the stable identity across restarts.
 
+### Origin Tag (Admin Reads Only)
+
+`IMenuNode` carries no flag distinguishing manual rows from plugin-registered ones, but the service tracks the distinction internally: `persistedNodeIds` holds ids loaded from or written to `menu_nodes`, and a cached set of `(namespace, url)` keys mirrors `menu_node_overrides`. Surfacing that as a stored column would be a drift hazard. Instead `getTreeAdminView()` projects the in-memory tree to `IMenuNodeAdminView` and tags each node with `origin`:
+
+| Value | Meaning |
+|-------|---------|
+| `manual` | Persisted in `menu_nodes`. Create/update/delete survive restart. |
+| `plugin` | Memory-only, no override row. Delete removes only the in-memory copy — the plugin re-registers on next boot. |
+| `plugin-overridden` | Memory-only with an admin customization in `menu_node_overrides`. Plugin still owns lifecycle; `order`/`label`/`icon`/`description`/`enabled` survive restarts. |
+
+The controller branches on `isAdmin(req)` — admin callers receive `IMenuTreeAdminView`, public callers receive the unchanged `IMenuTree`. Origin is computed at read time, so it never goes stale. The admin UI at `/system/menu` renders the tag as a badge and gates the delete confirm dialog with a "will reappear on next plugin load" warning for `plugin` and `plugin-overridden` rows.
+
 ### Auto-Derived URLs for Container Nodes
 
 Container nodes that omit a URL receive one automatically by slugifying their label. For root-level containers, the URL is `/{slug}` (e.g., label "Tools" becomes `/tools`). For nested containers, the URL is `{parent-url}/{slug}`. This auto-derived URL serves as the stable override key and as the route for the auto-generated category landing page. Admins can change the URL at runtime through the admin API, but for memory-only/plugin-registered nodes that change does not persist across restarts via `menu_node_overrides`. Only `order`, `label`, `description`, `icon`, and `enabled` are persisted for memory-only nodes. Persisted database-backed nodes save URL changes normally.

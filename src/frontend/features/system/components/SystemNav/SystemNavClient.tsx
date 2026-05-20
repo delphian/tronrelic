@@ -113,7 +113,7 @@ export function SystemNavClient({ items }: ISystemNavClientProps) {
         walk(nodes);
         return result;
     }, []);
-    const activeItems = liveMenuState ? flattenRoots(liveMenuState.roots) : items;
+    const activeItems = liveMenuState?.roots ? flattenRoots(liveMenuState.roots) : items;
 
     // Sort by order and filter enabled items
     const visibleItems = useMemo(() => activeItems

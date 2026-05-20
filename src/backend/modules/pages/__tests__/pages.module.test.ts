@@ -21,6 +21,7 @@ class MockMenuService implements IMenuService {
     delete = vi.fn();
     getNode = vi.fn();
     getTree = vi.fn(() => ({ all: [], roots: [], generatedAt: new Date() }));
+    getTreeAdminView = vi.fn(() => ({ all: [], roots: [], generatedAt: new Date() }));
     getTreeForUser = vi.fn(async () => ({ all: [], roots: [], generatedAt: new Date() }));
     getChildren = vi.fn(() => []);
     getChildrenForUser = vi.fn(async () => []);

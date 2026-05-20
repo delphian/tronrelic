@@ -5,9 +5,13 @@
  * This utility maps those strings to the corresponding lucide-react component
  * for rendering in the CategoryLandingPage card grid.
  *
- * Safe to use the full lucide-react namespace here because this file is only
- * imported by server components — the barrel import never reaches the client
- * bundle.
+ * Two callers today: `CategoryLandingPage` (server component) and
+ * `MenuNodeIconLoader` (the `next/dynamic({ ssr: false })` chunk behind
+ * `<MenuNodeIcon>`). The dynamic boundary keeps the lucide-react
+ * namespace out of the main client bundle, so importing this resolver
+ * from a `'use client'` module is only safe when the import is
+ * lazy/code-split — direct imports from non-dynamic client modules will
+ * regress bundle size.
  */
 
 import * as LucideIcons from 'lucide-react';
