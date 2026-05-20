@@ -35,9 +35,16 @@
     grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
-/* Responsive auto-fit variant */
+/*
+ * Responsive auto-fit variant. The minmax floor reads from a semantic
+ * token so consumers can override it at their own scope (per-section
+ * `--grid-responsive-min: 320px;` on a wrapping selector) and themes can
+ * remap it globally via `[data-theme="UUID"]` — both behaviours match the
+ * rest of the design-token system. The default value lives in
+ * semantic-tokens.scss; do not hardcode it here.
+ */
 .grid_responsive {
-    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(min(var(--grid-responsive-min), 100%), 1fr));
 }
 
 /* Tablet and below: collapse fixed columns to single column */

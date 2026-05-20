@@ -354,6 +354,7 @@
     --grid-gap-sm: var(--spacing-5);            /* 0.75rem */
     --grid-gap-md: var(--spacing-10);           /* 1.5rem */
     --grid-gap-lg: var(--spacing-12);           /* 2rem */
+    --grid-responsive-min: 280px;               /* auto-fit minmax floor for <Grid columns="responsive">; consumers override at their scope */
     --grid-bg-image: none;
     --grid-bg-opacity: 0.08;
     --grid-bg-size: 140px;
