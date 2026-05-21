@@ -23,7 +23,7 @@
     font-weight: var(--button-font-weight);
     font-size: var(--button-font-size-sm);
     padding: var(--button-padding-sm);
-    border-radius: var(--radius-md);
+    border-radius: var(--button-border-radius);
     display: inline-flex;
     align-items: center;
     gap: var(--button-gap);
@@ -56,8 +56,8 @@
  * TronLink logo with subtle glow effect and minimal border treatment.
  */
 .wallet_icon {
-    width: 14px;
-    height: 14px;
+    width: var(--icon-size-xs);
+    height: var(--icon-size-xs);
     border-radius: var(--radius-xs);
     border: var(--border-width-thin) solid var(--color-border);
     filter: drop-shadow(0 0 var(--spacing-4) var(--color-primary-alpha-38));
@@ -133,7 +133,7 @@
     }
 
     .connect_btn {
-        padding: var(--spacing-3);
+        padding: var(--icon-button-padding-touch);
     }
 }
 
