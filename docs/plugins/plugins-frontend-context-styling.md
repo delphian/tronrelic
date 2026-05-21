@@ -47,6 +47,37 @@ export function MyPluginPage({ context }: { context: IFrontendPluginContext }) {
 
 Multi-word identifiers use underscores (`styles.market_card`) so dot-notation works. See [ui-scss-modules.md](../frontend/ui/ui-scss-modules.md) for token tiers and naming.
 
+## Status Colors and Brand-Tinted Overlays
+
+Do not introduce a parallel status palette. Core publishes the canonical danger/success/warning/info families through semantic tokens; plugin status surfaces (alerts, badges, monitor cards) must reference them so they theme consistently. Hardcoding Tailwind palette numbers (`rgba(239, 68, 68, …)` for red, `rgba(34, 197, 94, …)` for green) creates a parallel design system that themes cannot reach.
+
+| Need | Token | Companion alphas |
+|------|-------|------------------|
+| Brand accent | `--color-primary` | `--color-primary-alpha-10/15/18/30/38` |
+| Success / online | `--color-success` | `--color-success-alpha-18/45`, `--color-success-text` |
+| Warning / stale | `--color-warning` | `--color-warning-alpha-15/40`, `--color-warning-text` |
+| Danger / failed | `--color-danger` | `--color-danger-alpha-18/50`, `--color-danger-text` |
+| Secondary accent | `--color-secondary` | — |
+| Focused input | — | `--input-border-focus`, `--input-shadow-focus` |
+
+Use alpha companions for tinted overlays (card backgrounds, badge fills, border accents) and `-text` variants for readable text on those overlays.
+
+```scss
+/* CORRECT — uses core's danger family; themes propagate */
+.warning_alert {
+    background: var(--color-danger-alpha-18);
+    border: var(--border-width-thin) solid var(--color-danger-alpha-50);
+}
+
+/* WRONG — parallel palette, frozen at default red */
+.warning_alert {
+    background: rgba(239, 68, 68, 0.1);
+    border: var(--border-width-thin) solid rgba(239, 68, 68, 0.3);
+}
+```
+
+For lighter/darker variants outside the published ladder, derive with `color-mix()`: `color-mix(in srgb, var(--color-primary) 70%, white)`. See [ui-design-token-layers.md](../frontend/ui/ui-design-token-layers.md#layer-2-composition-rules) for the complete rule set.
+
 ## SSR + Live Updates
 
 Visible plugin UI must render fully on the server with real data, then hydrate for live updates. No loading spinner on initial paint.

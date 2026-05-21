@@ -44,7 +44,7 @@ Source mode couples every plugin to core's webpack and blocks per-plugin build i
 
 ### What core still owns in compiled mode
 
-Externals (`react`, `next/*`, `lucide-react`, `@delphian/tronrelic-types`, etc.) resolve through core's hoisted `node_modules` so there is one React instance at runtime. SCSS Modules are still compiled by core's webpack via the `/src/plugins/` include extension in `next.config.mjs:113-151` — only the TypeScript compile moves into the plugin. A new plugin version still requires rebuilding the core Docker image because `plugins.generated.ts` imports the entry statically at `next build` time.
+Externals (`react`, `next/*`, `lucide-react`, `@delphian/tronrelic-types`, etc.) resolve through core's hoisted `node_modules` so there is one React instance at runtime. SCSS Modules are still compiled by core's webpack via the `/src/plugins/` include extension in `next.config.mjs:113-151` — only the TypeScript compile moves into the plugin. SCSS edits in `src/frontend/**/*.scss` propagate automatically through `next dev` because core reads from source; the `copy-frontend-assets.mjs` step mirrors them into `dist/frontend/` only when `npm run build:frontend` runs, so production consumers of `dist/` see stale SCSS until then. A new plugin version still requires rebuilding the core Docker image because `plugins.generated.ts` imports the entry statically at `next build` time.
 
 ### Required compiled-mode files
 
