@@ -486,10 +486,10 @@
     --color-text-subtle: #7a8499;                 /* Tertiary text */
 
     /* Primary Color Alphas */
-    --color-primary-alpha-10: color-mix(in srgb, var(--color-primary) 8%, transparent);
+    --color-primary-alpha-10: color-mix(in srgb, var(--color-primary) 10%, transparent);
     --color-primary-alpha-15: color-mix(in srgb, var(--color-primary) 15%, transparent);
     --color-primary-alpha-18: color-mix(in srgb, var(--color-primary) 18%, transparent);
-    --color-primary-alpha-30: color-mix(in srgb, var(--color-primary) 28%, transparent);
+    --color-primary-alpha-30: color-mix(in srgb, var(--color-primary) 30%, transparent);
     --color-primary-alpha-38: color-mix(in srgb, var(--color-primary) 38%, transparent);
 
     /* Text Contrast Companions
@@ -512,7 +512,7 @@
 
     /* Focus Colors */
     --color-focus: var(--color-primary);
-    --color-focus-alpha-25: color-mix(in srgb, var(--color-focus) 24%, transparent);
+    --color-focus-alpha-25: color-mix(in srgb, var(--color-focus) 25%, transparent);
 
     /* Warning Color Alphas */
     --color-warning-alpha-15: rgba(255, 200, 87, 0.15);
@@ -540,7 +540,7 @@
     --gradient-meter: linear-gradient(90deg, color-mix(in srgb, var(--color-primary) 90%, transparent), color-mix(in srgb, var(--color-success) 90%, transparent));
     --gradient-body-background: radial-gradient(circle at 0% -20%, var(--color-primary-alpha-18), transparent 45%),
                                 radial-gradient(circle at 90% 0%, color-mix(in srgb, var(--color-secondary) 14%, transparent), transparent 60%),
-                                linear-gradient(140deg, rgba(14, 21, 38, 0.85), rgba(6, 10, 20, 0.96));
+                                linear-gradient(140deg, color-mix(in srgb, var(--color-background) 85%, transparent), color-mix(in srgb, var(--color-background) 96%, transparent));
 
     /* ========================================================================
      * CHIP/PILL TOKENS

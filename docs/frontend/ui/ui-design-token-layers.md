@@ -48,10 +48,10 @@ Layer 2 tokens must derive from theme-controlled tokens. Literal values short-ci
 Brand-tinted overlays — focus rings, hover washes, badge backgrounds, gradient stops — consume `--color-primary` at fixed opacities. Express the ladder once in Layer 2; downstream consumers reference it:
 
 ```scss
---color-primary-alpha-10: color-mix(in srgb, var(--color-primary) 8%, transparent);
+--color-primary-alpha-10: color-mix(in srgb, var(--color-primary) 10%, transparent);
 --color-primary-alpha-15: color-mix(in srgb, var(--color-primary) 15%, transparent);
 --color-primary-alpha-18: color-mix(in srgb, var(--color-primary) 18%, transparent);
---color-primary-alpha-30: color-mix(in srgb, var(--color-primary) 28%, transparent);
+--color-primary-alpha-30: color-mix(in srgb, var(--color-primary) 30%, transparent);
 --color-primary-alpha-38: color-mix(in srgb, var(--color-primary) 38%, transparent);
 ```
 
