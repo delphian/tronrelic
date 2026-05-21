@@ -134,6 +134,25 @@ export class MigrationTracker {
     }
 
     /**
+     * Look up the tracker record for a single migration by qualifiedId.
+     *
+     * Used by the executor to enforce the forward-only "completed
+     * migrations never re-execute" contract before invoking
+     * `migration.up()`. Returns `null` when no record exists yet (the
+     * migration has never been attempted) and the full record otherwise.
+     *
+     * @param migrationId - The migration's qualifiedId (e.g. plain
+     *                      `001_create_users` for system migrations,
+     *                      `plugin:whale-alerts:001_init` for plugins)
+     * @returns Promise resolving to the existing record or `null`
+     */
+    public async getRecord(migrationId: string): Promise<IMigrationRecord | null> {
+        const collection = this.getCollection();
+        const record = await collection.findOne({ migrationId });
+        return record ?? null;
+    }
+
+    /**
      * Get all completed and failed migration records.
      *
      * Returns full migration records sorted by execution time (newest first).
@@ -256,9 +275,9 @@ export class MigrationTracker {
                 duration,
                 source: metadata.source
             }, 'Migration execution recorded as successful');
-        } catch (error) {
-            logger.error({ error, migrationId: metadata.qualifiedId }, 'Failed to record migration success');
-            throw error;
+        } catch (writeError) {
+            logger.error({ error: writeError, migrationId: metadata.qualifiedId }, 'Failed to record migration success');
+            throw writeError;
         }
     }
 

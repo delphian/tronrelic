@@ -61,6 +61,9 @@ class MockDatabase implements IDatabaseService {
                     })
                 })
             }),
+            findOne: async (filter: any = {}) => {
+                return self.records.find(r => self.matchesFilter(r, filter)) ?? null;
+            },
             insertOne: async (doc: any) => {
                 self.records.push({ ...doc });
                 return doc;
@@ -362,6 +365,33 @@ describe('MigrationTracker', () => {
             expect(records[0].status).toBe('failed');
             expect(records[0].error).toBe('Different failure');
             expect(records[0].executionDuration).toBe(500);
+        });
+    });
+
+    describe('Single-Record Lookup', () => {
+        /**
+         * Test: getRecord returns the existing record for a migration ID,
+         * or null when the migration has never been attempted. Used by the
+         * executor to enforce the forward-only "no re-execution" contract.
+         */
+        it('should return the existing record by migrationId', async () => {
+            await mockDatabase.insertOne('migrations', {
+                migrationId: '001_test',
+                status: 'completed',
+                source: 'system',
+                executedAt: new Date(),
+                executionDuration: 42
+            });
+
+            const record = await tracker.getRecord('001_test');
+            expect(record).not.toBeNull();
+            expect(record!.status).toBe('completed');
+            expect(record!.executionDuration).toBe(42);
+        });
+
+        it('should return null when no record exists for the migrationId', async () => {
+            const record = await tracker.getRecord('999_unknown');
+            expect(record).toBeNull();
         });
     });
 
