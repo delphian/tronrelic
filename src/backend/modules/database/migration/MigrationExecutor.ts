@@ -163,20 +163,39 @@ export class MigrationExecutor {
             throw new Error('Cannot execute migration: Another migration is already running');
         }
 
-        // Check if migration can be executed based on target
-        const targetCheck = this.checkMigrationTarget(migration);
-        if (!targetCheck.canExecute) {
-            logger.warn({
-                migrationId: migration.id,
-                target: migration.target || 'mongodb',
-                reason: targetCheck.skipReason
-            }, 'Skipping migration (target not available)');
-            return;
-        }
-
+        // Claim the executing slot synchronously, before any `await`,
+        // so two concurrent callers can't both pass the guard check
+        // above before either flips the flag.
         this.isExecuting = true;
 
         try {
+            // Forward-only safeguard: refuse to re-execute a migration
+            // that has already completed successfully. The runner is the
+            // right place to enforce this (industry pattern — Flyway /
+            // Alembic / Rails all gate at the runner, never at the
+            // tracker), so the tracker stays a simple lookup table and
+            // `migration.up()` is never invoked twice for the same
+            // migrationId via this path. To re-do a completed change,
+            // author a new migration file.
+            const existing = await this.tracker.getRecord(migration.qualifiedId);
+            if (existing && existing.status === 'completed') {
+                throw new Error(
+                    `Migration ${migration.qualifiedId} has already completed at ${existing.executedAt.toISOString()}. ` +
+                    'Forward-only — write a new migration to make further changes.'
+                );
+            }
+
+            // Check if migration can be executed based on target
+            const targetCheck = this.checkMigrationTarget(migration);
+            if (!targetCheck.canExecute) {
+                logger.warn({
+                    migrationId: migration.id,
+                    target: migration.target || 'mongodb',
+                    reason: targetCheck.skipReason
+                }, 'Skipping migration (target not available)');
+                return;
+            }
+
             await this.executeWithTransaction(migration);
         } finally {
             this.isExecuting = false;

@@ -134,6 +134,25 @@ export class MigrationTracker {
     }
 
     /**
+     * Look up the tracker record for a single migration by qualifiedId.
+     *
+     * Used by the executor to enforce the forward-only "completed
+     * migrations never re-execute" contract before invoking
+     * `migration.up()`. Returns `null` when no record exists yet (the
+     * migration has never been attempted) and the full record otherwise.
+     *
+     * @param migrationId - The migration's qualifiedId (e.g. plain
+     *                      `001_create_users` for system migrations,
+     *                      `plugin:whale-alerts:001_init` for plugins)
+     * @returns Promise resolving to the existing record or `null`
+     */
+    public async getRecord(migrationId: string): Promise<IMigrationRecord | null> {
+        const collection = this.getCollection();
+        const record = await collection.findOne({ migrationId });
+        return record ?? null;
+    }
+
+    /**
      * Get all completed and failed migration records.
      *
      * Returns full migration records sorted by execution time (newest first).
@@ -199,8 +218,10 @@ export class MigrationTracker {
     /**
      * Record successful migration execution.
      *
-     * Creates a record in the migrations collection marking the migration as completed.
-     * Includes execution metadata (duration, checksum, environment, codebase version).
+     * Upserts a record in the migrations collection keyed by `migrationId`,
+     * overwriting any prior record for the same migration (e.g. an earlier
+     * `failed` entry from a retry sequence) so the unique index on
+     * `migrationId` continues to enforce one canonical state per migration.
      *
      * **Fields recorded:**
      * - migrationId, status='completed', source
@@ -208,10 +229,18 @@ export class MigrationTracker {
      * - checksum (for detecting post-execution modifications)
      * - environment (NODE_ENV), codebaseVersion (git commit hash if available)
      *
+     * **Why upsert.** `getPendingMigrations` deliberately keeps failed
+     * migrations in the pending set so they can be re-run after the
+     * underlying problem is fixed. The retry then needs to update the
+     * existing tracker record rather than insert a second one — the
+     * unique index on `migrationId` rejects a plain `insertOne` and the
+     * E11000 surfaces as a confusing duplicate-key failure that masks
+     * the original migration error.
+     *
      * @param metadata - Migration metadata from scanner
      * @param duration - Execution duration in milliseconds
      * @returns Promise that resolves when record is saved
-     * @throws Error if insert fails (e.g., duplicate migrationId)
+     * @throws Error if the write fails
      *
      * @example
      * ```typescript
@@ -236,23 +265,32 @@ export class MigrationTracker {
         };
 
         try {
-            await collection.insertOne(record as any);
+            await collection.replaceOne(
+                { migrationId: metadata.qualifiedId },
+                record as any,
+                { upsert: true }
+            );
             logger.info({
                 migrationId: metadata.qualifiedId,
                 duration,
                 source: metadata.source
             }, 'Migration execution recorded as successful');
-        } catch (error) {
-            logger.error({ error, migrationId: metadata.qualifiedId }, 'Failed to record migration success');
-            throw error;
+        } catch (writeError) {
+            logger.error({ error: writeError, migrationId: metadata.qualifiedId }, 'Failed to record migration success');
+            throw writeError;
         }
     }
 
     /**
      * Record failed migration execution.
      *
-     * Creates a record in the migrations collection marking the migration as failed.
-     * Includes error details (message and stack trace) for debugging.
+     * Upserts a record in the migrations collection keyed by `migrationId`,
+     * overwriting any prior record for the same migration (typically an
+     * earlier failure from the same retry sequence) with the latest error
+     * details. The unique index on `migrationId` keeps one canonical state
+     * per migration; without the upsert, a second consecutive failure
+     * would surface as an E11000 duplicate-key error and mask the
+     * underlying migration error operators need to see.
      *
      * **Fields recorded:**
      * - All fields from recordSuccess()
@@ -260,13 +298,15 @@ export class MigrationTracker {
      * - error (error message)
      * - errorStack (full stack trace)
      *
-     * Failed migrations can be retried (they remain in pending state until successful).
+     * Failed migrations can be retried (they remain in pending state until
+     * successful). The next `recordSuccess` or `recordFailure` call
+     * replaces this record by `migrationId`.
      *
      * @param metadata - Migration metadata from scanner
      * @param error - Error thrown by migration.up()
      * @param duration - Execution duration in milliseconds (time until failure)
      * @returns Promise that resolves when record is saved
-     * @throws Error if insert fails
+     * @throws Error if the write fails
      *
      * @example
      * ```typescript
@@ -295,16 +335,20 @@ export class MigrationTracker {
         };
 
         try {
-            await collection.insertOne(record as any);
+            await collection.replaceOne(
+                { migrationId: metadata.qualifiedId },
+                record as any,
+                { upsert: true }
+            );
             logger.error({
                 migrationId: metadata.qualifiedId,
                 error: error.message,
                 duration,
                 source: metadata.source
             }, 'Migration execution recorded as failed');
-        } catch (insertError) {
-            logger.error({ error: insertError, migrationId: metadata.qualifiedId }, 'Failed to record migration failure');
-            throw insertError;
+        } catch (writeError) {
+            logger.error({ error: writeError, migrationId: metadata.qualifiedId }, 'Failed to record migration failure');
+            throw writeError;
         }
     }
 

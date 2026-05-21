@@ -61,9 +61,24 @@ class MockDatabase implements IDatabaseService {
                     })
                 })
             }),
+            findOne: async (filter: any = {}) => {
+                return self.records.find(r => self.matchesFilter(r, filter)) ?? null;
+            },
             insertOne: async (doc: any) => {
                 self.records.push({ ...doc });
                 return doc;
+            },
+            replaceOne: async (filter: any, replacement: any, options: any = {}) => {
+                const index = self.records.findIndex(r => self.matchesFilter(r, filter));
+                if (index >= 0) {
+                    self.records[index] = { ...replacement };
+                    return { matchedCount: 1, modifiedCount: 1, upsertedCount: 0 };
+                }
+                if (options.upsert) {
+                    self.records.push({ ...replacement });
+                    return { matchedCount: 0, modifiedCount: 0, upsertedCount: 1 };
+                }
+                return { matchedCount: 0, modifiedCount: 0, upsertedCount: 0 };
             },
             deleteMany: async (filter: any) => {
                 const beforeCount = self.records.length;
@@ -290,6 +305,93 @@ describe('MigrationTracker', () => {
             const records = mockDatabase.getRecords();
             expect(records[0].error).toBe('String error');
             expect(records[0].errorStack).toBeDefined(); // Error objects have stack traces
+        });
+    });
+
+    describe('Retry After Failure', () => {
+        /**
+         * Test: A retry of a previously-failed migration must upsert by
+         * migrationId rather than insert a second row. Prior behavior used
+         * insertOne, which collided with the unique index on { migrationId: 1 }
+         * and surfaced as an E11000 duplicate-key error that masked the
+         * underlying migration failure.
+         */
+        it('should overwrite a prior failed record on successful retry', async () => {
+            const metadata: IMigrationMetadata = {
+                id: '001_test',
+                qualifiedId: '001_test',
+                description: 'Test migration',
+                source: 'system',
+                filePath: '/test/001_test.ts',
+                timestamp: new Date(),
+                dependencies: [],
+                up: vi.fn()
+            };
+
+            await tracker.recordFailure(metadata, new Error('first attempt timed out'), 30000);
+            await tracker.recordSuccess(metadata, 12);
+
+            const records = mockDatabase.getRecords();
+            expect(records).toHaveLength(1);
+            expect(records[0].status).toBe('completed');
+            expect(records[0].executionDuration).toBe(12);
+            expect(records[0].error).toBeUndefined();
+            expect(records[0].errorStack).toBeUndefined();
+        });
+
+        /**
+         * Test: A second consecutive failure must overwrite the prior failure
+         * record so the latest error context (message, stack, timestamp) is
+         * what operators see in the admin UI. Without upsert this used to
+         * throw a duplicate-key error before recording the new failure.
+         */
+        it('should overwrite a prior failed record with a new failure', async () => {
+            const metadata: IMigrationMetadata = {
+                id: '001_test',
+                qualifiedId: '001_test',
+                description: 'Test migration',
+                source: 'system',
+                filePath: '/test/001_test.ts',
+                timestamp: new Date(),
+                dependencies: [],
+                up: vi.fn()
+            };
+
+            await tracker.recordFailure(metadata, new Error('Timeout error'), 30000);
+            await tracker.recordFailure(metadata, new Error('Different failure'), 500);
+
+            const records = mockDatabase.getRecords();
+            expect(records).toHaveLength(1);
+            expect(records[0].status).toBe('failed');
+            expect(records[0].error).toBe('Different failure');
+            expect(records[0].executionDuration).toBe(500);
+        });
+    });
+
+    describe('Single-Record Lookup', () => {
+        /**
+         * Test: getRecord returns the existing record for a migration ID,
+         * or null when the migration has never been attempted. Used by the
+         * executor to enforce the forward-only "no re-execution" contract.
+         */
+        it('should return the existing record by migrationId', async () => {
+            await mockDatabase.insertOne('migrations', {
+                migrationId: '001_test',
+                status: 'completed',
+                source: 'system',
+                executedAt: new Date(),
+                executionDuration: 42
+            });
+
+            const record = await tracker.getRecord('001_test');
+            expect(record).not.toBeNull();
+            expect(record!.status).toBe('completed');
+            expect(record!.executionDuration).toBe(42);
+        });
+
+        it('should return null when no record exists for the migrationId', async () => {
+            const record = await tracker.getRecord('999_unknown');
+            expect(record).toBeNull();
         });
     });
 

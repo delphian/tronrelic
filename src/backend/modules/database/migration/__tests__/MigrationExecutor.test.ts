@@ -86,6 +86,11 @@ class MockDatabase implements IDatabaseService {
 
 /**
  * Mock MigrationTracker for testing MigrationExecutor.
+ *
+ * `recordSuccess`/`recordFailure` capture call args for assertions.
+ * `getRecord` returns whatever was seeded via `seedRecord` (or `null`
+ * when nothing has been seeded for that id) — the executor uses this
+ * to enforce the "completed migrations never re-execute" contract.
  */
 class MockTracker {
     public successRecorded = false;
@@ -93,6 +98,7 @@ class MockTracker {
     public lastRecordedMetadata: IMigrationMetadata | null = null;
     public lastRecordedError: Error | null = null;
     public lastRecordedDuration = 0;
+    private records = new Map<string, any>();
 
     async recordSuccess(metadata: IMigrationMetadata, duration: number): Promise<void> {
         this.successRecorded = true;
@@ -107,12 +113,21 @@ class MockTracker {
         this.lastRecordedDuration = duration;
     }
 
+    async getRecord(migrationId: string): Promise<any | null> {
+        return this.records.get(migrationId) ?? null;
+    }
+
+    seedRecord(migrationId: string, record: any): void {
+        this.records.set(migrationId, record);
+    }
+
     reset() {
         this.successRecorded = false;
         this.failureRecorded = false;
         this.lastRecordedMetadata = null;
         this.lastRecordedError = null;
         this.lastRecordedDuration = 0;
+        this.records.clear();
     }
 }
 
@@ -573,6 +588,79 @@ describe('MigrationExecutor', () => {
             }).rejects.toThrow('Sync error');
 
             expect(mockTracker.failureRecorded).toBe(true);
+        });
+    });
+
+    describe('Forward-Only Safeguard', () => {
+        /**
+         * Test: Executor refuses to re-execute a migration whose tracker
+         * record is already 'completed'. Prior behavior re-invoked
+         * `migration.up()` against the live database when an operator hit
+         * POST /api/admin/migrations/execute with a completed migrationId;
+         * the duplicate-key error from the tracker's insertOne incidentally
+         * surfaced that behavior. Now the executor reads the tracker first
+         * and throws a clear forward-only error before `up()` runs.
+         */
+        it('should refuse to re-execute a completed migration', async () => {
+            const migration: IMigrationMetadata = {
+                id: '001_test',
+                qualifiedId: '001_test',
+                description: 'Test migration',
+                source: 'system',
+                filePath: '/test/001.ts',
+                timestamp: new Date(),
+                dependencies: [],
+                up: vi.fn()
+            };
+
+            const completedAt = new Date('2026-05-21T00:00:00.000Z');
+            mockTracker.seedRecord('001_test', {
+                migrationId: '001_test',
+                status: 'completed',
+                source: 'system',
+                executedAt: completedAt,
+                executionDuration: 42
+            });
+
+            await expect(async () => {
+                await executor.executeMigration(migration);
+            }).rejects.toThrow(/has already completed at .*Forward-only/);
+
+            expect(migration.up).not.toHaveBeenCalled();
+            expect(mockTracker.successRecorded).toBe(false);
+            expect(mockTracker.failureRecorded).toBe(false);
+        });
+
+        /**
+         * Test: Executor still runs a migration whose tracker record is
+         * 'failed' (the retryable case — the whole reason this PR exists).
+         */
+        it('should re-execute a previously failed migration', async () => {
+            const upSpy = vi.fn(async () => undefined);
+            const migration: IMigrationMetadata = {
+                id: '001_test',
+                qualifiedId: '001_test',
+                description: 'Test migration',
+                source: 'system',
+                filePath: '/test/001.ts',
+                timestamp: new Date(),
+                dependencies: [],
+                up: upSpy
+            };
+
+            mockTracker.seedRecord('001_test', {
+                migrationId: '001_test',
+                status: 'failed',
+                source: 'system',
+                executedAt: new Date('2026-05-21T00:00:00.000Z'),
+                executionDuration: 30000,
+                error: 'Timeout error'
+            });
+
+            await executor.executeMigration(migration);
+
+            expect(upSpy).toHaveBeenCalledTimes(1);
+            expect(mockTracker.successRecorded).toBe(true);
         });
     });
 });
