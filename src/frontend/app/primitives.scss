@@ -67,27 +67,15 @@
     --container-padding-tablet: 1.5rem;    /* 24px */
     --container-padding-desktop: 3rem;     /* 48px */
 
-    /* Color Tokens - Background & Surfaces */
+    /* Color Tokens - Background */
     --color-background: #03060f;
-    --color-surface: rgba(12, 18, 34, 0.88);
-    --color-surface-muted: rgba(9, 14, 26, 0.78);
-    --color-surface-accent: linear-gradient(135deg, rgba(44, 123, 255, 0.22), rgba(78, 47, 255, 0.18));
-
-    /* Color Tokens - Borders */
-    --color-border: rgba(120, 180, 255, 0.14);
-    --color-border-strong: rgba(120, 180, 255, 0.25);
 
     /* Color Tokens - Brand & Semantic */
     --color-primary: #4b8cff;
     --color-primary-strong: #246bff;
-    --color-secondary: #3fd1ff;
     --color-success: #57d48c;
     --color-warning: #ffc857;
     --color-danger: #ff6f7d;
-
-    /* Color Tokens - Text */
-    --color-text-muted: rgba(226, 234, 255, 0.64);
-    --color-text-subtle: rgba(226, 234, 255, 0.44);
 
     /* Shadow Tokens */
     --shadow-sm: 0 8px 18px rgba(7, 15, 30, 0.35);

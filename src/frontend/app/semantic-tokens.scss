@@ -90,16 +90,16 @@
     --button-font-size-lg: var(--font-size-lg);              /* 1.05rem */
 
     /* Button - Primary Variant */
-    --button-primary-background: linear-gradient(135deg, var(--color-primary), #6da3ff);
-    --button-primary-color: #0b1020;
-    --button-primary-shadow: 0 20px 36px rgba(58, 110, 255, 0.25);
-    --button-primary-shadow-hover: 0 28px 52px rgba(58, 110, 255, 0.32);
+    --button-primary-background: linear-gradient(135deg, var(--color-primary), color-mix(in srgb, var(--color-primary) 70%, white));
+    --button-primary-color: var(--color-on-primary);
+    --button-primary-shadow: 0 20px 36px color-mix(in srgb, var(--color-primary) 25%, transparent);
+    --button-primary-shadow-hover: 0 28px 52px color-mix(in srgb, var(--color-primary) 32%, transparent);
 
     /* Button - Secondary Variant */
-    --button-secondary-background: rgba(79, 140, 255, 0.14);
-    --button-secondary-background-hover: rgba(79, 140, 255, 0.22);
-    --button-secondary-color: #eaf0ff;
-    --button-secondary-border: rgba(79, 140, 255, 0.4);
+    --button-secondary-background: var(--color-primary-alpha-15);
+    --button-secondary-background-hover: var(--color-primary-alpha-30);
+    --button-secondary-color: var(--color-text);
+    --button-secondary-border: var(--color-primary-alpha-38);
 
     /* Button - Ghost Variant */
     --button-ghost-background: transparent;
@@ -225,9 +225,9 @@
     --badge-border-width: var(--border-width-thin);    /* 1px */
 
     /* Badge - Neutral Variant */
-    --badge-neutral-background: rgba(118, 164, 255, 0.22);
-    --badge-neutral-color: #bcd7ff;
-    --badge-neutral-border: rgba(118, 164, 255, 0.4);
+    --badge-neutral-background: color-mix(in srgb, var(--color-text) 12%, transparent);
+    --badge-neutral-color: var(--color-text);
+    --badge-neutral-border: color-mix(in srgb, var(--color-text) 24%, transparent);
 
     /* Badge - Success Variant */
     --badge-success-background: rgba(87, 212, 140, 0.18);
@@ -245,9 +245,9 @@
     --badge-danger-border: rgba(255, 111, 125, 0.45);
 
     /* Badge - Info Variant (primary-tinted for active/in-progress status) */
-    --badge-info-background: rgba(79, 140, 255, 0.15);
-    --badge-info-color: #bcd7ff;
-    --badge-info-border: rgba(79, 140, 255, 0.4);
+    --badge-info-background: var(--color-primary-alpha-15);
+    --badge-info-color: var(--color-text);
+    --badge-info-border: var(--color-primary-alpha-38);
 
     /* ========================================================================
      * INPUT COMPONENT TOKENS
@@ -255,7 +255,7 @@
 
     /* Input - Base Properties */
     --input-background: rgba(3, 6, 15, 0.9);
-    --input-border: var(--border-width-thin) solid rgba(110, 160, 255, 0.18);
+    --input-border: var(--border-width-thin) solid var(--color-primary-alpha-18);
     --input-border-radius: var(--radius-sm);
     --input-padding: var(--spacing-5) var(--spacing-7); /* 0.75rem 1rem */
     --input-padding-sm: var(--spacing-1) var(--spacing-2); /* 0.25rem 0.35rem — dense filter/search/inline inputs */
@@ -264,8 +264,8 @@
                         box-shadow var(--transition-base);
 
     /* Input - Focus State */
-    --input-border-focus: rgba(110, 160, 255, 0.48);
-    --input-shadow-focus: 0 0 0 3px rgba(79, 140, 255, 0.24);
+    --input-border-focus: color-mix(in srgb, var(--color-primary) 48%, transparent);
+    --input-shadow-focus: 0 0 0 3px var(--color-primary-alpha-30);
 
     /* Input - Ghost Variant */
     --input-ghost-background: transparent;
@@ -283,7 +283,7 @@
 
     /* Modal - Dialog */
     --modal-dialog-background: rgba(10, 15, 26, 0.96);
-    --modal-dialog-border: var(--border-width-thin) solid rgba(120, 180, 255, 0.16);
+    --modal-dialog-border: var(--border-width-thin) solid var(--color-border-strong);
     --modal-dialog-border-radius: var(--radius-lg);
     --modal-dialog-shadow: var(--shadow-lg);
     --modal-dialog-max-height: min(90vh, 720px);
@@ -329,7 +329,7 @@
     --toast-success-border: rgba(87, 212, 140, 0.4);
     --toast-warning-border: rgba(255, 200, 87, 0.45);
     --toast-danger-border: rgba(255, 111, 125, 0.45);
-    --toast-info-border: rgba(120, 180, 255, 0.35);
+    --toast-info-border: var(--color-primary-alpha-38);
 
     /* Toast - Actions */
     --toast-action-background: rgba(255, 255, 255, 0.08);
@@ -431,17 +431,17 @@
     --table-cell-border: var(--border-width-thin) solid rgba(255, 255, 255, 0.05);
 
     /* Table - Row Hover */
-    --table-row-background-hover: rgba(79, 140, 255, 0.08);
+    --table-row-background-hover: var(--color-primary-alpha-10);
     --table-row-transition: background-color var(--transition-base);
 
     /* ========================================================================
      * FOCUS STATE TOKENS (Global)
      * ======================================================================== */
 
-    --focus-outline-color: rgba(124, 155, 255, 0.95);
+    --focus-outline-color: var(--color-focus);
     --focus-outline-width: 2px;
     --focus-outline-offset: 3px;
-    --focus-shadow: 0 0 0 4px rgba(124, 155, 255, 0.24);
+    --focus-shadow: 0 0 0 4px var(--color-focus-alpha-25);
 
     /* ========================================================================
      * DIVIDER TOKENS
@@ -486,11 +486,17 @@
     --color-text-subtle: #7a8499;                 /* Tertiary text */
 
     /* Primary Color Alphas */
-    --color-primary-alpha-10: rgba(79, 140, 255, 0.08);
-    --color-primary-alpha-15: rgba(79, 140, 255, 0.15);
-    --color-primary-alpha-18: rgba(79, 140, 255, 0.18);
-    --color-primary-alpha-30: rgba(79, 140, 255, 0.28);
-    --color-primary-alpha-38: rgba(79, 140, 255, 0.38);
+    --color-primary-alpha-10: color-mix(in srgb, var(--color-primary) 8%, transparent);
+    --color-primary-alpha-15: color-mix(in srgb, var(--color-primary) 15%, transparent);
+    --color-primary-alpha-18: color-mix(in srgb, var(--color-primary) 18%, transparent);
+    --color-primary-alpha-30: color-mix(in srgb, var(--color-primary) 28%, transparent);
+    --color-primary-alpha-38: color-mix(in srgb, var(--color-primary) 38%, transparent);
+
+    /* Text Contrast Companions
+     * Foreground color paired with each brand color for use as text/icon on top
+     * of that color's solid surface. Themes override when the brand value's
+     * luminance demands the opposite end of the contrast scale. */
+    --color-on-primary: #0b1020;
 
     /* Surface Colors */
     --color-surface: rgba(20, 28, 48, 0.88);      /* Card/surface background */
@@ -505,8 +511,8 @@
     --color-border-strong: rgba(255, 255, 255, 0.12);
 
     /* Focus Colors */
-    --color-focus: rgba(124, 155, 255, 0.95);
-    --color-focus-alpha-25: rgba(124, 155, 255, 0.24);
+    --color-focus: var(--color-primary);
+    --color-focus-alpha-25: color-mix(in srgb, var(--color-focus) 24%, transparent);
 
     /* Warning Color Alphas */
     --color-warning-alpha-15: rgba(255, 200, 87, 0.15);
@@ -530,10 +536,10 @@
      * GRADIENT TOKENS
      * ======================================================================== */
 
-    --gradient-primary: linear-gradient(135deg, rgba(79, 140, 255, 0.38), rgba(79, 140, 255, 0.18));
-    --gradient-meter: linear-gradient(90deg, rgba(124, 155, 255, 0.9), rgba(101, 217, 165, 0.9));
+    --gradient-primary: linear-gradient(135deg, var(--color-primary-alpha-38), var(--color-primary-alpha-18));
+    --gradient-meter: linear-gradient(90deg, color-mix(in srgb, var(--color-primary) 90%, transparent), color-mix(in srgb, var(--color-success) 90%, transparent));
     --gradient-body-background: radial-gradient(circle at 0% -20%, var(--color-primary-alpha-18), transparent 45%),
-                                radial-gradient(circle at 90% 0%, rgba(63, 209, 255, 0.14), transparent 60%),
+                                radial-gradient(circle at 90% 0%, color-mix(in srgb, var(--color-secondary) 14%, transparent), transparent 60%),
                                 linear-gradient(140deg, rgba(14, 21, 38, 0.85), rgba(6, 10, 20, 0.96));
 
     /* ========================================================================
@@ -561,7 +567,7 @@
     --segmented-control-button-padding: var(--spacing-3) var(--spacing-7); /* 0.45rem 0.9rem */
     --segmented-control-button-font-size: var(--font-size-sm);
     --segmented-control-active-background: var(--gradient-primary);
-    --segmented-control-active-color: #f7fbff;
+    --segmented-control-active-color: var(--color-text);
 
     /* ========================================================================
      * METER/PROGRESS TOKENS

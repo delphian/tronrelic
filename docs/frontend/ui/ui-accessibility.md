@@ -27,15 +27,32 @@ Buttons, links, lists, and navigation landmarks communicate purpose to assistive
 
 ## Focus Management
 
-All interactive elements must have visible focus states. The design system provides these automatically for `<button>`, `<input>`, and `<a>` elements.
+All interactive elements must have visible focus states. The design system provides these automatically for `<button>`, `<input>`, and `<a>` via the global `:focus-visible` outline in `globals.scss`.
 
-For custom interactive elements, ensure `focus-visible` is styled:
+When a component overrides the focus style — to swap the outline for a box-shadow ring, change the border color, or fit a custom shape — gate the rule on `:focus-visible`, not `:focus`. `:focus` fires for both keyboard tabbing and mouse clicks; mouse clicks should not leave a lingering focus ring. `:focus-visible` fires only when the browser determines focus came from keyboard navigation or assistive tech.
+
+```scss
+/* CORRECT — keyboard-only focus ring */
+.my_input:focus-visible {
+    outline: none;
+    border-color: var(--input-border-focus);
+    box-shadow: var(--input-shadow-focus);
+}
+
+/* WRONG — fires on mouse clicks too, leaves visual noise after activation */
+.my_input:focus {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--color-primary-alpha-30);
+}
+```
+
+For custom interactive elements that don't get focus for free, add `tabIndex={0}`, handle keyboard activation in `onKeyDown`, and style with `:focus-visible`:
 
 ```tsx
 <div
     role="button"
     tabIndex={0}
-    className="custom-interactive"
+    className={styles.custom_interactive}
     onKeyDown={handleKeyDown}
 >
     Custom Element

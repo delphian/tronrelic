@@ -33,6 +33,67 @@ Component CSS reaches for tokens in this order:
 
 If no token in tiers 1–3 fits, **flag the gap so a use-case-named semantic can be added**. Don't silently drop to a forbidden foundation primitive.
 
+## Layer 2 Composition Rules
+
+Layer 2 tokens must derive from theme-controlled tokens. Literal values short-circuit the cascade — a theme override of `--color-primary` cannot reach surfaces whose tokens bake in literal blue.
+
+**No literals in themable Layer 2 tokens.** Any semantic token a theme is expected to override — colors, gradients, shadows tinted by brand — must compose from `--color-primary` (or sibling brand tokens) via `var()`, the alpha ladder, or `color-mix()`. Literal `rgba(…)` and hex values survive in `semantic-tokens.scss` only on tokens that should *not* theme: status base colors (`--color-danger: #ff6f7d` is the source of truth), dark backdrop primitives, fully neutral whites/blacks.
+
+**No half-derived tokens.** A token that mixes `var(--color-primary)` with a literal stop (e.g., `linear-gradient(135deg, var(--color-primary), #6da3ff)`) themes the derived half and freezes the literal half. The result is a visible color shear when the theme remaps primary. Derive every stop from theme-controlled values; use `color-mix(in srgb, var(--color-primary) 70%, white)` for a lighter variant.
+
+**No duplicate token names across layers.** Defining the same token in both `primitives.scss` and `semantic-tokens.scss` creates dead code — the later file wins the cascade silently. Semantic-named tokens belong in Layer 2; raw scales in Layer 1. A token name may appear only once in the source tree.
+
+### Alpha Ladder
+
+Brand-tinted overlays — focus rings, hover washes, badge backgrounds, gradient stops — consume `--color-primary` at fixed opacities. Express the ladder once in Layer 2; downstream consumers reference it:
+
+```scss
+--color-primary-alpha-10: color-mix(in srgb, var(--color-primary) 8%, transparent);
+--color-primary-alpha-15: color-mix(in srgb, var(--color-primary) 15%, transparent);
+--color-primary-alpha-18: color-mix(in srgb, var(--color-primary) 18%, transparent);
+--color-primary-alpha-30: color-mix(in srgb, var(--color-primary) 28%, transparent);
+--color-primary-alpha-38: color-mix(in srgb, var(--color-primary) 38%, transparent);
+```
+
+Identical ladders exist for `--color-success-alpha-*`, `--color-danger-alpha-*`, `--color-warning-alpha-*`. Adding a new alpha step is a Layer 2 edit, not a per-call decision.
+
+### color-mix() for Theme-Aware Variants
+
+When a token needs a variant of a brand color and no alpha-ladder entry fits, derive it inline:
+
+```scss
+/* Lighter primary for gradient sheen */
+--button-primary-background: linear-gradient(135deg, var(--color-primary), color-mix(in srgb, var(--color-primary) 70%, white));
+
+/* Primary at 25% opacity for colored drop-shadow */
+--button-primary-shadow: 0 20px 36px color-mix(in srgb, var(--color-primary) 25%, transparent);
+```
+
+`color-mix(in srgb, …)` is supported across all evergreen browsers since early 2023. Prefer it over hand-computed rgba values whose RGB triple decouples from `--color-primary` and stops themable.
+
+### Text-Contrast Companions
+
+Brand colors that appear as solid surfaces (primary, future on-secondary) pair with a `--color-on-X` token for the text/icon color drawn on top. Themes override `--color-on-X` whenever their brand value's luminance crosses the contrast threshold — a dark primary needs light on-primary, a light primary needs dark.
+
+This is distinct from `--color-X-text`, which is calibrated for text on `--color-X-alpha-*` washes, not on solid X. `--color-danger-text: #ffc1c8` reads correctly on the muted danger overlay; the same token would fail contrast against solid `--color-danger`. Two different concerns, two different tokens.
+
+```scss
+--color-on-primary: #0b1020;        /* dark text on default light-blue primary */
+--button-primary-color: var(--color-on-primary);
+```
+
+Add `--color-on-X` for additional brand colors only when a real surface needs one — preemptive tokens accumulate unused.
+
+### Intentional Literal Exceptions
+
+Three categories of literal colors are legitimate and should *not* be forced through the token system:
+
+1. **Functional fixed colors.** QR-code backgrounds (`#ffffff`), barcode foregrounds — colors required for the artifact to be scanned or read by external systems. Themes must not change them.
+2. **Data-visualization palettes.** Heatmap green→red gradients, chart series colors that encode data semantics rather than brand identity. The mapping is part of the data, not the theme.
+3. **Plugin-local design tokens.** A plugin with its own bounded palette (five-elements colors, ranking medal hues) should declare them as plugin-local CSS variables on the component (`--bazi-element-wood`, `--leaderboard-medal-gold`) and consume through `var()`. The plugin owns its design tokens; the core theme system does not try to override them.
+
+Declare the intent in a comment so the next audit reads it as deliberate, not as a missed leak.
+
 ## Size-Variant Convention
 
 Component-scoped semantic tokens that vary by density use the `xs | sm | md | lg` suffix uniformly. Buttons expose `--button-padding-xs/sm/md/lg`, `--button-font-size-xs/sm/md/lg`, `--button-height-xs/sm/md/lg`. Cards expose `--card-padding-xs/sm/md/lg`. Inputs expose `--input-padding` and `--input-padding-sm` (dense inline variant). When adding a new component-scoped density, extend the same four-step ladder rather than inventing a parallel scale — callers then pick the step that matches the visual weight they need, and responsive rules swap tokens instead of redefining them.
@@ -108,6 +169,24 @@ Container queries are preferred over viewport media queries; reserve `@media` fo
 ## Theme Customization
 
 Themes override semantic tokens via custom CSS attached to a `[data-theme="UUID"]` selector — no source-file changes needed. Themes persist in MongoDB and apply via SSR injection. See [ui-theme.md](./ui-theme.md) before creating or modifying a theme.
+
+## Auditing Token Compliance
+
+Drift accumulates quietly. A periodic grep catches most of it:
+
+```bash
+# Layer 3/4 — color literals in component and plugin code
+grep -rnE 'rgba?\(|#[0-9a-fA-F]{6}' \
+    src/frontend/components src/frontend/modules src/frontend/features src/plugins \
+    --include="*.scss" 2>/dev/null \
+    | grep -vE 'var\(--|/\*|//'
+
+# Layer 2 — blue/cyan literals that should derive from --color-primary/secondary
+grep -nE 'rgba?\(([0-9]+,\s*){2}(2[0-9]{2}|1[5-9][0-9])' \
+    src/frontend/app/semantic-tokens.scss
+```
+
+Hits are either real violations (replace with semantic tokens, the alpha ladder, or `color-mix()`) or intentional literals from the exception carveout above. The latter should already carry an explaining comment; if they don't, add one and consider whether a plugin-local variable would be cleaner.
 
 ## Further Reading
 
