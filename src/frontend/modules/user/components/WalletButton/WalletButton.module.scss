@@ -20,13 +20,13 @@
     background: linear-gradient(135deg, var(--color-primary-alpha-30), var(--color-primary-alpha-18));
     border: var(--border-width-medium) solid var(--color-primary);
     color: var(--color-text);
-    font-weight: var(--font-weight-semibold);
-    font-size: var(--font-size-base);
-    padding: var(--spacing-3) var(--spacing-9) var(--spacing-3) var(--spacing-8);
-    border-radius: var(--radius-full);
+    font-weight: var(--button-font-weight);
+    font-size: var(--button-font-size-sm);
+    padding: var(--button-padding-sm);
+    border-radius: var(--button-border-radius);
     display: inline-flex;
     align-items: center;
-    gap: var(--spacing-5);
+    gap: var(--button-gap);
     cursor: pointer;
     transition: all var(--transition-base);
     box-shadow: var(--button-primary-shadow);
@@ -56,8 +56,8 @@
  * TronLink logo with subtle glow effect and minimal border treatment.
  */
 .wallet_icon {
-    width: var(--icon-size-sm);
-    height: var(--icon-size-sm);
+    width: var(--icon-size-xs);
+    height: var(--icon-size-xs);
     border-radius: var(--radius-xs);
     border: var(--border-width-thin) solid var(--color-border);
     filter: drop-shadow(0 0 var(--spacing-4) var(--color-primary-alpha-38));
@@ -133,7 +133,7 @@
     }
 
     .connect_btn {
-        padding: var(--spacing-3) var(--spacing-5);
+        padding: var(--icon-button-padding-touch);
     }
 }
 

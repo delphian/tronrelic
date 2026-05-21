@@ -131,6 +131,7 @@
 
     /* Icon Button - Padding around icon */
     --icon-button-padding: var(--spacing-4);
+    --icon-button-padding-touch: var(--spacing-5); /* 0.75rem - WCAG dense-UI minimum with --icon-size-xs */
 
     /* Icon Button - Size Variants (icon + padding on both sides) */
     --icon-button-size-sm: calc(var(--icon-size-sm) + var(--icon-button-padding) * 2);

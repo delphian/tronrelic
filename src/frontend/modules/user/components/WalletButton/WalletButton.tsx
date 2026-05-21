@@ -37,11 +37,11 @@ import { useWallet } from '../../hooks/useWallet';
 import styles from './WalletButton.module.scss';
 
 /**
- * Truncates a wallet address to show first 6 and last 4 characters.
- * Example: TRSbL...N8Mq
+ * Truncates a wallet address to show first 3 and last 3 characters.
+ * Example: TRS…8Mq
  */
 function truncateWallet(address: string) {
-    return `${address.slice(0, 6)}…${address.slice(-4)}`;
+    return `${address.slice(0, 3)}…${address.slice(-3)}`;
 }
 
 /**
@@ -193,7 +193,7 @@ export function WalletButton() {
             aria-label="Login"
         >
             {isConnecting ? (
-                <Loader2 size={18} className={styles.spinner} />
+                <Loader2 size={14} className={styles.spinner} />
             ) : (
                 <img
                     src="/images/tronlink/tronlink-64x64.jpg"

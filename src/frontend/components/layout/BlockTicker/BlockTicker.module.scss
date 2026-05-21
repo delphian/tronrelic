@@ -18,10 +18,11 @@
     display: flex;
     align-items: center;
     gap: var(--spacing-10);
-    padding: var(--spacing-4) var(--container-padding-desktop);
+    padding: var(--padding-xs) var(--container-padding-desktop);
     width: min($breakpoint-tablet, 100%);
     margin: 0 auto;
-    font-size: var(--font-size-sm);
+    font-size: var(--font-size-caption);
+    line-height: var(--line-height-tight);
     overflow-x: auto;
     scrollbar-width: none;
 }
@@ -61,7 +62,7 @@
 /* Responsive adjustments */
 @media (max-width: $breakpoint-tablet) {
     .container {
-        padding: var(--spacing-4) var(--container-padding-tablet);
+        padding: var(--padding-xs) var(--container-padding-tablet);
         gap: var(--spacing-7);
     }
 }
@@ -69,9 +70,8 @@
 /* Note: 640px is component-specific, not a standard breakpoint */
 @media (max-width: 640px) {
     .container {
-        padding: var(--spacing-4) var(--container-padding-mobile);
+        padding: var(--padding-xs) var(--container-padding-mobile);
         gap: var(--spacing-5);
-        font-size: var(--font-size-xs);
     }
 
     .separator {
