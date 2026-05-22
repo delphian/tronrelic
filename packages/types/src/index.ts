@@ -37,3 +37,25 @@ export type { IAddressLabel, IResolvedAddressLabel, AddressCategory, AddressLabe
 export type { IToolsService, IAddressConversionResult, IAddressValidationResult } from './tools/index.js';
 export type { IAiTool, IAiToolInputSchema, IAiAssistantService, IAiQueryOptions, IAiQueryResult, IModelInfo } from './ai-tools/index.js';
 export { AI_TOOL_NAME_PATTERN } from './ai-tools/index.js';
+export type {
+    HookDescriptor,
+    HookKind,
+    HookPhase,
+    HookPredicate,
+    HookHandler,
+    ObserverHookHandler,
+    SeriesHookHandler,
+    WaterfallHookHandler,
+    BailHookHandler,
+    IHookRegistry,
+    IHookRegisterOptions,
+    HookRegisterDisposer,
+    IHookHandlerRecord,
+    IHookSnapshotRecord,
+    IHookSnapshot,
+    IPluginHooks,
+    ICoreHooks,
+    ICoreSsrHooks
+} from './hooks/index.js';
+export { HookAbortError, isHookAbortError } from './hooks/index.js';
+export type { IHeadFragment, HeadFragmentTag, ISsrHeadContext } from './ssr/index.js';

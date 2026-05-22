@@ -1,6 +1,7 @@
 import axios from 'axios';
 import mongoose from 'mongoose';
-import type { IPluginContext, IPlugin, IDatabaseService, ISchedulerService, IServiceRegistry } from '@/types';
+import type { IPluginContext, IPlugin, IDatabaseService, ISchedulerService, IServiceRegistry, IHookRegistry } from '@/types';
+import { PluginHooks } from '../hooks/index.js';
 import { logger } from '../lib/logger.js';
 import { BlockchainObserverService } from '../services/blockchain-observer/index.js';
 import { BaseObserver, BaseBatchObserver, BaseBlockObserver } from '../modules/blockchain/observers/index.js';
@@ -60,7 +61,12 @@ async function loadAllPlugins(): Promise<IPlugin[]> {
  * @param database - Shared database service instance from bootstrap
  * @param scheduler - Scheduler service instance for plugin cron job registration (null if disabled)
  */
-export async function loadPlugins(database: IDatabaseService, scheduler: ISchedulerService | null, serviceRegistry: IServiceRegistry): Promise<void> {
+export async function loadPlugins(
+    database: IDatabaseService,
+    scheduler: ISchedulerService | null,
+    serviceRegistry: IServiceRegistry,
+    hookRegistry: IHookRegistry
+): Promise<void> {
     await logger.waitUntilInitialized();
 
     const pluginList = await loadAllPlugins();
@@ -70,6 +76,7 @@ export async function loadPlugins(database: IDatabaseService, scheduler: ISchedu
     PluginMetadataService.setDependencies(database);
     const metadataService = PluginMetadataService.getInstance();
     const pluginManager = PluginManagerService.getInstance();
+    pluginManager.setHookRegistry(hookRegistry);
     const observerService = BlockchainObserverService.getInstance();
 
     logger.info(`Discovered ${pluginList.length} plugins`);
@@ -137,6 +144,12 @@ export async function loadPlugins(database: IDatabaseService, scheduler: ISchedu
                 pluginLogger.warn('Socket.IO not initialized - WebSocket features disabled for this plugin');
             }
 
+            // Per-plugin hook facade. Tags every registration with the
+            // plugin id, enforces the lifecycle window, and lets the plugin
+            // manager dispose every handler the plugin owns when it is
+            // disabled or uninstalled.
+            const pluginHooks = new PluginHooks(plugin.manifest.id, hookRegistry, pluginLogger);
+
             // Create plugin context with injected dependencies
             const context: IPluginContext = {
                 http: httpClient,
@@ -161,11 +174,12 @@ export async function loadPlugins(database: IDatabaseService, scheduler: ISchedu
                 userService: UserService.getInstance(),
                 signatureService: new SignatureService(tronWebInstance),
                 services: serviceRegistry,
+                hooks: pluginHooks,
                 logger: pluginLogger
             };
 
             // Register plugin in the manager (does not initialize)
-            pluginManager.registerPlugin(plugin, context);
+            pluginManager.registerPlugin(plugin, context, pluginHooks);
 
             pluginLogger.debug('Plugin discovered and registered');
         } catch (error) {

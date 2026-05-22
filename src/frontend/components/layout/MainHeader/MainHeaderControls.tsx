@@ -1,52 +1,24 @@
 /**
  * MainHeaderControls Component (Client Component)
  *
- * Interactive controls for the main header including theme toggle and wallet connection.
- * Separated from MainHeader server component to enable client-side interactivity.
- *
- * SSR + Live Updates Pattern:
- * - Receives theme data from server component for immediate rendering
- * - Theme toggle buttons render with SSR data (no loading flash)
- * - After hydration, client handles theme switching interactively
- *
- * @example
- * ```tsx
- * // Used by MainHeader (server component)
- * <MainHeaderControls initialThemes={themes} initialThemeId={selectedThemeId} />
- * ```
+ * Interactive controls for the main header. Currently only renders the
+ * wallet button — themes are global (applied site-wide whenever an admin
+ * enables them) and no longer surface a per-user toggle here.
  */
 'use client';
 
-import type { IOrderedTheme } from '../../../app/layout';
-import { ThemeToggle } from '../../ThemeToggle';
 import { WalletButton } from '../../../modules/user';
 import styles from './MainHeader.module.scss';
-
-/**
- * Props for the MainHeaderControls component.
- */
-interface MainHeaderControlsProps {
-    /**
-     * Active themes fetched during SSR for immediate toggle button rendering.
-     */
-    initialThemes: IOrderedTheme[];
-    /**
-     * Currently selected theme ID from cookie, read during SSR.
-     */
-    initialThemeId: string | null;
-}
 
 /**
  * Interactive header controls component.
  *
  * Provides client-side interactive features for the main header:
- * - Theme toggle buttons rendered immediately with SSR data
  * - Wallet connection button via WalletButton from modules/user
  */
-export function MainHeaderControls({ initialThemes, initialThemeId }: MainHeaderControlsProps) {
+export function MainHeaderControls() {
     return (
         <div className={styles.controls}>
-            <ThemeToggle initialThemes={initialThemes} initialThemeId={initialThemeId} />
             <WalletButton />
         </div>
     );
