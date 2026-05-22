@@ -64,7 +64,8 @@ export interface IFileRecord {
     /** Size of the stored bytes. */
     sizeBytes: number;
 
-    /** Public URL-relative address suitable for browser display. */
+    /** Absolute public URL (scheme + host + path) suitable for browser display
+     *  and for handing to external consumers such as Telegram, X, or email. */
     url: string;
 
     /** Optional uploader identity (user id, plugin context, etc.). */
@@ -142,8 +143,9 @@ export interface IFileService {
     read(id: string): Promise<{ bytes: Buffer; mimeType: string } | null>;
 
     /**
-     * Resolve a public URL for browser display from the id alone. Returns
-     * null when the id does not resolve.
+     * Resolve an absolute public URL (scheme + host + path) from the id alone.
+     * Suitable for browser display and for handing to external consumers such
+     * as Telegram, X, or email. Returns null when the id does not resolve.
      */
     getUrl(id: string): Promise<string | null>;
 

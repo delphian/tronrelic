@@ -1,0 +1,224 @@
+/**
+ * Scoped styles for the hook-system bird's-eye admin page.
+ *
+ * Page structure is composed with the layout primitives (Page, PageHeader,
+ * Stack). This module only contributes the track strip, the vertical
+ * timeline rail rendered behind the ordered list of hook nodes, and the
+ * tabular handler rows inside an expanded node. All values flow through
+ * design tokens so themes propagate correctly.
+ */
+
+@use '../../../../app/breakpoints' as *;
+
+.container {
+    container-type: inline-size;
+    container-name: hooks-page;
+}
+
+.intro {
+    color: var(--color-text-muted);
+    max-width: var(--max-width-prose);
+}
+
+.track_strip {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--gap-xs);
+    border-bottom: var(--border-width-thin) solid var(--color-border);
+    padding-bottom: var(--padding-xs);
+}
+
+.track_tab {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--gap-xs);
+    padding: var(--padding-xs) var(--padding-sm);
+    background: transparent;
+    border: var(--border-width-thin) solid transparent;
+    border-radius: var(--radius-md);
+    color: var(--color-text-muted);
+    font-size: var(--font-size-body);
+    font-weight: var(--font-weight-medium);
+    cursor: pointer;
+    transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+
+.track_tab:hover {
+    color: var(--color-text);
+    background: var(--color-surface-muted);
+}
+
+.track_tab:focus-visible {
+    outline: none;
+    border-color: var(--color-focus);
+    box-shadow: 0 0 0 var(--border-width-medium) var(--color-focus-alpha-25);
+}
+
+.track_tab--active {
+    color: var(--color-text);
+    background: var(--color-surface);
+    border-color: var(--color-border);
+}
+
+.track_tab_count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.5em;
+    padding: 0 var(--padding-2xs);
+    border-radius: var(--radius-full);
+    background: var(--color-surface-muted);
+    color: var(--color-text-muted);
+    font-size: var(--font-size-caption);
+    font-weight: var(--font-weight-semibold);
+}
+
+.timeline {
+    position: relative;
+    list-style: none;
+    margin: 0;
+    padding: 0 0 0 var(--padding-md);
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-md);
+}
+
+.timeline::before {
+    content: '';
+    position: absolute;
+    left: var(--padding-2xs);
+    top: 0;
+    bottom: 0;
+    width: var(--border-width-thin);
+    background: var(--color-border);
+}
+
+.hook_node {
+    position: relative;
+}
+
+.hook_node::before {
+    content: '';
+    position: absolute;
+    left: calc(-1 * var(--padding-md) + var(--padding-2xs) - var(--border-width-medium));
+    top: var(--padding-md);
+    width: var(--gap-sm);
+    height: var(--gap-sm);
+    border-radius: var(--radius-full);
+    background: var(--color-primary);
+}
+
+.hook_node--empty::before {
+    background: var(--color-border);
+}
+
+.hook_header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--gap-sm);
+    width: 100%;
+    padding: var(--padding-sm) var(--padding-md);
+    background: var(--color-surface);
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    text-align: left;
+    font: inherit;
+    color: inherit;
+    transition: border-color 120ms ease, background 120ms ease;
+}
+
+.hook_header:hover {
+    border-color: var(--color-primary);
+}
+
+.hook_header:focus-visible {
+    outline: none;
+    border-color: var(--color-focus);
+    box-shadow: 0 0 0 var(--border-width-medium) var(--color-focus-alpha-25);
+}
+
+.hook_header--empty {
+    background: var(--color-surface-muted);
+}
+
+.hook_id {
+    font-family: var(--font-mono);
+    font-size: var(--font-size-body);
+    font-weight: var(--font-weight-semibold);
+}
+
+.hook_meta {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--gap-xs);
+    margin-left: auto;
+    color: var(--color-text-muted);
+    font-size: var(--font-size-caption);
+}
+
+.hook_body {
+    padding: var(--padding-sm) var(--padding-md);
+    border: var(--border-width-thin) solid var(--color-border);
+    border-top: 0;
+    border-radius: 0 0 var(--radius-md) var(--radius-md);
+    background: var(--color-surface-muted);
+}
+
+.hook_description {
+    margin: 0 0 var(--gap-sm);
+    color: var(--color-text-muted);
+    font-size: var(--font-size-body-sm);
+}
+
+.handler_list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-2xs);
+}
+
+.handler_row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: var(--gap-sm);
+    align-items: baseline;
+    padding: var(--padding-2xs) 0;
+    border-bottom: var(--border-width-thin) dashed var(--color-border);
+}
+
+.handler_row:last-child {
+    border-bottom: 0;
+}
+
+.handler_plugin {
+    font-family: var(--font-mono);
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text);
+}
+
+.handler_meta {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-caption);
+    font-family: var(--font-mono);
+}
+
+.empty_body {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-body-sm);
+    font-style: italic;
+    margin: 0;
+}
+
+@container hooks-page (max-width: #{$breakpoint-mobile-md}) {
+    .hook_meta {
+        margin-left: 0;
+        width: 100%;
+    }
+    .handler_row {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}

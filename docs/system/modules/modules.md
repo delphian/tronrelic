@@ -47,6 +47,10 @@ See [modules-architecture.md](./modules-architecture.md#service-registry--late-b
 
 When migrating between the two, see [modules-architecture.md](./modules-architecture.md#migration-considerations) for step-by-step guidance.
 
+## Core-Pipeline Hooks
+
+Modules can also participate in the typed hook registry as `'core'` — the same mechanism plugins use to contribute at declared seams. A module receives `IHookRegistry` through its `init(deps)` interface and registers handlers in `run()` after dependencies are wired, calling `hookRegistry.register('core', HOOKS.<phase>.<name>, handler, { priority })`. Module registrations live for the process lifetime (no disable/uninstall), so the disposer returned by `register` is typically stored only for symmetry with the plugin facade pattern. No core module ships a hook registration today — the canonical example is the `trp-themes` plugin contributing to `HOOKS.ssr.headFragments` and `HOOKS.ssr.htmlAttributes` via the plugin facade, which exercises the same registry through `context.hooks.register(...)`. See [system-hooks.md](../system-hooks.md) for the contract, the four archetypes (observer / series / waterfall / bail), and the `/system/hooks` admin timeline that introspects registrations.
+
 ## Service Types and Singleton Usage
 
 Services implementing `IXxxService` interfaces (e.g., `IPageService`, `IMenuService`) **must be singletons**. They are public APIs with shared single state, configured once at bootstrap via dependency injection, and consumed as-is by all callers.
@@ -78,6 +82,7 @@ Before creating a new module, confirm the feature is essential infrastructure (o
 **Related topics:**
 - [system-database.md](../system-database.md) - Database access architecture and IDatabaseService
 - [system-database-migrations.md](../system-database-migrations.md) - Migration system for schema evolution
+- [system-hooks.md](../system-hooks.md) - Core-pipeline hooks: declared seams, archetypes, admin introspection
 - [system-testing.md](../system-testing.md) - Testing framework with Vitest and Mongoose mocking
 - [plugins.md](../../plugins/plugins.md) - Plugin system overview (comparison to modules)
 - [frontend-architecture.md](../../frontend/frontend-architecture.md) - Frontend module structure and import patterns

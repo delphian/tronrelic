@@ -20,6 +20,7 @@ import type { IAddressLabelService } from '../address-label/IAddressLabelService
 import type { IUserService } from '../user/IUserService.js';
 import type { IServiceRegistry } from '../services/IServiceRegistry.js';
 import type { ISignatureService } from '../services/ISignatureService.js';
+import type { IPluginHooks } from '../hooks/IPluginHooks.js';
 import { ISystemLogService } from '../system-log/ISystemLogService.js';
 
 /**
@@ -141,6 +142,37 @@ export interface IPluginContext {
      * ```
      */
     services: IServiceRegistry;
+
+    /**
+     * Plugin-scoped hook facade for registering handlers at core-declared
+     * pipeline seams.
+     *
+     * Hooks are the inverse directional flow of the service registry: the
+     * service registry lets plugins publish capabilities for other
+     * components to consume, while hooks let core invite plugins into the
+     * execution of its own pipeline at points it has explicitly opened.
+     * Plugins register handlers against typed descriptors imported from
+     * the central `HOOKS` registry; the runtime infers the handler
+     * signature from the descriptor so signature mismatches are
+     * compile-time errors. Handlers must be registered during the plugin
+     * lifecycle (`install` / `enable` / `init`) — registering from a
+     * request handler throws.
+     *
+     * @example
+     * ```typescript
+     * init: async (context) => {
+     *     context.hooks.register(
+     *         context.hooks.HOOKS.ssr.headFragments,
+     *         async (ssrCtx, fragments) => [
+     *             ...fragments,
+     *             { tag: 'link', rel: 'stylesheet', href: '/themes/active.css' }
+     *         ],
+     *         { priority: 100 }
+     *     );
+     * }
+     * ```
+     */
+    hooks: IPluginHooks;
 
     /** Structured logger scoped to the plugin for consistent telemetry */
     logger: ISystemLogService;

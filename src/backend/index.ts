@@ -23,13 +23,14 @@ import { logger, createLogger } from './lib/logger.js';
 import { WebSocketService } from './services/websocket.service.js';
 import { loadPlugins } from './loaders/plugins.js';
 import { ServiceRegistry } from './services/service-registry.js';
+import { HookRegistry, HooksController, createHooksAdminRouter, SsrHeadFragmentsController, SsrHtmlAttributesController, createSsrRouter } from './hooks/index.js';
+import { requireAdmin } from './api/middleware/admin-auth.js';
 import { SchedulerModule } from './modules/scheduler/index.js';
 import { MenuModule, MAIN_SYSTEM_CONTAINER_ID } from './modules/menu/index.js';
 import { LogsModule } from './modules/logs/index.js';
 import { DatabaseModule } from './modules/database/index.js';
 import { ClickHouseModule } from './modules/clickhouse/index.js';
 import { PagesModule } from './modules/pages/index.js';
-import { ThemeModule } from './modules/theme/index.js';
 import { UserModule } from './modules/user/index.js';
 import { AddressLabelsModule } from './modules/address-labels/index.js';
 import { ToolsModule } from './modules/tools/index.js';
@@ -43,7 +44,7 @@ import { UsdtParametersService } from './modules/usdt-parameters/usdt-parameters
 import { createApiRouter } from './api/routes/index.js';
 import { PluginManagerService } from './services/plugin-manager.service.js';
 import type { Express } from 'express';
-import type { IDatabaseService, IMenuService, IMenuNode, IPluginManifest, IServiceRegistry } from '@/types';
+import type { IDatabaseService, IMenuService, IMenuNode, IPluginManifest, IServiceRegistry, IHookRegistry } from '@/types';
 import axios from 'axios';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -141,7 +142,7 @@ async function bootstrap(): Promise<void> {
             await logger.waitUntilInitialized();
             // Pass scheduler to plugins for context.scheduler injection
             const scheduler = ctx.modules.scheduler.getSchedulerService();
-            await loadPlugins(ctx.coreDatabase, scheduler, ctx.serviceRegistry);
+            await loadPlugins(ctx.coreDatabase, scheduler, ctx.serviceRegistry, ctx.hookRegistry);
         } catch (pluginError) {
             logger.error({ pluginError, stack: pluginError instanceof Error ? pluginError.stack : undefined }, 'Plugin initialization failed');
         }
@@ -211,13 +212,13 @@ interface BootstrapContext {
     coreDatabase: IDatabaseService;
     menuService: IMenuService;
     serviceRegistry: IServiceRegistry;
+    hookRegistry: IHookRegistry;
     modules: {
         database: DatabaseModule;
         clickhouse: ClickHouseModule;
         menu: MenuModule;
         logs: LogsModule;
         pages: PagesModule;
-        theme: ThemeModule;
         user: UserModule;
         addressLabels: AddressLabelsModule;
         tools: ToolsModule;
@@ -279,6 +280,12 @@ async function bootstrapInit(): Promise<BootstrapContext> {
     // publish itself as `'menu'` for late-binding consumers during run().
     const serviceRegistry = new ServiceRegistry(logger);
 
+    // Hook registry is the inverse of the service registry: plugins register
+    // handlers against core-declared seams, where the service registry lets
+    // plugins publish capabilities for consumers. Instantiate alongside so
+    // both are available to the plugin loader.
+    const hookRegistry = new HookRegistry(logger);
+
     // Register shared infrastructure on the service registry so modules and
     // plugins can discover them via late-binding DI instead of importing
     // concrete classes.
@@ -291,11 +298,10 @@ async function bootstrapInit(): Promise<BootstrapContext> {
 
     const cacheService = new CacheService(getRedisClient(), coreDatabase);
 
-    const sharedDeps = { database: coreDatabase, cacheService, menuService, serviceRegistry, app };
+    const sharedDeps = { database: coreDatabase, cacheService, menuService, serviceRegistry, hookRegistry, app };
 
     const logsModule = new LogsModule();
     const pagesModule = new PagesModule();
-    const themeModule = new ThemeModule();
     const userModule = new UserModule();
     const addressLabelsModule = new AddressLabelsModule();
     const toolsModule = new ToolsModule();
@@ -303,7 +309,6 @@ async function bootstrapInit(): Promise<BootstrapContext> {
 
     await logsModule.init({ pinoLogger, database: coreDatabase, app });
     await pagesModule.init(sharedDeps);
-    await themeModule.init(sharedDeps);
     await schedulerModule.init({ database: coreDatabase, menuService, app });
     const schedulerService = schedulerModule.getSchedulerService();
     await userModule.init({ ...sharedDeps, scheduler: schedulerService, systemConfig: SystemConfigService.getInstance(), clickhouse });
@@ -317,13 +322,13 @@ async function bootstrapInit(): Promise<BootstrapContext> {
         coreDatabase,
         menuService,
         serviceRegistry,
+        hookRegistry,
         modules: {
             database: databaseModule,
             clickhouse: clickHouseModule,
             menu: menuModule,
             logs: logsModule,
             pages: pagesModule,
-            theme: themeModule,
             user: userModule,
             addressLabels: addressLabelsModule,
             tools: toolsModule,
@@ -347,18 +352,36 @@ async function bootstrapInit(): Promise<BootstrapContext> {
  * @param ctx - Bootstrap context from init phase containing all components
  */
 async function bootstrapRun(ctx: BootstrapContext): Promise<void> {
-    const { modules, menuService } = ctx;
+    const { modules, menuService, hookRegistry, app } = ctx;
 
     await modules.database.run();
     await modules.clickhouse.run();
     await modules.menu.run();
     await modules.logs.run();
     await modules.pages.run();
-    await modules.theme.run();
     await modules.user.run();
     await modules.addressLabels.run();
     await modules.tools.run();
     await modules.scheduler.run();
+
+    // Mount the hook-system introspection endpoint. The route is
+    // intentionally read-only: it serves the registry's snapshot for
+    // the bird's-eye admin UI. Plugins do not interact with this
+    // endpoint — they reach the same registry through the per-plugin
+    // facade exposed on `context.hooks`.
+    const hooksController = new HooksController(hookRegistry);
+    app.use('/api/admin/system/hooks', requireAdmin, createHooksAdminRouter(hooksController));
+    logger.info('Hook introspection router mounted at /api/admin/system/hooks');
+
+    // Mount the public SSR hook endpoints. The frontend SSR layer POSTs
+    // to /api/ssr/* once per page render with the request context; each
+    // controller invokes its respective hook (headFragments,
+    // htmlAttributes) and returns the aggregated payload. No admin gate
+    // — the consumer is the application's own server-side renderer.
+    const ssrFragmentsController = new SsrHeadFragmentsController(hookRegistry, logger);
+    const ssrHtmlAttributesController = new SsrHtmlAttributesController(hookRegistry, logger);
+    app.use('/api/ssr', createSsrRouter(ssrFragmentsController, ssrHtmlAttributesController));
+    logger.info('SSR hook routers mounted at /api/ssr');
 
     await registerTemporaryMenuItems(menuService);
     logger.info({}, 'All modules initialized');
@@ -417,6 +440,7 @@ async function initializeCoreServices(coreDatabase: IDatabaseService): Promise<v
 async function registerTemporaryMenuItems(menuService: IMenuService): Promise<void> {
     const items = [
         { label: 'Overview', url: '/system/system', icon: 'SlidersHorizontal', order: 5 },
+        { label: 'Hooks', url: '/system/hooks', icon: 'Network', order: 45 },
         // Logs (30), Scheduler (35) registered by their modules
         // Pages (40) registered by PagesModule
         // Files (42) registered by trp-files plugin

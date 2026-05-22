@@ -32,6 +32,8 @@ Only **installed AND enabled** plugins load at runtime. See [plugins-system-arch
 
 **Cross-component service sharing.** The service registry (`context.services`) lets plugins publish named services that other plugins and modules discover at runtime. Providers register on `init()`, unregister on `disable()`; consumers call `get()` (one-shot) or `watch()` (continuous). This shifts the module-vs-plugin decision: a feature exposing a shared service can stay a plugin as long as the app functions without it. See [plugins-service-registry.md](./plugins-service-registry.md).
 
+**Core-pipeline hooks.** The inverse directional flow: where the service registry lets plugins *publish* capabilities, the hook system (`context.hooks`) lets plugins *contribute* into core's own execution at typed seams it declares — SSR `<head>` injection, request lifecycle, and so on. Handlers register against descriptors from a central `HOOKS` registry (no magic strings), are scoped to the plugin lifecycle, and surface on the `/system/hooks` admin timeline so operators can see who is mutating what. See [system-hooks.md](../system/system-hooks.md) for the contract, archetypes, and failure-isolation rules.
+
 ## Quick Reference
 
 Canonical reference implementation: `src/plugins/trp-ai-assistant/` — exercises lifecycle hooks, scheduler jobs, service registry publication, admin routes, and SSR-first pages. New-plugin walkthrough: [plugins-system-architecture.md → Adding or updating a plugin](./plugins-system-architecture.md#adding-or-updating-a-plugin).
@@ -79,6 +81,7 @@ For the complete Hello World walkthrough including the observer factory, see [pl
 - [plugins-api-registration.md](./plugins-api-registration.md) — REST routes, middleware, admin endpoints
 - [plugins-websocket-subscriptions.md](./plugins-websocket-subscriptions.md) — Real-time subscriptions, rooms, event namespacing
 - [plugins-service-registry.md](./plugins-service-registry.md) — Cross-component service sharing
+- [system-hooks.md](../system/system-hooks.md) — Core-pipeline hooks: declared seams, archetypes, plugin facade, admin introspection
 - [system-database.md](../system/system-database.md#plugins) — Scoped storage, indexes, key-value config
 
 **Related topics:**

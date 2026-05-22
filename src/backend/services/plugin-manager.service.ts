@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events';
-import type { IPlugin, IPluginContext, IPluginManifest } from '@/types';
+import type { IPlugin, IPluginContext, IPluginManifest, IHookRegistry } from '@/types';
 import { PluginMetadataService } from './plugin-metadata.service.js';
 import { PluginDatabaseService } from '../modules/database/index.js';
 import { PluginApiService } from './plugin-api.service.js';
@@ -7,6 +7,7 @@ import { BlockchainObserverService } from './blockchain-observer/index.js';
 import { BaseObserver } from '../modules/blockchain/observers/BaseObserver.js';
 import { WebSocketService } from './websocket.service.js';
 import { logger } from '../lib/logger.js';
+import { PluginHooks } from '../hooks/index.js';
 
 /**
  * Lifecycle event payloads emitted by PluginManagerService.
@@ -35,6 +36,7 @@ interface ILoadedPlugin {
     plugin: IPlugin;
     context: IPluginContext;
     manifest: IPluginManifest;
+    hooks: PluginHooks;
 }
 
 /**
@@ -49,9 +51,23 @@ export class PluginManagerService {
     private loadedPlugins: Map<string, ILoadedPlugin> = new Map();
     private metadataService: PluginMetadataService;
     private events: EventEmitter = new EventEmitter();
+    private hookRegistry: IHookRegistry | null = null;
 
     private constructor() {
         this.metadataService = PluginMetadataService.getInstance();
+    }
+
+    /**
+     * Inject the process-wide hook registry.
+     *
+     * Called once during bootstrap from the plugin loader. The registry
+     * is used to rebuild a plugin's hook facade after it has been
+     * disabled and to dispose handlers in bulk as a safety net.
+     *
+     * @param registry - Shared hook registry instance.
+     */
+    public setHookRegistry(registry: IHookRegistry): void {
+        this.hookRegistry = registry;
     }
 
     /**
@@ -125,12 +141,16 @@ export class PluginManagerService {
      *
      * @param plugin - Plugin definition
      * @param context - Plugin context with injected dependencies
+     * @param hooks - Per-plugin hook facade tied to this context, used by
+     *   disable/uninstall paths to close the lifecycle window and drop
+     *   every handler the plugin has registered.
      */
-    public registerPlugin(plugin: IPlugin, context: IPluginContext): void {
+    public registerPlugin(plugin: IPlugin, context: IPluginContext, hooks: PluginHooks): void {
         this.loadedPlugins.set(plugin.manifest.id, {
             plugin,
             context,
-            manifest: plugin.manifest
+            manifest: plugin.manifest,
+            hooks
         });
     }
 
@@ -142,6 +162,51 @@ export class PluginManagerService {
      */
     public getPlugin(pluginId: string): ILoadedPlugin | undefined {
         return this.loadedPlugins.get(pluginId);
+    }
+
+    /**
+     * Rebuild a plugin's hook facade and rebind it to the live context.
+     *
+     * Called immediately before re-entering a plugin's enable/init path
+     * so the plugin sees an open lifecycle window. The previous facade
+     * (if any) is closed and its handlers disposed, then a fresh facade
+     * replaces `context.hooks`.
+     *
+     * @param loaded - Loaded plugin record.
+     */
+    private rearmHooks(loaded: ILoadedPlugin): void {
+        if (!this.hookRegistry) {
+            return;
+        }
+        try {
+            loaded.hooks.closeAndDisposeAll();
+        } catch (err) {
+            logger.warn({ err, pluginId: loaded.manifest.id }, 'Hook facade dispose threw during rearm');
+        }
+        this.hookRegistry.disposeForPlugin(loaded.manifest.id);
+        const fresh = new PluginHooks(loaded.manifest.id, this.hookRegistry, loaded.context.logger);
+        loaded.hooks = fresh;
+        loaded.context.hooks = fresh;
+    }
+
+    /**
+     * Close a plugin's hook facade and drop every handler it owns.
+     *
+     * Called after a plugin's disable hook completes so any handlers
+     * registered during init/enable are torn down regardless of whether
+     * the plugin code remembered to dispose them itself.
+     *
+     * @param loaded - Loaded plugin record.
+     */
+    private disposeHooks(loaded: ILoadedPlugin): void {
+        try {
+            loaded.hooks.closeAndDisposeAll();
+        } catch (err) {
+            logger.warn({ err, pluginId: loaded.manifest.id }, 'Hook facade dispose threw');
+        }
+        if (this.hookRegistry) {
+            this.hookRegistry.disposeForPlugin(loaded.manifest.id);
+        }
     }
 
     /**
@@ -177,6 +242,10 @@ export class PluginManagerService {
                 return { success: false, message: 'Plugin metadata not found' };
             }
 
+            // Rebind a fresh hook facade so the plugin's install/enable/init
+            // path sees an open lifecycle window.
+            this.rearmHooks(loaded);
+
             // Run install hook if not already installed
             if (!metadata.installed && plugin.install) {
                 pluginLogger.info('Running install hook');
@@ -195,6 +264,11 @@ export class PluginManagerService {
                 pluginLogger.info('Running init hook');
                 await plugin.init(context);
             }
+
+            // Seal the lifecycle window. Subsequent register() attempts
+            // (e.g. inside request handlers) now throw — handlers
+            // registered during install/enable/init stay live.
+            loaded.hooks.seal();
 
             // Mark as enabled in database
             await this.metadataService.markEnabled(pluginId);
@@ -233,12 +307,27 @@ export class PluginManagerService {
         const { plugin, context } = loaded;
         const pluginLogger = context.logger;
 
-        try {
-            // Run disable hook if defined
-            if (plugin.disable) {
+        // Run the plugin's disable hook inside its own try/catch so a
+        // misbehaving plugin cannot starve the platform's cleanup that
+        // follows. The hook is best-effort cleanup the plugin owns; the
+        // disposers below are the only thing that guarantees handlers and
+        // routes do not leak past the disabled boundary.
+        let disableError: Error | null = null;
+        if (plugin.disable) {
+            try {
                 pluginLogger.info('Running disable hook');
                 await plugin.disable(context);
+            } catch (error) {
+                disableError = error instanceof Error ? error : new Error(String(error));
+                pluginLogger.error({ error: disableError }, 'Plugin disable hook threw; continuing with platform cleanup');
             }
+        }
+
+        try {
+            // Close the plugin's hook facade and drop every handler it
+            // registered, regardless of whether the plugin's disable hook
+            // remembered to call disposers itself.
+            this.disposeHooks(loaded);
 
             // Mark as disabled in database
             await this.metadataService.markDisabled(pluginId);
@@ -248,6 +337,11 @@ export class PluginManagerService {
             apiService.unregisterPluginRoutes(pluginId);
 
             this.events.emit('plugin:disabled', { pluginId });
+
+            if (disableError) {
+                await this.metadataService.recordError(pluginId, disableError.message);
+                return { success: false, message: `Disable hook threw but platform cleanup completed: ${disableError.message}` };
+            }
 
             pluginLogger.info('Plugin unloaded and disabled successfully');
             return { success: true, message: 'Plugin unloaded successfully' };
@@ -287,11 +381,23 @@ export class PluginManagerService {
                 return { success: false, message: 'Plugin is already installed' };
             }
 
+            // Rearm the hook facade so the install hook may register
+            // handlers. A previous disable/uninstall cycle leaves the
+            // facade closed (closeAndDisposeAll flips it shut), and the
+            // install lifecycle window is one of the three points where
+            // context.hooks.register(...) is allowed — reinstall and
+            // upgrade flows depend on this being a fresh facade.
+            this.rearmHooks(loaded);
+
             // Run install hook if defined
             if (plugin.install) {
                 pluginLogger.info('Running install hook');
                 await plugin.install(context);
             }
+
+            // Seal the install lifecycle window. The next enable cycle
+            // will rearm the facade before plugin.enable/init runs.
+            loaded.hooks.seal();
 
             // Mark as installed in database
             await this.metadataService.markInstalled(pluginId);
@@ -413,6 +519,10 @@ export class PluginManagerService {
                 return { success: false, message: 'Plugin is already enabled' };
             }
 
+            // Rebind a fresh hook facade so the plugin's enable/init path
+            // sees an open lifecycle window.
+            this.rearmHooks(loaded);
+
             // Run enable hook if defined
             if (plugin.enable) {
                 pluginLogger.info('Running enable hook');
@@ -424,6 +534,9 @@ export class PluginManagerService {
                 pluginLogger.info('Running init hook');
                 await plugin.init(context);
             }
+
+            // Seal the lifecycle window now that enable+init have run.
+            loaded.hooks.seal();
 
             // Mark as enabled in database
             await this.metadataService.markEnabled(pluginId);
@@ -462,21 +575,36 @@ export class PluginManagerService {
         const { plugin, context } = loaded;
         const pluginLogger = context.logger;
 
-        try {
-            const metadata = await this.metadataService.getMetadata(pluginId);
-            if (!metadata) {
-                return { success: false, message: 'Plugin metadata not found' };
-            }
+        const metadata = await this.metadataService.getMetadata(pluginId).catch(() => null);
+        if (!metadata) {
+            return { success: false, message: 'Plugin metadata not found' };
+        }
 
-            if (!metadata.enabled) {
-                return { success: false, message: 'Plugin is not enabled' };
-            }
+        if (!metadata.enabled) {
+            return { success: false, message: 'Plugin is not enabled' };
+        }
 
-            // Run disable hook if defined
-            if (plugin.disable) {
+        // Run the plugin's disable hook inside its own try/catch so a
+        // misbehaving plugin cannot starve the platform's cleanup. The
+        // hook is best-effort cleanup the plugin owns; the disposers
+        // below are the only thing that guarantees handlers and routes
+        // do not leak past the disabled boundary.
+        let disableError: Error | null = null;
+        if (plugin.disable) {
+            try {
                 pluginLogger.info('Running disable hook');
                 await plugin.disable(context);
+            } catch (error) {
+                disableError = error instanceof Error ? error : new Error(String(error));
+                pluginLogger.error({ error: disableError }, 'Plugin disable hook threw; continuing with platform cleanup');
             }
+        }
+
+        try {
+            // Close the plugin's hook facade and drop every handler it
+            // registered, regardless of whether the plugin's disable hook
+            // remembered to call disposers itself.
+            this.disposeHooks(loaded);
 
             // Mark as disabled in database
             await this.metadataService.markDisabled(pluginId);
@@ -486,6 +614,11 @@ export class PluginManagerService {
             apiService.unregisterPluginRoutes(pluginId);
 
             this.events.emit('plugin:disabled', { pluginId });
+
+            if (disableError) {
+                await this.metadataService.recordError(pluginId, disableError.message);
+                return { success: false, message: `Disable hook threw but platform cleanup completed: ${disableError.message}` };
+            }
 
             pluginLogger.info('Plugin disabled successfully');
             return { success: true, message: 'Plugin disabled successfully' };

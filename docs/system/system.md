@@ -54,6 +54,10 @@ Markdown-authored CMS for admin-published content. `PageService` (singleton, imp
 
 Visitor identity anchored on one HttpOnly, HMAC-signed `tronrelic_uid` cookie minted by the server at `POST /api/user/bootstrap` — the server is the only writer. Identity state (`Anonymous` | `Registered` | `Verified`) is stored, not derived; `Verified` requires a recent TronLink signature within `SESSION_TTL_MS`. One UUID can link multiple wallets with a primary designation. See [User Module README](../../src/backend/modules/user/README.md).
 
+### Hooks
+
+Typed extension points where core invites plugins into its own execution. Descriptors declared in `src/backend/hooks/registry.ts` are the single source of truth; the runtime registry refuses unknown descriptors, enforces per-plugin handler caps, and serves a snapshot to the `/system/hooks` admin timeline. Four archetypes (observer / series / waterfall / bail) with explicit isolation and abort semantics. See [system-hooks.md](./system-hooks.md).
+
 ### Logging
 
 Pino-based logger with MongoDB persistence for historical queries. See [system-logging.md](./system-logging.md).
@@ -85,6 +89,7 @@ Inspect health at `/system` (auth: `ADMIN_API_TOKEN`) — fastest path to blockc
 | [system-api-websockets.md](./system-api-websockets.md) | WebSocket admin metrics + real-time event catalog |
 | [system-dashboard.md](./system-dashboard.md) | Dashboard tabs and controls |
 | [system-database-migrations.md](./system-database-migrations.md) | Migration discovery, transactions, REST API, admin UI |
+| [system-hooks.md](./system-hooks.md) | Declared seams, four archetypes, plugin facade, introspection, admin UI |
 | [system-logging.md](./system-logging.md) | Pino, MongoDB persistence, log queries |
 | [Menu Module README](../../src/backend/modules/menu/README.md) | Menu service, plugin integration, WebSocket events |
 | [Pages Module README](../../src/backend/modules/pages/README.md) | Markdown CMS, storage providers, file uploads |
