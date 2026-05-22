@@ -25,8 +25,12 @@ import type { IHeadFragment, ISsrHeadContext } from '@/types';
 import { defineHook } from './define-hook.js';
 
 /**
- * Declared hooks, organized by pipeline phase. Plugins import this
- * object to obtain descriptor references for `context.hooks.register`.
+ * Declared hooks, organized by pipeline phase. Core modules and call
+ * sites import this object directly. Plugins reach the same runtime
+ * descriptors through `context.hooks.HOOKS` (typed by `ICoreHooks` in
+ * the types package) because plugin workspaces have no path alias into
+ * `src/backend/hooks/` — the facade re-exposes this registry so the
+ * descriptor identity passes `defineHook`'s known-set check.
  */
 export const HOOKS = {
     ssr: {

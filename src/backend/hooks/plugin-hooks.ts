@@ -94,6 +94,16 @@ export class PluginHooks implements IPluginHooks {
     }
 
     /**
+     * Close the lifecycle window without disposing handlers.
+     *
+     * Called by the platform after install/enable/init finish so any
+     * later `register()` attempt throws. Idempotent.
+     */
+    seal(): void {
+        this.open = false;
+    }
+
+    /**
      * Close the facade and drop every handler it owns.
      *
      * Invoked by the plugin loader on `disable()` and `uninstall()`.

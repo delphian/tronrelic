@@ -170,9 +170,21 @@ export interface IHookRegistry {
      *   otherwise).
      * @returns Kind-dependent result.
      */
-    invoke<I, O, K extends HookKind>(
-        descriptor: HookDescriptor<I, O, K>,
+    invoke<I, O>(
+        descriptor: HookDescriptor<I, O, 'observer'>,
+        input: I
+    ): Promise<void>;
+    invoke<I, O>(
+        descriptor: HookDescriptor<I, O, 'series'>,
+        input: I
+    ): Promise<void>;
+    invoke<I, O>(
+        descriptor: HookDescriptor<I, O, 'waterfall'>,
         input: I,
-        seed?: O
-    ): Promise<void | O | undefined>;
+        seed: O
+    ): Promise<O>;
+    invoke<I, O>(
+        descriptor: HookDescriptor<I, O, 'bail'>,
+        input: I
+    ): Promise<O | undefined>;
 }

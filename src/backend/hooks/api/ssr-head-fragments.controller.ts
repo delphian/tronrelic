@@ -21,9 +21,12 @@ import type { IHookRegistry, IHeadFragment, ISsrHeadContext, ISystemLogService }
 import { HOOKS } from '../registry.js';
 
 /**
- * Minimal record-string sanitizer. Coerces every value to string and
- * filters out non-string keys so the controller never forwards a
- * fundamentally malformed map into the handler chain.
+ * Minimal record-string sanitizer. Drops any entry whose key or value
+ * is not already a string so the controller never forwards a
+ * fundamentally malformed map into the handler chain. Non-string
+ * values are not coerced via `String(v)` — that would let
+ * `[object Object]`, `function() {}`, or `Symbol(…)` representations
+ * leak through and surprise handlers expecting real string data.
  *
  * @param raw - Unknown value claimed to be a string-keyed map.
  * @returns Sanitized record. Empty when input is not an object.

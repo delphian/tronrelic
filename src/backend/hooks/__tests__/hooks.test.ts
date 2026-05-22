@@ -355,6 +355,21 @@ describe('invokeHook dispatch', () => {
         const wfResult = await invokeHook(waterfall, registry.getHandlers(waterfall), 3, 10, logger);
         expect(wfResult).toBe(13);
     });
+
+    it('HookRegistry.invoke throws when a waterfall is called without a seed', async () => {
+        const wf = defineHook<number, number, 'waterfall'>({
+            id: 'test.dispatch.wf-noseed', kind: 'waterfall', phase: 'ssr.page', order: 0, description: 'd'
+        });
+        // The overload set forbids omitting the seed for waterfall, but
+        // the runtime guard exists for callers that route around
+        // TypeScript (JS, `any`-typed glue, dynamic dispatch). Cast to
+        // any so the type system lets the call through.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const untyped = registry.invoke as any;
+        // Synchronous throw before a promise is returned — assert on the
+        // throw itself, not on .rejects.
+        expect(() => untyped.call(registry, wf, 0)).toThrow(/waterfall and requires a seed/);
+    });
 });
 
 describe('PluginHooks facade', () => {
@@ -391,6 +406,22 @@ describe('PluginHooks facade', () => {
         const count = facade.closeAndDisposeAll();
         expect(count).toBe(2);
         expect(registry.getHandlers(desc)).toHaveLength(0);
+    });
+
+    it('seal closes the lifecycle window without disposing handlers', () => {
+        const desc = defineHook<number, void, 'observer'>({
+            id: 'test.facade.seal', kind: 'observer', phase: 'observer.dispatch', order: 0, description: 'd'
+        });
+        const facade = new PluginHooks('plg-x', registry, logger);
+        facade.register(desc, () => {});
+        expect(registry.getHandlers(desc)).toHaveLength(1);
+
+        facade.seal();
+
+        // Handlers stay registered after seal — only the window flips.
+        expect(registry.getHandlers(desc)).toHaveLength(1);
+        // Subsequent register() throws because the window is closed.
+        expect(() => facade.register(desc, () => {})).toThrow(/lifecycle window closed/);
     });
 
     it('refuses registration after close', () => {
@@ -439,6 +470,30 @@ describe('HookRegistry.snapshot', () => {
         expect(tracks['http.api'].hooks).toHaveLength(1);
         expect(tracks['http.api'].hooks[0].handlers).toHaveLength(0);
         expect(tracks['http.api'].hooks[0].shortCircuit).toBe(true);
+    });
+
+    it('reports shortCircuit=true for every archetype that can propagate HookAbortError', () => {
+        const obs = defineHook<number, void, 'observer'>({
+            id: 'snap.kind.observer', kind: 'observer', phase: 'observer.dispatch', order: 10, description: 'd'
+        });
+        const ser = defineHook<number, void, 'series'>({
+            id: 'snap.kind.series', kind: 'series', phase: 'observer.dispatch', order: 20, description: 'd'
+        });
+        const water = defineHook<number, number, 'waterfall'>({
+            id: 'snap.kind.waterfall', kind: 'waterfall', phase: 'observer.dispatch', order: 30, description: 'd'
+        });
+        const bail = defineHook<number, number, 'bail'>({
+            id: 'snap.kind.bail', kind: 'bail', phase: 'observer.dispatch', order: 40, description: 'd'
+        });
+
+        const snap = registry.snapshot();
+        const byId = Object.fromEntries(
+            snap.tracks.flatMap(t => t.hooks).map(h => [h.id, h.shortCircuit])
+        );
+        expect(byId[obs.id]).toBe(false);
+        expect(byId[ser.id]).toBe(true);
+        expect(byId[water.id]).toBe(true);
+        expect(byId[bail.id]).toBe(true);
     });
 });
 

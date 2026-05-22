@@ -49,7 +49,7 @@ When migrating between the two, see [modules-architecture.md](./modules-architec
 
 ## Core-Pipeline Hooks
 
-Modules can also participate in the typed hook registry as `'core'` — the same mechanism plugins use to contribute at declared seams. A module receives `IHookRegistry` through its `init(deps)` interface and registers handlers in `run()` after dependencies are wired. ThemeModule is the canonical example: it registers a `HOOKS.ssr.headFragments` handler to inject active themes into rendered `<head>`. See [system-hooks.md](../system-hooks.md) for the contract, the four archetypes (observer / series / waterfall / bail), and the `/system/hooks` admin timeline that introspects registrations.
+Modules can also participate in the typed hook registry as `'core'` — the same mechanism plugins use to contribute at declared seams. A module receives `IHookRegistry` through its `init(deps)` interface and registers handlers in `run()` after dependencies are wired, calling `hookRegistry.register('core', HOOKS.<phase>.<name>, handler, { priority })`. Module registrations live for the process lifetime (no disable/uninstall), so the disposer returned by `register` is typically stored only for symmetry with the plugin facade pattern. No core module ships a hook registration today — the canonical example is the `trp-themes` plugin contributing to `HOOKS.ssr.headFragments` and `HOOKS.ssr.htmlAttributes` via the plugin facade, which exercises the same registry through `context.hooks.register(...)`. See [system-hooks.md](../system-hooks.md) for the contract, the four archetypes (observer / series / waterfall / bail), and the `/system/hooks` admin timeline that introspects registrations.
 
 ## Service Types and Singleton Usage
 

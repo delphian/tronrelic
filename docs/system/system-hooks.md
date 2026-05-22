@@ -41,15 +41,14 @@ Every handler runs in isolation appropriate to its archetype. Observer rejection
 
 ## Plugin Author Example
 
-The minimum a plugin needs to contribute at a seam: import `HOOKS` from `@/backend/hooks`, register a handler whose signature is inferred from the descriptor, store the disposer for symmetry — the loader will dispose it on `disable()` regardless.
+The minimum a plugin needs to contribute at a seam: reach the descriptor through `context.hooks.HOOKS` (no path alias into core required), register a handler whose signature is inferred from the descriptor, store the disposer for symmetry — the loader will dispose it on `disable()` regardless.
 
 ```typescript
-import { HOOKS } from '@/backend/hooks';
-import type { IPluginContext, IHeadFragment } from '@/types';
+import type { IPluginContext, IHeadFragment } from '@delphian/tronrelic-types';
 
 init: async (context: IPluginContext) => {
     context.hooks.register(
-        HOOKS.ssr.headFragments,
+        context.hooks.HOOKS.ssr.headFragments,
         async (_ctx, fragments) => [
             ...fragments,
             {
@@ -64,7 +63,9 @@ init: async (context: IPluginContext) => {
 }
 ```
 
-The handler signature is enforced off the descriptor's type parameters. A misnamed seam (`HOOKS.ssr.headFragment`) does not compile; a handler whose return type drifts from `ReadonlyArray<IHeadFragment>` does not compile. There is no string parameter anywhere in the call site.
+The handler signature is enforced off the descriptor's type parameters. A misnamed seam (`context.hooks.HOOKS.ssr.headFragment`) does not compile; a handler whose return type drifts from `ReadonlyArray<IHeadFragment>` does not compile. There is no string parameter anywhere in the call site.
+
+Core modules registering as `'core'` consume the descriptors through the constructor-injected `IHookRegistry` instead — `hookRegistry.register('core', HOOKS.<phase>.<name>, handler, { priority })`. Plugins cannot import `HOOKS` directly because plugin workspaces have no TypeScript path alias into `src/backend/hooks/`; `context.hooks.HOOKS` is the same runtime registry, exposed through the per-plugin facade so the descriptor identity passes the `defineHook` known-set check.
 
 ## Declared Seams
 
@@ -85,7 +86,7 @@ Adding a seam is a PR to `registry.ts`: declare the descriptor with its types, t
 
 - Source: `src/backend/hooks/` (runtime), `packages/types/src/hooks/` (types), `src/backend/hooks/__tests__/hooks.test.ts` (contract tests).
 - Add a seam: edit `registry.ts`, then `hookRegistry.invoke(...)` from core.
-- Register a handler: `context.hooks.register(HOOKS.<phase>.<name>, handler, { priority })`.
+- Register a handler (plugin): `context.hooks.register(context.hooks.HOOKS.<phase>.<name>, handler, { priority })`. Modules registering as `'core'` use the injected `IHookRegistry` directly with the imported `HOOKS` constant.
 - Abort a pipeline: `throw new HookAbortError('reason', payload)`.
 - See registrations: `/system/hooks` (admin), or `GET /api/admin/system/hooks` (raw JSON).
 

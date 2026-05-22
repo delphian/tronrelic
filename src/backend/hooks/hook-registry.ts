@@ -229,7 +229,11 @@ export class HookRegistry implements IHookRegistry {
                     label: p.label,
                     description: p.description
                 })),
-                shortCircuit: desc.kind === 'series' || desc.kind === 'bail',
+                // Every archetype except observer can halt the pipeline:
+                // series/waterfall/bail all propagate HookAbortError up
+                // to the caller. Only observer (Promise.allSettled) is
+                // immune.
+                shortCircuit: desc.kind !== 'observer',
                 handlers: handlerRecords
             });
         }
@@ -259,6 +263,10 @@ export class HookRegistry implements IHookRegistry {
      * @param seed - Initial threaded value (waterfall only).
      * @returns Kind-dependent result.
      */
+    invoke<I, O>(descriptor: HookDescriptor<I, O, 'observer'>, input: I): Promise<void>;
+    invoke<I, O>(descriptor: HookDescriptor<I, O, 'series'>, input: I): Promise<void>;
+    invoke<I, O>(descriptor: HookDescriptor<I, O, 'waterfall'>, input: I, seed: O): Promise<O>;
+    invoke<I, O>(descriptor: HookDescriptor<I, O, 'bail'>, input: I): Promise<O | undefined>;
     invoke<I, O, K extends HookKind>(
         descriptor: HookDescriptor<I, O, K>,
         input: I,
@@ -266,7 +274,18 @@ export class HookRegistry implements IHookRegistry {
     ): Promise<void | O | undefined> {
         const handlers = this.handlersByHook.get(descriptor.id) ?? [];
         if (descriptor.kind === 'waterfall') {
-            return invokeHook(descriptor, handlers, input, seed as O, this.logger);
+            // The public overload makes `seed` mandatory for waterfall,
+            // so reaching here without it is a contract violation from
+            // an untyped caller (e.g. JS, `any`-typed glue). Throw eagerly
+            // rather than silently threading `undefined` into the first
+            // handler.
+            if (seed === undefined) {
+                throw new Error(
+                    `Hook '${descriptor.id}' is a waterfall and requires a seed value; ` +
+                    `invoke() was called without one.`
+                );
+            }
+            return invokeHook(descriptor, handlers, input, seed, this.logger);
         }
 
         return invokeHook(descriptor, handlers, input, this.logger);

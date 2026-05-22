@@ -265,6 +265,11 @@ export class PluginManagerService {
                 await plugin.init(context);
             }
 
+            // Seal the lifecycle window. Subsequent register() attempts
+            // (e.g. inside request handlers) now throw — handlers
+            // registered during install/enable/init stay live.
+            loaded.hooks.seal();
+
             // Mark as enabled in database
             await this.metadataService.markEnabled(pluginId);
 
@@ -302,13 +307,23 @@ export class PluginManagerService {
         const { plugin, context } = loaded;
         const pluginLogger = context.logger;
 
-        try {
-            // Run disable hook if defined
-            if (plugin.disable) {
+        // Run the plugin's disable hook inside its own try/catch so a
+        // misbehaving plugin cannot starve the platform's cleanup that
+        // follows. The hook is best-effort cleanup the plugin owns; the
+        // disposers below are the only thing that guarantees handlers and
+        // routes do not leak past the disabled boundary.
+        let disableError: Error | null = null;
+        if (plugin.disable) {
+            try {
                 pluginLogger.info('Running disable hook');
                 await plugin.disable(context);
+            } catch (error) {
+                disableError = error instanceof Error ? error : new Error(String(error));
+                pluginLogger.error({ error: disableError }, 'Plugin disable hook threw; continuing with platform cleanup');
             }
+        }
 
+        try {
             // Close the plugin's hook facade and drop every handler it
             // registered, regardless of whether the plugin's disable hook
             // remembered to call disposers itself.
@@ -322,6 +337,11 @@ export class PluginManagerService {
             apiService.unregisterPluginRoutes(pluginId);
 
             this.events.emit('plugin:disabled', { pluginId });
+
+            if (disableError) {
+                await this.metadataService.recordError(pluginId, disableError.message);
+                return { success: false, message: `Disable hook threw but platform cleanup completed: ${disableError.message}` };
+            }
 
             pluginLogger.info('Plugin unloaded and disabled successfully');
             return { success: true, message: 'Plugin unloaded successfully' };
@@ -361,11 +381,23 @@ export class PluginManagerService {
                 return { success: false, message: 'Plugin is already installed' };
             }
 
+            // Rearm the hook facade so the install hook may register
+            // handlers. A previous disable/uninstall cycle leaves the
+            // facade closed (closeAndDisposeAll flips it shut), and the
+            // install lifecycle window is one of the three points where
+            // context.hooks.register(...) is allowed — reinstall and
+            // upgrade flows depend on this being a fresh facade.
+            this.rearmHooks(loaded);
+
             // Run install hook if defined
             if (plugin.install) {
                 pluginLogger.info('Running install hook');
                 await plugin.install(context);
             }
+
+            // Seal the install lifecycle window. The next enable cycle
+            // will rearm the facade before plugin.enable/init runs.
+            loaded.hooks.seal();
 
             // Mark as installed in database
             await this.metadataService.markInstalled(pluginId);
@@ -503,6 +535,9 @@ export class PluginManagerService {
                 await plugin.init(context);
             }
 
+            // Seal the lifecycle window now that enable+init have run.
+            loaded.hooks.seal();
+
             // Mark as enabled in database
             await this.metadataService.markEnabled(pluginId);
 
@@ -540,22 +575,32 @@ export class PluginManagerService {
         const { plugin, context } = loaded;
         const pluginLogger = context.logger;
 
-        try {
-            const metadata = await this.metadataService.getMetadata(pluginId);
-            if (!metadata) {
-                return { success: false, message: 'Plugin metadata not found' };
-            }
+        const metadata = await this.metadataService.getMetadata(pluginId).catch(() => null);
+        if (!metadata) {
+            return { success: false, message: 'Plugin metadata not found' };
+        }
 
-            if (!metadata.enabled) {
-                return { success: false, message: 'Plugin is not enabled' };
-            }
+        if (!metadata.enabled) {
+            return { success: false, message: 'Plugin is not enabled' };
+        }
 
-            // Run disable hook if defined
-            if (plugin.disable) {
+        // Run the plugin's disable hook inside its own try/catch so a
+        // misbehaving plugin cannot starve the platform's cleanup. The
+        // hook is best-effort cleanup the plugin owns; the disposers
+        // below are the only thing that guarantees handlers and routes
+        // do not leak past the disabled boundary.
+        let disableError: Error | null = null;
+        if (plugin.disable) {
+            try {
                 pluginLogger.info('Running disable hook');
                 await plugin.disable(context);
+            } catch (error) {
+                disableError = error instanceof Error ? error : new Error(String(error));
+                pluginLogger.error({ error: disableError }, 'Plugin disable hook threw; continuing with platform cleanup');
             }
+        }
 
+        try {
             // Close the plugin's hook facade and drop every handler it
             // registered, regardless of whether the plugin's disable hook
             // remembered to call disposers itself.
@@ -569,6 +614,11 @@ export class PluginManagerService {
             apiService.unregisterPluginRoutes(pluginId);
 
             this.events.emit('plugin:disabled', { pluginId });
+
+            if (disableError) {
+                await this.metadataService.recordError(pluginId, disableError.message);
+                return { success: false, message: `Disable hook threw but platform cleanup completed: ${disableError.message}` };
+            }
 
             pluginLogger.info('Plugin disabled successfully');
             return { success: true, message: 'Plugin disabled successfully' };

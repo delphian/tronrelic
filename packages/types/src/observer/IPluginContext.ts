@@ -160,13 +160,15 @@ export interface IPluginContext {
      *
      * @example
      * ```typescript
-     * import { HOOKS } from '@/backend/hooks';
-     *
      * init: async (context) => {
-     *     context.hooks.register(HOOKS.ssr.headFragments, async (ssrCtx, fragments) => [
-     *         ...fragments,
-     *         { tag: 'link', rel: 'stylesheet', href: '/themes/active.css' }
-     *     ], { priority: 100 });
+     *     context.hooks.register(
+     *         context.hooks.HOOKS.ssr.headFragments,
+     *         async (ssrCtx, fragments) => [
+     *             ...fragments,
+     *             { tag: 'link', rel: 'stylesheet', href: '/themes/active.css' }
+     *         ],
+     *         { priority: 100 }
+     *     );
      * }
      * ```
      */

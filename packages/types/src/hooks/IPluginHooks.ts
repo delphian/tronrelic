@@ -75,4 +75,19 @@ export interface IPluginHooks {
         handler: HookHandler<I, O, K>,
         options?: IHookRegisterOptions
     ): HookRegisterDisposer;
+
+    /**
+     * Close the lifecycle window without disposing handlers.
+     *
+     * Called by the platform after `install` / `enable` / `init` finish,
+     * so any later `register()` attempt (e.g. inside a request handler)
+     * throws instead of silently extending the plugin's contribution
+     * surface. Handlers stay registered for the plugin's enabled
+     * lifetime — only the open flag flips.
+     *
+     * Idempotent: calling `seal()` on an already-sealed facade is a
+     * no-op. Disable/uninstall still goes through `closeAndDisposeAll`
+     * (implementation-only), which both seals and drops every handler.
+     */
+    seal(): void;
 }
