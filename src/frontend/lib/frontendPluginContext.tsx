@@ -59,10 +59,24 @@ import { getRuntimeConfig } from './runtimeConfig';
  * service-token path for CI/scripts that don't run in a browser).
  */
 class ApiClient implements IApiClient {
-    private baseUrl: string;
+    private _baseUrl: string | null = null;
 
-    constructor() {
-        this.baseUrl = getRuntimeConfig().apiUrl;
+    /**
+     * Resolved API base URL, cached after first access.
+     *
+     * Why a lazy getter: `FrontendPluginContextProvider` instantiates
+     * `ApiClient` inside a `useMemo` factory, which Next.js runs during
+     * the SSR pass of every client component. `getRuntimeConfig()`
+     * throws when `typeof window === 'undefined'`, so resolving the URL
+     * in the constructor crashed every page render. Deferring to first
+     * request guarantees we only consult `window.__RUNTIME_CONFIG__`
+     * on the client, after hydration, where it is defined.
+     */
+    private get baseUrl(): string {
+        if (this._baseUrl === null) {
+            this._baseUrl = getRuntimeConfig().apiUrl;
+        }
+        return this._baseUrl;
     }
 
     /**
