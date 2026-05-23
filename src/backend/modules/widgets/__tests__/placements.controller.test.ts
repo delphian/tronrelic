@@ -169,6 +169,45 @@ describe('PlacementsController.listPlacements', () => {
 
         expect(placements.list).toHaveBeenCalledWith({});
     });
+
+    it('strips malformed zoneId values that fail the format regex', async () => {
+        const { controller, placements } = buildController();
+        (placements.list as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+
+        await controller.listPlacements(
+            { query: { zoneId: '../etc/passwd' } } as unknown as Request,
+            buildResponse()
+        );
+
+        expect(placements.list).toHaveBeenCalledWith({});
+    });
+
+    it('strips zoneId values that arrive as a parsed Mongo-operator object', async () => {
+        const { controller, placements } = buildController();
+        (placements.list as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+
+        // Express's `qs` parser turns `?zoneId[$ne]=foo` into this
+        // object form. The safe-string gate must reject it before it
+        // can reach the Mongo filter.
+        await controller.listPlacements(
+            { query: { zoneId: { $ne: 'main-after' } } } as unknown as Request,
+            buildResponse()
+        );
+
+        expect(placements.list).toHaveBeenCalledWith({});
+    });
+
+    it('strips malformed pluginId values', async () => {
+        const { controller, placements } = buildController();
+        (placements.list as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+
+        await controller.listPlacements(
+            { query: { pluginId: 'plugin id with spaces' } } as unknown as Request,
+            buildResponse()
+        );
+
+        expect(placements.list).toHaveBeenCalledWith({});
+    });
 });
 
 describe('PlacementsController.getPlacement', () => {

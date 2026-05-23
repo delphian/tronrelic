@@ -62,6 +62,46 @@ const MAX_ORDER = 10_000;
 const MAX_TITLE_LENGTH = 80;
 
 /**
+ * Format gate for zone ids. Zone ids are lowercase-dotted (letters,
+ * digits, hyphens, underscores, colons for namespaced cases), start
+ * with a letter, and never exceed 64 characters. Anything else is a
+ * malformed input and must not reach the Mongo query.
+ */
+const ZONE_ID_PATTERN = /^[a-z][a-z0-9_:-]{0,63}$/;
+
+/**
+ * Format gate for plugin ids. Same shape as a zone id minus the
+ * colon — plugin ids never carry namespaced segments.
+ */
+const PLUGIN_ID_PATTERN = /^[a-z][a-z0-9-]{0,63}$/;
+
+/**
+ * Read a query-string value, coerce it to a string, validate it
+ * against the supplied regex, and return the sanitised result.
+ *
+ * Two-step defence:
+ *
+ * 1. Explicit `String(...)` coercion neutralises Express's parsed-
+ *    object form (`?zoneId[$ne]=foo` becomes a `[object Object]`
+ *    literal that fails the regex). CodeQL's taint analysis
+ *    recognises `String(taint)` as a coercion sanitiser.
+ * 2. The regex enforces a known-safe shape, so even if a coerced
+ *    value somehow carried Mongo operators they could not survive
+ *    the test.
+ *
+ * Returns `undefined` when the value is missing or fails validation.
+ * Callers omit the filter key in that case, preserving the existing
+ * "no filter" semantic.
+ */
+function safeStringParam(value: unknown, pattern: RegExp): string | undefined {
+    if (value === undefined || value === null) return undefined;
+    if (typeof value !== 'string') return undefined;
+    const coerced = String(value);
+    if (coerced.length === 0) return undefined;
+    return pattern.test(coerced) ? coerced : undefined;
+}
+
+/**
  * Admin controller for placement CRUD plus restore-defaults.
  */
 export class PlacementsController {
@@ -72,7 +112,9 @@ export class PlacementsController {
      *
      * Query params (all optional): `zoneId`, `pluginId`, `source`
      * (`plugin` | `operator`), `enabledOnly` (truthy → only enabled
-     * rows).
+     * rows). Each string param is coerced through `String(...)` and
+     * gated against a format regex before reaching the placement
+     * service — see `safeStringParam` for the NoSQL-injection defence.
      */
     listPlacements = async (req: Request, res: Response): Promise<void> => {
         try {
@@ -83,12 +125,16 @@ export class PlacementsController {
                 enabledOnly?: boolean;
             } = {};
 
-            if (typeof req.query.zoneId === 'string' && req.query.zoneId.length > 0) {
-                filter.zoneId = req.query.zoneId;
-            }
-            if (typeof req.query.pluginId === 'string' && req.query.pluginId.length > 0) {
-                filter.pluginId = req.query.pluginId;
-            }
+            const zoneId = safeStringParam(req.query.zoneId, ZONE_ID_PATTERN);
+            if (zoneId !== undefined) filter.zoneId = zoneId;
+
+            const pluginId = safeStringParam(req.query.pluginId, PLUGIN_ID_PATTERN);
+            if (pluginId !== undefined) filter.pluginId = pluginId;
+
+            // `source` and `enabledOnly` ride on equality allowlists
+            // already — a non-matching value (object, number, anything
+            // other than the listed strings) simply fails the
+            // comparison and the filter key is omitted.
             if (req.query.source === 'plugin' || req.query.source === 'operator') {
                 filter.source = req.query.source;
             }
