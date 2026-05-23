@@ -1,0 +1,446 @@
+/// <reference types="vitest" />
+
+/**
+ * @fileoverview Unit tests for placement persistence and SSR
+ * resolution.
+ *
+ * Exercises `PlacementService` against the shared in-memory
+ * Mongo mock, `PlacementResolver` against stubbed registry +
+ * service implementations, and the pure `routeMatches` predicate.
+ */
+
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import type {
+    ISystemLogService,
+    IWidgetPlacement,
+    IWidgetType,
+    IWidgetTypeRegistry,
+    IPlacementService
+} from '@/types';
+import { createMockDatabaseService } from '../../../tests/vitest/mocks/database-service.js';
+import { PlacementService } from '../placements/placement.service.js';
+import { PlacementResolver } from '../placements/placement-resolver.js';
+import { routeMatches } from '../placements/route-matcher.js';
+
+class MockLogger implements ISystemLogService {
+    public level = 'info';
+    public fatal = vi.fn();
+    public error = vi.fn();
+    public warn = vi.fn();
+    public info = vi.fn();
+    public debug = vi.fn();
+    public trace = vi.fn();
+    public child = vi.fn((_b: Record<string, unknown>): ISystemLogService => this);
+    public async initialize() {}
+    public async saveLog() {}
+    public async getLogs() {
+        return { logs: [], total: 0, page: 1, limit: 50, totalPages: 0, hasNextPage: false, hasPrevPage: false };
+    }
+    public async markAsResolved() {}
+    public async cleanup() { return 0; }
+    public async getStatistics() { return { total: 0, byLevel: {} as any, byService: {}, unresolved: 0 }; }
+    public async getLogById() { return null; }
+    public async markAsUnresolved() { return null; }
+    public async deleteAllLogs() { return 0; }
+    public async getStats() { return { total: 0, byLevel: {} as any, resolved: 0, unresolved: 0 }; }
+    public async waitUntilInitialized() {}
+}
+
+describe('routeMatches', () => {
+    it('matches every route when the filter is empty', () => {
+        expect(routeMatches([], '/')).toBe(true);
+        expect(routeMatches([], '/anything')).toBe(true);
+    });
+
+    it('matches exact strings only when the filter is populated', () => {
+        expect(routeMatches(['/', '/markets'], '/')).toBe(true);
+        expect(routeMatches(['/', '/markets'], '/markets')).toBe(true);
+        expect(routeMatches(['/'], '/markets')).toBe(false);
+        expect(routeMatches(['/'], '/u/TXyz')).toBe(false);
+    });
+});
+
+describe('PlacementService.ensurePluginPlacement', () => {
+    let logger: MockLogger;
+    let db: ReturnType<typeof createMockDatabaseService>;
+    let service: PlacementService;
+
+    beforeEach(() => {
+        logger = new MockLogger();
+        db = createMockDatabaseService();
+        PlacementService.__resetForTests();
+        PlacementService.setDependencies(db, logger);
+        service = PlacementService.getInstance();
+    });
+
+    it('creates a new placement when none exists', async () => {
+        const placement = await service.ensurePluginPlacement({
+            typeId: 'whale-alerts:recent',
+            zoneId: 'main-after',
+            routes: ['/'],
+            order: 20,
+            title: 'Recent Whales',
+            pluginId: 'whale-alerts'
+        });
+
+        expect(placement.typeId).toBe('whale-alerts:recent');
+        expect(placement.zoneId).toBe('main-after');
+        expect(placement.routes).toEqual(['/']);
+        expect(placement.order).toBe(20);
+        expect(placement.title).toBe('Recent Whales');
+        expect(placement.pluginId).toBe('whale-alerts');
+        expect(placement.source).toBe('plugin');
+        expect(placement.enabled).toBe(true);
+    });
+
+    it('defaults order to 100 when not provided', async () => {
+        const placement = await service.ensurePluginPlacement({
+            typeId: 'p:t',
+            zoneId: 'main-after',
+            routes: [],
+            pluginId: 'p'
+        });
+
+        expect(placement.order).toBe(100);
+    });
+
+    it('preserves operator customisations on re-enable', async () => {
+        const first = await service.ensurePluginPlacement({
+            typeId: 'p:t',
+            zoneId: 'main-after',
+            routes: ['/'],
+            order: 50,
+            title: 'Original',
+            pluginId: 'p'
+        });
+
+        // Simulate operator customisation
+        await service.update(first.id, { order: 5, routes: ['/dashboard'], title: 'Operator Override' });
+        await service.softDisableForPlugin('p');
+
+        // Re-enable — plugin code calls ensurePluginPlacement with its
+        // original defaults again.
+        const reenabled = await service.ensurePluginPlacement({
+            typeId: 'p:t',
+            zoneId: 'main-after',
+            routes: ['/'],
+            order: 50,
+            title: 'Original',
+            pluginId: 'p'
+        });
+
+        expect(reenabled.enabled).toBe(true);
+        expect(reenabled.order).toBe(5);
+        expect(reenabled.routes).toEqual(['/dashboard']);
+        expect(reenabled.title).toBe('Operator Override');
+    });
+
+    it('rejects calls without a pluginId', async () => {
+        await expect(
+            service.ensurePluginPlacement({
+                typeId: 'p:t',
+                zoneId: 'main-after',
+                routes: [],
+                pluginId: ''
+            })
+        ).rejects.toThrow(/requires a pluginId/);
+    });
+});
+
+describe('PlacementService.softDisableForPlugin', () => {
+    let logger: MockLogger;
+    let db: ReturnType<typeof createMockDatabaseService>;
+    let service: PlacementService;
+
+    beforeEach(() => {
+        logger = new MockLogger();
+        db = createMockDatabaseService();
+        PlacementService.__resetForTests();
+        PlacementService.setDependencies(db, logger);
+        service = PlacementService.getInstance();
+    });
+
+    it('flips enabled=false on every plugin-source row for the plugin', async () => {
+        await service.ensurePluginPlacement({ typeId: 'a:t', zoneId: 'main-after', routes: [], pluginId: 'a' });
+        await service.ensurePluginPlacement({ typeId: 'a:u', zoneId: 'main-after', routes: [], pluginId: 'a' });
+        await service.ensurePluginPlacement({ typeId: 'b:t', zoneId: 'main-after', routes: [], pluginId: 'b' });
+
+        const modified = await service.softDisableForPlugin('a');
+
+        expect(modified).toBe(2);
+        const aPlacements = await service.list({ pluginId: 'a' });
+        expect(aPlacements.every(p => p.enabled === false)).toBe(true);
+        const bPlacements = await service.list({ pluginId: 'b' });
+        expect(bPlacements.every(p => p.enabled === true)).toBe(true);
+    });
+
+    it('does not touch operator-source rows', async () => {
+        await service.ensurePluginPlacement({ typeId: 'a:t', zoneId: 'main-after', routes: [], pluginId: 'a' });
+        const op = await service.create(
+            { typeId: 'a:t', zoneId: 'main-after', routes: [] },
+            { source: 'operator' }
+        );
+
+        await service.softDisableForPlugin('a');
+
+        const operatorAfter = await service.findById(op.id);
+        expect(operatorAfter?.enabled).toBe(true);
+    });
+
+    it('returns zero when the plugin owns nothing', async () => {
+        const modified = await service.softDisableForPlugin('phantom');
+        expect(modified).toBe(0);
+    });
+});
+
+describe('PlacementService.findByRoute', () => {
+    let logger: MockLogger;
+    let db: ReturnType<typeof createMockDatabaseService>;
+    let service: PlacementService;
+
+    beforeEach(() => {
+        logger = new MockLogger();
+        db = createMockDatabaseService();
+        PlacementService.__resetForTests();
+        PlacementService.setDependencies(db, logger);
+        service = PlacementService.getInstance();
+    });
+
+    it('returns only enabled placements matching the route', async () => {
+        await service.ensurePluginPlacement({ typeId: 'a:home', zoneId: 'main-after', routes: ['/'], pluginId: 'a' });
+        await service.ensurePluginPlacement({ typeId: 'a:markets', zoneId: 'main-after', routes: ['/markets'], pluginId: 'a' });
+        await service.ensurePluginPlacement({ typeId: 'a:all', zoneId: 'main-after', routes: [], pluginId: 'a' });
+
+        // Disable one and ensure it doesn't surface
+        const markets = await service.list({ pluginId: 'a' });
+        const marketsRow = markets.find(p => p.typeId === 'a:markets')!;
+        await service.update(marketsRow.id, { enabled: false });
+
+        const homeResults = await service.findByRoute('/');
+        const homeIds = homeResults.map(p => p.typeId);
+        expect(homeIds).toContain('a:home');
+        expect(homeIds).toContain('a:all');
+        expect(homeIds).not.toContain('a:markets');
+    });
+});
+
+describe('PlacementService CRUD', () => {
+    let logger: MockLogger;
+    let db: ReturnType<typeof createMockDatabaseService>;
+    let service: PlacementService;
+
+    beforeEach(() => {
+        logger = new MockLogger();
+        db = createMockDatabaseService();
+        PlacementService.__resetForTests();
+        PlacementService.setDependencies(db, logger);
+        service = PlacementService.getInstance();
+    });
+
+    it('create defaults source=operator and enabled=true', async () => {
+        const placement = await service.create({
+            typeId: 't',
+            zoneId: 'main-after',
+            routes: ['/']
+        });
+
+        expect(placement.source).toBe('operator');
+        expect(placement.enabled).toBe(true);
+        expect(placement.pluginId).toBeUndefined();
+    });
+
+    it('create rejects plugin-source without pluginId', async () => {
+        await expect(
+            service.create(
+                { typeId: 't', zoneId: 'main-after', routes: [] },
+                { source: 'plugin' }
+            )
+        ).rejects.toThrow(/requires options\.pluginId/);
+    });
+
+    it('update preserves untouched fields', async () => {
+        const placement = await service.create({
+            typeId: 't',
+            zoneId: 'main-after',
+            routes: ['/'],
+            order: 50,
+            title: 'Original'
+        });
+        const updated = await service.update(placement.id, { order: 5 });
+
+        expect(updated?.order).toBe(5);
+        expect(updated?.zoneId).toBe('main-after');
+        expect(updated?.title).toBe('Original');
+        expect(updated?.routes).toEqual(['/']);
+    });
+
+    it('update returns null for unknown ids', async () => {
+        const result = await service.update('507f1f77bcf86cd799439011', { order: 5 });
+        expect(result).toBeNull();
+    });
+
+    it('update returns null for malformed ids', async () => {
+        const result = await service.update('not-an-objectid', { order: 5 });
+        expect(result).toBeNull();
+    });
+
+    it('delete removes the row', async () => {
+        const placement = await service.create({ typeId: 't', zoneId: 'main-after', routes: [] });
+        const removed = await service.delete(placement.id);
+
+        expect(removed).toBe(true);
+        expect(await service.findById(placement.id)).toBeNull();
+    });
+
+    it('list applies filters', async () => {
+        await service.create({ typeId: 'a', zoneId: 'main-after', routes: [] });
+        await service.create({ typeId: 'b', zoneId: 'main-before', routes: [] });
+        await service.create({ typeId: 'c', zoneId: 'main-after', routes: [], enabled: false });
+
+        const filtered = await service.list({ zoneId: 'main-after' });
+        expect(filtered.map(p => p.typeId).sort()).toEqual(['a', 'c']);
+
+        const enabled = await service.list({ zoneId: 'main-after', enabledOnly: true });
+        expect(enabled.map(p => p.typeId)).toEqual(['a']);
+    });
+});
+
+describe('PlacementResolver', () => {
+    let logger: MockLogger;
+    let typeRegistry: IWidgetTypeRegistry;
+    let placementService: IPlacementService;
+    let resolver: PlacementResolver;
+
+    const buildType = (id: string, fetcher: IWidgetType['defaultDataFetcher']): IWidgetType => ({
+        id,
+        label: id,
+        description: '',
+        defaultDataFetcher: fetcher
+    });
+
+    const buildPlacement = (overrides: Partial<IWidgetPlacement> = {}): IWidgetPlacement => ({
+        id: overrides.id ?? 'placement-1',
+        typeId: overrides.typeId ?? 'plugin:type',
+        zoneId: overrides.zoneId ?? 'main-after',
+        routes: overrides.routes ?? [],
+        order: overrides.order ?? 10,
+        title: overrides.title,
+        instanceConfig: overrides.instanceConfig,
+        enabled: overrides.enabled ?? true,
+        source: overrides.source ?? 'plugin',
+        pluginId: overrides.pluginId ?? 'plugin',
+        createdAt: overrides.createdAt ?? new Date().toISOString(),
+        updatedAt: overrides.updatedAt ?? new Date().toISOString()
+    });
+
+    beforeEach(() => {
+        logger = new MockLogger();
+        const types = new Map<string, IWidgetType>();
+        typeRegistry = {
+            register: vi.fn(),
+            disposeForPlugin: vi.fn(() => 0),
+            has: vi.fn((id: string) => types.has(id)),
+            get: vi.fn((id: string) => types.get(id)),
+            getOwnerPluginId: vi.fn((_id: string) => undefined),
+            snapshot: vi.fn(() => ({ groups: [] }))
+        };
+        (typeRegistry as any).__types = types;
+        placementService = {
+            ensurePluginPlacement: vi.fn(),
+            softDisableForPlugin: vi.fn(),
+            findByRoute: vi.fn(async () => []),
+            create: vi.fn(),
+            update: vi.fn(),
+            delete: vi.fn(),
+            findById: vi.fn(),
+            list: vi.fn()
+        };
+        resolver = new PlacementResolver(placementService, typeRegistry, logger);
+    });
+
+    it('joins each placement to its type and runs the data fetcher', async () => {
+        (typeRegistry as any).__types.set('plugin:type', buildType('plugin:type', async () => ({ items: [1, 2] })));
+        (placementService.findByRoute as ReturnType<typeof vi.fn>).mockResolvedValue([
+            buildPlacement({ id: 'p-1', typeId: 'plugin:type', zoneId: 'main-after', order: 10 })
+        ]);
+
+        const result = await resolver.resolveForRoute('/', {});
+
+        expect(result).toHaveLength(1);
+        expect(result[0].id).toBe('plugin:type');
+        expect(result[0].zone).toBe('main-after');
+        expect(result[0].order).toBe(10);
+        expect(result[0].data).toEqual({ items: [1, 2] });
+    });
+
+    it('skips placements whose type is not registered', async () => {
+        (placementService.findByRoute as ReturnType<typeof vi.fn>).mockResolvedValue([
+            buildPlacement({ typeId: 'orphan:type' })
+        ]);
+
+        const result = await resolver.resolveForRoute('/', {});
+        expect(result).toEqual([]);
+    });
+
+    it('drops a placement whose fetcher times out', async () => {
+        (typeRegistry as any).__types.set(
+            'slow:type',
+            buildType('slow:type', () => new Promise(() => { /* never resolves */ }))
+        );
+        (placementService.findByRoute as ReturnType<typeof vi.fn>).mockResolvedValue([
+            buildPlacement({ typeId: 'slow:type' })
+        ]);
+
+        vi.useFakeTimers();
+        const pending = resolver.resolveForRoute('/', {});
+        await vi.advanceTimersByTimeAsync(5100);
+        const result = await pending;
+        vi.useRealTimers();
+
+        expect(result).toEqual([]);
+        expect(logger.error).toHaveBeenCalledWith(
+            expect.objectContaining({
+                typeId: 'slow:type',
+                error: 'Widget fetch timeout'
+            }),
+            'Widget data fetch failed'
+        );
+    });
+
+    it('drops a placement whose fetcher returns non-serialisable data', async () => {
+        const circular: Record<string, unknown> = {};
+        circular.self = circular;
+        (typeRegistry as any).__types.set('circular:type', buildType('circular:type', async () => circular));
+        (placementService.findByRoute as ReturnType<typeof vi.fn>).mockResolvedValue([
+            buildPlacement({ typeId: 'circular:type' })
+        ]);
+
+        const result = await resolver.resolveForRoute('/', {});
+
+        expect(result).toEqual([]);
+        expect(logger.error).toHaveBeenCalledWith(
+            expect.objectContaining({ typeId: 'circular:type' }),
+            'Widget returned non-serializable data'
+        );
+    });
+
+    it('sorts results by zone (alphabetical), then order', async () => {
+        // 'main-after' sorts before 'main-before' alphabetically, so
+        // the expected ordering joins zone-asc then order-asc within
+        // each zone.
+        (typeRegistry as any).__types.set('t1', buildType('t1', async () => 'a'));
+        (typeRegistry as any).__types.set('t2', buildType('t2', async () => 'b'));
+        (typeRegistry as any).__types.set('t3', buildType('t3', async () => 'c'));
+        (placementService.findByRoute as ReturnType<typeof vi.fn>).mockResolvedValue([
+            buildPlacement({ id: 'p1', typeId: 't1', zoneId: 'main-before', order: 50 }),
+            buildPlacement({ id: 'p2', typeId: 't2', zoneId: 'main-after', order: 5 }),
+            buildPlacement({ id: 'p3', typeId: 't3', zoneId: 'main-after', order: 100 })
+        ]);
+
+        const result = await resolver.resolveForRoute('/', {});
+
+        expect(result.map(r => r.id)).toEqual(['t2', 't3', 't1']);
+        expect(result.map(r => r.zone)).toEqual(['main-after', 'main-after', 'main-before']);
+        expect(result.map(r => r.order)).toEqual([5, 100, 50]);
+    });
+});

@@ -307,8 +307,12 @@ export function createMockDatabaseService(): IDatabaseService & {
                     if (options?.upsert) {
                         const id = new ObjectId();
                         const updateFields = (update as any).$set || {};
-                        // Merge filter fields with update fields (matches MongoDB behavior)
-                        const newDoc = { ...filter, ...updateFields, _id: id };
+                        const setOnInsertFields = (update as any).$setOnInsert || {};
+                        // Merge filter fields with $setOnInsert (insert-only) and $set fields.
+                        // MongoDB behavior: $set applies on insert AND update; $setOnInsert only
+                        // applies on insert. Spread order gives $set priority over $setOnInsert
+                        // on overlap, though by contract the two should not share keys.
+                        const newDoc = { ...filter, ...setOnInsertFields, ...updateFields, _id: id };
                         data.push(newDoc);
                         return { modifiedCount: 0, matchedCount: 0, acknowledged: true, upsertedCount: 1, upsertedId: id };
                     }

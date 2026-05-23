@@ -200,7 +200,7 @@ describe('WidgetService', () => {
             await service.unregisterAll('no-widgets');
 
             expect(mockLogger.info).toHaveBeenCalledWith(
-                'All widgets unregistered for plugin',
+                'Legacy in-memory cache cleared for plugin',
                 { pluginId: 'no-widgets', count: 0 }
             );
         });

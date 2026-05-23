@@ -22,6 +22,7 @@ import type { IServiceRegistry } from '../services/IServiceRegistry.js';
 import type { ISignatureService } from '../services/ISignatureService.js';
 import type { IPluginHooks } from '../hooks/IPluginHooks.js';
 import type { IPluginZones } from '../widget-zones/IPluginZones.js';
+import type { IPluginWidgetTypes } from '../widget-types/IPluginWidgetTypes.js';
 import { ISystemLogService } from '../system-log/ISystemLogService.js';
 
 /**
@@ -204,6 +205,39 @@ export interface IPluginContext {
      * ```
      */
     zones: IPluginZones;
+
+    /**
+     * Plugin-scoped widget-type facade for declaring renderable
+     * widgets the operator can place across zones.
+     *
+     * Each registered type contributes a single SSR data fetcher and
+     * is paired with a frontend component built into the plugin's
+     * widget bundle (keyed by the type id). Placements — the records
+     * that decide *where* a type appears — are managed independently
+     * via the legacy widget-service compatibility shim (which creates
+     * one plugin-source placement per registered type) and, in
+     * future, via an operator-facing admin UI.
+     *
+     * Type declarations must happen during the plugin lifecycle
+     * (`install` / `enable` / `init`); registering from a request
+     * handler throws.
+     *
+     * @example
+     * ```typescript
+     * init: async (context) => {
+     *     context.widgetTypes.register({
+     *         id: 'whale-alerts:recent',
+     *         label: 'Recent Whale Activity',
+     *         description: 'Latest large transactions on TRON network.',
+     *         defaultDataFetcher: async () => {
+     *             const cache = await context.database.findOne('feed', {});
+     *             return { transactions: cache?.items ?? [] };
+     *         }
+     *     });
+     * }
+     * ```
+     */
+    widgetTypes: IPluginWidgetTypes;
 
     /** Structured logger scoped to the plugin for consistent telemetry */
     logger: ISystemLogService;

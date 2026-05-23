@@ -70,3 +70,22 @@ export type {
     IZoneSnapshotRecord,
     IPluginZones
 } from './widget-zones/index.js';
+export type {
+    IWidgetType,
+    IDefineWidgetTypeOptions,
+    WidgetDataFetcher,
+    WidgetTypeRegisterDisposer,
+    IWidgetTypeRegistry,
+    IWidgetTypeSnapshot,
+    IWidgetTypeSnapshotRecord,
+    IPluginWidgetTypes
+} from './widget-types/index.js';
+export type {
+    IWidgetPlacement,
+    IPlacementInput,
+    IPluginPlacementInput,
+    PlacementSource,
+    IPlacementService,
+    IPlacementListFilter,
+    IPlacementPatch
+} from './widget-placements/index.js';
