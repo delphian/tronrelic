@@ -165,6 +165,31 @@ export interface MenuNamespaceConfigUpdatePayload {
   };
 }
 
+/**
+ * Refetch signal emitted whenever a widget placement is created,
+ * updated, soft-disabled, deleted, or restored to plugin defaults via
+ * the admin API.
+ *
+ * Broadcast to every connected socket — placements drive what renders
+ * on public pages, so non-admin visitors must refetch their widget
+ * data to pick up operator changes without a hard reload. The payload
+ * carries only identifiers; clients re-request whatever they need
+ * (placement list for admin UIs, widget data for public pages) with
+ * their own credentials.
+ */
+export interface WidgetsPlacementsUpdatePayload {
+  event: 'widgets:placements-update';
+  payload: {
+    /** Event discriminator: created, updated, deleted, defaults-restored. */
+    event: 'placement:created' | 'placement:updated' | 'placement:deleted' | 'placement:restored';
+    /** Placement id affected by the event. */
+    placementId: string;
+    /** Zone the placement belongs to, when the row still exists. */
+    zoneId?: string;
+    timestamp: string;
+  };
+}
+
 export type TronRelicSocketEvent =
   | TransactionAlertPayload
   | BlockNotificationPayload
@@ -173,4 +198,5 @@ export type TronRelicSocketEvent =
   | MemoUpdatePayload
   | UserUpdatePayload
   | MenuUpdatePayload
-  | MenuNamespaceConfigUpdatePayload;
+  | MenuNamespaceConfigUpdatePayload
+  | WidgetsPlacementsUpdatePayload;

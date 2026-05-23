@@ -44,10 +44,36 @@ const DEFAULT_ORDER = 100;
  * compat-shim widget service, the placement resolver, and the admin
  * API surface.
  */
+/**
+ * Discriminator for the placement broadcast callback. Mirrors the
+ * subset of events on `WidgetsPlacementsUpdatePayload` shipped over
+ * the wire; `WidgetsModule` is responsible for translating these into
+ * the socket payload via `WebSocketService`.
+ */
+export type PlacementBroadcastEvent =
+    | 'placement:created'
+    | 'placement:updated'
+    | 'placement:deleted'
+    | 'placement:restored';
+
+/**
+ * Callback invoked by the placement service after every successful
+ * mutation. `WidgetsModule.init()` wires this to broadcast a refetch
+ * signal over WebSocket so connected clients re-pull widget data.
+ *
+ * Errors thrown by the callback are caught inside the service so
+ * placement writes never roll back on a broadcast failure.
+ */
+export type PlacementBroadcastCallback = (
+    event: PlacementBroadcastEvent,
+    placement: { id: string; zoneId?: string }
+) => void;
+
 export class PlacementService implements IPlacementService {
     private static instance: PlacementService;
     private readonly database: IDatabaseService;
     private readonly logger: ISystemLogService;
+    private broadcast: PlacementBroadcastCallback | null = null;
 
     private constructor(database: IDatabaseService, logger: ISystemLogService) {
         this.database = database;
@@ -62,6 +88,44 @@ export class PlacementService implements IPlacementService {
     public static setDependencies(database: IDatabaseService, logger: ISystemLogService): void {
         if (!PlacementService.instance) {
             PlacementService.instance = new PlacementService(database, logger);
+        }
+    }
+
+    /**
+     * Wire a broadcast callback the service invokes after every
+     * successful create/update/delete/restore. `WidgetsModule.init()`
+     * passes a closure that emits a `widgets:placements-update`
+     * envelope through `WebSocketService`. Optional — when unset, the
+     * service operates silently (useful for tests and for the legacy
+     * unwired code path that predates the broadcast hook).
+     *
+     * @param callback - Function the service invokes post-write.
+     */
+    public setBroadcast(callback: PlacementBroadcastCallback | null): void {
+        this.broadcast = callback;
+    }
+
+    /**
+     * Internal helper that invokes the broadcast callback if one is
+     * wired and swallows any thrown error. Broadcast failure must not
+     * roll back the placement mutation that already succeeded.
+     *
+     * @param event - Mutation kind.
+     * @param payload - Placement identifiers carried in the envelope.
+     */
+    private fireBroadcast(event: PlacementBroadcastEvent, payload: { id: string; zoneId?: string }): void {
+        if (!this.broadcast) return;
+        try {
+            this.broadcast(event, payload);
+        } catch (err) {
+            this.logger.warn(
+                {
+                    err: err instanceof Error ? err.message : String(err),
+                    event,
+                    placementId: payload.id
+                },
+                'Placement broadcast callback threw — placement write succeeded but the notification was not delivered'
+            );
         }
     }
 
@@ -168,27 +232,37 @@ export class PlacementService implements IPlacementService {
 
     async findByRoute(route: string): Promise<ReadonlyArray<IWidgetPlacement>> {
         const collection = this.database.getCollection<IWidgetPlacementDocument>(WIDGET_PLACEMENT_COLLECTION);
-        // Push the route filter into Mongo. Empty `routes` matches
-        // every path; otherwise the exact path must appear in the
-        // array. The multikey index on `routes` (built implicitly on
-        // every array field) plus the compound
-        // `enabled_zone_order` index from migration 001 keeps the
-        // common SSR query cheap as placement counts grow. The
-        // pure `routeMatches` predicate in `route-matcher.ts`
-        // remains the canonical statement of the matching rule for
-        // any non-Mongo caller and for future grammar extension.
+        // Push the cheap filter into Mongo: empty `routes` matches
+        // every path; an exact match of `route` matches that path;
+        // a row whose `routes` contains any entry ending in `/*` or
+        // `/**` is a candidate that must be re-checked in memory by
+        // the matcher.
+        //
+        // The multikey index on `routes` keeps the equality and regex
+        // arms cheap; the regex arm narrows on the suffix marker
+        // before the in-memory filter runs. As placement counts grow
+        // the worst-case pull is roughly "rows with empty routes" +
+        // "rows containing a glob" + "rows containing the exact
+        // route" — bounded by the count of routes-using rows and
+        // never the full collection.
         const documents = await collection
             .find({
                 enabled: true,
                 $or: [
                     { routes: { $size: 0 } },
-                    { routes: route }
+                    { routes: route },
+                    { routes: { $regex: '\\*$' } }
                 ]
             })
             .sort({ zoneId: 1, order: 1 })
             .toArray();
 
-        return documents.map(toPublic);
+        // Pull-side filter: ensures glob patterns honour the matcher
+        // rules (single-segment vs deep prefix, leading-slash, exact
+        // form) instead of the broader Mongo `$regex` arm.
+        const filtered = documents.filter(doc => routeMatches(doc.routes, route));
+
+        return filtered.map(toPublic);
     }
 
     async create(
@@ -230,7 +304,9 @@ export class PlacementService implements IPlacementService {
             throw new Error('Placement create succeeded but document could not be re-read');
         }
 
-        return toPublic(created);
+        const publicShape = toPublic(created);
+        this.fireBroadcast('placement:created', { id: publicShape.id, zoneId: publicShape.zoneId });
+        return publicShape;
     }
 
     async update(id: string, patch: IPlacementPatch): Promise<IWidgetPlacement | null> {
@@ -250,14 +326,90 @@ export class PlacementService implements IPlacementService {
         if (result.matchedCount === 0) return null;
 
         const updated = await collection.findOne({ _id: objectId });
-        return updated ? toPublic(updated) : null;
+        if (!updated) return null;
+
+        const publicShape = toPublic(updated);
+        this.fireBroadcast('placement:updated', { id: publicShape.id, zoneId: publicShape.zoneId });
+        return publicShape;
     }
 
     async delete(id: string): Promise<boolean> {
         if (!ObjectId.isValid(id)) return false;
         const collection = this.database.getCollection<IWidgetPlacementDocument>(WIDGET_PLACEMENT_COLLECTION);
         const result = await collection.deleteOne({ _id: new ObjectId(id) });
-        return (result.deletedCount ?? 0) > 0;
+        const removed = (result.deletedCount ?? 0) > 0;
+        if (removed) {
+            this.fireBroadcast('placement:deleted', { id });
+        }
+        return removed;
+    }
+
+    /**
+     * Replace operator-editable fields on a plugin-source placement
+     * with the plugin's original registration args, then re-enable
+     * the row. Used by the admin "restore plugin defaults" endpoint.
+     *
+     * The controller is responsible for verifying the placement is
+     * plugin-source and resolving the defaults from the legacy widget
+     * service's cache before calling this method. The service only
+     * applies the patch atomically and broadcasts the dedicated
+     * `placement:restored` event so receivers can distinguish a
+     * restore from a plain update.
+     *
+     * @param id - Placement id (stringified ObjectId).
+     * @param defaults - Plugin defaults to apply. `instanceConfig` is
+     *   not part of plugin registration args — it is operator state —
+     *   so it is intentionally absent from the input. The row's
+     *   existing `instanceConfig` survives restore.
+     * @returns Updated placement, or null when no row matches.
+     */
+    async restoreToPluginDefaults(
+        id: string,
+        defaults: {
+            zoneId: string;
+            routes: ReadonlyArray<string>;
+            order: number;
+            title?: string;
+        }
+    ): Promise<IWidgetPlacement | null> {
+        if (!ObjectId.isValid(id)) return null;
+
+        const collection = this.database.getCollection<IWidgetPlacementDocument>(WIDGET_PLACEMENT_COLLECTION);
+        const objectId = new ObjectId(id);
+        const now = new Date();
+
+        const setOps: Partial<IWidgetPlacementDocument> = {
+            zoneId: defaults.zoneId,
+            routes: [...defaults.routes],
+            order: defaults.order,
+            enabled: true,
+            updatedAt: now
+        };
+
+        // `$unset` the optional title field when the plugin never set
+        // one so the restored row matches a fresh plugin registration
+        // exactly, not "plugin defaults plus operator title".
+        const unsetOps: Record<string, ''> = {};
+        if (defaults.title !== undefined) {
+            setOps.title = defaults.title;
+        } else {
+            unsetOps.title = '';
+        }
+
+        const updateDoc: Record<string, unknown> = { $set: setOps };
+        if (Object.keys(unsetOps).length > 0) {
+            updateDoc.$unset = unsetOps;
+        }
+
+        const result = await collection.updateOne({ _id: objectId }, updateDoc);
+        if (result.matchedCount === 0) return null;
+
+        const updated = await collection.findOne({ _id: objectId });
+        if (!updated) return null;
+
+        const publicShape = toPublic(updated);
+        this.fireBroadcast('placement:restored', { id: publicShape.id, zoneId: publicShape.zoneId });
+        return publicShape;
     }
 
     async findById(id: string): Promise<IWidgetPlacement | null> {

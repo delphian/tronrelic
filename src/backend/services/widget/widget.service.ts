@@ -11,6 +11,27 @@ import { defineWidgetType } from '../../modules/widgets/widget-types/define-widg
 import type { PlacementResolver } from '../../modules/widgets/placements/placement-resolver.js';
 
 /**
+ * Snapshot of a plugin's original `widgetService.register(...)` call.
+ *
+ * Captured the first time a plugin registers a given type id in a
+ * process and retained for the lifetime of that process so the admin
+ * "restore plugin defaults" endpoint can revert operator changes to a
+ * plugin-owned placement without consulting the plugin code itself.
+ *
+ * Only the operator-editable fields (`zone`, `routes`, `order`,
+ * `title`) are kept — the data fetcher lives on the widget-type
+ * descriptor and is not part of placement state.
+ */
+export interface IPluginRegistrationDefaults {
+    pluginId: string;
+    typeId: string;
+    zone: string;
+    routes: string[];
+    order: number;
+    title?: string;
+}
+
+/**
  * Fallback set used for zone validation when no `IZoneRegistry` has
  * been injected yet — covers test paths that instantiate the service
  * without bootstrap wiring. Production always overrides this via
@@ -63,6 +84,14 @@ export class WidgetService implements IWidgetService {
     private widgetTypeRegistry: IWidgetTypeRegistry | null = null;
     private placementService: IPlacementService | null = null;
     private placementResolver: PlacementResolver | null = null;
+
+    /**
+     * Cache of every plugin's first `register(...)` call in this
+     * process, keyed by `${pluginId}::${typeId}`. Restore-defaults
+     * reads from this map; the singleton resets it via
+     * `__resetForTests` between unit tests.
+     */
+    private pluginDefaults: Map<string, IPluginRegistrationDefaults> = new Map();
 
     private constructor(logger: ISystemLogService) {
         this.logger = logger;
@@ -123,6 +152,25 @@ export class WidgetService implements IWidgetService {
     }
 
     /**
+     * Retrieve the cached plugin defaults for a given plugin id and
+     * widget-type id. Returns `null` when the combination was never
+     * registered in this process (e.g. plugin disabled before this
+     * process started, or a typo). Consumed by the placements admin
+     * controller to power the restore-defaults endpoint.
+     *
+     * @param pluginId - Plugin id that originally registered the type.
+     * @param typeId - Widget-type id.
+     * @returns Snapshot of the plugin's first registration args, or
+     *   null when missing.
+     */
+    public getPluginDefault(
+        pluginId: string,
+        typeId: string
+    ): IPluginRegistrationDefaults | null {
+        return this.pluginDefaults.get(`${pluginId}::${typeId}`) ?? null;
+    }
+
+    /**
      * Test whether a zone id is currently known.
      */
     private isKnownZone(zone: string): boolean {
@@ -160,8 +208,29 @@ export class WidgetService implements IWidgetService {
         };
         this.widgets.set(config.id, widgetConfig);
 
-        // If the new system isn't wired (tests), the in-memory cache
-        // is the entire behaviour — keep going.
+        // Capture the plugin's original registration args. The cache
+        // is wired-mode-independent so unit tests that exercise
+        // `register()` without constructing `WidgetsModule` still see
+        // `getPluginDefault` return the canonical defaults. Only the
+        // first call within the process populates the entry —
+        // same-plugin re-registration during a single lifecycle
+        // preserves the original descriptor (see the same-plugin
+        // owner branch below) and the cached defaults follow that
+        // semantic.
+        const cacheKey = `${pluginId}::${config.id}`;
+        if (!this.pluginDefaults.has(cacheKey)) {
+            this.pluginDefaults.set(cacheKey, {
+                pluginId,
+                typeId: config.id,
+                zone: config.zone,
+                routes: [...config.routes],
+                order: config.order ?? DEFAULT_ORDER,
+                title: config.title
+            });
+        }
+
+        // If the new system isn't wired (tests), the in-memory caches
+        // above are the entire behaviour — keep going.
         if (!this.widgetTypeRegistry || !this.placementService) {
             this.logger.debug(
                 { widgetId: config.id, pluginId },

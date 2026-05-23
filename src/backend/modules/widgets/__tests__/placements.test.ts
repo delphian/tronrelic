@@ -20,7 +20,11 @@ import type {
 import { createMockDatabaseService } from '../../../tests/vitest/mocks/database-service.js';
 import { PlacementService } from '../placements/placement.service.js';
 import { PlacementResolver } from '../placements/placement-resolver.js';
-import { routeMatches } from '../placements/route-matcher.js';
+import {
+    routeMatches,
+    normaliseRoutePattern,
+    partitionRoutePatterns
+} from '../placements/route-matcher.js';
 
 class MockLogger implements ISystemLogService {
     public level = 'info';
@@ -57,6 +61,92 @@ describe('routeMatches', () => {
         expect(routeMatches(['/', '/markets'], '/markets')).toBe(true);
         expect(routeMatches(['/'], '/markets')).toBe(false);
         expect(routeMatches(['/'], '/u/TXyz')).toBe(false);
+    });
+
+    it('handles single-segment globs', () => {
+        expect(routeMatches(['/u/*'], '/u/TXyz')).toBe(true);
+        expect(routeMatches(['/u/*'], '/u/')).toBe(false);
+        expect(routeMatches(['/u/*'], '/u')).toBe(false);
+        expect(routeMatches(['/u/*'], '/u/TXyz/holdings')).toBe(false);
+        expect(routeMatches(['/u/*'], '/users/TXyz')).toBe(false);
+    });
+
+    it('handles deep globs', () => {
+        expect(routeMatches(['/u/**'], '/u/TXyz')).toBe(true);
+        expect(routeMatches(['/u/**'], '/u/TXyz/holdings')).toBe(true);
+        expect(routeMatches(['/u/**'], '/u/TXyz/holdings/2024')).toBe(true);
+        expect(routeMatches(['/u/**'], '/u')).toBe(false);
+        expect(routeMatches(['/u/**'], '/users/TXyz')).toBe(false);
+    });
+
+    it('a deep glob at the root matches any path', () => {
+        expect(routeMatches(['/**'], '/')).toBe(true);
+        expect(routeMatches(['/**'], '/markets')).toBe(true);
+        expect(routeMatches(['/**'], '/a/b/c')).toBe(true);
+    });
+
+    it('mixes patterns in a single filter', () => {
+        const filter = ['/', '/markets', '/u/*'];
+        expect(routeMatches(filter, '/')).toBe(true);
+        expect(routeMatches(filter, '/markets')).toBe(true);
+        expect(routeMatches(filter, '/u/TXyz')).toBe(true);
+        expect(routeMatches(filter, '/u/TXyz/h')).toBe(false);
+        expect(routeMatches(filter, '/admin')).toBe(false);
+    });
+});
+
+describe('normaliseRoutePattern', () => {
+    it('accepts exact paths', () => {
+        expect(normaliseRoutePattern('/')).toBe('/');
+        expect(normaliseRoutePattern('/markets')).toBe('/markets');
+    });
+
+    it('accepts trailing single and deep globs', () => {
+        expect(normaliseRoutePattern('/u/*')).toBe('/u/*');
+        expect(normaliseRoutePattern('/u/**')).toBe('/u/**');
+    });
+
+    it('trims whitespace surrounding a pattern', () => {
+        expect(normaliseRoutePattern('  /markets  ')).toBe('/markets');
+    });
+
+    it('rejects empty and whitespace-only input', () => {
+        expect(normaliseRoutePattern('')).toBeNull();
+        expect(normaliseRoutePattern('   ')).toBeNull();
+    });
+
+    it('rejects patterns without a leading slash', () => {
+        expect(normaliseRoutePattern('markets')).toBeNull();
+        expect(normaliseRoutePattern('u/*')).toBeNull();
+    });
+
+    it('rejects internal whitespace', () => {
+        expect(normaliseRoutePattern('/with space')).toBeNull();
+    });
+
+    it('rejects glob markers anywhere except the trailing segment', () => {
+        expect(normaliseRoutePattern('/*/markets')).toBeNull();
+        expect(normaliseRoutePattern('/u/*/extra')).toBeNull();
+        expect(normaliseRoutePattern('/u*')).toBeNull();
+    });
+});
+
+describe('partitionRoutePatterns', () => {
+    it('separates exact entries from glob entries', () => {
+        const { exact, patterns } = partitionRoutePatterns([
+            '/',
+            '/markets',
+            '/u/*',
+            '/admin/**'
+        ]);
+        expect(exact).toEqual(['/', '/markets']);
+        expect(patterns).toEqual(['/u/*', '/admin/**']);
+    });
+
+    it('returns empty buckets for an empty input', () => {
+        const { exact, patterns } = partitionRoutePatterns([]);
+        expect(exact).toEqual([]);
+        expect(patterns).toEqual([]);
     });
 });
 
@@ -353,7 +443,8 @@ describe('PlacementResolver', () => {
             update: vi.fn(),
             delete: vi.fn(),
             findById: vi.fn(),
-            list: vi.fn()
+            list: vi.fn(),
+            restoreToPluginDefaults: vi.fn()
         };
         resolver = new PlacementResolver(placementService, typeRegistry, logger);
     });
@@ -442,5 +533,228 @@ describe('PlacementResolver', () => {
         expect(result.map(r => r.id)).toEqual(['t2', 't3', 't1']);
         expect(result.map(r => r.zone)).toEqual(['main-after', 'main-after', 'main-before']);
         expect(result.map(r => r.order)).toEqual([5, 100, 50]);
+    });
+});
+
+describe('PlacementService.findByRoute (globs)', () => {
+    let logger: MockLogger;
+    let db: ReturnType<typeof createMockDatabaseService>;
+    let service: PlacementService;
+
+    beforeEach(() => {
+        logger = new MockLogger();
+        db = createMockDatabaseService();
+        PlacementService.__resetForTests();
+        PlacementService.setDependencies(db, logger);
+        service = PlacementService.getInstance();
+    });
+
+    it('returns placements with single-glob patterns when the route matches one segment', async () => {
+        await service.create({ typeId: 'profile:summary', zoneId: 'main-after', routes: ['/u/*'] });
+        await service.create({ typeId: 'home:hero', zoneId: 'main-after', routes: ['/'] });
+
+        const results = await service.findByRoute('/u/TXyz');
+        const ids = results.map(p => p.typeId).sort();
+        expect(ids).toEqual(['profile:summary']);
+    });
+
+    it('returns placements with deep-glob patterns at any depth', async () => {
+        await service.create({ typeId: 'admin:nav', zoneId: 'main-after', routes: ['/admin/**'] });
+        await service.create({ typeId: 'home:hero', zoneId: 'main-after', routes: ['/'] });
+
+        const results = await service.findByRoute('/admin/users/edit');
+        const ids = results.map(p => p.typeId).sort();
+        expect(ids).toEqual(['admin:nav']);
+    });
+
+    it('excludes single-glob rows when the route has extra depth', async () => {
+        await service.create({ typeId: 'profile:summary', zoneId: 'main-after', routes: ['/u/*'] });
+
+        const results = await service.findByRoute('/u/TXyz/holdings');
+        expect(results).toEqual([]);
+    });
+});
+
+describe('PlacementService broadcast wiring', () => {
+    let logger: MockLogger;
+    let db: ReturnType<typeof createMockDatabaseService>;
+    let service: PlacementService;
+    let broadcast: ReturnType<typeof vi.fn>;
+
+    beforeEach(() => {
+        logger = new MockLogger();
+        db = createMockDatabaseService();
+        broadcast = vi.fn();
+        PlacementService.__resetForTests();
+        PlacementService.setDependencies(db, logger);
+        service = PlacementService.getInstance();
+        service.setBroadcast(broadcast);
+    });
+
+    it('fires placement:created on create', async () => {
+        const placement = await service.create({ typeId: 't', zoneId: 'main-after', routes: [] });
+
+        expect(broadcast).toHaveBeenCalledTimes(1);
+        expect(broadcast).toHaveBeenCalledWith('placement:created', {
+            id: placement.id,
+            zoneId: 'main-after'
+        });
+    });
+
+    it('fires placement:updated on update', async () => {
+        const placement = await service.create({ typeId: 't', zoneId: 'main-after', routes: [] });
+        broadcast.mockClear();
+
+        await service.update(placement.id, { order: 50 });
+
+        expect(broadcast).toHaveBeenCalledTimes(1);
+        expect(broadcast).toHaveBeenCalledWith('placement:updated', {
+            id: placement.id,
+            zoneId: 'main-after'
+        });
+    });
+
+    it('fires placement:deleted on delete', async () => {
+        const placement = await service.create({ typeId: 't', zoneId: 'main-after', routes: [] });
+        broadcast.mockClear();
+
+        await service.delete(placement.id);
+
+        expect(broadcast).toHaveBeenCalledTimes(1);
+        expect(broadcast).toHaveBeenCalledWith('placement:deleted', { id: placement.id });
+    });
+
+    it('fires placement:restored on restoreToPluginDefaults', async () => {
+        const placement = await service.ensurePluginPlacement({
+            typeId: 't',
+            zoneId: 'main-after',
+            routes: [],
+            order: 25,
+            pluginId: 'p'
+        });
+        broadcast.mockClear();
+
+        await service.restoreToPluginDefaults(placement.id, {
+            zoneId: 'main-after',
+            routes: ['/'],
+            order: 25
+        });
+
+        expect(broadcast).toHaveBeenCalledTimes(1);
+        expect(broadcast).toHaveBeenCalledWith('placement:restored', {
+            id: placement.id,
+            zoneId: 'main-after'
+        });
+    });
+
+    it('does not fire on update of an unknown id', async () => {
+        await service.update('507f1f77bcf86cd799439011', { order: 5 });
+        expect(broadcast).not.toHaveBeenCalled();
+    });
+
+    it('does not fire on delete of an unknown id', async () => {
+        await service.delete('507f1f77bcf86cd799439011');
+        expect(broadcast).not.toHaveBeenCalled();
+    });
+
+    it('swallows broadcast errors so the mutation still succeeds', async () => {
+        broadcast.mockImplementation(() => { throw new Error('boom'); });
+        const placement = await service.create({ typeId: 't', zoneId: 'main-after', routes: [] });
+
+        expect(placement.id).toBeTruthy();
+        expect(logger.warn).toHaveBeenCalledWith(
+            expect.objectContaining({ event: 'placement:created' }),
+            expect.stringContaining('Placement broadcast callback threw')
+        );
+    });
+
+    it('ignores broadcast after setBroadcast(null)', async () => {
+        service.setBroadcast(null);
+        await service.create({ typeId: 't', zoneId: 'main-after', routes: [] });
+        expect(broadcast).not.toHaveBeenCalled();
+    });
+});
+
+describe('PlacementService.restoreToPluginDefaults', () => {
+    let logger: MockLogger;
+    let db: ReturnType<typeof createMockDatabaseService>;
+    let service: PlacementService;
+
+    beforeEach(() => {
+        logger = new MockLogger();
+        db = createMockDatabaseService();
+        PlacementService.__resetForTests();
+        PlacementService.setDependencies(db, logger);
+        service = PlacementService.getInstance();
+    });
+
+    it('restores zone, routes, order, title, and re-enables the row', async () => {
+        const placement = await service.ensurePluginPlacement({
+            typeId: 't',
+            zoneId: 'main-after',
+            routes: ['/'],
+            order: 25,
+            title: 'Default',
+            pluginId: 'p'
+        });
+
+        // Operator customisation, then disable.
+        await service.update(placement.id, {
+            zoneId: 'main-before',
+            routes: ['/dashboard'],
+            order: 1,
+            title: 'Operator Title',
+            enabled: false
+        });
+
+        const restored = await service.restoreToPluginDefaults(placement.id, {
+            zoneId: 'main-after',
+            routes: ['/'],
+            order: 25,
+            title: 'Default'
+        });
+
+        expect(restored).not.toBeNull();
+        expect(restored?.zoneId).toBe('main-after');
+        expect(restored?.routes).toEqual(['/']);
+        expect(restored?.order).toBe(25);
+        expect(restored?.title).toBe('Default');
+        expect(restored?.enabled).toBe(true);
+    });
+
+    it('unsets title when defaults have no title', async () => {
+        const placement = await service.ensurePluginPlacement({
+            typeId: 't',
+            zoneId: 'main-after',
+            routes: ['/'],
+            title: 'Operator Title',
+            pluginId: 'p'
+        });
+
+        const restored = await service.restoreToPluginDefaults(placement.id, {
+            zoneId: 'main-after',
+            routes: ['/'],
+            order: 100
+        });
+
+        expect(restored?.title).toBeUndefined();
+    });
+
+    it('returns null for unknown ids', async () => {
+        const result = await service.restoreToPluginDefaults('507f1f77bcf86cd799439011', {
+            zoneId: 'main-after',
+            routes: [],
+            order: 100
+        });
+        expect(result).toBeNull();
+    });
+
+    it('returns null for malformed ids', async () => {
+        const result = await service.restoreToPluginDefaults('not-an-objectid', {
+            zoneId: 'main-after',
+            routes: [],
+            order: 100
+        });
+        expect(result).toBeNull();
     });
 });

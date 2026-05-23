@@ -1,0 +1,278 @@
+/**
+ * Scoped styles for the widget placement admin page.
+ *
+ * Page structure flows through layout primitives (Page, PageHeader,
+ * Stack); this module contributes the per-track section, the zone
+ * header strip, the placement table cells with their inline route
+ * chips, and the create/edit form layout. Every value comes from
+ * design tokens so themes propagate.
+ */
+
+@use '../../../../app/breakpoints' as *;
+
+.container {
+    container-type: inline-size;
+    container-name: widgets-admin;
+}
+
+.toolbar {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--gap-md);
+    flex-wrap: wrap;
+}
+
+.toolbar p {
+    max-width: var(--max-width-prose);
+    margin: 0;
+}
+
+.track {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-md);
+}
+
+.track_title {
+    margin: 0;
+    font-size: var(--font-size-heading-sm);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text);
+    text-transform: capitalize;
+}
+
+.zone_list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-md);
+}
+
+.zone {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-sm);
+    padding: var(--card-padding-sm);
+    background: var(--color-surface);
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-md);
+}
+
+.zone_header {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-sm);
+    flex-wrap: wrap;
+}
+
+.zone_label {
+    margin: 0;
+    font-size: var(--font-size-body-lg);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text);
+    display: inline-flex;
+    align-items: baseline;
+    gap: var(--gap-xs);
+}
+
+.zone_id {
+    font-family: var(--font-mono);
+    font-size: var(--font-size-caption);
+    color: var(--color-text-muted);
+    font-weight: var(--font-weight-normal);
+}
+
+.zone_count {
+    margin-left: auto;
+    color: var(--color-text-muted);
+    font-size: var(--font-size-caption);
+}
+
+.zone_empty {
+    margin: 0;
+    color: var(--color-text-muted);
+    font-size: var(--font-size-body-sm);
+    font-style: italic;
+}
+
+.widget_cell {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-2xs);
+}
+
+.widget_label {
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text);
+}
+
+.widget_meta {
+    font-family: var(--font-mono);
+    font-size: var(--font-size-caption);
+    color: var(--color-text-muted);
+}
+
+.route_chip {
+    display: inline-block;
+    margin-right: var(--gap-2xs);
+    padding: var(--padding-2xs) var(--padding-xs);
+    background: var(--color-surface-muted);
+    border-radius: var(--radius-xs);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-caption);
+    color: var(--color-text);
+}
+
+.route_chip:last-child {
+    margin-right: 0;
+}
+
+.row_actions {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--gap-xs);
+}
+
+/* ------------------------------------------------------------------ */
+/* Placement form                                                      */
+/* ------------------------------------------------------------------ */
+
+.form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-md);
+}
+
+.field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-2xs);
+}
+
+.field label,
+.field_label {
+    font-size: var(--font-size-body-sm);
+    font-weight: var(--font-weight-medium);
+    color: var(--color-text);
+}
+
+.field_hint {
+    font-size: var(--font-size-caption);
+    color: var(--color-text-muted);
+}
+
+.field_error {
+    font-size: var(--font-size-caption);
+    color: var(--color-danger-text);
+}
+
+.field_row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+    gap: var(--gap-md);
+}
+
+.select {
+    background: var(--input-background);
+    border: var(--input-border);
+    border-radius: var(--input-border-radius);
+    padding: var(--input-padding);
+    color: var(--color-text);
+    font-size: var(--input-font-size);
+    transition: var(--input-transition);
+}
+
+.select:focus-visible {
+    outline: none;
+    border-color: var(--input-border-focus);
+    box-shadow: var(--input-shadow-focus);
+}
+
+.routes_chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--gap-xs);
+    min-height: var(--button-height-sm);
+    align-items: center;
+}
+
+.route_chip_editable {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--gap-2xs);
+    padding: var(--padding-2xs) var(--padding-xs);
+    background: var(--color-primary-alpha-15);
+    border: var(--border-width-thin) solid var(--color-primary-alpha-38);
+    border-radius: var(--radius-sm);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-caption);
+    color: var(--color-text);
+}
+
+.route_chip_remove {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    border: none;
+    background: transparent;
+    color: var(--color-text-muted);
+    border-radius: var(--radius-full);
+    cursor: pointer;
+    transition: background-color var(--transition-base), color var(--transition-base);
+}
+
+.route_chip_remove:hover {
+    background: var(--color-danger-alpha-18);
+    color: var(--color-danger-text);
+}
+
+.route_chip_remove:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 var(--border-width-medium) var(--color-focus-alpha-25);
+}
+
+.routes_input_row {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-sm);
+}
+
+.routes_input_row > :first-child {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.inline_toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--gap-sm);
+    color: var(--color-text);
+    font-size: var(--font-size-body-sm);
+}
+
+.form_footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--gap-sm);
+    margin-top: var(--gap-sm);
+}
+
+/* ------------------------------------------------------------------ */
+/* Responsive                                                          */
+/* ------------------------------------------------------------------ */
+
+@container widgets-admin (max-width: #{$breakpoint-mobile-md}) {
+    .toolbar {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    .field_row {
+        grid-template-columns: minmax(0, 1fr);
+    }
+    .zone_count {
+        margin-left: 0;
+        width: 100%;
+    }
+}

@@ -41,6 +41,7 @@ When both succeed, the cookie wins: `req.adminVia = 'user'`. Token-only is tagge
 | [system-api-scheduler.md](./system-api-scheduler.md) | `/scheduler/status`, `/scheduler/health`, `PATCH /scheduler/job/:jobName` |
 | [system-api-logs.md](./system-api-logs.md) | `/logs` query/stats/get/resolve/unresolve/delete |
 | [system-api-websockets.md](./system-api-websockets.md) | WebSocket monitoring endpoints + real-time event reference (`transaction:large`, `delegation:new`, `block:new`, `comments:new`, `chat:update`) |
+| [system-api-widgets.md](./system-api-widgets.md) | Widget placements admin CRUD + zone/widget-type introspection (`/api/admin/system/widgets/placements`, `/api/admin/system/zones`, `/api/admin/system/widget-types`) |
 
 ## Troubleshooting
 
