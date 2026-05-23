@@ -3,18 +3,19 @@ import type {
     IWidgetConfig,
     IWidgetData,
     ISystemLogService,
-    IZoneRegistry
+    IZoneRegistry,
+    IWidgetTypeRegistry,
+    IPlacementService
 } from '@/types';
+import { defineWidgetType } from '../../modules/widgets/widget-types/define-widget-type.js';
+import type { PlacementResolver } from '../../modules/widgets/placements/placement-resolver.js';
 
 /**
  * Fallback set used for zone validation when no `IZoneRegistry` has
  * been injected yet — covers test paths that instantiate the service
  * without bootstrap wiring. Production always overrides this via
  * `setZoneRegistry(...)` immediately after bootstrap constructs the
- * registry, so this set's job is to mirror the registry's declared
- * core zones (see `modules/widgets/zones/descriptors.ts`) and nothing
- * more — divergence would have widgets warn-or-not depending on
- * whether the registry happened to be wired.
+ * registry, so this set mirrors the registry's declared core zones.
  */
 const FALLBACK_VALID_ZONES = new Set([
     'ticker-after',
@@ -24,90 +25,51 @@ const FALLBACK_VALID_ZONES = new Set([
     'plugin-content:after'
 ]);
 
+/** Default order applied when input omits one. */
+const DEFAULT_ORDER = 100;
+
 /**
- * Singleton service managing plugin widget registration and SSR data fetching.
+ * Compatibility-shim widget service.
  *
- * Maintains an in-memory registry of widgets registered by plugins. Provides methods
- * for filtering widgets by route and fetching their data during SSR. This service
- * enables plugins to extend existing pages by injecting components into designated
- * zones without modifying core page code.
+ * PR 2 reshapes the plugin-facing widget API: instead of an in-memory
+ * registry, plugin registrations are split into a widget-type
+ * declaration (against `IWidgetTypeRegistry`) plus a plugin-source
+ * placement (against `IPlacementService`). The shim translates the
+ * legacy `IWidgetService` calls into this new shape so the five
+ * existing plugins (and any third-party plugin shipping against the
+ * old API) keep working without code change.
  *
- * Key responsibilities:
- * - Widget registration and deregistration
- * - Route-based filtering of active widgets
- * - Parallel data fetching for SSR with timeout protection
- * - Widget ordering by zone and sort order
+ * Operational modes:
  *
- * @example
- * ```typescript
- * // Register a widget in plugin init() hook
- * await widgetService.register({
- *     id: 'reddit-feed',
- *     zone: 'main-after',
- *     routes: ['/'],
- *     order: 10,
- *     title: 'Community Buzz',
- *     fetchData: async () => ({ posts: [] })
- * }, 'reddit-sentiment');
+ * - **Wired** (production): every method delegates to the new
+ *   widget-type / placement services. `WidgetsModule.init()` calls
+ *   the `setWidgetTypeRegistry`/`setPlacementService`/`setPlacementResolver`
+ *   setters once during bootstrap.
+ * - **Unwired** (tests that don't construct `WidgetsModule`): the
+ *   legacy in-memory Map of widgets is consulted for the existing
+ *   sync admin reads and for `fetchWidgetsForRoute`. This preserves
+ *   the 27 unit tests in `widget.service.test.ts` without forcing
+ *   each to mock the new infrastructure.
  *
- * // Fetch widgets for SSR
- * const widgets = await widgetService.fetchWidgetsForRoute('/');
- * ```
+ * The dual mode is temporary — PR 3 removes the legacy code path and
+ * the `IWidgetService` interface alongside the rest of the legacy
+ * widget surface.
  */
 export class WidgetService implements IWidgetService {
     private static instance: WidgetService;
     private widgets: Map<string, IWidgetConfig> = new Map();
     private logger: ISystemLogService;
     private zoneRegistry: IZoneRegistry | null = null;
+    private widgetTypeRegistry: IWidgetTypeRegistry | null = null;
+    private placementService: IPlacementService | null = null;
+    private placementResolver: PlacementResolver | null = null;
 
-    /**
-     * Private constructor enforcing singleton pattern with dependency injection.
-     *
-     * @param logger - Structured logger for widget service telemetry
-     */
     private constructor(logger: ISystemLogService) {
         this.logger = logger;
     }
 
     /**
-     * Inject the process-wide zone registry.
-     *
-     * Called once during bootstrap after the registry is constructed so
-     * that subsequent widget registrations can validate `config.zone`
-     * against the live set of declared zones — including plugin-declared
-     * zones that the hardcoded fallback set could not anticipate.
-     *
-     * @param registry - Shared zone registry instance.
-     */
-    public setZoneRegistry(registry: IZoneRegistry): void {
-        this.zoneRegistry = registry;
-    }
-
-    /**
-     * Test whether a zone id is currently known.
-     *
-     * Prefers the injected `IZoneRegistry`; falls back to the hardcoded
-     * set when the registry has not been wired (e.g. unit tests
-     * instantiating the singleton directly).
-     *
-     * @param zone - Zone id to check.
-     * @returns True if the zone is known.
-     */
-    private isKnownZone(zone: string): boolean {
-        if (this.zoneRegistry) {
-            return this.zoneRegistry.has(zone);
-        }
-        return FALLBACK_VALID_ZONES.has(zone);
-    }
-
-    /**
      * Get or create the singleton instance.
-     *
-     * Must be called with logger on first access. Subsequent calls ignore the
-     * logger parameter and return the existing instance.
-     *
-     * @param logger - Structured logger (required on first call)
-     * @returns The singleton widget service instance
      */
     public static getInstance(logger?: ISystemLogService): WidgetService {
         if (!WidgetService.instance) {
@@ -120,21 +82,65 @@ export class WidgetService implements IWidgetService {
     }
 
     /**
+     * Test-only reset to clear the singleton between unit tests.
+     */
+    public static __resetForTests(): void {
+        // @ts-expect-error — clearing the private static for tests
+        WidgetService.instance = undefined;
+    }
+
+    /**
+     * Inject the process-wide zone registry. Called once during
+     * bootstrap from the plugin loader.
+     */
+    public setZoneRegistry(registry: IZoneRegistry): void {
+        this.zoneRegistry = registry;
+    }
+
+    /**
+     * Inject the process-wide widget-type registry. Called once
+     * during `WidgetsModule.init()`.
+     */
+    public setWidgetTypeRegistry(registry: IWidgetTypeRegistry): void {
+        this.widgetTypeRegistry = registry;
+    }
+
+    /**
+     * Inject the module-owned placement service. Called once during
+     * `WidgetsModule.init()`.
+     */
+    public setPlacementService(service: IPlacementService): void {
+        this.placementService = service;
+    }
+
+    /**
+     * Inject the module-owned placement resolver. Called once during
+     * `WidgetsModule.init()`. When set, `fetchWidgetsForRoute` routes
+     * through the resolver instead of the in-memory cache.
+     */
+    public setPlacementResolver(resolver: PlacementResolver): void {
+        this.placementResolver = resolver;
+    }
+
+    /**
+     * Test whether a zone id is currently known.
+     */
+    private isKnownZone(zone: string): boolean {
+        if (this.zoneRegistry) {
+            return this.zoneRegistry.has(zone);
+        }
+        return FALLBACK_VALID_ZONES.has(zone);
+    }
+
+    /**
      * Register a widget with the service.
      *
-     * Adds the widget to the in-memory registry. If a widget with the same ID
-     * already exists, it will be replaced. This allows plugins to re-register
-     * widgets on hot reload.
-     *
-     * @param config - Widget configuration including zone, routes, and data fetcher
-     * @param pluginId - ID of the plugin registering this widget
-     * @returns Promise that resolves when registration is complete
+     * In wired mode this splits into a widget-type declaration and a
+     * plugin-source placement upsert. In unwired mode it falls back
+     * to the legacy in-memory Map. Either way, the in-memory Map is
+     * updated for sync admin reads.
      */
     public async register(config: IWidgetConfig, pluginId: string): Promise<void> {
-        // Validate zone name against the live registry (preferred) or
-        // the hardcoded fallback set when the registry has not been
-        // wired. Unknown zones produce a warning but do not block
-        // registration — the warning is diagnostic, not authoritative.
         if (!this.isKnownZone(config.zone)) {
             this.logger.warn('Widget registered with unknown zone', {
                 widgetId: config.id,
@@ -143,35 +149,98 @@ export class WidgetService implements IWidgetService {
             });
         }
 
-        // Clone config to avoid mutations
+        // Maintain the legacy in-memory cache for sync admin reads
+        // (`getAllWidgets`, `getWidgetsByZone`). PR 3 will replace
+        // those endpoints with placement-backed lookups and remove
+        // this cache.
         const widgetConfig: IWidgetConfig = {
             ...config,
             pluginId,
-            order: config.order ?? 100 // Default order
+            order: config.order ?? DEFAULT_ORDER
         };
-
         this.widgets.set(config.id, widgetConfig);
 
-        this.logger.debug('Widget registered', {
-            widgetId: config.id,
-            pluginId,
-            zone: config.zone,
-            routes: config.routes
-        });
+        // If the new system isn't wired (tests), the in-memory cache
+        // is the entire behaviour — keep going.
+        if (!this.widgetTypeRegistry || !this.placementService) {
+            this.logger.debug(
+                { widgetId: config.id, pluginId },
+                'Widget registered (legacy in-memory mode — placement service not wired)'
+            );
+            return;
+        }
+
+        // Register the widget type if this plugin hasn't claimed the
+        // id yet. Re-registration during the same lifecycle window
+        // is a plugin bug; we tolerate it silently because the
+        // legacy API allowed silent replacement.
+        if (!this.widgetTypeRegistry.has(config.id)) {
+            try {
+                const descriptor = defineWidgetType({
+                    id: config.id,
+                    label: config.title ?? config.id,
+                    description: config.description ?? '',
+                    defaultDataFetcher: config.fetchData
+                });
+                this.widgetTypeRegistry.register(pluginId, descriptor);
+            } catch (err) {
+                this.logger.error(
+                    {
+                        err,
+                        widgetId: config.id,
+                        pluginId
+                    },
+                    'Failed to register widget type via compat shim'
+                );
+                return;
+            }
+        }
+
+        // Ensure the plugin-source placement exists and is enabled.
+        // Upsert semantics preserve operator customisations to
+        // `order`, `routes`, `title` across plugin disable/re-enable.
+        try {
+            await this.placementService.ensurePluginPlacement({
+                typeId: config.id,
+                zoneId: config.zone,
+                routes: config.routes,
+                order: config.order,
+                title: config.title,
+                pluginId
+            });
+        } catch (err) {
+            this.logger.error(
+                {
+                    err,
+                    widgetId: config.id,
+                    pluginId
+                },
+                'Failed to ensure plugin placement via compat shim'
+            );
+        }
+
+        this.logger.debug(
+            {
+                widgetId: config.id,
+                pluginId,
+                zone: config.zone,
+                routes: config.routes
+            },
+            'Widget registered via compat shim'
+        );
     }
 
     /**
-     * Unregister a widget from the service.
+     * Unregister a widget by id.
      *
-     * Removes the widget from the in-memory registry. The widget will no longer
-     * appear in calls to fetchWidgetsForRoute().
-     *
-     * @param widgetId - Unique ID of the widget to unregister
-     * @returns Promise that resolves when unregistration is complete
+     * Legacy semantic — used by tests; production plugin lifecycle
+     * uses `unregisterAll`. Clears the in-memory cache only; widget
+     * types are disposed via `PluginManagerService.disposeWidgetTypes`
+     * and placements are soft-disabled via
+     * `PlacementService.softDisableForPlugin`.
      */
     public async unregister(widgetId: string): Promise<void> {
         const deleted = this.widgets.delete(widgetId);
-
         if (deleted) {
             this.logger.debug('Widget unregistered', { widgetId });
         } else {
@@ -182,11 +251,10 @@ export class WidgetService implements IWidgetService {
     /**
      * Unregister all widgets for a plugin.
      *
-     * Removes all widgets registered by the specified plugin. Used during
-     * plugin disable/uninstall to clean up all widget registrations.
-     *
-     * @param pluginId - ID of the plugin whose widgets should be unregistered
-     * @returns Promise that resolves when all widgets are unregistered
+     * Closes the previous (PR 1) leak by chaining into the placement
+     * service's soft-disable path. Widget-type disposal goes through
+     * the dedicated plugin-manager lifecycle (see
+     * `PluginManagerService.disposeWidgetTypes`).
      */
     public async unregisterAll(pluginId: string): Promise<void> {
         const widgetsToRemove: string[] = [];
@@ -201,37 +269,53 @@ export class WidgetService implements IWidgetService {
             this.widgets.delete(widgetId);
         }
 
-        this.logger.info('All widgets unregistered for plugin', {
+        this.logger.info('Legacy in-memory cache cleared for plugin', {
             pluginId,
             count: widgetsToRemove.length
         });
+
+        if (this.placementService) {
+            try {
+                await this.placementService.softDisableForPlugin(pluginId);
+            } catch (err) {
+                this.logger.error(
+                    { err, pluginId },
+                    'Failed to soft-disable plugin placements via compat shim'
+                );
+            }
+        }
     }
 
     /**
-     * Fetch widget data for a specific route.
+     * Fetch widget data for a route.
      *
-     * Filters registered widgets by route match, executes their fetchData()
-     * functions in parallel with timeout protection, and returns the results
-     * sorted by zone and order.
-     *
-     * Widgets with failing fetchData() functions are excluded from results
-     * (errors are logged but not thrown).
-     *
-     * @param route - URL path to match against widget routes (e.g., '/', '/u/TXyz...')
-     * @param params - Route parameters extracted from the URL (e.g., { address: 'TXyz...' })
-     * @returns Promise resolving to array of widget data with pre-fetched content
+     * Routes through the placement resolver when wired; falls back to
+     * the legacy in-memory implementation for unwired test paths.
      */
     public async fetchWidgetsForRoute(
         route: string,
         params: Record<string, string> = {}
     ): Promise<IWidgetData[]> {
-        // Filter widgets by route
+        if (this.placementResolver) {
+            return this.placementResolver.resolveForRoute(route, params);
+        }
+
+        return this.legacyFetchWidgetsForRoute(route, params);
+    }
+
+    /**
+     * Legacy in-memory fetch retained as a fallback for tests that
+     * instantiate `WidgetService` without constructing `WidgetsModule`.
+     * Production paths always run through the placement resolver.
+     */
+    private async legacyFetchWidgetsForRoute(
+        route: string,
+        params: Record<string, string>
+    ): Promise<IWidgetData[]> {
         const matchingWidgets = Array.from(this.widgets.values()).filter(widget => {
-            // Empty routes array means show on all routes
             if (widget.routes.length === 0) {
                 return true;
             }
-            // Check for exact route match
             return widget.routes.includes(route);
         });
 
@@ -239,7 +323,7 @@ export class WidgetService implements IWidgetService {
             return [];
         }
 
-        this.logger.debug('Fetching widget data for route', {
+        this.logger.debug('Fetching widget data for route (legacy path)', {
             route,
             params,
             widgetCount: matchingWidgets.length
@@ -247,11 +331,9 @@ export class WidgetService implements IWidgetService {
 
         const TIMEOUT_MS = 5000;
 
-        // Fetch data for all matching widgets in parallel
         const widgetDataPromises = matchingWidgets.map(async (widget): Promise<IWidgetData | null> => {
             let timerId: NodeJS.Timeout | undefined;
             try {
-                // Use Promise.race for actual timeout enforcement, and clear timer when done
                 const timeoutPromise = new Promise<never>((_, reject) => {
                     timerId = setTimeout(() => reject(new Error('Widget fetch timeout')), TIMEOUT_MS);
                 });
@@ -261,7 +343,6 @@ export class WidgetService implements IWidgetService {
                 ]);
                 clearTimeout(timerId);
 
-                // Validate data is JSON-serializable
                 const data = this.validateSerializable(rawData, widget.id);
                 if (data === null) {
                     return null;
@@ -271,7 +352,7 @@ export class WidgetService implements IWidgetService {
                     id: widget.id,
                     zone: widget.zone,
                     pluginId: widget.pluginId!,
-                    order: widget.order ?? 100,
+                    order: widget.order ?? DEFAULT_ORDER,
                     title: widget.title,
                     data
                 };
@@ -288,19 +369,16 @@ export class WidgetService implements IWidgetService {
 
         const widgetDataResults = await Promise.all(widgetDataPromises);
 
-        // Filter out failed widgets and sort by zone then order
         const widgetData = widgetDataResults
             .filter((w): w is IWidgetData => w !== null)
             .sort((a, b) => {
-                // Sort by zone first (alphabetically)
                 if (a.zone !== b.zone) {
                     return a.zone.localeCompare(b.zone);
                 }
-                // Then by order
                 return a.order - b.order;
             });
 
-        this.logger.debug('Widget data fetched successfully', {
+        this.logger.debug('Widget data fetched successfully (legacy path)', {
             route,
             successCount: widgetData.length,
             failedCount: matchingWidgets.length - widgetData.length
@@ -309,16 +387,6 @@ export class WidgetService implements IWidgetService {
         return widgetData;
     }
 
-    /**
-     * Validate that data is JSON-serializable.
-     *
-     * Attempts a round-trip through JSON to catch non-serializable data
-     * (BigInt, circular references, functions) before SSR.
-     *
-     * @param data - Raw data from widget fetchData
-     * @param widgetId - Widget ID for error logging
-     * @returns Validated data or null if not serializable
-     */
     private validateSerializable(data: unknown, widgetId: string): unknown {
         try {
             return JSON.parse(JSON.stringify(data));
@@ -332,29 +400,22 @@ export class WidgetService implements IWidgetService {
     }
 
     /**
-     * Get all registered widgets (without fetching data).
+     * Get all registered widgets (sync legacy read).
      *
-     * Returns the raw widget configurations for all registered widgets.
-     * Useful for admin interfaces or debugging.
-     *
-     * @returns Array of widget configurations
+     * Returns the in-memory cache — plugin-source widgets only.
+     * Operator-source placements (introduced via the admin API in
+     * PR 3) are not visible through this method.
      */
     public getAllWidgets(): IWidgetConfig[] {
         return Array.from(this.widgets.values());
     }
 
     /**
-     * Get widgets for a specific zone (without fetching data).
-     *
-     * Returns widget configurations filtered by zone. Useful for debugging
-     * or admin interfaces that need to show which widgets are in each zone.
-     *
-     * @param zone - Zone name to filter by
-     * @returns Array of widget configurations in the specified zone
+     * Get widgets for a specific zone (sync legacy read).
      */
     public getWidgetsByZone(zone: string): IWidgetConfig[] {
         return Array.from(this.widgets.values())
             .filter(widget => widget.zone === zone)
-            .sort((a, b) => (a.order ?? 100) - (b.order ?? 100));
+            .sort((a, b) => (a.order ?? DEFAULT_ORDER) - (b.order ?? DEFAULT_ORDER));
     }
 }

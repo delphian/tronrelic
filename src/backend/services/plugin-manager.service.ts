@@ -1,14 +1,15 @@
 import { EventEmitter } from 'node:events';
-import type { IPlugin, IPluginContext, IPluginManifest, IHookRegistry, IZoneRegistry } from '@/types';
+import type { IPlugin, IPluginContext, IPluginManifest, IHookRegistry, IZoneRegistry, IWidgetTypeRegistry } from '@/types';
 import { PluginMetadataService } from './plugin-metadata.service.js';
 import { PluginDatabaseService } from '../modules/database/index.js';
 import { PluginApiService } from './plugin-api.service.js';
 import { BlockchainObserverService } from './blockchain-observer/index.js';
 import { BaseObserver } from '../modules/blockchain/observers/BaseObserver.js';
 import { WebSocketService } from './websocket.service.js';
+import { WidgetService } from './widget/widget.service.js';
 import { logger } from '../lib/logger.js';
 import { PluginHooks } from '../hooks/index.js';
-import { PluginZones } from '../modules/widgets/index.js';
+import { PluginZones, PluginWidgetTypes } from '../modules/widgets/index.js';
 
 /**
  * Lifecycle event payloads emitted by PluginManagerService.
@@ -39,6 +40,7 @@ interface ILoadedPlugin {
     manifest: IPluginManifest;
     hooks: PluginHooks;
     zones: PluginZones;
+    widgetTypes: PluginWidgetTypes;
 }
 
 /**
@@ -55,6 +57,7 @@ export class PluginManagerService {
     private events: EventEmitter = new EventEmitter();
     private hookRegistry: IHookRegistry | null = null;
     private zoneRegistry: IZoneRegistry | null = null;
+    private widgetTypeRegistry: IWidgetTypeRegistry | null = null;
 
     private constructor() {
         this.metadataService = PluginMetadataService.getInstance();
@@ -84,6 +87,19 @@ export class PluginManagerService {
      */
     public setZoneRegistry(registry: IZoneRegistry): void {
         this.zoneRegistry = registry;
+    }
+
+    /**
+     * Inject the process-wide widget-type registry.
+     *
+     * Called once during bootstrap from the plugin loader. Used to
+     * rebuild a plugin's widget-type facade after disable and to
+     * dispose widget-type declarations in bulk as a safety net.
+     *
+     * @param registry - Shared widget-type registry instance.
+     */
+    public setWidgetTypeRegistry(registry: IWidgetTypeRegistry): void {
+        this.widgetTypeRegistry = registry;
     }
 
     /**
@@ -162,19 +178,25 @@ export class PluginManagerService {
      *   every handler the plugin has registered.
      * @param zones - Per-plugin zone facade. Same lifecycle and bulk-
      *   disposal contract as the hooks facade.
+     * @param widgetTypes - Per-plugin widget-type facade. Same
+     *   lifecycle and bulk-disposal contract as the hooks and zones
+     *   facades; complementary to the placement soft-disable that
+     *   runs through the compat-shim `WidgetService` on `disposeWidgets`.
      */
     public registerPlugin(
         plugin: IPlugin,
         context: IPluginContext,
         hooks: PluginHooks,
-        zones: PluginZones
+        zones: PluginZones,
+        widgetTypes: PluginWidgetTypes
     ): void {
         this.loadedPlugins.set(plugin.manifest.id, {
             plugin,
             context,
             manifest: plugin.manifest,
             hooks,
-            zones
+            zones,
+            widgetTypes
         });
     }
 
@@ -281,6 +303,67 @@ export class PluginManagerService {
     }
 
     /**
+     * Rebuild a plugin's widget-type facade and rebind it to the live
+     * context. Called immediately before re-entering a plugin's
+     * install/enable/init path so the plugin sees an open lifecycle
+     * window for `context.widgetTypes.register(...)` calls.
+     *
+     * @param loaded - Loaded plugin record.
+     */
+    private rearmWidgetTypes(loaded: ILoadedPlugin): void {
+        if (!this.widgetTypeRegistry) {
+            return;
+        }
+        try {
+            loaded.widgetTypes.closeAndDisposeAll();
+        } catch (err) {
+            logger.warn({ err, pluginId: loaded.manifest.id }, 'Widget-type facade dispose threw during rearm');
+        }
+        this.widgetTypeRegistry.disposeForPlugin(loaded.manifest.id);
+        const fresh = new PluginWidgetTypes(loaded.manifest.id, this.widgetTypeRegistry, loaded.context.logger);
+        loaded.widgetTypes = fresh;
+        loaded.context.widgetTypes = fresh;
+    }
+
+    /**
+     * Close a plugin's widget-type facade, drop every registered type
+     * it owns, and chain into the compat-shim widget service to
+     * soft-disable the associated plugin-source placements and clear
+     * the legacy in-memory cache. The placement rows themselves
+     * survive (soft-disable) so operator customisations to ordering
+     * or routes are preserved across the plugin's disable/re-enable
+     * cycle.
+     *
+     * @param loaded - Loaded plugin record.
+     */
+    private async disposeWidgetTypes(loaded: ILoadedPlugin): Promise<void> {
+        try {
+            loaded.widgetTypes.closeAndDisposeAll();
+        } catch (err) {
+            logger.warn({ err, pluginId: loaded.manifest.id }, 'Widget-type facade dispose threw');
+        }
+        if (this.widgetTypeRegistry) {
+            this.widgetTypeRegistry.disposeForPlugin(loaded.manifest.id);
+        }
+        // Chain into the compat-shim widget service so its legacy
+        // in-memory cache is cleared and the matching plugin-source
+        // placements are soft-disabled. This closes the leak the
+        // PR 1 research flagged: `widgetService.unregisterAll` had no
+        // call site in the plugin manager before now, so plugin
+        // widgets persisted in the cache and (later) in the
+        // placement collection across disable/uninstall.
+        try {
+            const widgetService = WidgetService.getInstance();
+            await widgetService.unregisterAll(loaded.manifest.id);
+        } catch (err) {
+            logger.warn(
+                { err, pluginId: loaded.manifest.id },
+                'WidgetService compat-shim unregisterAll threw'
+            );
+        }
+    }
+
+    /**
      * Get all loaded plugin manifests.
      *
      * @returns Array of plugin manifests for all discovered plugins
@@ -314,10 +397,11 @@ export class PluginManagerService {
             }
 
             // Rebind fresh per-plugin facades so the plugin's install/
-            // enable/init path sees open lifecycle windows for hooks and
-            // zones.
+            // enable/init path sees open lifecycle windows for hooks,
+            // zones, and widget types.
             this.rearmHooks(loaded);
             this.rearmZones(loaded);
+            this.rearmWidgetTypes(loaded);
 
             // Run install hook if not already installed
             if (!metadata.installed && plugin.install) {
@@ -339,11 +423,12 @@ export class PluginManagerService {
             }
 
             // Seal the lifecycle windows. Subsequent register() attempts
-            // (e.g. inside request handlers) now throw — handlers and
-            // zone declarations registered during install/enable/init
-            // stay live.
+            // (e.g. inside request handlers) now throw — handlers,
+            // zones, and widget-type declarations registered during
+            // install/enable/init stay live.
             loaded.hooks.seal();
             loaded.zones.seal();
+            loaded.widgetTypes.seal();
 
             // Mark as enabled in database
             await this.metadataService.markEnabled(pluginId);
@@ -404,6 +489,7 @@ export class PluginManagerService {
             // disable hook remembered to call disposers itself.
             this.disposeHooks(loaded);
             this.disposeZones(loaded);
+            await this.disposeWidgetTypes(loaded);
 
             // Mark as disabled in database
             await this.metadataService.markDisabled(pluginId);
@@ -458,14 +544,17 @@ export class PluginManagerService {
             }
 
             // Rearm the per-plugin facades so the install hook may
-            // register handlers and declare zones. A previous disable/
-            // uninstall cycle leaves the facades closed, and the install
-            // lifecycle window is one of the three points where
-            // context.hooks.register(...) and context.zones.register(...)
-            // are allowed — reinstall and upgrade flows depend on these
-            // being fresh facades.
+            // register handlers, declare zones, and declare widget
+            // types. A previous disable/uninstall cycle leaves the
+            // facades closed, and the install lifecycle window is one
+            // of the three points where context.hooks.register(...),
+            // context.zones.register(...), and
+            // context.widgetTypes.register(...) are allowed —
+            // reinstall and upgrade flows depend on these being fresh
+            // facades.
             this.rearmHooks(loaded);
             this.rearmZones(loaded);
+            this.rearmWidgetTypes(loaded);
 
             // Run install hook if defined
             if (plugin.install) {
@@ -477,6 +566,7 @@ export class PluginManagerService {
             // will rearm the facades before plugin.enable/init runs.
             loaded.hooks.seal();
             loaded.zones.seal();
+            loaded.widgetTypes.seal();
 
             // Mark as installed in database
             await this.metadataService.markInstalled(pluginId);
@@ -599,9 +689,11 @@ export class PluginManagerService {
             }
 
             // Rebind fresh per-plugin facades so the plugin's enable/
-            // init path sees open lifecycle windows for hooks and zones.
+            // init path sees open lifecycle windows for hooks, zones,
+            // and widget types.
             this.rearmHooks(loaded);
             this.rearmZones(loaded);
+            this.rearmWidgetTypes(loaded);
 
             // Run enable hook if defined
             if (plugin.enable) {
@@ -618,6 +710,7 @@ export class PluginManagerService {
             // Seal the lifecycle windows now that enable+init have run.
             loaded.hooks.seal();
             loaded.zones.seal();
+            loaded.widgetTypes.seal();
 
             // Mark as enabled in database
             await this.metadataService.markEnabled(pluginId);
@@ -687,6 +780,7 @@ export class PluginManagerService {
             // disable hook remembered to call disposers itself.
             this.disposeHooks(loaded);
             this.disposeZones(loaded);
+            await this.disposeWidgetTypes(loaded);
 
             // Mark as disabled in database
             await this.metadataService.markDisabled(pluginId);

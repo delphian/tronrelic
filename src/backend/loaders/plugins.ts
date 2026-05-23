@@ -1,8 +1,8 @@
 import axios from 'axios';
 import mongoose from 'mongoose';
-import type { IPluginContext, IPlugin, IDatabaseService, ISchedulerService, IServiceRegistry, IHookRegistry, IZoneRegistry } from '@/types';
+import type { IPluginContext, IPlugin, IDatabaseService, ISchedulerService, IServiceRegistry, IHookRegistry, IZoneRegistry, IWidgetTypeRegistry } from '@/types';
 import { PluginHooks } from '../hooks/index.js';
-import { PluginZones } from '../modules/widgets/index.js';
+import { PluginZones, PluginWidgetTypes } from '../modules/widgets/index.js';
 import { logger } from '../lib/logger.js';
 import { BlockchainObserverService } from '../services/blockchain-observer/index.js';
 import { BaseObserver, BaseBatchObserver, BaseBlockObserver } from '../modules/blockchain/observers/index.js';
@@ -67,7 +67,8 @@ export async function loadPlugins(
     scheduler: ISchedulerService | null,
     serviceRegistry: IServiceRegistry,
     hookRegistry: IHookRegistry,
-    zoneRegistry: IZoneRegistry
+    zoneRegistry: IZoneRegistry,
+    widgetTypeRegistry: IWidgetTypeRegistry
 ): Promise<void> {
     await logger.waitUntilInitialized();
 
@@ -80,6 +81,7 @@ export async function loadPlugins(
     const pluginManager = PluginManagerService.getInstance();
     pluginManager.setHookRegistry(hookRegistry);
     pluginManager.setZoneRegistry(zoneRegistry);
+    pluginManager.setWidgetTypeRegistry(widgetTypeRegistry);
     const observerService = BlockchainObserverService.getInstance();
 
     logger.info(`Discovered ${pluginList.length} plugins`);
@@ -159,6 +161,12 @@ export async function loadPlugins(
             // when the plugin is disabled or uninstalled.
             const pluginZones = new PluginZones(plugin.manifest.id, zoneRegistry, pluginLogger);
 
+            // Per-plugin widget-type facade. Mirrors the zone facade —
+            // widget types declared during install/enable/init are
+            // disposed on disable, and the placement service's
+            // soft-disable path handles the matching placement rows.
+            const pluginWidgetTypes = new PluginWidgetTypes(plugin.manifest.id, widgetTypeRegistry, pluginLogger);
+
             // Create plugin context with injected dependencies
             const context: IPluginContext = {
                 http: httpClient,
@@ -185,11 +193,12 @@ export async function loadPlugins(
                 services: serviceRegistry,
                 hooks: pluginHooks,
                 zones: pluginZones,
+                widgetTypes: pluginWidgetTypes,
                 logger: pluginLogger
             };
 
             // Register plugin in the manager (does not initialize)
-            pluginManager.registerPlugin(plugin, context, pluginHooks, pluginZones);
+            pluginManager.registerPlugin(plugin, context, pluginHooks, pluginZones, pluginWidgetTypes);
 
             pluginLogger.debug('Plugin discovered and registered');
         } catch (error) {
