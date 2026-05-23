@@ -341,6 +341,7 @@ describe('PlacementResolver', () => {
             disposeForPlugin: vi.fn(() => 0),
             has: vi.fn((id: string) => types.has(id)),
             get: vi.fn((id: string) => types.get(id)),
+            getOwnerPluginId: vi.fn((_id: string) => undefined),
             snapshot: vi.fn(() => ({ groups: [] }))
         };
         (typeRegistry as any).__types = types;

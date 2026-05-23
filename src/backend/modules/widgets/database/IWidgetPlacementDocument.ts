@@ -14,7 +14,7 @@
  * @module backend/modules/widgets/database/IWidgetPlacementDocument
  */
 
-import type { Types } from 'mongoose';
+import type { ObjectId } from 'mongodb';
 import type { PlacementSource } from '@/types';
 
 /**
@@ -27,7 +27,7 @@ import type { PlacementSource } from '@/types';
  * lifecycle events. Hard delete is reserved for the admin API.
  */
 export interface IWidgetPlacementDocument {
-    _id: Types.ObjectId;
+    _id: ObjectId;
     /** Widget-type id this placement renders. */
     typeId: string;
     /** Zone id this placement targets. */

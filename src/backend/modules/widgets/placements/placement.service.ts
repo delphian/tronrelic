@@ -99,59 +99,49 @@ export class PlacementService implements IPlacementService {
             source: 'plugin' as PlacementSource
         };
 
-        // Find-then-(insert | re-enable). Atomicity is enforced by the
-        // unique sparse index on (typeId, pluginId) created in
-        // migration 001: a concurrent insert from a second process
-        // would fail and we'd fall back to the update branch on
-        // retry. In single-process tests there is no race; the
-        // pattern reads cleanly under both the production Mongo
-        // driver and the in-memory mock.
-        const existing = await collection.findOne(filter);
-        if (existing) {
-            await collection.updateOne(
-                { _id: existing._id },
-                { $set: { enabled: true, updatedAt: now } }
-            );
-            const refreshed = await collection.findOne({ _id: existing._id });
-            if (!refreshed) {
-                throw new Error(
-                    `ensurePluginPlacement: row vanished between update and reread for typeId='${input.typeId}', pluginId='${input.pluginId}'`
-                );
-            }
-            this.logger.debug(
-                { typeId: input.typeId, pluginId: input.pluginId, zoneId: input.zoneId },
-                'Plugin placement re-enabled (existing row)'
-            );
-            return toPublic(refreshed);
-        }
-
-        const doc: Omit<IWidgetPlacementDocument, '_id'> = {
-            typeId: input.typeId,
+        // Atomic upsert. `$set` applies on both insert and update so
+        // `enabled` and `updatedAt` always reflect the current call.
+        // `$setOnInsert` applies only on insert so operator
+        // customisations to `order`, `routes`, `title`, and
+        // `instanceConfig` survive plugin disable/re-enable cycles
+        // (the existing row is found by filter and only `enabled` +
+        // `updatedAt` are touched). The sparse unique index on
+        // (typeId, pluginId) created in migration 001 guarantees
+        // atomicity against concurrent enables from multiple
+        // processes: the second writer's $setOnInsert is dropped
+        // because the row already exists.
+        const setOnInsert: Partial<IWidgetPlacementDocument> = {
             zoneId: input.zoneId,
             routes: [...input.routes],
             order: input.order ?? DEFAULT_ORDER,
-            enabled: true,
             source: 'plugin',
-            pluginId: input.pluginId,
-            createdAt: now,
-            updatedAt: now
+            createdAt: now
         };
-        if (input.title !== undefined) doc.title = input.title;
-        if (input.instanceConfig !== undefined) doc.instanceConfig = input.instanceConfig;
+        if (input.title !== undefined) setOnInsert.title = input.title;
+        if (input.instanceConfig !== undefined) setOnInsert.instanceConfig = input.instanceConfig;
 
-        const result = await collection.insertOne(doc as IWidgetPlacementDocument);
-        const created = await collection.findOne({ _id: result.insertedId });
-        if (!created) {
+        await collection.updateOne(
+            filter,
+            {
+                $set: { enabled: true, updatedAt: now },
+                $setOnInsert: setOnInsert
+            },
+            { upsert: true }
+        );
+
+        const document = await collection.findOne(filter);
+        if (!document) {
             throw new Error(
-                `ensurePluginPlacement: insert succeeded but document could not be re-read for typeId='${input.typeId}', pluginId='${input.pluginId}'`
+                `ensurePluginPlacement: upsert succeeded but document could not be re-read for typeId='${input.typeId}', pluginId='${input.pluginId}'`
             );
         }
 
         this.logger.debug(
             { typeId: input.typeId, pluginId: input.pluginId, zoneId: input.zoneId },
-            'Plugin placement created'
+            'Plugin placement ensured'
         );
-        return toPublic(created);
+
+        return toPublic(document);
     }
 
     async softDisableForPlugin(pluginId: string): Promise<number> {
@@ -178,26 +168,27 @@ export class PlacementService implements IPlacementService {
 
     async findByRoute(route: string): Promise<ReadonlyArray<IWidgetPlacement>> {
         const collection = this.database.getCollection<IWidgetPlacementDocument>(WIDGET_PLACEMENT_COLLECTION);
-        // Fetch all enabled placements and filter route in-memory.
-        // The route-match grammar today is exact-string-or-empty-
-        // matches-all, which is awkward to express in a single
-        // index-friendly Mongo query; in-memory filtering of an
-        // `enabled: true` set is fast at the expected placement
-        // counts and keeps the matching rule in one place
-        // (`route-matcher.ts`).
+        // Push the route filter into Mongo. Empty `routes` matches
+        // every path; otherwise the exact path must appear in the
+        // array. The multikey index on `routes` (built implicitly on
+        // every array field) plus the compound
+        // `enabled_zone_order` index from migration 001 keeps the
+        // common SSR query cheap as placement counts grow. The
+        // pure `routeMatches` predicate in `route-matcher.ts`
+        // remains the canonical statement of the matching rule for
+        // any non-Mongo caller and for future grammar extension.
         const documents = await collection
-            .find({ enabled: true })
+            .find({
+                enabled: true,
+                $or: [
+                    { routes: { $size: 0 } },
+                    { routes: route }
+                ]
+            })
             .sort({ zoneId: 1, order: 1 })
             .toArray();
 
-        const matches: IWidgetPlacement[] = [];
-        for (const doc of documents) {
-            if (routeMatches(doc.routes ?? [], route)) {
-                matches.push(toPublic(doc));
-            }
-        }
-
-        return matches;
+        return documents.map(toPublic);
     }
 
     async create(
@@ -210,6 +201,13 @@ export class PlacementService implements IPlacementService {
 
         if (source === 'plugin' && !options.pluginId) {
             throw new Error("Plugin-source placement requires options.pluginId");
+        }
+        if (source === 'operator' && options.pluginId !== undefined) {
+            throw new Error(
+                "Operator-source placement must not carry a pluginId — pluginId is only " +
+                "meaningful when source='plugin', and the sparse unique index on " +
+                "(typeId, pluginId) would collide with future plugin registrations."
+            );
         }
 
         const doc: Omit<IWidgetPlacementDocument, '_id'> = {
@@ -224,7 +222,7 @@ export class PlacementService implements IPlacementService {
         };
         if (input.title !== undefined) doc.title = input.title;
         if (input.instanceConfig !== undefined) doc.instanceConfig = input.instanceConfig;
-        if (options.pluginId !== undefined) doc.pluginId = options.pluginId;
+        if (source === 'plugin' && options.pluginId !== undefined) doc.pluginId = options.pluginId;
 
         const result = await collection.insertOne(doc as IWidgetPlacementDocument);
         const created = await collection.findOne({ _id: result.insertedId });

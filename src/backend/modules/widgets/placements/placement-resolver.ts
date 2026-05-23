@@ -125,10 +125,23 @@ export class PlacementResolver {
             const data = this.validateSerializable(raw, placement.typeId);
             if (data === null) return null;
 
+            // Resolve owning plugin id from the registry — the
+            // authoritative source — so operator placements (which
+            // omit `placement.pluginId`) and non-namespaced type ids
+            // both surface the correct frontend plugin context.
+            // Falls back to placement.pluginId only when the type
+            // isn't registered to anyone, which shouldn't happen
+            // because the type was just fetched from the registry
+            // above.
+            const owner =
+                this.widgetTypeRegistry.getOwnerPluginId(placement.typeId) ??
+                placement.pluginId ??
+                'unknown';
+
             return {
                 id: placement.typeId,
                 zone: placement.zoneId,
-                pluginId: placement.pluginId ?? type.id.split(':')[0] ?? 'unknown',
+                pluginId: owner,
                 order: placement.order,
                 title: placement.title,
                 data

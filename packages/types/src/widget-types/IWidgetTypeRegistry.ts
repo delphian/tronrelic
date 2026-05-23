@@ -102,6 +102,29 @@ export interface IWidgetTypeRegistry {
     get(typeId: string): IWidgetType | undefined;
 
     /**
+     * Return the plugin id that currently owns the given widget-type
+     * id, or `undefined` when the id is not registered.
+     *
+     * Used by the legacy `WidgetService` compatibility shim to
+     * distinguish three cases when a plugin registers a widget:
+     *
+     * - Owner equals the current plugin — same-plugin re-registration
+     *   (hot reload). Skip the registry call to avoid the
+     *   `defineWidgetType` duplicate-id throw; the existing
+     *   descriptor stays in place.
+     * - Owner is `undefined` — fresh registration. Mint a descriptor
+     *   and register it.
+     * - Owner is some other plugin — cross-plugin id collision.
+     *   Refuse to create the placement to prevent the new plugin's
+     *   placement from silently inheriting the first plugin's
+     *   data fetcher.
+     *
+     * @param typeId - Type id to query.
+     * @returns Owning plugin id, or `undefined` if unregistered.
+     */
+    getOwnerPluginId(typeId: string): string | undefined;
+
+    /**
      * Produce the introspection snapshot consumed by the admin
      * endpoint. The snapshot groups every registered type by
      * declaring plugin.

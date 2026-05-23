@@ -130,6 +130,14 @@ export function matchesFilter(doc: any, filter: Filter<any>): boolean {
                 return exists ? docValue !== undefined : docValue === undefined;
             }
 
+            // Handle $size operator: { field: { $size: N } } — matches
+            // arrays of length N. Returns false for non-array values.
+            if ('$size' in value) {
+                const size = (value as any).$size;
+                const docValue = getNestedValue(doc, key);
+                return Array.isArray(docValue) && docValue.length === size;
+            }
+
             // Handle $gte operator: { field: { $gte: value } }
             if ('$gte' in value) {
                 const gteValue = (value as any).$gte;

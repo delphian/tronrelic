@@ -148,6 +148,16 @@ export class WidgetTypeRegistry implements IWidgetTypeRegistry {
     }
 
     /**
+     * Return the plugin id that currently owns the given widget-type
+     * id, or `undefined` when unregistered. See `IWidgetTypeRegistry`
+     * JSDoc for the three-way decision the compat shim uses this for.
+     */
+    getOwnerPluginId(typeId: string): string | undefined {
+        const entry = this.types.get(typeId);
+        return entry?.pluginId;
+    }
+
+    /**
      * Produce the introspection snapshot consumed by the admin
      * endpoint. Groups every registered type by declaring plugin.
      */

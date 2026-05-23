@@ -251,6 +251,7 @@ export async function loadPlugins(
             // PluginManagerService.
             loaded.hooks.seal();
             loaded.zones.seal();
+            loaded.widgetTypes.seal();
 
             // Register widgets if defined
             if (plugin.widgets && plugin.widgets.length > 0) {

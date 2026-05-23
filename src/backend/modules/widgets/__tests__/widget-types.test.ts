@@ -137,6 +137,19 @@ describe('WidgetTypeRegistry.register', () => {
         expect(registry.get('test.plugin-type')).toBe(desc);
     });
 
+    it('exposes plugin ownership via getOwnerPluginId', () => {
+        const desc = defineWidgetType({
+            id: 'test.owned',
+            label: 'Owned',
+            description: '',
+            defaultDataFetcher: noopFetcher
+        });
+        registry.register('plugin-a', desc);
+
+        expect(registry.getOwnerPluginId('test.owned')).toBe('plugin-a');
+        expect(registry.getOwnerPluginId('test.unregistered')).toBeUndefined();
+    });
+
     it('refuses to overwrite a type declared by a different plugin', () => {
         const desc = defineWidgetType({ id: 'test.conflict', label: 'C', description: '', defaultDataFetcher: noopFetcher });
         registry.register('plugin-a', desc);

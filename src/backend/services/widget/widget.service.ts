@@ -170,11 +170,47 @@ export class WidgetService implements IWidgetService {
             return;
         }
 
-        // Register the widget type if this plugin hasn't claimed the
-        // id yet. Re-registration during the same lifecycle window
-        // is a plugin bug; we tolerate it silently because the
-        // legacy API allowed silent replacement.
-        if (!this.widgetTypeRegistry.has(config.id)) {
+        // Resolve current ownership of the widget-type id before
+        // routing into the registry. Three cases:
+        //
+        // - owner === pluginId: same plugin re-registering (hot
+        //   reload during the same lifecycle window). Skip the
+        //   registry call because `defineWidgetType` would throw on
+        //   the cached id; the existing descriptor stays in place.
+        // - owner === undefined: id is unclaimed. Mint a descriptor
+        //   and register it.
+        // - owner is some other plugin: cross-plugin id collision.
+        //   Refuse to register the type AND refuse to create the
+        //   placement, otherwise the new plugin's placement would
+        //   silently render the first plugin's `defaultDataFetcher`.
+        const currentOwner = this.widgetTypeRegistry.getOwnerPluginId(config.id);
+        if (currentOwner !== undefined && currentOwner !== pluginId) {
+            this.logger.error(
+                {
+                    widgetId: config.id,
+                    pluginId,
+                    existingOwner: currentOwner
+                },
+                'Refusing widget registration: type id is already owned by another plugin'
+            );
+            return;
+        }
+
+        if (currentOwner === pluginId) {
+            // Same-plugin re-registration within an open lifecycle
+            // window. The legacy service silently replaced the
+            // in-memory config; the new system keeps the original
+            // descriptor (and its data fetcher) intact. Flag this as
+            // a likely plugin bug — re-enable through the admin UI
+            // is the supported path for applying changed data
+            // fetchers.
+            this.logger.warn(
+                { widgetId: config.id, pluginId },
+                'Widget re-registered within the same lifecycle window; the original widget-type descriptor is preserved. Re-enable the plugin to apply a changed data fetcher.'
+            );
+        }
+
+        if (currentOwner === undefined) {
             try {
                 const descriptor = defineWidgetType({
                     id: config.id,
