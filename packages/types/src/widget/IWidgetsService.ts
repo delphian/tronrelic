@@ -31,10 +31,13 @@ import type {
 import type { IWidgetData } from './IWidgetData.js';
 
 /**
- * Disposer returned by a `register*` call. Invoking it removes the
- * registration. Disposers are collected by the plugin lifecycle so
- * `unregisterAllForOwner` can drop everything an owner registered in
- * one pass.
+ * Disposer returned by a `register*` call. Invoking it removes that
+ * specific registration — use it when a caller needs manual,
+ * fine-grained cleanup. For bulk teardown of every type, zone, and
+ * placement an owner registered, call
+ * `unregisterAllForOwner(ownerId)`; the registries dispose by
+ * ownerId, so there is no disposer ledger to maintain. The plugin
+ * lifecycle calls `unregisterAllForOwner` on disable.
  */
 export type WidgetsRegistrationDisposer = () => void;
 
@@ -54,7 +57,10 @@ export interface IRegisterWidgetTypeInput {
     /**
      * Called at SSR time with the request route and params. Must
      * return JSON-serialisable data quickly — a 5-second per-fetcher
-     * timeout is enforced. Errors resolve to empty data.
+     * timeout is enforced. On throw, timeout, or non-serialisable
+     * result the widget is logged and silently omitted from the
+     * rendered output; it is not replaced with an empty-data
+     * placeholder.
      */
     defaultDataFetcher: WidgetDataFetcher;
     /** Optional informational schema for the per-placement instanceConfig. */

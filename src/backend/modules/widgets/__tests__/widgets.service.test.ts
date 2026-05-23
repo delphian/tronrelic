@@ -254,6 +254,40 @@ describe('WidgetsService.registerWidget', () => {
         expect(list).toHaveLength(1);
         expect(list[0].zoneId).toBe('unknown-zone');
     });
+
+    it('refuses to upsert a placement for a typeId owned by a different plugin', async () => {
+        const { widgets } = buildWidgetsService();
+        widgets.registerZone({
+            id: 'main-after', label: 'm', description: 'm', host: 'core'
+        }, 'core');
+
+        await widgets.registerWidget({
+            id: 'shared:feed',
+            label: 'Feed A',
+            description: 'A',
+            defaultZoneId: 'main-after',
+            defaultRoutes: ['/'],
+            defaultDataFetcher: async () => ({ owner: 'a' })
+        }, 'plugin-a');
+
+        await expect(widgets.registerWidget({
+            id: 'shared:feed',
+            label: 'Feed B',
+            description: 'B',
+            defaultZoneId: 'main-after',
+            defaultRoutes: ['/'],
+            defaultDataFetcher: async () => ({ owner: 'b' })
+        }, 'plugin-b')).rejects.toThrow(/already owned by plugin "plugin-a"/);
+
+        // Plugin B must not have a placement and must not have poisoned the cache.
+        const bPlacements = await widgets.listPlacements({ pluginId: 'plugin-b' });
+        expect(bPlacements).toHaveLength(0);
+
+        // Plugin A's placement and type are unchanged.
+        const aPlacements = await widgets.listPlacements({ pluginId: 'plugin-a' });
+        expect(aPlacements).toHaveLength(1);
+        expect(aPlacements[0].typeId).toBe('shared:feed');
+    });
 });
 
 describe('WidgetsService.unregisterAllForOwner', () => {

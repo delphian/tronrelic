@@ -23,6 +23,13 @@ import type {
     IPlacementListFilter
 } from '@/types';
 import { normaliseRoutePattern } from '../placements/route-matcher.js';
+import {
+    MissingPluginDefaultsError,
+    PluginPlacementDeletionForbiddenError,
+    RestoreDefaultsOnOperatorRowError,
+    UnknownWidgetTypeError,
+    UnknownZoneError
+} from '../widgets.errors.js';
 
 /**
  * Upper bound on a placement's `order` field. Lower numbers render
@@ -137,7 +144,7 @@ export class PlacementsController {
             const placement = await this.widgets.createPlacement(parsed.input);
             res.status(201).json({ success: true, placement });
         } catch (err) {
-            if (err instanceof Error && err.message.startsWith('Unknown ')) {
+            if (err instanceof UnknownWidgetTypeError || err instanceof UnknownZoneError) {
                 res.status(400).json({ success: false, error: err.message });
                 return;
             }
@@ -164,7 +171,7 @@ export class PlacementsController {
             }
             res.json({ success: true, placement });
         } catch (err) {
-            if (err instanceof Error && err.message.startsWith('Unknown ')) {
+            if (err instanceof UnknownZoneError) {
                 res.status(400).json({ success: false, error: err.message });
                 return;
             }
@@ -185,7 +192,7 @@ export class PlacementsController {
             }
             res.status(204).end();
         } catch (err) {
-            if (err instanceof Error && err.message.startsWith('Plugin-source placements cannot be deleted')) {
+            if (err instanceof PluginPlacementDeletionForbiddenError) {
                 res.status(400).json({ success: false, error: err.message });
                 return;
             }
@@ -206,15 +213,13 @@ export class PlacementsController {
             }
             res.json({ success: true, placement });
         } catch (err) {
-            if (err instanceof Error) {
-                if (err.message.startsWith('restorePluginDefaults is only valid')) {
-                    res.status(400).json({ success: false, error: err.message });
-                    return;
-                }
-                if (err.message.startsWith('No cached plugin defaults')) {
-                    res.status(409).json({ success: false, error: err.message });
-                    return;
-                }
+            if (err instanceof RestoreDefaultsOnOperatorRowError) {
+                res.status(400).json({ success: false, error: err.message });
+                return;
+            }
+            if (err instanceof MissingPluginDefaultsError) {
+                res.status(409).json({ success: false, error: err.message });
+                return;
             }
             this.logger.error({ err, id: req.params.id }, 'Failed to restore plugin defaults');
             res.status(500).json({ success: false, error: 'Failed to restore plugin defaults' });

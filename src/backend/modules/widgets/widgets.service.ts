@@ -39,14 +39,22 @@ import type {
     IWidgetPlacement,
     IPlacementInput,
     IPlacementListFilter,
-    IPlacementPatch
+    IPlacementPatch,
+    IZoneRegistry,
+    IWidgetTypeRegistry,
+    IPlacementService
 } from '@/types';
-import type { IZoneRegistry } from '../../../../packages/types/src/widget-zones/IZoneRegistry.js';
-import type { IWidgetTypeRegistry } from '../../../../packages/types/src/widget-types/IWidgetTypeRegistry.js';
-import type { IPlacementService } from '../../../../packages/types/src/widget-placements/IPlacementService.js';
 import type { PlacementResolver } from './placements/placement-resolver.js';
 import { defineZone } from './zones/define-zone.js';
 import { defineWidgetType } from './widget-types/define-widget-type.js';
+import {
+    MissingPluginDefaultsError,
+    PluginPlacementDeletionForbiddenError,
+    RestoreDefaultsOnOperatorRowError,
+    UnknownWidgetTypeError,
+    UnknownZoneError,
+    WidgetTypeOwnerConflictError
+} from './widgets.errors.js';
 
 /** Reserved owner id for core-declared zones and types. */
 const CORE_OWNER = 'core';
@@ -236,20 +244,32 @@ export class WidgetsService implements IWidgetsService {
             );
         }
 
-        // Capture the original args before any registry mutation so a
-        // mid-registration failure still leaves a recoverable cache
-        // entry for restore-defaults.
-        const cacheKey = `${ownerId}::${input.id}`;
-        if (!this.pluginDefaults.has(cacheKey)) {
-            this.pluginDefaults.set(cacheKey, {
-                ownerId,
-                typeId: input.id,
-                zoneId: input.defaultZoneId,
-                routes: [...input.defaultRoutes],
-                order: input.defaultOrder ?? DEFAULT_ORDER,
-                title: input.defaultTitle
-            });
+        // Refuse to create a plugin-source placement for a typeId
+        // already owned by a different plugin. Without this guard plugin
+        // B could upsert a placement keyed on ownerId=B that renders
+        // plugin A's data fetcher at SSR time. Trust-based registration
+        // makes the explicit ownership check the only safe gate.
+        const existingOwner = this.widgetTypes.getOwnerPluginId(input.id);
+        if (existingOwner !== undefined && existingOwner !== ownerId) {
+            throw new WidgetTypeOwnerConflictError(input.id, existingOwner, ownerId);
         }
+
+        // Capture the most-recent args before any registry mutation so
+        // a mid-registration failure still leaves a recoverable cache
+        // entry for restore-defaults. Overwrite on every call so that
+        // a plugin re-enabled with updated defaults (e.g. a bumped
+        // `defaultOrder`) propagates the new values into the
+        // restore-defaults path instead of reverting to whatever was
+        // in effect at the first registration.
+        const cacheKey = `${ownerId}::${input.id}`;
+        this.pluginDefaults.set(cacheKey, {
+            ownerId,
+            typeId: input.id,
+            zoneId: input.defaultZoneId,
+            routes: [...input.defaultRoutes],
+            order: input.defaultOrder ?? DEFAULT_ORDER,
+            title: input.defaultTitle
+        });
 
         // Register the type if it isn't already (same-owner repeat
         // calls reuse the existing descriptor — handled by
@@ -295,9 +315,42 @@ export class WidgetsService implements IWidgetsService {
             return;
         }
 
-        const placementCount = await this.placements.softDisableForPlugin(ownerId);
-        const typeCount = this.widgetTypes.disposeForPlugin(ownerId);
-        const zoneCount = this.zones.disposeForPlugin(ownerId);
+        // Each teardown phase runs independently. A failure in one
+        // phase — most plausibly a transient Mongo error in
+        // softDisableForPlugin — must not skip disposal of the
+        // in-memory type and zone registries. Otherwise the plugin
+        // manager would mark the plugin disabled while live type/zone
+        // descriptors remain discoverable and renderable.
+        let placementCount = 0;
+        let typeCount = 0;
+        let zoneCount = 0;
+
+        try {
+            placementCount = await this.placements.softDisableForPlugin(ownerId);
+        } catch (err) {
+            this.logger.error(
+                { err, ownerId },
+                'Failed to soft-disable plugin placements; continuing with in-memory registry teardown'
+            );
+        }
+
+        try {
+            typeCount = this.widgetTypes.disposeForPlugin(ownerId);
+        } catch (err) {
+            this.logger.error(
+                { err, ownerId },
+                'Failed to dispose plugin widget types'
+            );
+        }
+
+        try {
+            zoneCount = this.zones.disposeForPlugin(ownerId);
+        } catch (err) {
+            this.logger.error(
+                { err, ownerId },
+                'Failed to dispose plugin zones'
+            );
+        }
 
         if (placementCount > 0 || typeCount > 0 || zoneCount > 0) {
             this.logger.info(
@@ -323,10 +376,10 @@ export class WidgetsService implements IWidgetsService {
 
     async createPlacement(input: IPlacementInput): Promise<IWidgetPlacement> {
         if (!this.widgetTypes.has(input.typeId)) {
-            throw new Error(`Unknown widget type '${input.typeId}'`);
+            throw new UnknownWidgetTypeError(input.typeId);
         }
         if (!this.zones.has(input.zoneId)) {
-            throw new Error(`Unknown zone '${input.zoneId}'`);
+            throw new UnknownZoneError(input.zoneId);
         }
         return this.placements.create(input);
     }
@@ -336,7 +389,7 @@ export class WidgetsService implements IWidgetsService {
         patch: IPlacementPatch
     ): Promise<IWidgetPlacement | null> {
         if (patch.zoneId !== undefined && !this.zones.has(patch.zoneId)) {
-            throw new Error(`Unknown zone '${patch.zoneId}'`);
+            throw new UnknownZoneError(patch.zoneId);
         }
         return this.placements.update(id, patch);
     }
@@ -345,9 +398,7 @@ export class WidgetsService implements IWidgetsService {
         const existing = await this.placements.findById(id);
         if (!existing) return false;
         if (existing.source === 'plugin') {
-            throw new Error(
-                'Plugin-source placements cannot be deleted. Disable the plugin or update the placement to enabled: false instead.'
-            );
+            throw new PluginPlacementDeletionForbiddenError();
         }
         return this.placements.delete(id);
     }
@@ -356,15 +407,12 @@ export class WidgetsService implements IWidgetsService {
         const existing = await this.placements.findById(id);
         if (!existing) return null;
         if (existing.source !== 'plugin' || !existing.pluginId) {
-            throw new Error('restorePluginDefaults is only valid on plugin-source placements');
+            throw new RestoreDefaultsOnOperatorRowError();
         }
 
         const defaults = this.pluginDefaults.get(`${existing.pluginId}::${existing.typeId}`);
         if (!defaults) {
-            throw new Error(
-                `No cached plugin defaults for '${existing.pluginId}::${existing.typeId}'. ` +
-                `Re-enable the plugin in this process to repopulate the cache.`
-            );
+            throw new MissingPluginDefaultsError(existing.pluginId, existing.typeId);
         }
 
         return this.placements.restoreToPluginDefaults(id, {
