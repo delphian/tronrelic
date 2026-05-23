@@ -45,11 +45,11 @@ Base path: `/api/admin/system/widgets`.
 
 `GET /placements` accepts query params `zoneId`, `pluginId`, `source` (`plugin`\|`operator`), and `enabledOnly` (`true`\|`1`).
 
-`POST /placements` always creates an operator-source row. Plugin-source rows are created exclusively by the legacy widget-service compatibility shim during plugin enable.
+`POST /placements` always creates an operator-source row. Plugin-source rows are created exclusively by plugins calling `IWidgetsService.registerWidget(input, pluginId)` on the `'widgets'` service during plugin enable.
 
 `DELETE /placements/:id` refuses plugin-source rows with 400 — the supported reversals are disable (`PATCH { enabled: false }`) and restore-defaults. Operator rows delete cleanly.
 
-`POST /placements/:id/restore-defaults` is only valid on plugin-source rows. It looks up the plugin's cached registration args (captured the first time the plugin called `widgetService.register(...)` in this process) and applies them as a single update, re-enabling the row. Returns 409 when the cache lookup misses — re-enable the plugin to repopulate.
+`POST /placements/:id/restore-defaults` is only valid on plugin-source rows. It looks up the plugin's cached registration args (captured the first time the plugin called `IWidgetsService.registerWidget(...)` in this process) and applies them as a single update, re-enabling the row. Returns 409 when the cache lookup misses — re-enable the plugin to repopulate.
 
 ## Validation Rules
 

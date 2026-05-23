@@ -16,8 +16,16 @@ export type { ICacheService } from './services/ICacheService.js';
 export type { IServiceRegistry, IServiceWatchHandlers, ServiceWatchDisposer } from './services/IServiceRegistry.js';
 export type { ISignatureService } from './services/ISignatureService.js';
 export type { IMenuNode, IMenuNodeWithChildren, IMenuTree, IMenuValidation, MenuEventType, IMenuEvent, MenuEventSubscriber, IMenuService, IMenuNamespaceConfig, MenuNodeOrigin, IMenuNodeAdminView, IMenuNodeAdminViewWithChildren, IMenuTreeAdminView } from './menu/index.js';
-export { WIDGET_ZONES } from './widget/index.js';
-export type { IWidgetConfig, WidgetZone, IWidgetData, IWidgetService, IWidgetComponentProps, WidgetComponent } from './widget/index.js';
+export type {
+    IWidgetData,
+    IWidgetComponentProps,
+    WidgetComponent,
+    IWidgetsService,
+    IRegisterWidgetTypeInput,
+    IRegisterZoneInput,
+    IRegisterWidgetInput,
+    WidgetsRegistrationDisposer
+} from './widget/index.js';
 export type { ISystemConfig, ISystemConfigService } from './system-config/index.js';
 export type { ISystemLogService, ISystemLogQuery, ISystemLogPaginatedResponse, ISaveLogData, LogLevel } from './system-log/index.js';
 export { LOG_LEVELS, shouldLog, type LogLevelName } from './system-log/index.js';
@@ -61,31 +69,35 @@ export { HookAbortError, isHookAbortError } from './hooks/index.js';
 export type { IHeadFragment, HeadFragmentTag, ISsrHeadContext } from './ssr/index.js';
 export type {
     IZoneDescriptor,
-    IDefineZoneOptions,
     ZoneHost,
     ZoneLayout,
-    ZoneRegisterDisposer,
-    IZoneRegistry,
     IZoneSnapshot,
     IZoneSnapshotRecord,
-    IPluginZones
+    // Internal — used only by widgets-module implementation. Consumers
+    // (plugins, other modules) reach zone state through IWidgetsService.
+    IZoneRegistry,
+    IDefineZoneOptions,
+    ZoneRegisterDisposer
 } from './widget-zones/index.js';
 export type {
     IWidgetType,
-    IDefineWidgetTypeOptions,
     WidgetDataFetcher,
-    WidgetTypeRegisterDisposer,
-    IWidgetTypeRegistry,
     IWidgetTypeSnapshot,
     IWidgetTypeSnapshotRecord,
-    IPluginWidgetTypes
+    // Internal — used only by widgets-module implementation. Consumers
+    // (plugins, other modules) reach widget-type state through IWidgetsService.
+    IWidgetTypeRegistry,
+    IDefineWidgetTypeOptions,
+    WidgetTypeRegisterDisposer
 } from './widget-types/index.js';
 export type {
     IWidgetPlacement,
     IPlacementInput,
-    IPluginPlacementInput,
     PlacementSource,
-    IPlacementService,
     IPlacementListFilter,
-    IPlacementPatch
+    IPlacementPatch,
+    // Internal — used only by widgets-module implementation. Consumers
+    // reach placement operations through IWidgetsService.
+    IPlacementService,
+    IPluginPlacementInput
 } from './widget-placements/index.js';

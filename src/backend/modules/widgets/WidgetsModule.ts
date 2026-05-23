@@ -1,25 +1,23 @@
 /**
  * @fileoverview Widget module — IModule implementation.
  *
- * Owns three subsystems: the widget-zone registry (bootstrap-
- * instantiated), the widget-type registry (also bootstrap-instantiated,
- * plugin-declared types), and the placement-persistence layer that
- * records every operator- or plugin-source placement in MongoDB and
- * resolves them at SSR time. The legacy `WidgetService` is a
- * compatibility shim that delegates type registration and placement
- * upsert/disable/fetch to this module's services, keeping every
- * existing plugin working without code change.
+ * Owns every concern of the widget subsystem: the zone registry, the
+ * widget-type registry, the placement service (MongoDB), and the SSR
+ * placement resolver. None of those are exposed outside the module;
+ * the single public surface is `IWidgetsService`, registered on the
+ * service registry as `'widgets'` during `run()`.
  *
- * The module also mounts the admin REST surface: a read-only
- * zone-introspection endpoint, a read-only widget-type introspection
- * endpoint, and a full CRUD endpoint set for placements. Together
- * these power the `/system/widgets` operator UI.
+ * Consumers — plugins, core modules, admin controllers, the SSR
+ * router — reach widget functionality exclusively through
+ * `context.services.get<IWidgetsService>('widgets')`. The legacy
+ * `WidgetService` shim, the per-plugin `context.zones` /
+ * `context.widgetTypes` facades, and the `IWidgetConfig` type are all
+ * gone.
  *
  * Mutations to placements broadcast a `widgets:placements-update`
- * refetch signal over WebSocket so connected clients — including
- * public pages rendering widgets — pick up changes without a hard
- * reload. The broadcast callback is wired here so the placement
- * service has no direct dependency on `WebSocketService`.
+ * refetch signal over WebSocket so connected clients pick up changes
+ * without a hard reload. The broadcast callback is wired here so the
+ * placement service has no direct dependency on `WebSocketService`.
  *
  * @module backend/modules/widgets/WidgetsModule
  */
@@ -29,10 +27,9 @@ import type {
     IModule,
     IModuleMetadata,
     IDatabaseService,
-    IZoneRegistry,
-    IWidgetTypeRegistry,
     IMenuService,
-    ISystemLogService
+    ISystemLogService,
+    IServiceRegistry
 } from '@/types';
 import { logger } from '../../lib/logger.js';
 import { requireAdmin } from '../../api/middleware/admin-auth.js';
@@ -45,26 +42,26 @@ import { WidgetTypesController } from './api/widget-types.controller.js';
 import { createWidgetTypesAdminRouter } from './api/widget-types.routes.js';
 import { PlacementService } from './placements/placement.service.js';
 import { PlacementResolver } from './placements/placement-resolver.js';
-import { WidgetService } from '../../services/widget/widget.service.js';
+import { ZoneRegistry } from './zones/zone-registry.js';
+import { WidgetTypeRegistry } from './widget-types/widget-type-registry.js';
+import { WidgetsService } from './widgets.service.js';
+import { CORE_ZONE_DESCRIPTORS } from './zones/descriptors.js';
 import { WebSocketService } from '../../services/websocket.service.js';
 import { MAIN_SYSTEM_CONTAINER_ID } from '../menu/index.js';
 
 /**
  * Dependencies required by the widgets module.
  *
- * `zoneRegistry` and `widgetTypeRegistry` are constructed in
- * `bootstrapInit` and threaded through `sharedDeps` so both this
- * module and the plugin loader receive the same instances. `database`
- * is the platform-shared `IDatabaseService` the placement service
- * uses for the `module_widgets_placements` collection. `menuService`
- * is the navigation singleton — the module seeds the `/system/widgets`
- * admin menu entry during `run()`.
+ * The internal registries (`ZoneRegistry`, `WidgetTypeRegistry`) are
+ * constructed inside `init()` — bootstrap no longer pre-creates them.
+ * `serviceRegistry` is the publication channel for the unified
+ * `'widgets'` service; `database` backs the placement collection;
+ * `menuService` seeds the admin menu entry; `app` mounts the admin
+ * routers.
  */
 export interface IWidgetsModuleDependencies {
-    /** Shared process-wide zone registry. */
-    zoneRegistry: IZoneRegistry;
-    /** Shared process-wide widget-type registry. */
-    widgetTypeRegistry: IWidgetTypeRegistry;
+    /** Shared process-wide service registry where `'widgets'` is published. */
+    serviceRegistry: IServiceRegistry;
     /** Database service for placement persistence. */
     database: IDatabaseService;
     /** Menu service for seeding the admin menu entry. */
@@ -77,54 +74,52 @@ export interface IWidgetsModuleDependencies {
  * Widgets module class.
  *
  * Lifecycle:
- * - `init()` — store deps, configure the `PlacementService` singleton,
- *   construct the `PlacementResolver`, wire the legacy `WidgetService`
- *   compat shim, and bind the placement broadcast callback to
- *   `WebSocketService`.
- * - `run()` — mount the admin routers and seed the System menu entry.
+ * - `init()` — instantiate internal registries, configure the
+ *   `PlacementService` singleton, build the resolver, configure the
+ *   `WidgetsService` singleton, wire admin controllers, wire the
+ *   placement broadcast callback.
+ * - `run()` — publish `'widgets'` on the service registry, register
+ *   the core zone catalog through it, mount the admin routers, seed
+ *   the System menu entry.
  */
 export class WidgetsModule implements IModule<IWidgetsModuleDependencies> {
     readonly metadata: IModuleMetadata = {
         id: 'widgets',
         name: 'Widgets',
-        version: '2.1.0',
-        description: 'Widget zone registry, widget type catalog, placement persistence, and admin REST.'
+        version: '3.0.0',
+        description: 'Unified IWidgetsService — zones, widget types, placements, and SSR resolution behind a single registry-published service.'
     };
 
-    private zoneRegistry!: IZoneRegistry;
-    private widgetTypeRegistry!: IWidgetTypeRegistry;
+    private serviceRegistry!: IServiceRegistry;
     private database!: IDatabaseService;
     private menuService!: IMenuService;
     private app!: Express;
+    private zoneRegistry!: ZoneRegistry;
+    private widgetTypeRegistry!: WidgetTypeRegistry;
+    private placementService!: PlacementService;
+    private placementResolver!: PlacementResolver;
+    private widgetsService!: WidgetsService;
     private zonesController!: ZonesController;
     private placementsController!: PlacementsController;
     private widgetTypesController!: WidgetTypesController;
-    private placementService!: PlacementService;
-    private placementResolver!: PlacementResolver;
-    private widgetService!: WidgetService;
 
     private readonly logger: ISystemLogService = logger.child({ module: 'widgets' });
 
     /**
      * Initialise the module.
      *
-     * Wires the placement subsystem, the legacy `WidgetService`
-     * compatibility shim, and the placement-broadcast callback so
-     * that by the time `loadPlugins(...)` runs every plugin
-     * registration routes into the new infrastructure with WebSocket
-     * notifications already in place.
-     *
-     * @param dependencies - Injected dependencies.
-     * @throws Error if any dependency is missing.
+     * Builds the four internal collaborators, wires the placement
+     * broadcast callback, and constructs the unified `WidgetsService`
+     * via its singleton `setDependencies` setter. The service is not
+     * yet on the registry — that happens in `run()` so peer modules
+     * that depend on widgets at boot do so through the registry,
+     * preserving service-registry discipline.
      */
     async init(dependencies: IWidgetsModuleDependencies): Promise<void> {
         this.logger.info('Initializing widgets module...');
 
-        if (!dependencies.zoneRegistry) {
-            throw new Error('WidgetsModule requires zoneRegistry dependency');
-        }
-        if (!dependencies.widgetTypeRegistry) {
-            throw new Error('WidgetsModule requires widgetTypeRegistry dependency');
+        if (!dependencies.serviceRegistry) {
+            throw new Error('WidgetsModule requires serviceRegistry dependency');
         }
         if (!dependencies.database) {
             throw new Error('WidgetsModule requires database dependency');
@@ -136,14 +131,19 @@ export class WidgetsModule implements IModule<IWidgetsModuleDependencies> {
             throw new Error('WidgetsModule requires app dependency');
         }
 
-        this.zoneRegistry = dependencies.zoneRegistry;
-        this.widgetTypeRegistry = dependencies.widgetTypeRegistry;
+        this.serviceRegistry = dependencies.serviceRegistry;
         this.database = dependencies.database;
         this.menuService = dependencies.menuService;
         this.app = dependencies.app;
 
-        this.zonesController = new ZonesController(this.zoneRegistry, this.logger);
+        // Internal registries — runtime-only, rebuilt from registrations
+        // every process start. The new model gives them no public
+        // exposure; only `WidgetsService` reaches them.
+        this.zoneRegistry = new ZoneRegistry(this.logger);
+        this.widgetTypeRegistry = new WidgetTypeRegistry(this.logger);
 
+        // Placement service is singleton-backed — `setDependencies`
+        // resolves to a no-op on hot-reload. Resolver is plain.
         PlacementService.setDependencies(this.database, this.logger);
         this.placementService = PlacementService.getInstance();
         this.placementResolver = new PlacementResolver(
@@ -152,12 +152,10 @@ export class WidgetsModule implements IModule<IWidgetsModuleDependencies> {
             this.logger
         );
 
-        // Wire the broadcast callback that fires after every
-        // placement mutation. The `WebSocketService` singleton is
-        // initialised earlier in `bootstrapInit()` (gated by
-        // `ENABLE_WEBSOCKETS`); when WebSockets are disabled the
-        // service is a no-op so the placement service still
-        // executes mutations cleanly.
+        // Wire the broadcast callback that fires after every placement
+        // mutation. `WebSocketService` is initialised earlier in
+        // bootstrap; when WebSockets are disabled the service is a
+        // no-op so placement writes still execute cleanly.
         this.placementService.setBroadcast((event, payload) => {
             const wsService = WebSocketService.getInstance();
             wsService.emit({
@@ -171,51 +169,55 @@ export class WidgetsModule implements IModule<IWidgetsModuleDependencies> {
             });
         });
 
-        // Wire the legacy `WidgetService` compatibility shim. The
-        // singleton was constructed earlier during the plugin loader
-        // setup, but its widget-type and placement back-ends only
-        // become populated here. Plugin registrations during
-        // `loadPlugins(...)` (which runs after every module's
-        // `run()`) therefore see the fully-wired shim with the
-        // broadcast callback already firing.
-        this.widgetService = WidgetService.getInstance(this.logger);
-        this.widgetService.setZoneRegistry(this.zoneRegistry);
-        this.widgetService.setWidgetTypeRegistry(this.widgetTypeRegistry);
-        this.widgetService.setPlacementService(this.placementService);
-        this.widgetService.setPlacementResolver(this.placementResolver);
-
-        // Admin REST controllers. The placements controller pulls
-        // plugin defaults through `widgetService.getPluginDefault`
-        // so it does not import the legacy service directly.
-        this.placementsController = new PlacementsController({
-            placements: this.placementService,
-            zones: this.zoneRegistry,
-            widgetTypes: this.widgetTypeRegistry,
-            getPluginDefault: (pluginId, typeId) =>
-                this.widgetService.getPluginDefault(pluginId, typeId),
-            logger: this.logger
-        });
-        this.widgetTypesController = new WidgetTypesController(
+        // Singleton-backed unified widgets service. Composes the four
+        // internal collaborators behind one IWidgetsService surface.
+        WidgetsService.setDependencies(
+            this.zoneRegistry,
             this.widgetTypeRegistry,
+            this.placementService,
+            this.placementResolver,
             this.logger
         );
+        this.widgetsService = WidgetsService.getInstance();
+
+        // Admin controllers consume the unified service exclusively —
+        // they no longer reach into the registries or placement
+        // service directly.
+        this.zonesController = new ZonesController(this.widgetsService, this.logger);
+        this.widgetTypesController = new WidgetTypesController(this.widgetsService, this.logger);
+        this.placementsController = new PlacementsController(this.widgetsService, this.logger);
 
         this.logger.info('Widgets module initialized');
     }
 
     /**
-     * Activate the module — mount admin routers and seed the System
-     * menu entry.
+     * Activate the module.
      *
-     * Three admin routers mount in parallel namespaces under
-     * `/api/admin/system/`: `zones` (introspection), `widget-types`
-     * (introspection), and `widgets/placements` (CRUD). Each gets the
-     * platform-default admin rate limiter applied before
-     * `requireAdmin` so the brute-force cost against the auth gate
-     * stays bounded per IP.
+     * Publishes `'widgets'` on the service registry, registers the
+     * core zone catalog through the public service (so core uses the
+     * same code path plugins do), mounts the three admin routers, and
+     * seeds the System menu entry.
      */
     async run(): Promise<void> {
         this.logger.info('Running widgets module...');
+
+        // Publish the single public surface. Done first so any code
+        // that runs synchronously below (none currently) and every
+        // subsequent plugin init can consume the service through the
+        // registry without a fallback.
+        this.serviceRegistry.register('widgets', this.widgetsService);
+        this.logger.info("Registered IWidgetsService on service registry as 'widgets'");
+
+        // Register the core zone catalog. Plain-data descriptors are
+        // routed through the public service so the registry's
+        // admission flow is the same one plugins exercise.
+        for (const descriptor of CORE_ZONE_DESCRIPTORS) {
+            this.widgetsService.registerZone(descriptor, 'core');
+        }
+        this.logger.info(
+            { coreZoneCount: CORE_ZONE_DESCRIPTORS.length },
+            'Core zone catalog registered'
+        );
 
         const zonesRouter: Router = createZonesAdminRouter(this.zonesController);
         this.app.use(
@@ -263,45 +265,14 @@ export class WidgetsModule implements IModule<IWidgetsModuleDependencies> {
     }
 
     /**
-     * Accessor for the zone registry, exposed for tests and tooling.
+     * Accessor for the unified widgets service. Exposed for tests and
+     * tooling that need direct access — production code consumes the
+     * service through the service registry.
      */
-    getZoneRegistry(): IZoneRegistry {
-        if (!this.zoneRegistry) {
+    getWidgetsService(): WidgetsService {
+        if (!this.widgetsService) {
             throw new Error('WidgetsModule not initialized - call init() first');
         }
-        return this.zoneRegistry;
-    }
-
-    /**
-     * Accessor for the widget-type registry, exposed for tests and
-     * tooling.
-     */
-    getWidgetTypeRegistry(): IWidgetTypeRegistry {
-        if (!this.widgetTypeRegistry) {
-            throw new Error('WidgetsModule not initialized - call init() first');
-        }
-        return this.widgetTypeRegistry;
-    }
-
-    /**
-     * Accessor for the placement service, exposed for tests, admin
-     * tooling, and any forthcoming CRUD endpoints.
-     */
-    getPlacementService(): PlacementService {
-        if (!this.placementService) {
-            throw new Error('WidgetsModule not initialized - call init() first');
-        }
-        return this.placementService;
-    }
-
-    /**
-     * Accessor for the SSR placement resolver. The compat-shim widget
-     * service delegates `fetchWidgetsForRoute` here.
-     */
-    getPlacementResolver(): PlacementResolver {
-        if (!this.placementResolver) {
-            throw new Error('WidgetsModule not initialized - call init() first');
-        }
-        return this.placementResolver;
+        return this.widgetsService;
     }
 }

@@ -4,7 +4,7 @@ Frontend widget authoring — exporting components, the SSR + Live Updates patte
 
 ## Why This Matters
 
-Widgets are extra vulnerable to hydration mismatch: SSR data arrives via `fetchData`, but a component that re-fetches on mount or initializes empty state renders blank on the client while the server rendered content. React aborts hydration and the widget either flashes empty or fails outright. The rules below close that gap.
+Widgets are extra vulnerable to hydration mismatch: SSR data arrives via the widget type's data fetcher, but a component that re-fetches on mount or initializes empty state renders blank on the client while the server rendered content. React aborts hydration and the widget either flashes empty or fails outright. The rules below close that gap.
 
 ## Component Registry
 
@@ -30,7 +30,7 @@ If no component is registered for a widget ID, dev mode falls back to a JSON dum
 
 ```typescript
 interface IWidgetComponentProps {
-    data: unknown;                   // SSR-fetched payload from fetchData()
+    data: unknown;                   // SSR-fetched payload from the widget type's defaultDataFetcher
     context: IFrontendPluginContext; // UI primitives, API client, WebSocket
     route: string;                   // Current URL, e.g. '/u/TXyz...'
     params: Record<string, string>;  // Extracted route params

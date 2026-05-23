@@ -31,7 +31,7 @@ import { LogsModule } from './modules/logs/index.js';
 import { DatabaseModule } from './modules/database/index.js';
 import { ClickHouseModule } from './modules/clickhouse/index.js';
 import { PagesModule } from './modules/pages/index.js';
-import { WidgetsModule, ZoneRegistry, WidgetTypeRegistry } from './modules/widgets/index.js';
+import { WidgetsModule } from './modules/widgets/index.js';
 import { UserModule } from './modules/user/index.js';
 import { AddressLabelsModule } from './modules/address-labels/index.js';
 import { ToolsModule } from './modules/tools/index.js';
@@ -45,7 +45,7 @@ import { UsdtParametersService } from './modules/usdt-parameters/usdt-parameters
 import { createApiRouter } from './api/routes/index.js';
 import { PluginManagerService } from './services/plugin-manager.service.js';
 import type { Express } from 'express';
-import type { IDatabaseService, IMenuService, IMenuNode, IPluginManifest, IServiceRegistry, IHookRegistry, IZoneRegistry, IWidgetTypeRegistry } from '@/types';
+import type { IDatabaseService, IMenuService, IMenuNode, IPluginManifest, IServiceRegistry, IHookRegistry } from '@/types';
 import axios from 'axios';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -143,7 +143,7 @@ async function bootstrap(): Promise<void> {
             await logger.waitUntilInitialized();
             // Pass scheduler to plugins for context.scheduler injection
             const scheduler = ctx.modules.scheduler.getSchedulerService();
-            await loadPlugins(ctx.coreDatabase, scheduler, ctx.serviceRegistry, ctx.hookRegistry, ctx.zoneRegistry, ctx.widgetTypeRegistry);
+            await loadPlugins(ctx.coreDatabase, scheduler, ctx.serviceRegistry, ctx.hookRegistry);
         } catch (pluginError) {
             logger.error({ pluginError, stack: pluginError instanceof Error ? pluginError.stack : undefined }, 'Plugin initialization failed');
         }
@@ -214,8 +214,6 @@ interface BootstrapContext {
     menuService: IMenuService;
     serviceRegistry: IServiceRegistry;
     hookRegistry: IHookRegistry;
-    zoneRegistry: IZoneRegistry;
-    widgetTypeRegistry: IWidgetTypeRegistry;
     modules: {
         database: DatabaseModule;
         clickhouse: ClickHouseModule;
@@ -290,20 +288,6 @@ async function bootstrapInit(): Promise<BootstrapContext> {
     // both are available to the plugin loader.
     const hookRegistry = new HookRegistry(logger);
 
-    // Zone registry is process-wide infrastructure for the widget system —
-    // core zone descriptors declared at module load (see modules/widgets/
-    // zones/descriptors.ts) auto-populate on construction. Threaded into
-    // both the WidgetsModule (for admin introspection) and the plugin loader
-    // (for the per-plugin facade exposed on context.zones).
-    const zoneRegistry = new ZoneRegistry(logger);
-
-    // Widget-type registry stores the renderable widget types plugins
-    // declare via context.widgetTypes.register(...). Mirrors the zone
-    // registry's bootstrap-owned shape so the plugin loader's facade
-    // construction and WidgetsModule's placement resolver receive the
-    // same instance.
-    const widgetTypeRegistry = new WidgetTypeRegistry(logger);
-
     // Register shared infrastructure on the service registry so modules and
     // plugins can discover them via late-binding DI instead of importing
     // concrete classes.
@@ -316,7 +300,7 @@ async function bootstrapInit(): Promise<BootstrapContext> {
 
     const cacheService = new CacheService(getRedisClient(), coreDatabase);
 
-    const sharedDeps = { database: coreDatabase, cacheService, menuService, serviceRegistry, hookRegistry, zoneRegistry, widgetTypeRegistry, app };
+    const sharedDeps = { database: coreDatabase, cacheService, menuService, serviceRegistry, hookRegistry, app };
 
     const logsModule = new LogsModule();
     const pagesModule = new PagesModule();
@@ -343,8 +327,6 @@ async function bootstrapInit(): Promise<BootstrapContext> {
         menuService,
         serviceRegistry,
         hookRegistry,
-        zoneRegistry,
-        widgetTypeRegistry,
         modules: {
             database: databaseModule,
             clickhouse: clickHouseModule,

@@ -1,11 +1,10 @@
 /**
- * @fileoverview Widget-type subsystem barrel.
+ * @fileoverview Widget-type subsystem barrel — internal to the widgets module.
  *
- * Public exports for the widget-type subsystem — the
- * `defineWidgetType` constructor, the runtime `WidgetTypeRegistry`,
- * and the per-plugin `PluginWidgetTypes` facade. Consumed by
- * `WidgetsModule`, the plugin loader, the placement resolver, and the
- * compat-shim widget service.
+ * Exports the `defineWidgetType` descriptor mint and the
+ * `WidgetTypeRegistry` runtime class. Consumers outside the widgets
+ * module reach widget types through `IWidgetsService` on the service
+ * registry, not these symbols.
  *
  * @module backend/modules/widgets/widget-types
  */
@@ -18,4 +17,3 @@ export {
     __resetKnownWidgetTypesForTests
 } from './define-widget-type.js';
 export { WidgetTypeRegistry, RESERVED_PLUGIN_ID } from './widget-type-registry.js';
-export { PluginWidgetTypes } from './plugin-widget-types.js';
