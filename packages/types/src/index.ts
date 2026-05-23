@@ -59,3 +59,14 @@ export type {
 } from './hooks/index.js';
 export { HookAbortError, isHookAbortError } from './hooks/index.js';
 export type { IHeadFragment, HeadFragmentTag, ISsrHeadContext } from './ssr/index.js';
+export type {
+    IZoneDescriptor,
+    IDefineZoneOptions,
+    ZoneHost,
+    ZoneLayout,
+    ZoneRegisterDisposer,
+    IZoneRegistry,
+    IZoneSnapshot,
+    IZoneSnapshotRecord,
+    IPluginZones
+} from './widget-zones/index.js';
