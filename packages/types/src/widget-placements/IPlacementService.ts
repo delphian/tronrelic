@@ -35,12 +35,18 @@ export interface IPlacementListFilter {
 
 /**
  * Patch shape for `update`. Any subset of operator-editable fields.
+ *
+ * Title supports an explicit clear: `title: null` removes the field
+ * (`$unset`) so the placement falls back to the widget-type label.
+ * Omitting `title` from the patch leaves the existing value unchanged.
+ * `title: ''` is rejected at the controller boundary so blank cannot
+ * sneak in through clients that drop empty strings.
  */
 export interface IPlacementPatch {
     zoneId?: string;
     routes?: string[];
     order?: number;
-    title?: string;
+    title?: string | null;
     instanceConfig?: Record<string, unknown>;
     enabled?: boolean;
 }
@@ -137,4 +143,28 @@ export interface IPlacementService {
      * @returns Placements in `(zoneId asc, order asc)` order.
      */
     list(filter?: IPlacementListFilter): Promise<ReadonlyArray<IWidgetPlacement>>;
+
+    /**
+     * Replace operator-editable fields on a plugin-source placement
+     * with the plugin's original registration args and re-enable the
+     * row. Used by the admin "restore plugin defaults" endpoint.
+     *
+     * Callers are responsible for verifying the placement is
+     * plugin-source and for resolving the plugin defaults — the
+     * service applies the patch atomically and broadcasts a
+     * `placement:restored` event.
+     *
+     * @param id - Placement id (stringified ObjectId).
+     * @param defaults - Plugin defaults to apply.
+     * @returns Updated placement, or null when no row matches.
+     */
+    restoreToPluginDefaults(
+        id: string,
+        defaults: {
+            zoneId: string;
+            routes: ReadonlyArray<string>;
+            order: number;
+            title?: string;
+        }
+    ): Promise<IWidgetPlacement | null>;
 }

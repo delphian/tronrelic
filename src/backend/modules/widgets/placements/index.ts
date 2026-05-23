@@ -8,4 +8,4 @@
 
 export { PlacementService } from './placement.service.js';
 export { PlacementResolver } from './placement-resolver.js';
-export { routeMatches } from './route-matcher.js';
+export { routeMatches, normaliseRoutePattern, partitionRoutePatterns } from './route-matcher.js';

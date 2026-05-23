@@ -646,16 +646,21 @@ export function createMockCollection(name: string) {
             const docIndex = data.findIndex((d: any) => matchesFilter(d, filter));
 
             if (docIndex !== -1) {
-                const updateFields = (update as any).$set || {};
-                data[docIndex] = { ...data[docIndex], ...updateFields };
+                const setFields = (update as any).$set || {};
+                const unsetFields = (update as any).$unset || {};
+                data[docIndex] = { ...data[docIndex], ...setFields };
+                for (const key of Object.keys(unsetFields)) {
+                    delete (data[docIndex] as any)[key];
+                }
                 return { modifiedCount: 1, matchedCount: 1, acknowledged: true, upsertedCount: 0 };
             }
 
             // Handle upsert
             if (options?.upsert) {
                 const id = new ObjectId();
-                const updateFields = (update as any).$set || {};
-                const newDoc = { ...updateFields, _id: id };
+                const setFields = (update as any).$set || {};
+                const setOnInsertFields = (update as any).$setOnInsert || {};
+                const newDoc = { ...setOnInsertFields, ...setFields, _id: id };
                 data.push(newDoc);
                 return { modifiedCount: 0, matchedCount: 0, acknowledged: true, upsertedCount: 1, upsertedId: id };
             }
@@ -671,8 +676,12 @@ export function createMockCollection(name: string) {
 
             data.forEach((doc, index) => {
                 if (matchesFilter(doc, filter)) {
-                    const updateFields = (update as any).$set || {};
-                    data[index] = { ...data[index], ...updateFields };
+                    const setFields = (update as any).$set || {};
+                    const unsetFields = (update as any).$unset || {};
+                    data[index] = { ...data[index], ...setFields };
+                    for (const key of Object.keys(unsetFields)) {
+                        delete (data[index] as any)[key];
+                    }
                     modifiedCount++;
                 }
             });

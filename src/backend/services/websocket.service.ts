@@ -399,6 +399,10 @@ export class WebSocketService implements IWebSocketService {
         break;
       case 'menu:update':
       case 'menu:namespace-config:update':
+      case 'widgets:placements-update':
+        // Broadcast to every connected socket. Widget placements
+        // affect public render order, so non-admin clients must
+        // refetch their widget data to see operator changes.
         this.io.emit(event.event, event.payload);
         break;
       default:

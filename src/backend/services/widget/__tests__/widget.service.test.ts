@@ -440,4 +440,76 @@ describe('WidgetService', () => {
             expect(widgets).toEqual([]);
         });
     });
+
+    describe('getPluginDefault', () => {
+        it('returns null when never registered', () => {
+            expect(service.getPluginDefault('p', 'w')).toBeNull();
+        });
+
+        it('returns the plugin defaults captured at first registration', async () => {
+            await service.register(
+                createWidget({
+                    id: 'whale:recent',
+                    zone: 'main-after',
+                    routes: ['/'],
+                    order: 25,
+                    title: 'Recent Whales'
+                }),
+                'whale-alerts'
+            );
+
+            const defaults = service.getPluginDefault('whale-alerts', 'whale:recent');
+            expect(defaults).not.toBeNull();
+            expect(defaults?.zone).toBe('main-after');
+            expect(defaults?.routes).toEqual(['/']);
+            expect(defaults?.order).toBe(25);
+            expect(defaults?.title).toBe('Recent Whales');
+            expect(defaults?.pluginId).toBe('whale-alerts');
+            expect(defaults?.typeId).toBe('whale:recent');
+        });
+
+        it('does not overwrite cached defaults on same-plugin re-registration', async () => {
+            await service.register(
+                createWidget({ id: 'w', order: 10, title: 'First' }),
+                'p'
+            );
+            await service.register(
+                createWidget({ id: 'w', order: 99, title: 'Second' }),
+                'p'
+            );
+
+            const defaults = service.getPluginDefault('p', 'w');
+            expect(defaults?.order).toBe(10);
+            expect(defaults?.title).toBe('First');
+        });
+
+        it('isolates defaults between plugins for the same typeId', async () => {
+            // Two plugins claiming the same id is normally rejected by
+            // the registry, but the legacy in-memory cache still tracks
+            // each pluginId::typeId tuple independently. The compat-shim
+            // bails out before the placement upsert in that case, so
+            // the cache reflects the first plugin's args only — the
+            // second plugin's entry never lands. This test pins that
+            // behaviour: same id under a different plugin id does not
+            // collide.
+            await service.register(
+                createWidget({ id: 'shared', order: 5 }),
+                'plugin-a'
+            );
+
+            const a = service.getPluginDefault('plugin-a', 'shared');
+            const b = service.getPluginDefault('plugin-b', 'shared');
+            expect(a?.order).toBe(5);
+            expect(b).toBeNull();
+        });
+
+        it('clones the routes array so callers cannot mutate cached state', async () => {
+            const config = createWidget({ id: 'w', routes: ['/markets'] });
+            await service.register(config, 'p');
+            config.routes.push('/leaked');
+
+            const defaults = service.getPluginDefault('p', 'w');
+            expect(defaults?.routes).toEqual(['/markets']);
+        });
+    });
 });

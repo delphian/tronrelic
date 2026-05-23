@@ -269,11 +269,19 @@ export function createMockDatabaseService(): IDatabaseService & {
 
                     if (docIndex !== -1) {
                         const updateFields = (update as any).$set || {};
+                        const unsetFields = (update as any).$unset || {};
                         const incFields = (update as any).$inc || {};
                         const pushFields = (update as any).$push || {};
 
                         // Apply $set
                         data[docIndex] = { ...data[docIndex], ...updateFields };
+
+                        // Apply $unset - remove fields. MongoDB ignores the
+                        // value of $unset entries (typically empty string);
+                        // mirror that by deleting each key regardless.
+                        for (const key of Object.keys(unsetFields)) {
+                            delete (data[docIndex] as any)[key];
+                        }
 
                         // Apply $inc - increment numeric fields
                         for (const [key, amount] of Object.entries(incFields)) {
