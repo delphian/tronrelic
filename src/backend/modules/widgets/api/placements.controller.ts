@@ -131,12 +131,15 @@ export class PlacementsController {
             const pluginId = safeStringParam(req.query.pluginId, PLUGIN_ID_PATTERN);
             if (pluginId !== undefined) filter.pluginId = pluginId;
 
-            // `source` and `enabledOnly` ride on equality allowlists
-            // already — a non-matching value (object, number, anything
-            // other than the listed strings) simply fails the
-            // comparison and the filter key is omitted.
-            if (req.query.source === 'plugin' || req.query.source === 'operator') {
-                filter.source = req.query.source;
+            // `source` and `enabledOnly` ride on equality allowlists.
+            // Assign the literal we just compared against rather than
+            // the request value so CodeQL's taint tracking sees a
+            // constant flowing into the filter, not a sanitised-but-
+            // still-tainted user input.
+            if (req.query.source === 'plugin') {
+                filter.source = 'plugin';
+            } else if (req.query.source === 'operator') {
+                filter.source = 'operator';
             }
             if (req.query.enabledOnly === 'true' || req.query.enabledOnly === '1') {
                 filter.enabledOnly = true;
