@@ -88,7 +88,6 @@ export default function HooksAdminPage() {
     const [loading, setLoading] = useState<boolean>(true);
 
     useEffect(() => {
-        if (!token) return;
         let aborted = false;
         const ctrl = new AbortController();
 
