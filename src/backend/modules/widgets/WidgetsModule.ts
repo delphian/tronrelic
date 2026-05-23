@@ -26,6 +26,7 @@ import type {
 } from '@/types';
 import { logger } from '../../lib/logger.js';
 import { requireAdmin } from '../../api/middleware/admin-auth.js';
+import { createAdminRateLimiter } from '../../api/middleware/rate-limit.js';
 import { ZonesController } from './api/zones.controller.js';
 import { createZonesAdminRouter } from './api/zones.routes.js';
 
@@ -90,12 +91,18 @@ export class WidgetsModule implements IModule<IWidgetsModuleDependencies> {
 
     /**
      * Activate the module — mount the admin zone introspection router.
+     *
+     * The platform-default admin rate limiter runs before `requireAdmin`
+     * so the brute-force cost against the auth gate is bounded per IP
+     * (60 req / 60s). Matches the MenuModule `/manage` precedent and
+     * satisfies CodeQL's `js/missing-rate-limiting` rule.
      */
     async run(): Promise<void> {
         this.logger.info('Running widgets module...');
 
         const adminRouter: Router = createZonesAdminRouter(this.zonesController);
-        this.app.use('/api/admin/system/zones', requireAdmin, adminRouter);
+        const rateLimiter = createAdminRateLimiter('system-zones');
+        this.app.use('/api/admin/system/zones', rateLimiter, requireAdmin, adminRouter);
         this.logger.info('Zone introspection router mounted at /api/admin/system/zones');
 
         this.logger.info('Widgets module running');
