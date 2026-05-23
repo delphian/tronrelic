@@ -12,6 +12,7 @@
 
 export {
     defineZone,
+    forgetZone,
     isKnownZone,
     listKnownZones,
     __resetKnownZonesForTests

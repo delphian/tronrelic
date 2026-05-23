@@ -13,6 +13,7 @@ export type { IWidgetsModuleDependencies } from './WidgetsModule.js';
 
 export {
     defineZone,
+    forgetZone,
     isKnownZone,
     listKnownZones,
     __resetKnownZonesForTests,

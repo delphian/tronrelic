@@ -11,16 +11,17 @@ import type {
  * been injected yet — covers test paths that instantiate the service
  * without bootstrap wiring. Production always overrides this via
  * `setZoneRegistry(...)` immediately after bootstrap constructs the
- * registry.
+ * registry, so this set's job is to mirror the registry's declared
+ * core zones (see `modules/widgets/zones/descriptors.ts`) and nothing
+ * more — divergence would have widgets warn-or-not depending on
+ * whether the registry happened to be wired.
  */
 const FALLBACK_VALID_ZONES = new Set([
     'ticker-after',
     'main-before',
     'main-after',
     'plugin-content:before',
-    'plugin-content:after',
-    'sidebar-top',
-    'sidebar-bottom'
+    'plugin-content:after'
 ]);
 
 /**

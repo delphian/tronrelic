@@ -25,7 +25,7 @@ import type {
     ZoneRegisterDisposer,
     ISystemLogService
 } from '@/types';
-import { isKnownZone, listKnownZones } from './define-zone.js';
+import { forgetZone, isKnownZone, listKnownZones } from './define-zone.js';
 
 const RESERVED_PLUGIN_ID = 'core';
 
@@ -140,6 +140,7 @@ export class ZoneRegistry implements IZoneRegistry {
             const cur = this.zones.get(descriptor.id);
             if (!cur || cur !== record) return;
             this.zones.delete(descriptor.id);
+            forgetZone(descriptor.id);
             this.logger.debug({ zoneId: descriptor.id, pluginId }, 'Zone unregistered');
         };
     }
@@ -161,6 +162,7 @@ export class ZoneRegistry implements IZoneRegistry {
         for (const [id, entry] of this.zones) {
             if (entry.pluginId === pluginId) {
                 this.zones.delete(id);
+                forgetZone(id);
                 removed++;
             }
         }

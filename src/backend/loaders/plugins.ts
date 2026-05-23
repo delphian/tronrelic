@@ -234,11 +234,14 @@ export async function loadPlugins(
                 pluginLogger.info('✓ Loaded plugin (no init hook)');
             }
 
-            // Seal the lifecycle window. Handlers stay registered for
-            // the plugin's enabled lifetime; subsequent register() calls
+            // Seal the lifecycle windows on both per-plugin facades.
+            // Handlers and zone declarations stay registered for the
+            // plugin's enabled lifetime; subsequent register() calls
             // (e.g. inside request handlers) now throw, matching the
-            // contract documented in system-hooks.md.
+            // contract enforced by every other activation path in
+            // PluginManagerService.
             loaded.hooks.seal();
+            loaded.zones.seal();
 
             // Register widgets if defined
             if (plugin.widgets && plugin.widgets.length > 0) {

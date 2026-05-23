@@ -14,6 +14,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import type { ISystemLogService, IZoneDescriptor } from '@/types';
 import {
     defineZone,
+    forgetZone,
     isKnownZone,
     listKnownZones,
     __resetKnownZonesForTests,
@@ -255,17 +256,95 @@ describe('ZoneRegistry.disposeForPlugin', () => {
         expect(registry.has('test.plugin-a-2')).toBe(false);
     });
 
+    it('forgets disposed zones from KNOWN_ZONES so subsequent defineZone calls mint fresh descriptors', () => {
+        const desc = defineZone({ id: 'test.forget', label: 'F', description: '', host: 'plugin' });
+        registry.register('plugin-a', desc);
+
+        registry.disposeForPlugin('plugin-a');
+
+        expect(listKnownZones().map(d => d.id)).not.toContain('test.forget');
+        const fresh = defineZone({ id: 'test.forget', label: 'F2', description: '', host: 'plugin' });
+        expect(fresh).not.toBe(desc);
+        expect(fresh.label).toBe('F2');
+    });
+
     it('never removes core-owned zones', () => {
         const removed = registry.disposeForPlugin(RESERVED_PLUGIN_ID);
 
         expect(removed).toBe(0);
         expect(registry.has('test.core')).toBe(true);
+        expect(listKnownZones().map(d => d.id)).toContain('test.core');
     });
 
     it('returns zero when the plugin owns no zones', () => {
         const removed = registry.disposeForPlugin('phantom-plugin');
 
         expect(removed).toBe(0);
+    });
+});
+
+describe('Plugin re-enable cycle', () => {
+    let logger: MockLogger;
+    let registry: ZoneRegistry;
+
+    beforeEach(() => {
+        __resetKnownZonesForTests();
+        logger = new MockLogger();
+        registry = new ZoneRegistry(logger);
+    });
+
+    it('lets a plugin re-declare zones after disposeForPlugin clears them', () => {
+        const facade = new PluginZones('plugin-x', registry, logger);
+        facade.register({
+            id: 'test.re-enable',
+            label: 'Re-enable',
+            description: '',
+            host: 'plugin'
+        });
+        expect(registry.has('test.re-enable')).toBe(true);
+
+        // Mimic PluginManagerService.disposeZones on plugin disable.
+        facade.closeAndDisposeAll();
+        registry.disposeForPlugin('plugin-x');
+
+        // Mimic PluginManagerService.rearmZones on the next enable.
+        const reFacade = new PluginZones('plugin-x', registry, logger);
+        expect(() => reFacade.register({
+            id: 'test.re-enable',
+            label: 'Re-enable',
+            description: '',
+            host: 'plugin'
+        })).not.toThrow();
+        expect(registry.has('test.re-enable')).toBe(true);
+        expect(registry.get('test.re-enable')?.pluginId).toBe('plugin-x');
+    });
+
+    it('forgets the zone when a single registration disposer fires', () => {
+        const facade = new PluginZones('plugin-x', registry, logger);
+        const dispose = facade.register({
+            id: 'test.single-dispose',
+            label: 'D',
+            description: '',
+            host: 'plugin'
+        });
+
+        dispose();
+
+        expect(listKnownZones().map(d => d.id)).not.toContain('test.single-dispose');
+        expect(() => defineZone({
+            id: 'test.single-dispose',
+            label: 'Fresh',
+            description: '',
+            host: 'plugin'
+        })).not.toThrow();
+    });
+
+    it('exports forgetZone as a primitive of define-zone', () => {
+        defineZone({ id: 'test.manual-forget', label: 'M', description: '', host: 'plugin' });
+
+        expect(forgetZone('test.manual-forget')).toBe(true);
+        expect(forgetZone('test.manual-forget')).toBe(false);
+        expect(listKnownZones().map(d => d.id)).not.toContain('test.manual-forget');
     });
 });
 

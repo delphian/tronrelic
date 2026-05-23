@@ -71,6 +71,30 @@ export function isKnownZone(descriptor: IZoneDescriptor): boolean {
 }
 
 /**
+ * Forget a tracked descriptor.
+ *
+ * Called by the runtime registry when a zone is disposed — either
+ * through a single registration's disposer or through bulk
+ * `disposeForPlugin` cleanup — so a future `defineZone` call with the
+ * same id mints a fresh descriptor with fresh metadata rather than
+ * returning a stale cached entry. Without this, a disable → re-enable
+ * cycle would trip the duplicate-id guard the next time the plugin
+ * declares its zones.
+ *
+ * No caller currently holds descriptor references across a
+ * `disposeForPlugin` boundary, so dropping the cache entry does not
+ * invalidate any live identity check. Core zones are not subject to
+ * this path — `ZoneRegistry.disposeForPlugin` short-circuits on the
+ * reserved `'core'` plugin id.
+ *
+ * @param id - Zone id to forget.
+ * @returns True if the descriptor was tracked and removed.
+ */
+export function forgetZone(id: string): boolean {
+    return KNOWN_ZONES.delete(id);
+}
+
+/**
  * Snapshot every descriptor known to the process, in stable id order.
  *
  * Used by the runtime registry's constructor to auto-populate core

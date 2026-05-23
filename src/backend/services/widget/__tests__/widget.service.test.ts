@@ -136,12 +136,11 @@ describe('WidgetService', () => {
 
         it('should not warn on valid zones', async () => {
             const validZones = [
+                'ticker-after',
                 'main-before',
                 'main-after',
                 'plugin-content:before',
-                'plugin-content:after',
-                'sidebar-top',
-                'sidebar-bottom'
+                'plugin-content:after'
             ];
             for (const zone of validZones) {
                 await service.register(
@@ -151,6 +150,18 @@ describe('WidgetService', () => {
             }
 
             expect(mockLogger.warn).not.toHaveBeenCalled();
+        });
+
+        it('should warn on sidebar zones (no render sites — divergent from legacy WIDGET_ZONES)', async () => {
+            await service.register(
+                createWidget({ id: 'sidebar-widget', zone: 'sidebar-top' as any }),
+                'plugin'
+            );
+
+            expect(mockLogger.warn).toHaveBeenCalledWith(
+                'Widget registered with unknown zone',
+                expect.objectContaining({ zone: 'sidebar-top' })
+            );
         });
     });
 
