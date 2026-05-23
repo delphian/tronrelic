@@ -322,16 +322,18 @@ export class PlacementsController {
 
     /**
      * Parse and validate a patch-placement request body. Every field
-     * is optional, but those provided must validate.
+     * is optional, but those provided must validate. `title: null`
+     * is the explicit unset signal and is preserved through to the
+     * service so it can `$unset` the field.
      */
     private parsePatchBody(body: unknown):
-        | { patch: { zoneId?: string; routes?: string[]; order?: number; title?: string; instanceConfig?: Record<string, unknown>; enabled?: boolean } }
+        | { patch: { zoneId?: string; routes?: string[]; order?: number; title?: string | null; instanceConfig?: Record<string, unknown>; enabled?: boolean } }
         | { error: string } {
         if (!body || typeof body !== 'object') {
             return { error: 'Request body must be an object' };
         }
         const b = body as Record<string, unknown>;
-        const patch: { zoneId?: string; routes?: string[]; order?: number; title?: string; instanceConfig?: Record<string, unknown>; enabled?: boolean } = {};
+        const patch: { zoneId?: string; routes?: string[]; order?: number; title?: string | null; instanceConfig?: Record<string, unknown>; enabled?: boolean } = {};
 
         if (b.zoneId !== undefined) {
             if (typeof b.zoneId !== 'string' || b.zoneId.length === 0) {
@@ -356,9 +358,17 @@ export class PlacementsController {
         }
 
         if (b.title !== undefined) {
-            const result = this.parseTitle(b.title);
-            if ('error' in result) return result;
-            patch.title = result.title;
+            // `null` is the explicit unset signal — preserve it
+            // through to the service, which translates it to
+            // `$unset: { title: '' }`. Anything else goes through
+            // `parseTitle` for the standard string-shape checks.
+            if (b.title === null) {
+                patch.title = null;
+            } else {
+                const result = this.parseTitle(b.title);
+                if ('error' in result) return result;
+                patch.title = result.title;
+            }
         }
 
         if (b.instanceConfig !== undefined) {
@@ -418,9 +428,10 @@ export class PlacementsController {
     }
 
     /**
-     * Validate the optional `title` field. Trimmed; empty after trim
-     * is rejected because an empty title is meaningless — clear the
-     * field by omitting it from the patch.
+     * Validate the optional `title` field for the create path.
+     * Trimmed; empty after trim is rejected (an empty title carries
+     * no meaning — pass `null` to the patch endpoint to clear an
+     * existing override, or simply omit the field on create).
      */
     private parseTitle(value: unknown): { title?: string } | { error: string } {
         if (value === undefined) return { title: undefined };

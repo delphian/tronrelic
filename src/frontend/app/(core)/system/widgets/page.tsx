@@ -13,9 +13,12 @@
  *
  * Lives behind the System container, which is admin-gated. Like
  * `/system/menu` and `/system/hooks` this is a client component
- * because the admin token lives in `localStorage` and the page can
- * only read it post-mount. WebSocket subscription to
- * `widgets:placements-update` triggers a list refetch so admin
+ * because the page needs hooks (`useModal`, `useToast`, WebSocket
+ * subscription, redux). Admin auth runs on the cookie path —
+ * same-origin fetches carry the signed `tronrelic_uid` cookie, which
+ * `requireAdmin` consults; `useSystemAuth().token` stays as an empty
+ * string for transitional API compatibility. WebSocket subscription
+ * to `widgets:placements-update` triggers a list refetch so admin
  * changes propagate live to every open admin tab.
  *
  * @module app/(core)/system/widgets/page
@@ -68,13 +71,14 @@ interface IPlacement {
 }
 
 /**
- * Patch shape sent to PATCH /placements/:id.
+ * Patch shape sent to PATCH /placements/:id. `title: null` is the
+ * explicit unset signal honored server-side as `$unset: { title }`.
  */
 interface IPlacementPatch {
     zoneId?: string;
     routes?: string[];
     order?: number;
-    title?: string | undefined;
+    title?: string | null | undefined;
     enabled?: boolean;
 }
 
@@ -219,21 +223,39 @@ export default function WidgetsAdminPage() {
     }, [fetchAll]);
 
     /**
-     * PATCH a single placement and notify the user on outcome.
+     * PATCH a single placement, throwing on failure.
+     *
+     * The modal-edit path awaits this directly and lets the outer
+     * try/catch handle the failure UX (toast + keep modal open). The
+     * row-level enable switch goes through `togglePlacement` instead,
+     * which adds the standalone toast UX.
      */
     const patchPlacement = useCallback(
         async (id: string, patch: IPlacementPatch): Promise<void> => {
+            const res = await fetch(`/api/admin/system/widgets/placements/${id}`, {
+                method: 'PATCH',
+                headers: { ...headers, 'Content-Type': 'application/json' },
+                body: JSON.stringify(patch)
+            });
+            if (!res.ok) {
+                const body = await res.json().catch(() => ({}));
+                throw new Error(body.error || `Update failed (${res.status})`);
+            }
+        },
+        [headers]
+    );
+
+    /**
+     * Toast-wrapping wrapper for the inline enable switch and any
+     * other standalone-row mutation. Toasts success or failure and
+     * never throws, since the callers (Switch's `onChange`) have
+     * nowhere to surface the error.
+     */
+    const togglePlacement = useCallback(
+        async (id: string, patch: IPlacementPatch): Promise<void> => {
             setBusyId(id);
             try {
-                const res = await fetch(`/api/admin/system/widgets/placements/${id}`, {
-                    method: 'PATCH',
-                    headers: { ...headers, 'Content-Type': 'application/json' },
-                    body: JSON.stringify(patch)
-                });
-                if (!res.ok) {
-                    const body = await res.json().catch(() => ({}));
-                    throw new Error(body.error || `Update failed (${res.status})`);
-                }
+                await patchPlacement(id, patch);
                 notifySuccess('Placement updated');
             } catch (err) {
                 notifyError('Could not update placement', err);
@@ -241,7 +263,7 @@ export default function WidgetsAdminPage() {
                 setBusyId(null);
             }
         },
-        [headers, notifyError, notifySuccess]
+        [patchPlacement, notifyError, notifySuccess]
     );
 
     /**
@@ -352,6 +374,7 @@ export default function WidgetsAdminPage() {
                                     notifySuccess('Placement created');
                                 } else if (initial) {
                                     await patchPlacement(initial.id, data as IPlacementPatch);
+                                    notifySuccess('Placement updated');
                                 }
                                 closeModal(id);
                             } catch (err) {
@@ -466,7 +489,7 @@ export default function WidgetsAdminPage() {
                                         types={types}
                                         zones={zones}
                                         busyId={busyId}
-                                        onToggleEnabled={(p, next) => patchPlacement(p.id, { enabled: next })}
+                                        onToggleEnabled={(p, next) => togglePlacement(p.id, { enabled: next })}
                                         onEdit={(p) => openPlacementModal('edit', p)}
                                         onDelete={openDeleteModal}
                                         onRestore={(p) => restoreDefaults(p.id)}
@@ -699,11 +722,25 @@ function PlacementForm({ mode, initial, types, zones, onSubmit, onCancel }: Plac
                     };
                     await onSubmit(payload);
                 } else {
+                    const trimmedTitle = title.trim();
+                    const hadInitialTitle = typeof initial?.title === 'string' && initial.title.length > 0;
+                    // Edit-mode title semantics:
+                    //   - non-empty input → set the new value
+                    //   - blank input when the row HAD a title → null
+                    //     (explicit clear signal honored as $unset)
+                    //   - blank input when the row had no title →
+                    //     omit so the patch is a no-op for that field
+                    const titlePatch: string | null | undefined =
+                        trimmedTitle.length > 0
+                            ? trimmedTitle
+                            : hadInitialTitle
+                                ? null
+                                : undefined;
                     const payload: IPlacementPatch = {
                         zoneId,
                         routes,
                         order,
-                        title: title.trim().length > 0 ? title.trim() : undefined,
+                        title: titlePatch,
                         enabled
                     };
                     await onSubmit(payload);

@@ -59,7 +59,7 @@ The placements controller refuses input on any of:
 - `zoneId` not registered in `IZoneRegistry`.
 - `routes` entry that doesn't start with `/`, contains whitespace, or carries a glob marker outside the trailing segment.
 - `order` outside `[0, 10000]`, non-integer, or non-finite.
-- `title` empty after trim, or longer than 80 characters.
+- `title` empty after trim, or longer than 80 characters. Pass `title: null` on PATCH to clear an existing override (`$unset`).
 - `instanceConfig` not a plain object.
 
 ## Route Pattern Grammar

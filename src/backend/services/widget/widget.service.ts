@@ -158,6 +158,9 @@ export class WidgetService implements IWidgetService {
      * process started, or a typo). Consumed by the placements admin
      * controller to power the restore-defaults endpoint.
      *
+     * The returned object is a shallow copy with a fresh `routes`
+     * array so callers cannot mutate the cached entry.
+     *
      * @param pluginId - Plugin id that originally registered the type.
      * @param typeId - Widget-type id.
      * @returns Snapshot of the plugin's first registration args, or
@@ -167,7 +170,16 @@ export class WidgetService implements IWidgetService {
         pluginId: string,
         typeId: string
     ): IPluginRegistrationDefaults | null {
-        return this.pluginDefaults.get(`${pluginId}::${typeId}`) ?? null;
+        const entry = this.pluginDefaults.get(`${pluginId}::${typeId}`);
+        if (!entry) return null;
+        return {
+            pluginId: entry.pluginId,
+            typeId: entry.typeId,
+            zone: entry.zone,
+            routes: [...entry.routes],
+            order: entry.order,
+            title: entry.title
+        };
     }
 
     /**

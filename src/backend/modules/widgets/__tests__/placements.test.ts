@@ -348,6 +348,19 @@ describe('PlacementService CRUD', () => {
         ).rejects.toThrow(/requires options\.pluginId/);
     });
 
+    it('update accepts title: null as an explicit unset signal', async () => {
+        const placement = await service.create({
+            typeId: 't',
+            zoneId: 'main-after',
+            routes: ['/'],
+            title: 'Operator Title'
+        });
+        expect(placement.title).toBe('Operator Title');
+
+        const cleared = await service.update(placement.id, { title: null });
+        expect(cleared?.title).toBeUndefined();
+    });
+
     it('update preserves untouched fields', async () => {
         const placement = await service.create({
             typeId: 't',

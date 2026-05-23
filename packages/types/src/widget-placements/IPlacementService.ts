@@ -35,12 +35,18 @@ export interface IPlacementListFilter {
 
 /**
  * Patch shape for `update`. Any subset of operator-editable fields.
+ *
+ * Title supports an explicit clear: `title: null` removes the field
+ * (`$unset`) so the placement falls back to the widget-type label.
+ * Omitting `title` from the patch leaves the existing value unchanged.
+ * `title: ''` is rejected at the controller boundary so blank cannot
+ * sneak in through clients that drop empty strings.
  */
 export interface IPlacementPatch {
     zoneId?: string;
     routes?: string[];
     order?: number;
-    title?: string;
+    title?: string | null;
     instanceConfig?: Record<string, unknown>;
     enabled?: boolean;
 }

@@ -314,15 +314,26 @@ export class PlacementService implements IPlacementService {
 
         const collection = this.database.getCollection<IWidgetPlacementDocument>(WIDGET_PLACEMENT_COLLECTION);
         const setOps: Partial<IWidgetPlacementDocument> = { updatedAt: new Date() };
+        const unsetOps: Record<string, ''> = {};
         if (patch.zoneId !== undefined) setOps.zoneId = patch.zoneId;
         if (patch.routes !== undefined) setOps.routes = [...patch.routes];
         if (patch.order !== undefined) setOps.order = patch.order;
-        if (patch.title !== undefined) setOps.title = patch.title;
+        if (patch.title === null) {
+            // Explicit unset signal — drop the title field so the
+            // placement falls back to the widget-type label.
+            unsetOps.title = '';
+        } else if (patch.title !== undefined) {
+            setOps.title = patch.title;
+        }
         if (patch.instanceConfig !== undefined) setOps.instanceConfig = patch.instanceConfig;
         if (patch.enabled !== undefined) setOps.enabled = patch.enabled;
 
         const objectId = new ObjectId(id);
-        const result = await collection.updateOne({ _id: objectId }, { $set: setOps });
+        const updateDoc: Record<string, unknown> = { $set: setOps };
+        if (Object.keys(unsetOps).length > 0) {
+            updateDoc.$unset = unsetOps;
+        }
+        const result = await collection.updateOne({ _id: objectId }, updateDoc);
         if (result.matchedCount === 0) return null;
 
         const updated = await collection.findOne({ _id: objectId });

@@ -60,7 +60,7 @@ All endpoints require admin auth (cookie path: verified wallet + admin group; se
 | GET | `/api/admin/system/widgets/placements` | — | `{ success, placements: IWidgetPlacement[] }` | Query: `zoneId?`, `pluginId?`, `source?` (`plugin`\|`operator`), `enabledOnly?` |
 | GET | `/api/admin/system/widgets/placements/:id` | — | `{ success, placement }` or 404 | |
 | POST | `/api/admin/system/widgets/placements` | `IPlacementInput` | `{ success, placement }` 201 | Always `source: 'operator'`; rejects unknown `typeId`/`zoneId`/route patterns/order out of `[0,10000]`/title > 80 chars |
-| PATCH | `/api/admin/system/widgets/placements/:id` | `IPlacementPatch` | `{ success, placement }` or 404 | Operator-editable on every row, including plugin-source |
+| PATCH | `/api/admin/system/widgets/placements/:id` | `IPlacementPatch` | `{ success, placement }` or 404 | Operator-editable on every row, including plugin-source. `title: null` clears the override (`$unset`); omitting `title` leaves it unchanged |
 | DELETE | `/api/admin/system/widgets/placements/:id` | — | 204 / 400 / 404 | 400 on plugin-source rows (use disable or restore-defaults) |
 | POST | `/api/admin/system/widgets/placements/:id/restore-defaults` | — | `{ success, placement }` | 400 on operator rows; 409 when plugin has not registered in this process |
 
