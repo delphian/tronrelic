@@ -1,112 +1,167 @@
-# Widget Registration
+# Plugin Widget Registration
 
-Backend registration of widgets — manifest fields, route filtering, ordering, lifecycle, and admin introspection. For zones and SSR data flow see [plugins-widget-zones.md](./plugins-widget-zones.md). For component authoring see [plugins-widget-zones-ssr.md](./plugins-widget-zones-ssr.md).
+Backend registration is how a plugin tells the platform "I have a renderable widget — here's where it goes by default." The platform splits that single intent into a *widget type* (the renderable unit and its data fetcher) and a *plugin-source placement* (the row in `module_widgets_placements` that wires the type to a zone). Operators then refine the placement from `/system/widgets`. For zones, ownership, and rendering flow see [plugins-widget-zones.md](./plugins-widget-zones.md); for the component side see [plugins-widget-zones-ssr.md](./plugins-widget-zones-ssr.md).
 
 ## Why This Matters
 
-Widget config controls *where* (zone), *when* (route filter), *order* (priority), and *what data* (fetchData). Get any of these wrong and the widget either never appears, appears on the wrong pages, fights for ordering with other plugins, or breaks SSR with a slow/throwing data fetch.
+Getting registration wrong fails in operator-visible ways: the widget never appears, lands on the wrong routes, fights another plugin for order, or breaks SSR with a slow or throwing data fetcher. Beyond correctness, every plugin-registered placement must be tagged with the calling plugin's id so the platform can soft-disable it on plugin disable without losing operator overrides — that tagging happens automatically when the plugin passes `ownerId` to the unified widgets service.
 
-## IWidgetConfig
+## What You Register
 
-```typescript
-interface IWidgetConfig {
-    id: string;          // Plugin-namespaced: 'plugin-id:widget-name'
-    zone: string;        // 'main-after', 'plugin-content:before', etc.
-    routes: string[];    // [] = all routes; ['/'] = homepage only
-    order?: number;      // Lower renders first; default 100
-    title?: string;      // Optional heading shown above widget
-    description?: string;// Admin UI only
-    fetchData: (route: string, params: Record<string, string>) => Promise<unknown>;
-}
-```
+A plugin registers a **widget type** — an id, label, a `defaultDataFetcher`, and default placement parameters (zone, routes, order, optional title). The platform stores the type descriptor in an in-memory type registry and upserts a `source: 'plugin'` row into `module_widgets_placements` keyed by `(typeId, pluginId)`. From that point forward the placement is operator-owned: `zoneId`, `routes`, `order`, `title`, `instanceConfig`, and `enabled` are all overridable through `/system/widgets`. The plugin's stated defaults are cached so an operator can revert via restore-defaults.
 
-`fetchData` receives the resolved route and any params extracted by the host (e.g. `{ address }` on `/u/[address]`). It must return cached, JSON-serializable data quickly — heavy work belongs in a scheduled job that writes to the plugin's MongoDB collection. Errors should resolve to empty data, not throw. The 5s service-side timeout (Promise.race) is enforced.
+A plugin may *additionally* register **zones** if it wants to expose new injection points other plugins (or operators) can target. Zones are runtime-only — they live for the plugin's enabled lifetime and disappear on disable. Most plugins consume zones rather than declare them.
 
-## Imperative Registration (in `init()`)
+## The Unified Widgets Service
 
-Use this when registration depends on context — e.g. conditional registration, or storing a service handle. Always pair with `unregisterAll` in `disable()`.
+Every widget operation flows through `IWidgetsService`, published on the service registry as `'widgets'`. Plugins look it up, then call `registerWidget` (combined type + default placement), `registerType` (type only), `registerZone` (new injection point), or read methods like `listZones` / `listTypes` / `findPlacementsForRoute`. No per-plugin facade rides on `IPluginContext` — the entire surface is one named service.
 
 ```typescript
-export const myBackendPlugin = definePlugin({
+import {
+    definePlugin,
+    type IPluginContext,
+    type IWidgetsService
+} from '@delphian/tronrelic-types';
+
+export const myPlugin = definePlugin({
     manifest: myManifest,
     init: async (context: IPluginContext) => {
-        await context.widgetService.register({
-            id: 'reddit-sentiment:feed',
-            zone: 'main-after',
-            routes: ['/'],
-            order: 10,
-            title: 'Community Buzz',
-            fetchData: async (route, params) => {
+        const widgets = context.services.get<IWidgetsService>('widgets');
+        if (!widgets) return; // service registry is empty — defensive, should never fire in production
+
+        await widgets.registerWidget({
+            id: 'my-plugin:feed',
+            label: 'Community Buzz',
+            description: 'Latest community posts',
+            defaultZoneId: 'main-after',
+            defaultRoutes: ['/'],
+            defaultOrder: 10,
+            defaultTitle: 'Community Buzz',
+            defaultDataFetcher: async (route, params) => {
                 const cache = await context.database.findOne('feed_cache', {});
                 return { posts: cache?.posts ?? [] };
             }
         }, myManifest.id);
-    },
-    disable: async (context) => {
-        await context.widgetService.unregisterAll(myManifest.id);
     }
 });
 ```
 
-## Declarative Registration (on the plugin definition)
+Note: plugins do *not* implement a `disable()` hook to unregister widgets. The plugin manager calls `widgets.unregisterAllForOwner(pluginId)` automatically on disable — placements soft-disable, types and zones unregister, and operator customisations on placements survive the next enable cycle.
 
-Static widgets register before `init()` runs. Cleanup is automatic on disable/uninstall.
+## Declaring Plugin-Owned Zones
+
+If your plugin renders a page that should expose injection points for *other* plugins (or for operator-placed widgets), register zones in `init`. They are torn down automatically on disable.
 
 ```typescript
-export const myBackendPlugin = definePlugin({
-    manifest: myManifest,
-    widgets: [{
-        id: 'my-plugin:feed',
-        zone: 'main-after',
-        routes: ['/'],
-        order: 10,
-        fetchData: async () => ({ items: [] })
-    }],
-    init: async (context) => { /* ... */ }
-});
+init: async (context: IPluginContext) => {
+    const widgets = context.services.get<IWidgetsService>('widgets');
+    if (!widgets) return;
+
+    widgets.registerZone({
+        id: 'my-plugin:sidebar',
+        label: 'My plugin sidebar',
+        description: 'Right rail on the My Plugin page.',
+        host: 'plugin',
+        layout: 'vertical'
+    }, myManifest.id);
+}
 ```
+
+## Registering a Type Without a Default Placement
+
+Rare but valid — e.g. a widget meant to be placed only by operators. Use `registerType` instead of `registerWidget`. The type becomes available in the `/system/widgets` type picker; no placement is created automatically.
+
+```typescript
+widgets.registerType({
+    id: 'my-plugin:standalone',
+    label: 'Standalone Widget',
+    description: 'Operator-only placement',
+    defaultDataFetcher: async () => ({ /* … */ })
+}, myManifest.id);
+```
+
+## Operator Overrides
+
+Once a plugin-source row exists, the operator can edit it from `/system/widgets`. Editable fields are `zoneId`, `routes`, `order`, `title`, `instanceConfig`, and `enabled`. The plugin's original `registerWidget(input, ownerId)` arguments are cached in process so the operator can revert via the restore-defaults action — which resets everything except the row's id and `createdAt`. Operators can also create entirely new placements of the same widget type pointing at different zones or routes; those new rows are `source: 'operator'` and can be deleted outright.
+
+Treat the values in `IRegisterWidgetInput` as *defaults*, not invariants. Anything an operator might reasonably want to retarget — zone, route filter, order, instance config — belongs in those defaults rather than hardcoded in the data fetcher.
 
 ## Route Filtering
 
-`routes: []` matches every route. `routes: ['/']` matches only the homepage. `routes: ['/dashboard', '/markets']` matches multiple specific paths. The middleware sets `x-pathname` per request, so widget filtering reflects the actual page — not the layout's base path. Cross-plugin injection works by targeting another plugin's page slug, e.g. `routes: ['/whales']` from a memo-tracker widget.
+`defaultRoutes: []` matches every route. Otherwise the array must hold one or more patterns from this grammar:
+
+| Form | Matches | Example |
+|---|---|---|
+| Exact | The literal path, nothing else | `/markets` |
+| Single-segment glob | One trailing segment, no deeper | `/u/*` matches `/u/TXyz`, not `/u/TXyz/holdings` |
+| Deep glob | Any depth below the prefix | `/admin/**` matches `/admin/users/edit` |
+
+Patterns must start with `/`, contain no whitespace, and place glob markers only at the trailing position (`/*/markets` is rejected). The matcher is `routeMatches` in `src/backend/modules/widgets/placements/route-matcher.ts`; the admin API validates inputs through `normaliseRoutePattern` before reaching the placement service.
+
+Cross-plugin injection works by targeting another plugin's page slug — `defaultRoutes: ['/whales']` from a memo-tracker widget places it on the whale-alerts page without coupling the two plugins.
 
 ## Ordering
 
-Lower `order` renders first within a zone. Suggested ranges:
+Lower `defaultOrder` renders first within a zone. Default is `100`. The valid range is `[0, 10000]`.
 
 | Range | Use |
-|-------|-----|
+|---|---|
 | 0–9 | High-priority alerts, notifications |
 | 10–49 | Primary content widgets |
 | 50–99 | Secondary widgets |
 | 100+ | Default / lowest priority |
 
-When two plugins target the same zone, set explicit `order` to win deterministic placement.
+When two plugins target the same zone, set explicit `defaultOrder` to win deterministic placement. Operators can reorder by drag-and-drop in `/system/widgets`, which renumbers every affected row in steps of 10.
 
-## Lifecycle
+## Lifecycle Semantics
 
-Widgets registered in `init()` (or declaratively) are torn down when the plugin is disabled or uninstalled. Imperative registrations must call `context.widgetService.unregisterAll(manifestId)` in `disable()`. Declarative widgets clean up automatically.
+**Plugin enable / re-enable.** Each `registerWidget(input, ownerId)` call caches the original args, registers the widget type, and calls `placementService.ensurePluginPlacement(...)` internally. The placement upsert is atomic: it flips `enabled: true` and updates `updatedAt` on existing rows, but uses `$setOnInsert` for `zoneId`, `routes`, `order`, `title`, and `instanceConfig`, so operator customisations on existing rows are preserved across enable cycles.
+
+**Plugin disable.** `PluginManagerService` calls `widgets.unregisterAllForOwner(pluginId)`, which soft-disables every plugin-source placement (`enabled: false`), removes every widget type the plugin owned, and removes every plugin-declared zone. Placement rows stay in MongoDB. The plugin-default cache is *not* cleared, so restore-defaults continues to work on soft-disabled rows as long as the process is alive.
+
+**Plugin uninstall.** Same path as disable. Rows remain on disk until a future cleanup migration or a manual operator delete (operator-source rows only).
+
+**Process restart.** The widget-type and zone registries rebuild from plugin `init` calls; the plugin-default cache is empty until the plugin enables and re-registers. Placements survive in MongoDB across restarts.
+
+## Data Fetchers
+
+`defaultDataFetcher(route, params)` receives the resolved route and any params the host extracted (e.g. `{ address }` on `/u/[address]`). It must return JSON-serialisable data quickly — heavy work belongs in a scheduled job that writes to a plugin-owned MongoDB collection that the fetcher then reads. A 5-second per-fetcher timeout is enforced by the SSR resolver via `Promise.race`. Failures should resolve to empty data, never throw — a throw is converted to an empty payload but logged as a fetcher error.
 
 ## Admin Introspection
 
-`/all` and `/zones/:zone` go through `requireAdmin` — admits the signed `tronrelic_uid` cookie OR the `x-admin-token` header. Same-origin browser requests pass automatically; tooling sends the header.
+`/system/widgets` is the operator-facing UI. The three admin REST endpoints behind it:
 
-| Endpoint | Auth | Returns |
-|----------|------|---------|
-| `GET /api/widgets/all` | Admin (cookie or `x-admin-token`) | All registered widgets (no fetchData run) |
-| `GET /api/widgets/zones/:zone` | Admin (cookie or `x-admin-token`) | Widgets in a specific zone |
-| `GET /api/widgets?route=/path` | None | Widgets matching route, with fetched data |
+| Method | Path | Returns |
+|---|---|---|
+| GET | `/api/admin/system/zones` | `IZoneSnapshot` — tracks (one per host) → zones |
+| GET | `/api/admin/system/widget-types` | `IWidgetTypeSnapshot` — groups (one per declaring plugin) → types |
+| GET / POST / PATCH / DELETE | `/api/admin/system/widgets/placements[/:id]` | Placement CRUD; see [system-api-widgets.md](../system/system-api-widgets.md) |
 
-Example: `curl -H "X-Admin-Token: $ADMIN_API_TOKEN" http://localhost:4000/api/widgets/all`.
+All three chain `createAdminRateLimiter` before `requireAdmin` — admits the signed `tronrelic_uid` cookie or the `x-admin-token` header.
+
+The pre-split read endpoints (`/api/widgets/all`, `/api/widgets/zones/:zone`) have been deleted. The SSR data endpoint `/api/widgets?route=...` remains.
 
 ## Troubleshooting
 
-**Widget missing.** Confirm the plugin is enabled in `/system/plugins`. Hit `/api/widgets/all` to confirm registration. Hit `/api/widgets?route=/your/path` to confirm route match. Tail backend logs for `widget` keywords; verify `fetchData` completes inside the 5s timeout.
+**Widget never appears.** Confirm the plugin is enabled in `/system/plugins`. Hit `/api/admin/system/widgets/placements?pluginId=<id>` to confirm the placement was upserted. Check `enabled: true` and that `zoneId` matches a real zone (`/api/admin/system/zones`). Verify the route filter against the page you're loading.
 
-**Widget renders with no data.** Inspect `fetchData` for thrown errors (return empty data instead). Verify the source MongoDB collection is populated. Look for `"Widget data fetch failed"` in logs.
+**Widget renders blank.** The `defaultDataFetcher` threw, timed out, or returned non-serialisable data. Check backend logs for `"Widget data fetch failed"`. Confirm the source MongoDB collection is populated. Return empty data on error instead of throwing.
 
-**Wrong order.** Set explicit `order` and remember lower-first. Audit other plugins targeting the same zone.
+**Wrong order.** Set explicit `defaultOrder` in your `registerWidget` call; remember lower-first. If an operator reordered the row, restore-defaults reverts it to your default. Two plugins targeting the same zone with no explicit order get insertion-order — never rely on that.
+
+**Plugin disable removed my placement.** It didn't — it was soft-disabled. Inspect the row at `/api/admin/system/widgets/placements/:id` and confirm `enabled: false, source: 'plugin'`. Re-enable the plugin and the row flips back to `enabled: true` with operator overrides intact.
+
+**`services.get('widgets')` returns undefined.** Defensive check only — the widgets service is registered during `WidgetsModule.run()`, which runs before any plugin's `init()`. If the lookup misses, the widgets module failed to bootstrap; check backend startup logs.
 
 ## Best Practices
 
-Cache widget data in Mongo or Redis; do not compute inside `fetchData`. Refresh on a scheduled job. Namespace IDs as `plugin-id:widget-name`. Target only the routes where the widget adds value. Keep `fetchData` under 100ms for good UX.
+Cache widget data in MongoDB or Redis; never compute inside the data fetcher. Refresh the cache on a scheduled job. Namespace widget ids as `plugin-id:widget-name` so operator pickers stay disambiguated. Pick conservative default route filters — `defaultRoutes: []` means every page, which is usually wrong; scope to the routes where the widget adds value and let operators broaden if they want. Keep the fetcher under 100ms for good SSR latency; 5s is the kill ceiling, not a target.
+
+## Further Reading
+
+- [plugins-widget-zones.md](./plugins-widget-zones.md) — Overview, three concepts, core zone catalog, rendering flow
+- [plugins-widget-zones-ssr.md](./plugins-widget-zones-ssr.md) — Component authoring, `IWidgetComponentProps`, SSR + Live Updates
+- [system-api-widgets.md](../system/system-api-widgets.md) — Admin REST contract, route grammar, WebSocket event
+- [Widgets Module README](../../src/backend/modules/widgets/README.md) — Canonical backend contract, storage schema, indexes
+- [plugins-service-registry.md](./plugins-service-registry.md) — How services are published and discovered
+- [plugins-frontend-context.md](./plugins-frontend-context.md) — `IFrontendPluginContext` injected into widget components

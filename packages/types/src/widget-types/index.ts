@@ -1,8 +1,11 @@
 /**
  * @fileoverview Public type surface for the widget-type system.
  *
- * Re-exports the descriptor, registry, and per-plugin facade types so
- * consumers can import them from a single barrel.
+ * Plugins register widget types through
+ * `IWidgetsService.registerType(...)` (or the convenience
+ * `IWidgetsService.registerWidget(...)`) on the `'widgets'` service.
+ * The `IWidgetTypeRegistry` interface is internal to the widgets
+ * module — the public surface is `IWidgetsService`.
  *
  * @module types/widget-types
  */
@@ -19,5 +22,3 @@ export type {
     IWidgetTypeSnapshot,
     IWidgetTypeSnapshotRecord
 } from './IWidgetTypeRegistry.js';
-
-export type { IPluginWidgetTypes } from './IPluginWidgetTypes.js';

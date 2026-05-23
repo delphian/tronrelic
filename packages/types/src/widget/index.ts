@@ -1,13 +1,18 @@
 /**
  * Widget system type definitions.
  *
- * Provides interfaces for plugin widget registration and SSR data fetching.
- * Widgets allow plugins to inject UI components into designated zones on existing
- * pages without modifying core page code.
+ * Provides the unified `IWidgetsService` interface published on the
+ * service registry, the SSR data shape returned by
+ * `fetchWidgetsForRoute`, and the React component contract widget
+ * frontends implement.
  */
 
-export { WIDGET_ZONES } from './IWidgetConfig.js';
-export type { IWidgetConfig, WidgetZone } from './IWidgetConfig.js';
 export type { IWidgetData } from './IWidgetData.js';
-export type { IWidgetService } from './IWidgetService.js';
 export type { IWidgetComponentProps, WidgetComponent } from './IWidgetComponentProps.js';
+export type {
+    IWidgetsService,
+    IRegisterWidgetTypeInput,
+    IRegisterZoneInput,
+    IRegisterWidgetInput,
+    WidgetsRegistrationDisposer
+} from './IWidgetsService.js';

@@ -32,7 +32,24 @@ import {
     type FormEvent,
     type KeyboardEvent
 } from 'react';
-import { Pencil, Plus, RefreshCw, Trash2, X } from 'lucide-react';
+import { GripVertical, Pencil, Plus, RefreshCw, Trash2, X } from 'lucide-react';
+import {
+    DndContext,
+    KeyboardSensor,
+    PointerSensor,
+    closestCorners,
+    useDroppable,
+    useSensor,
+    useSensors,
+    type DragEndEvent
+} from '@dnd-kit/core';
+import {
+    SortableContext,
+    sortableKeyboardCoordinates,
+    useSortable,
+    verticalListSortingStrategy
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import type { IZoneSnapshot, IWidgetTypeSnapshot } from '@/types';
 
 import { Page, PageHeader, Stack } from '../../../../components/layout';
@@ -41,12 +58,11 @@ import { Button } from '../../../../components/ui/Button';
 import { IconButton } from '../../../../components/ui/IconButton';
 import { Input } from '../../../../components/ui/Input';
 import { Switch } from '../../../../components/ui/Switch';
-import { Tbody, Td, Th, Thead, Tr, Table } from '../../../../components/ui/Table';
-import { ClientTime } from '../../../../components/ui/ClientTime';
 import { useModal } from '../../../../components/ui/ModalProvider';
 import { useToast } from '../../../../components/ui/ToastProvider';
 import { ConfirmDialog } from '../../../../components/ui/ConfirmDialog';
 import { useSystemAuth } from '../../../../features/system';
+import { cn } from '../../../../lib/cn';
 import { getSocket } from '../../../../lib/socketClient';
 
 import styles from './page.module.scss';
@@ -326,6 +342,98 @@ export default function WidgetsAdminPage() {
         [headers, notifyError, notifySuccess]
     );
 
+    const sensors = useSensors(
+        useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+        useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+    );
+
+    /**
+     * Persist a drag-end gesture. Within-zone drops reorder; cross-zone
+     * drops additionally rewrite the moved placement's zoneId. Both
+     * paths renumber positions sequentially (10, 20, 30…) and emit one
+     * PATCH per placement whose order or zone actually changed. The
+     * local placement list is updated optimistically so the bubble
+     * snaps into place before the network round-trip resolves; a
+     * failed PATCH falls back to a refetch.
+     */
+    const handleDragEnd = useCallback(
+        async (event: DragEndEvent): Promise<void> => {
+            const { active, over } = event;
+            if (!over) return;
+            const sourceZone = active.data.current?.zoneId as string | undefined;
+            const destZone = (over.data.current?.zoneId as string | undefined) ?? String(over.id);
+            if (!sourceZone || !destZone) return;
+            if (active.id === over.id && sourceZone === destZone) return;
+
+            const sameZone = sourceZone === destZone;
+            const sourceList = placements
+                .filter(p => p.zoneId === sourceZone)
+                .sort((a, b) => a.order - b.order);
+            const moved = sourceList.find(p => p.id === active.id);
+            if (!moved) return;
+
+            const sourceWithoutActive = sourceList.filter(p => p.id !== active.id);
+            const destListPrev = sameZone
+                ? sourceWithoutActive
+                : placements
+                    .filter(p => p.zoneId === destZone)
+                    .sort((a, b) => a.order - b.order);
+
+            const insertIdx =
+                over.id === destZone
+                    ? destListPrev.length
+                    : (() => {
+                        const target = destListPrev.findIndex(p => p.id === over.id);
+                        return target < 0 ? destListPrev.length : target;
+                    })();
+
+            const newDest = [
+                ...destListPrev.slice(0, insertIdx),
+                sameZone ? moved : { ...moved, zoneId: destZone },
+                ...destListPrev.slice(insertIdx)
+            ];
+            const newSource = sameZone ? newDest : sourceWithoutActive;
+
+            interface IOp { id: string; patch: IPlacementPatch }
+            const ops: IOp[] = [];
+            const collect = (list: IPlacement[], rewriteZoneFor?: string): void => {
+                list.forEach((p, idx) => {
+                    const nextOrder = (idx + 1) * 10;
+                    const patch: IPlacementPatch = {};
+                    if (p.order !== nextOrder) patch.order = nextOrder;
+                    if (rewriteZoneFor === p.id) patch.zoneId = destZone;
+                    if (Object.keys(patch).length > 0) ops.push({ id: p.id, patch });
+                });
+            };
+            collect(newSource);
+            if (!sameZone) collect(newDest, moved.id);
+
+            if (ops.length === 0) return;
+
+            setPlacements(prev => {
+                const byId = new Map(prev.map(p => [p.id, p]));
+                for (const op of ops) {
+                    const existing = byId.get(op.id);
+                    if (!existing) continue;
+                    byId.set(op.id, {
+                        ...existing,
+                        order: op.patch.order ?? existing.order,
+                        zoneId: op.patch.zoneId ?? existing.zoneId
+                    });
+                }
+                return Array.from(byId.values());
+            });
+
+            try {
+                await Promise.all(ops.map(op => patchPlacement(op.id, op.patch)));
+            } catch (err) {
+                notifyError('Could not reorder placements', err);
+                void fetchAll(false);
+            }
+        },
+        [placements, patchPlacement, notifyError, fetchAll]
+    );
+
     /**
      * Group placements by zone for rendering. Zones with no
      * placements still render so operators can see they exist.
@@ -358,7 +466,7 @@ export default function WidgetsAdminPage() {
     const openPlacementModal = useCallback(
         (mode: 'create' | 'edit', initial?: IPlacement) => {
             const id = openModal({
-                title: mode === 'create' ? 'Create placement' : `Edit placement`,
+                title: mode === 'create' ? 'Place widget' : 'Edit widget',
                 size: 'md',
                 content: (
                     <PlacementForm
@@ -409,14 +517,14 @@ export default function WidgetsAdminPage() {
         (placement: IPlacement) => {
             const isPluginSource = placement.source === 'plugin';
             const id = openModal({
-                title: 'Delete placement',
+                title: 'Delete widget',
                 size: 'sm',
                 content: (
                     <ConfirmDialog
                         label={placement.title ?? placement.typeId}
                         message={
                             isPluginSource
-                                ? 'Plugin-source rows cannot be deleted. Disable the row or restore plugin defaults instead.'
+                                ? 'Plugin-placed widgets cannot be deleted. Disable the widget or restore plugin defaults instead.'
                                 : undefined
                         }
                         confirmLabel="Delete"
@@ -452,9 +560,11 @@ export default function WidgetsAdminPage() {
                 <Stack gap="lg">
                     <div className={styles.toolbar}>
                         <p className="text-muted">
-                            Each placement points a registered widget type at a zone. Plugin rows are seeded
-                            automatically and survive disable/re-enable; operator rows are yours to create
-                            and remove.
+                            Widgets reach a zone two ways. <strong>Plugin-placed</strong> rows are added
+                            automatically by the plugin that owns the widget — you can disable or edit them,
+                            and your changes survive the plugin being turned off and back on.
+                            {' '}<strong>Operator-placed</strong> rows are ones you add here yourself with
+                            {' '}<strong>Place widget</strong> — disable, edit, or delete them freely.
                         </p>
                         <Button
                             variant="primary"
@@ -462,7 +572,7 @@ export default function WidgetsAdminPage() {
                             onClick={() => openPlacementModal('create')}
                             disabled={!zones || !types}
                         >
-                            Create placement
+                            Place widget
                         </Button>
                     </div>
 
@@ -476,28 +586,36 @@ export default function WidgetsAdminPage() {
                         <p className="text-muted">No zones declared.</p>
                     )}
 
-                    {!loading && grouped.map(track => (
-                        <section key={track.trackId} className={styles.track}>
-                            <h2 className={styles.track_title}>{track.trackLabel}</h2>
-                            <div className={styles.zone_list}>
-                                {track.rows.map(zone => (
-                                    <ZoneSection
-                                        key={zone.zoneId}
-                                        zoneId={zone.zoneId}
-                                        zoneLabel={zone.zoneLabel}
-                                        placements={zone.placements}
-                                        types={types}
-                                        zones={zones}
-                                        busyId={busyId}
-                                        onToggleEnabled={(p, next) => togglePlacement(p.id, { enabled: next })}
-                                        onEdit={(p) => openPlacementModal('edit', p)}
-                                        onDelete={openDeleteModal}
-                                        onRestore={(p) => restoreDefaults(p.id)}
-                                    />
-                                ))}
-                            </div>
-                        </section>
-                    ))}
+                    {!loading && (
+                        <DndContext
+                            sensors={sensors}
+                            collisionDetection={closestCorners}
+                            onDragEnd={handleDragEnd}
+                        >
+                            {grouped.map(track => (
+                                <section key={track.trackId} className={styles.track}>
+                                    <h2 className={styles.track_title}>{track.trackLabel}</h2>
+                                    <div className={styles.zone_list}>
+                                        {track.rows.map(zone => (
+                                            <ZoneSection
+                                                key={zone.zoneId}
+                                                zoneId={zone.zoneId}
+                                                zoneLabel={zone.zoneLabel}
+                                                placements={zone.placements}
+                                                types={types}
+                                                zones={zones}
+                                                busyId={busyId}
+                                                onToggleEnabled={(p, next) => togglePlacement(p.id, { enabled: next })}
+                                                onEdit={(p) => openPlacementModal('edit', p)}
+                                                onDelete={openDeleteModal}
+                                                onRestore={(p) => restoreDefaults(p.id)}
+                                            />
+                                        ))}
+                                    </div>
+                                </section>
+                            ))}
+                        </DndContext>
+                    )}
                 </Stack>
             </div>
         </Page>
@@ -534,9 +652,11 @@ function ZoneSection({
     onRestore
 }: ZoneSectionProps) {
     const zoneInfo = lookupZone(zones, zoneId);
+    const { setNodeRef, isOver } = useDroppable({ id: zoneId, data: { zoneId } });
+    const itemIds = useMemo(() => placements.map(p => p.id), [placements]);
 
     return (
-        <section className={styles.zone}>
+        <section className={cn(styles.zone, isOver && styles['zone--drop-target'])}>
             <header className={styles.zone_header}>
                 <h3 className={styles.zone_label}>
                     {zoneLabel}
@@ -548,103 +668,148 @@ function ZoneSection({
                 </span>
             </header>
 
-            {placements.length === 0 ? (
-                <p className={styles.zone_empty}>No placements in this zone.</p>
-            ) : (
-                <Table variant="compact">
-                    <Thead>
-                        <Tr>
-                            <Th>Widget</Th>
-                            <Th width="shrink">Source</Th>
-                            <Th>Routes</Th>
-                            <Th width="shrink">Order</Th>
-                            <Th width="shrink">Updated</Th>
-                            <Th width="shrink">Enabled</Th>
-                            <Th width="shrink">Actions</Th>
-                        </Tr>
-                    </Thead>
-                    <Tbody>
-                        {placements.map(placement => {
-                            const typeInfo = lookupType(types, placement.typeId);
-                            return (
-                                <Tr key={placement.id}>
-                                    <Td>
-                                        <div className={styles.widget_cell}>
-                                            <span className={styles.widget_label}>
-                                                {placement.title ?? typeInfo?.label ?? placement.typeId}
-                                            </span>
-                                            <span className={styles.widget_meta}>
-                                                {placement.typeId}
-                                                {typeInfo && ` · ${typeInfo.pluginId}`}
-                                            </span>
-                                        </div>
-                                    </Td>
-                                    <Td>
-                                        <Badge tone={sourceTone(placement.source)}>
-                                            {placement.source === 'plugin'
-                                                ? `plugin: ${placement.pluginId ?? '?'}`
-                                                : 'operator'}
-                                        </Badge>
-                                    </Td>
-                                    <Td muted>
-                                        {placement.routes.length === 0
-                                            ? <em>every route</em>
-                                            : placement.routes.map(r => (
-                                                <code key={r} className={styles.route_chip}>{r}</code>
-                                            ))}
-                                    </Td>
-                                    <Td>{placement.order}</Td>
-                                    <Td muted>
-                                        <ClientTime date={placement.updatedAt} format="relative" />
-                                    </Td>
-                                    <Td>
-                                        <Switch
-                                            size="sm"
-                                            on={placement.enabled}
-                                            onChange={(next) => onToggleEnabled(placement, next)}
-                                            disabled={busyId === placement.id}
-                                            aria-label={`${placement.enabled ? 'Disable' : 'Enable'} placement ${placement.title ?? placement.typeId}`}
-                                        />
-                                    </Td>
-                                    <Td>
-                                        <div className={styles.row_actions}>
-                                            <IconButton
-                                                size="sm"
-                                                variant="primary"
-                                                aria-label={`Edit ${placement.title ?? placement.typeId}`}
-                                                onClick={() => onEdit(placement)}
-                                            >
-                                                <Pencil size={14} />
-                                            </IconButton>
-                                            {placement.source === 'plugin' ? (
-                                                <IconButton
-                                                    size="sm"
-                                                    variant="ghost"
-                                                    aria-label={`Restore plugin defaults for ${placement.title ?? placement.typeId}`}
-                                                    onClick={() => onRestore(placement)}
-                                                    disabled={busyId === placement.id}
-                                                >
-                                                    <RefreshCw size={14} />
-                                                </IconButton>
-                                            ) : (
-                                                <IconButton
-                                                    size="sm"
-                                                    variant="danger"
-                                                    aria-label={`Delete ${placement.title ?? placement.typeId}`}
-                                                    onClick={() => onDelete(placement)}
-                                                >
-                                                    <Trash2 size={14} />
-                                                </IconButton>
-                                            )}
-                                        </div>
-                                    </Td>
-                                </Tr>
-                            );
-                        })}
-                    </Tbody>
-                </Table>
-            )}
+            <SortableContext id={zoneId} items={itemIds} strategy={verticalListSortingStrategy}>
+                <div ref={setNodeRef} className={styles.bubbles}>
+                    {placements.length === 0 ? (
+                        <p className={styles.zone_empty}>
+                            No placements in this zone — drag a widget here to place it.
+                        </p>
+                    ) : (
+                        placements.map(placement => (
+                            <PlacementBubble
+                                key={placement.id}
+                                placement={placement}
+                                typeInfo={lookupType(types, placement.typeId)}
+                                busy={busyId === placement.id}
+                                onToggleEnabled={onToggleEnabled}
+                                onEdit={onEdit}
+                                onDelete={onDelete}
+                                onRestore={onRestore}
+                            />
+                        ))
+                    )}
+                </div>
+            </SortableContext>
         </section>
+    );
+}
+
+/* ------------------------------------------------------------------ */
+/* Placement bubble                                                    */
+/* ------------------------------------------------------------------ */
+
+interface PlacementBubbleProps {
+    placement: IPlacement;
+    typeInfo: { label: string; pluginId: string } | null;
+    busy: boolean;
+    onToggleEnabled: (placement: IPlacement, next: boolean) => void;
+    onEdit: (placement: IPlacement) => void;
+    onDelete: (placement: IPlacement) => void;
+    onRestore: (placement: IPlacement) => void;
+}
+
+/**
+ * Single draggable placement card. The grip on the left is the drag
+ * activator; the rest of the card stays clickable for the inline
+ * switch and action buttons. Order and last-updated are intentionally
+ * hidden — both remain editable from the modal opened via the pencil
+ * icon.
+ */
+function PlacementBubble({
+    placement,
+    typeInfo,
+    busy,
+    onToggleEnabled,
+    onEdit,
+    onDelete,
+    onRestore
+}: PlacementBubbleProps) {
+    const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+        id: placement.id,
+        data: { zoneId: placement.zoneId }
+    });
+
+    const style = {
+        transform: CSS.Transform.toString(transform),
+        transition
+    };
+
+    const label = placement.title ?? typeInfo?.label ?? placement.typeId;
+
+    return (
+        <div
+            ref={setNodeRef}
+            style={style}
+            className={cn(styles.bubble, isDragging && styles['bubble--dragging'])}
+        >
+            <button
+                type="button"
+                className={styles.bubble_handle}
+                aria-label={`Drag ${label} to reorder`}
+                {...attributes}
+                {...listeners}
+            >
+                <GripVertical size={16} aria-hidden />
+            </button>
+            <div className={styles.bubble_main}>
+                <div className={styles.bubble_top}>
+                    <span className={styles.widget_label}>{label}</span>
+                    <Badge tone={sourceTone(placement.source)}>
+                        {placement.source === 'plugin'
+                            ? `plugin: ${placement.pluginId ?? '?'}`
+                            : 'operator'}
+                    </Badge>
+                </div>
+                <span className={styles.widget_meta}>
+                    {placement.typeId}
+                    {typeInfo && ` · ${typeInfo.pluginId}`}
+                </span>
+                <div className={styles.bubble_routes}>
+                    {placement.routes.length === 0
+                        ? <em className={styles.bubble_routes_empty}>every route</em>
+                        : placement.routes.map(r => (
+                            <code key={r} className={styles.route_chip}>{r}</code>
+                        ))}
+                </div>
+            </div>
+            <div className={styles.bubble_actions}>
+                <Switch
+                    size="sm"
+                    on={placement.enabled}
+                    onChange={(next) => onToggleEnabled(placement, next)}
+                    disabled={busy}
+                    aria-label={`${placement.enabled ? 'Disable' : 'Enable'} placement ${label}`}
+                />
+                <IconButton
+                    size="sm"
+                    variant="primary"
+                    aria-label={`Edit ${label}`}
+                    onClick={() => onEdit(placement)}
+                >
+                    <Pencil size={14} />
+                </IconButton>
+                {placement.source === 'plugin' ? (
+                    <IconButton
+                        size="sm"
+                        variant="ghost"
+                        aria-label={`Restore plugin defaults for ${label}`}
+                        onClick={() => onRestore(placement)}
+                        disabled={busy}
+                    >
+                        <RefreshCw size={14} />
+                    </IconButton>
+                ) : (
+                    <IconButton
+                        size="sm"
+                        variant="danger"
+                        aria-label={`Delete ${label}`}
+                        onClick={() => onDelete(placement)}
+                    >
+                        <Trash2 size={14} />
+                    </IconButton>
+                )}
+            </div>
+        </div>
     );
 }
 
@@ -890,7 +1055,7 @@ function PlacementForm({ mode, initial, types, zones, onSubmit, onCancel }: Plac
             <div className={styles.form_footer}>
                 <Button type="button" variant="ghost" onClick={onCancel} disabled={saving}>Cancel</Button>
                 <Button type="submit" variant="primary" loading={saving} disabled={!canSubmit}>
-                    {mode === 'create' ? 'Create placement' : 'Save changes'}
+                    {mode === 'create' ? 'Place widget' : 'Save changes'}
                 </Button>
             </div>
         </form>

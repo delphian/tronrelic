@@ -1,11 +1,10 @@
 /**
- * @fileoverview Widget zone subsystem barrel.
+ * @fileoverview Widget zone subsystem barrel — internal to the widgets module.
  *
- * Public exports for the zone subsystem — the `defineZone` constructor,
- * the core `ZONES` catalog, the runtime `ZoneRegistry`, and the
- * per-plugin `PluginZones` facade. Consumed by `WidgetsModule`, the
- * plugin loader, and core layout files that need to reference zones by
- * typed identifier.
+ * Exports the `defineZone` descriptor mint, the `ZoneRegistry` runtime
+ * class, and the plain-data `CORE_ZONE_DESCRIPTORS` catalog. Consumers
+ * outside the widgets module reach zones through `IWidgetsService` on
+ * the service registry, not these symbols.
  *
  * @module backend/modules/widgets/zones
  */
@@ -17,7 +16,5 @@ export {
     listKnownZones,
     __resetKnownZonesForTests
 } from './define-zone.js';
-export { ZONES } from './descriptors.js';
-export type { Zones } from './descriptors.js';
+export { CORE_ZONE_DESCRIPTORS } from './descriptors.js';
 export { ZoneRegistry, RESERVED_PLUGIN_ID } from './zone-registry.js';
-export { PluginZones } from './plugin-zones.js';

@@ -1,8 +1,7 @@
 import axios from 'axios';
 import mongoose from 'mongoose';
-import type { IPluginContext, IPlugin, IDatabaseService, ISchedulerService, IServiceRegistry, IHookRegistry, IZoneRegistry, IWidgetTypeRegistry } from '@/types';
+import type { IPluginContext, IPlugin, IDatabaseService, ISchedulerService, IServiceRegistry, IHookRegistry } from '@/types';
 import { PluginHooks } from '../hooks/index.js';
-import { PluginZones, PluginWidgetTypes } from '../modules/widgets/index.js';
 import { logger } from '../lib/logger.js';
 import { BlockchainObserverService } from '../services/blockchain-observer/index.js';
 import { BaseObserver, BaseBatchObserver, BaseBlockObserver } from '../modules/blockchain/observers/index.js';
@@ -18,7 +17,6 @@ import { SystemConfigService } from '../services/system-config/index.js';
 import { MenuService } from '../modules/menu/services/menu.service.js';
 import { ChainParametersService } from '../modules/chain-parameters/chain-parameters.service.js';
 import { UsdtParametersService } from '../modules/usdt-parameters/usdt-parameters.service.js';
-import { WidgetService } from '../services/widget/widget.service.js';
 import { TronGridClient } from '../modules/blockchain/tron-grid.client.js';
 import { BlockchainService } from '../modules/blockchain/blockchain.service.js';
 import { ClickHouseService } from '../modules/clickhouse/services/clickhouse.service.js';
@@ -66,9 +64,7 @@ export async function loadPlugins(
     database: IDatabaseService,
     scheduler: ISchedulerService | null,
     serviceRegistry: IServiceRegistry,
-    hookRegistry: IHookRegistry,
-    zoneRegistry: IZoneRegistry,
-    widgetTypeRegistry: IWidgetTypeRegistry
+    hookRegistry: IHookRegistry
 ): Promise<void> {
     await logger.waitUntilInitialized();
 
@@ -80,8 +76,7 @@ export async function loadPlugins(
     const metadataService = PluginMetadataService.getInstance();
     const pluginManager = PluginManagerService.getInstance();
     pluginManager.setHookRegistry(hookRegistry);
-    pluginManager.setZoneRegistry(zoneRegistry);
-    pluginManager.setWidgetTypeRegistry(widgetTypeRegistry);
+    pluginManager.setServiceRegistry(serviceRegistry);
     const observerService = BlockchainObserverService.getInstance();
 
     logger.info(`Discovered ${pluginList.length} plugins`);
@@ -98,8 +93,6 @@ export async function loadPlugins(
     // Caches are guaranteed warm at this point
     const chainParametersService = ChainParametersService.getInstance();
     const usdtParametersService = UsdtParametersService.getInstance();
-    const widgetService = WidgetService.getInstance(logger);
-    widgetService.setZoneRegistry(zoneRegistry);
     const tronGridClient = TronGridClient.getInstance();
     // Ensure BlockchainService has database injected before getInstance() (may already be set by jobs/index.ts)
     BlockchainService.setDependencies(database);
@@ -156,18 +149,10 @@ export async function loadPlugins(
             // disabled or uninstalled.
             const pluginHooks = new PluginHooks(plugin.manifest.id, hookRegistry, pluginLogger);
 
-            // Per-plugin zone facade. Same lifecycle and disposal model as
-            // hooks — zones declared during install/enable/init are dropped
-            // when the plugin is disabled or uninstalled.
-            const pluginZones = new PluginZones(plugin.manifest.id, zoneRegistry, pluginLogger);
-
-            // Per-plugin widget-type facade. Mirrors the zone facade —
-            // widget types declared during install/enable/init are
-            // disposed on disable, and the placement service's
-            // soft-disable path handles the matching placement rows.
-            const pluginWidgetTypes = new PluginWidgetTypes(plugin.manifest.id, widgetTypeRegistry, pluginLogger);
-
-            // Create plugin context with injected dependencies
+            // Create plugin context with injected dependencies. Widget
+            // operations go through `services.get('widgets')` — see
+            // IWidgetsService — so no widget-specific facade rides on
+            // the context.
             const context: IPluginContext = {
                 http: httpClient,
                 observerRegistry: observerService,
@@ -184,7 +169,6 @@ export async function loadPlugins(
                 scheduler: scheduler as any, // May be null if scheduler disabled
                 chainParameters: chainParametersService,
                 usdtParameters: usdtParametersService,
-                widgetService,
                 tronGrid: tronGridClient,
                 blockchainService,
                 addressLabelService,
@@ -192,13 +176,11 @@ export async function loadPlugins(
                 signatureService: new SignatureService(tronWebInstance),
                 services: serviceRegistry,
                 hooks: pluginHooks,
-                zones: pluginZones,
-                widgetTypes: pluginWidgetTypes,
                 logger: pluginLogger
             };
 
             // Register plugin in the manager (does not initialize)
-            pluginManager.registerPlugin(plugin, context, pluginHooks, pluginZones, pluginWidgetTypes);
+            pluginManager.registerPlugin(plugin, context, pluginHooks);
 
             pluginLogger.debug('Plugin discovered and registered');
         } catch (error) {
@@ -243,23 +225,11 @@ export async function loadPlugins(
                 pluginLogger.info('✓ Loaded plugin (no init hook)');
             }
 
-            // Seal the lifecycle windows on both per-plugin facades.
-            // Handlers and zone declarations stay registered for the
+            // Seal the lifecycle window on the hook facade. Handlers
+            // registered during install/enable/init stay live for the
             // plugin's enabled lifetime; subsequent register() calls
-            // (e.g. inside request handlers) now throw, matching the
-            // contract enforced by every other activation path in
-            // PluginManagerService.
+            // (e.g. inside request handlers) now throw.
             loaded.hooks.seal();
-            loaded.zones.seal();
-            loaded.widgetTypes.seal();
-
-            // Register widgets if defined
-            if (plugin.widgets && plugin.widgets.length > 0) {
-                for (const widget of plugin.widgets) {
-                    await widgetService.register(widget, metadata.id);
-                }
-                pluginLogger.info(`✓ Registered ${plugin.widgets.length} widget(s)`);
-            }
 
             // Register API routes
             apiService.registerPluginRoutes(plugin);

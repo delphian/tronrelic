@@ -56,6 +56,12 @@
     background: var(--color-surface);
     border: var(--border-width-thin) solid var(--color-border);
     border-radius: var(--radius-md);
+    transition: border-color var(--transition-base), background-color var(--transition-base);
+}
+
+.zone--drop-target {
+    border-color: var(--color-primary);
+    background: var(--color-primary-alpha-15);
 }
 
 .zone_header {
@@ -95,12 +101,6 @@
     font-style: italic;
 }
 
-.widget_cell {
-    display: flex;
-    flex-direction: column;
-    gap: var(--gap-2xs);
-}
-
 .widget_label {
     font-weight: var(--font-weight-semibold);
     color: var(--color-text);
@@ -114,7 +114,6 @@
 
 .route_chip {
     display: inline-block;
-    margin-right: var(--gap-2xs);
     padding: var(--padding-2xs) var(--padding-xs);
     background: var(--color-surface-muted);
     border-radius: var(--radius-xs);
@@ -123,11 +122,95 @@
     color: var(--color-text);
 }
 
-.route_chip:last-child {
-    margin-right: 0;
+/* ------------------------------------------------------------------ */
+/* Bubble cards                                                        */
+/* ------------------------------------------------------------------ */
+
+.bubbles {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-sm);
 }
 
-.row_actions {
+.bubble {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--gap-sm);
+    padding: var(--card-padding-sm);
+    background: var(--color-surface-muted);
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-md);
+    transition: border-color var(--transition-base), box-shadow var(--transition-base);
+}
+
+.bubble:hover {
+    border-color: var(--color-primary-alpha-38);
+}
+
+.bubble--dragging {
+    opacity: 0.55;
+    box-shadow: var(--shadow-md);
+    cursor: grabbing;
+}
+
+.bubble_handle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--button-height-sm);
+    height: var(--button-height-sm);
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: var(--color-text-muted);
+    border-radius: var(--radius-sm);
+    cursor: grab;
+    transition: color var(--transition-base), background-color var(--transition-base);
+    touch-action: none;
+}
+
+.bubble_handle:hover {
+    color: var(--color-text);
+    background: var(--color-surface);
+}
+
+.bubble_handle:active {
+    cursor: grabbing;
+}
+
+.bubble_handle:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 var(--border-width-medium) var(--color-focus-alpha-25);
+}
+
+.bubble_main {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-2xs);
+    min-width: 0;
+}
+
+.bubble_top {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-sm);
+    flex-wrap: wrap;
+}
+
+.bubble_routes {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--gap-2xs);
+    margin-top: var(--gap-2xs);
+}
+
+.bubble_routes_empty {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-caption);
+}
+
+.bubble_actions {
     display: inline-flex;
     align-items: center;
     gap: var(--gap-xs);
@@ -274,5 +357,12 @@
     .zone_count {
         margin-left: 0;
         width: 100%;
+    }
+    .bubble {
+        grid-template-columns: auto minmax(0, 1fr);
+    }
+    .bubble_actions {
+        grid-column: 1 / -1;
+        justify-content: flex-end;
     }
 }
