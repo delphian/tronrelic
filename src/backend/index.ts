@@ -31,6 +31,7 @@ import { LogsModule } from './modules/logs/index.js';
 import { DatabaseModule } from './modules/database/index.js';
 import { ClickHouseModule } from './modules/clickhouse/index.js';
 import { PagesModule } from './modules/pages/index.js';
+import { WidgetsModule, ZoneRegistry } from './modules/widgets/index.js';
 import { UserModule } from './modules/user/index.js';
 import { AddressLabelsModule } from './modules/address-labels/index.js';
 import { ToolsModule } from './modules/tools/index.js';
@@ -44,7 +45,7 @@ import { UsdtParametersService } from './modules/usdt-parameters/usdt-parameters
 import { createApiRouter } from './api/routes/index.js';
 import { PluginManagerService } from './services/plugin-manager.service.js';
 import type { Express } from 'express';
-import type { IDatabaseService, IMenuService, IMenuNode, IPluginManifest, IServiceRegistry, IHookRegistry } from '@/types';
+import type { IDatabaseService, IMenuService, IMenuNode, IPluginManifest, IServiceRegistry, IHookRegistry, IZoneRegistry } from '@/types';
 import axios from 'axios';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -142,7 +143,7 @@ async function bootstrap(): Promise<void> {
             await logger.waitUntilInitialized();
             // Pass scheduler to plugins for context.scheduler injection
             const scheduler = ctx.modules.scheduler.getSchedulerService();
-            await loadPlugins(ctx.coreDatabase, scheduler, ctx.serviceRegistry, ctx.hookRegistry);
+            await loadPlugins(ctx.coreDatabase, scheduler, ctx.serviceRegistry, ctx.hookRegistry, ctx.zoneRegistry);
         } catch (pluginError) {
             logger.error({ pluginError, stack: pluginError instanceof Error ? pluginError.stack : undefined }, 'Plugin initialization failed');
         }
@@ -213,12 +214,14 @@ interface BootstrapContext {
     menuService: IMenuService;
     serviceRegistry: IServiceRegistry;
     hookRegistry: IHookRegistry;
+    zoneRegistry: IZoneRegistry;
     modules: {
         database: DatabaseModule;
         clickhouse: ClickHouseModule;
         menu: MenuModule;
         logs: LogsModule;
         pages: PagesModule;
+        widgets: WidgetsModule;
         user: UserModule;
         addressLabels: AddressLabelsModule;
         tools: ToolsModule;
@@ -286,6 +289,13 @@ async function bootstrapInit(): Promise<BootstrapContext> {
     // both are available to the plugin loader.
     const hookRegistry = new HookRegistry(logger);
 
+    // Zone registry is process-wide infrastructure for the widget system —
+    // core zone descriptors declared at module load (see modules/widgets/
+    // zones/descriptors.ts) auto-populate on construction. Threaded into
+    // both the WidgetsModule (for admin introspection) and the plugin loader
+    // (for the per-plugin facade exposed on context.zones).
+    const zoneRegistry = new ZoneRegistry(logger);
+
     // Register shared infrastructure on the service registry so modules and
     // plugins can discover them via late-binding DI instead of importing
     // concrete classes.
@@ -298,10 +308,11 @@ async function bootstrapInit(): Promise<BootstrapContext> {
 
     const cacheService = new CacheService(getRedisClient(), coreDatabase);
 
-    const sharedDeps = { database: coreDatabase, cacheService, menuService, serviceRegistry, hookRegistry, app };
+    const sharedDeps = { database: coreDatabase, cacheService, menuService, serviceRegistry, hookRegistry, zoneRegistry, app };
 
     const logsModule = new LogsModule();
     const pagesModule = new PagesModule();
+    const widgetsModule = new WidgetsModule();
     const userModule = new UserModule();
     const addressLabelsModule = new AddressLabelsModule();
     const toolsModule = new ToolsModule();
@@ -309,6 +320,7 @@ async function bootstrapInit(): Promise<BootstrapContext> {
 
     await logsModule.init({ pinoLogger, database: coreDatabase, app });
     await pagesModule.init(sharedDeps);
+    await widgetsModule.init(sharedDeps);
     await schedulerModule.init({ database: coreDatabase, menuService, app });
     const schedulerService = schedulerModule.getSchedulerService();
     await userModule.init({ ...sharedDeps, scheduler: schedulerService, systemConfig: SystemConfigService.getInstance(), clickhouse });
@@ -323,12 +335,14 @@ async function bootstrapInit(): Promise<BootstrapContext> {
         menuService,
         serviceRegistry,
         hookRegistry,
+        zoneRegistry,
         modules: {
             database: databaseModule,
             clickhouse: clickHouseModule,
             menu: menuModule,
             logs: logsModule,
             pages: pagesModule,
+            widgets: widgetsModule,
             user: userModule,
             addressLabels: addressLabelsModule,
             tools: toolsModule,
@@ -359,6 +373,7 @@ async function bootstrapRun(ctx: BootstrapContext): Promise<void> {
     await modules.menu.run();
     await modules.logs.run();
     await modules.pages.run();
+    await modules.widgets.run();
     await modules.user.run();
     await modules.addressLabels.run();
     await modules.tools.run();

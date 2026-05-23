@@ -2,18 +2,26 @@ import type {
     IWidgetService,
     IWidgetConfig,
     IWidgetData,
-    ISystemLogService
+    ISystemLogService,
+    IZoneRegistry
 } from '@/types';
 
-/** Valid widget zone names for validation. */
-const VALID_ZONES = new Set([
+/**
+ * Fallback set used for zone validation when no `IZoneRegistry` has
+ * been injected yet — covers test paths that instantiate the service
+ * without bootstrap wiring. Production always overrides this via
+ * `setZoneRegistry(...)` immediately after bootstrap constructs the
+ * registry, so this set's job is to mirror the registry's declared
+ * core zones (see `modules/widgets/zones/descriptors.ts`) and nothing
+ * more — divergence would have widgets warn-or-not depending on
+ * whether the registry happened to be wired.
+ */
+const FALLBACK_VALID_ZONES = new Set([
     'ticker-after',
     'main-before',
     'main-after',
     'plugin-content:before',
-    'plugin-content:after',
-    'sidebar-top',
-    'sidebar-bottom'
+    'plugin-content:after'
 ]);
 
 /**
@@ -50,6 +58,7 @@ export class WidgetService implements IWidgetService {
     private static instance: WidgetService;
     private widgets: Map<string, IWidgetConfig> = new Map();
     private logger: ISystemLogService;
+    private zoneRegistry: IZoneRegistry | null = null;
 
     /**
      * Private constructor enforcing singleton pattern with dependency injection.
@@ -58,6 +67,37 @@ export class WidgetService implements IWidgetService {
      */
     private constructor(logger: ISystemLogService) {
         this.logger = logger;
+    }
+
+    /**
+     * Inject the process-wide zone registry.
+     *
+     * Called once during bootstrap after the registry is constructed so
+     * that subsequent widget registrations can validate `config.zone`
+     * against the live set of declared zones — including plugin-declared
+     * zones that the hardcoded fallback set could not anticipate.
+     *
+     * @param registry - Shared zone registry instance.
+     */
+    public setZoneRegistry(registry: IZoneRegistry): void {
+        this.zoneRegistry = registry;
+    }
+
+    /**
+     * Test whether a zone id is currently known.
+     *
+     * Prefers the injected `IZoneRegistry`; falls back to the hardcoded
+     * set when the registry has not been wired (e.g. unit tests
+     * instantiating the singleton directly).
+     *
+     * @param zone - Zone id to check.
+     * @returns True if the zone is known.
+     */
+    private isKnownZone(zone: string): boolean {
+        if (this.zoneRegistry) {
+            return this.zoneRegistry.has(zone);
+        }
+        return FALLBACK_VALID_ZONES.has(zone);
     }
 
     /**
@@ -91,13 +131,15 @@ export class WidgetService implements IWidgetService {
      * @returns Promise that resolves when registration is complete
      */
     public async register(config: IWidgetConfig, pluginId: string): Promise<void> {
-        // Validate zone name
-        if (!VALID_ZONES.has(config.zone)) {
+        // Validate zone name against the live registry (preferred) or
+        // the hardcoded fallback set when the registry has not been
+        // wired. Unknown zones produce a warning but do not block
+        // registration — the warning is diagnostic, not authoritative.
+        if (!this.isKnownZone(config.zone)) {
             this.logger.warn('Widget registered with unknown zone', {
                 widgetId: config.id,
                 pluginId,
-                zone: config.zone,
-                validZones: Array.from(VALID_ZONES)
+                zone: config.zone
             });
         }
 

@@ -21,6 +21,7 @@ import type { IUserService } from '../user/IUserService.js';
 import type { IServiceRegistry } from '../services/IServiceRegistry.js';
 import type { ISignatureService } from '../services/ISignatureService.js';
 import type { IPluginHooks } from '../hooks/IPluginHooks.js';
+import type { IPluginZones } from '../widget-zones/IPluginZones.js';
 import { ISystemLogService } from '../system-log/ISystemLogService.js';
 
 /**
@@ -173,6 +174,36 @@ export interface IPluginContext {
      * ```
      */
     hooks: IPluginHooks;
+
+    /**
+     * Plugin-scoped zone facade for declaring widget injection points
+     * inside the plugin's own pages.
+     *
+     * Zones are physical injection points where widgets render. Core
+     * zones (e.g. `main-after`, `ticker-after`) are declared by the
+     * platform; plugins can declare additional zones that other plugins
+     * can target with widget placements. Zone declarations must happen
+     * during the plugin lifecycle (`install` / `enable` / `init`);
+     * registering from a request handler throws.
+     *
+     * Plugins do not need to redeclare core zones — they reach those by
+     * string id from widget placements. This facade is exclusively for
+     * declaring *new* zones the plugin owns.
+     *
+     * @example
+     * ```typescript
+     * init: async (context) => {
+     *     context.zones.register({
+     *         id: 'whales:detail-sidebar',
+     *         label: 'Whale detail sidebar',
+     *         description: 'Right-side panel on individual whale pages.',
+     *         host: 'plugin',
+     *         layout: 'vertical'
+     *     });
+     * }
+     * ```
+     */
+    zones: IPluginZones;
 
     /** Structured logger scoped to the plugin for consistent telemetry */
     logger: ISystemLogService;

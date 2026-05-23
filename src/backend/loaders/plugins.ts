@@ -1,7 +1,8 @@
 import axios from 'axios';
 import mongoose from 'mongoose';
-import type { IPluginContext, IPlugin, IDatabaseService, ISchedulerService, IServiceRegistry, IHookRegistry } from '@/types';
+import type { IPluginContext, IPlugin, IDatabaseService, ISchedulerService, IServiceRegistry, IHookRegistry, IZoneRegistry } from '@/types';
 import { PluginHooks } from '../hooks/index.js';
+import { PluginZones } from '../modules/widgets/index.js';
 import { logger } from '../lib/logger.js';
 import { BlockchainObserverService } from '../services/blockchain-observer/index.js';
 import { BaseObserver, BaseBatchObserver, BaseBlockObserver } from '../modules/blockchain/observers/index.js';
@@ -65,7 +66,8 @@ export async function loadPlugins(
     database: IDatabaseService,
     scheduler: ISchedulerService | null,
     serviceRegistry: IServiceRegistry,
-    hookRegistry: IHookRegistry
+    hookRegistry: IHookRegistry,
+    zoneRegistry: IZoneRegistry
 ): Promise<void> {
     await logger.waitUntilInitialized();
 
@@ -77,6 +79,7 @@ export async function loadPlugins(
     const metadataService = PluginMetadataService.getInstance();
     const pluginManager = PluginManagerService.getInstance();
     pluginManager.setHookRegistry(hookRegistry);
+    pluginManager.setZoneRegistry(zoneRegistry);
     const observerService = BlockchainObserverService.getInstance();
 
     logger.info(`Discovered ${pluginList.length} plugins`);
@@ -94,6 +97,7 @@ export async function loadPlugins(
     const chainParametersService = ChainParametersService.getInstance();
     const usdtParametersService = UsdtParametersService.getInstance();
     const widgetService = WidgetService.getInstance(logger);
+    widgetService.setZoneRegistry(zoneRegistry);
     const tronGridClient = TronGridClient.getInstance();
     // Ensure BlockchainService has database injected before getInstance() (may already be set by jobs/index.ts)
     BlockchainService.setDependencies(database);
@@ -150,6 +154,11 @@ export async function loadPlugins(
             // disabled or uninstalled.
             const pluginHooks = new PluginHooks(plugin.manifest.id, hookRegistry, pluginLogger);
 
+            // Per-plugin zone facade. Same lifecycle and disposal model as
+            // hooks — zones declared during install/enable/init are dropped
+            // when the plugin is disabled or uninstalled.
+            const pluginZones = new PluginZones(plugin.manifest.id, zoneRegistry, pluginLogger);
+
             // Create plugin context with injected dependencies
             const context: IPluginContext = {
                 http: httpClient,
@@ -175,11 +184,12 @@ export async function loadPlugins(
                 signatureService: new SignatureService(tronWebInstance),
                 services: serviceRegistry,
                 hooks: pluginHooks,
+                zones: pluginZones,
                 logger: pluginLogger
             };
 
             // Register plugin in the manager (does not initialize)
-            pluginManager.registerPlugin(plugin, context, pluginHooks);
+            pluginManager.registerPlugin(plugin, context, pluginHooks, pluginZones);
 
             pluginLogger.debug('Plugin discovered and registered');
         } catch (error) {
@@ -224,11 +234,14 @@ export async function loadPlugins(
                 pluginLogger.info('✓ Loaded plugin (no init hook)');
             }
 
-            // Seal the lifecycle window. Handlers stay registered for
-            // the plugin's enabled lifetime; subsequent register() calls
+            // Seal the lifecycle windows on both per-plugin facades.
+            // Handlers and zone declarations stay registered for the
+            // plugin's enabled lifetime; subsequent register() calls
             // (e.g. inside request handlers) now throw, matching the
-            // contract documented in system-hooks.md.
+            // contract enforced by every other activation path in
+            // PluginManagerService.
             loaded.hooks.seal();
+            loaded.zones.seal();
 
             // Register widgets if defined
             if (plugin.widgets && plugin.widgets.length > 0) {
