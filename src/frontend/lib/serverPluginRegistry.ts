@@ -65,22 +65,48 @@ let permanentMap: Map<string, IResolvedPluginPage> | null = null;
 function buildPermanentMap(): Map<string, IResolvedPluginPage> {
     const map = new Map<string, IResolvedPluginPage>();
     for (const plugin of frontendPlugins) {
-        const pluginId = plugin.manifest.id;
-        const pages = plugin.pages ?? [];
-        const adminPages = plugin.adminPages ?? [];
-        for (const page of [...pages, ...adminPages]) {
-            const existing = map.get(page.path);
-            if (existing) {
-                console.warn(
-                    `[serverPluginRegistry] Duplicate page path '${page.path}' detected. ` +
-                        `Plugin '${pluginId}' will be ignored; '${existing.pluginId}' keeps the route.`
+        // Defense in depth — the generated registry already filters malformed
+        // modules, but a plugin whose pages array contains entries with
+        // missing paths would still throw inside the loop and abort SSR for
+        // every route. Wrap each plugin so one broken entry only breaks that
+        // plugin, never the entire page resolver.
+        try {
+            const manifest = plugin?.manifest;
+            if (!manifest || typeof manifest.id !== 'string' || manifest.id.length === 0) {
+                console.error(
+                    '[serverPluginRegistry] Skipping registry entry with missing manifest id.'
                 );
                 continue;
             }
-            map.set(page.path, {
-                pluginId,
-                config: { ...page, pluginId }
-            });
+            const pluginId = manifest.id;
+            const pages = plugin.pages ?? [];
+            const adminPages = plugin.adminPages ?? [];
+            for (const page of [...pages, ...adminPages]) {
+                if (!page || typeof page.path !== 'string' || page.path.length === 0) {
+                    console.error(
+                        `[serverPluginRegistry] Plugin '${pluginId}' declared a page with no path; skipping.`
+                    );
+                    continue;
+                }
+                const existing = map.get(page.path);
+                if (existing) {
+                    console.warn(
+                        `[serverPluginRegistry] Duplicate page path '${page.path}' detected. ` +
+                            `Plugin '${pluginId}' will be ignored; '${existing.pluginId}' keeps the route.`
+                    );
+                    continue;
+                }
+                map.set(page.path, {
+                    pluginId,
+                    config: { ...page, pluginId }
+                });
+            }
+        } catch (error) {
+            const pluginId = plugin?.manifest?.id ?? '<unknown>';
+            console.error(
+                `[serverPluginRegistry] Plugin '${pluginId}' threw while indexing pages; skipping.`,
+                error
+            );
         }
     }
     return map;

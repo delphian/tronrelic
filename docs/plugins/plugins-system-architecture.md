@@ -42,6 +42,14 @@ Source mode couples every plugin to core's webpack and blocks per-plugin build i
 
 `scripts/generate-frontend-plugin-registry.mjs` reads each plugin's `package.json` `exports` map. When `exports."./frontend"` points at `.js`/`.mjs`/`.cjs`, the generator emits a static import at that path and `next.config.mjs` omits the plugin from `transpilePackages`. When the entry still points at `.ts`, core falls back to transpiling the source.
 
+### Frontend export contract
+
+Every plugin's frontend entry — compiled or raw — must expose an IPlugin-shaped value (an object whose `manifest` has non-empty string `id` and `title`) under any named export. **`export default` is permitted but not required.** The generator imports every plugin under a namespace binding (`import * as foo_module from '...'`); the runtime discovers the IPlugin via `Object.values(foo_module).find(isIPluginShape)`. Plugins whose module exposes no IPlugin-shaped value are dropped with a logged error and surfaced via `failedPluginLoads` — the rest of the registry loads normally.
+
+The widget registry follows the same defense-in-depth pattern: each plugin's `widgets/index.ts` is imported as a namespace and merged via `safeMergeWidgets`, which refuses missing or non-object `widgetComponents` exports instead of crashing the spread at module load.
+
+This contract supersedes the prior default-import path for compiled-mode plugins, which silently produced `undefined` whenever a plugin shipped only a named export and crashed SSR for every route at the first `.menuItems` access. The `.d.ts` sidecar core generates next to each compiled artifact remains as a TS-resolution affordance; its declared shape does not constrain the plugin's public API.
+
 ### What core still owns in compiled mode
 
 Externals (`react`, `next/*`, `lucide-react`, `@delphian/tronrelic-types`, etc.) resolve through core's hoisted `node_modules` so there is one React instance at runtime. SCSS Modules are still compiled by core's webpack via the `/src/plugins/` include extension in `next.config.mjs:113-151` — only the TypeScript compile moves into the plugin. SCSS edits in `src/frontend/**/*.scss` propagate automatically through `next dev` because core reads from source; the `copy-frontend-assets.mjs` step mirrors them into `dist/frontend/` only when `npm run build:frontend` runs, so production consumers of `dist/` see stale SCSS until then. A new plugin version still requires rebuilding the core Docker image because `plugins.generated.ts` imports the entry statically at `next build` time.

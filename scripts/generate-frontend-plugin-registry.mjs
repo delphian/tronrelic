@@ -235,59 +235,51 @@ async function collectPluginMetadata() {
  * instead of polling, so the registry must be populated at module load time on
  * both server and client.
  *
- * Two import shapes are emitted based on each plugin's entry:
- *   - Compiled artifact (.js/.mjs/.cjs) → typed default import. The plugin must
- *     `export default <IPlugin>` from its frontend entry. A sibling .d.ts
- *     generated in the plugin's dist directory supplies the IPlugin type,
- *     avoiding TS7016 from noImplicitAny.
- *   - Raw TS entry → namespace import + runtime discovery. Keeps legacy plugins
- *     working without forcing a default export until they migrate.
+ * Every plugin uses one import shape — namespace import (`import * as foo_module`)
+ * — and the registry resolves the IPlugin via runtime discovery
+ * (`Object.values().find(...)`). This contract is symmetric with the backend
+ * loader at src/backend/loaders/plugins.generated.ts and removes the prior
+ * default-import-only path that silently produced `undefined` whenever a plugin
+ * forgot `export default`. Invalid plugins are skipped with a logged error
+ * instead of poisoning the array — see `loadPluginCandidate` below.
+ *
+ * Plugin authors may use any named export. `export default` is permitted but
+ * not required: the runtime walks Object.values for the first IPlugin-shaped
+ * value. A `.d.ts` sidecar (see writeCompiledPluginTypes) supplies the IPlugin
+ * type for TS module resolution so namespace imports on .js artifacts resolve
+ * without allowJs.
  *
  * CSS code splitting is preserved because each plugin's frontend.ts uses
  * next/dynamic() to lazy-load its actual page components — the static import
  * here only pulls in the manifest and the dynamic wrappers, not the page CSS.
  */
 function renderModule(metadata) {
-    const header = `/**\n * AUTO-GENERATED FILE. DO NOT EDIT.\n *\n * This module is produced by scripts/generate-frontend-plugin-registry.mjs\n * and exposes a synchronous, statically-imported array of plugin frontends.\n *\n * Static imports are required so the plugin registry can be populated at\n * module load time on both server and client. CSS code splitting is preserved\n * because plugin frontend entry files use next/dynamic() for their page\n * components — only the manifest and dynamic wrappers are pulled in here.\n */\n`;
+    const header = `/**\n * AUTO-GENERATED FILE. DO NOT EDIT.\n *\n * This module is produced by scripts/generate-frontend-plugin-registry.mjs\n * and exposes a synchronous, statically-imported array of plugin frontends.\n *\n * Static imports are required so the plugin registry can be populated at\n * module load time on both server and client. CSS code splitting is preserved\n * because plugin frontend entry files use next/dynamic() for their page\n * components — only the manifest and dynamic wrappers are pulled in here.\n *\n * Every plugin module is imported under a namespace binding and the IPlugin\n * value is discovered via Object.values().find() at load time. Plugins whose\n * module exposes no IPlugin-shaped export are reported and dropped from the\n * resulting registry, never propagated as undefined into consumers.\n */\n`;
 
     const imports = `import type { IPlugin } from '@/types';\n\n`;
 
     if (metadata.length === 0) {
-        const emptyBody = `export const frontendPlugins: IPlugin[] = [];\n`;
+        const emptyBody = `export const frontendPlugins: IPlugin[] = [];\nexport const failedPluginLoads: ReadonlyArray<{ readonly pluginId: string; readonly reason: string }> = [];\n`;
         return `${header}${imports}${emptyBody}`;
     }
 
-    const hasLegacy = metadata.some(entry => !entry.isCompiled);
-
     const staticImports = metadata
-        .map(({ id, importPath, isCompiled }) => {
+        .map(({ id, importPath }) => {
             const safeId = id.replace(/[^a-zA-Z0-9_]/g, '_');
-            if (isCompiled) {
-                return `import ${safeId}_plugin from '${importPath}';`;
-            }
             return `import * as ${safeId}_module from '${importPath}';`;
         })
         .join('\n');
 
-    const arrayEntries = metadata
-        .map(({ id, isCompiled }) => {
+    const candidateEntries = metadata
+        .map(({ id }) => {
             const safeId = id.replace(/[^a-zA-Z0-9_]/g, '_');
-            if (isCompiled) {
-                return `    ${safeId}_plugin,`;
-            }
-            return `    resolvePluginExport('${id}', ${safeId}_module),`;
+            return `    { pluginId: ${JSON.stringify(id)}, module: ${safeId}_module as Record<string, unknown> },`;
         })
         .join('\n');
 
-    const arrayDecl = `export const frontendPlugins: IPlugin[] = [\n${arrayEntries}\n];\n`;
+    const resolver = `interface IPluginCandidate {\n    pluginId: string;\n    module: Record<string, unknown>;\n}\n\ninterface ILoadFailure {\n    pluginId: string;\n    reason: string;\n}\n\n/**\n * Returns true when value has the minimum IPlugin shape: a manifest object\n * with non-empty string id and title. Looser than the full IPlugin type so a\n * plugin can lack optional surfaces (pages, menuItems, adminPages, component)\n * and still register — those are validated by downstream consumers.\n */\nfunction isIPluginShape(value: unknown): value is IPlugin {\n    if (typeof value !== 'object' || value === null) return false;\n    const v = value as Record<string, unknown>;\n    if (typeof v.manifest !== 'object' || v.manifest === null) return false;\n    const m = v.manifest as Record<string, unknown>;\n    return typeof m.id === 'string' && m.id.length > 0\n        && typeof m.title === 'string' && m.title.length > 0;\n}\n\n/**\n * Scans a plugin module for the IPlugin-shaped value and returns it. Returns\n * null and records a failure when no candidate is found — the alternative,\n * throwing, would crash module load and break every consumer of\n * frontendPlugins, which is exactly the failure mode this loader exists to\n * eliminate.\n */\nfunction loadPluginCandidate(\n    candidate: IPluginCandidate,\n    failures: ILoadFailure[]\n): IPlugin | null {\n    const found = Object.values(candidate.module).find(isIPluginShape);\n    if (!found) {\n        const reason = \`No IPlugin-shaped export found. Ensure frontend.ts exports a constant whose \\\`manifest\\\` has string \\\`id\\\` and \\\`title\\\`.\`;\n        failures.push({ pluginId: candidate.pluginId, reason });\n        console.error(\`[plugins.generated] Failed to load plugin '\${candidate.pluginId}': \${reason}\`);\n        return null;\n    }\n    if (found.manifest.id !== candidate.pluginId) {\n        console.warn(\n            \`[plugins.generated] Plugin '\${candidate.pluginId}' has manifest id '\${found.manifest.id}'; \` +\n            \`the directory id is canonical for registry lookups.\`\n        );\n    }\n    return found;\n}\n\nconst _pluginCandidates: IPluginCandidate[] = [\n${candidateEntries}\n];\n\nconst _loadFailures: ILoadFailure[] = [];\n\n/**\n * Every plugin whose module produced a valid IPlugin shape. Plugins whose\n * module is malformed are absent and surfaced via failedPluginLoads.\n */\nexport const frontendPlugins: IPlugin[] = _pluginCandidates\n    .map(c => loadPluginCandidate(c, _loadFailures))\n    .filter((p): p is IPlugin => p !== null);\n\n/**\n * Diagnostic record of plugins whose module failed validation at load time.\n * Surface via /system/plugins so operators can see broken registrations\n * without grepping logs.\n */\nexport const failedPluginLoads: ReadonlyArray<ILoadFailure> = _loadFailures;\n`;
 
-    const resolver = hasLegacy
-        ? `function resolvePluginExport(pluginId: string, module: Record<string, unknown>): IPlugin {\n    const candidate = Object.values(module).find((value): value is IPlugin => {\n        return typeof value === 'object' && value !== null && 'manifest' in value;\n    });\n\n    if (!candidate) {\n        throw new Error(\`Failed to locate plugin export for '\${pluginId}'. Ensure the module exports an IPlugin.\`);\n    }\n\n    return candidate;\n}\n`
-        : '';
-
-    const body = hasLegacy
-        ? `${staticImports}\n\n${resolver}\n${arrayDecl}`
-        : `${staticImports}\n\n${arrayDecl}`;
+    const body = `${staticImports}\n\n${resolver}`;
 
     return `${header}${imports}${body}`;
 }
@@ -298,7 +290,14 @@ function renderModule(metadata) {
  * The root tsconfig uses `moduleResolution: "Node"` (legacy), so it doesn't
  * honor package `exports.types` conditions and instead looks for `.d.ts` files
  * sitting next to the imported `.js`. Each compiled plugin frontend therefore
- * needs a one-line declaration that types the default export as IPlugin.
+ * needs a declaration that lets the registry's namespace import resolve.
+ *
+ * The declaration is intentionally permissive: it advertises a single
+ * `plugin: IPlugin` and a matching default export so namespace imports always
+ * compile, but the runtime registry rediscovers the actual export via
+ * Object.values().find() regardless of name. Plugin authors are not bound to
+ * use this exact identifier — the sidecar exists only to satisfy TS module
+ * resolution, not to constrain the plugin's public API.
  *
  * The plugin's own build intentionally does not emit .d.ts — core's registry
  * generator owns the declarations because that's the only consumer that needs
@@ -313,7 +312,7 @@ async function writeCompiledPluginTypes(metadata) {
             continue;
         }
         const sidecarPath = entry.absoluteEntry.replace(/\.(js|mjs|cjs)$/, '.d.ts');
-        const contents = `/**\n * AUTO-GENERATED FILE. DO NOT EDIT.\n *\n * This declaration file is produced by\n * scripts/generate-frontend-plugin-registry.mjs and gives core's\n * plugins.generated.ts a typed default import for this compiled plugin\n * artifact. The plugin's own build intentionally skips .d.ts emission —\n * core owns this sidecar because core is the only consumer.\n */\nimport type { IPlugin } from '@delphian/tronrelic-types';\n\ndeclare const plugin: IPlugin;\nexport default plugin;\n`;
+        const contents = `/**\n * AUTO-GENERATED FILE. DO NOT EDIT.\n *\n * This declaration file is produced by\n * scripts/generate-frontend-plugin-registry.mjs so the core registry's\n * namespace import resolves under moduleResolution: "Node" without allowJs.\n *\n * The shape below is a TS-resolution affordance, not a runtime contract:\n * the registry discovers the IPlugin via Object.values().find() at load time,\n * so plugin authors may use any named export — this file does not bind them\n * to the identifier 'plugin' nor to providing a default export.\n */\nimport type { IPlugin } from '@delphian/tronrelic-types';\n\ndeclare const plugin: IPlugin;\nexport { plugin };\nexport default plugin;\n`;
         await writeIfChanged(sidecarPath, contents);
     }
 }
@@ -480,32 +479,66 @@ export function getWidgetComponent(widgetId: string): WidgetComponent | undefine
 `;
     }
 
-    // Generate static imports for each plugin's widget components
+    // Generate namespace imports for each plugin's widget module. Using a
+    // namespace import (rather than `import { widgetComponents }`) means a
+    // plugin that fails to export `widgetComponents` resolves to an empty
+    // namespace at load time — the spread below would otherwise throw
+    // "Cannot read properties of undefined" and take down every page that
+    // hosts a widget zone.
     const imports = metadata
         .map(({ id, importPath }) => {
             const safeId = id.replace(/[^a-zA-Z0-9_]/g, '_');
-            return `import { widgetComponents as ${safeId}_widgets } from '${importPath}';`;
+            return `import * as ${safeId}_widgets_module from '${importPath}';`;
         })
         .join('\n');
 
-    // Generate the merged registry
-    const registrySpread = metadata
+    const mergeCalls = metadata
         .map(({ id }) => {
             const safeId = id.replace(/[^a-zA-Z0-9_]/g, '_');
-            return `    ...${safeId}_widgets,`;
+            return `safeMergeWidgets(${JSON.stringify(id)}, (${safeId}_widgets_module as { widgetComponents?: unknown }).widgetComponents);`;
         })
         .join('\n');
 
     const registry = `
 /**
+ * Validates a plugin's widget map and merges it into the registry.
+ *
+ * Refuses missing or non-object exports rather than crashing the spread at
+ * module load. A plugin whose frontend bundle is missing widgetComponents is
+ * dropped with a logged warning instead of poisoning every widget zone on
+ * the site.
+ */
+function safeMergeWidgets(
+    pluginId: string,
+    widgets: unknown
+): void {
+    if (widgets == null) {
+        console.error(
+            \`[widgets.generated] Plugin '\${pluginId}' module did not export widgetComponents. \` +
+            \`Ensure src/frontend/widgets/index.ts contains \\\`export const widgetComponents = {...}\\\`.\`
+        );
+        return;
+    }
+    if (typeof widgets !== 'object') {
+        console.error(
+            \`[widgets.generated] Plugin '\${pluginId}' widgetComponents export is not an object (got \${typeof widgets}).\`
+        );
+        return;
+    }
+    Object.assign(widgetComponentRegistry, widgets);
+}
+
+/**
  * Combined widget component registry from all plugins.
  *
  * Maps widget IDs to their React components. Widget IDs must match
- * the IDs used in backend widget registration.
+ * the IDs used in backend widget registration. Plugins whose widgetComponents
+ * export is malformed are skipped with a logged error instead of crashing the
+ * spread at module load.
  */
-export const widgetComponentRegistry: Record<string, WidgetComponent> = {
-${registrySpread}
-};
+export const widgetComponentRegistry: Record<string, WidgetComponent> = {};
+
+${mergeCalls}
 
 /**
  * Look up a widget component by ID.

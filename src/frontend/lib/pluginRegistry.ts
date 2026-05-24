@@ -84,14 +84,50 @@ class PluginRegistry {
      * Automatically adds the plugin ID to each page configuration for proper
      * context injection during rendering.
      *
+     * Defense in depth: although the generated registry already filters out
+     * malformed plugin modules, this method revalidates each plugin's manifest
+     * shape and skips with a logged error rather than throwing on a missing
+     * field. A bad plugin reaching this point used to crash the entire SSR
+     * pass on the first `.menuItems` access — see the post-mortem on the
+     * x-poster widget rollout for the failure mode.
+     *
      * @param plugin - The plugin definition containing menu items, pages, and/or admin pages
      */
     registerPlugin(plugin: IPlugin): void {
-        this.state.plugins.push(plugin);
-
-        if (plugin.menuItems) {
-            this.state.menuItems.push(...plugin.menuItems);
+        if (!this.isValidPlugin(plugin)) {
+            console.error(
+                '[pluginRegistry] Refusing to register malformed plugin entry. ' +
+                'Expected an object with a manifest containing string id and title.',
+                { received: plugin }
+            );
+            return;
         }
+
+        // Materialize the plugin's surfaces into locals *before* mutating
+        // shared state. A throwing getter on .menuItems / .pages / .adminPages
+        // (or an iterator that throws partway through) would otherwise leave
+        // this.state partially populated — the plugin would appear in
+        // .plugins but contribute nothing to navigation or routing. By
+        // computing the full payload first, we either register everything
+        // for a plugin or nothing.
+        let menuItems: IMenuItemConfig[];
+        let pages: IPageConfig[];
+        let adminPages: IPageConfig[];
+        try {
+            menuItems = plugin.menuItems ? [...plugin.menuItems] : [];
+            pages = plugin.pages ? [...plugin.pages] : [];
+            adminPages = plugin.adminPages ? [...plugin.adminPages] : [];
+        } catch (error) {
+            console.error(
+                `[pluginRegistry] Plugin '${plugin.manifest.id}' threw while ` +
+                'enumerating menuItems/pages/adminPages; skipping registration entirely.',
+                error
+            );
+            return;
+        }
+
+        this.state.plugins.push(plugin);
+        this.state.menuItems.push(...menuItems);
 
         // First-wins collision policy. The server-side registry uses the same
         // policy in serverPluginRegistry.buildPermanentMap, so SSR and client
@@ -111,14 +147,8 @@ class PluginRegistry {
             this.state.pages.push({ ...page, pluginId: plugin.manifest.id });
         };
 
-        if (plugin.pages) {
-            plugin.pages.forEach(addPageIfFirst);
-        }
-
-        // Register admin pages (also added to pages array)
-        if (plugin.adminPages) {
-            plugin.adminPages.forEach(addPageIfFirst);
-        }
+        pages.forEach(addPageIfFirst);
+        adminPages.forEach(addPageIfFirst);
 
         // Skip the sort + notify when called from bootstrap(); the bulk
         // path sorts once and notifies once at the end of the loop.
@@ -126,6 +156,21 @@ class PluginRegistry {
             this.sortMenuItems();
             this.notify();
         }
+    }
+
+    /**
+     * Returns true when the value has the minimum IPlugin shape the registry
+     * needs to operate: a manifest object with non-empty string id and title.
+     * Looser than IPlugin's full type so optional surfaces (pages, menuItems,
+     * adminPages, component) may be absent without disqualifying the plugin.
+     */
+    private isValidPlugin(plugin: unknown): plugin is IPlugin {
+        if (typeof plugin !== 'object' || plugin === null) return false;
+        const p = plugin as Record<string, unknown>;
+        if (typeof p.manifest !== 'object' || p.manifest === null) return false;
+        const m = p.manifest as Record<string, unknown>;
+        return typeof m.id === 'string' && m.id.length > 0
+            && typeof m.title === 'string' && m.title.length > 0;
     }
 
     /**
@@ -157,6 +202,12 @@ class PluginRegistry {
      * existing `clear()` and `registerPlugin()` methods remain available for
      * tests that need to reset state.
      *
+     * Each plugin is wrapped in try/catch so a runtime exception inside one
+     * plugin's registration cannot abort the whole bootstrap loop. The
+     * generated registry already excludes plugins with no IPlugin export, but
+     * downstream listeners or page configs may still throw — that single
+     * plugin gets dropped, the rest still load.
+     *
      * @param plugins - Plugin instances to register synchronously
      */
     bootstrap(plugins: IPlugin[]): void {
@@ -167,7 +218,15 @@ class PluginRegistry {
         this.bulkRegistering = true;
         try {
             for (const plugin of plugins) {
-                this.registerPlugin(plugin);
+                try {
+                    this.registerPlugin(plugin);
+                } catch (error) {
+                    const pluginId = plugin?.manifest?.id ?? '<unknown>';
+                    console.error(
+                        `[pluginRegistry] Plugin '${pluginId}' threw during registration; skipping.`,
+                        error
+                    );
+                }
             }
         } finally {
             this.bulkRegistering = false;
