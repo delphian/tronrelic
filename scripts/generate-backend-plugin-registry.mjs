@@ -196,6 +196,7 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import type { IPlugin, IPluginManifest } from '@/types';
+import { loadFromPluginLoaders } from './safe-plugin-load.js';
 `;
 
     if (metadata.length === 0) {
@@ -277,21 +278,14 @@ ${entries}
 
 /**
  * Loads every discovered plugin via dynamic import. Resolution failures are
- * isolated per plugin: a broken module-level import or evaluation throw in one
- * plugin logs a warning and is dropped from the returned set, leaving the rest
- * of the registry — and backend startup — unaffected.
+ * isolated per plugin: a broken module-level import, evaluation throw, or a
+ * resolved value that fails the minimum IPlugin shape check is logged and
+ * dropped from the returned set, leaving the rest of the registry — and
+ * backend startup — unaffected. The orchestration lives in
+ * loaders/safe-plugin-load.ts so the contract is testable.
  */
 export async function loadDiscoveredPlugins(): Promise<IPlugin[]> {
-    const results = await Promise.allSettled(pluginLoaders.map((load) => load()));
-    const plugins: IPlugin[] = [];
-    for (const result of results) {
-        if (result.status === 'fulfilled') {
-            plugins.push(result.value);
-        } else {
-            console.error('[plugins.generated] Plugin failed to load:', result.reason);
-        }
-    }
-    return plugins;
+    return loadFromPluginLoaders(pluginLoaders);
 }
 `;
 
