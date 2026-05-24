@@ -9,9 +9,11 @@
  * - plugin-content:before - Above the plugin page content
  * - plugin-content:after - Below the plugin page content
  *
- * Plugins can target these zones by registering widgets with:
- * - zone: 'plugin-content:before' or 'plugin-content:after'
- * - routes: ['/plugin-path'] to target specific plugin pages
+ * Plugins target these zones by calling registerWidget on the unified
+ * widgets service (`IWidgetsService`, published on the service registry
+ * as `'widgets'`). The default placement points the widget at a zone
+ * and a route filter; operators can later override either from
+ * /system/widgets.
  *
  * Context-aware widgets can access route information through the `route` and
  * `params` props passed to widget components. For plugin pages, the route is
@@ -20,14 +22,21 @@
  *
  * @example
  * // In plugin backend init()
- * await context.widgetService.register({
- *     id: 'my-plugin:promo-banner',
- *     zone: 'plugin-content:before',
- *     routes: ['/other-plugin'],
- *     order: 10,
- *     title: 'Promo Banner',
- *     fetchData: async (route, params) => ({ message: 'Check out my plugin!' })
- * }, manifest.id);
+ * const widgets = context.services.get<IWidgetsService>('widgets');
+ * if (widgets) {
+ *     await widgets.registerWidget({
+ *         id: 'my-plugin:promo-banner',
+ *         label: 'Promo Banner',
+ *         description: 'Cross-plugin promo strip.',
+ *         defaultZoneId: 'plugin-content:before',
+ *         defaultRoutes: ['/other-plugin'],
+ *         defaultOrder: 10,
+ *         defaultTitle: 'Promo Banner',
+ *         defaultDataFetcher: async (route, params) => ({
+ *             message: 'Check out my plugin!'
+ *         })
+ *     }, manifest.id);
+ * }
  */
 
 import { WidgetZone, fetchWidgetsForRoute } from './widgets';
