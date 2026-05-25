@@ -34,7 +34,7 @@ export type { IDatabaseService } from './database/IDatabaseService.js';
 export type { IMigration, IMigrationContext, MigrationTarget } from './database/IMigration.js';
 export type { IClickHouseService } from './clickhouse/index.js';
 export type { IPage, IPageSettings, IPageService, IMarkdownService, IFrontmatterData, IParsedMarkdown } from './pages/index.js';
-export type { IStorageProvider, IFileService, IFileRecord, IFileSource, IFileUploadOptions, IFileListFilter, IVariantOptions, IFileVariant, IFilesSettings, IFilesSettingsService } from './files/index.js';
+export type { IStorageProvider, IStorageObjectStat, IFileService, IFileRecord, IFileSource, IFileUploadOptions, IFileListFilter, IVariantOptions, IFileVariant, IFilesSettings, IFilesSettingsService } from './files/index.js';
 export { FILE_SOURCE_KINDS, FileValidationError, FileSizeExceededError } from './files/index.js';
 export type { IModule, IModuleMetadata } from './module/index.js';
 export { USER_FILTERS, USER_IDENTITY_STATES, UserIdentityState, SESSION_TTL_MS, isSessionFresh } from './user/index.js';

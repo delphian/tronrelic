@@ -85,18 +85,27 @@ export interface IFileUploadOptions {
 }
 
 /**
- * Caller-supplied options on `getVariant()`. At least one dimension is
- * required. When only one is supplied the other is computed to preserve
- * the source aspect ratio. Values outside the 1–4000 pixel range are
- * rejected so a single request cannot pin a server CPU resizing a
+ * Caller-supplied options on `getVariant()`. Modeled as a discriminated
+ * union so the type system enforces "at least one of width or height"
+ * — `{}` is unrepresentable. When only one is supplied the other is
+ * computed to preserve the source aspect ratio. Values outside the
+ * 1–4000 pixel range are clamped to the nearest endpoint; the 4000-pixel
+ * ceiling prevents a single request from pinning a server CPU resizing a
  * pathological image.
  */
-export interface IVariantOptions {
-    /** Target width in pixels (1–4000). */
-    width?: number;
-    /** Target height in pixels (1–4000). */
-    height?: number;
-}
+export type IVariantOptions =
+    | {
+        /** Target width in pixels (1–4000). */
+        width: number;
+        /** Target height in pixels (1–4000). */
+        height?: number;
+    }
+    | {
+        /** Target width in pixels (1–4000). */
+        width?: number;
+        /** Target height in pixels (1–4000). */
+        height: number;
+    };
 
 /**
  * Result returned by `getVariant()`. The URL points at the cached variant
@@ -194,11 +203,10 @@ export interface IFileService {
      * the storage provider's static middleware without re-running the
      * image processor.
      *
-     * Returns null when the id does not resolve, when the source is
-     * not a supported raster image (jpeg/png/webp/gif), or when no
-     * dimension was provided. Dimensions outside 1–4000 are clamped.
-     * Variants never upscale: requesting a width larger than the
-     * source returns the source dimensions.
+     * Returns null when the id does not resolve or when the source is
+     * not a supported raster image (jpeg/png/webp/gif). Dimensions
+     * outside 1–4000 are clamped. Variants never upscale: requesting a
+     * width larger than the source returns the source dimensions.
      */
     getVariant(id: string, options: IVariantOptions): Promise<IFileVariant | null>;
 
