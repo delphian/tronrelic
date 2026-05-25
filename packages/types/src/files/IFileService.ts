@@ -85,6 +85,47 @@ export interface IFileUploadOptions {
 }
 
 /**
+ * Caller-supplied options on `getVariant()`. Modeled as a discriminated
+ * union so the type system enforces "at least one of width or height"
+ * — `{}` is unrepresentable. When only one is supplied the other is
+ * computed to preserve the source aspect ratio. Values outside the
+ * 1–4000 pixel range are clamped to the nearest endpoint; the 4000-pixel
+ * ceiling prevents a single request from pinning a server CPU resizing a
+ * pathological image.
+ */
+export type IVariantOptions =
+    | {
+        /** Target width in pixels (1–4000). */
+        width: number;
+        /** Target height in pixels (1–4000). */
+        height?: number;
+    }
+    | {
+        /** Target width in pixels (1–4000). */
+        width?: number;
+        /** Target height in pixels (1–4000). */
+        height: number;
+    };
+
+/**
+ * Result returned by `getVariant()`. The URL points at the cached variant
+ * served by the storage provider's static middleware (or CDN); consumers
+ * embed it directly in `<img src>`.
+ */
+export interface IFileVariant {
+    /** Absolute public URL of the variant. */
+    url: string;
+    /** MIME type of the variant (matches the source). */
+    mimeType: string;
+    /** Variant size in bytes. */
+    sizeBytes: number;
+    /** Actual variant width in pixels. */
+    width: number;
+    /** Actual variant height in pixels. */
+    height: number;
+}
+
+/**
  * Filter shape for `list()`. All fields are optional and combine as AND
  * predicates.
  */
@@ -153,6 +194,21 @@ export interface IFileService {
      * Fetch a single record without reading bytes.
      */
     getRecord(id: string): Promise<IFileRecord | null>;
+
+    /**
+     * Produce a resized variant of a stored image and return a URL
+     * pointing at the cached output. The variant is generated on first
+     * request and persisted alongside the source so subsequent calls
+     * — and direct browser hits to the returned URL — are served by
+     * the storage provider's static middleware without re-running the
+     * image processor.
+     *
+     * Returns null when the id does not resolve or when the source is
+     * not a supported raster image (jpeg/png/webp/gif). Dimensions
+     * outside 1–4000 are clamped. Variants never upscale: requesting a
+     * width larger than the source returns the source dimensions.
+     */
+    getVariant(id: string, options: IVariantOptions): Promise<IFileVariant | null>;
 
     /**
      * Enumerate records matching the filter, sorted by `uploadedAt` desc.
