@@ -41,6 +41,22 @@ export interface IStorageProvider {
     delete(handle: string): Promise<boolean>;
 
     /**
+     * Cheap existence check that avoids loading bytes. Used by
+     * `FileService.getVariant` to short-circuit cache hits without
+     * paying the I/O cost of reading the variant file. Implementations
+     * map this to `fs.access` (local), `HEAD` (S3), or equivalent.
+     */
+    exists(handle: string): Promise<boolean>;
+
+    /**
+     * Enumerate handles whose path starts with the supplied prefix.
+     * Used by `FileService.delete` to find and remove cached variants
+     * derived from the deleted source. Returns an empty array when no
+     * matches exist. Order is unspecified.
+     */
+    listByPrefix(prefix: string): Promise<string[]>;
+
+    /**
      * Resolve the public, browser-safe URL for a previously stored file.
      */
     getUrl(handle: string): string;
