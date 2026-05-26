@@ -16,6 +16,9 @@
  */
 
 import type { Request, Response } from 'express';
+import Ajv, { type ValidateFunction } from 'ajv';
+import addFormats from 'ajv-formats';
+import type { JSONSchema7 } from 'json-schema';
 import type {
     ISystemLogService,
     IWidgetsService,
@@ -30,6 +33,18 @@ import {
     UnknownWidgetTypeError,
     UnknownZoneError
 } from '../widgets.errors.js';
+
+/**
+ * Per-field validation error reported back to the client in the
+ * structured 400 body when `instanceConfig` fails a widget type's
+ * declared schema. `path` is the JSON Pointer to the offending field
+ * (empty string for root-level errors); `message` is AJV's human-
+ * readable summary.
+ */
+interface IInstanceConfigFieldError {
+    readonly path: string;
+    readonly message: string;
+}
 
 /**
  * Upper bound on a placement's `order` field. Lower numbers render
@@ -78,10 +93,86 @@ function safeStringParam(value: unknown, pattern: RegExp): string | undefined {
  * Admin controller for placement CRUD plus restore-defaults.
  */
 export class PlacementsController {
+    /**
+     * Shared AJV instance. `allErrors` so a single bad submission
+     * surfaces every offending field at once rather than feeding the
+     * operator one error per round-trip. `strict: false` lets plugin
+     * authors declare schemas with unrecognised keywords (e.g. UI
+     * hints) without AJV refusing to compile.
+     */
+    private readonly ajv: Ajv;
+
+    /**
+     * Compile cache keyed on the schema *object identity*. Because
+     * widget-type descriptors are frozen at mint time and re-minted on
+     * every plugin re-enable, the schema reference changes whenever
+     * the underlying contract changes — so a WeakMap keyed on the
+     * schema is correct without an explicit invalidation hook, and the
+     * entry is GC'd when the descriptor goes away.
+     */
+    private readonly validatorCache: WeakMap<JSONSchema7, ValidateFunction>;
+
     constructor(
         private readonly widgets: IWidgetsService,
         private readonly logger: ISystemLogService
-    ) {}
+    ) {
+        this.ajv = new Ajv({ allErrors: true, strict: false });
+        addFormats(this.ajv);
+        this.validatorCache = new WeakMap();
+    }
+
+    /**
+     * Validate `instanceConfig` against the widget type's declared
+     * JSON Schema, when one is declared. Returns the structured
+     * per-field errors on failure, or `null` when validation passes
+     * (or no schema was declared — in which case the caller has
+     * already enforced the shape-only "plain object" guard via
+     * `parseInstanceConfig`). Compiled validators are cached on the
+     * schema reference so the per-write cost is a single AJV invoke.
+     *
+     * @param typeId - Widget-type id whose schema gates this body.
+     * @param instanceConfig - The operator-supplied config object.
+     * @returns Array of per-field errors, or `null` when valid.
+     */
+    private validateInstanceConfigAgainstSchema(
+        typeId: string,
+        instanceConfig: Record<string, unknown>
+    ): ReadonlyArray<IInstanceConfigFieldError> | null {
+        const schema = this.widgets.getTypeConfigSchema(typeId);
+        if (!schema) return null;
+
+        let validator = this.validatorCache.get(schema);
+        if (!validator) {
+            // Plugin-supplied schemas can be malformed (unsupported
+            // keyword, bad $ref, draft mismatch). Surface that as a
+            // structured 400 so a schema-author bug never lands as a
+            // 500 for the operator submitting a placement edit.
+            try {
+                validator = this.ajv.compile(schema);
+                this.validatorCache.set(schema, validator);
+            } catch (compileErr) {
+                this.logger.error(
+                    {
+                        err: compileErr,
+                        typeId
+                    },
+                    'Failed to compile widget configSchema'
+                );
+                return [{
+                    path: '',
+                    message: `Widget type schema compilation failed: ${compileErr instanceof Error ? compileErr.message : String(compileErr)}`
+                }];
+            }
+        }
+
+        if (validator(instanceConfig)) return null;
+
+        const errors = validator.errors ?? [];
+        return errors.map(err => ({
+            path: err.instancePath,
+            message: err.message ?? 'invalid value'
+        }));
+    }
 
     /**
      * GET /api/admin/system/widgets/placements
@@ -141,6 +232,21 @@ export class PlacementsController {
                 return;
             }
 
+            if (parsed.input.instanceConfig !== undefined) {
+                const fieldErrors = this.validateInstanceConfigAgainstSchema(
+                    parsed.input.typeId,
+                    parsed.input.instanceConfig
+                );
+                if (fieldErrors) {
+                    res.status(400).json({
+                        success: false,
+                        error: 'instanceConfig failed widget-type schema validation',
+                        errors: fieldErrors
+                    });
+                    return;
+                }
+            }
+
             const placement = await this.widgets.createPlacement(parsed.input);
             res.status(201).json({ success: true, placement });
         } catch (err) {
@@ -162,6 +268,32 @@ export class PlacementsController {
             if ('error' in parsed) {
                 res.status(400).json({ success: false, error: parsed.error });
                 return;
+            }
+
+            if (parsed.patch.instanceConfig !== undefined) {
+                // PATCH bodies don't carry typeId — the schema gate is
+                // determined by the existing row's typeId, so we have
+                // to read first. 404 here matches the post-update 404
+                // below; an operator patching a vanished placement
+                // gets a consistent error regardless of which body
+                // field was set.
+                const existing = await this.widgets.findPlacementById(req.params.id);
+                if (!existing) {
+                    res.status(404).json({ success: false, error: 'Placement not found' });
+                    return;
+                }
+                const fieldErrors = this.validateInstanceConfigAgainstSchema(
+                    existing.typeId,
+                    parsed.patch.instanceConfig
+                );
+                if (fieldErrors) {
+                    res.status(400).json({
+                        success: false,
+                        error: 'instanceConfig failed widget-type schema validation',
+                        errors: fieldErrors
+                    });
+                    return;
+                }
             }
 
             const placement = await this.widgets.updatePlacement(req.params.id, parsed.patch);

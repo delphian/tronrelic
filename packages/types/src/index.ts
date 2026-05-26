@@ -81,6 +81,7 @@ export type {
 } from './widget-zones/index.js';
 export type {
     IWidgetType,
+    IWidgetPlacementContext,
     WidgetDataFetcher,
     IWidgetTypeSnapshot,
     IWidgetTypeSnapshotRecord,

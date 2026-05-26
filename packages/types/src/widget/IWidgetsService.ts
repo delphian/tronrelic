@@ -16,6 +16,7 @@
  * @module types/widget/IWidgetsService
  */
 
+import type { JSONSchema7 } from 'json-schema';
 import type { WidgetDataFetcher } from '../widget-types/IWidgetType.js';
 import type { IZoneSnapshot } from '../widget-zones/IZoneRegistry.js';
 import type { IWidgetTypeSnapshot } from '../widget-types/IWidgetTypeRegistry.js';
@@ -63,8 +64,16 @@ export interface IRegisterWidgetTypeInput {
      * placeholder.
      */
     defaultDataFetcher: WidgetDataFetcher;
-    /** Optional informational schema for the per-placement instanceConfig. */
-    configSchema?: unknown;
+    /**
+     * Optional JSON Schema Draft 7 describing the operator-editable
+     * `instanceConfig` this widget type accepts. When present, the
+     * placement admin API validates `instanceConfig` on create/patch
+     * and rejects invalid bodies with a structured 400 listing per-
+     * field errors. Plugin authors may declare a flat schema (string,
+     * number, boolean, or enum top-level properties) for the cleanest
+     * admin-UX path.
+     */
+    configSchema?: JSONSchema7;
 }
 
 /**
@@ -124,6 +133,22 @@ export interface IWidgetsService {
 
     /** True when a widget type with the given id is registered. */
     hasType(typeId: string): boolean;
+
+    /**
+     * Retrieve the JSON Schema declared by a widget type for its
+     * per-placement `instanceConfig`, or `undefined` when the type is
+     * unregistered or declares no schema.
+     *
+     * Used by the placement admin API to validate operator-supplied
+     * `instanceConfig` against the type's contract on every write
+     * (create / patch). Returning a clone is *not* required because
+     * the descriptor is frozen at mint time and `JSONSchema7` values
+     * are read-only by convention.
+     *
+     * @param typeId - Widget-type id to look up.
+     * @returns Declared schema, or `undefined`.
+     */
+    getTypeConfigSchema(typeId: string): JSONSchema7 | undefined;
 
     /**
      * Resolve the widgets to render for a given route. Queries the

@@ -79,6 +79,7 @@ interface IPlacement {
     routes: string[];
     order: number;
     title?: string;
+    instanceConfig?: Record<string, unknown>;
     enabled: boolean;
     source: 'plugin' | 'operator';
     pluginId?: string;
@@ -95,6 +96,7 @@ interface IPlacementPatch {
     routes?: string[];
     order?: number;
     title?: string | null | undefined;
+    instanceConfig?: Record<string, unknown>;
     enabled?: boolean;
 }
 
@@ -108,6 +110,7 @@ interface IPlacementCreate {
     routes: string[];
     order?: number;
     title?: string;
+    instanceConfig?: Record<string, unknown>;
     enabled?: boolean;
 }
 
@@ -125,6 +128,27 @@ function authHeader(token: string | null): HeadersInit {
  */
 function sourceTone(source: IPlacement['source']): 'info' | 'success' {
     return source === 'plugin' ? 'info' : 'success';
+}
+
+/**
+ * Flatten the structured 400 body the placement API returns into a
+ * single human-readable message for the toast. Server-side schema
+ * validation surfaces a top-level `error` plus an `errors: [{path,
+ * message}]` array; we render `path: message` lines beneath the
+ * summary so an operator typing JSON sees which field failed without
+ * having to inspect the network tab.
+ */
+function formatApiError(
+    body: { error?: string; errors?: ReadonlyArray<{ path?: string; message?: string }> },
+    status: number,
+    verb: string
+): string {
+    const summary = body.error || `${verb} failed (${status})`;
+    if (!Array.isArray(body.errors) || body.errors.length === 0) return summary;
+    const fields = body.errors
+        .map(e => `${e.path?.length ? e.path : '/'}: ${e.message ?? 'invalid'}`)
+        .join('; ');
+    return `${summary} — ${fields}`;
 }
 
 /**
@@ -255,7 +279,7 @@ export default function WidgetsAdminPage() {
             });
             if (!res.ok) {
                 const body = await res.json().catch(() => ({}));
-                throw new Error(body.error || `Update failed (${res.status})`);
+                throw new Error(formatApiError(body, res.status, 'Update'));
             }
         },
         [headers]
@@ -294,7 +318,7 @@ export default function WidgetsAdminPage() {
             });
             if (!res.ok) {
                 const body = await res.json().catch(() => ({}));
-                throw new Error(body.error || `Create failed (${res.status})`);
+                throw new Error(formatApiError(body, res.status, 'Create'));
             }
         },
         [headers]
@@ -836,6 +860,16 @@ function PlacementForm({ mode, initial, types, zones, onSubmit, onCancel }: Plac
     const [enabled, setEnabled] = useState<boolean>(initial?.enabled ?? true);
     const [saving, setSaving] = useState<boolean>(false);
     const [routeError, setRouteError] = useState<string | null>(null);
+    // Per-placement instanceConfig surface. Pre-populate edit-mode rows
+    // with the existing config (pretty-printed); leave create-mode blank
+    // so an operator who doesn't need overrides just submits empty —
+    // the parser treats blank as "no instanceConfig in payload".
+    const [instanceConfigText, setInstanceConfigText] = useState<string>(
+        initial?.instanceConfig
+            ? JSON.stringify(initial.instanceConfig, null, 2)
+            : ''
+    );
+    const [instanceConfigError, setInstanceConfigError] = useState<string | null>(null);
 
     const handleAddRoute = useCallback(() => {
         const trimmed = routeDraft.trim();
@@ -874,6 +908,41 @@ function PlacementForm({ mode, initial, types, zones, onSubmit, onCancel }: Plac
     const handleSubmit = useCallback(
         async (e: FormEvent) => {
             e.preventDefault();
+
+            // Parse instanceConfig out of the textarea. Any non-empty
+            // input must parse to a plain JSON object — array and
+            // primitive parses are rejected client-side rather than
+            // relying on the server's shape-only guard so the operator
+            // sees the failure inline.
+            //
+            // Empty textarea has different semantics by mode:
+            //   - create → omit (no overrides; defaults apply)
+            //   - edit   → send `{}` to explicitly clear overrides on
+            //              the existing row. Omitting the field on
+            //              patch would leave the prior value intact,
+            //              contradicting the "Leave empty for no
+            //              overrides" hint shown beneath the field.
+            const rawConfig = instanceConfigText.trim();
+            let parsedInstanceConfig: Record<string, unknown> | undefined;
+            if (rawConfig.length > 0) {
+                try {
+                    const candidate = JSON.parse(rawConfig);
+                    if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) {
+                        setInstanceConfigError('Instance config must be a JSON object');
+                        return;
+                    }
+                    parsedInstanceConfig = candidate as Record<string, unknown>;
+                } catch (err) {
+                    setInstanceConfigError(
+                        err instanceof Error ? `Invalid JSON: ${err.message}` : 'Invalid JSON'
+                    );
+                    return;
+                }
+            } else if (mode === 'edit') {
+                parsedInstanceConfig = {};
+            }
+            setInstanceConfigError(null);
+
             setSaving(true);
             try {
                 if (mode === 'create') {
@@ -883,6 +952,7 @@ function PlacementForm({ mode, initial, types, zones, onSubmit, onCancel }: Plac
                         routes,
                         order,
                         title: title.trim().length > 0 ? title.trim() : undefined,
+                        instanceConfig: parsedInstanceConfig,
                         enabled
                     };
                     await onSubmit(payload);
@@ -906,6 +976,7 @@ function PlacementForm({ mode, initial, types, zones, onSubmit, onCancel }: Plac
                         routes,
                         order,
                         title: titlePatch,
+                        instanceConfig: parsedInstanceConfig,
                         enabled
                     };
                     await onSubmit(payload);
@@ -914,7 +985,7 @@ function PlacementForm({ mode, initial, types, zones, onSubmit, onCancel }: Plac
                 setSaving(false);
             }
         },
-        [enabled, mode, onSubmit, order, routes, title, typeId, zoneId]
+        [enabled, initial?.title, instanceConfigText, mode, onSubmit, order, routes, title, typeId, zoneId]
     );
 
     const canSubmit = typeId.length > 0 && zoneId.length > 0;
@@ -1039,6 +1110,26 @@ function PlacementForm({ mode, initial, types, zones, onSubmit, onCancel }: Plac
                         disabled={saving}
                     />
                 </div>
+            </div>
+
+            <div className={styles.field}>
+                <label htmlFor="wp-instance-config">Instance config</label>
+                <textarea
+                    id="wp-instance-config"
+                    className={styles.textarea}
+                    rows={6}
+                    value={instanceConfigText}
+                    onChange={(e) => { setInstanceConfigText(e.target.value); setInstanceConfigError(null); }}
+                    placeholder='{"maxPosts": 5}'
+                    disabled={saving}
+                    spellCheck={false}
+                    aria-describedby="wp-instance-config-hint"
+                />
+                {instanceConfigError && <span className={styles.field_error}>{instanceConfigError}</span>}
+                <span id="wp-instance-config-hint" className={styles.field_hint}>
+                    Optional per-placement JSON object validated against the widget type&apos;s schema
+                    on save. Leave empty for no overrides.
+                </span>
             </div>
 
             <label className={styles.inline_toggle}>

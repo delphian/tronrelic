@@ -26,6 +26,7 @@
  * @module backend/modules/widgets/widgets.service
  */
 
+import type { JSONSchema7 } from 'json-schema';
 import type {
     ISystemLogService,
     IWidgetsService,
@@ -165,6 +166,10 @@ export class WidgetsService implements IWidgetsService {
 
     hasType(typeId: string): boolean {
         return this.widgetTypes.has(typeId);
+    }
+
+    getTypeConfigSchema(typeId: string): JSONSchema7 | undefined {
+        return this.widgetTypes.get(typeId)?.configSchema;
     }
 
     async fetchWidgetsForRoute(
