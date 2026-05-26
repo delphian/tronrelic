@@ -87,7 +87,7 @@ function buildResponseStub() {
     const json = vi.fn();
     const end = vi.fn();
     const res = {
-        status: vi.fn(function (this: typeof res) { return this; }),
+        status: vi.fn().mockReturnThis(),
         json,
         end
     };

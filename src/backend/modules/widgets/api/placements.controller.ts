@@ -143,8 +143,26 @@ export class PlacementsController {
 
         let validator = this.validatorCache.get(schema);
         if (!validator) {
-            validator = this.ajv.compile(schema);
-            this.validatorCache.set(schema, validator);
+            // Plugin-supplied schemas can be malformed (unsupported
+            // keyword, bad $ref, draft mismatch). Surface that as a
+            // structured 400 so a schema-author bug never lands as a
+            // 500 for the operator submitting a placement edit.
+            try {
+                validator = this.ajv.compile(schema);
+                this.validatorCache.set(schema, validator);
+            } catch (compileErr) {
+                this.logger.error(
+                    {
+                        err: compileErr,
+                        typeId
+                    },
+                    'Failed to compile widget configSchema'
+                );
+                return [{
+                    path: '',
+                    message: `Widget type schema compilation failed: ${compileErr instanceof Error ? compileErr.message : String(compileErr)}`
+                }];
+            }
         }
 
         if (validator(instanceConfig)) return null;

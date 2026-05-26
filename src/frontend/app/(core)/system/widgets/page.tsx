@@ -909,13 +909,19 @@ function PlacementForm({ mode, initial, types, zones, onSubmit, onCancel }: Plac
         async (e: FormEvent) => {
             e.preventDefault();
 
-            // Parse instanceConfig out of the textarea. Empty input
-            // collapses to `undefined` so the payload omits the field
-            // entirely (no change on patch, no overrides on create);
-            // any other input must parse to a plain JSON object. Array
-            // and primitive parses are rejected client-side rather
-            // than relying on the server's shape-only guard so the
-            // operator sees the failure inline.
+            // Parse instanceConfig out of the textarea. Any non-empty
+            // input must parse to a plain JSON object — array and
+            // primitive parses are rejected client-side rather than
+            // relying on the server's shape-only guard so the operator
+            // sees the failure inline.
+            //
+            // Empty textarea has different semantics by mode:
+            //   - create → omit (no overrides; defaults apply)
+            //   - edit   → send `{}` to explicitly clear overrides on
+            //              the existing row. Omitting the field on
+            //              patch would leave the prior value intact,
+            //              contradicting the "Leave empty for no
+            //              overrides" hint shown beneath the field.
             const rawConfig = instanceConfigText.trim();
             let parsedInstanceConfig: Record<string, unknown> | undefined;
             if (rawConfig.length > 0) {
@@ -932,6 +938,8 @@ function PlacementForm({ mode, initial, types, zones, onSubmit, onCancel }: Plac
                     );
                     return;
                 }
+            } else if (mode === 'edit') {
+                parsedInstanceConfig = {};
             }
             setInstanceConfigError(null);
 
