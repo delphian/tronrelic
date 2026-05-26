@@ -116,8 +116,15 @@ export class PlacementResolver {
             const timeoutPromise = new Promise<never>((_, reject) => {
                 timerId = setTimeout(() => reject(new Error('Widget fetch timeout')), TIMEOUT_MS);
             });
+            // Substitute an empty object when the placement carries no
+            // overrides so fetchers can read keys unconditionally
+            // without null-guards on every access.
+            const placementContext = {
+                id: placement.id,
+                instanceConfig: placement.instanceConfig ?? {}
+            };
             const raw = await Promise.race([
-                type.defaultDataFetcher(route, params),
+                type.defaultDataFetcher(route, params, placementContext),
                 timeoutPromise
             ]);
             clearTimeout(timerId);

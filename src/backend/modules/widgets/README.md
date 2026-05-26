@@ -11,7 +11,7 @@ Owns every concern of the widget subsystem behind a single public surface: `IWid
 | Public service | `'widgets'` on the service registry (`IWidgetsService`) |
 | Backend API base | `/api/admin/system/widgets/placements`, `/api/admin/system/widget-types`, `/api/admin/system/zones`, plus SSR fetch at `/api/widgets` |
 | WebSocket event | `widgets:placements-update` |
-| Types package | `@delphian/tronrelic-types` — `IWidgetsService`, `IRegisterWidgetTypeInput`, `IRegisterZoneInput`, `IRegisterWidgetInput`, `IWidgetPlacement`, `IPlacementInput`, `IPlacementPatch`, `IPlacementListFilter`, `IWidgetType`, `IZoneDescriptor`, `IZoneSnapshot`, `IWidgetTypeSnapshot` |
+| Types package | `@delphian/tronrelic-types` — `IWidgetsService`, `IRegisterWidgetTypeInput`, `IRegisterZoneInput`, `IRegisterWidgetInput`, `IWidgetPlacement`, `IPlacementInput`, `IPlacementPatch`, `IPlacementListFilter`, `IWidgetType`, `IWidgetPlacementContext`, `IZoneDescriptor`, `IZoneSnapshot`, `IWidgetTypeSnapshot` |
 | Storage | `module_widgets_placements` (MongoDB) |
 | Migration | `module:widgets:001_create_placements_collection` (creates collection + 4 indexes) |
 | System menu node | "Widgets" under the System container — seeded by `WidgetsModule.run()` |
@@ -135,6 +135,12 @@ Indexes (migration 001): `(typeId, pluginId)` sparse unique for plugin-row atomi
 
 ## SSR Resolution
 
-`PlacementResolver.resolveForRoute(route, params)` (called via `widgets.fetchWidgetsForRoute(route, params)`) runs at every page render: queries enabled placements matching the route via `placementService.findByRoute`, looks up each type's `defaultDataFetcher` in the widget-type registry, runs them in parallel under a 5-second per-fetcher timeout, validates JSON-serialisability via round-trip, sorts by `(zoneId, order)`, and returns the `IWidgetData[]` bundle the frontend embeds.
+`PlacementResolver.resolveForRoute(route, params)` (called via `widgets.fetchWidgetsForRoute(route, params)`) runs at every page render: queries enabled placements matching the route via `placementService.findByRoute`, looks up each type's `defaultDataFetcher` in the widget-type registry, invokes each fetcher with `(route, params, { id, instanceConfig })` where the third arg carries the placement's id and operator-editable instance config, runs them in parallel under a 5-second per-fetcher timeout, validates JSON-serialisability via round-trip, sorts by `(zoneId, order)`, and returns the `IWidgetData[]` bundle the frontend embeds. The resolver substitutes `{}` for `instanceConfig` when a placement carries no overrides, so fetchers can read keys without null-guarding every access.
 
 Failures within a fetcher are logged and the widget is omitted — they never propagate out. Placements whose `typeId` is unregistered (e.g. plugin disabled) are silently skipped, leaving the rest of the route's widgets unaffected.
+
+## Instance-Config Schema Validation
+
+Widget types may declare `configSchema` (JSON Schema Draft 7) on registration. The placement admin API compiles each declared schema once via AJV and validates `instanceConfig` against it on every create and patch. Schema-invalid bodies return 400 with `{ error, errors: [{ path, message }] }`; widget types without a schema fall through to the existing shape-only "plain object" guard. The validator cache is keyed on the schema reference (WeakMap), so re-enabling a plugin mints a fresh descriptor and a fresh compiled validator without explicit invalidation.
+
+Consumers retrieve the schema for an arbitrary `typeId` via `IWidgetsService.getTypeConfigSchema(typeId)` — the controller's single touchpoint into the type-side contract. Adminship still flows through `IWidgetsService`; the registry stays internal to the module.

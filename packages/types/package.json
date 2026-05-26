@@ -1,6 +1,6 @@
 {
     "name": "@delphian/tronrelic-types",
-    "version": "2.0.7",
+    "version": "2.1.0",
     "description": "Core type definitions for the TronRelic platform",
     "type": "module",
     "main": "dist/index.js",
@@ -30,6 +30,9 @@
         "directory": "packages/types"
     },
     "license": "AGPL-3.0-or-later",
+    "dependencies": {
+        "@types/json-schema": "^7.0.15"
+    },
     "peerDependencies": {
         "axios": "^1.0.0",
         "mongodb": "^6.0.0",

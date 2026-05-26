@@ -17,11 +17,43 @@
  * @module types/widget-types/IWidgetType
  */
 
+import type { JSONSchema7 } from 'json-schema';
+
+/**
+ * Per-placement context forwarded to a widget's data fetcher at SSR
+ * time. Lets a single widget type produce per-placement variation
+ * (post count, threshold, filter, title length) without shipping one
+ * widget type per configuration permutation.
+ *
+ * The context surface is intentionally narrow — placement id plus the
+ * operator-editable `instanceConfig` blob — so future placement fields
+ * (zoneId, routes, title) can be added without re-breaking the fetcher
+ * signature. `instanceConfig` is always an object; the resolver
+ * substitutes `{}` when the placement record carries no config so
+ * fetchers can read keys unconditionally.
+ */
+export interface IWidgetPlacementContext {
+    /** Placement id this fetch is rendering. */
+    readonly id: string;
+    /**
+     * Operator-editable instance configuration. Empty object when the
+     * placement carries no overrides. Validated against the widget
+     * type's `configSchema` at write time (if a schema is declared) so
+     * fetchers can trust the shape on read.
+     */
+    readonly instanceConfig: Record<string, unknown>;
+}
+
 /**
  * SSR data fetcher signature shared between widget types and the
- * legacy widget service. Receives the resolved route and any params
- * extracted by the host (e.g. `{ address }` on `/u/[address]`) and
- * returns the JSON-serialisable data the frontend component renders.
+ * legacy widget service. Receives the resolved route, any params
+ * extracted by the host (e.g. `{ address }` on `/u/[address]`), and
+ * the per-placement context (placement id and instanceConfig).
+ *
+ * The third arg is optional so existing fetchers that ignore
+ * placement-scoped config remain valid without code changes. New
+ * fetchers wanting per-placement variation declare the third
+ * parameter and read `placement?.instanceConfig`.
  *
  * Implementations must return quickly (under 5 s; the resolver enforces
  * a Promise.race timeout) and should not throw — return an empty
@@ -30,7 +62,8 @@
  */
 export type WidgetDataFetcher = (
     route: string,
-    params: Record<string, string>
+    params: Record<string, string>,
+    placement?: IWidgetPlacementContext
 ) => Promise<unknown>;
 
 /**
@@ -62,13 +95,18 @@ export interface IWidgetType {
      */
     readonly defaultDataFetcher: WidgetDataFetcher;
     /**
-     * Optional schema describing the operator-editable instance
-     * configuration this widget type accepts. Reserved for the
-     * admin placement editor in a future PR; today the resolver
-     * does not forward instanceConfig anywhere, so this field is
-     * informational only.
+     * Optional JSON Schema Draft 7 describing the operator-editable
+     * instance configuration this widget type accepts. When present,
+     * `instanceConfig` is validated against this schema at write time
+     * by the placement admin API; invalid bodies are rejected with a
+     * structured 400 listing per-field errors. The runtime resolver
+     * forwards the (validated) `instanceConfig` into the fetcher via
+     * the third `placement` argument of {@link WidgetDataFetcher}.
+     *
+     * Widget types that declare no schema accept any plain object as
+     * `instanceConfig` (the existing shape-only check still applies).
      */
-    readonly configSchema?: unknown;
+    readonly configSchema?: JSONSchema7;
 }
 
 /**
@@ -89,8 +127,8 @@ export interface IDefineWidgetTypeOptions {
     category?: string;
     /** SSR data fetcher. See {@link WidgetDataFetcher}. */
     defaultDataFetcher: WidgetDataFetcher;
-    /** Optional instance-config schema. Informational in this PR. */
-    configSchema?: unknown;
+    /** Optional JSON Schema Draft 7 for `instanceConfig` validation. */
+    configSchema?: JSONSchema7;
 }
 
 /**

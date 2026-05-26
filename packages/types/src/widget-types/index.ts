@@ -12,6 +12,7 @@
 
 export type {
     IWidgetType,
+    IWidgetPlacementContext,
     IDefineWidgetTypeOptions,
     WidgetDataFetcher,
     WidgetTypeRegisterDisposer

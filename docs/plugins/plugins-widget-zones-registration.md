@@ -125,7 +125,54 @@ When two plugins target the same zone, set explicit `defaultOrder` to win determ
 
 ## Data Fetchers
 
-`defaultDataFetcher(route, params)` receives the resolved route and any params the host extracted (e.g. `{ address }` on `/u/[address]`). It must return JSON-serialisable data quickly — heavy work belongs in a scheduled job that writes to a plugin-owned MongoDB collection that the fetcher then reads. A 5-second per-fetcher timeout is enforced by the SSR resolver via `Promise.race`. Failures should resolve to empty data, never throw — a throw is converted to an empty payload but logged as a fetcher error.
+`defaultDataFetcher(route, params, placement?)` receives the resolved route, any params the host extracted (e.g. `{ address }` on `/u/[address]`), and a per-placement `IWidgetPlacementContext` — `{ id, instanceConfig }` — that lets one widget type produce per-placement variation without shipping a type per permutation. The third argument is optional, so existing fetchers that ignore placement-scoped config remain valid. The resolver substitutes an empty object for `instanceConfig` when a placement carries no overrides, so fetchers can read keys unconditionally.
+
+Fetchers must return JSON-serialisable data quickly — heavy work belongs in a scheduled job that writes to a plugin-owned MongoDB collection that the fetcher then reads. A 5-second per-fetcher timeout is enforced by the SSR resolver via `Promise.race`. Failures should resolve to empty data, never throw — a throw is converted to an empty payload but logged as a fetcher error.
+
+```typescript
+defaultDataFetcher: async (_route, _params, placement) => {
+    const cap = Number(placement?.instanceConfig?.maxPosts);
+    const maxPosts = Number.isFinite(cap) ? Math.min(20, Math.max(1, Math.floor(cap))) : 5;
+    return { posts: await service.recent(maxPosts) };
+}
+```
+
+## Per-Placement Configuration Schemas
+
+A widget type may declare `configSchema` — a JSON Schema Draft 7 object — to constrain the `instanceConfig` operators attach to its placements. When a schema is declared, the placement admin API validates `instanceConfig` against it on every create and patch using AJV, rejecting invalid bodies with a structured 400 listing per-field errors:
+
+```json
+{
+    "success": false,
+    "error": "instanceConfig failed widget-type schema validation",
+    "errors": [
+        { "path": "/maxPosts", "message": "must be <= 20" }
+    ]
+}
+```
+
+The schema flows through `IRegisterWidgetTypeInput.configSchema` (and the convenience `IRegisterWidgetInput.configSchema`) into the widget type descriptor; the validation path retrieves it via `IWidgetsService.getTypeConfigSchema(typeId)`. Validators compile once per schema reference and cache for the descriptor's lifetime — re-enabling a plugin invalidates the cache by minting a fresh descriptor.
+
+Widget types that declare no schema accept any plain JSON object as `instanceConfig` (the shape-only "must be a plain object" guard still applies). For the smoothest operator-UX path keep top-level schema properties as primitives (`string`, `number`, `boolean`, `enum`) — the `/system/widgets` JSON-textarea editor surfaces the structured field errors inline regardless of nesting.
+
+```typescript
+widgets.registerWidget({
+    id: 'my-plugin:feed',
+    label: 'Feed',
+    description: 'Recent posts',
+    defaultZoneId: 'main-after',
+    defaultRoutes: [],
+    defaultInstanceConfig: { maxPosts: 5 },
+    configSchema: {
+        type: 'object',
+        properties: {
+            maxPosts: { type: 'integer', minimum: 1, maximum: 20 }
+        },
+        additionalProperties: false
+    },
+    defaultDataFetcher: async (_route, _params, placement) => { /* ... */ }
+}, ownerId);
+```
 
 ## Admin Introspection
 

@@ -528,6 +528,43 @@ describe('PlacementResolver', () => {
         );
     });
 
+    it('forwards { id, instanceConfig } to the data fetcher', async () => {
+        const fetcher = vi.fn(async () => ({ ok: true }));
+        (typeRegistry as any).__types.set('plugin:type', buildType('plugin:type', fetcher));
+        (placementService.findByRoute as ReturnType<typeof vi.fn>).mockResolvedValue([
+            buildPlacement({
+                id: 'p-cfg',
+                typeId: 'plugin:type',
+                instanceConfig: { maxPosts: 3, theme: 'compact' }
+            })
+        ]);
+
+        await resolver.resolveForRoute('/markets', { foo: 'bar' });
+
+        expect(fetcher).toHaveBeenCalledTimes(1);
+        expect(fetcher).toHaveBeenCalledWith(
+            '/markets',
+            { foo: 'bar' },
+            { id: 'p-cfg', instanceConfig: { maxPosts: 3, theme: 'compact' } }
+        );
+    });
+
+    it('substitutes an empty instanceConfig object when the placement carries none', async () => {
+        const fetcher = vi.fn(async () => ({ ok: true }));
+        (typeRegistry as any).__types.set('plugin:type', buildType('plugin:type', fetcher));
+        (placementService.findByRoute as ReturnType<typeof vi.fn>).mockResolvedValue([
+            buildPlacement({ id: 'p-empty', typeId: 'plugin:type', instanceConfig: undefined })
+        ]);
+
+        await resolver.resolveForRoute('/', {});
+
+        expect(fetcher).toHaveBeenCalledWith(
+            '/',
+            {},
+            { id: 'p-empty', instanceConfig: {} }
+        );
+    });
+
     it('sorts results by zone (alphabetical), then order', async () => {
         // 'main-after' sorts before 'main-before' alphabetically, so
         // the expected ordering joins zone-asc then order-asc within
