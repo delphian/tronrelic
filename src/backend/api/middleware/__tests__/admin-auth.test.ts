@@ -1,6 +1,6 @@
 /// <reference types="vitest" />
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { ICacheService, ISystemLogService, IUser } from '@/types';
 import { UserIdentityState } from '@/types';
 import { createMockDatabaseService } from '../../../tests/vitest/mocks/database-service.js';
@@ -28,6 +28,12 @@ vi.mock('../../../config/env.js', () => ({
 
 import { UserService } from '../../../modules/user/services/user.service.js';
 import { UserGroupService, SYSTEM_ADMIN_GROUP_ID } from '../../../modules/user/services/user-group.service.js';
+import { GroupService } from '../../../modules/user/services/group.service.js';
+import { AUTH_USERS_COLLECTION } from '../../../modules/user/services/auth-constants.js';
+import {
+    setAuthInstance,
+    resetAuthInstanceForTests
+} from '../../../modules/user/services/auth-facade.js';
 import { USER_ID_COOKIE_NAME } from '../../../modules/user/api/identity-cookie.js';
 import { requireAdmin } from '../admin-auth.js';
 
@@ -420,6 +426,119 @@ describe('requireAdmin middleware', () => {
             expect(called()).toBe(false);
             expect(res.statusCode).toBe(401);
             expect(res.jsonBody?.reason).toBeUndefined();
+        });
+    });
+
+    describe('Better Auth admin path', () => {
+        /**
+         * Build a stubbed Better Auth instance whose `getSession`
+         * returns a fixed value regardless of input headers.
+         */
+        function makeStubAuth(session: { user: { id: string; email: string }; session?: unknown } | null) {
+            return {
+                api: {
+                    getSession: vi.fn(async () => session)
+                }
+            } as any;
+        }
+
+        /**
+         * Seed a BA user row directly into the auth users collection.
+         * Used to satisfy GroupService.getUserGroups lookups during
+         * augmentation in the facade.
+         */
+        function seedBaUser(userId: string, groups: string[]): void {
+            mockDb.getCollectionData(AUTH_USERS_COLLECTION).push({
+                _id: userId,
+                email: `${userId}@example.com`,
+                emailVerified: true,
+                groups
+            });
+        }
+
+        beforeEach(() => {
+            resetAuthInstanceForTests();
+            GroupService.resetForTests();
+            GroupService.setDependencies(mockDb, new NullLogger());
+        });
+
+        afterEach(() => {
+            resetAuthInstanceForTests();
+            GroupService.resetForTests();
+        });
+
+        it('approves a BA admin session and tags adminVia="user" with the BA user id', async () => {
+            setAuthInstance(makeStubAuth({
+                user: { id: 'ba_admin_1', email: 'a@b.com' },
+                session: { id: 's1', token: 't', expiresAt: new Date().toISOString() }
+            }));
+            seedBaUser('ba_admin_1', ['admin']);
+
+            const { req, res, next, called } = makeReqRes();
+            await requireAdmin(req, res, next);
+
+            expect(called()).toBe(true);
+            expect(req.adminVia).toBe('user');
+            expect(req.userId).toBe('ba_admin_1');
+        });
+
+        it('prefers the BA path when both BA admin session and legacy admin cookie are present', async () => {
+            // Legacy admin user (would also approve via the cookie path).
+            await seedUser(userService, mockDb, mockCache, VALID_UUID, { verified: true, admin: true });
+            // BA admin session (preferred).
+            setAuthInstance(makeStubAuth({
+                user: { id: 'ba_admin_2', email: 'a@b.com' },
+                session: { id: 's2', token: 't', expiresAt: new Date().toISOString() }
+            }));
+            seedBaUser('ba_admin_2', ['admin']);
+
+            const { req, res, next, called } = makeReqRes({ cookieId: VALID_UUID });
+            await requireAdmin(req, res, next);
+
+            expect(called()).toBe(true);
+            expect(req.adminVia).toBe('user');
+            expect(req.userId).toBe('ba_admin_2');
+        });
+
+        it('falls through to legacy when the BA session has no admin group', async () => {
+            await seedUser(userService, mockDb, mockCache, VALID_UUID, { verified: true, admin: true });
+            setAuthInstance(makeStubAuth({
+                user: { id: 'ba_user_plain', email: 'p@b.com' },
+                session: { id: 's3', token: 't', expiresAt: new Date().toISOString() }
+            }));
+            seedBaUser('ba_user_plain', ['vip']);
+
+            const { req, res, next, called } = makeReqRes({ cookieId: VALID_UUID });
+            await requireAdmin(req, res, next);
+
+            // Legacy path approves the request — BA path returned null.
+            expect(called()).toBe(true);
+            expect(req.adminVia).toBe('user');
+            expect(req.userId).toBe(VALID_UUID);
+        });
+
+        it('falls through cleanly when no BA session is present', async () => {
+            // ADMIN_API_TOKEN required so the failed cookie path lands
+            // on 401 rather than 503.
+            process.env.ADMIN_API_TOKEN = SERVICE_TOKEN;
+            setAuthInstance(makeStubAuth(null));
+
+            const { req, res, next, called } = makeReqRes();
+            await requireAdmin(req, res, next);
+
+            expect(called()).toBe(false);
+            expect(res.statusCode).toBe(401);
+        });
+
+        it('still admits the service-token path when BA session is absent', async () => {
+            process.env.ADMIN_API_TOKEN = SERVICE_TOKEN;
+            setAuthInstance(makeStubAuth(null));
+
+            const { req, res, next, called } = makeReqRes({ headerToken: SERVICE_TOKEN });
+            await requireAdmin(req, res, next);
+
+            expect(called()).toBe(true);
+            expect(req.adminVia).toBe('service-token');
         });
     });
 });

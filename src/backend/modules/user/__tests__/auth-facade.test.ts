@@ -89,8 +89,14 @@ describe('auth facade', () => {
     });
 
     describe('configuration contract', () => {
-        it('throws when a predicate runs before setAuthInstance', async () => {
-            await expect(isLoggedIn(makeRequest())).rejects.toThrow(/not configured/i);
+        it('degrades to anonymous when a predicate runs before setAuthInstance', async () => {
+            // Phase 2 contract: a missing auth instance is treated as
+            // a recoverable failure inside computeAugmentedSession.
+            // The cached Promise resolves to null and predicates
+            // return their anonymous default rather than throwing —
+            // anonymous-allowed routes keep working even if the auth
+            // tier is unconfigured or degraded.
+            expect(await isLoggedIn(makeRequest())).toBe(false);
         });
 
         it('accepts a fresh auth instance via setAuthInstance', () => {

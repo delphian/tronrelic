@@ -44,7 +44,6 @@ import { createAdminUserGroupRouter } from './api/user-group.routes.js';
 import { createAdminTrafficRouter } from './api/traffic.routes.js';
 import { requireAdmin } from '../../api/middleware/admin-auth.js';
 import { createAuth, type Auth } from './auth.js';
-import { attachAuthSession } from '../../api/middleware/auth-session.js';
 
 /**
  * User module dependencies for initialization.
@@ -364,15 +363,12 @@ export class UserModule implements IModule<IUserModuleDependencies> {
         this.serviceRegistry.register('user-groups', this.userGroupService);
         this.logger.info('UserGroupService registered on service registry as "user-groups"');
 
-        // Phase 2: mount the auth-session middleware ahead of every
-        // downstream route handler so plugins/routes can use the
-        // facade as a pure cache read. The middleware itself skips
-        // `/api/auth/*` to avoid duplicating BA's internal session
-        // lookup on its own endpoints. Registration order matters:
-        // app.use(...) before any app.all/use route binding means
-        // this middleware runs first in the chain.
-        this.app.use(attachAuthSession);
-        this.logger.info('Auth-session middleware mounted (req.authSession populated for all routes)');
+        // Note: the auth-session middleware that pre-populates
+        // req.authSession is mounted in `loaders/express.ts` so it
+        // runs ahead of the /api router that `bootstrapInit()` mounts
+        // before any module run() phase. Mounting it here would land
+        // it after that router and the middleware would never fire
+        // for /api/* requests.
 
         // Mount Better Auth's HTTP handler at /api/auth/* (Phase 1).
         //

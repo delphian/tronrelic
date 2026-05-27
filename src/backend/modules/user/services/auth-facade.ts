@@ -22,8 +22,11 @@
 import type { Request } from 'express';
 import type { IncomingHttpHeaders } from 'node:http';
 import { fromNodeHeaders } from 'better-auth/node';
+import { logger } from '../../../lib/logger.js';
 import { GroupService, ADMIN_GROUP_ID } from './group.service.js';
 import type { Auth } from '../auth.js';
+
+const facadeLogger = logger.child({ component: 'auth-facade' });
 
 /**
  * Per-request cache key for the resolved augmented session.
@@ -239,11 +242,31 @@ async function resolveSession(req: Request): Promise<IAugmentedSession | null> {
  * function returns directly into the per-request cache, ensuring
  * concurrent callers share a single in-flight computation.
  *
+ * Catches and swallows resolution errors so the cached Promise
+ * always resolves successfully (to `null` on failure). Without this,
+ * a single BA / Mongo hiccup would leave a rejected Promise in the
+ * cache slot, and every downstream facade call (`isLoggedIn`,
+ * `isAdmin`, `isInGroup`) within the same request would re-await
+ * the rejection and throw — turning an anonymous-allowed route into
+ * a 500. Returning `null` here lets the documented graceful-
+ * degradation contract apply uniformly to direct and middleware-
+ * primed call sites.
+ *
  * @param req - Express request whose headers carry the BA session cookie.
- * @returns Augmented session when a valid BA session resolves, else null.
+ * @returns Augmented session when a valid BA session resolves, `null`
+ *          on missing-session and on any resolution failure.
  */
 async function computeAugmentedSession(req: Request): Promise<IAugmentedSession | null> {
-    const result = await getSessionFromHeaders(req.headers);
+    let result: IAugmentedSession | null;
+    try {
+        result = await getSessionFromHeaders(req.headers);
+    } catch (error) {
+        facadeLogger.error(
+            { error, path: req.path },
+            'Auth facade session resolution failed; degrading to anonymous'
+        );
+        result = null;
+    }
     return result;
 }
 
