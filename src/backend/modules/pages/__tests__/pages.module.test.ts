@@ -150,7 +150,11 @@ describe('PagesModule', () => {
 
             expect(mockApp.use).toHaveBeenCalledTimes(2);
             const [adminCall, publicCall] = mockApp.use.mock.calls;
-            expect(adminCall).toHaveLength(3);
+            // Admin call has 4 args: path, rate-limit middleware,
+            // requireAdmin middleware, router. The rate-limit
+            // middleware is required for the platform-wide policy
+            // CodeQL's js/missing-rate-limiting rule enforces.
+            expect(adminCall).toHaveLength(4);
             expect(adminCall[0]).toBe('/api/admin/pages');
             expect(publicCall[0]).toBe('/api/pages');
         });
