@@ -25,6 +25,7 @@ import { DatabaseBrowserController } from './api/database-browser.controller.js'
 import { Router } from 'express';
 import mongoSanitize from 'express-mongo-sanitize';
 import { requireAdmin } from '../../api/middleware/admin-auth.js';
+import { createAdminRateLimiter } from '../../api/middleware/rate-limit.js';
 
 /**
  * Database module dependencies for initialization.
@@ -191,12 +192,12 @@ export class DatabaseModule implements IModule<IDatabaseModuleDependencies> {
 
         // Create and mount migrations router (IoC - module attaches itself to app)
         const migrationsRouter = this.createMigrationsRouter();
-        this.app.use('/api/admin/migrations', requireAdmin, migrationsRouter);
+        this.app.use('/api/admin/migrations', createAdminRateLimiter('migrations-admin'), requireAdmin, migrationsRouter);
         this.logger.info('Migrations router mounted at /api/admin/migrations');
 
         // Create and mount database browser router
         const browserRouter = this.createBrowserRouter();
-        this.app.use('/api/admin/database', requireAdmin, browserRouter);
+        this.app.use('/api/admin/database', createAdminRateLimiter('database-admin'), requireAdmin, browserRouter);
         this.logger.info('Database browser router mounted at /api/admin/database');
 
         this.logger.info('Database module running');

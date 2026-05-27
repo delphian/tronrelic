@@ -19,7 +19,7 @@ import { MenuController } from './api/menu.controller.js';
 import { MAIN_SYSTEM_CONTAINER_ID } from './constants.js';
 import { Router as ExpressRouter } from 'express';
 import { requireAdmin } from '../../api/middleware/admin-auth.js';
-import { createRateLimiter } from '../../api/middleware/rate-limit.js';
+import { createRateLimiter, createAdminRateLimiter } from '../../api/middleware/rate-limit.js';
 import { userContextMiddleware } from '../../api/middleware/user-context.js';
 
 /**
@@ -313,12 +313,17 @@ export class MenuModule implements IModule<IMenuModuleDependencies> {
         });
         router.get('/manage', manageRateLimiter, requireAdmin, this.controller.getManageView);
 
-        // Admin-only routes (mutating operations require authentication)
-        router.post('/', requireAdmin, this.controller.create);
-        router.patch('/:id', requireAdmin, this.controller.update);
-        router.delete('/:id', requireAdmin, this.controller.delete);
-        router.put('/namespace/:namespace/config', requireAdmin, this.controller.setNamespaceConfig);
-        router.delete('/namespace/:namespace/config', requireAdmin, this.controller.deleteNamespaceConfig);
+        // Admin-only routes (mutating operations require authentication).
+        // A single shared admin rate-limiter chains in front of
+        // requireAdmin so the brute-force cost against the auth gate
+        // is bounded and the routes inherit the platform-default
+        // per-IP window the other modules use.
+        const adminLimiter = createAdminRateLimiter('menu-admin');
+        router.post('/', adminLimiter, requireAdmin, this.controller.create);
+        router.patch('/:id', adminLimiter, requireAdmin, this.controller.update);
+        router.delete('/:id', adminLimiter, requireAdmin, this.controller.delete);
+        router.put('/namespace/:namespace/config', adminLimiter, requireAdmin, this.controller.setNamespaceConfig);
+        router.delete('/namespace/:namespace/config', adminLimiter, requireAdmin, this.controller.deleteNamespaceConfig);
 
         return router;
     }

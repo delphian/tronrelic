@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import type { IDatabaseService } from '@/types';
 import { requireAdmin } from '../middleware/admin-auth.js';
+import { createAdminRateLimiter } from '../middleware/rate-limit.js';
 import { SystemMonitorController } from '../../modules/system/system-monitor.controller.js';
 import { getRedisClient } from '../../loaders/redis.js';
 import { PluginWebSocketRegistry } from '../../services/plugin-websocket-registry.js';
@@ -11,6 +12,7 @@ export function systemRouter(database: IDatabaseService) {
   const controller = new SystemMonitorController(getRedisClient(), database);
   const wsRegistry = PluginWebSocketRegistry.getInstance();
 
+  router.use(createAdminRateLimiter('system-monitor'));
   router.use(requireAdmin);
 
   // Blockchain endpoints
