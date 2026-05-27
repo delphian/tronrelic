@@ -212,20 +212,21 @@ export class GroupService {
      * Add a user to a group.
      *
      * Idempotent — uses `$addToSet` so repeated calls leave the
-     * `groups` array unchanged once membership is established. Throws
-     * when the underlying write fails (other than missing-user, which
-     * is silently ignored because the matched-count is zero and the
-     * upstream caller has the user context to react).
+     * `groups` array unchanged once membership is established.
      *
      * @param userId - Better Auth user id.
      * @param groupId - Group id to add.
+     * @returns `true` when the user existed and the write matched,
+     *          `false` when no user matched the id (silent no-op
+     *          MongoDB would otherwise return invisibly).
      */
-    public async addMember(userId: string, groupId: string): Promise<void> {
+    public async addMember(userId: string, groupId: string): Promise<boolean> {
         const collection = this.getCollection();
-        await collection.updateOne(
+        const result = await collection.updateOne(
             { _id: userId },
             { $addToSet: { groups: groupId } }
         );
+        return result.matchedCount > 0;
     }
 
     /**
@@ -235,13 +236,16 @@ export class GroupService {
      *
      * @param userId - Better Auth user id.
      * @param groupId - Group id to remove.
+     * @returns `true` when the user existed and the write matched,
+     *          `false` when no user matched the id.
      */
-    public async removeMember(userId: string, groupId: string): Promise<void> {
+    public async removeMember(userId: string, groupId: string): Promise<boolean> {
         const collection = this.getCollection();
-        await collection.updateOne(
+        const result = await collection.updateOne(
             { _id: userId },
             { $pull: { groups: groupId } }
         );
+        return result.matchedCount > 0;
     }
 
     /**
@@ -254,14 +258,17 @@ export class GroupService {
      *
      * @param userId - Better Auth user id.
      * @param groupIds - Complete list of group ids the user should belong to.
+     * @returns `true` when the user existed and the write matched,
+     *          `false` when no user matched the id.
      */
-    public async setUserGroups(userId: string, groupIds: string[]): Promise<void> {
+    public async setUserGroups(userId: string, groupIds: string[]): Promise<boolean> {
         const collection = this.getCollection();
         const unique = Array.from(new Set(groupIds));
-        await collection.updateOne(
+        const result = await collection.updateOne(
             { _id: userId },
             { $set: { groups: unique } }
         );
+        return result.matchedCount > 0;
     }
 
     /**

@@ -212,11 +212,22 @@ function buildSocialProviders(): {
  * @returns Ordered list of Better Auth plugins for the instance.
  */
 function buildPlugins(log: ISystemLogService): Array<ReturnType<typeof passkey | typeof magicLink>> {
-    const plugins: Array<ReturnType<typeof passkey | typeof magicLink>> = [passkey()];
+    const plugins: Array<ReturnType<typeof passkey | typeof magicLink>> = [
+        passkey({
+            // Remap the plugin's owned `passkey` table to the project's
+            // `module_user_auth_*` convention so it sits alongside the
+            // other BA-managed collections.
+            schema: { passkey: { modelName: AUTH_COLLECTIONS.passkeys } }
+        })
+    ];
     const isProduction = env.NODE_ENV === 'production' || env.ENV === 'production';
     const hasResend = Boolean(env.RESEND_API_KEY && env.RESEND_FROM_ADDRESS);
     if (hasResend || !isProduction) {
         plugins.push(magicLink({ sendMagicLink: buildMagicLinkSender(log) }));
+    } else {
+        log.warn(
+            'Magic-link plugin DISABLED in production: RESEND_API_KEY and/or RESEND_FROM_ADDRESS unset. Sign-in via magic-link is not available until these are configured.'
+        );
     }
     return plugins;
 }
@@ -242,12 +253,20 @@ function buildMagicLinkSender(
         const from = env.RESEND_FROM_ADDRESS;
         sender = async ({ email, url }): Promise<void> => {
             try {
-                await resend.emails.send({
+                // The Resend SDK does not throw on API-level failures
+                // (invalid key, unverified domain, quota exceeded). It
+                // resolves with `{ data, error }`, so failures are
+                // silent unless we explicitly inspect the `error` field
+                // and throw.
+                const { error: resendError } = await resend.emails.send({
                     from,
                     to: email,
                     subject: 'Sign in to TronRelic',
                     html: renderMagicLinkEmail(url)
                 });
+                if (resendError) {
+                    throw new Error(resendError.message || 'Unknown Resend error');
+                }
             } catch (error) {
                 log.error({ error, email }, 'Resend magic-link send failed');
                 throw error;

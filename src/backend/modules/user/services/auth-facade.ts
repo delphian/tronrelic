@@ -144,32 +144,27 @@ export async function isAdmin(req: Request): Promise<boolean> {
 /**
  * Resolve the Better Auth session for a request, with per-request caching.
  *
- * Computes the session on first call within a request and caches the
- * result on the request object under a private Symbol. Subsequent
- * facade calls within the same request reuse the cached value, so a
- * handler that asks `isLoggedIn` and then `isAdmin` pays one Mongo
- * round-trip, not two.
+ * Caches the *in-flight Promise* on the request object under a private
+ * Symbol, not the resolved session, so concurrent callers — e.g.
+ * `Promise.all([isLoggedIn(req), isAdmin(req)])` — share a single
+ * `auth.api.getSession` round-trip rather than racing through the
+ * "undefined cache, fetch fresh" branch in parallel. Once the Promise
+ * resolves it remains in the cache slot, so later sequential calls in
+ * the same request also reuse the result.
  *
  * @param req - Express request whose Better Auth cookies will be read.
  * @returns The resolved session, or `null` when no valid session exists.
  */
 async function resolveSession(req: Request): Promise<ResolvedSession | null> {
-    const cached = (req as unknown as { [SESSION_CACHE_KEY]?: ResolvedSession | null })[
-        SESSION_CACHE_KEY
-    ];
-    let session: ResolvedSession | null;
-    if (cached !== undefined) {
-        session = cached;
-    } else {
+    const slot = req as unknown as { [SESSION_CACHE_KEY]?: Promise<ResolvedSession | null> };
+    let pending = slot[SESSION_CACHE_KEY];
+    if (pending === undefined) {
         const auth = requireAuth();
         const headers = fromNodeHeaders(req.headers);
-        const resolved = await auth.api.getSession({ headers });
-        session = resolved ?? null;
-        (req as unknown as { [SESSION_CACHE_KEY]?: ResolvedSession | null })[
-            SESSION_CACHE_KEY
-        ] = session;
+        pending = auth.api.getSession({ headers }).then((resolved) => resolved ?? null);
+        slot[SESSION_CACHE_KEY] = pending;
     }
-    return session;
+    return pending;
 }
 
 /**

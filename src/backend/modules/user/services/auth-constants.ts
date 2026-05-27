@@ -33,5 +33,6 @@ export const AUTH_COLLECTIONS = {
     users: AUTH_USERS_COLLECTION,
     sessions: 'module_user_auth_sessions',
     accounts: 'module_user_auth_accounts',
-    verifications: 'module_user_auth_verifications'
+    verifications: 'module_user_auth_verifications',
+    passkeys: 'module_user_auth_passkeys'
 } as const;
