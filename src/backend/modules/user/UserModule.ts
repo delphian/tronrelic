@@ -23,6 +23,8 @@
  */
 
 import type { Express, Router } from 'express';
+import mongoose from 'mongoose';
+import { toNodeHandler } from 'better-auth/node';
 import type { ICacheService, IClickHouseService, IDatabaseService, IMenuService, IModule, IModuleMetadata, ISchedulerService, IServiceRegistry, ISystemConfigService } from '@/types';
 import { logger } from '../../lib/logger.js';
 import { MAIN_SYSTEM_CONTAINER_ID } from '../menu/index.js';
@@ -31,6 +33,8 @@ import { UserService } from './services/user.service.js';
 import { GscService } from './services/gsc.service.js';
 import { TrafficService } from './services/traffic.service.js';
 import { UserGroupService } from './services/user-group.service.js';
+import { GroupService } from './services/group.service.js';
+import { setAuthInstance } from './services/auth-facade.js';
 import { initGeoIP } from './services/geo.service.js';
 import { UserController } from './api/user.controller.js';
 import { UserGroupController } from './api/user-group.controller.js';
@@ -39,6 +43,7 @@ import { createUserRouter, createAdminUserRouter, createProfileRouter } from './
 import { createAdminUserGroupRouter } from './api/user-group.routes.js';
 import { createAdminTrafficRouter } from './api/traffic.routes.js';
 import { requireAdmin } from '../../api/middleware/admin-auth.js';
+import { createAuth, type Auth } from './auth.js';
 
 /**
  * User module dependencies for initialization.
@@ -175,6 +180,19 @@ export class UserModule implements IModule<IUserModuleDependencies> {
     private trafficController!: TrafficController;
 
     /**
+     * Better Auth instance and its group-membership companion service.
+     *
+     * Phase 1 wiring: the auth instance is configured against the
+     * `module_user_auth_*` collections and reads/writes the `groups`
+     * additional field through {@link GroupService}. The legacy
+     * UUID-based user system continues to run alongside it until the
+     * Phase 6 cutover migration. See `auth.ts` for the configuration
+     * surface and the file header for the Db-injection exception.
+     */
+    private auth!: Auth;
+    private groupService!: GroupService;
+
+    /**
      * Logger instance for this module.
      */
     private readonly logger = logger.child({ module: 'user' });
@@ -272,6 +290,30 @@ export class UserModule implements IModule<IUserModuleDependencies> {
         // Reads ClickHouse `traffic_events` aggregates and per-user history.
         this.trafficController = new TrafficController(this.trafficService, this.logger);
 
+        // Better Auth wiring (Phase 1 of the auth refactor).
+        //
+        // GroupService is configured first because the BA after-create
+        // hook needs to call addMember() during signup. The auth
+        // factory takes a raw MongoDB Db handle — see auth.ts for the
+        // documented exception to the IDatabaseService rule. The
+        // facade is configured last so it cannot be queried before
+        // the auth instance exists.
+        GroupService.setDependencies(this.database, this.logger);
+        this.groupService = GroupService.getInstance();
+        const authDb = mongoose.connection.db;
+        if (!authDb) {
+            throw new Error(
+                'mongoose.connection.db is undefined — UserModule.init() ran before connectDatabase() completed.'
+            );
+        }
+        this.auth = createAuth({
+            db: authDb,
+            groupService: this.groupService,
+            logger: this.logger
+        });
+        setAuthInstance(this.auth);
+        this.logger.info('Better Auth instance configured and facade wired');
+
         this.logger.info('User module initialized');
     }
 
@@ -320,6 +362,16 @@ export class UserModule implements IModule<IUserModuleDependencies> {
         // discover it via context.services.get<IUserGroupService>('user-groups').
         this.serviceRegistry.register('user-groups', this.userGroupService);
         this.logger.info('UserGroupService registered on service registry as "user-groups"');
+
+        // Mount Better Auth's HTTP handler at /api/auth/* (Phase 1).
+        //
+        // `toNodeHandler` adapts BA's fetch-style handler to the Express
+        // (req, res) signature. Mounting here, before the legacy user
+        // routes, keeps `/api/auth/*` cleanly isolated from the
+        // UUID-based identity surface that the cutover migration will
+        // remove in Phase 6.
+        this.app.all('/api/auth/*', toNodeHandler(this.auth));
+        this.logger.info('Better Auth handler mounted at /api/auth/*');
 
         // Create and mount public router (IoC - module attaches itself to app)
         const publicRouter = this.createPublicRouter();

@@ -29,8 +29,14 @@ export function createExpressApp(): Express {
   // window in `userContextMiddleware` — but `requireAdmin` reads only from
   // `req.signedCookies` to close the cookie-forgery vector.
   app.use(cookieParser(env.SESSION_SECRET));
-  app.use(express.json({ limit: '5mb' }));
-  app.use(express.urlencoded({ extended: true }));
+  // Body parsers consume the raw request stream, but Better Auth's
+  // Node integration needs the original body to validate magic-link
+  // tokens, OAuth callbacks, and passkey assertions. Skip them on
+  // `/api/auth/*` so `toNodeHandler` (mounted by UserModule.run()) can
+  // read the body itself. Cookie-parser above is safe to leave global
+  // because it only reads headers.
+  app.use(skipForAuthRoutes(express.json({ limit: '5mb' })));
+  app.use(skipForAuthRoutes(express.urlencoded({ extended: true })));
   app.use(morgan(env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 
   // Serve uploaded files from /public/uploads directory
@@ -65,4 +71,26 @@ export function createExpressApp(): Express {
 
   app.use(errorHandler);
   return app;
+}
+
+/**
+ * Wrap an Express middleware so it skips itself on `/api/auth/*` paths.
+ *
+ * Used to keep the global body parsers from consuming the request
+ * stream that Better Auth's Node handler needs to read. The wrapper
+ * preserves the original middleware's signature so it composes
+ * transparently with `app.use(...)`.
+ *
+ * @param middleware - Middleware to bypass on auth routes.
+ * @returns A new middleware that calls through on `/api/auth/*` and
+ *          delegates to the original elsewhere.
+ */
+function skipForAuthRoutes(middleware: express.RequestHandler): express.RequestHandler {
+  return function authBypass(req, res, next): void {
+    if (req.path.startsWith('/api/auth/') || req.path === '/api/auth') {
+      next();
+      return;
+    }
+    middleware(req, res, next);
+  };
 }
