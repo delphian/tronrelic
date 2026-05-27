@@ -29,6 +29,48 @@ const envSchema = z.object({
    * placeholder must not be used in any non-development deployment.
    */
   SESSION_SECRET: z.string().optional(),
+  /**
+   * Better Auth HMAC secret used to sign session tokens and the session cookie.
+   * Required in production for the same reason as SESSION_SECRET — the absence
+   * of a secret would let any caller mint a forged session token.
+   * Generate with `openssl rand -hex 32`.
+   */
+  BETTER_AUTH_SECRET: z.string().optional(),
+  /**
+   * Canonical base URL Better Auth uses to construct OAuth redirect URIs and
+   * email magic-link URLs. Optional — falls back to SITE_URL when unset.
+   */
+  BETTER_AUTH_URL: z.string().optional(),
+  /**
+   * Comma-separated list of email addresses auto-promoted to the `admin`
+   * group when they complete signup. Empty/unset means no auto-promotion;
+   * the operator bootstraps the first admin via the service-token path.
+   */
+  ADMIN_EMAILS: z.string().optional(),
+  /**
+   * Resend API key used to send magic-link emails. When unset, the magic-link
+   * plugin still mints links but the send callback logs them to console for
+   * development. Set in any environment where real users sign in.
+   */
+  RESEND_API_KEY: z.string().optional(),
+  /**
+   * Verified `From` address Resend uses for outbound mail. Must be on a
+   * domain whose DKIM/SPF records are configured in Resend.
+   */
+  RESEND_FROM_ADDRESS: z.string().optional(),
+  /**
+   * Google OAuth client ID and secret. Both must be set for the Google
+   * social provider to load; otherwise it is omitted from Better Auth's
+   * provider list.
+   */
+  GOOGLE_CLIENT_ID: z.string().optional(),
+  GOOGLE_CLIENT_SECRET: z.string().optional(),
+  /**
+   * GitHub OAuth client ID and secret. Both must be set for the GitHub
+   * social provider to load; otherwise it is omitted.
+   */
+  GITHUB_CLIENT_ID: z.string().optional(),
+  GITHUB_CLIENT_SECRET: z.string().optional(),
   ENABLE_TELEMETRY: z
     .union([
       z.boolean(),
@@ -87,6 +129,23 @@ if (!parsed.data.SESSION_SECRET) {
     '[env] SESSION_SECRET unset — using a fixed development placeholder. Identity cookies will be signed with a known secret. Set SESSION_SECRET before deploying anywhere non-local.'
   );
   parsed.data.SESSION_SECRET = DEV_SESSION_SECRET_FALLBACK;
+}
+
+// Mirror the SESSION_SECRET policy for BETTER_AUTH_SECRET. A missing secret
+// in dev/test is acceptable with a warning and a fixed placeholder so local
+// signup flows work without per-developer config; production must supply a
+// real secret or boot fails.
+const DEV_BETTER_AUTH_SECRET_FALLBACK = 'tronrelic-dev-better-auth-secret-do-not-use-in-prod';
+if (!parsed.data.BETTER_AUTH_SECRET) {
+  if (parsed.data.NODE_ENV === 'production' || parsed.data.ENV === 'production') {
+    throw new Error(
+      'BETTER_AUTH_SECRET is required in production. Generate one with `openssl rand -hex 32` and set it in your environment.'
+    );
+  }
+  console.warn(
+    '[env] BETTER_AUTH_SECRET unset — using a fixed development placeholder. Better Auth session tokens will be signed with a known secret. Set BETTER_AUTH_SECRET before deploying anywhere non-local.'
+  );
+  parsed.data.BETTER_AUTH_SECRET = DEV_BETTER_AUTH_SECRET_FALLBACK;
 }
 
 export type EnvConfig = z.infer<typeof envSchema>;
