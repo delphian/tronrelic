@@ -8,6 +8,7 @@ import { PluginWebSocketRegistry } from './plugin-websocket-registry.js';
 import { corsOriginCallback } from '../config/cors.js';
 import { env } from '../config/env.js';
 import { USER_ID_COOKIE_NAME, UUID_V4_REGEX } from '../modules/user/api/identity-cookie.js';
+import { getSessionFromHeaders } from '../modules/user/services/auth-facade.js';
 
 /**
  * Pull the identity UUID out of a handshake Cookie header string.
@@ -102,6 +103,24 @@ export class WebSocketService implements IWebSocketService {
       },
       pingInterval: 25000,
       pingTimeout: 20000
+    });
+
+    // Phase 2: resolve the Better Auth session during the handshake
+    // and stash the augmented payload on `socket.data.authSession`
+    // before the `connection` event fires. Plugin WS handlers and
+    // future room-gating logic can read it as `socket.data.authSession`
+    // without rehydrating. Failures degrade to `null` so anonymous
+    // connections (which are the common case) are never blocked by
+    // an auth-tier hiccup.
+    this.io.use(async (socket, next) => {
+      try {
+        const session = await getSessionFromHeaders(socket.handshake.headers);
+        socket.data.authSession = session;
+      } catch (error) {
+        socket.data.authSession = null;
+        logger.error({ error, socketId: socket.id }, 'WS handshake BA session resolution failed');
+      }
+      next();
     });
 
     this.io.on('connection', socket => this.handleConnection(socket));
