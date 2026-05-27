@@ -363,6 +363,13 @@ export class UserModule implements IModule<IUserModuleDependencies> {
         this.serviceRegistry.register('user-groups', this.userGroupService);
         this.logger.info('UserGroupService registered on service registry as "user-groups"');
 
+        // Note: the auth-session middleware that pre-populates
+        // req.authSession is mounted in `loaders/express.ts` so it
+        // runs ahead of the /api router that `bootstrapInit()` mounts
+        // before any module run() phase. Mounting it here would land
+        // it after that router and the middleware would never fire
+        // for /api/* requests.
+
         // Mount Better Auth's HTTP handler at /api/auth/* (Phase 1).
         //
         // `toNodeHandler` adapts BA's fetch-style handler to the Express

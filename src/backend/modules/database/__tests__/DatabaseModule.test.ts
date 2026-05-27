@@ -239,8 +239,9 @@ describe('DatabaseModule', () => {
 
             expect(mockApp.use).toHaveBeenCalledWith(
                 '/api/admin/migrations',
-                expect.anything(),
-                expect.anything()
+                expect.anything(), // rate-limit middleware
+                expect.anything(), // requireAdmin middleware
+                expect.anything()  // router
             );
         });
 
@@ -259,8 +260,9 @@ describe('DatabaseModule', () => {
 
             expect(mockApp.use).toHaveBeenCalledWith(
                 '/api/admin/database',
-                expect.anything(),
-                expect.anything()
+                expect.anything(), // rate-limit middleware
+                expect.anything(), // requireAdmin middleware
+                expect.anything()  // router
             );
         });
 
@@ -283,11 +285,15 @@ describe('DatabaseModule', () => {
             // Find the migrations route call
             const migrationsCall = useCalls.find((call: any[]) => call[0] === '/api/admin/migrations');
 
-            // Verify migrations route has 3 arguments: path, middleware, router
+            // Verify migrations route has 4 arguments: path,
+            // rate-limit, requireAdmin, router. The rate-limit
+            // middleware chains in front of the auth gate per the
+            // platform-wide policy.
             expect(migrationsCall).toBeDefined();
-            expect(migrationsCall?.length).toBe(3);
-            expect(migrationsCall?.[1]).toBeTypeOf('function'); // requireAdmin middleware
-            expect(migrationsCall?.[2]).toBeTypeOf('function'); // router
+            expect(migrationsCall?.length).toBe(4);
+            expect(migrationsCall?.[1]).toBeTypeOf('function'); // rate-limit middleware
+            expect(migrationsCall?.[2]).toBeTypeOf('function'); // requireAdmin middleware
+            expect(migrationsCall?.[3]).toBeTypeOf('function'); // router
         });
 
         /**
@@ -309,11 +315,13 @@ describe('DatabaseModule', () => {
             // Find the database browser route call
             const browserCall = useCalls.find((call: any[]) => call[0] === '/api/admin/database');
 
-            // Verify database browser route has 3 arguments: path, middleware, router
+            // Verify database browser route has 4 arguments: path,
+            // rate-limit, requireAdmin, router.
             expect(browserCall).toBeDefined();
-            expect(browserCall?.length).toBe(3);
-            expect(browserCall?.[1]).toBeTypeOf('function'); // requireAdmin middleware
-            expect(browserCall?.[2]).toBeTypeOf('function'); // router
+            expect(browserCall?.length).toBe(4);
+            expect(browserCall?.[1]).toBeTypeOf('function'); // rate-limit middleware
+            expect(browserCall?.[2]).toBeTypeOf('function'); // requireAdmin middleware
+            expect(browserCall?.[3]).toBeTypeOf('function'); // router
         });
 
     });

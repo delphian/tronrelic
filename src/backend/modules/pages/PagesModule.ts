@@ -21,6 +21,7 @@ import { PagesController } from './api/pages.controller.js';
 import { createPagesRouter } from './api/pages.routes.js';
 import { createPublicPagesRouter } from './api/pages.public-routes.js';
 import { requireAdmin } from '../../api/middleware/admin-auth.js';
+import { createAdminRateLimiter } from '../../api/middleware/rate-limit.js';
 
 export interface IPagesModuleDependencies {
     database: IDatabaseService;
@@ -95,7 +96,7 @@ export class PagesModule implements IModule<IPagesModuleDependencies> {
         }
 
         const adminRouter: Router = createPagesRouter(this.controller);
-        this.app.use('/api/admin/pages', requireAdmin, adminRouter);
+        this.app.use('/api/admin/pages', createAdminRateLimiter('pages-admin'), requireAdmin, adminRouter);
         this.logger.info('Admin pages router mounted at /api/admin/pages');
 
         const publicRouter: Router = createPublicPagesRouter(this.controller);

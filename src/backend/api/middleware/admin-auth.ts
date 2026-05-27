@@ -4,6 +4,10 @@ import { UserService } from '../../modules/user/services/user.service.js';
 import { UserGroupService } from '../../modules/user/services/user-group.service.js';
 import { computeUserAuthStatus } from '../../modules/user/services/auth-status.js';
 import { USER_ID_COOKIE_NAME, UUID_V4_REGEX } from '../../modules/user/api/identity-cookie.js';
+import {
+    getSessionForRequest,
+    isAdmin as facadeIsAdmin
+} from '../../modules/user/services/auth-facade.js';
 
 /**
  * Internal result returned from `tryUserAdminAuth`. A non-null
@@ -73,6 +77,36 @@ function extractCandidate(req: Request): string | undefined {
         return trimmed.length > 0 ? trimmed : undefined;
     }
     return candidate;
+}
+
+/**
+ * Try to authorize via a Better Auth session + admin-group membership.
+ *
+ * Phase 2 of the auth refactor: the new path checks whether the
+ * caller carries a live BA session and is a member of the `admin`
+ * group on the BA user record. Reads through the facade so the
+ * single-surface rule holds — no direct GroupService calls here.
+ *
+ * Tried first by {@link requireAdmin} so that a user authenticated
+ * via Better Auth is preferred over the legacy cookie path. Returns
+ * `{ userId: null }` on any failure (no session, not admin, facade
+ * not yet configured, etc.) so the caller falls through cleanly.
+ *
+ * @param req - Express request.
+ * @returns Resolved user id on BA-admin success, `null` otherwise.
+ */
+async function tryBetterAuthAdminAuth(req: Request): Promise<CookieAdminResult> {
+    let userId: string | null = null;
+    try {
+        const isBaAdmin = await facadeIsAdmin(req);
+        if (isBaAdmin) {
+            const session = await getSessionForRequest(req);
+            userId = session?.user.id ?? null;
+        }
+    } catch {
+        userId = null;
+    }
+    return { userId };
 }
 
 /**
@@ -150,6 +184,17 @@ async function tryUserAdminAuth(req: Request): Promise<CookieAdminResult> {
  * middleware surfaces the stale reason for the recovery flow.
  */
 export async function isAdmin(req: Request): Promise<boolean> {
+    // Phase 2: prefer the Better Auth admin path. A BA-authenticated
+    // admin is the canonical operator going forward; legacy cookie
+    // path stays as a transitional fallback.
+    try {
+        if (await facadeIsAdmin(req)) {
+            return true;
+        }
+    } catch {
+        // Facade not configured in this test/boot context — fall
+        // through to the legacy path rather than failing the check.
+    }
     const result = await tryUserAdminAuth(req);
     if (result.userId) return true;
     if (!env.ADMIN_API_TOKEN) return false;
@@ -180,7 +225,20 @@ export async function isAdmin(req: Request): Promise<boolean> {
  */
 export async function requireAdmin(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-        // Prefer the cookie path for per-human attribution.
+        // Phase 2: prefer the Better Auth session path. Operators who
+        // sign in through BA (magic-link / OAuth / passkey) are
+        // attributed by their BA user id; this becomes the canonical
+        // operator identity once Phase 6 retires the legacy cookie.
+        const baResult = await tryBetterAuthAdminAuth(req);
+        if (baResult.userId) {
+            req.adminVia = 'user';
+            req.userId = baResult.userId;
+            next();
+            return;
+        }
+
+        // Legacy cookie path: tronrelic_uid + verified wallet + admin
+        // group. Retained until the cutover removes the UUID system.
         const cookieResult = await tryUserAdminAuth(req);
         if (cookieResult.userId) {
             req.adminVia = 'user';

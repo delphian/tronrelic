@@ -10,6 +10,7 @@
 import { Router } from 'express';
 import type { SchedulerController } from './scheduler.controller.js';
 import { requireAdmin } from '../../../api/middleware/admin-auth.js';
+import { createAdminRateLimiter } from '../../../api/middleware/rate-limit.js';
 
 /**
  * Create the scheduler admin router.
@@ -20,7 +21,10 @@ import { requireAdmin } from '../../../api/middleware/admin-auth.js';
 export function createSchedulerRouter(controller: SchedulerController): Router {
     const router = Router();
 
-    // All scheduler admin routes require authentication
+    // All scheduler admin routes are rate-limited and require authentication.
+    // Rate limiting runs first so it bounds the brute-force cost against the
+    // auth gate itself.
+    router.use(createAdminRateLimiter('scheduler-admin'));
     router.use(requireAdmin);
 
     // GET /status - Get status of all scheduled jobs

@@ -36,6 +36,7 @@ import { AddressLabelService } from './services/address-label.service.js';
 import { AddressLabelController } from './api/address-label.controller.js';
 import { createPublicRouter, createAdminRouter } from './api/address-label.routes.js';
 import { requireAdmin } from '../../api/middleware/admin-auth.js';
+import { createAdminRateLimiter } from '../../api/middleware/rate-limit.js';
 
 /**
  * Dependencies required by the address labels module.
@@ -218,7 +219,7 @@ export class AddressLabelsModule implements IModule<IAddressLabelsModuleDependen
 
         // Create and mount admin router (IoC - module attaches itself to app)
         const adminRouter = this.createAdminRouter();
-        this.app.use('/api/admin/address-labels', requireAdmin, adminRouter);
+        this.app.use('/api/admin/address-labels', createAdminRateLimiter('address-labels-admin'), requireAdmin, adminRouter);
         this.logger.info('Admin address labels router mounted at /api/admin/address-labels');
 
         this.logger.info('Address labels module running');

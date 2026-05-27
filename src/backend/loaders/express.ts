@@ -7,6 +7,7 @@ import morgan from 'morgan';
 import type { Express } from 'express';
 import { requestContext } from '../api/middleware/request-context.js';
 import { errorHandler } from '../api/middleware/error-handler.js';
+import { attachAuthSession } from '../api/middleware/auth-session.js';
 import { env } from '../config/env.js';
 import { corsOriginCallback } from '../config/cors.js';
 
@@ -65,6 +66,19 @@ export function createExpressApp(): Express {
     res.setHeader('Content-Type', 'text/plain; version=0.0.4; charset=utf-8');
     res.send('# Market metrics moved to plugin API\n# See: /api/plugins/resource-markets/system/platforms\n# See: /api/plugins/resource-markets/system/freshness\n');
   });
+
+  // Phase 2 of the auth refactor: mount the Better Auth session
+  // middleware in the framework layer so every downstream route
+  // (including the /api router mounted by bootstrapInit after this
+  // function returns) inherits a pre-resolved req.authSession.
+  // Registering it inside UserModule.run() would be too late —
+  // bootstrapInit mounts the /api router before module.run() fires,
+  // so middleware added there would never see /api/* requests. The
+  // middleware lazily resolves the auth instance via the facade, so
+  // it is safe to register here before UserModule.init() configures
+  // the BA singleton; real traffic only arrives after both phases
+  // complete and the server starts listening.
+  app.use(attachAuthSession);
 
   // Note: API routes are mounted in bootstrapInit() after database is initialized
   // This allows routers to receive the shared coreDatabase via dependency injection

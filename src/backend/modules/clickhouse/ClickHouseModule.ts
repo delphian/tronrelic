@@ -24,6 +24,7 @@
 import { Router, type Express } from 'express';
 import type { IModule, IModuleMetadata, ISystemLogService } from '@/types';
 import { requireAdmin } from '../../api/middleware/admin-auth.js';
+import { createAdminRateLimiter } from '../../api/middleware/rate-limit.js';
 import { ClickHouseService } from './services/clickhouse.service.js';
 import { ClickHouseBrowserController } from './api/clickhouse-browser.controller.js';
 
@@ -148,7 +149,7 @@ export class ClickHouseModule implements IModule<IClickHouseModuleDependencies> 
         this.logger.info('ClickHouse module running');
 
         const browserRouter = this.createBrowserRouter();
-        this.app.use('/api/admin/clickhouse', requireAdmin, browserRouter);
+        this.app.use('/api/admin/clickhouse', createAdminRateLimiter('clickhouse-admin'), requireAdmin, browserRouter);
         this.logger.info('ClickHouse browser router mounted at /api/admin/clickhouse');
     }
 
