@@ -19,29 +19,30 @@
 'use client';
 
 import { createAuthClient } from 'better-auth/react';
-import { magicLinkClient } from 'better-auth/client/plugins';
+import { emailOTPClient } from 'better-auth/client/plugins';
 import { passkeyClient } from '@better-auth/passkey/client';
 
 /**
  * Configured Better Auth client.
  *
  * Plugin list mirrors the backend `auth.ts` plugin list — passkey is
- * always loaded, magic-link client method is registered so the modal
- * can call it whether or not the server side has Resend wired
- * (the server returns an error if magic-link is disabled, which the
- * modal surfaces as a toast).
+ * always loaded, the email-OTP client methods are registered so the
+ * modal can request and verify codes whether or not the server side
+ * has Resend wired (the server returns an error if email-OTP is
+ * disabled, which the modal surfaces as a toast).
  */
 export const authClient = createAuthClient({
-    plugins: [magicLinkClient(), passkeyClient()]
+    plugins: [emailOTPClient(), passkeyClient()]
 });
 
 /**
- * Reactive session hook re-exported from the configured client.
+ * Reactive session hook plus the auth actions used across the app.
  *
- * Returns `{ data, isPending, error, refetch }`. Components that need
- * SSR fallback should prefer `useAuthSession` from `SessionProvider` —
- * it merges the SSR-resolved session with this hook's live value so
- * the first render is never a "signed out" flash for users who
- * arrived with a valid Better Auth cookie.
+ * `emailOtp.sendVerificationOtp({ email, type: 'sign-in' })` mails a
+ * code; `signIn.emailOtp({ email, otp })` verifies it and creates the
+ * session. Components that need SSR fallback should prefer
+ * `useAuthSession` from `SessionProvider` — it merges the SSR-resolved
+ * session with `useSession`'s live value so the first render is never a
+ * "signed out" flash for users who arrived with a valid BA cookie.
  */
-export const { useSession, signIn, signUp, signOut } = authClient;
+export const { useSession, signIn, signUp, signOut, emailOtp } = authClient;

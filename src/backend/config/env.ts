@@ -37,8 +37,8 @@ const envSchema = z.object({
    */
   BETTER_AUTH_SECRET: z.string().optional(),
   /**
-   * Canonical base URL Better Auth uses to construct OAuth redirect URIs and
-   * email magic-link URLs. Optional — falls back to SITE_URL when unset.
+   * Canonical base URL Better Auth uses to construct OAuth redirect URIs.
+   * Optional — falls back to SITE_URL when unset.
    */
   BETTER_AUTH_URL: z.string().optional(),
   /**
@@ -48,9 +48,9 @@ const envSchema = z.object({
    */
   ADMIN_EMAILS: z.string().optional(),
   /**
-   * Resend API key used to send magic-link emails. When unset, the magic-link
-   * plugin still mints links but the send callback logs them to console for
-   * development. Set in any environment where real users sign in.
+   * Resend API key used to send sign-in code (OTP) emails. When unset, the
+   * email-OTP plugin logs codes to the console for development. Set in any
+   * environment where real users sign in.
    */
   RESEND_API_KEY: z.string().optional(),
   /**
