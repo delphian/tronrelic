@@ -113,34 +113,13 @@ RUN npm run build:frontend
 # ============================================
 # Stage 5: Backend Production Image
 # ============================================
-# Debian-slim for Playwright browser support and glibc consistency with deps.
+# glibc consistency with the deps stage (native addons compiled there).
 FROM node:20-slim AS backend
 WORKDIR /app
 
+# ca-certificates for outbound TLS (TronGrid, etc.); node:20-slim omits them.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
-    libasound2 \
-    libatk-bridge2.0-0 \
-    libatk1.0-0 \
-    libatspi2.0-0 \
-    libcairo2 \
-    libcups2 \
-    libdbus-1-3 \
-    libdrm2 \
-    libgbm1 \
-    libglib2.0-0 \
-    libnspr4 \
-    libnss3 \
-    libpango-1.0-0 \
-    libx11-6 \
-    libxcb1 \
-    libxcomposite1 \
-    libxdamage1 \
-    libxext6 \
-    libxfixes3 \
-    libxkbcommon0 \
-    libxrandr2 \
-    fonts-liberation \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy package files and prebuilt workspace outputs so npm ci can create
@@ -151,9 +130,7 @@ COPY --from=builder /app/packages/types/package.json ./packages/types/package.js
 COPY --from=builder /app/packages/types/dist ./packages/types/dist
 RUN node -e "const f='packages/types/package.json';const p=require('./'+f);if(p.scripts){delete p.scripts.prepare;delete p.scripts.prepublishOnly;}require('fs').writeFileSync(f, JSON.stringify(p,null,4)+'\n');"
 
-RUN --mount=type=secret,id=npmrc,target=/root/.npmrc npm ci --only=production
-
-RUN npx playwright install chromium
+RUN npm ci --only=production
 
 COPY --from=builder /app/dist/backend ./dist/backend
 
@@ -202,7 +179,7 @@ COPY --from=builder /app/packages/types/package.json ./packages/types/package.js
 COPY --from=builder /app/packages/types/dist ./packages/types/dist
 RUN node -e "const f='packages/types/package.json';const p=require('./'+f);if(p.scripts){delete p.scripts.prepare;delete p.scripts.prepublishOnly;}require('fs').writeFileSync(f, JSON.stringify(p,null,4)+'\n');"
 
-RUN --mount=type=secret,id=npmrc,target=/root/.npmrc npm ci --only=production
+RUN npm ci --only=production
 
 COPY --from=builder /app/src/frontend/.next/standalone ./
 COPY --from=builder /app/src/frontend/.next/static ./src/frontend/.next/static

@@ -8,8 +8,8 @@ const channelEnum = z.enum(['websocket', 'email']);
 const preferencesSchema = z.object({
   wallet: z.string().min(34),
   channels: z.array(channelEnum).optional(),
-  thresholds: z.record(z.number()).default({}),
-  preferences: z.record(z.unknown()).default({}),
+  thresholds: z.record(z.string(), z.number()).default({}),
+  preferences: z.record(z.string(), z.unknown()).default({}),
   throttleOverrides: z
     .object({
       websocket: z.number().nonnegative().optional(),
