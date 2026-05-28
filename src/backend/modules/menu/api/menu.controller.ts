@@ -500,7 +500,7 @@ export class MenuController {
             res.json({ success: true, node });
         } catch (error) {
             if (error instanceof z.ZodError) {
-                res.status(400).json({ success: false, error: error.errors[0].message });
+                res.status(400).json({ success: false, error: error.issues[0].message });
             } else {
                 const message = error instanceof Error ? error.message : 'Failed to create menu node';
                 res.status(400).json({ success: false, error: message });
@@ -571,7 +571,7 @@ export class MenuController {
             res.json({ success: true, node });
         } catch (error) {
             if (error instanceof z.ZodError) {
-                res.status(400).json({ success: false, error: error.errors[0].message });
+                res.status(400).json({ success: false, error: error.issues[0].message });
             } else {
                 const message = error instanceof Error ? error.message : 'Failed to update menu node';
                 const status = message.includes('not found') ? 404 : 400;
@@ -807,7 +807,7 @@ export class MenuController {
             res.json({ success: true, config });
         } catch (error) {
             if (error instanceof z.ZodError) {
-                res.status(400).json({ success: false, error: error.errors[0].message });
+                res.status(400).json({ success: false, error: error.issues[0].message });
             } else {
                 const message = error instanceof Error ? error.message : 'Failed to set namespace config';
                 res.status(400).json({ success: false, error: message });
