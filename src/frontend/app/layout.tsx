@@ -10,6 +10,7 @@ import { MainHeader } from '../components/layout/MainHeader';
 import { BlockTicker } from '../components/layout/BlockTicker';
 import { WidgetZone, fetchWidgetsForRoute } from '../components/widgets';
 import { getServerUserId, getServerUser } from '../modules/user/lib/server';
+import { getServerSession, type ISSRSession } from '../modules/user/lib/session-server';
 import type { BlockSummary } from '../features/blockchain/slice';
 
 /**
@@ -302,6 +303,24 @@ async function fetchSSRUserData(): Promise<SSRUserData | null> {
   }
 }
 
+/**
+ * Fetch the Better Auth session for SSR.
+ *
+ * Resolves the session by forwarding the inbound cookies to BA's
+ * `/api/auth/get-session` endpoint so logged-in visitors see the
+ * logged-in header pill on first paint instead of flashing "Sign in"
+ * while the client-side BA hook fetches.
+ *
+ * @returns Resolved BA session, or null when no session is active.
+ */
+async function fetchSSRSession(): Promise<ISSRSession | null> {
+  try {
+    return await getServerSession();
+  } catch {
+    return null;
+  }
+}
+
 export default async function RootLayout({ children }: { children: ReactNode }) {
   // Extract pathname from middleware-set header for ticker-after widget zone
   const headersList = await headers();
@@ -320,11 +339,12 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
   // via ssr.headFragments and stamps data-theme="active" via
   // ssr.htmlAttributes, so no separate fetchActiveThemes call or cookie
   // branch is needed in this layout.
-  const [runtimeConfig, headFragments, htmlAttributes, ssrUserData, initialBlock, tickerWidgets] = await Promise.all([
+  const [runtimeConfig, headFragments, htmlAttributes, ssrUserData, ssrSession, initialBlock, tickerWidgets] = await Promise.all([
     getServerConfig(),
     fetchHeadFragments(pathname, cookieMap),
     fetchHtmlAttributes(pathname, cookieMap),
     fetchSSRUserData(),
+    fetchSSRSession(),
     fetchInitialBlock(),
     fetchWidgetsForRoute(pathname, {})
   ]);
@@ -351,7 +371,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
         {headFragments.map(renderHeadFragment)}
       </head>
       <body>
-        <Providers ssrUserData={ssrUserData}>
+        <Providers ssrUserData={ssrUserData} ssrSession={ssrSession}>
           <MainHeader />
           <BlockTicker initialBlock={initialBlock} />
           <WidgetZone name="ticker-after" widgets={tickerWidgets} route={pathname} params={{}} />

@@ -1,207 +1,108 @@
 'use client';
 
 /**
- * WalletButton Component
+ * @fileoverview Header button driving the Phase 3 auth surface.
  *
- * Self-contained wallet connection button driving the two-stage wallet flow
- * (see User Module README for the canonical anonymous / registered / verified
- * taxonomy). Shows different states based on the visitor's identity state
- * and live TronLink connection:
+ * Anonymous visitors see "Sign in" — clicking opens `AuthModal` with
+ * magic-link, OAuth, and passkey options. Logged-in visitors see a
+ * short identity pill — clicking opens `ProfileMenu` for sign-out
+ * and (legacy) wallet actions.
  *
- * 1. **No connected address** — "Login" button. Triggers TronLink account
- *    access; on success the wallet is auto-registered by the `useWallet`
- *    hook and the user transitions from *anonymous* to *registered*.
- * 2. **Connected address, not currently Verified** — Address with warning
- *    icon. Click prompts for signature to verify the wallet (user becomes
- *    *verified*). This branch fires for never-signed registered users
- *    *and* for users whose previous session has expired — both states
- *    resolve through the same re-sign affordance, no special UI.
- * 3. **Connected address, currently Verified** — Address. Click navigates
- *    to the user's profile page.
- *
- * The verified check reads the user-level `identityState === Verified`,
- * which the backend has already resolved through its lazy session-expiry
- * pass. A user whose session has aged past `SESSION_TTL_MS` reads as
- * not-Verified here, so the button routes them to the re-sign CTA
- * instead of into the Verified-only profile route (which would 404).
- *
- * Logout is handled from the user's profile page, not from this button.
+ * Phase 3 keeps the file name and component name to minimise churn
+ * in the header import graph (`MainHeader` imports `WalletButton`),
+ * but the affordance is now identity-driven rather than wallet-driven.
+ * Phase 4 will move the wallet flow into a proper anchored popover.
  */
 
-import { useEffect, useCallback, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { AlertCircle, Loader2, ShieldCheck } from 'lucide-react';
+import { useCallback } from 'react';
+import { LogIn, User as UserIcon } from 'lucide-react';
 import { Button } from '../../../../components/ui/Button';
-import { useToast } from '../../../../components/ui/ToastProvider';
-import { useWallet } from '../../hooks/useWallet';
+import { useModal } from '../../../../components/ui/ModalProvider';
+import { useAuthSession } from '../SessionProvider';
+import { AuthModal } from '../AuthModal';
+import { ProfileMenu } from '../ProfileMenu';
 import styles from './WalletButton.module.scss';
 
 /**
- * Truncates a wallet address to show first 3 and last 3 characters.
- * Example: TRS…8Mq
+ * Render an identity label suitable for a tight header button.
+ *
+ * Prefers the email's local-part; falls back to the user's name or a
+ * short prefix of their id. Long emails get truncated with an ellipsis
+ * so the pill stays the same width regardless of provider.
+ *
+ * @param user - BA user record.
+ * @returns Display string for the header pill.
  */
-function truncateWallet(address: string) {
-    return `${address.slice(0, 3)}…${address.slice(-3)}`;
+function buildIdentityLabel(user: { email?: string | null; name?: string | null; id: string }): string {
+    if (user.email) {
+        const local = user.email.split('@')[0] ?? user.email;
+        return local.length > 14 ? `${local.slice(0, 14)}…` : local;
+    }
+    if (user.name) {
+        return user.name.length > 14 ? `${user.name.slice(0, 14)}…` : user.name;
+    }
+    return user.id.slice(0, 8);
 }
 
 /**
- * Wallet connection button with login state display.
+ * Header auth/profile button.
+ *
+ * Renders nothing while the session is genuinely pending — i.e. the
+ * SSR seed was absent and the live BA fetch has not yet completed —
+ * so visitors arriving without a session don't see a flash from
+ * "(blank)" to "Sign in." The pending window is normally a single
+ * client tick because SSR resolves the session before render; only
+ * cold loads with no cookie hit this code path.
  */
 export function WalletButton() {
-    const {
-        address,
-        connect,
-        verify,
-        connectionError,
-        isVerified,
-        connectionStatus
-    } = useWallet();
-    const router = useRouter();
-    const { push } = useToast();
-    const [isLoggingIn, setIsLoggingIn] = useState(false);
-    const [isVerifying, setIsVerifying] = useState(false);
+    const { session, isLoggedIn, isPending } = useAuthSession();
+    const { open, close } = useModal();
 
-    // Display connection errors via toast
-    useEffect(() => {
-        if (connectionError) {
-            const isNotInstalled = connectionError.includes('not detected');
-            push({
-                tone: 'warning',
-                title: 'Wallet Connection',
-                description: connectionError,
-                ...(isNotInstalled && {
-                    actionLabel: 'Get TronLink',
-                    onAction: () => window.open('https://www.tronlink.org/', '_blank')
-                })
-            });
-        }
-    }, [connectionError, push]);
+    const openAuthModal = useCallback(() => {
+        const id = open({
+            title: 'Sign in',
+            size: 'md',
+            content: <AuthModal onSuccess={() => close(id)} />
+        });
+    }, [close, open]);
 
-    /**
-     * Handle connect button click.
-     *
-     * Triggers TronLink account access. The `useWallet` hook's auto-register
-     * effect picks up the connected address and registers it on the backend
-     * (stage 1), moving the user from *anonymous* to *registered*. The
-     * separate "verify" CTA then handles the signature step.
-     */
-    const handleConnect = useCallback(async () => {
-        setIsLoggingIn(true);
-        try {
-            await connect();
-        } catch (error) {
-            console.error('Connect failed:', error);
-        } finally {
-            setIsLoggingIn(false);
-        }
-    }, [connect]);
+    const openProfileMenu = useCallback(() => {
+        const id = open({
+            title: 'Account',
+            size: 'sm',
+            content: <ProfileMenu session={session} onClose={() => close(id)} />
+        });
+    }, [close, open, session]);
 
-    /**
-     * Handle verify button click.
-     * Ensures TronLink is connected, then requests signature.
-     *
-     * SSR hydrates wallet addresses from the database, but TronLink may not
-     * be connected yet. We must call connect() first to access the signing API.
-     * For whitelisted sites, connect() returns silently (no popup).
-     */
-    const handleVerify = useCallback(async () => {
-        setIsVerifying(true);
-        try {
-            await connect();
-            const verified = await verify();
-            if (verified) {
-                push({
-                    tone: 'success',
-                    title: 'Wallet Verified',
-                    description: 'Your wallet has been verified successfully.'
-                });
-            }
-            // Most verify() failures dispatch setConnectionError, which the
-            // connectionError useEffect surfaces as a warning toast. A few
-            // early-return paths (e.g. missing userId/connectedAddress) exit
-            // silently without setting connectionError.
-        } finally {
-            setIsVerifying(false);
-        }
-    }, [connect, verify, push]);
+    if (isPending) {
+        return null;
+    }
 
-    /**
-     * Handle profile navigation.
-     * Navigates to the user's profile page when wallet is verified.
-     */
-    const handleNavigateToProfile = useCallback(() => {
-        if (address) {
-            router.push(`/u/${address}`);
-        }
-    }, [address, router]);
-
-    // Not-currently-Verified branch — fires for never-signed registered
-    // users and for users whose previous session has expired. Both
-    // recover through the same verify CTA.
-    if (address && !isVerified) {
+    if (isLoggedIn && session?.user) {
+        const label = buildIdentityLabel(session.user);
         return (
             <Button
                 variant="secondary"
                 size="sm"
-                onClick={handleVerify}
-                disabled={isVerifying}
-                className={styles.connected_btn}
-                title="Click to verify wallet ownership"
+                onClick={openProfileMenu}
+                className={styles.identity_btn}
+                aria-label="Open account menu"
             >
-                {isVerifying ? (
-                    <Loader2 size={14} className={styles.spinner} />
-                ) : (
-                    <AlertCircle
-                        size={14}
-                        className={styles.registered_icon}
-                        aria-label="Click to verify wallet"
-                    />
-                )}
-                {truncateWallet(address)}
+                <UserIcon size={14} aria-hidden />
+                <span className={styles.identity_text}>{label}</span>
             </Button>
         );
     }
-
-    // Verified state — click navigates to profile
-    if (address) {
-        return (
-            <Button
-                variant="secondary"
-                size="sm"
-                onClick={handleNavigateToProfile}
-                className={styles.connected_btn}
-                title="View your profile"
-            >
-                <ShieldCheck
-                    size={14}
-                    className={styles.verified_icon}
-                    aria-label="Wallet verified"
-                />
-                {truncateWallet(address)}
-            </Button>
-        );
-    }
-
-    // Logged out state - show connect button (responsive via parent container query)
-    const isConnecting = connectionStatus === 'connecting' || isLoggingIn;
 
     return (
         <button
-            className={styles.connect_btn}
-            onClick={handleConnect}
-            disabled={isConnecting}
-            aria-label="Login"
+            type="button"
+            className={styles.signin_btn}
+            onClick={openAuthModal}
+            aria-label="Sign in"
         >
-            {isConnecting ? (
-                <Loader2 size={14} className={styles.spinner} />
-            ) : (
-                <img
-                    src="/images/tronlink/tronlink-64x64.jpg"
-                    alt="TronLink"
-                    className={styles.wallet_icon}
-                />
-            )}
-            <span className={styles.login_text}>Login</span>
+            <LogIn size={14} aria-hidden />
+            <span className={styles.signin_text}>Sign in</span>
         </button>
     );
 }

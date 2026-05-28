@@ -1,0 +1,108 @@
+/**
+ * AuthModal styles.
+ *
+ * Container-query driven so the layout collapses cleanly when the
+ * modal docks to the mobile width — the size="md" variant in the
+ * ModalProvider narrows on small screens. The container name is
+ * scoped to `auth-modal` so the rules cannot collide with the
+ * surrounding ModalProvider chrome.
+ */
+
+@use '../../../../app/breakpoints' as *;
+
+.modal {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-md);
+    container-type: inline-size;
+    container-name: auth-modal;
+}
+
+.form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-xs);
+}
+
+.label {
+    font-size: var(--font-size-caption);
+    font-weight: var(--font-weight-medium);
+    color: var(--color-text-muted);
+}
+
+.input {
+    padding: var(--input-padding);
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: var(--input-background);
+    color: var(--color-text);
+    font-size: var(--font-size-body);
+}
+
+.input:focus-visible {
+    outline: var(--focus-outline-width) solid var(--focus-outline-color);
+    outline-offset: var(--focus-outline-offset);
+}
+
+.input:disabled {
+    opacity: var(--opacity-50);
+    cursor: not-allowed;
+}
+
+.divider {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-sm);
+    color: var(--color-text-muted);
+    font-size: var(--font-size-caption);
+
+    &::before,
+    &::after {
+        content: '';
+        flex: 1;
+        height: var(--border-width-thin);
+        background: var(--color-border);
+    }
+}
+
+.providers {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: var(--gap-sm);
+}
+
+.provider_glyph {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--icon-size-xs);
+    height: var(--icon-size-xs);
+    font-weight: var(--font-weight-bold);
+}
+
+.spinner {
+    animation: auth-modal-spin 1s linear infinite;
+}
+
+.success {
+    font-size: var(--font-size-body);
+    color: var(--color-text);
+    line-height: var(--line-height-relaxed);
+}
+
+.hint {
+    font-size: var(--font-size-caption);
+    color: var(--color-text-muted);
+    line-height: var(--line-height-relaxed);
+}
+
+@keyframes auth-modal-spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+@container auth-modal (max-width: #{$breakpoint-mobile-md}) {
+    .providers {
+        grid-template-columns: 1fr;
+    }
+}

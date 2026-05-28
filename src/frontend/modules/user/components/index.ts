@@ -8,6 +8,12 @@
 export { UserIdentityProvider } from './UserIdentityProvider';
 export type { UserIdentityProviderProps } from './UserIdentityProvider';
 export { WalletButton } from './WalletButton';
+export { SessionProvider, useAuthSession } from './SessionProvider';
+export type { IAuthSessionContext, ISessionProviderProps } from './SessionProvider';
+export { AuthModal } from './AuthModal';
+export type { IAuthModalProps } from './AuthModal';
+export { ProfileMenu } from './ProfileMenu';
+export type { IProfileMenuProps } from './ProfileMenu';
 export { ProfileOwnerView, ProfilePublicView } from './Profile';
 export type { ProfileData } from './Profile';
 

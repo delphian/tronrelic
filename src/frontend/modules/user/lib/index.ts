@@ -23,6 +23,18 @@ export type { TronWebProvider, TronLinkProvider, TronLinkRequestResponse } from 
 export { buildSSRUserState } from './ssr-state';
 export type { SSRUserData } from './ssr-state';
 
-// NOTE: Server-side utilities (getServerUserId, getServerUser, hasServerUserIdentity)
-// must be imported directly from './server' in Server Components only.
-// They use next/headers which cannot be bundled into client components.
+// Better Auth client (Phase 3) — exposed for hook-level access from
+// non-Provider call sites. New code should prefer `useAuthSession` from
+// the SessionProvider for SSR-aware reads; this surface is for sign-out
+// triggers, programmatic redirects, and other one-off invocations.
+export { authClient, useSession, signIn, signOut, signUp } from './auth-client';
+
+// Better Auth session shape consumed by frontend code. The SSR
+// resolver lives at './session-server' and must be imported directly
+// from server components (uses `next/headers`).
+export type { ISSRSession } from './session-server';
+
+// NOTE: Server-side utilities (getServerUserId, getServerUser, hasServerUserIdentity,
+// getServerSession) must be imported directly from './server' / './session-server'
+// in Server Components only. They use next/headers which cannot be bundled into
+// client components.

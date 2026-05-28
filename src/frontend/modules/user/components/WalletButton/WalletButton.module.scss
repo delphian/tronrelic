@@ -1,21 +1,25 @@
 /**
- * WalletButton Component CSS Module
+ * WalletButton (Phase 3) styles.
  *
- * Styles for the wallet connection button across the three wallet states
- * (anonymous / registered / verified). Includes the connect button, the
- * registered-state warning indicator, and the verified-state success indicator.
- * Uses container queries for responsive behavior - responds to parent container.
+ * Two header affordances:
+ *   - `signin_btn`: anonymous-visitor CTA opening the AuthModal.
+ *   - `identity_btn`: logged-in pill opening the ProfileMenu.
+ *
+ * Both collapse to icon-only on mobile via the same @media breakpoint
+ * MainHeader uses, since this component is a content-sized flex item
+ * in the header and an inline-size container would break that.
  */
 
 @use '../../../../app/breakpoints' as *;
 
-/**
- * Connect Wallet Button - Premium Design
+/* ============================================================================
+ * Sign-in CTA (anonymous visitors)
  *
- * Enhanced wallet connection button with strong visual hierarchy.
- * Features theme-aware gradient, prominent icon, and clear states.
+ * Premium pill carried over from the pre-refactor wallet button so the
+ * anonymous-visitor affordance keeps its visual weight in the header.
+ * ============================================================================
  */
-.connect_btn {
+.signin_btn {
     position: relative;
     background: linear-gradient(135deg, var(--color-primary-alpha-30), var(--color-primary-alpha-18));
     border: var(--border-width-medium) solid var(--color-primary);
@@ -33,107 +37,65 @@
     white-space: nowrap;
 }
 
-.connect_btn:hover {
+.signin_btn:hover {
     border-color: var(--color-primary-strong);
     box-shadow: var(--button-primary-shadow-hover);
     transform: translateY(-1px);
 }
 
-.connect_btn:focus-visible {
+.signin_btn:focus-visible {
     outline: var(--focus-outline-width) solid var(--focus-outline-color);
     outline-offset: var(--focus-outline-offset);
     box-shadow: var(--focus-shadow);
 }
 
-.connect_btn:disabled {
+.signin_btn:disabled {
     opacity: var(--opacity-50);
     cursor: wait;
 }
 
-/**
- * Wallet Icon Styling
+/* ============================================================================
+ * Identity pill (logged-in visitors)
  *
- * TronLink logo with subtle glow effect and minimal border treatment.
+ * Compact pill that never wraps; the truncated local-part keeps the
+ * button width predictable across email-length variation.
+ * ============================================================================
  */
-.wallet_icon {
-    width: var(--icon-size-xs);
-    height: var(--icon-size-xs);
-    border-radius: var(--radius-xs);
-    border: var(--border-width-thin) solid var(--color-border);
-    filter: drop-shadow(0 0 var(--spacing-4) var(--color-primary-alpha-38));
+.identity_btn {
+    white-space: nowrap;
+    max-width: 12rem;
 }
 
-/**
- * Connected Wallet Button
- *
- * Ensures wallet address never wraps to multiple lines.
- */
-.connected_btn {
+.identity_text {
+    overflow: hidden;
+    text-overflow: ellipsis;
     white-space: nowrap;
 }
 
-/**
- * Registered-State Indicator
+/* ============================================================================
+ * Mobile: hide label text on both states, keep icon visible.
  *
- * Warning icon shown when the wallet is registered (connected) but not yet
- * cryptographically verified. Click prompts the user to sign and become
- * *verified*.
+ * Matches MainHeader's own @media-driven mobile rules for visual
+ * consistency. Container queries are inappropriate here — the header
+ * flex layout content-sizes this child, so a containment context
+ * would break the natural width collapse.
+ * ============================================================================
  */
-.registered_icon {
-    color: var(--color-warning);
-    flex-shrink: 0;
-    margin-right: var(--spacing-2);
-}
-
-/**
- * Verified-State Indicator
- *
- * Security icon shown when wallet ownership is cryptographically verified.
- */
-.verified_icon {
-    color: var(--color-success);
-    flex-shrink: 0;
-    margin-right: var(--spacing-2);
-}
-
-/**
- * Loading Spinner
- *
- * Animated spinner for loading states during connect/logout.
- */
-.spinner {
-    animation: spin 1s linear infinite;
-    flex-shrink: 0;
-}
-
-@keyframes spin {
-    from {
-        transform: rotate(0deg);
-    }
-    to {
-        transform: rotate(360deg);
-    }
-}
-
-/**
- * Login Text
- *
- * Hidden on mobile to show icon-only button.
- * Uses @media (not container query) because this component is a content-sized
- * flex item in MainHeader — inline-size containment would break natural sizing.
- * Matches MainHeader's own @media breakpoints for visual consistency.
- */
-.login_text {
-    /* Visible by default */
+.signin_text {
+    /* visible by default */
 }
 
 @media (max-width: $breakpoint-mobile) {
-    .login_text {
+    .signin_text,
+    .identity_text {
         display: none;
     }
 
-    .connect_btn {
+    .signin_btn {
         padding: var(--icon-button-padding-touch);
     }
-}
 
+    .identity_btn {
+        max-width: none;
+    }
+}
