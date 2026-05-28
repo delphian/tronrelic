@@ -1,4 +1,5 @@
 import type { IUser } from '../user/IUser.js';
+import type { IAuthSession } from '../auth/IAuthSession.js';
 
 /**
  * Framework-agnostic HTTP request interface.
@@ -202,4 +203,32 @@ export interface IHttpRequest<
      * ```
      */
     user?: IUser;
+
+    /**
+     * Resolved Better Auth session, attached by the core
+     * `attachAuthSession` middleware before requests reach plugin routes.
+     *
+     * `null` for anonymous visitors, an {@link IAuthSession} for
+     * logged-in ones, `undefined` only if the middleware did not run
+     * (test stubs). This is the Better Auth successor to {@link user}:
+     * gate authenticated plugin routes on `req.authSession` via the
+     * `isLoggedIn` / `isAdmin` / `isInGroup` predicates rather than the
+     * legacy `req.user.identityState` reads.
+     *
+     * @example
+     * ```typescript
+     * import { isLoggedIn, isAdmin } from '@delphian/tronrelic-types';
+     *
+     * handler: async (req, res) => {
+     *     if (!isLoggedIn(req)) {
+     *         return res.status(401).json({ error: 'Authentication required' });
+     *     }
+     *     if (!isAdmin(req)) {
+     *         return res.status(403).json({ error: 'Admin required' });
+     *     }
+     *     const userId = req.authSession!.user.id;
+     * }
+     * ```
+     */
+    authSession?: IAuthSession | null;
 }
