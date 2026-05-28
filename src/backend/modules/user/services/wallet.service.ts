@@ -184,11 +184,21 @@ export class WalletService {
      * Create the collection indexes.
      *
      * `address` is globally unique so a wallet can belong to exactly one
-     * Better Auth account; `userId` speeds the per-account list read.
+     * Better Auth account; `userId` speeds the per-account list read. The
+     * partial unique index on `{ userId, isPrimary }` (filtered to
+     * `isPrimary: true`) enforces *at most one primary wallet per account*
+     * at the database level, so a concurrent first-link race cannot leave
+     * two `isPrimary: true` rows — the losing insert surfaces a duplicate-
+     * key error that {@link linkWallet} recovers from by attaching the
+     * wallet as non-primary.
      */
     public async createIndexes(): Promise<void> {
         await this.collection.createIndex({ address: 1 }, { unique: true });
         await this.collection.createIndex({ userId: 1 });
+        await this.collection.createIndex(
+            { userId: 1, isPrimary: 1 },
+            { unique: true, partialFilterExpression: { isPrimary: true } }
+        );
         this.logger.info('Wallet indexes created');
     }
 
@@ -257,22 +267,83 @@ export class WalletService {
             );
         } else {
             const existingCount = await this.collection.countDocuments({ userId });
-            const isPrimary = existingCount === 0;
-            await this.collection.insertOne({
-                _id: new ObjectId(),
-                userId,
-                address: normalizedAddress,
-                isPrimary,
-                linkedAt: now,
-                lastUsedAt: now
-            });
-            if (isPrimary) {
+            const wantPrimary = existingCount === 0;
+            const becamePrimary = await this.insertLinkedWallet(userId, normalizedAddress, wantPrimary, now);
+            if (becamePrimary) {
                 await this.setAuthPrimary(userId, normalizedAddress);
             }
         }
 
         this.logger.info({ userId, wallet: normalizedAddress }, 'Wallet linked to account');
         return this.listWallets(userId);
+    }
+
+    /**
+     * Insert a new wallet row, recovering from the two duplicate-key races
+     * the unique indexes can surface so a concurrent link never leaks a raw
+     * E11000 out of the API.
+     *
+     * - **Address unique index** — the same wallet was linked concurrently
+     *   between this method's caller `findOne` pre-check and the insert. If
+     *   it now belongs to another account, reject with the friendly
+     *   cross-account conflict; if to this account, treat as idempotent and
+     *   bump usage.
+     * - **Partial `{ userId, isPrimary: true }` index** — a concurrent
+     *   first-link already claimed primary. Re-insert this wallet as
+     *   non-primary so the at-most-one-primary invariant holds.
+     *
+     * @param userId - Better Auth user id.
+     * @param address - Normalized base58 address.
+     * @param wantPrimary - Whether this would be the account's first (primary) wallet.
+     * @param now - Shared timestamp for linkedAt/lastUsedAt.
+     * @returns Whether the row was ultimately stored as the account's primary.
+     */
+    private async insertLinkedWallet(
+        userId: string,
+        address: string,
+        wantPrimary: boolean,
+        now: Date
+    ): Promise<boolean> {
+        try {
+            await this.collection.insertOne({
+                _id: new ObjectId(),
+                userId,
+                address,
+                isPrimary: wantPrimary,
+                linkedAt: now,
+                lastUsedAt: now
+            });
+            return wantPrimary;
+        } catch (error) {
+            if (!isDuplicateKeyError(error)) {
+                throw error;
+            }
+            const dup = await this.collection.findOne({ address });
+            if (dup) {
+                // Address unique index: the same wallet was inserted
+                // concurrently. Mirror the caller's pre-check semantics.
+                if (dup.userId !== userId) {
+                    throw new Error('This wallet is already linked to another account.');
+                }
+                await this.collection.updateOne(
+                    { userId, address },
+                    { $set: { lastUsedAt: now } }
+                );
+                return dup.isPrimary;
+            }
+            // The address is absent, so the conflict was the partial
+            // primary index — another concurrent first-link already became
+            // primary. Attach this wallet as non-primary.
+            await this.collection.insertOne({
+                _id: new ObjectId(),
+                userId,
+                address,
+                isPrimary: false,
+                linkedAt: now,
+                lastUsedAt: now
+            });
+            return false;
+        }
     }
 
     /**
@@ -298,18 +369,25 @@ export class WalletService {
 
         await this.collection.deleteOne({ userId, address: normalizedAddress });
 
-        if (target.isPrimary) {
-            const remaining = await this.collection.find({ userId }).sort({ lastUsedAt: -1 }).toArray();
+        // Recompute the primary from the post-deletion state on every
+        // unlink rather than trusting the pre-deletion `target.isPrimary`.
+        // Two concurrent unlinks (primary + non-primary) could otherwise
+        // both read stale `isPrimary` flags: the non-primary request, having
+        // seen `isPrimary === false` before the primary was deleted and
+        // promoted, would delete the freshly-promoted wallet yet skip the
+        // promotion block — stranding `authUsers.primaryWallet` on an
+        // already-deleted address. Re-reading here closes that window and
+        // also self-heals a collection that has ended up with no primary.
+        const remaining = await this.collection.find({ userId }).sort({ lastUsedAt: -1 }).toArray();
+        if (remaining.length === 0) {
+            await this.setAuthPrimary(userId, null);
+        } else if (!remaining.some(w => w.isPrimary)) {
             const next = remaining[0];
-            if (next) {
-                await this.collection.updateOne(
-                    { userId, address: next.address },
-                    { $set: { isPrimary: true } }
-                );
-                await this.setAuthPrimary(userId, next.address);
-            } else {
-                await this.setAuthPrimary(userId, null);
-            }
+            await this.collection.updateOne(
+                { userId, address: next.address },
+                { $set: { isPrimary: true } }
+            );
+            await this.setAuthPrimary(userId, next.address);
         }
 
         this.logger.info({ userId, wallet: normalizedAddress }, 'Wallet unlinked from account');
@@ -422,4 +500,21 @@ export class WalletService {
             lastUsedAt: doc.lastUsedAt
         };
     }
+}
+
+/**
+ * True for a MongoDB duplicate-key (E11000) error, regardless of which
+ * unique index raised it. Kept structural (a `code === 11000` check rather
+ * than an `instanceof`) so a driver-version change in the error class
+ * doesn't silently break detection.
+ *
+ * @param error - Caught error of unknown type.
+ * @returns Whether it is a duplicate-key violation.
+ */
+function isDuplicateKeyError(error: unknown): boolean {
+    return (
+        typeof error === 'object' &&
+        error !== null &&
+        (error as { code?: unknown }).code === 11000
+    );
 }

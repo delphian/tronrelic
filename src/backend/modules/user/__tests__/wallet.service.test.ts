@@ -200,6 +200,23 @@ describe('WalletService', () => {
                 })
             ).rejects.toThrow(/canonical challenge form/i);
         });
+
+        it('recovers from a concurrent-primary duplicate-key race by linking as non-primary', async () => {
+            // Simulate the partial { userId, isPrimary:true } unique index
+            // rejecting the first insert (a concurrent first-link already
+            // claimed primary). The service must catch E11000, find no
+            // address dup, and re-insert the wallet as non-primary rather
+            // than leaking the raw error.
+            const e11000 = Object.assign(new Error('E11000 duplicate key'), { code: 11000 });
+            mockDatabase.injectError(WALLETS_COLLECTION, 'insertOne', e11000);
+
+            const wallets = await service.linkWallet(USER_A, await buildInput(USER_A, 'link', WALLET_1));
+
+            expect(wallets).toHaveLength(1);
+            expect(wallets[0]).toMatchObject({ address: WALLET_1, isPrimary: false });
+            // A non-primary link must not denormalize primaryWallet.
+            expect(authPrimary(USER_A)).toBeNull();
+        });
     });
 
     describe('setPrimaryWallet', () => {
