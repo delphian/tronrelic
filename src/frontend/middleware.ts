@@ -30,6 +30,25 @@ const USER_ID_COOKIE_MAX_AGE_SECONDS = 31536000;
 const UUID_V4_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 /**
+ * Analytics traffic id (Phase 5 of the Better Auth refactor). A UUID
+ * decoupled from identity that keys `traffic_events`, minted here so it is
+ * stable from the very first SSR paint and survives the Phase 6 removal of
+ * `tronrelic_uid`. Spec mirrors the backend `traffic-cookies.ts` helper:
+ * HttpOnly, SameSite=Lax, Secure in production, one-year max-age, unsigned.
+ */
+const TID_COOKIE_NAME = 'tronrelic_tid';
+const TID_COOKIE_MAX_AGE_SECONDS = 31536000;
+
+/**
+ * Referral cookie — first-touch capture of an inbound `?ref=<code>` so a
+ * later signup can attribute to the referrer. 90-day window. Mirrors the
+ * backend `traffic-cookies.ts` spec.
+ */
+const REF_COOKIE_NAME = 'tronrelic_ref';
+const REF_COOKIE_MAX_AGE_SECONDS = 7776000;
+const REFERRAL_CODE_REGEX = /^[A-Za-z0-9_-]{4,32}$/;
+
+/**
  * Cap on the JSON body forwarded to the backend bootstrap endpoint. The
  * payload only carries small derived signals (landing path, UTM params,
  * `document.referrer`) so 1 KB is generous; the cap exists to defend
@@ -74,7 +93,7 @@ const UTM_KEYS = ['source', 'medium', 'campaign', 'term', 'content'] as const;
  * The body is capped at `BOOTSTRAP_BODY_BYTE_CAP` bytes. Oversized payloads
  * fall back to an empty object so the backend bootstrap still succeeds.
  */
-function buildBootstrapBody(request: NextRequest): string {
+function buildBootstrapBody(request: NextRequest, tid: string, referralCode: string | null): string {
     const utm: Record<string, string> = {};
     for (const key of UTM_KEYS) {
         const value = request.nextUrl.searchParams.get(`utm_${key}`);
@@ -86,13 +105,20 @@ function buildBootstrapBody(request: NextRequest): string {
     const originalReferrer = request.cookies.get(ORIGINAL_REFERRER_COOKIE)?.value;
 
     const payload: Record<string, unknown> = {
-        landingPath: request.nextUrl.pathname
+        landingPath: request.nextUrl.pathname,
+        // Forward the analytics tid so the backend keys the bootstrap
+        // traffic_event on the same id this middleware persists in the
+        // cookie, rather than minting a divergent one server-side.
+        tid
     };
     if (Object.keys(utm).length > 0) {
         payload.utm = utm;
     }
     if (originalReferrer) {
         payload.originalReferrer = originalReferrer;
+    }
+    if (referralCode) {
+        payload.ref = referralCode;
     }
 
     const serialized = JSON.stringify(payload);
@@ -164,13 +190,17 @@ function buildForwardedHeaders(request: NextRequest): Record<string, string> {
  * client IP via `X-Forwarded-For`, and a small JSON body with the
  * landing path, UTM params, and `_original_ref` cookie.
  */
-async function bootstrapIdentity(request: NextRequest): Promise<string | null> {
+async function bootstrapIdentity(
+    request: NextRequest,
+    tid: string,
+    referralCode: string | null
+): Promise<string | null> {
     const backendUrl = process.env.SITE_BACKEND || 'http://localhost:4000';
     try {
         const response = await fetch(`${backendUrl}/api/user/bootstrap`, {
             method: 'POST',
             headers: buildForwardedHeaders(request),
-            body: buildBootstrapBody(request),
+            body: buildBootstrapBody(request, tid, referralCode),
             // Prevent edge runtime from caching identity bootstrap.
             cache: 'no-store',
             signal: AbortSignal.timeout(3000)
@@ -311,12 +341,29 @@ export async function middleware(request: NextRequest) {
     // Only mint here when the cookie is genuinely absent or empty. The
     // raw UUID-regex check that used to gate this call rejected the
     // signed envelope and orphaned every returning user post-PR-197.
+    // Resolve the analytics traffic id and first-touch referral capture
+    // (Phase 5). Independent of the identity bootstrap below: an existing
+    // visitor may carry a uid from before Phase 5 but no tid yet, so the
+    // tid is minted whenever it is absent regardless of uid state.
+    const existingTid = request.cookies.get(TID_COOKIE_NAME)?.value;
+    const tid =
+        typeof existingTid === 'string' && UUID_V4_REGEX.test(existingTid)
+            ? existingTid
+            : crypto.randomUUID();
+    const tidMinted = tid !== existingTid;
+
+    const existingRef = request.cookies.get(REF_COOKIE_NAME)?.value;
+    const inboundRef = request.nextUrl.searchParams.get('ref');
+    const refToSet =
+        !existingRef && inboundRef && REFERRAL_CODE_REGEX.test(inboundRef) ? inboundRef : null;
+    const referralCode = existingRef ?? refToSet ?? null;
+
     const existingId = request.cookies.get(USER_ID_COOKIE_NAME)?.value;
     const needsBootstrap = typeof existingId !== 'string' || existingId.length === 0;
 
     let injectedUserId: string | null = null;
     if (needsBootstrap) {
-        injectedUserId = await bootstrapIdentity(request);
+        injectedUserId = await bootstrapIdentity(request, tid, referralCode);
         if (injectedUserId) {
             // Mutate the request's cookie jar so server components running
             // in the same render tree see the cookie via `next/headers`.
@@ -337,14 +384,40 @@ export async function middleware(request: NextRequest) {
     // Persist the bootstrapped identity on the browser so subsequent
     // requests carry it. Spec mirrors the backend's setIdentityCookie:
     // HttpOnly, SameSite=Lax, Secure in production.
+    const isProduction = request.nextUrl.protocol === 'https:';
     if (injectedUserId) {
-        const isProduction = request.nextUrl.protocol === 'https:';
         response.cookies.set(USER_ID_COOKIE_NAME, injectedUserId, {
             httpOnly: true,
             sameSite: 'lax',
             secure: isProduction,
             path: '/',
             maxAge: USER_ID_COOKIE_MAX_AGE_SECONDS
+        });
+    }
+
+    // Persist the analytics tid (Phase 5) on first sight so every
+    // subsequent request — and the backend traffic_events row — keys on a
+    // stable id independent of identity. Set only when freshly minted to
+    // avoid a redundant Set-Cookie on every navigation.
+    if (tidMinted) {
+        response.cookies.set(TID_COOKIE_NAME, tid, {
+            httpOnly: true,
+            sameSite: 'lax',
+            secure: isProduction,
+            path: '/',
+            maxAge: TID_COOKIE_MAX_AGE_SECONDS
+        });
+    }
+
+    // Capture the first-touch referral code. First-touch wins: only set
+    // when no referral cookie exists yet and the inbound ?ref= is well-formed.
+    if (refToSet) {
+        response.cookies.set(REF_COOKIE_NAME, refToSet, {
+            httpOnly: true,
+            sameSite: 'lax',
+            secure: isProduction,
+            path: '/',
+            maxAge: REF_COOKIE_MAX_AGE_SECONDS
         });
     }
 

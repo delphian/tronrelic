@@ -305,6 +305,11 @@ function buildSyntheticEvent(user: IUserDocument, origin: ITrafficOrigin): ITraf
         event_type: 'bootstrap',
         timestamp: user.createdAt,
         candidate_uid: user.id,
+        // Legacy orphan rows predate Phase 5 attribution columns: the
+        // visitor was anonymous (no Better Auth account) and carried no
+        // captured referral. Both default to null.
+        user_id: null,
+        referral_code: null,
 
         path: origin.landingPage ?? '/',
         referer: origin.referrerDomain ? `https://${origin.referrerDomain}/` : null,

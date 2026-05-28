@@ -62,6 +62,8 @@ const sampleEvent: ITrafficEvent = {
     event_type: 'bootstrap',
     timestamp: new Date('2026-04-30T12:00:00.000Z'),
     candidate_uid: '550e8400-e29b-41d4-a716-446655440000',
+    user_id: null,
+    referral_code: null,
     path: '/markets',
     referer: 'https://example.com/post',
     original_referrer: null,

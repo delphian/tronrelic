@@ -1348,7 +1348,11 @@ export class UserService {
             // — both collapse to "use post-hydration values," which is the
             // pre-Phase-3 behaviour and matches the no-ClickHouse posture in
             // PLAN-traffic-events.md.
-            const firstTouch = await this.fetchFirstTouchEvent(userId);
+            // Look up by the analytics traffic id (Phase 5): bootstrap rows
+            // key on `tronrelic_tid`, not the legacy uid. Fall back to the
+            // canonical user id when no tid was threaded (legacy callers,
+            // tests) so first-touch correlation still works in transition.
+            const firstTouch = await this.fetchFirstTouchEvent(input.tid ?? userId);
 
             // Derive context from request (IP/UA never stored). The CH first-
             // touch event takes precedence on every dimension it carries —

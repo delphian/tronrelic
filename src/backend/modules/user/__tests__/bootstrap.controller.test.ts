@@ -110,13 +110,18 @@ describe('UserController.bootstrap', () => {
         expect(res.jsonBody).not.toBeNull();
         expect(res.jsonBody.id).toMatch(/^[0-9a-f-]{36}$/);
 
-        // Cookie must be set with HttpOnly and the same UUID returned in the body.
-        expect(res.cookies).toHaveLength(1);
-        expect(res.cookies[0].name).toBe(USER_ID_COOKIE_NAME);
-        expect(res.cookies[0].value).toBe(res.jsonBody.id);
-        expect(res.cookies[0].options.httpOnly).toBe(true);
-        expect(res.cookies[0].options.sameSite).toBe('lax');
-        expect(res.cookies[0].options.path).toBe('/');
+        // Identity cookie must be set with HttpOnly and the same UUID
+        // returned in the body. Bootstrap also mints the Phase 5 analytics
+        // tid cookie, so look the identity cookie up by name rather than
+        // assuming it is the only Set-Cookie.
+        const idCookie = res.cookies.find((c: any) => c.name === USER_ID_COOKIE_NAME);
+        expect(idCookie).toBeDefined();
+        expect(idCookie.value).toBe(res.jsonBody.id);
+        expect(idCookie.options.httpOnly).toBe(true);
+        expect(idCookie.options.sameSite).toBe('lax');
+        expect(idCookie.options.path).toBe('/');
+        // The analytics tid cookie is minted alongside identity.
+        expect(res.cookies.find((c: any) => c.name === 'tronrelic_tid')).toBeDefined();
     });
 
     it('returns the existing user and refreshes the cookie when a valid signed cookie is present', async () => {
@@ -135,11 +140,13 @@ describe('UserController.bootstrap', () => {
         await controller.bootstrap(req, res as any);
 
         expect(res.jsonBody.id).toBe(VALID_UUID_A);
-        // Cookie still set on every call — refreshes max-age and rewrites
-        // legacy non-HttpOnly cookies into HttpOnly.
-        expect(res.cookies).toHaveLength(1);
-        expect(res.cookies[0].value).toBe(VALID_UUID_A);
-        expect(res.cookies[0].options.httpOnly).toBe(true);
+        // Identity cookie still set on every call — refreshes max-age and
+        // rewrites legacy non-HttpOnly cookies into HttpOnly. Looked up by
+        // name since bootstrap also mints the Phase 5 analytics tid cookie.
+        const idCookie = res.cookies.find((c: any) => c.name === USER_ID_COOKIE_NAME);
+        expect(idCookie).toBeDefined();
+        expect(idCookie.value).toBe(VALID_UUID_A);
+        expect(idCookie.options.httpOnly).toBe(true);
     });
 
     it('accepts an unsigned legacy cookie and re-anchors the user as signed', async () => {
