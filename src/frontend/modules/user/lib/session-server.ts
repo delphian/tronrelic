@@ -13,7 +13,7 @@
  * same auth pipeline production browsers will hit.
  */
 
-import { cookies } from 'next/headers';
+import { headers } from 'next/headers';
 
 /**
  * Minimal SSR-safe shape of the Better Auth session response.
@@ -40,7 +40,6 @@ export interface ISSRSession {
     session: {
         id?: string;
         expiresAt?: string;
-        token?: string;
     };
 }
 
@@ -58,11 +57,8 @@ export interface ISSRSession {
 export async function getServerSession(): Promise<ISSRSession | null> {
     try {
         const backendUrl = process.env.SITE_BACKEND || 'http://localhost:4000';
-        const cookieStore = await cookies();
-        const cookieHeader = cookieStore
-            .getAll()
-            .map((c) => `${c.name}=${c.value}`)
-            .join('; ');
+        const reqHeaders = await headers();
+        const cookieHeader = reqHeaders.get('cookie');
 
         if (!cookieHeader) {
             return null;
@@ -84,11 +80,30 @@ export async function getServerSession(): Promise<ISSRSession | null> {
         }
 
         const data = JSON.parse(text) as Partial<ISSRSession> | null;
-        if (!data || !data.user || !data.session) {
+        if (!data || !data.user || !data.session || typeof data.user.id !== 'string' || !data.user.id) {
             return null;
         }
 
-        return data as ISSRSession;
+        // Pick only non-secret fields. BA's session sub-object carries
+        // the bearer `token`; returning the raw payload would serialize
+        // it into the client hydration payload via SessionProvider and
+        // defeat the httpOnly-cookie boundary.
+        const { user, session } = data;
+        return {
+            user: {
+                id: user.id,
+                email: user.email,
+                emailVerified: user.emailVerified,
+                name: user.name,
+                image: user.image,
+                groups: user.groups,
+                primaryWallet: user.primaryWallet
+            },
+            session: {
+                id: session.id,
+                expiresAt: session.expiresAt
+            }
+        };
     } catch {
         return null;
     }

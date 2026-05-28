@@ -21,6 +21,7 @@
  */
 
 import { useCallback, useState, type FormEvent } from 'react';
+import { useRouter } from 'next/navigation';
 import { Github, KeyRound, Mail, Loader2 } from 'lucide-react';
 import { Button } from '../../../../components/ui/Button';
 import { useToast } from '../../../../components/ui/ToastProvider';
@@ -59,6 +60,7 @@ export interface IAuthModalProps {
  * @param props - {@link IAuthModalProps}.
  */
 export function AuthModal({ callbackURL, onSuccess }: IAuthModalProps) {
+    const router = useRouter();
     const { push } = useToast();
     const [email, setEmail] = useState('');
     const [pendingMethod, setPendingMethod] = useState<'magic-link' | 'google' | 'github' | 'passkey' | null>(null);
@@ -136,13 +138,14 @@ export function AuthModal({ callbackURL, onSuccess }: IAuthModalProps) {
                 return;
             }
             push({ tone: 'success', title: 'Signed in', description: 'Welcome back.' });
+            router.refresh();
             onSuccess?.();
         } catch (error) {
             showError('Passkey sign-in failed', error);
         } finally {
             setPendingMethod(null);
         }
-    }, [onSuccess, push, showError]);
+    }, [onSuccess, push, router, showError]);
 
     if (magicLinkSent) {
         return (

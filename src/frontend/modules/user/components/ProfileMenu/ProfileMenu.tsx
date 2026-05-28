@@ -14,7 +14,7 @@
  * machinery purely to deliver login affordances.
  */
 
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { AlertCircle, LogOut, ShieldCheck, Wallet } from 'lucide-react';
 import { Button } from '../../../../components/ui/Button';
@@ -66,11 +66,32 @@ export function ProfileMenu({ session, onClose }: IProfileMenuProps) {
     const [signingOut, setSigningOut] = useState(false);
     const [walletWorking, setWalletWorking] = useState(false);
 
+    // useWallet().connect()/verify() never throw — they catch internally
+    // and dispatch connectionError to Redux. Surface that here so a
+    // missing/locked/rejected TronLink prompt isn't a silent no-op once
+    // the spinner stops (the wallet flow's only error channel).
+    useEffect(() => {
+        if (!wallet.connectionError) {
+            return;
+        }
+        const isNotInstalled = wallet.connectionError.includes('not detected');
+        push({
+            tone: 'warning',
+            title: 'Wallet Connection',
+            description: wallet.connectionError,
+            ...(isNotInstalled && {
+                actionLabel: 'Get TronLink',
+                onAction: () => window.open('https://www.tronlink.org/', '_blank')
+            })
+        });
+    }, [wallet.connectionError, push]);
+
     const handleSignOut = useCallback(async () => {
         setSigningOut(true);
         try {
             await signOut();
             push({ tone: 'success', title: 'Signed out' });
+            router.refresh();
             onClose();
         } catch (error) {
             push({
@@ -81,7 +102,7 @@ export function ProfileMenu({ session, onClose }: IProfileMenuProps) {
         } finally {
             setSigningOut(false);
         }
-    }, [onClose, push]);
+    }, [onClose, push, router]);
 
     const handleWalletConnect = useCallback(async () => {
         setWalletWorking(true);

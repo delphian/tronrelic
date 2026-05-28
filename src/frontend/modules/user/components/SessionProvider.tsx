@@ -83,7 +83,7 @@ export interface ISessionProviderProps {
  * @param props - {@link ISessionProviderProps}.
  * @returns Provider element with the merged session in context.
  */
-export function SessionProvider({ children, initialSession = null }: ISessionProviderProps) {
+export function SessionProvider({ children, initialSession }: ISessionProviderProps) {
     const { data, isPending } = useSession();
 
     const value = useMemo<IAuthSessionContext>(() => {
@@ -91,20 +91,18 @@ export function SessionProvider({ children, initialSession = null }: ISessionPro
         // The shape matches ISSRSession by construction (same backend
         // endpoint), so we treat it as such for downstream consumers.
         const live = (data ?? null) as ISSRSession | null;
-        // The SSR seed is a *pre-hydration fallback only* — once BA's
-        // client has settled (isPending === false), the live value is
-        // authoritative even when it is null. Otherwise sign-out would
-        // never propagate to consumers: the post-signOut value is
-        // `{ data: null, isPending: false }`, and `live ?? initialSession`
-        // would resurrect the stale logged-in seed.
-        const merged: ISSRSession | null = isPending ? initialSession : live;
+        // The SSR seed is a pre-hydration fallback used only while BA
+        // has produced no data yet. Once `data` is present (even null
+        // after sign-out), `live` wins, so sign-out propagates and a
+        // background revalidation never resurrects the stale seed.
+        const merged: ISSRSession | null = isPending && !data ? (initialSession ?? null) : live;
         return {
             session: merged,
             isLoggedIn: Boolean(merged?.user?.id),
-            // Don't flag pending when the SSR seed already answers
-            // the question — pending should mean "we genuinely don't
-            // know yet," not "the live re-fetch is still in flight."
-            isPending: isPending && !initialSession
+            // The SSR seed answering the question — even with `null` —
+            // means we are not pending. Only an absent seed
+            // (`undefined`) leaves us genuinely waiting on BA.
+            isPending: isPending && initialSession === undefined
         };
     }, [data, initialSession, isPending]);
 
