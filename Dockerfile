@@ -151,7 +151,7 @@ COPY --from=builder /app/packages/types/package.json ./packages/types/package.js
 COPY --from=builder /app/packages/types/dist ./packages/types/dist
 RUN node -e "const f='packages/types/package.json';const p=require('./'+f);if(p.scripts){delete p.scripts.prepare;delete p.scripts.prepublishOnly;}require('fs').writeFileSync(f, JSON.stringify(p,null,4)+'\n');"
 
-RUN npm ci --only=production
+RUN --mount=type=secret,id=npmrc,target=/root/.npmrc npm ci --only=production
 
 RUN npx playwright install chromium
 
@@ -202,7 +202,7 @@ COPY --from=builder /app/packages/types/package.json ./packages/types/package.js
 COPY --from=builder /app/packages/types/dist ./packages/types/dist
 RUN node -e "const f='packages/types/package.json';const p=require('./'+f);if(p.scripts){delete p.scripts.prepare;delete p.scripts.prepublishOnly;}require('fs').writeFileSync(f, JSON.stringify(p,null,4)+'\n');"
 
-RUN npm ci --only=production
+RUN --mount=type=secret,id=npmrc,target=/root/.npmrc npm ci --only=production
 
 COPY --from=builder /app/src/frontend/.next/standalone ./
 COPY --from=builder /app/src/frontend/.next/static ./src/frontend/.next/static
