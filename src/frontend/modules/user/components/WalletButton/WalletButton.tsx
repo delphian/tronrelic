@@ -4,7 +4,7 @@
  * @fileoverview Header button driving the Phase 3 auth surface.
  *
  * Anonymous visitors see "Sign in" — clicking opens `AuthModal` with
- * magic-link, OAuth, and passkey options. Logged-in visitors see a
+ * email-code, OAuth, and passkey options. Logged-in visitors see a
  * short identity pill — clicking opens `ProfileMenu` for sign-out
  * and (legacy) wallet actions.
  *

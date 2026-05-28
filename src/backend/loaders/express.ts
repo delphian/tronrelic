@@ -31,8 +31,8 @@ export function createExpressApp(): Express {
   // `req.signedCookies` to close the cookie-forgery vector.
   app.use(cookieParser(env.SESSION_SECRET));
   // Body parsers consume the raw request stream, but Better Auth's
-  // Node integration needs the original body to validate magic-link
-  // tokens, OAuth callbacks, and passkey assertions. Skip them on
+  // Node integration needs the original body to validate email-OTP
+  // codes, OAuth callbacks, and passkey assertions. Skip them on
   // `/api/auth/*` so `toNodeHandler` (mounted by UserModule.run()) can
   // read the body itself. Cookie-parser above is safe to leave global
   // because it only reads headers.

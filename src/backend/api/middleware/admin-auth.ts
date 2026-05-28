@@ -226,7 +226,7 @@ export async function isAdmin(req: Request): Promise<boolean> {
 export async function requireAdmin(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
         // Phase 2: prefer the Better Auth session path. Operators who
-        // sign in through BA (magic-link / OAuth / passkey) are
+        // sign in through BA (email-OTP / OAuth / passkey) are
         // attributed by their BA user id; this becomes the canonical
         // operator identity once Phase 6 retires the legacy cookie.
         const baResult = await tryBetterAuthAdminAuth(req);

@@ -47,7 +47,7 @@ export const attachAuthSession: RequestHandler = async (
     // Better Auth's own handler runs on /api/auth/*; it resolves the
     // session internally and never reads req.authSession. Skipping
     // the middleware on those paths avoids a duplicate round-trip for
-    // every magic-link/OAuth/passkey call.
+    // every email-OTP/OAuth/passkey call.
     if (req.path === '/api/auth' || req.path.startsWith('/api/auth/')) {
         next();
         return;

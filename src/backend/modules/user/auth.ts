@@ -24,7 +24,7 @@
 
 import { betterAuth } from 'better-auth';
 import { mongodbAdapter } from 'better-auth/adapters/mongodb';
-import { magicLink } from 'better-auth/plugins';
+import { emailOTP } from 'better-auth/plugins';
 import { passkey } from '@better-auth/passkey';
 import { Resend } from 'resend';
 import type { Db } from 'mongodb';
@@ -86,7 +86,7 @@ export type Auth = ReturnType<typeof createAuth>;
  * Build the Better Auth instance configured for TronRelic.
  *
  * Provider toggling is env-driven: each social provider loads only when
- * both its client id and secret are present, and the magic-link plugin
+ * both its client id and secret are present, and the email-OTP plugin
  * loads only when Resend credentials are configured (or in non-prod,
  * where a console fallback is acceptable). The after-create database
  * hook reads the new user's verified email against the parsed
@@ -202,17 +202,17 @@ function buildSocialProviders(): {
 /**
  * Build the plugin list for the auth instance.
  *
- * Passkey is always loaded — it has no env-var dependency. Magic-link
+ * Passkey is always loaded — it has no env-var dependency. Email-OTP
  * loads when Resend credentials are present (real send path) or when
  * the process is not running in production (dev console fallback).
- * Production without Resend credentials drops magic-link entirely so
- * plaintext sign-in URLs cannot leak to operator logs.
+ * Production without Resend credentials drops email-OTP entirely so
+ * sign-in codes cannot leak to operator logs.
  *
- * @param log - Logger passed into the magic-link sender for fallback diagnostics.
+ * @param log - Logger passed into the OTP sender for fallback diagnostics.
  * @returns Ordered list of Better Auth plugins for the instance.
  */
-function buildPlugins(log: ISystemLogService): Array<ReturnType<typeof passkey | typeof magicLink>> {
-    const plugins: Array<ReturnType<typeof passkey | typeof magicLink>> = [
+function buildPlugins(log: ISystemLogService): Array<ReturnType<typeof passkey | typeof emailOTP>> {
+    const plugins: Array<ReturnType<typeof passkey | typeof emailOTP>> = [
         passkey({
             // Remap the plugin's owned `passkey` table to the project's
             // `module_user_auth_*` convention so it sits alongside the
@@ -223,35 +223,49 @@ function buildPlugins(log: ISystemLogService): Array<ReturnType<typeof passkey |
     const isProduction = env.NODE_ENV === 'production' || env.ENV === 'production';
     const hasResend = Boolean(env.RESEND_API_KEY && env.RESEND_FROM_ADDRESS);
     if (hasResend || !isProduction) {
-        plugins.push(magicLink({ sendMagicLink: buildMagicLinkSender(log) }));
+        plugins.push(
+            emailOTP({
+                sendVerificationOTP: buildOtpSender(log),
+                otpLength: 6,
+                // Five minutes balances inbox-delivery latency against the
+                // exposure window of a code sitting in an inbox.
+                expiresIn: 300
+            })
+        );
     } else {
         log.warn(
-            'Magic-link plugin DISABLED in production: RESEND_API_KEY and/or RESEND_FROM_ADDRESS unset. Sign-in via magic-link is not available until these are configured.'
+            'Email-OTP plugin DISABLED in production: RESEND_API_KEY and/or RESEND_FROM_ADDRESS unset. Sign-in via email code is not available until these are configured.'
         );
     }
     return plugins;
 }
 
 /**
- * Build the `sendMagicLink` callback used by the magic-link plugin.
+ * Build the `sendVerificationOTP` callback used by the email-OTP plugin.
  *
  * Returns a Resend-backed sender when both RESEND_API_KEY and
  * RESEND_FROM_ADDRESS are set; otherwise returns a dev fallback that
- * logs the sign-in URL at warn level so contributors can copy-paste
- * the link locally. The fallback is gated out of production by
- * {@link buildPlugins} so it can never leak credentials in deployed logs.
+ * logs the code at warn level so contributors can read it from the
+ * console locally. The fallback is gated out of production by
+ * {@link buildPlugins} so a sign-in code can never leak in deployed logs.
+ *
+ * A code (not a link) is used so sign-in completes in the browser tab
+ * where the user started: email clients open links in in-app webviews,
+ * which would set the session in a sandbox separate from the user's
+ * real browser, and email link-scanners can pre-consume single-use
+ * verify URLs. Typing a code back into the original tab avoids both.
  *
  * @param log - Logger used for both Resend failures and the dev fallback.
- * @returns Async function the magic-link plugin calls with `({ email, url })`.
+ * @returns Async function the plugin calls with `({ email, otp, type })`.
  */
-function buildMagicLinkSender(
+function buildOtpSender(
     log: ISystemLogService
-): (data: { email: string; url: string }) => Promise<void> {
-    let sender: (data: { email: string; url: string }) => Promise<void>;
+): (data: { email: string; otp: string; type: string }) => Promise<void> {
+    let sender: (data: { email: string; otp: string; type: string }) => Promise<void>;
     if (env.RESEND_API_KEY && env.RESEND_FROM_ADDRESS) {
         const resend = new Resend(env.RESEND_API_KEY);
         const from = env.RESEND_FROM_ADDRESS;
-        sender = async ({ email, url }): Promise<void> => {
+        sender = async ({ email, otp }): Promise<void> => {
             try {
                 // The Resend SDK does not throw on API-level failures
                 // (invalid key, unverified domain, quota exceeded). It
@@ -261,22 +275,22 @@ function buildMagicLinkSender(
                 const { error: resendError } = await resend.emails.send({
                     from,
                     to: email,
-                    subject: 'Sign in to TronRelic',
-                    html: renderMagicLinkEmail(url)
+                    subject: 'Your TronRelic sign-in code',
+                    html: renderOtpEmail(otp)
                 });
                 if (resendError) {
                     throw new Error(resendError.message || 'Unknown Resend error');
                 }
             } catch (error) {
-                log.error({ error, email }, 'Resend magic-link send failed');
+                log.error({ error, email }, 'Resend OTP send failed');
                 throw error;
             }
         };
     } else {
-        sender = async ({ email, url }): Promise<void> => {
+        sender = async ({ email, otp }): Promise<void> => {
             log.warn(
-                { email, url },
-                'Magic-link rendered to logs (RESEND_API_KEY/RESEND_FROM_ADDRESS unset, dev fallback only)'
+                { email, otp },
+                'Sign-in OTP rendered to logs (RESEND_API_KEY/RESEND_FROM_ADDRESS unset, dev fallback only)'
             );
         };
     }
@@ -284,21 +298,20 @@ function buildMagicLinkSender(
 }
 
 /**
- * Render the HTML body for a magic-link email.
+ * Render the HTML body for a sign-in OTP email.
  *
  * Kept intentionally minimal to avoid Resend template-rendering
- * surprises; the layout passes spam filters and clearly shows the call
- * to action. The URL is interpolated raw because Better Auth
- * guarantees it is a same-origin verified link.
+ * surprises; the layout passes spam filters and shows the code
+ * prominently. The code is plugin-generated digits, safe to interpolate.
  *
- * @param url - The signed magic-link URL produced by Better Auth.
+ * @param otp - The one-time code produced by Better Auth.
  * @returns HTML string suitable for the Resend `html` field.
  */
-function renderMagicLinkEmail(url: string): string {
+function renderOtpEmail(otp: string): string {
     const body = [
-        '<p>Click the link below to sign in to TronRelic:</p>',
-        `<p><a href="${url}">${url}</a></p>`,
-        '<p>This link expires shortly. If you didn\'t request it, you can safely ignore this email.</p>'
+        '<p>Your TronRelic sign-in code is:</p>',
+        `<p style="font-size:28px;font-weight:bold;letter-spacing:4px;">${otp}</p>`,
+        '<p>Enter it in the tab where you started signing in. This code expires in 5 minutes. If you didn\'t request it, you can safely ignore this email.</p>'
     ].join('');
     return body;
 }
@@ -309,9 +322,10 @@ function renderMagicLinkEmail(url: string): string {
  *
  * Verification is non-negotiable — without it an attacker could sign up
  * with `admin@example.com` they don't control and inherit privilege.
- * Magic-link guarantees verification by construction; OAuth providers
- * report verification status on the BA user record and we respect what
- * they say. Hook errors are caught and logged so a transient group-write
+ * Email-OTP guarantees verification by construction (the user proved
+ * inbox control by entering the emailed code); OAuth providers report
+ * verification status on the BA user record and we respect what they
+ * say. Hook errors are caught and logged so a transient group-write
  * failure cannot block legitimate signup completion.
  *
  * @param params.user - New user object as supplied by the BA after-create hook.
