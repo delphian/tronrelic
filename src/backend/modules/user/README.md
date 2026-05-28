@@ -640,6 +640,41 @@ interface IUserGroupDocument {
 
 **Seeded rows:** the user module seeds the `admin` row (with `system: true`) on every boot. The reserved-admin slug pattern (`admin`, `admins`, `super-admin(s)`, `administrator(s)`, `sub-admin(s)`, `superadmin(s)`, `root(s)`) blocks operators from creating or renaming rows matching it — only the platform may seed them.
 
+## Better Auth Wallet Store (Phase 4)
+
+> **Coexistence note.** Everything above describes the *legacy* UUID-keyed wallet flow (`users.wallets[]`, two-stage register/verify, cross-browser reconciliation). Phase 4 of the Better Auth refactor adds a parallel, Better-Auth-keyed wallet store. Both run side by side until the Phase 6 cutover removes the legacy flow. New code consumes the surfaces in this section; the legacy `/api/user/:id/wallet/*` routes remain only for the in-transition UI.
+
+Wallets are an opt-in post-login profile feature keyed by the Better Auth user id, not a browser-local UUID. Better Auth identity is already portable across devices (email-OTP / OAuth / passkey), so the new model drops the legacy "registered (unverified)" stage and the winner/loser identity merge: a wallet attaches only after a signature proves ownership, and a wallet already held by another account is a hard conflict, never a merge.
+
+`WalletService` (singleton, `services/wallet.service.ts`) owns the `module_user_wallets` collection and reuses `SignatureService` and `WalletChallengeService` for the same challenge → sign → verify contract the legacy flow uses. On every mutation it denormalizes the account's primary address onto the Better Auth user record's `primaryWallet` additional field (declared in `auth.ts`), so the authorization facade surfaces `session.primaryWallet` without a second query — the same pattern `GroupService` uses for `groups`.
+
+### `module_user_wallets` Collection
+
+```typescript
+interface IWalletDocument {
+    _id: ObjectId;
+    userId: string;     // Better Auth user id (module_user_auth_users._id)
+    address: string;    // normalized base58 TRON address (globally unique)
+    isPrimary: boolean; // exactly one primary per account
+    linkedAt: Date;
+    lastUsedAt: Date;
+}
+```
+
+**Indexes:** `address` (unique — a wallet belongs to exactly one account), `userId` (per-account list).
+
+### Routes (`/api/user/wallets`, Better Auth session)
+
+These routes resolve the caller from `req.authSession` (the `attachAuthSession` middleware), **not** a cookie-validated `:id` path param, so no user id appears on the wire. Anonymous callers get 401. The router mounts *before* the legacy `/api/user` router so the literal `wallets` segment is not captured by that router's `/:id` cookie middleware. All routes are rate-limited at the wallet-mutation tier (10 req/min).
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET` | `/api/user/wallets` | List the signed-in account's linked wallets |
+| `POST` | `/api/user/wallets/challenge` | Mint a single-use nonce. Body: `{ action: 'link' \| 'unlink' \| 'set-primary', address }` |
+| `POST` | `/api/user/wallets` | Link a wallet. Body: `{ address, message, signature, nonce }` |
+| `DELETE` | `/api/user/wallets/:address` | Unlink a wallet. Body: `{ message, signature, nonce }` |
+| `PATCH` | `/api/user/wallets/:address/primary` | Set primary (step-up). Body: `{ message, signature, nonce }` |
+
 ## Module Lifecycle
 
 The user module implements the `IModule` interface with two-phase initialization:
