@@ -80,9 +80,11 @@ export interface IAugmentedSession {
     groups: string[];
 
     /**
-     * Primary TRON wallet address linked to the user, when one has
-     * been verified. Always `undefined` in Phase 2 — wallet storage
-     * lands in Phase 4.
+     * Primary TRON wallet address linked to the user, when one is set.
+     * Sourced from the Better Auth user record's `primaryWallet`
+     * additional field (Phase 4), which {@link WalletService} maintains
+     * on every link / unlink / set-primary. `undefined` when the account
+     * has no linked wallet.
      */
     primaryWallet?: string;
 }
@@ -295,11 +297,17 @@ export async function getSessionFromHeaders(
     let augmented: IAugmentedSession | null = null;
     if (resolved) {
         const groups = await GroupService.getInstance().getUserGroups(resolved.user.id);
+        // `primaryWallet` is a Better Auth additional field (declared in
+        // auth.ts, maintained by WalletService) so it rides along on the
+        // resolved user record — no extra round-trip. Read defensively
+        // because BA's inferred user type does not surface custom fields.
+        const primaryWallet =
+            (resolved.user as { primaryWallet?: string | null }).primaryWallet ?? undefined;
         augmented = {
             user: resolved.user,
             session: resolved.session,
             groups,
-            primaryWallet: undefined
+            primaryWallet
         };
     }
     return augmented;

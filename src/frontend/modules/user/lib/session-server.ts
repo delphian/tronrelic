@@ -34,7 +34,11 @@ export interface ISSRSession {
         image?: string | null;
         /** Group ids from the BA additionalFields config. */
         groups?: string[];
-        /** Primary wallet — reserved for Phase 4, currently always absent. */
+        /**
+         * Primary wallet address from the BA `primaryWallet` additional
+         * field (Phase 4), maintained by the backend WalletService.
+         * Absent/null when the account has no linked wallet.
+         */
         primaryWallet?: string | null;
     };
     session: {

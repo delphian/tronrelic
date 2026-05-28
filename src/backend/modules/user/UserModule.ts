@@ -30,6 +30,7 @@ import { logger } from '../../lib/logger.js';
 import { MAIN_SYSTEM_CONTAINER_ID } from '../menu/index.js';
 import { TronGridClient } from '../blockchain/tron-grid.client.js';
 import { UserService } from './services/user.service.js';
+import { WalletService } from './services/wallet.service.js';
 import { GscService } from './services/gsc.service.js';
 import { TrafficService } from './services/traffic.service.js';
 import { UserGroupService } from './services/user-group.service.js';
@@ -37,9 +38,11 @@ import { GroupService } from './services/group.service.js';
 import { setAuthInstance } from './services/auth-facade.js';
 import { initGeoIP } from './services/geo.service.js';
 import { UserController } from './api/user.controller.js';
+import { WalletController } from './api/wallet.controller.js';
 import { UserGroupController } from './api/user-group.controller.js';
 import { TrafficController } from './api/traffic.controller.js';
 import { createUserRouter, createAdminUserRouter, createProfileRouter } from './api/user.routes.js';
+import { createWalletRouter } from './api/wallet.routes.js';
 import { createAdminUserGroupRouter } from './api/user-group.routes.js';
 import { createAdminTrafficRouter } from './api/traffic.routes.js';
 import { requireAdmin } from '../../api/middleware/admin-auth.js';
@@ -172,10 +175,12 @@ export class UserModule implements IModule<IUserModuleDependencies> {
      * Services created during init() phase.
      */
     private userService!: UserService;
+    private walletService!: WalletService;
     private gscService!: GscService;
     private trafficService!: TrafficService;
     private userGroupService!: UserGroupService;
     private controller!: UserController;
+    private walletController!: WalletController;
     private groupController!: UserGroupController;
     private trafficController!: TrafficController;
 
@@ -239,6 +244,15 @@ export class UserModule implements IModule<IUserModuleDependencies> {
         // Create database indexes
         await this.userService.createIndexes();
 
+        // Initialize WalletService singleton (Phase 4 of the Better Auth
+        // refactor). Owns the BA-user-keyed `module_user_wallets` store,
+        // reusing the same TronWeb instance for signature verification.
+        // Replaces the legacy UUID-keyed `users.wallets[]` flow, which the
+        // Phase 6 cutover removes.
+        WalletService.setDependencies(this.database, this.cacheService, this.logger, tronWeb);
+        this.walletService = WalletService.getInstance();
+        await this.walletService.createIndexes();
+
         // Initialize GscService singleton with dependencies
         GscService.setDependencies(
             this.database,
@@ -282,6 +296,10 @@ export class UserModule implements IModule<IUserModuleDependencies> {
             this.trafficService,
             this.logger
         );
+
+        // Create wallet controller (Phase 4). Resolves the caller from the
+        // Better Auth session rather than a cookie-validated :id param.
+        this.walletController = new WalletController(this.walletService, this.logger);
 
         // Create group controller with singleton service
         this.groupController = new UserGroupController(this.userGroupService, this.logger);
@@ -379,6 +397,15 @@ export class UserModule implements IModule<IUserModuleDependencies> {
         // remove in Phase 6.
         this.app.all('/api/auth/*', toNodeHandler(this.auth));
         this.logger.info('Better Auth handler mounted at /api/auth/*');
+
+        // Mount the Better Auth-keyed wallet router (Phase 4). Must be
+        // registered BEFORE the `/api/user` public router so the literal
+        // `wallets` segment is matched here and never falls through to
+        // that router's `/:id` cookie-validation middleware (which would
+        // treat "wallets" as a UUID and 403).
+        const walletRouter = createWalletRouter(this.walletController);
+        this.app.use('/api/user/wallets', walletRouter);
+        this.logger.info('Wallet router mounted at /api/user/wallets');
 
         // Create and mount public router (IoC - module attaches itself to app)
         const publicRouter = this.createPublicRouter();
