@@ -127,6 +127,18 @@ services:
             - TRONGRID_API_KEY_2=${TRONGRID_API_KEY_2}
             - TRONGRID_API_KEY_3=${TRONGRID_API_KEY_3}
 
+            # Better Auth (BETTER_AUTH_SECRET is required in production; the
+            # rest are optional and default to empty when unset in .env)
+            - BETTER_AUTH_SECRET=${BETTER_AUTH_SECRET}
+            - BETTER_AUTH_URL=${BETTER_AUTH_URL:-}
+            - ADMIN_EMAILS=${ADMIN_EMAILS:-}
+            - RESEND_API_KEY=${RESEND_API_KEY:-}
+            - RESEND_FROM_ADDRESS=${RESEND_FROM_ADDRESS:-}
+            - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
+            - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
+            - GITHUB_CLIENT_ID=${GITHUB_CLIENT_ID:-}
+            - GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET:-}
+
             # Site Configuration
             - SITE_URL=${SITE_URL}
             - SITE_WS=${SITE_WS}
