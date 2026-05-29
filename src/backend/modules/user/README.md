@@ -62,34 +62,34 @@ Plugins have full access to user identity through two mechanisms:
 
 ### Request Context (Recommended)
 
-All plugin route handlers receive user context automatically via middleware. The `req.user` and `req.userId` fields are populated before requests reach plugin handlers:
+All plugin route handlers receive the resolved Better Auth session automatically via the `attachAuthSession` middleware. Gate on `req.authSession` using the synchronous predicates from `@delphian/tronrelic-types` — they read the pre-resolved session and act as type guards, so `req.authSession` narrows to non-null on the truthy branch:
 
 ```typescript
-import { UserIdentityState } from '@/types';
+import { isLoggedIn, hasPrimaryWallet, type IHttpRequest, type IHttpResponse } from '@delphian/tronrelic-types';
 
 // In plugin route handler
 handler: async (req: IHttpRequest, res: IHttpResponse) => {
-    // Cookie present and resolved? (identity continuity, not wallet auth)
-    if (!req.user) {
-        return res.status(401).json({ error: 'User context required' });
+    if (!isLoggedIn(req)) {
+        return res.status(401).json({ error: 'Authentication required' });
     }
 
-    // Sensitive operations require a live verified session — compare
-    // against the canonical taxonomy, never the per-wallet `verified`
-    // flag (audit history that stays true after signatures age out).
-    if (req.user.identityState !== UserIdentityState.Verified) {
-        return res.status(403).json({ error: 'Wallet verification required' });
+    // Wallet-gated operations require a signature-proven wallet, NOT
+    // merely a login: a Better Auth account can be email/OAuth/passkey-only
+    // with no wallet. Use hasPrimaryWallet, never isLoggedIn, for these.
+    if (!hasPrimaryWallet(req)) {
+        return res.status(403).json({ error: 'Linked wallet required' });
     }
 
-    const userId = req.userId;
-    const wallets = req.user.wallets;
-    const preferences = req.user.preferences;
+    const userId = req.authSession.user.id;       // narrowed: non-null
+    const wallet = req.authSession.primaryWallet;  // canonical primary
 }
 ```
 
-The middleware parses the `tronrelic_uid` cookie and resolves the user via `UserService`. Plugins don't need to parse cookies or call services directly.
+The middleware resolves the Better Auth session once per request; plugins don't parse cookies or call services directly. See [system-auth.md](../../../../docs/system/system-auth.md) for the authorization model.
 
-**Security note:** The `tronrelic_uid` cookie is HttpOnly and HMAC-signed by `SESSION_SECRET`, so the UUID is server-issued and unforgeable — but possessing a stable UUID is identity continuity, not proof of wallet ownership. For sensitive operations, always check `req.user.identityState === UserIdentityState.Verified` — the user-level live-session state, with `SESSION_TTL_MS` freshness already enforced by `enforceSessionExpiry`. Frontend plugins consume the same signal as `useUser().isVerified`.
+**Wallet-vs-login is load-bearing.** The legacy `req.user.identityState === Verified` check meant "has a signature-proven wallet," so a route migrating off it maps to `hasPrimaryWallet(req)`, not `isLoggedIn(req)`. Wallets link only after a TronLink signature, so a present `primaryWallet` is proven.
+
+> **Coexistence.** The legacy `req.user` (`IUser`) / `req.userId` fields and the `UserIdentityState` taxonomy still exist during the Better Auth migration and are removed in Phase 6. The full legacy taxonomy is documented below for the still-live system; new code uses `req.authSession` and the predicates above.
 
 ### IUserService (For Non-Request Context)
 

@@ -10,7 +10,11 @@ Scheduler jobs fail silently, blockchain sync stalls without warning, observers 
 
 ### Authentication Workflow
 
-The dashboard uses the cookie path of the user module's [admin authentication — dual-track](../../src/backend/modules/user/README.md#admin-authentication--dual-track) model. Operators sign in like any other visitor; admin authority comes from group membership, not a JS-readable token.
+Admin authority comes from `admin` group membership, not a JS-readable token. The `requireAdmin` middleware admits a Better Auth admin session, the legacy cookie path below, or the service token — see [system-auth.md](./system-auth.md).
+
+**Primary path (Better Auth).** Sign in via the header (email-OTP / OAuth / passkey) with an account in the `admin` group; the `/system` nav and routes unlock immediately — no wallet required. Get into the group via `ADMIN_EMAILS` on signup or the Groups editor on `/system/users`.
+
+**Legacy cookie path (coexistence, removed in Phase 6).** Still honored during the migration:
 
 1. **Bootstrap your identity** by visiting any TronRelic page — the server mints the signed `tronrelic_uid` cookie via `POST /api/user/bootstrap`.
 2. **Verify a wallet** via the header WalletButton (TronLink signature). This moves your `identityState` to `Verified` and starts the 14-day session clock.

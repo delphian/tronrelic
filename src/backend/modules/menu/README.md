@@ -142,6 +142,13 @@ backend filters menu reads at request time using the cookie-resolved
 `req.user`; admin token holders bypass the filter so the admin UI can render
 and edit gated nodes.
 
+> **Coexistence note.** This filter keys off the legacy `req.user` /
+> `UserIdentityState`, which the Phase 6 Better Auth cutover removes —
+> `allowedIdentityStates` retires and the filter reworks onto the Better
+> Auth session (`req.authSession`) at that point. `requiresGroups` /
+> `requiresAdmin` (group membership) carry forward. See
+> [system-auth.md](../../../../docs/system/system-auth.md).
+
 | Field | Shape | Semantics |
 |-------|-------|-----------|
 | `allowedIdentityStates` | `UserIdentityState[]?` | Visible only to users whose `identityState` is in the set. `undefined` means no gate. Empty array is rejected at write time. |

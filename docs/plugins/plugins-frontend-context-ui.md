@@ -117,6 +117,8 @@ interface IPluginWalletLink {
 
 Identity progression: Anonymous (`!hasLinkedWallet`) → Registered (`hasLinkedWallet && !isVerified`) → Verified.
 
+> **Coexistence.** `useUser()` and its `isVerified` / `identityState` / `wallets` fields reflect the *legacy* UUID identity system. It is still live and accurate today, but the frontend plugin auth surface migrates to the Better Auth session in the Phase 6 cutover. Backend plugin routes already gate on `req.authSession` — see [system-auth.md](../system/system-auth.md).
+
 ## Modal (`context.useModal`)
 
 ```typescript

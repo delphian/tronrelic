@@ -8,9 +8,11 @@ Without these endpoints operators must SSH in, restart processes, and tail logs 
 
 ## Authentication
 
-Admin endpoints accept either path via the `requireAdmin` middleware. See [admin authentication — dual-track](../../src/backend/modules/user/README.md#admin-authentication--dual-track) for the canonical spec.
+Admin endpoints accept any of the paths below via the `requireAdmin` middleware, tried in this order. See [system-auth.md](./system-auth.md) for the authorization model.
 
-**Cookie path** (humans, the `/system` SPA). A signed `tronrelic_uid` cookie identifying a user with `identityState === Verified` and membership in the `admin` group authorizes the call. Same-origin fetches carry it when `credentials: 'include'`.
+**Session path** (humans, the `/system` SPA). A Better Auth session whose account is in the `admin` group authorizes the call. Same-origin fetches carry the session cookie when `credentials: 'include'`.
+
+**Legacy cookie path** (coexistence, removed in Phase 6). A signed `tronrelic_uid` cookie identifying a user with `identityState === Verified` and membership in the `admin` group. Still honored during the Better Auth migration.
 
 **Service-token path** (CI, scripts, first-admin bootstrap). Set `ADMIN_API_TOKEN` in the backend `.env` and pass it in `X-Admin-Token` (preferred) or `Authorization: Bearer`. Query-param auth (`?token=...`) is intentionally rejected so tokens never leak into access logs.
 

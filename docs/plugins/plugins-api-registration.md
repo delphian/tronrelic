@@ -27,22 +27,26 @@ Every route entry uses the `IApiRouteConfig` contract. Focus on these fields:
 
 Remember: `req.params`, `req.query`, `req.body`, and `req.ip` are plain objects; `res.status()`, `res.json()`, `res.send()`, and `res.setHeader()` mirror familiar Express methods but stay framework-agnostic.
 
-**`requiresAdmin` runs the dual-track admin gate.** The `requireAdmin` middleware admits the call when *either* (a) the signed `tronrelic_uid` cookie identifies a Verified user in the `admin` group, *or* (b) the request carries `ADMIN_API_TOKEN` via `x-admin-token` / `Authorization: Bearer`. The cookie path is tried first; the middleware tags the request with `req.adminVia = 'user' | 'service-token'` so handlers and audit logs can attribute the call.
+**`requiresAdmin` runs the admin gate.** The `requireAdmin` middleware admits the call when, in order, (a) the Better Auth session is in the `admin` group, (b) — during the legacy-coexistence window — the signed `tronrelic_uid` cookie identifies a verified user in the `admin` group, or (c) the request carries `ADMIN_API_TOKEN` via `x-admin-token` / `Authorization: Bearer`. The middleware tags the request with `req.adminVia = 'user' | 'service-token'` so handlers and audit logs can attribute the call. See [system-auth.md](../system/system-auth.md) for the authorization model.
 
-The middleware short-circuits failures with **401**, or **503 when `ADMIN_API_TOKEN` is unset and no admin user resolves** — that 503 is the deliberate "admin surface disabled" signal, not a misconfiguration to retry. See [admin authentication — dual-track](../../src/backend/modules/user/README.md#admin-authentication--dual-track) for the canonical specification.
+The middleware short-circuits failures with **401**, or **503 when `ADMIN_API_TOKEN` is unset and no admin user resolves** — that 503 is the deliberate "admin surface disabled" signal, not a misconfiguration to retry. See [system-auth.md](../system/system-auth.md) for the canonical specification of the admin authorization model.
 
 The middleware overlaps with `IUserGroupService.isAdmin(req.userId)` — both confirm a human is admin via group membership — but the middleware *also* accepts the service token, while `isAdmin` is a pure predicate the handler consults to vary response shape. Combine them when an admin SPA route both rejects unauthenticated callers and renders different UI per operator: gate with `requiresAdmin: true`, then call `isAdmin(req.userId)` inside the handler. See [plugins-service-registry.md](./plugins-service-registry.md) and the [User Module README](../../src/backend/modules/user/README.md#user-groups-and-admin-status) for the consumption side.
 
-**User context is automatically available.** Middleware populates `req.userId` (from the `tronrelic_uid` cookie) and `req.user` (the resolved user record) before your handler runs. For feature gating, check wallet states:
-- `req.user?.wallets?.length > 0` — user has linked a wallet (may be unverified)
-- `req.user?.wallets?.some(w => w.verified)` — user has a verified wallet (recommended for feature gating)
+**Auth context is automatically available.** The `attachAuthSession` middleware resolves the Better Auth session onto `req.authSession` before your handler runs. Gate with the synchronous predicates from `@delphian/tronrelic-types` — they read `req.authSession` and act as type guards, so it narrows to non-null on the truthy branch:
 
-See [User Module README](../../src/backend/modules/user/README.md#plugin-access-to-user-data) for complete patterns.
+- `isLoggedIn(req)` — any authenticated account. Login-only gates.
+- `isAdmin(req)` / `isInGroup(req, id)` — role / group-membership gates.
+- `hasPrimaryWallet(req)` — the account has a signature-proven primary wallet. **Use this for wallet-gated routes**, not `isLoggedIn`: a Better Auth account can be email/OAuth/passkey-only with no wallet, so mapping a legacy `req.user.identityState === Verified` gate to `isLoggedIn` would open it to wallet-less callers.
+
+The user id is `req.authSession.user.id`; the canonical wallet is `req.authSession.primaryWallet`. See [system-auth.md](../system/system-auth.md) for the full model.
+
+> **Coexistence.** The legacy `req.userId` / `req.user` (`IUser`) fields populated from the `tronrelic_uid` cookie still exist during the Better Auth migration and are removed in Phase 6. New plugins use `req.authSession` and the predicates above; do not write new `req.user.identityState` gates.
 
 ## Minimal Example
 
 ```typescript
-import { definePlugin, type IHttpRequest, type IHttpResponse, type IHttpNext } from '@/types';
+import { definePlugin, isLoggedIn, type IHttpRequest, type IHttpResponse, type IHttpNext, type IPluginDatabase } from '@delphian/tronrelic-types';
 import { whaleAlertsManifest } from '../manifest.js';
 
 // Mounts at /api/plugins/trp-whale-alerts/subscriptions
@@ -71,11 +75,11 @@ function createSubscriptionHandlers(database: IPluginDatabase) {
     return {
         list: async (req: IHttpRequest, res: IHttpResponse, next: IHttpNext) => {
             try {
-                // User context populated by middleware before handler runs
-                if (!req.user) {
+                // Auth context resolved by middleware before the handler runs
+                if (!isLoggedIn(req)) {
                     return res.status(401).json({ error: 'Authentication required' });
                 }
-                const subscriptions = await database.find('subscriptions', { userId: req.userId });
+                const subscriptions = await database.find('subscriptions', { userId: req.authSession.user.id });
                 res.json({ subscriptions });
             } catch (error) {
                 next(error);
