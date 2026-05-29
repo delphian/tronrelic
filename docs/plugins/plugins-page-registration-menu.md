@@ -70,7 +70,9 @@ Three optional fields filter menu visibility per visitor at read time:
 - `requiresGroups` — OR-membership across admin-defined groups.
 - `requiresAdmin` — routes through `IUserGroupService.isAdmin`.
 
-The menu config's `requiresAdmin` is a *visibility* predicate. It is unrelated to the `requireAdmin` HTTP middleware in [plugins-api-registration.md](./plugins-api-registration.md), which gates routes via cookie OR `x-admin-token`.
+The menu config's `requiresAdmin` is a *visibility* predicate. It is unrelated to the `requireAdmin` HTTP middleware in [plugins-api-registration.md](./plugins-api-registration.md), which gates routes (Better Auth session, legacy cookie, or `x-admin-token`).
+
+> **Coexistence.** `allowedIdentityStates` keys off the legacy `UserIdentityState` taxonomy, removed in the Phase 6 cutover; menu visibility gating reworks onto the Better Auth session then. `requiresGroups` / `requiresAdmin` (group membership) carry forward. See [system-auth.md](../system/system-auth.md).
 
 ```typescript
 await context.menuService.create({

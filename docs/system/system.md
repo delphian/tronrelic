@@ -50,9 +50,13 @@ Schema evolution discovered automatically from system, module, and plugin direct
 
 Markdown-authored CMS for admin-published content. `PageService` (singleton, implements `IPageService`) depends on `IStorageProvider`, so the storage backend (local FS, S3, custom) is swappable via DI. Rendered HTML cached in Redis 24h with auto-invalidation; a route blacklist prevents slugs from shadowing core routes. See [Pages Module README](../../src/backend/modules/pages/README.md).
 
+### Authentication & Authorization
+
+Identity runs on Better Auth (email-OTP / OAuth / passkey), mounted at `/api/auth/*`. The `attachAuthSession` middleware resolves the session once per request onto `req.authSession`; modules and plugins gate through predicates (`isLoggedIn` / `isInGroup` / `isAdmin` / `hasPrimaryWallet`) rather than reading session fields. A legacy UUID identity layer coexists and is removed in the Phase 6 cutover. See [system-auth.md](./system-auth.md).
+
 ### User
 
-Visitor identity anchored on one HttpOnly, HMAC-signed `tronrelic_uid` cookie minted by the server at `POST /api/user/bootstrap` — the server is the only writer. Identity state (`Anonymous` | `Registered` | `Verified`) is stored, not derived; `Verified` requires a recent TronLink signature within `SESSION_TTL_MS`. One UUID can link multiple wallets with a primary designation. See [User Module README](../../src/backend/modules/user/README.md).
+The user module hosts both the Better Auth instance (above) and the legacy UUID system still live during the migration: visitor identity on an HttpOnly, HMAC-signed `tronrelic_uid` cookie, the stored `UserIdentityState` taxonomy (`Anonymous` | `Registered` | `Verified`), and multi-wallet linking. The legacy surface is removed in Phase 6. See [User Module README](../../src/backend/modules/user/README.md) and [system-auth.md](./system-auth.md).
 
 ### Hooks
 
@@ -78,6 +82,7 @@ Inspect health at `/system` (auth: `ADMIN_API_TOKEN`) — fastest path to blockc
 | [modules.md](./modules/modules.md) | Module overview, module-vs-plugin matrix, service singleton rules |
 | [modules-architecture.md](./modules/modules-architecture.md) | `IModule` interface, bootstrap order, DI, service registry |
 | [modules-creating.md](./modules/modules-creating.md) | Step-by-step new-module guide |
+| [system-auth.md](./system-auth.md) | Better Auth identity, `req.authSession`, authorization predicates, coexistence/cutover |
 | [system-database.md](./system-database.md) | `IDatabaseService`, three-tier access, namespace isolation |
 | [system-blockchain-sync-architecture.md](./system-blockchain-sync-architecture.md) | Block retrieval, enrichment pipeline, observer dispatch |
 | [system-scheduler-operations.md](./system-scheduler-operations.md) | Job control, cron syntax, persistence, troubleshooting |
