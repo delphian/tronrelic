@@ -9,8 +9,7 @@ import type {
     ISystemComponents,
     IApiClient,
     IWebSocketClient,
-    IPluginUserState,
-    IPluginWalletLink
+    IPluginUserState
 } from '@/types';
 import { Card } from '../components/ui/Card';
 import { Badge } from '../components/ui/Badge';
@@ -28,14 +27,7 @@ import { useToast as useToastHook } from '../components/ui/ToastProvider';
 import { LineChart } from '../features/charts/components/LineChart';
 import { SchedulerMonitor } from '../modules/scheduler';
 import { Page, PageHeader, Stack, Grid, Section } from '../components/layout';
-import { useAppSelector } from '../store/hooks';
-import {
-    selectUserId,
-    selectUserData,
-    selectUserInitialized,
-    selectIsVerified,
-    selectPrimaryWallet
-} from '../modules/user/slice';
+import { useAuthSession } from '../modules/user/components/SessionProvider';
 import { getSocket } from './socketClient';
 import { getRuntimeConfig } from './runtimeConfig';
 
@@ -283,45 +275,26 @@ class WebSocketClient implements IWebSocketClient {
 /**
  * Hook providing user state to frontend plugins.
  *
- * Wraps Redux selectors to provide a stable interface that won't break
- * plugins when the internal user module is refactored. Returns reactive
- * state that automatically updates when user data changes.
+ * Mirrors the backend authorization surface: `isLoggedIn` is the primary
+ * gate (any authenticated Better Auth account), `hasPrimaryWallet` is the
+ * single wallet check, and `primaryWallet` is the proven primary address.
+ * A present `primaryWallet` is always signature-verified — the wallet store
+ * only holds wallets proven by signature — so there is no separate
+ * verified/unverified distinction. Sourced from the Better Auth session
+ * (SSR-seeded via SessionProvider), not the legacy UUID identity slice.
  *
- * @returns Plugin-safe user state with identity, wallets, and verification status
+ * @returns Plugin-safe user state: login flag, primary-wallet flag + address
  */
 function usePluginUser(): IPluginUserState {
-    const userId = useAppSelector(selectUserId);
-    const userData = useAppSelector(selectUserData);
-    const initialized = useAppSelector(selectUserInitialized);
-    const isUserVerified = useAppSelector(selectIsVerified);
-    const primaryWallet = useAppSelector(selectPrimaryWallet);
-
-    // Transform wallets to plugin-safe format
-    const wallets: IPluginWalletLink[] = (userData?.wallets ?? []).map(w => ({
-        address: w.address,
-        verified: w.verified,
-        isPrimary: w.isPrimary,
-        linkedAt: w.linkedAt,
-        lastUsed: w.lastUsed,
-        label: w.label
-    }));
-
-    // `isVerified` mirrors the canonical `UserIdentityState.Verified`
-    // — already resolved through the backend's lazy session-expiry
-    // pass — rather than scanning per-wallet `verified` flags. A user
-    // with a historically-verified wallet whose session has expired
-    // reads as `isVerified: false`; the per-wallet flag is audit
-    // history, not session state.
-    const hasLinkedWallet = wallets.length > 0;
-    const isVerified = isUserVerified;
+    const { session, isLoggedIn, isPending } = useAuthSession();
+    const primaryWallet = session?.user?.primaryWallet ?? null;
 
     return {
-        userId,
-        hasLinkedWallet,
-        isVerified,
-        wallets,
+        userId: session?.user?.id ?? null,
+        isLoggedIn,
+        hasPrimaryWallet: primaryWallet !== null,
         primaryWallet,
-        initialized
+        initialized: !isPending
     };
 }
 
