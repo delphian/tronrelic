@@ -214,6 +214,19 @@ export class WalletService implements IWalletService {
     }
 
     /**
+     * Count distinct Better Auth accounts that hold at least one wallet.
+     *
+     * Drives the wallet-adoption analytics panel (accounts-with-wallets over
+     * total accounts).
+     *
+     * @returns The number of accounts with one or more linked wallets.
+     */
+    public async countDistinctOwners(): Promise<number> {
+        const owners = await this.collection.distinct('userId');
+        return owners.length;
+    }
+
+    /**
      * Mint a single-use challenge for a wallet operation.
      *
      * The client signs the returned `message` verbatim with TronLink and

@@ -170,7 +170,12 @@ export class UserModule implements IModule<IUserModuleDependencies> {
 
         // Traffic controller over the traffic-owned TrafficService, for the
         // `GET /api/admin/users/:id/traffic-history` read in the legacy admin tree.
-        this.trafficController = new TrafficController(this.trafficService, this.logger);
+        this.trafficController = new TrafficController(
+            this.trafficService,
+            this.gscService,
+            this.serviceRegistry,
+            this.logger
+        );
 
         this.logger.info('User module initialized');
     }

@@ -1128,3 +1128,53 @@ const serializeEvent = serializeTrafficEventForClickHouse;
 function deserializeEvent(row: TrafficEventRow): ITrafficEvent {
     return { ...row, timestamp: parseClickHouseDateTime64Utc(row.timestamp) };
 }
+
+/**
+ * Raw query input understood by {@link resolveAnalyticsRange}.
+ *
+ * The HTTP layer passes `req.query` straight in. Ported from the legacy
+ * `UserService.resolveAnalyticsRange` so the traffic module owns its analytics
+ * range vocabulary without depending on the soon-to-be-removed user module.
+ */
+export interface IAnalyticsRangeQuery {
+    /** Preset window: `'24h'` | `'7d'` | `'30d'` | `'90d'`. */
+    period?: string;
+    /** ISO start for a custom range; both ends must be valid. */
+    startDate?: string;
+    /** ISO end for a custom range; both ends must be valid. */
+    endDate?: string;
+}
+
+const HOURS_BY_PERIOD: Record<string, number> = {
+    '24h': 24,
+    '7d': 7 * 24,
+    '30d': 30 * 24,
+    '90d': 90 * 24
+};
+
+/**
+ * Resolve a query's preset/custom window to an inclusive date range.
+ *
+ * A valid custom `(startDate, endDate)` pair wins; otherwise the named period
+ * (default `'30d'`) is converted to a `since` offset from now. Lenient — a
+ * malformed or inverted custom range falls through to the preset rather than
+ * throwing, so a bad query param degrades to the default window.
+ *
+ * @param query - Raw `req.query`-shaped input.
+ * @param defaultPeriod - Fallback preset when none is supplied.
+ * @returns Inclusive analytics window.
+ */
+export function resolveAnalyticsRange(query: IAnalyticsRangeQuery, defaultPeriod = '30d'): IAnalyticsDateRange {
+    const { startDate, endDate, period } = query;
+
+    if (startDate && endDate) {
+        const since = new Date(startDate);
+        const until = new Date(endDate);
+        if (!Number.isNaN(since.getTime()) && !Number.isNaN(until.getTime()) && since.getTime() <= until.getTime()) {
+            return { since, until };
+        }
+    }
+
+    const hours = HOURS_BY_PERIOD[period ?? defaultPeriod] ?? HOURS_BY_PERIOD[defaultPeriod] ?? 30 * 24;
+    return { since: new Date(Date.now() - hours * 60 * 60 * 1000) };
+}

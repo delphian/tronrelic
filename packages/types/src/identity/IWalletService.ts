@@ -101,6 +101,14 @@ export interface IWalletService {
     listWallets(userId: string): Promise<ILinkedWallet[]>;
 
     /**
+     * Count distinct accounts that hold at least one wallet. Drives the
+     * wallet-adoption analytics panel.
+     *
+     * @returns Number of accounts with one or more linked wallets.
+     */
+    countDistinctOwners(): Promise<number>;
+
+    /**
      * Mint a single-use challenge for a wallet operation.
      *
      * @param userId - Better Auth user id.

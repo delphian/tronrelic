@@ -41,4 +41,6 @@ export {
 } from './services/geo.service.js';
 
 export { TrafficController } from './api/traffic.controller.js';
-export { createAdminTrafficRouter } from './api/traffic.routes.js';
+export { createAdminTrafficRouter, createAdminAnalyticsRouter } from './api/traffic.routes.js';
+export { resolveAnalyticsRange } from './services/traffic.service.js';
+export type { IAnalyticsRangeQuery } from './services/traffic.service.js';
