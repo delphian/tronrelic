@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import type { UserController } from './user.controller.js';
-import type { UserGroupController } from './user-group.controller.js';
+import type { UserGroupController } from '../../identity/api/user-group.controller.js';
 import type { TrafficController } from './traffic.controller.js';
 import { createRateLimiter } from '../../../api/middleware/rate-limit.js';
 

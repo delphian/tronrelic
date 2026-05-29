@@ -3,7 +3,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { UserService } from '../services/user.service.js';
 import type { ILinkWalletInput } from '../database/IUserDocument.js';
-import type { WalletChallengeAction } from '../services/wallet-challenge.service.js';
+import type { WalletChallengeAction } from '../../identity/services/wallet-challenge.service.js';
 import { UserIdentityState } from '@/types';
 import type { ICacheService, ISystemLogService } from '@/types';
 import { createMockDatabaseService } from '../../../tests/vitest/mocks/database-service.js';

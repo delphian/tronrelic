@@ -3,7 +3,7 @@ import { env } from '../../config/env.js';
 import {
     getSessionForRequest,
     isAdmin as facadeIsAdmin
-} from '../../modules/user/services/auth-facade.js';
+} from '../../modules/identity/services/auth-facade.js';
 
 /**
  * Augment Express Request with the admin-auth path that approved the call.

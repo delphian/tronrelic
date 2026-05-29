@@ -1,169 +1,104 @@
 /**
- * User module implementation.
+ * User module implementation (legacy UUID identity surface).
  *
- * Provides visitor identity management, wallet linking, and preference tracking.
- * The module follows TronRelic's two-phase initialization pattern with dependency
- * injection.
+ * Provides the legacy visitor-identity system: UUID cookie bootstrap,
+ * preference/activity/session tracking, the public `/api/user` surface, and
+ * the admin `/api/admin/users` analytics dashboard. Better Auth, wallet
+ * linking, and group membership moved to the {@link IdentityModule}; cookieless
+ * traffic analytics move to the traffic module. This module shrinks to the
+ * legacy bits and is removed entirely in the Phase 6 cutover.
  *
- * ## Design Decisions
- *
- * **Anonymous-first identity**: Users start with client-generated UUIDs stored
- * in cookies/localStorage. No registration required.
- *
- * **Multi-wallet support**: One UUID can link to multiple TRON addresses,
- * enabling unified identity across wallets.
- *
- * **Cookie-based authentication**: Public endpoints require cookie validation
- * to ensure users can only access their own data.
- *
- * ## Future Extensibility
- *
- * If plugins need access to user data, create `IUserService` in `@/types`
- * and expose via `IPluginContext`. The `IUserDocument` stays internal to this module.
+ * The module follows TronRelic's two-phase initialization pattern with
+ * dependency injection. It runs *after* {@link IdentityModule} so it can
+ * resolve the BA-keyed `UserGroupService` singleton the legacy admin surface
+ * still composes (the per-user group editor and auth-status response shaping).
  */
 
 import type { Express, Router } from 'express';
-import mongoose from 'mongoose';
-import { toNodeHandler } from 'better-auth/node';
 import type { ICacheService, IClickHouseService, IDatabaseService, IMenuService, IModule, IModuleMetadata, ISchedulerService, IServiceRegistry, ISystemConfigService } from '@/types';
 import { logger } from '../../lib/logger.js';
 import { MAIN_SYSTEM_CONTAINER_ID } from '../menu/index.js';
 import { TronGridClient } from '../blockchain/tron-grid.client.js';
 import { UserService } from './services/user.service.js';
-import { WalletService } from './services/wallet.service.js';
 import { GscService } from './services/gsc.service.js';
 import { TrafficService } from './services/traffic.service.js';
-import { UserGroupService } from './services/user-group.service.js';
-import { GroupService } from './services/group.service.js';
-import { setAuthInstance } from './services/auth-facade.js';
+import { UserGroupService } from '../identity/services/user-group.service.js';
+import { UserGroupController } from '../identity/api/user-group.controller.js';
 import { initGeoIP } from './services/geo.service.js';
 import { UserController } from './api/user.controller.js';
-import { WalletController } from './api/wallet.controller.js';
-import { UserGroupController } from './api/user-group.controller.js';
 import { TrafficController } from './api/traffic.controller.js';
 import { createUserRouter, createAdminUserRouter } from './api/user.routes.js';
-import { createWalletRouter } from './api/wallet.routes.js';
-import { createAdminUserGroupRouter } from './api/user-group.routes.js';
 import { createAdminTrafficRouter } from './api/traffic.routes.js';
 import { requireAdmin } from '../../api/middleware/admin-auth.js';
-import { createAuth, type Auth } from './auth.js';
 
 /**
  * User module dependencies for initialization.
- *
- * All required services for the user module to function properly, injected
- * at application bootstrap time.
  */
 export interface IUserModuleDependencies {
-    /**
-     * Database service for MongoDB operations (user storage).
-     */
+    /** Database service for MongoDB operations (legacy user storage). */
     database: IDatabaseService;
 
-    /**
-     * Cache service for user data caching.
-     */
+    /** Cache service for user data caching. */
     cacheService: ICacheService;
 
-    /**
-     * Menu service for registering /system/users navigation entry.
-     */
+    /** Menu service for registering the /system/users navigation entry. */
     menuService: IMenuService;
 
-    /**
-     * Express application instance for mounting routers.
-     * The module will attach its public and admin routers using IoC pattern.
-     */
+    /** Express application instance for mounting routers (IoC). */
     app: Express;
 
     /**
-     * Scheduler service for registering the daily GSC fetch job.
-     * Null when the scheduler is disabled via ENABLE_SCHEDULER=false.
+     * Scheduler service for the daily GSC fetch job. Null when the scheduler
+     * is disabled via ENABLE_SCHEDULER=false.
      */
     scheduler: ISchedulerService | null;
 
-    /**
-     * Service registry for exposing UserService to plugins via late-binding DI.
-     * Plugins discover the user service with context.services.get('user').
-     */
+    /** Service registry for exposing UserService to plugins via late-binding DI. */
     serviceRegistry: IServiceRegistry;
 
     /**
-     * System config service. UserService consults this when starting a
-     * session to decide whether the browser-supplied `Referer` header points
-     * to an external origin or to our own site.
+     * System config service. UserService consults this when starting a session
+     * to decide whether the browser-supplied `Referer` points to an external
+     * origin or to our own site.
      */
     systemConfig: ISystemConfigService;
 
     /**
-     * ClickHouse service for the new TrafficService sibling. Optional —
-     * `undefined` when `CLICKHOUSE_HOST` is unset and the ClickHouse
-     * module skipped initialization. TrafficService stays usable in
-     * that mode but silently drops writes; see traffic.service.ts.
-     * Backs the cookieless-traffic split tracked in PLAN-traffic-events.md.
+     * ClickHouse service for the TrafficService sibling. Optional — `undefined`
+     * when `CLICKHOUSE_HOST` is unset. TrafficService stays usable in that mode
+     * but silently drops writes; see traffic.service.ts.
      */
     clickhouse: IClickHouseService | undefined;
 }
 
 /**
- * User module for visitor identity and wallet linking.
- *
- * Implements the IModule interface to provide:
- * - Anonymous visitor identity via UUID
- * - Wallet linking with TronLink signature verification
- * - Preference storage and activity tracking
- * - Admin interface for user management
+ * Legacy user module for UUID visitor identity.
  *
  * ## Lifecycle
  *
  * ### init() phase:
- * - Stores injected dependencies (database, cache, menu service, app)
- * - Instantiates UserService singleton
- * - Creates database indexes
- * - Creates UserController
- * - Does NOT mount routes or register menu items yet
+ * - Stores injected dependencies
+ * - Instantiates UserService singleton and creates indexes
+ * - Instantiates GscService / TrafficService and injects them into UserService
+ * - Resolves the BA-keyed UserGroupService singleton (created by IdentityModule)
+ * - Creates the user, group, and traffic controllers
  *
  * ### run() phase:
- * - Registers menu item in 'system' namespace for admin UI
- * - Creates and mounts public router at /api/user
- * - Creates and mounts admin router at /api/admin/users
- *
- * ## Inversion of Control
- *
- * The module uses IoC by injecting the Express app and mounting its own routes,
- * rather than returning routers for the bootstrap process to mount. This makes
- * the module responsible for its own integration.
- *
- * @example
- * ```typescript
- * // In backend bootstrap (apps/backend/src/index.ts)
- * const userModule = new UserModule();
- *
- * await userModule.init({
- *     database: coreDatabase,
- *     cacheService: cacheService,
- *     menuService: MenuService.getInstance(),
- *     app: app,
- *     scheduler: schedulerModule.getSchedulerService()
- * });
- *
- * await userModule.run();
- * ```
+ * - Registers the Users menu item under the System container
+ * - Registers UserService on the service registry as `'user'`
+ * - Mounts the public `/api/user` and admin `/api/admin/users[/traffic]` routers
+ * - Registers the daily GSC fetch job
  */
 export class UserModule implements IModule<IUserModuleDependencies> {
-    /**
-     * Module metadata for introspection and logging.
-     */
+    /** Module metadata for introspection and logging. */
     readonly metadata: IModuleMetadata = {
         id: 'user',
         name: 'User',
         version: '1.0.0',
-        description: 'Visitor identity management and wallet linking'
+        description: 'Legacy visitor identity management and analytics dashboard'
     };
 
-    /**
-     * Stored dependencies from init() phase.
-     */
+    /** Stored dependencies from init() phase. */
     private database!: IDatabaseService;
     private cacheService!: ICacheService;
     private menuService!: IMenuService;
@@ -171,51 +106,31 @@ export class UserModule implements IModule<IUserModuleDependencies> {
     private scheduler!: ISchedulerService | null;
     private serviceRegistry!: IServiceRegistry;
 
-    /**
-     * Services created during init() phase.
-     */
+    /** Services created or resolved during init() phase. */
     private userService!: UserService;
-    private walletService!: WalletService;
     private gscService!: GscService;
     private trafficService!: TrafficService;
     private userGroupService!: UserGroupService;
     private controller!: UserController;
-    private walletController!: WalletController;
     private groupController!: UserGroupController;
     private trafficController!: TrafficController;
 
-    /**
-     * Better Auth instance and its group-membership companion service.
-     *
-     * Phase 1 wiring: the auth instance is configured against the
-     * `module_user_auth_*` collections and reads/writes the `groups`
-     * additional field through {@link GroupService}. The legacy
-     * UUID-based user system continues to run alongside it until the
-     * Phase 6 cutover migration. See `auth.ts` for the configuration
-     * surface and the file header for the Db-injection exception.
-     */
-    private auth!: Auth;
-    private groupService!: GroupService;
-
-    /**
-     * Logger instance for this module.
-     */
+    /** Logger instance for this module. */
     private readonly logger = logger.child({ module: 'user' });
 
     /**
      * Initialize the user module with injected dependencies.
      *
-     * This phase prepares the module by creating service instances and storing
-     * dependencies for use in the run() phase. It does NOT mount routes or
-     * register menu items yet.
+     * Creates the legacy UserService and its analytics siblings, and resolves
+     * the BA-keyed UserGroupService the legacy admin surface still composes.
+     * Does NOT mount routes or register menu items.
      *
-     * @param dependencies - All required services (database, cache, menu, app)
-     * @throws {Error} If initialization fails (causes application shutdown)
+     * @param dependencies - All required services.
+     * @throws {Error} If initialization fails (causes application shutdown).
      */
     async init(dependencies: IUserModuleDependencies): Promise<void> {
         this.logger.info('Initializing user module...');
 
-        // Store dependencies for use in run() phase
         this.database = dependencies.database;
         this.cacheService = dependencies.cacheService;
         this.menuService = dependencies.menuService;
@@ -223,13 +138,13 @@ export class UserModule implements IModule<IUserModuleDependencies> {
         this.scheduler = dependencies.scheduler;
         this.serviceRegistry = dependencies.serviceRegistry;
 
-        // Initialize GeoIP lookup for country detection (non-blocking)
+        // Initialize GeoIP lookup for country detection (non-blocking).
         await initGeoIP();
 
-        // Create independent TronWeb instance for signature verification
+        // Independent TronWeb instance for legacy wallet signature verification.
         const tronWeb = TronGridClient.getInstance().createTronWeb();
 
-        // Initialize UserService singleton with dependencies
+        // Initialize UserService singleton.
         UserService.setDependencies(
             this.database,
             this.cacheService,
@@ -237,68 +152,29 @@ export class UserModule implements IModule<IUserModuleDependencies> {
             dependencies.systemConfig,
             tronWeb
         );
-
-        // Get UserService singleton instance
         this.userService = UserService.getInstance();
-
-        // Create database indexes
         await this.userService.createIndexes();
 
-        // Initialize WalletService singleton (Phase 4 of the Better Auth
-        // refactor). Owns the BA-user-keyed `module_user_wallets` store,
-        // reusing the same TronWeb instance for signature verification.
-        // Replaces the legacy UUID-keyed `users.wallets[]` flow, which the
-        // Phase 6 cutover removes.
-        WalletService.setDependencies(this.database, this.cacheService, this.logger, tronWeb);
-        this.walletService = WalletService.getInstance();
-        await this.walletService.createIndexes();
-
-        // Initialize GscService singleton with dependencies
-        GscService.setDependencies(
-            this.database,
-            this.cacheService,
-            this.logger
-        );
+        // Initialize GscService singleton and inject into UserService.
+        GscService.setDependencies(this.database, this.cacheService, this.logger);
         this.gscService = GscService.getInstance();
         await this.gscService.createIndexes();
-
-        // Inject GscService into UserService for explicit dependency
         this.userService.setGscService(this.gscService);
 
-        // Initialize TrafficService sibling. ClickHouse is optional;
-        // when it's undefined the service no-ops and the orphan-row
-        // fix in later phases still works (Mongo writes are gated
-        // independently). See PLAN-traffic-events.md.
+        // Initialize TrafficService sibling. ClickHouse is optional; when it's
+        // undefined the service no-ops. See PLAN-traffic-events.md.
         TrafficService.setDependencies(dependencies.clickhouse, this.logger);
         this.trafficService = TrafficService.getInstance();
-
-        // Inject TrafficService into UserService so `startSession` can
-        // backfill from ClickHouse first-touch events (Phase 3). Explicit
-        // dependency rather than a hidden singleton lookup so tests can
-        // boot the user module without ClickHouse and assert on the
-        // post-hydration fallback path.
         this.userService.setTrafficService(this.trafficService);
 
-        // Initialize GroupService first — it owns Better Auth group membership
-        // (the `groups` field on module_user_auth_users) and is both the
-        // membership primitive UserGroupService delegates to and the service
-        // the BA after-create hook calls to promote ADMIN_EMAILS signups.
-        GroupService.setDependencies(this.database, this.logger);
-        this.groupService = GroupService.getInstance();
-        await this.groupService.createIndexes();
-
-        // Initialize UserGroupService singleton (group-definition registry plus
-        // the public 'user-groups' contract), build definition indexes, seed
-        // the admin group. Composes GroupService for all membership reads/writes,
-        // so no membership state lives on the legacy users collection.
-        // Must precede UserController construction so the controller can inject
-        // it for `withAuthStatus` response shaping.
-        UserGroupService.setDependencies(this.database, this.groupService, this.logger);
+        // Resolve the BA-keyed UserGroupService singleton. IdentityModule
+        // constructs it during its init(), which runs before this module, so
+        // getInstance() is safe here. The legacy admin surface composes it for
+        // the per-user group editor and auth-status response shaping; this
+        // coupling is removed with the legacy surface in Phase 6.
         this.userGroupService = UserGroupService.getInstance();
-        await this.userGroupService.createIndexes();
-        await this.userGroupService.seedSystemGroups();
 
-        // Create controller with singleton services
+        // Create the user controller with its singleton services.
         this.controller = new UserController(
             this.userService,
             this.gscService,
@@ -307,37 +183,13 @@ export class UserModule implements IModule<IUserModuleDependencies> {
             this.logger
         );
 
-        // Create wallet controller (Phase 4). Resolves the caller from the
-        // Better Auth session rather than a cookie-validated :id param.
-        this.walletController = new WalletController(this.walletService, this.logger);
-
-        // Create group controller with singleton service
+        // Group controller over the identity-owned UserGroupService, for the
+        // `PUT /api/admin/users/:id/groups` membership editor that lives in the
+        // legacy user admin tree.
         this.groupController = new UserGroupController(this.userGroupService, this.logger);
 
-        // Create traffic controller for the Phase 5 admin dashboard.
-        // Reads ClickHouse `traffic_events` aggregates and per-user history.
+        // Traffic controller for the admin dashboard ClickHouse reads.
         this.trafficController = new TrafficController(this.trafficService, this.logger);
-
-        // Better Auth wiring (Phase 1 of the auth refactor).
-        //
-        // GroupService (configured above) backs the BA after-create hook's
-        // addMember() call during signup. The auth factory takes a raw
-        // MongoDB Db handle — see auth.ts for the documented exception to
-        // the IDatabaseService rule. The facade is configured last so it
-        // cannot be queried before the auth instance exists.
-        const authDb = mongoose.connection.db;
-        if (!authDb) {
-            throw new Error(
-                'mongoose.connection.db is undefined — UserModule.init() ran before connectDatabase() completed.'
-            );
-        }
-        this.auth = createAuth({
-            db: authDb,
-            groupService: this.groupService,
-            logger: this.logger
-        });
-        setAuthInstance(this.auth);
-        this.logger.info('Better Auth instance configured and facade wired');
 
         this.logger.info('User module initialized');
     }
@@ -345,14 +197,11 @@ export class UserModule implements IModule<IUserModuleDependencies> {
     /**
      * Run the user module after all modules have initialized.
      *
-     * This phase activates the module by:
-     * - Registering menu item under the System container (admin subtree of `main`)
-     * - Creating and mounting public router
-     * - Creating and mounting admin router
+     * Registers the Users menu item, publishes UserService, and mounts the
+     * public and admin routers. The identity module has already mounted
+     * `/api/user/wallets` and `/api/admin/users/groups` ahead of these.
      *
-     * By this point, MenuService is guaranteed to be ready (no need for 'ready' event).
-     *
-     * @throws {Error} If runtime setup fails (causes application shutdown)
+     * @throws {Error} If runtime setup fails (causes application shutdown).
      */
     async run(): Promise<void> {
         this.logger.info('Running user module...');
@@ -368,7 +217,6 @@ export class UserModule implements IModule<IUserModuleDependencies> {
                 order: 75,
                 parent: MAIN_SYSTEM_CONTAINER_ID,
                 enabled: true
-                // persist defaults to false (memory-only entry)
             });
 
             this.logger.info('Users menu item registered under the System container');
@@ -378,68 +226,30 @@ export class UserModule implements IModule<IUserModuleDependencies> {
         }
 
         // Register UserService on the service registry so plugins can discover
-        // it via context.services.get<IUserService>('user') for aggregate stats
-        // and user lookups without direct module coupling.
+        // it via context.services.get<IUserService>('user').
         this.serviceRegistry.register('user', this.userService);
         this.logger.info('UserService registered on service registry as "user"');
 
-        // Register UserGroupService for plugin permission gating. Plugins
-        // discover it via context.services.get<IUserGroupService>('user-groups').
-        this.serviceRegistry.register('user-groups', this.userGroupService);
-        this.logger.info('UserGroupService registered on service registry as "user-groups"');
-
-        // Note: the auth-session middleware that pre-populates
-        // req.authSession is mounted in `loaders/express.ts` so it
-        // runs ahead of the /api router that `bootstrapInit()` mounts
-        // before any module run() phase. Mounting it here would land
-        // it after that router and the middleware would never fire
-        // for /api/* requests.
-
-        // Mount Better Auth's HTTP handler at /api/auth/* (Phase 1).
-        //
-        // `toNodeHandler` adapts BA's fetch-style handler to the Express
-        // (req, res) signature. Mounting here, before the legacy user
-        // routes, keeps `/api/auth/*` cleanly isolated from the
-        // UUID-based identity surface that the cutover migration will
-        // remove in Phase 6.
-        this.app.all('/api/auth/*', toNodeHandler(this.auth));
-        this.logger.info('Better Auth handler mounted at /api/auth/*');
-
-        // Mount the Better Auth-keyed wallet router (Phase 4). Must be
-        // registered BEFORE the `/api/user` public router so the literal
-        // `wallets` segment is matched here and never falls through to
-        // that router's `/:id` cookie-validation middleware (which would
-        // treat "wallets" as a UUID and 403).
-        const walletRouter = createWalletRouter(this.walletController);
-        this.app.use('/api/user/wallets', walletRouter);
-        this.logger.info('Wallet router mounted at /api/user/wallets');
-
-        // Create and mount public router (IoC - module attaches itself to app)
+        // Create and mount the public router (IoC). The identity module mounted
+        // `/api/user/wallets` ahead of this, so the literal segment wins.
         const publicRouter = this.createPublicRouter();
         this.app.use('/api/user', publicRouter);
         this.logger.info('Public user router mounted at /api/user');
 
-        // Create and mount admin router (IoC - module attaches itself to app)
-        // Apply requireAdmin middleware to all admin routes.
-        // Note: the user-groups and traffic routers are mounted FIRST under
-        // the same prefix so their specific paths (/groups/*, /traffic/*)
-        // win over /:id, which would otherwise treat 'groups' or 'traffic'
-        // as a user UUID.
-        const adminGroupRouter = createAdminUserGroupRouter(this.groupController);
-        this.app.use('/api/admin/users/groups', requireAdmin, adminGroupRouter);
-        this.logger.info('Admin user-groups router mounted at /api/admin/users/groups');
-
+        // Mount the admin traffic router before `/api/admin/users` so its
+        // specific `/traffic/*` paths win over `/:id`.
         const adminTrafficRouter = createAdminTrafficRouter(this.trafficController);
         this.app.use('/api/admin/users/traffic', requireAdmin, adminTrafficRouter);
         this.logger.info('Admin traffic router mounted at /api/admin/users/traffic');
 
+        // Mount the admin users router. The identity module mounted
+        // `/api/admin/users/groups` ahead of this.
         const adminRouter = this.createAdminRouter();
         this.app.use('/api/admin/users', requireAdmin, adminRouter);
         this.logger.info('Admin users router mounted at /api/admin/users');
 
-        // Register GSC fetch scheduled job (daily at 3 AM).
-        // SchedulerService supports late registration — if the scheduler
-        // has already started, the job schedules immediately.
+        // Register GSC fetch scheduled job (daily at 3 AM). SchedulerService
+        // supports late registration.
         if (this.scheduler) {
             this.scheduler.register('gsc:fetch', '0 3 * * *', async () => {
                 if (await this.gscService.isConfigured()) {
@@ -457,10 +267,7 @@ export class UserModule implements IModule<IUserModuleDependencies> {
     /**
      * Create the public router with cookie-validated endpoints.
      *
-     * This is an internal helper method called during the run() phase.
-     * The router is then mounted by the module itself using IoC pattern.
-     *
-     * @returns Express router with public endpoints
+     * @returns Express router with public endpoints.
      * @internal
      */
     private createPublicRouter(): Router {
@@ -470,10 +277,7 @@ export class UserModule implements IModule<IUserModuleDependencies> {
     /**
      * Create the admin router with authenticated endpoints.
      *
-     * This is an internal helper method called during the run() phase.
-     * The router is then mounted by the module itself using IoC pattern.
-     *
-     * @returns Express router with admin endpoints
+     * @returns Express router with admin endpoints.
      * @internal
      */
     private createAdminRouter(): Router {
@@ -481,14 +285,10 @@ export class UserModule implements IModule<IUserModuleDependencies> {
     }
 
     /**
-     * Get the UserService singleton instance for external consumers.
+     * Get the UserService singleton for external consumers.
      *
-     * This allows other modules and plugins to access the UserService after
-     * the module has been initialized. Should only be called after init()
-     * completes successfully.
-     *
-     * @returns UserService singleton instance
-     * @throws {Error} If called before init() completes
+     * @returns UserService singleton instance.
+     * @throws {Error} If called before init() completes.
      */
     getUserService(): UserService {
         if (!this.userService) {

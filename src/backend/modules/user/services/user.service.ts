@@ -61,7 +61,7 @@ import {
 } from './geo.service.js';
 import type TronWeb from 'tronweb';
 import { SignatureService } from '../../auth/signature.service.js';
-import { WalletChallengeService, type IWalletChallenge, type WalletChallengeAction } from './wallet-challenge.service.js';
+import { WalletChallengeService, type IWalletChallenge, type WalletChallengeAction } from '../../identity/services/wallet-challenge.service.js';
 import { GscService } from './gsc.service.js';
 import { TrafficService } from './traffic.service.js';
 import { AnalyticsRangeValidationError } from './user.errors.js';

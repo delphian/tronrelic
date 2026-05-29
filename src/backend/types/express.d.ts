@@ -1,5 +1,5 @@
 import 'express-serve-static-core';
-import type { IAugmentedSession } from '../modules/user/services/auth-facade.js';
+import type { IAugmentedSession } from '../modules/identity/services/auth-facade.js';
 
 declare module 'express-serve-static-core' {
   interface Request {

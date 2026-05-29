@@ -15,12 +15,12 @@ vi.mock('../../../config/env.js', () => ({
     })
 }));
 
-import { GroupService } from '../../../modules/user/services/group.service.js';
-import { AUTH_USERS_COLLECTION } from '../../../modules/user/services/auth-constants.js';
+import { GroupService } from '../../../modules/identity/services/group.service.js';
+import { AUTH_USERS_COLLECTION } from '../../../modules/identity/services/auth-constants.js';
 import {
     setAuthInstance,
     resetAuthInstanceForTests
-} from '../../../modules/user/services/auth-facade.js';
+} from '../../../modules/identity/services/auth-facade.js';
 import { requireAdmin } from '../admin-auth.js';
 
 class NullLogger implements ISystemLogService {

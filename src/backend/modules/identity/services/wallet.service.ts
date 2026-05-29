@@ -38,7 +38,7 @@
 
 import { ObjectId, type Collection } from 'mongodb';
 import type TronWeb from 'tronweb';
-import type { ICacheService, IDatabaseService, ISystemLogService } from '@/types';
+import type { ICacheService, IDatabaseService, ISystemLogService, IWalletService } from '@/types';
 import { SignatureService } from '../../auth/signature.service.js';
 import { WalletChallengeService } from './wallet-challenge.service.js';
 import type { WalletChallengeAction, IWalletChallenge } from './wallet-challenge.service.js';
@@ -98,7 +98,7 @@ interface IAuthUserPrimaryWallet {
  * Singleton; configured during `UserModule.init()` via
  * {@link WalletService.setDependencies}.
  */
-export class WalletService {
+export class WalletService implements IWalletService {
     /** Singleton instance. `null` until {@link setDependencies} runs. */
     private static instance: WalletService | null = null;
 

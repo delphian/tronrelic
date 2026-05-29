@@ -16,7 +16,3 @@ export type {
     IUser,
     IReferral
 } from './IUserDocument.js';
-
-export type { IUserGroupDocument } from './IUserGroupDocument.js';
-
-export type { IWalletDocument, ILinkedWallet } from './IWalletDocument.js';

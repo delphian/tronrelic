@@ -8,7 +8,7 @@ import { PluginWebSocketRegistry } from './plugin-websocket-registry.js';
 import { corsOriginCallback } from '../config/cors.js';
 import { env } from '../config/env.js';
 import { USER_ID_COOKIE_NAME, UUID_V4_REGEX } from '../modules/user/api/identity-cookie.js';
-import { getSessionFromHeaders } from '../modules/user/services/auth-facade.js';
+import { getSessionFromHeaders } from '../modules/identity/services/auth-facade.js';
 
 /**
  * Pull the identity UUID out of a handshake Cookie header string.

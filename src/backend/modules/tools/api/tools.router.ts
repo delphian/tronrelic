@@ -11,7 +11,7 @@ import { Router } from 'express';
 import type { Request, Response, NextFunction } from 'express';
 import { asyncHandler } from '../../../api/middleware/async-handler.js';
 import { createRateLimiter } from '../../../api/middleware/rate-limit.js';
-import { getSessionForRequest } from '../../../modules/user/services/auth-facade.js';
+import { getSessionForRequest } from '../../../modules/identity/services/auth-facade.js';
 import type { ToolsController } from './tools.controller.js';
 
 /**

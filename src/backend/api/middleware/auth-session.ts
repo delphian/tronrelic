@@ -23,7 +23,7 @@
 
 import type { Request, Response, NextFunction, RequestHandler } from 'express';
 import { logger } from '../../lib/logger.js';
-import { getSessionForRequest } from '../../modules/user/services/auth-facade.js';
+import { getSessionForRequest } from '../../modules/identity/services/auth-facade.js';
 
 const moduleLogger = logger.child({ component: 'auth-session-middleware' });
 

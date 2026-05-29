@@ -26,7 +26,7 @@
 import type { Request, Response } from 'express';
 import type { ISystemLogService } from '@/types';
 import type { TrafficService } from '../services/traffic.service.js';
-import { parsePositiveInt } from './query-params.js';
+import { parsePositiveInt } from '../../../api/query-params.js';
 
 /** Hard upper bounds on user-supplied query params. Keeps ClickHouse query cost predictable. */
 const MAX_SINCE_HOURS = 720; // 30 days

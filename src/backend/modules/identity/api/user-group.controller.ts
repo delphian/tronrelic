@@ -1,7 +1,7 @@
 import type { Request, Response } from 'express';
 import type { ISystemLogService } from '@/types';
 import type { UserGroupService } from '../services/user-group.service.js';
-import { getClientIP } from '../services/geo.service.js';
+import { getClientIP } from '../../user/services/geo.service.js';
 import {
     UserGroupValidationError,
     UserGroupNotFoundError,
@@ -9,7 +9,7 @@ import {
     UserGroupSystemProtectedError,
     UserGroupMemberNotFoundError
 } from '../services/user-group.errors.js';
-import { parsePositiveInt, parseNonNegativeInt } from './query-params.js';
+import { parsePositiveInt, parseNonNegativeInt } from '../../../api/query-params.js';
 
 /**
  * Controller for admin user-group endpoints.
