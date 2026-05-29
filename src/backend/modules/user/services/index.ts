@@ -4,7 +4,7 @@ export { WalletChallengeService } from './wallet-challenge.service.js';
 export type { IWalletChallenge, WalletChallengeAction } from './wallet-challenge.service.js';
 export { WalletService, WALLETS_COLLECTION } from './wallet.service.js';
 export type { WalletAction, IWalletMutationInput } from './wallet.service.js';
-export { UserGroupService, RESERVED_ADMIN_PATTERN, SYSTEM_ADMIN_GROUP_ID } from './user-group.service.js';
+export { UserGroupService, SYSTEM_ADMIN_GROUP_ID } from './user-group.service.js';
 export { computeUserAuthStatus, withAuthStatus } from './auth-status.js';
 export { GscService } from './gsc.service.js';
 export type { IGscStatus, IGscKeyword, IGscQueryDocument } from './gsc.service.js';

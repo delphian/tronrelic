@@ -2,34 +2,32 @@
  * User-group service.
  *
  * Owns the admin-defined group registry (`module_user_groups` collection)
- * and all membership reads/writes against the user document's `groups[]`
- * array. Plugins discover this service on the registry as `'user-groups'`
- * and consume it through the `IUserGroupService` contract — see
- * `packages/types/src/user/IUserGroupService.ts` for the public surface.
+ * and the public `IUserGroupService` contract that plugins discover on the
+ * service registry as `'user-groups'` — see
+ * `packages/types/src/user/IUserGroupService.ts` for the surface.
  *
- * ## Reserved-admin namespace
+ * ## Membership lives on Better Auth
  *
- * Naked `admin` and admin-derivative slugs without further context are
- * platform-reserved: only the user module itself may seed them, and only
- * with `system: true`. The deny pattern matches `admin`, `admins`,
- * `administrator(s)`, `super-admin(s)`, `superadmin(s)`, `sub-admin(s)`,
- * `subadmin(s)`, and `root(s)`. Context-scoped names (`market-admin`,
- * `plugin-admins`) are admin-creatable and treated as ordinary groups.
+ * This service owns group *definitions*. Membership reads and writes are
+ * delegated to {@link GroupService}, the single owner of the `groups`
+ * additional field on Better Auth's user collection
+ * (`module_user_auth_users`). Keeping definitions here and membership there
+ * gives each a single responsibility and a single source of truth: the
+ * auth facade, the BA after-create admin promotion, and this service all
+ * route membership through one primitive rather than writing the array
+ * from several places.
  *
- * ## isAdmin trust caveat
+ * ## Admin is a single `admin` group
  *
- * `isAdmin(userId)` reflects membership in any system-flagged admin-pattern
- * group. Membership is keyed by user UUID, which is a knowledge factor only
- * (cookies are client-controlled). The predicate is suitable for plugin
- * UX gating but is **not** equivalent to the platform's `requireAdmin`
- * token check; sensitive operations should still require the token or pair
- * group membership with `hasVerifiedWallet`.
+ * `isAdmin` is membership in the literal `admin` group — no reserved-slug
+ * pattern, no admin-derivative tiers. The seeded `admin` row is protected
+ * from rename and delete by its `system: true` flag, and the unique index
+ * on `id` prevents a second `admin` definition.
  */
 
 import type { Collection } from 'mongodb';
 import type {
     IDatabaseService,
-    ICacheService,
     ISystemLogService,
     IUserGroup,
     IUserGroupService,
@@ -37,7 +35,7 @@ import type {
     IUpdateUserGroupInput
 } from '@/types';
 import type { IUserGroupDocument } from '../database/IUserGroupDocument.js';
-import type { IUserDocument } from '../database/IUserDocument.js';
+import { GroupService, ADMIN_GROUP_ID } from './group.service.js';
 import {
     UserGroupValidationError,
     UserGroupNotFoundError,
@@ -47,41 +45,33 @@ import {
 } from './user-group.errors.js';
 
 /**
- * Reserved-admin slug pattern. See module JSDoc for matched cases.
- */
-const RESERVED_ADMIN_PATTERN =
-    /^(super[-_]?|sub[-_]?)?admin(istrator)?s?$|^roots?$/i;
-
-/**
  * Valid slug pattern for admin-defined group ids. Lowercase letters,
  * digits, and hyphens; must start with a letter and not end in a hyphen.
  */
 const SLUG_PATTERN = /^[a-z][a-z0-9-]*[a-z0-9]$|^[a-z]$/;
 
 /**
- * Canonical seeded admin group id. Other system admin groups may exist
- * later; `isAdmin` detects all of them via the reserved-admin pattern,
- * not by hardcoding this constant.
+ * Canonical seeded admin group id. Sourced from {@link ADMIN_GROUP_ID}
+ * so the literal `'admin'` has one definition shared with the membership
+ * primitive and the auth facade.
  */
-const SYSTEM_ADMIN_GROUP_ID = 'admin';
+const SYSTEM_ADMIN_GROUP_ID = ADMIN_GROUP_ID;
 
 export class UserGroupService implements IUserGroupService {
     private static instance: UserGroupService;
     private readonly groupsCollection: Collection<IUserGroupDocument>;
-    private readonly usersCollection: Collection<IUserDocument>;
 
     private constructor(
         database: IDatabaseService,
-        private readonly cacheService: ICacheService,
+        private readonly groupService: GroupService,
         private readonly logger: ISystemLogService
     ) {
         this.groupsCollection = database.getCollection<IUserGroupDocument>('module_user_groups');
-        this.usersCollection = database.getCollection<IUserDocument>('users');
     }
 
-    public static setDependencies(database: IDatabaseService, cacheService: ICacheService, logger: ISystemLogService): void {
+    public static setDependencies(database: IDatabaseService, groupService: GroupService, logger: ISystemLogService): void {
         if (!UserGroupService.instance) {
-            UserGroupService.instance = new UserGroupService(database, cacheService, logger);
+            UserGroupService.instance = new UserGroupService(database, groupService, logger);
         }
     }
 
@@ -97,13 +87,14 @@ export class UserGroupService implements IUserGroupService {
     }
 
     /**
-     * Create indexes on the groups collection. Called from `UserModule.init`.
+     * Create indexes on the group-definition collection. Called from
+     * `UserModule.init`. The membership index on the Better Auth user
+     * collection is owned by {@link GroupService.createIndexes}.
      */
     async createIndexes(): Promise<void> {
         await this.groupsCollection.createIndex({ id: 1 }, { unique: true });
         await this.groupsCollection.createIndex({ system: 1 });
-        await this.usersCollection.createIndex({ groups: 1 });
-        this.logger.info('User-group indexes created');
+        this.logger.info('User-group definition indexes created');
     }
 
     /**
@@ -163,15 +154,11 @@ export class UserGroupService implements IUserGroupService {
                 `Invalid group id "${id}": must be lowercase letters, digits, and hyphens, starting with a letter`
             );
         }
-        if (RESERVED_ADMIN_PATTERN.test(id)) {
-            throw new UserGroupValidationError(
-                `Group id "${id}" is reserved for platform-defined admin groups; choose a context-scoped name (e.g. "market-admin")`
-            );
-        }
 
         // Pre-check gives fast feedback in the uncontended case. The unique
         // index on `id` is the actual correctness anchor — see the catch
-        // below for the concurrent-insert race.
+        // below for the concurrent-insert race. It also blocks a second
+        // `admin` definition: the seeded system row already holds the id.
         const existing = await this.groupsCollection.findOne({ id });
         if (existing) {
             throw new UserGroupConflictError(id);
@@ -243,45 +230,23 @@ export class UserGroupService implements IUserGroupService {
 
         // Cascade first so that a partial failure leaves a recoverable
         // state. If the definition delete below fails, the operator can
-        // retry — the definition is still present, $pull on already-clean
-        // arrays is a no-op, and no orphaned references are stranded in
-        // user.groups[]. The reverse order would strand references that
+        // retry — the definition is still present, the membership $pull is
+        // idempotent, and no orphaned references are stranded in any user's
+        // groups[]. The reverse order would strand references that
         // removeMember (which validates the definition exists) cannot clear.
-        //
-        // Enumerate affected user ids before the cascade so we can invalidate
-        // their UserService caches after the write. Otherwise consumers
-        // reading via UserService would see stale `groups[]` until the
-        // 1-hour TTL expires.
-        const affectedUsers = await this.usersCollection
-            .find({ groups: id }, { projection: { id: 1 } })
-            .toArray();
-        await this.usersCollection.updateMany(
-            { groups: id },
-            { $pull: { groups: id } as any, $set: { updatedAt: new Date() } }
-        );
+        const modified = await this.groupService.removeGroupFromAllMembers(id);
         await this.groupsCollection.deleteOne({ id });
-        await Promise.all(affectedUsers.map(u => this.invalidateUserCache(u.id)));
-        this.logger.info({ groupId: id, affectedUsers: affectedUsers.length }, 'User group deleted');
+        this.logger.info({ groupId: id, affectedUsers: modified }, 'User group deleted');
     }
 
-    // ==================== Membership ====================
+    // ==================== Membership (delegated to Better Auth) ====================
 
     async getUserGroups(userId: string): Promise<string[]> {
-        const canonicalId = await this.resolveCanonicalUserId(userId);
-        const doc = await this.usersCollection.findOne(
-            { id: canonicalId },
-            { projection: { groups: 1 } }
-        );
-        return doc?.groups ?? [];
+        return this.groupService.getUserGroups(userId);
     }
 
     async isMember(userId: string, groupId: string): Promise<boolean> {
-        const canonicalId = await this.resolveCanonicalUserId(userId);
-        const count = await this.usersCollection.countDocuments(
-            { id: canonicalId, groups: groupId },
-            { limit: 1 }
-        );
-        return count > 0;
+        return this.groupService.isMember(userId, groupId);
     }
 
     async addMember(userId: string, groupId: string): Promise<void> {
@@ -289,15 +254,10 @@ export class UserGroupService implements IUserGroupService {
         if (!group) {
             throw new UserGroupNotFoundError(groupId);
         }
-        const canonicalId = await this.resolveCanonicalUserId(userId);
-        const result = await this.usersCollection.updateOne(
-            { id: canonicalId },
-            { $addToSet: { groups: groupId } as any, $set: { updatedAt: new Date() } }
-        );
-        if (result.matchedCount === 0) {
+        const matched = await this.groupService.addMember(userId, groupId);
+        if (!matched) {
             throw new UserGroupMemberNotFoundError(userId);
         }
-        await this.invalidateUserCache(canonicalId);
     }
 
     async removeMember(userId: string, groupId: string): Promise<void> {
@@ -305,25 +265,18 @@ export class UserGroupService implements IUserGroupService {
         if (!group) {
             throw new UserGroupNotFoundError(groupId);
         }
-        const canonicalId = await this.resolveCanonicalUserId(userId);
-        await this.usersCollection.updateOne(
-            { id: canonicalId },
-            { $pull: { groups: groupId } as any, $set: { updatedAt: new Date() } }
-        );
-        await this.invalidateUserCache(canonicalId);
+        await this.groupService.removeMember(userId, groupId);
     }
 
     /**
      * Replace the user's full membership array. See contract JSDoc in
      * `IUserGroupService` for semantics.
      *
-     * The intentional difference from looping `addMember`/`removeMember`:
-     * one atomic `$set` of the deduplicated target array. This collapses
-     * N existence-checks and N updateOne calls into a single round trip,
-     * and matches the admin UX — operator sees a snapshot, ticks boxes,
-     * saves their explicit intent. Concurrent plugin writes between the
-     * admin's read and save are deliberately overwritten because that is
-     * what "set the membership to exactly this" means.
+     * Validates every id resolves to a real group definition before
+     * delegating the atomic `$set` to {@link GroupService}. The set-semantics
+     * (concurrent writes between an admin's read and save are deliberately
+     * overwritten) live in the primitive; the definition validation lives
+     * here because this service owns the registry.
      */
     async setUserGroups(userId: string, groupIds: string[]): Promise<string[]> {
         if (!Array.isArray(groupIds)) {
@@ -340,8 +293,8 @@ export class UserGroupService implements IUserGroupService {
         ));
 
         // Validate every id resolves to a real group definition. A single
-        // $in query is cheaper than N findOnes and surfaces all unknown
-        // ids in the same trip if needed (we throw on the first one).
+        // $in query is cheaper than N findOnes and surfaces unknown ids in
+        // one trip (we throw on the first one).
         if (desired.length > 0) {
             const existing = await this.groupsCollection
                 .find({ id: { $in: desired } }, { projection: { id: 1 } })
@@ -353,17 +306,12 @@ export class UserGroupService implements IUserGroupService {
             }
         }
 
-        const canonicalId = await this.resolveCanonicalUserId(userId);
-        const result = await this.usersCollection.updateOne(
-            { id: canonicalId },
-            { $set: { groups: desired, updatedAt: new Date() } }
-        );
-        if (result.matchedCount === 0) {
+        const matched = await this.groupService.setUserGroups(userId, desired);
+        if (!matched) {
             throw new UserGroupMemberNotFoundError(userId);
         }
-        await this.invalidateUserCache(canonicalId);
         this.logger.info(
-            { userId: canonicalId, groupCount: desired.length },
+            { userId, groupCount: desired.length },
             'User group membership replaced'
         );
         return desired;
@@ -371,11 +319,7 @@ export class UserGroupService implements IUserGroupService {
 
     /**
      * Paginated member list for a single group. See contract JSDoc in
-     * `IUserGroupService` for semantics.
-     *
-     * Filters out `mergedInto`-flagged tombstones so the admin UI never
-     * shows duplicate identities for a single human after a wallet-driven
-     * identity merge.
+     * `IUserGroupService` for semantics. Returns Better Auth user ids.
      */
     async getMembers(
         groupId: string,
@@ -385,87 +329,16 @@ export class UserGroupService implements IUserGroupService {
         if (!group) {
             throw new UserGroupNotFoundError(groupId);
         }
-
-        const limit = Math.min(Math.max(1, options.limit ?? 100), 500);
-        const skip = Math.max(0, options.skip ?? 0);
-
-        const filter = { groups: groupId, mergedInto: { $exists: false } };
-        const [docs, total] = await Promise.all([
-            this.usersCollection
-                .find(filter, { projection: { id: 1 } })
-                .sort({ id: 1 })
-                .skip(skip)
-                .limit(limit)
-                .toArray(),
-            this.usersCollection.countDocuments(filter)
-        ]);
-
-        return {
-            userIds: docs.map(d => d.id),
-            total
-        };
+        return this.groupService.getMembers(groupId, options);
     }
 
     // ==================== Special: admin ====================
 
     async isAdmin(userId: string): Promise<boolean> {
-        // Resolve the user's group ids in one query, then test each id
-        // against the reserved-admin pattern with system: true on the
-        // group definition. This handles future system-seeded admin
-        // variants without code changes.
-        const canonicalId = await this.resolveCanonicalUserId(userId);
-        const user = await this.usersCollection.findOne(
-            { id: canonicalId },
-            { projection: { groups: 1 } }
-        );
-        const groupIds = user?.groups ?? [];
-        if (groupIds.length === 0) return false;
-
-        const adminCandidates = groupIds.filter(g => RESERVED_ADMIN_PATTERN.test(g));
-        if (adminCandidates.length === 0) return false;
-
-        const matched = await this.groupsCollection.countDocuments(
-            { id: { $in: adminCandidates }, system: true },
-            { limit: 1 }
-        );
-        return matched > 0;
+        return this.groupService.isAdmin(userId);
     }
 
     // ==================== Helpers ====================
-
-    /**
-     * Follow a single `mergedInto` hop to the canonical user id.
-     *
-     * Identity reconciliation in `UserService` flattens pointer chains during
-     * the merge (every UUID already pointing at the loser is rewritten to
-     * point at the winner), so a single hop is always sufficient — no loop
-     * required.
-     *
-     * Plugins commonly retain a pre-merge UUID (cookie, persisted reference,
-     * cached value). Resolving the pointer here keeps membership reads and
-     * writes accurate after a wallet-driven identity swap, instead of
-     * silently operating on the loser tombstone — whose `groups[]` array
-     * is whatever the loser had at merge time and is never updated again.
-     */
-    private async resolveCanonicalUserId(userId: string): Promise<string> {
-        const doc = await this.usersCollection.findOne(
-            { id: userId },
-            { projection: { mergedInto: 1 } }
-        );
-        return doc?.mergedInto ?? userId;
-    }
-
-    /**
-     * Drop the affected user's `UserService` cache entry so consumers
-     * reading via `/api/user/:id` and other UserService paths see the
-     * updated `groups[]` array immediately. UserService caches users
-     * with the tag `user:${userId}` and a 1-hour TTL — without this
-     * call, membership changes lag behind by up to an hour.
-     */
-    private async invalidateUserCache(userId: string): Promise<void> {
-        await this.cacheService.invalidate(`user:${userId}`);
-    }
-
 
     private toPublicGroup(doc: IUserGroupDocument | Omit<IUserGroupDocument, '_id'>): IUserGroup {
         return {
@@ -479,4 +352,4 @@ export class UserGroupService implements IUserGroupService {
     }
 }
 
-export { RESERVED_ADMIN_PATTERN, SYSTEM_ADMIN_GROUP_ID };
+export { SYSTEM_ADMIN_GROUP_ID };

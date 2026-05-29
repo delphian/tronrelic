@@ -272,6 +272,71 @@ export class GroupService {
     }
 
     /**
+     * List the user ids belonging to a group, paginated.
+     *
+     * Powers the admin "members of group" view. Returns Better Auth user
+     * ids (the `_id` values BA exposes as `user.id`) plus the unpaginated
+     * total so the caller can render pagination controls. `limit` is
+     * clamped to [1, 500]; `skip` floors at 0.
+     *
+     * @param groupId - Group id to enumerate membership for.
+     * @param options - Optional `limit` / `skip` pagination window.
+     * @returns Page of member ids and the total match count.
+     */
+    public async getMembers(
+        groupId: string,
+        options: { limit?: number; skip?: number } = {}
+    ): Promise<{ userIds: string[]; total: number }> {
+        const collection = this.getCollection();
+        const limit = Math.min(Math.max(1, options.limit ?? 100), 500);
+        const skip = Math.max(0, options.skip ?? 0);
+        const filter = { groups: groupId };
+        const [docs, total] = await Promise.all([
+            collection
+                .find(filter, { projection: { _id: 1 } })
+                .sort({ _id: 1 })
+                .skip(skip)
+                .limit(limit)
+                .toArray(),
+            collection.countDocuments(filter)
+        ]);
+        return { userIds: docs.map((d) => d._id), total };
+    }
+
+    /**
+     * Remove a group id from every member's `groups` array.
+     *
+     * Called when a group definition is deleted so no user retains a
+     * dangling membership. Idempotent; users without the group are
+     * untouched by the `$pull`.
+     *
+     * @param groupId - Group id to strip from all members.
+     * @returns Number of user documents modified.
+     */
+    public async removeGroupFromAllMembers(groupId: string): Promise<number> {
+        const collection = this.getCollection();
+        const result = await collection.updateMany(
+            { groups: groupId },
+            { $pull: { groups: groupId } }
+        );
+        return result.modifiedCount;
+    }
+
+    /**
+     * Ensure the membership index on the Better Auth user collection.
+     *
+     * A `{ groups: 1 }` index keeps membership lookups (`isMember`,
+     * `getMembers`, the delete cascade) from scanning the full user
+     * collection. Adding a secondary index does not alter the schema
+     * Better Auth owns, so it is safe at this boundary.
+     */
+    public async createIndexes(): Promise<void> {
+        const collection = this.getCollection();
+        await collection.createIndex({ groups: 1 });
+        this.logger.info('Group membership index ensured on Better Auth user collection');
+    }
+
+    /**
      * Resolve the raw `module_user_auth_users` collection handle.
      *
      * Better Auth's adapter populates this collection; we read and

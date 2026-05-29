@@ -1,8 +1,10 @@
 /// <reference types="vitest" />
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import type { ICacheService, ISystemLogService } from '@/types';
+import { describe, it, expect, beforeEach } from 'vitest';
+import type { ISystemLogService } from '@/types';
 import { UserGroupService } from '../services/user-group.service.js';
+import { GroupService } from '../services/group.service.js';
+import { AUTH_USERS_COLLECTION } from '../services/auth-constants.js';
 import { createMockDatabaseService } from '../../../tests/vitest/mocks/database-service.js';
 
 /**
@@ -33,10 +35,10 @@ class StubLogger implements ISystemLogService {
 }
 
 /**
- * Helper: seed a system or admin-defined group row directly into the mock
- * collection, sidestepping `$setOnInsert` upsert (unsupported by the
- * shared mock). Tests that exercise `seedSystemGroups` itself still call
- * the service method — this helper is only for setup of dependent state.
+ * Helper: seed a group definition row directly into the mock
+ * `module_user_groups` collection, sidestepping `$setOnInsert` upsert
+ * (unsupported by the shared mock). Tests that exercise `seedSystemGroups`
+ * itself still call the service method.
  */
 function seedGroup(
     db: ReturnType<typeof createMockDatabaseService>,
@@ -54,51 +56,31 @@ function seedGroup(
 }
 
 /**
- * Helper: seed a user document directly into the users collection. The
- * shared mock doesn't apply `$addToSet`/`$pull`, so membership state is
- * established by direct seeding rather than service calls.
+ * Helper: seed a Better Auth user document directly into the
+ * `module_user_auth_users` collection. Membership now lives on the BA
+ * user's `groups` additional field (keyed by `_id`), so seeding here is
+ * how we establish membership state — the shared mock does not apply
+ * `$addToSet`/`$pull`, so write paths are validated via matched/throw
+ * contracts rather than array mutation.
  */
 function seedUser(
     db: ReturnType<typeof createMockDatabaseService>,
     id: string,
     groups: string[] = []
 ): void {
-    const now = new Date();
-    db.getCollectionData('users').push({
-        id,
-        groups,
-        wallets: [],
-        preferences: {},
-        activity: {},
-        createdAt: now,
-        updatedAt: now
-    });
-}
-
-/**
- * Minimal in-memory mock of `ICacheService`. The user-group service only
- * calls `invalidate()` so the rest of the surface area is no-op stubs.
- */
-function createMockCache(): ICacheService {
-    return {
-        get: vi.fn(async () => null),
-        set: vi.fn(async () => {}),
-        invalidate: vi.fn(async () => {}),
-        del: vi.fn(async () => 0),
-        keys: vi.fn(async () => [])
-    } as unknown as ICacheService;
+    db.getCollectionData(AUTH_USERS_COLLECTION).push({ _id: id, groups });
 }
 
 describe('UserGroupService', () => {
     let mockDatabase: ReturnType<typeof createMockDatabaseService>;
-    let mockCache: ICacheService;
     let service: UserGroupService;
 
     beforeEach(async () => {
         mockDatabase = createMockDatabaseService();
-        mockCache = createMockCache();
+        GroupService.resetForTests();
+        GroupService.setDependencies(mockDatabase, new StubLogger());
         UserGroupService.resetInstance();
-        UserGroupService.setDependencies(mockDatabase, mockCache, new StubLogger());
+        UserGroupService.setDependencies(mockDatabase, GroupService.getInstance(), new StubLogger());
         service = UserGroupService.getInstance();
         // Seed the admin system row directly. The service's
         // `seedSystemGroups()` upserts via $setOnInsert which the shared
@@ -122,42 +104,27 @@ describe('UserGroupService', () => {
         });
     });
 
-    // -------- Reserved-admin pattern --------
+    // -------- admin is just the seeded `admin` row --------
 
-    describe('createGroup reserved-admin enforcement', () => {
-        const rejectedSlugs = [
-            'admin',
+    describe('createGroup admin handling', () => {
+        it('rejects "admin" because the seeded system row already holds the id', async () => {
+            await expect(
+                service.createGroup({ id: 'admin', name: 'X' })
+            ).rejects.toThrow(/already exists/i);
+        });
+
+        const formerlyReserved = [
             'admins',
             'administrator',
-            'administrators',
             'super-admin',
-            'super-admins',
             'superadmin',
             'sub-admin',
-            'subadmins',
             'root',
             'roots'
         ];
 
-        for (const slug of rejectedSlugs) {
-            it(`rejects "${slug}" as reserved`, async () => {
-                await expect(
-                    service.createGroup({ id: slug, name: 'X' })
-                ).rejects.toThrow(/reserved|already exists/i);
-            });
-        }
-
-        const acceptedSlugs = [
-            'market-admin',
-            'plugin-admins',
-            'bazi-administrator',
-            'admin-market',
-            'vip-traders',
-            'whale-watchers'
-        ];
-
-        for (const slug of acceptedSlugs) {
-            it(`accepts "${slug}" as context-scoped`, async () => {
+        for (const slug of formerlyReserved) {
+            it(`accepts "${slug}" — admin-derivative slugs are no longer reserved`, async () => {
                 const group = await service.createGroup({ id: slug, name: slug });
                 expect(group.id).toBe(slug);
                 expect(group.system).toBe(false);
@@ -227,14 +194,12 @@ describe('UserGroupService', () => {
         });
     });
 
-    // -------- Membership --------
+    // -------- Membership (delegated to GroupService over module_user_auth_users) --------
     //
-    // Note: membership write paths (`addMember`/`removeMember`/cascade on
-    // delete) rely on `$addToSet` and `$pull`, neither of which is
-    // implemented by the shared mock. We therefore seed membership state
-    // directly and assert the read-side contract (`isMember`,
-    // `getUserGroups`, error paths). The mutation paths are exercised
-    // end-to-end by integration tests against a real database.
+    // Membership writes (`$addToSet`/`$pull`/`$set` of the array) are owned
+    // by GroupService; the shared mock applies `$set` to top-level fields but
+    // not `$addToSet`/`$pull`. We seed membership state directly and assert
+    // the read-side contract plus the definition-validation/throw paths.
 
     describe('membership reads', () => {
         const userId = 'user-1';
@@ -244,7 +209,7 @@ describe('UserGroupService', () => {
             seedGroup(mockDatabase, { id: 'vip', name: 'VIP' });
         });
 
-        it('isMember returns true when group is in user.groups', async () => {
+        it('isMember returns true when group is in the BA user.groups', async () => {
             expect(await service.isMember(userId, 'vip')).toBe(true);
         });
 
@@ -275,7 +240,7 @@ describe('UserGroupService', () => {
 
         it('addMember throws on unknown user', async () => {
             seedGroup(mockDatabase, { id: 'vip', name: 'VIP' });
-            await expect(service.addMember('ghost', 'vip')).rejects.toThrow(/does not exist/i);
+            await expect(service.addMember('ghost', 'vip')).rejects.toThrow(/not found|does not exist/i);
         });
 
         it('removeMember throws on unknown group', async () => {
@@ -309,29 +274,23 @@ describe('UserGroupService', () => {
         it('throws on unknown user', async () => {
             await expect(
                 service.setUserGroups('ghost-user', ['vip'])
-            ).rejects.toThrow(/does not exist/i);
+            ).rejects.toThrow(/not found|does not exist/i);
         });
 
-        it('replaces user.groups atomically with dedup and lowercase', async () => {
+        it('replaces the BA user.groups atomically with dedup and lowercase', async () => {
             const result = await service.setUserGroups(userId, ['VIP', 'whales', 'vip']);
             expect(result).toEqual(['vip', 'whales']);
-            // Confirm the persisted document reflects the new array, not the
-            // originally-seeded ['vip']. The mock supports $set on top-level
-            // fields, which is what the service uses for the atomic replace.
-            const doc = mockDatabase.getCollectionData('users').find(u => u.id === userId);
+            // Confirm the persisted BA user document reflects the new array.
+            // GroupService uses a top-level $set, which the mock supports.
+            const doc = mockDatabase.getCollectionData(AUTH_USERS_COLLECTION).find(u => u._id === userId);
             expect(doc?.groups).toEqual(['vip', 'whales']);
         });
 
         it('accepts an empty array to clear all memberships', async () => {
             const result = await service.setUserGroups(userId, []);
             expect(result).toEqual([]);
-            const doc = mockDatabase.getCollectionData('users').find(u => u.id === userId);
+            const doc = mockDatabase.getCollectionData(AUTH_USERS_COLLECTION).find(u => u._id === userId);
             expect(doc?.groups).toEqual([]);
-        });
-
-        it('invalidates the user cache after a successful write', async () => {
-            await service.setUserGroups(userId, ['whales']);
-            expect(mockCache.invalidate).toHaveBeenCalledWith(`user:${userId}`);
         });
     });
 
@@ -375,25 +334,15 @@ describe('UserGroupService', () => {
             seedGroup(mockDatabase, { id: 'vip-traders', name: 'VIP Traders' });
         });
 
-        it('returns true for member of system admin group', async () => {
+        it('returns true for a member of the admin group', async () => {
             expect(await service.isAdmin(adminUser)).toBe(true);
         });
 
-        it('returns false for member of admin-pattern group that is NOT system-flagged', async () => {
-            // Forge a non-system group whose id matches the reserved-admin
-            // pattern. The service refuses to create such rows itself, but
-            // direct DB seeding bypasses validation. `isAdmin` must still
-            // return false because the row's `system` flag is false.
-            seedGroup(mockDatabase, { id: 'super-admin', name: 'Forged', system: false });
-            seedUser(mockDatabase, 'forger', ['super-admin']);
-            expect(await service.isAdmin('forger')).toBe(false);
-        });
-
-        it('returns false for non-admin user', async () => {
+        it('returns false for a non-admin user', async () => {
             expect(await service.isAdmin(normalUser)).toBe(false);
         });
 
-        it('returns false for unknown user', async () => {
+        it('returns false for an unknown user', async () => {
             expect(await service.isAdmin('ghost')).toBe(false);
         });
     });

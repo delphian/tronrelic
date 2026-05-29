@@ -163,6 +163,7 @@ describe('requireAdmin middleware', () => {
         mockCache = new MockCache();
         UserService.resetInstance();
         UserGroupService.resetInstance();
+        GroupService.resetForTests();
 
         UserService.setDependencies(
             mockDb, mockCache, new NullLogger(),
@@ -171,7 +172,8 @@ describe('requireAdmin middleware', () => {
         );
         userService = UserService.getInstance();
 
-        UserGroupService.setDependencies(mockDb, mockCache, new NullLogger());
+        GroupService.setDependencies(mockDb, new NullLogger());
+        UserGroupService.setDependencies(mockDb, GroupService.getInstance(), new NullLogger());
         groupService = UserGroupService.getInstance();
 
         // The mock database service's `updateOne` upsert path doesn't

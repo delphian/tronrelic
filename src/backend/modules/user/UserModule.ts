@@ -279,11 +279,21 @@ export class UserModule implements IModule<IUserModuleDependencies> {
         // post-hydration fallback path.
         this.userService.setTrafficService(this.trafficService);
 
-        // Initialize UserGroupService singleton, build indexes, seed system groups.
+        // Initialize GroupService first — it owns Better Auth group membership
+        // (the `groups` field on module_user_auth_users) and is both the
+        // membership primitive UserGroupService delegates to and the service
+        // the BA after-create hook calls to promote ADMIN_EMAILS signups.
+        GroupService.setDependencies(this.database, this.logger);
+        this.groupService = GroupService.getInstance();
+        await this.groupService.createIndexes();
+
+        // Initialize UserGroupService singleton (group-definition registry plus
+        // the public 'user-groups' contract), build definition indexes, seed
+        // the admin group. Composes GroupService for all membership reads/writes,
+        // so no membership state lives on the legacy users collection.
         // Must precede UserController construction so the controller can inject
-        // it for `withAuthStatus` response shaping — keeps the cross-tier
-        // admin predicate (middleware, controller, frontend) in one place.
-        UserGroupService.setDependencies(this.database, this.cacheService, this.logger);
+        // it for `withAuthStatus` response shaping.
+        UserGroupService.setDependencies(this.database, this.groupService, this.logger);
         this.userGroupService = UserGroupService.getInstance();
         await this.userGroupService.createIndexes();
         await this.userGroupService.seedSystemGroups();
@@ -310,14 +320,11 @@ export class UserModule implements IModule<IUserModuleDependencies> {
 
         // Better Auth wiring (Phase 1 of the auth refactor).
         //
-        // GroupService is configured first because the BA after-create
-        // hook needs to call addMember() during signup. The auth
-        // factory takes a raw MongoDB Db handle — see auth.ts for the
-        // documented exception to the IDatabaseService rule. The
-        // facade is configured last so it cannot be queried before
-        // the auth instance exists.
-        GroupService.setDependencies(this.database, this.logger);
-        this.groupService = GroupService.getInstance();
+        // GroupService (configured above) backs the BA after-create hook's
+        // addMember() call during signup. The auth factory takes a raw
+        // MongoDB Db handle — see auth.ts for the documented exception to
+        // the IDatabaseService rule. The facade is configured last so it
+        // cannot be queried before the auth instance exists.
         const authDb = mongoose.connection.db;
         if (!authDb) {
             throw new Error(
