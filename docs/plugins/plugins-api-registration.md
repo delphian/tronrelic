@@ -29,7 +29,7 @@ Remember: `req.params`, `req.query`, `req.body`, and `req.ip` are plain objects;
 
 **`requiresAdmin` runs the admin gate.** The `requireAdmin` middleware admits the call when, in order, (a) the Better Auth session is in the `admin` group, (b) — during the legacy-coexistence window — the signed `tronrelic_uid` cookie identifies a verified user in the `admin` group, or (c) the request carries `ADMIN_API_TOKEN` via `x-admin-token` / `Authorization: Bearer`. The middleware tags the request with `req.adminVia = 'user' | 'service-token'` so handlers and audit logs can attribute the call. See [system-auth.md](../system/system-auth.md) for the authorization model.
 
-The middleware short-circuits failures with **401**, or **503 when `ADMIN_API_TOKEN` is unset and no admin user resolves** — that 503 is the deliberate "admin surface disabled" signal, not a misconfiguration to retry. See [admin authentication — dual-track](../../src/backend/modules/user/README.md#admin-authentication--dual-track) for the canonical specification.
+The middleware short-circuits failures with **401**, or **503 when `ADMIN_API_TOKEN` is unset and no admin user resolves** — that 503 is the deliberate "admin surface disabled" signal, not a misconfiguration to retry. See [system-auth.md](../system/system-auth.md) for the canonical specification of the admin authorization model.
 
 The middleware overlaps with `IUserGroupService.isAdmin(req.userId)` — both confirm a human is admin via group membership — but the middleware *also* accepts the service token, while `isAdmin` is a pure predicate the handler consults to vary response shape. Combine them when an admin SPA route both rejects unauthenticated callers and renders different UI per operator: gate with `requiresAdmin: true`, then call `isAdmin(req.userId)` inside the handler. See [plugins-service-registry.md](./plugins-service-registry.md) and the [User Module README](../../src/backend/modules/user/README.md#user-groups-and-admin-status) for the consumption side.
 
@@ -46,7 +46,7 @@ The user id is `req.authSession.user.id`; the canonical wallet is `req.authSessi
 ## Minimal Example
 
 ```typescript
-import { definePlugin, isLoggedIn, type IHttpRequest, type IHttpResponse, type IHttpNext } from '@/types';
+import { definePlugin, isLoggedIn, type IHttpRequest, type IHttpResponse, type IHttpNext, type IPluginDatabase } from '@delphian/tronrelic-types';
 import { whaleAlertsManifest } from '../manifest.js';
 
 // Mounts at /api/plugins/trp-whale-alerts/subscriptions

@@ -52,7 +52,7 @@ Markdown-authored CMS for admin-published content. `PageService` (singleton, imp
 
 ### Authentication & Authorization
 
-Identity runs on Better Auth (email-OTP / OAuth / passkey), mounted at `/api/auth/*`. The `attachAuthSession` middleware resolves the session once per request onto `req.authSession`; modules and plugins gate through predicates (`isLoggedIn` / `isInGroup` / `isAdmin` / `hasPrimaryWallet`) rather than reading session fields. A legacy UUID identity layer coexists and is removed in the Phase 6 cutover. See [system-auth.md](./system-auth.md).
+Identity runs on Better Auth (email-OTP / OAuth / passkey), mounted at `/api/auth/*`. The `attachAuthSession` middleware resolves the session once per request onto `req.authSession`; modules and plugins gate through predicates (`isLoggedIn` / `isInGroup` / `isAdmin`, plus `hasPrimaryWallet` for plugins) rather than reading session fields. A legacy UUID identity layer coexists and is removed in the Phase 6 cutover. See [system-auth.md](./system-auth.md).
 
 ### User
 

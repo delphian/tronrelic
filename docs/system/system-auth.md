@@ -80,4 +80,4 @@ The legacy UUID identity layer is **still live** and removed in Phase 6 of the B
 - [User Module README](../../src/backend/modules/user/README.md) — the module that hosts the Better Auth instance, facade, `GroupService`, wallet store, and the legacy system during coexistence.
 - [plugins-api-registration.md](../plugins/plugins-api-registration.md) — gating plugin REST routes (`req.authSession`, predicates, `requiresAdmin`).
 - [environment.md](../environment.md) — `BETTER_AUTH_SECRET`, `ADMIN_EMAILS`, `RESEND_*`, OAuth client env vars.
-- Source: `src/backend/modules/user/auth.ts`, `services/auth-facade.ts`, `services/group.service.ts`, `api/middleware/auth-session.ts`; `packages/types/src/auth/`.
+- Source: `src/backend/modules/user/auth.ts`, `src/backend/modules/user/services/auth-facade.ts`, `src/backend/modules/user/services/group.service.ts`, `src/backend/api/middleware/auth-session.ts`; `packages/types/src/auth/`.

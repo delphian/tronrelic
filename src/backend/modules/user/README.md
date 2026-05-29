@@ -65,7 +65,7 @@ Plugins have full access to user identity through two mechanisms:
 All plugin route handlers receive the resolved Better Auth session automatically via the `attachAuthSession` middleware. Gate on `req.authSession` using the synchronous predicates from `@delphian/tronrelic-types` — they read the pre-resolved session and act as type guards, so `req.authSession` narrows to non-null on the truthy branch:
 
 ```typescript
-import { isLoggedIn, hasPrimaryWallet } from '@delphian/tronrelic-types';
+import { isLoggedIn, hasPrimaryWallet, type IHttpRequest, type IHttpResponse } from '@delphian/tronrelic-types';
 
 // In plugin route handler
 handler: async (req: IHttpRequest, res: IHttpResponse) => {
