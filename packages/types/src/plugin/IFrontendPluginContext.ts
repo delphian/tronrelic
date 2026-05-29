@@ -764,16 +764,20 @@ export interface IFrontendPluginContext {
     /**
      * User state hook for accessing current user identity and wallet information.
      *
-     * Returns reactive user state that automatically updates when user data changes.
-     * Must be called within a component context (similar to React hooks pattern).
+     * Returns reactive user state that mirrors the Better Auth session.
+     * `isLoggedIn` is the primary gate; `hasPrimaryWallet` and `primaryWallet`
+     * are the wallet-specific signals. Must be called within a component
+     * context (similar to React hooks pattern).
      *
      * @example
      * ```typescript
-     * const { isVerified } = context.useUser();
+     * const { isLoggedIn, hasPrimaryWallet, primaryWallet } = context.useUser();
      *
-     * // Gate features to verified users
-     * if (!isVerified) {
-     *     return <p>Please verify your wallet to access this feature</p>;
+     * if (!isLoggedIn) {
+     *     return <p>Please sign in to access this feature</p>;
+     * }
+     * if (!hasPrimaryWallet) {
+     *     return <p>Link a TRON wallet to use this feature</p>;
      * }
      * ```
      */
