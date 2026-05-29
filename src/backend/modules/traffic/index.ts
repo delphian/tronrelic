@@ -13,7 +13,18 @@ export type {
     ITrafficEvent,
     TrafficEventType,
     IGetEventsForUserOptions,
-    ITrafficEventBuilderInputs
+    ITrafficEventBuilderInputs,
+    IAnalyticsDateRange,
+    IDailyVisitorPoint,
+    ITrafficVisitorOrigin,
+    ITrafficSourceBucket,
+    ILandingPageBucket,
+    IGeoBucket,
+    IDeviceBucket,
+    IRetentionPoint,
+    IBinaryConversionFunnel,
+    ICampaignPerformanceBucket,
+    IEngagementMetrics
 } from './services/traffic.service.js';
 export { GscService } from './services/gsc.service.js';
 export type { IGscStatus, IGscKeyword, IGscQueryDocument } from './services/gsc.service.js';

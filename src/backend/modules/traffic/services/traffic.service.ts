@@ -167,6 +167,99 @@ export interface ITrafficAggregateOptions {
 }
 
 /**
+ * Inclusive date window for the dashboard analytics reads.
+ *
+ * Defined locally (rather than imported from the user module) so the traffic
+ * module owns its analytics surface and does not couple to the soon-to-be-
+ * removed `UserService`. Structurally identical to the legacy `IDateRange`.
+ */
+export interface IAnalyticsDateRange {
+    /** Start of the window (inclusive). */
+    since: Date;
+    /** End of the window (inclusive). Defaults to "now" when omitted. */
+    until?: Date;
+}
+
+/** One day's distinct-visitor count. */
+export interface IDailyVisitorPoint {
+    day: string;
+    visitors: number;
+}
+
+/** First-touch attribution for one analytics visitor (tid). */
+export interface ITrafficVisitorOrigin {
+    candidateUid: string;
+    firstSeen: string;
+    path: string;
+    referer: string | null;
+    utmSource: string | null;
+    utmMedium: string | null;
+    utmCampaign: string | null;
+}
+
+/** Referrer-domain (or `'direct'`) row count. */
+export interface ITrafficSourceBucket {
+    source: string;
+    count: number;
+}
+
+/** Landing-path row count. */
+export interface ILandingPageBucket {
+    path: string;
+    count: number;
+}
+
+/** Country (ISO-3166 alpha-2) row count. `null` excluded by the query. */
+export interface IGeoBucket {
+    country: string | null;
+    count: number;
+}
+
+/** Device-category row count. */
+export interface IDeviceBucket {
+    device: string;
+    count: number;
+}
+
+/** New-vs-returning split for one day, keyed off each tid's global first-seen. */
+export interface IRetentionPoint {
+    day: string;
+    newVisitors: number;
+    returningVisitors: number;
+}
+
+/**
+ * Binary conversion funnel: distinct visitors (tids) vs. tids that ever carried
+ * a non-null `user_id` (i.e. were logged in for at least one event).
+ */
+export interface IBinaryConversionFunnel {
+    distinctVisitors: number;
+    converted: number;
+    conversionRate: number;
+}
+
+/** UTM-campaign aggregate joined to the binary conversion. */
+export interface ICampaignPerformanceBucket {
+    campaign: string;
+    source: string;
+    medium: string;
+    visitors: number;
+    conversions: number;
+    conversionRate: number;
+}
+
+/**
+ * Engagement metrics computed from `session_end` and `page` events. Reads near
+ * zero until Phase D wires the session-event emission surface.
+ */
+export interface IEngagementMetrics {
+    sessions: number;
+    avgDurationMs: number;
+    pagesPerSession: number;
+    bounceRate: number;
+}
+
+/**
  * ClickHouse table backing every traffic event the user module records.
  *
  * Exported so module-internal collaborators (notably migration 011's
@@ -445,6 +538,367 @@ export class TrafficService {
         } catch (error) {
             this.logger.warn({ error, dimension, sinceHours, limit }, 'Failed to read traffic aggregate');
             return [];
+        }
+    }
+
+    /**
+     * Build the WHERE fragment + params for an inclusive date window.
+     *
+     * Timestamps are formatted in ClickHouse's native `DateTime64(3)` UTC form
+     * and bound as `String` params, parsed back with `parseDateTimeBestEffort`
+     * so the comparison is timezone-stable regardless of node.
+     *
+     * @param range - Inclusive window; `until` omitted means "to now".
+     * @returns The SQL clause and its bound parameters.
+     */
+    private rangeParams(range: IAnalyticsDateRange): { clause: string; params: Record<string, unknown> } {
+        const params: Record<string, unknown> = { since: formatClickHouseDateTime64Utc(range.since) };
+        let clause = 'timestamp >= parseDateTimeBestEffort({since:String})';
+        if (range.until) {
+            params.until = formatClickHouseDateTime64Utc(range.until);
+            clause += ' AND timestamp <= parseDateTimeBestEffort({until:String})';
+        }
+        return { clause, params };
+    }
+
+    /**
+     * Distinct analytics visitors (tids) per calendar day over the window.
+     *
+     * @param range - Inclusive date window.
+     * @returns One point per day with the distinct-visitor count, oldest first.
+     */
+    async getDailyVisitors(range: IAnalyticsDateRange): Promise<IDailyVisitorPoint[]> {
+        if (!this.clickhouse) return [];
+        const { clause, params } = this.rangeParams(range);
+        const sql = `
+            SELECT toDate(timestamp) AS day, uniqExact(candidate_uid) AS visitors
+            FROM ${TABLE_NAME}
+            WHERE ${clause}
+            GROUP BY day
+            ORDER BY day ASC
+        `;
+        try {
+            const rows = await this.clickhouse.query<{ day: string; visitors: string | number }>(sql, params);
+            return rows.map(r => ({ day: String(r.day), visitors: Number(r.visitors) }));
+        } catch (error) {
+            this.logger.warn({ error }, 'Failed to read daily visitors');
+            return [];
+        }
+    }
+
+    /**
+     * First-touch attribution per tid: the path/referer/UTM of each visitor's
+     * earliest event in the window, newest-first by first-seen.
+     *
+     * @param range - Inclusive date window.
+     * @param limit - Page size.
+     * @param skip - Pagination offset.
+     * @returns First-touch origin rows.
+     */
+    async getVisitorOrigins(range: IAnalyticsDateRange, limit = 50, skip = 0): Promise<ITrafficVisitorOrigin[]> {
+        if (!this.clickhouse) return [];
+        const { clause, params } = this.rangeParams(range);
+        const sql = `
+            SELECT
+                candidate_uid AS candidateUid,
+                min(timestamp) AS firstSeen,
+                argMin(path, timestamp) AS path,
+                argMin(referer, timestamp) AS referer,
+                argMin(utm_source, timestamp) AS utmSource,
+                argMin(utm_medium, timestamp) AS utmMedium,
+                argMin(utm_campaign, timestamp) AS utmCampaign
+            FROM ${TABLE_NAME}
+            WHERE ${clause}
+            GROUP BY candidate_uid
+            ORDER BY firstSeen DESC
+            LIMIT {limit:UInt32} OFFSET {skip:UInt32}
+        `;
+        try {
+            const rows = await this.clickhouse.query<{
+                candidateUid: string; firstSeen: string; path: string;
+                referer: string | null; utmSource: string | null;
+                utmMedium: string | null; utmCampaign: string | null;
+            }>(sql, { ...params, limit, skip });
+            return rows.map(r => ({
+                candidateUid: r.candidateUid,
+                firstSeen: String(r.firstSeen),
+                path: r.path,
+                referer: r.referer,
+                utmSource: r.utmSource,
+                utmMedium: r.utmMedium,
+                utmCampaign: r.utmCampaign
+            }));
+        } catch (error) {
+            this.logger.warn({ error }, 'Failed to read visitor origins');
+            return [];
+        }
+    }
+
+    /**
+     * Referrer-domain breakdown. Null/empty referers collapse to `'direct'`.
+     *
+     * @param range - Inclusive date window.
+     * @returns Source-domain row counts, descending.
+     */
+    async getTrafficSources(range: IAnalyticsDateRange): Promise<ITrafficSourceBucket[]> {
+        if (!this.clickhouse) return [];
+        const { clause, params } = this.rangeParams(range);
+        const sql = `
+            SELECT
+                multiIf(referer IS NULL OR referer = '', 'direct', domain(referer)) AS source,
+                count() AS count
+            FROM ${TABLE_NAME}
+            WHERE ${clause}
+            GROUP BY source
+            ORDER BY count DESC
+        `;
+        try {
+            const rows = await this.clickhouse.query<{ source: string; count: string | number }>(sql, params);
+            return rows.map(r => ({ source: r.source, count: Number(r.count) }));
+        } catch (error) {
+            this.logger.warn({ error }, 'Failed to read traffic sources');
+            return [];
+        }
+    }
+
+    /**
+     * Top landing paths by event count.
+     *
+     * @param range - Inclusive date window.
+     * @param limit - Max rows.
+     * @returns Path row counts, descending.
+     */
+    async getTopLandingPages(range: IAnalyticsDateRange, limit = 20): Promise<ILandingPageBucket[]> {
+        if (!this.clickhouse) return [];
+        const { clause, params } = this.rangeParams(range);
+        const sql = `
+            SELECT path AS path, count() AS count
+            FROM ${TABLE_NAME}
+            WHERE ${clause} AND path != ''
+            GROUP BY path
+            ORDER BY count DESC
+            LIMIT {limit:UInt32}
+        `;
+        try {
+            const rows = await this.clickhouse.query<{ path: string; count: string | number }>(sql, { ...params, limit });
+            return rows.map(r => ({ path: r.path, count: Number(r.count) }));
+        } catch (error) {
+            this.logger.warn({ error }, 'Failed to read top landing pages');
+            return [];
+        }
+    }
+
+    /**
+     * Geographic distribution (ISO-3166 alpha-2). Null country excluded.
+     *
+     * @param range - Inclusive date window.
+     * @param limit - Max rows.
+     * @returns Country row counts, descending.
+     */
+    async getGeoDistribution(range: IAnalyticsDateRange, limit = 30): Promise<IGeoBucket[]> {
+        if (!this.clickhouse) return [];
+        const { clause, params } = this.rangeParams(range);
+        const sql = `
+            SELECT country, count() AS count
+            FROM ${TABLE_NAME}
+            WHERE ${clause} AND country IS NOT NULL
+            GROUP BY country
+            ORDER BY count DESC
+            LIMIT {limit:UInt32}
+        `;
+        try {
+            const rows = await this.clickhouse.query<{ country: string | null; count: string | number }>(sql, { ...params, limit });
+            return rows.map(r => ({ country: r.country, count: Number(r.count) }));
+        } catch (error) {
+            this.logger.warn({ error }, 'Failed to read geo distribution');
+            return [];
+        }
+    }
+
+    /**
+     * Device-category breakdown.
+     *
+     * @param range - Inclusive date window.
+     * @returns Device row counts, descending.
+     */
+    async getDeviceBreakdown(range: IAnalyticsDateRange): Promise<IDeviceBucket[]> {
+        if (!this.clickhouse) return [];
+        const { clause, params } = this.rangeParams(range);
+        const sql = `
+            SELECT device, count() AS count
+            FROM ${TABLE_NAME}
+            WHERE ${clause}
+            GROUP BY device
+            ORDER BY count DESC
+        `;
+        try {
+            const rows = await this.clickhouse.query<{ device: string; count: string | number }>(sql, params);
+            return rows.map(r => ({ device: r.device, count: Number(r.count) }));
+        } catch (error) {
+            this.logger.warn({ error }, 'Failed to read device breakdown');
+            return [];
+        }
+    }
+
+    /**
+     * New-vs-returning visitors per day. A tid is "new" on the day its global
+     * first-seen (across the full table) falls, "returning" otherwise. The
+     * full-table first-seen is computed in a subquery and joined to in-window
+     * day activity.
+     *
+     * @param range - Inclusive date window.
+     * @returns Per-day new/returning split, oldest first.
+     */
+    async getRetention(range: IAnalyticsDateRange): Promise<IRetentionPoint[]> {
+        if (!this.clickhouse) return [];
+        const { clause, params } = this.rangeParams(range);
+        const sql = `
+            SELECT
+                d.day AS day,
+                countIf(f.first_day = d.day) AS newVisitors,
+                countIf(f.first_day < d.day) AS returningVisitors
+            FROM (
+                SELECT candidate_uid, toDate(timestamp) AS day
+                FROM ${TABLE_NAME}
+                WHERE ${clause}
+                GROUP BY candidate_uid, day
+            ) AS d
+            INNER JOIN (
+                SELECT candidate_uid, min(toDate(timestamp)) AS first_day
+                FROM ${TABLE_NAME}
+                GROUP BY candidate_uid
+            ) AS f USING (candidate_uid)
+            GROUP BY day
+            ORDER BY day ASC
+        `;
+        try {
+            const rows = await this.clickhouse.query<{ day: string; newVisitors: string | number; returningVisitors: string | number }>(sql, params);
+            return rows.map(r => ({ day: String(r.day), newVisitors: Number(r.newVisitors), returningVisitors: Number(r.returningVisitors) }));
+        } catch (error) {
+            this.logger.warn({ error }, 'Failed to read retention');
+            return [];
+        }
+    }
+
+    /**
+     * Binary conversion funnel over the window: distinct visitors (tids) vs.
+     * tids that ever carried a non-null `user_id`.
+     *
+     * @param range - Inclusive date window.
+     * @returns Distinct/converted counts and the derived rate.
+     */
+    async getBinaryConversionFunnel(range: IAnalyticsDateRange): Promise<IBinaryConversionFunnel> {
+        const empty: IBinaryConversionFunnel = { distinctVisitors: 0, converted: 0, conversionRate: 0 };
+        if (!this.clickhouse) return empty;
+        const { clause, params } = this.rangeParams(range);
+        const sql = `
+            SELECT
+                uniqExact(candidate_uid) AS distinctVisitors,
+                uniqExactIf(candidate_uid, user_id IS NOT NULL) AS converted
+            FROM ${TABLE_NAME}
+            WHERE ${clause}
+        `;
+        try {
+            const rows = await this.clickhouse.query<{ distinctVisitors: string | number; converted: string | number }>(sql, params);
+            const row = rows[0];
+            if (!row) return empty;
+            const distinctVisitors = Number(row.distinctVisitors);
+            const converted = Number(row.converted);
+            return { distinctVisitors, converted, conversionRate: distinctVisitors > 0 ? converted / distinctVisitors : 0 };
+        } catch (error) {
+            this.logger.warn({ error }, 'Failed to read conversion funnel');
+            return empty;
+        }
+    }
+
+    /**
+     * UTM-campaign performance joined to the binary conversion. Only events
+     * carrying a campaign are counted.
+     *
+     * @param range - Inclusive date window.
+     * @param limit - Max campaigns.
+     * @returns Per-campaign visitors, conversions, and rate, by visitors desc.
+     */
+    async getCampaignPerformance(range: IAnalyticsDateRange, limit = 20): Promise<ICampaignPerformanceBucket[]> {
+        if (!this.clickhouse) return [];
+        const { clause, params } = this.rangeParams(range);
+        const sql = `
+            SELECT
+                coalesce(utm_campaign, '(none)') AS campaign,
+                coalesce(utm_source, '(none)') AS source,
+                coalesce(utm_medium, '(none)') AS medium,
+                uniqExact(candidate_uid) AS visitors,
+                uniqExactIf(candidate_uid, user_id IS NOT NULL) AS conversions
+            FROM ${TABLE_NAME}
+            WHERE ${clause} AND utm_campaign IS NOT NULL
+            GROUP BY campaign, source, medium
+            ORDER BY visitors DESC
+            LIMIT {limit:UInt32}
+        `;
+        try {
+            const rows = await this.clickhouse.query<{
+                campaign: string; source: string; medium: string;
+                visitors: string | number; conversions: string | number;
+            }>(sql, { ...params, limit });
+            return rows.map(r => {
+                const visitors = Number(r.visitors);
+                const conversions = Number(r.conversions);
+                return {
+                    campaign: r.campaign,
+                    source: r.source,
+                    medium: r.medium,
+                    visitors,
+                    conversions,
+                    conversionRate: visitors > 0 ? conversions / visitors : 0
+                };
+            });
+        } catch (error) {
+            this.logger.warn({ error }, 'Failed to read campaign performance');
+            return [];
+        }
+    }
+
+    /**
+     * Engagement metrics from `session_end` and `page` events: average session
+     * duration, pages per session, and bounce rate (sessions under 10s or with
+     * no recorded page activity). Reads near zero until Phase D wires session
+     * emission.
+     *
+     * @param range - Inclusive date window.
+     * @returns Aggregate engagement metrics.
+     */
+    async getEngagementMetrics(range: IAnalyticsDateRange): Promise<IEngagementMetrics> {
+        const empty: IEngagementMetrics = { sessions: 0, avgDurationMs: 0, pagesPerSession: 0, bounceRate: 0 };
+        if (!this.clickhouse) return empty;
+        const { clause, params } = this.rangeParams(range);
+        const sql = `
+            SELECT
+                countIf(event_type = 'session_start') AS sessions,
+                countIf(event_type = 'page') AS pageEvents,
+                avgIf(duration_ms, event_type = 'session_end' AND duration_ms IS NOT NULL) AS avgDurationMs,
+                countIf(event_type = 'session_end' AND (duration_ms IS NULL OR duration_ms < 10000)) AS bounces
+            FROM ${TABLE_NAME}
+            WHERE ${clause}
+        `;
+        try {
+            const rows = await this.clickhouse.query<{
+                sessions: string | number; pageEvents: string | number;
+                avgDurationMs: string | number | null; bounces: string | number;
+            }>(sql, params);
+            const row = rows[0];
+            if (!row) return empty;
+            const sessions = Number(row.sessions);
+            const pageEvents = Number(row.pageEvents);
+            const bounces = Number(row.bounces);
+            return {
+                sessions,
+                avgDurationMs: Number(row.avgDurationMs ?? 0),
+                pagesPerSession: sessions > 0 ? pageEvents / sessions : 0,
+                bounceRate: sessions > 0 ? bounces / sessions : 0
+            };
+        } catch (error) {
+            this.logger.warn({ error }, 'Failed to read engagement metrics');
+            return empty;
         }
     }
 }
