@@ -34,6 +34,7 @@ import { PagesModule } from './modules/pages/index.js';
 import { WidgetsModule } from './modules/widgets/index.js';
 import { UserModule } from './modules/user/index.js';
 import { IdentityModule } from './modules/identity/index.js';
+import { TrafficModule } from './modules/traffic/index.js';
 import { AddressLabelsModule } from './modules/address-labels/index.js';
 import { ToolsModule } from './modules/tools/index.js';
 import { BlockchainObserverService } from './services/blockchain-observer/index.js';
@@ -223,6 +224,7 @@ interface BootstrapContext {
         pages: PagesModule;
         widgets: WidgetsModule;
         identity: IdentityModule;
+        traffic: TrafficModule;
         user: UserModule;
         addressLabels: AddressLabelsModule;
         tools: ToolsModule;
@@ -308,6 +310,7 @@ async function bootstrapInit(): Promise<BootstrapContext> {
     const pagesModule = new PagesModule();
     const widgetsModule = new WidgetsModule();
     const identityModule = new IdentityModule();
+    const trafficModule = new TrafficModule();
     const userModule = new UserModule();
     const addressLabelsModule = new AddressLabelsModule();
     const toolsModule = new ToolsModule();
@@ -319,7 +322,8 @@ async function bootstrapInit(): Promise<BootstrapContext> {
     await schedulerModule.init({ database: coreDatabase, menuService, app });
     const schedulerService = schedulerModule.getSchedulerService();
     await identityModule.init(sharedDeps);
-    await userModule.init({ ...sharedDeps, scheduler: schedulerService, systemConfig: SystemConfigService.getInstance(), clickhouse });
+    await trafficModule.init({ ...sharedDeps, scheduler: schedulerService, clickhouse });
+    await userModule.init({ ...sharedDeps, systemConfig: SystemConfigService.getInstance() });
     await addressLabelsModule.init(sharedDeps);
     await toolsModule.init(sharedDeps);
 
@@ -339,6 +343,7 @@ async function bootstrapInit(): Promise<BootstrapContext> {
             pages: pagesModule,
             widgets: widgetsModule,
             identity: identityModule,
+            traffic: trafficModule,
             user: userModule,
             addressLabels: addressLabelsModule,
             tools: toolsModule,
@@ -371,6 +376,7 @@ async function bootstrapRun(ctx: BootstrapContext): Promise<void> {
     await modules.pages.run();
     await modules.widgets.run();
     await modules.identity.run();
+    await modules.traffic.run();
     await modules.user.run();
     await modules.addressLabels.run();
     await modules.tools.run();

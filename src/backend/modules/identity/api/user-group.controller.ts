@@ -1,7 +1,7 @@
 import type { Request, Response } from 'express';
 import type { ISystemLogService } from '@/types';
 import type { UserGroupService } from '../services/user-group.service.js';
-import { getClientIP } from '../../user/services/geo.service.js';
+import { getClientIP } from '../../traffic/services/geo.service.js';
 import {
     UserGroupValidationError,
     UserGroupNotFoundError,

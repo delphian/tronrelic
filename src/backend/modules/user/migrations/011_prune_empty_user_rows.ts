@@ -1,6 +1,6 @@
 import type { IMigration, IMigrationContext } from '@/types';
 import type { IUserDocument, ITrafficOrigin } from '../database/IUserDocument.js';
-import type { ITrafficEvent } from '../services/traffic.service.js';
+import type { ITrafficEvent } from '../../traffic/services/traffic.service.js';
 
 // Inline constants and helpers from traffic.service.ts — migration files are
 // compiled with `bundle: false`, so they cannot import runtime values from
@@ -121,7 +121,7 @@ export const migration: IMigration = {
     // dependency forces the topological sort to run 012 before 011 even
     // though id order would otherwise place 011 first.
     dependencies: [
-        'module:user:010_create_traffic_events_table',
+        'module:traffic:010_create_traffic_events_table',
         'module:user:012_traffic_events_user_referral_columns'
     ],
 

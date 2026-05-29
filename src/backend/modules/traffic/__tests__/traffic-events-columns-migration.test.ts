@@ -21,7 +21,7 @@ describe('migration: 012_traffic_events_user_referral_columns', () => {
     });
 
     it('depends on the table-creation migration', () => {
-        expect(migration.dependencies).toContain('module:user:010_create_traffic_events_table');
+        expect(migration.dependencies).toContain('module:traffic:010_create_traffic_events_table');
     });
 
     it('does nothing when ClickHouse is unavailable', async () => {

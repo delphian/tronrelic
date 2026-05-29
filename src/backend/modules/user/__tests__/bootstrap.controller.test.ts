@@ -3,7 +3,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import type { ICacheService, ISystemLogService } from '@/types';
 import { UserService } from '../services/user.service.js';
-import { TrafficService } from '../services/traffic.service.js';
+import { TrafficService } from '../../traffic/services/traffic.service.js';
 import { UserController } from '../api/user.controller.js';
 import { USER_ID_COOKIE_NAME } from '../api/identity-cookie.js';
 import { createMockDatabaseService } from '../../../tests/vitest/mocks/database-service.js';

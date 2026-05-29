@@ -58,12 +58,12 @@ import {
     getDeviceCategory,
     getScreenSizeCategory,
     isInternalReferrer
-} from './geo.service.js';
+} from '../../traffic/services/geo.service.js';
 import type TronWeb from 'tronweb';
 import { SignatureService } from '../../auth/signature.service.js';
 import { WalletChallengeService, type IWalletChallenge, type WalletChallengeAction } from '../../identity/services/wallet-challenge.service.js';
-import { GscService } from './gsc.service.js';
-import { TrafficService } from './traffic.service.js';
+import { GscService } from '../../traffic/services/gsc.service.js';
+import { TrafficService } from '../../traffic/services/traffic.service.js';
 import { AnalyticsRangeValidationError } from './user.errors.js';
 
 /**

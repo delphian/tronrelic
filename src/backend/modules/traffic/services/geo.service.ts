@@ -20,7 +20,7 @@
  * ```
  */
 
-import type { DeviceCategory, ScreenSizeCategory } from '../database/index.js';
+import type { DeviceCategory, ScreenSizeCategory } from '@/types';
 import type geoipLite from 'geoip-lite';
 
 // Dynamic import for geoip-lite (optional dependency)

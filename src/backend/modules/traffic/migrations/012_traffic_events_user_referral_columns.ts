@@ -46,7 +46,7 @@ export const migration: IMigration = {
         'traffic_events table for Better Auth Phase 5 account attribution and referral ' +
         'first-touch capture. Additive (columns sit outside the ORDER BY key).',
     target: 'clickhouse',
-    dependencies: ['module:user:010_create_traffic_events_table'],
+    dependencies: ['module:traffic:010_create_traffic_events_table'],
 
     async up(context: IMigrationContext): Promise<void> {
         if (!context.clickhouse) {

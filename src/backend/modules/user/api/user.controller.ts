@@ -2,10 +2,11 @@ import type { Request, Response, NextFunction } from 'express';
 import { randomUUID } from 'node:crypto';
 import { USER_FILTERS } from '@/types';
 import type { ISystemLogService, UserFilterType, IUserGroupService } from '@/types';
-import type { UserService, IUserStats, IDateRange, TrafficService } from '../services/index.js';
-import type { GscService } from '../services/index.js';
+import type { UserService, IUserStats, IDateRange } from '../services/index.js';
+import type { TrafficService, GscService } from '../../traffic/index.js';
 import type { IUser, IUserPreferences } from '../database/index.js';
-import { buildTrafficEvent, getClientIP, withAuthStatus } from '../services/index.js';
+import { withAuthStatus } from '../services/index.js';
+import { buildTrafficEvent, getClientIP } from '../../traffic/index.js';
 import { AnalyticsRangeValidationError } from '../services/user.errors.js';
 import {
     setIdentityCookie,
