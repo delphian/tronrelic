@@ -20,7 +20,6 @@ import { MAIN_SYSTEM_CONTAINER_ID } from './constants.js';
 import { Router as ExpressRouter } from 'express';
 import { requireAdmin } from '../../api/middleware/admin-auth.js';
 import { createRateLimiter, createAdminRateLimiter } from '../../api/middleware/rate-limit.js';
-import { userContextMiddleware } from '../../api/middleware/user-context.js';
 
 /**
  * Menu module dependencies for initialization.
@@ -150,11 +149,10 @@ export class MenuModule implements IModule<IMenuModuleDependencies> {
         this.serviceRegistry = dependencies.serviceRegistry;
         this.app = dependencies.app;
 
-        // Initialize MenuService singleton with database + registry dependencies.
-        // The registry is used at read time to look up `'user-groups'` for the
-        // admin-predicate gating filter (see MenuService.passesGate, called
-        // from getTreeForUser / getChildrenForUser).
-        MenuService.setDependencies(this.database, this.serviceRegistry);
+        // Initialize MenuService singleton. Per-user gating reads the viewer
+        // from the Better Auth session (resolved by attachAuthSession), so the
+        // service no longer needs the registry for an admin lookup.
+        MenuService.setDependencies(this.database);
         this.menuService = MenuService.getInstance();
 
         // Initialize MenuService (loads menu tree from database)
@@ -290,14 +288,13 @@ export class MenuModule implements IModule<IMenuModuleDependencies> {
         const router = ExpressRouter();
 
         // Public routes (no auth required for reading navigation structure).
-        // userContextMiddleware resolves the tronrelic_uid cookie to req.user
-        // so the controller can apply per-user gating on `getTree` and
-        // `resolve`. The middleware is identity-only; it does not enforce
-        // authentication and is safe to apply to public reads.
-        router.get('/resolve', userContextMiddleware, this.controller.resolve);
+        // The controller applies per-user gating from `req.authSession`, which
+        // the global attachAuthSession middleware resolves ahead of the /api
+        // router — no per-route identity middleware needed.
+        router.get('/resolve', this.controller.resolve);
         router.get('/namespaces', this.controller.getNamespaces);
         router.get('/namespace/:namespace/config', this.controller.getNamespaceConfig);
-        router.get('/', userContextMiddleware, this.controller.getTree);
+        router.get('/', this.controller.getTree);
 
         // Admin management read — origin-tagged, includes disabled and gated
         // rows. Distinct from `GET /` (the universal navigation read) so

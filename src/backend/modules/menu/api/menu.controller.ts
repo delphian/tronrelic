@@ -3,8 +3,7 @@ import { z } from 'zod';
 import { MenuService } from '../services/menu.service.js';
 import { ADMIN_NAMESPACES } from '../constants.js';
 import { isAdmin } from '../../../api/middleware/admin-auth.js';
-import type { IMenuNodeWithChildren, IMenuTree, IUser } from '@/types';
-import { UserIdentityState } from '@/types';
+import type { IMenuNodeWithChildren, IMenuTree, IMenuViewer, IAuthSession } from '@/types';
 
 /**
  * Acceptable namespace identifiers. Lowercase ASCII, hyphens allowed,
@@ -73,17 +72,6 @@ function emptyStringAsUndefined<T extends z.ZodTypeAny>(schema: T) {
  * read time.
  */
 const GROUP_ID_REGEX = /^[a-z][a-z0-9-]*[a-z0-9]$|^[a-z]$/;
-
-/**
- * Allow-list of identity states. An empty array is accepted and treated as
- * "no gate" — the service persists empty arrays via `$unset` so the database
- * stays clean. Sending `[]` from a PATCH is the only way to clear a gate
- * that was previously set, since omitting the field means "leave unchanged".
- */
-const allowedIdentityStatesField = z
-    .array(z.nativeEnum(UserIdentityState))
-    .max(3)
-    .optional();
 
 const requiresGroupsField = z
     .array(z.string().regex(GROUP_ID_REGEX, 'Group ids must be lowercase kebab-case slugs'))
@@ -163,11 +151,6 @@ const createNodeSchema = z.object({
     enabled: z.boolean().optional(),
 
     /**
-     * Allow-list of identity states that may see the node.
-     */
-    allowedIdentityStates: allowedIdentityStatesField,
-
-    /**
      * Required group memberships (OR-of-membership).
      */
     requiresGroups: requiresGroupsField,
@@ -213,7 +196,6 @@ const updateNodeSchema = z.object({
     order: z.number().int().min(0).max(100_000).optional(),
     parent: objectIdField.nullable().optional(),
     enabled: z.boolean().optional(),
-    allowedIdentityStates: allowedIdentityStatesField,
     requiresGroups: requiresGroupsField,
     requiresAdmin: z.boolean().optional()
 });
@@ -312,6 +294,21 @@ async function denyIfAdminNamespace(req: Request, res: Response, namespace: stri
     return false;
 }
 
+/**
+ * Resolve the per-request menu viewer from the Better Auth session.
+ *
+ * Returns `undefined` for anonymous callers (no session) so the gating filter
+ * shows only ungated nodes. `isAdmin` routes through the admin-auth predicate
+ * so the menu service stays agnostic of how admin is determined. The session
+ * is resolved once per request by the global `attachAuthSession` middleware
+ * and read here off `req.authSession`.
+ */
+async function resolveViewer(req: Request): Promise<IMenuViewer | undefined> {
+    const session = (req as Request & { authSession?: IAuthSession | null }).authSession ?? null;
+    if (!session) return undefined;
+    return { groups: session.groups, isAdmin: await isAdmin(req) };
+}
+
 export class MenuController {
     /**
      * MenuService instance injected via constructor.
@@ -388,8 +385,8 @@ export class MenuController {
             // management surface lives at `GET /api/menu/manage`. Node
             // visibility is controlled exclusively by per-node gating
             // (`allowedIdentityStates`, `requiresGroups`, `requiresAdmin`).
-            const user = (req as Request & { user?: IUser }).user;
-            const filtered = await this.service.getTreeForUser(namespace, user);
+            const viewer = await resolveViewer(req);
+            const filtered = await this.service.getTreeForUser(namespace, viewer);
             res.json({ success: true, tree: publicTreeView(filtered) });
         } catch (error) {
             const message = error instanceof Error ? error.message : 'Failed to get menu tree';
@@ -925,10 +922,13 @@ export class MenuController {
             // children) their identity qualifies for. Admin status now
             // resolves via cookie+verified+admin-group OR service token.
             const callerIsAdmin = await isAdmin(req);
-            const user = (req as Request & { user?: IUser }).user;
+            const session = (req as Request & { authSession?: IAuthSession | null }).authSession ?? null;
+            const viewer: IMenuViewer | undefined = session
+                ? { groups: session.groups, isAdmin: callerIsAdmin }
+                : undefined;
             const tree = callerIsAdmin
                 ? this.service.getTree(namespace)
-                : await this.service.getTreeForUser(namespace, user);
+                : await this.service.getTreeForUser(namespace, viewer);
 
             // Find node matching the URL
             const node = tree.all.find(n => n.url === url && n.enabled);
@@ -941,7 +941,7 @@ export class MenuController {
             // calling visitor unless the caller is admin.
             const children = (callerIsAdmin
                 ? this.service.getChildren(node._id!, namespace)
-                : await this.service.getChildrenForUser(node._id!, namespace, user)
+                : await this.service.getChildrenForUser(node._id!, namespace, viewer)
             ).filter(c => c.enabled && c.url);
 
             if (children.length === 0) {

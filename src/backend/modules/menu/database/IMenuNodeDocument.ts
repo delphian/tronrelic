@@ -1,5 +1,4 @@
 import { ObjectId } from 'mongodb';
-import type { UserIdentityState } from '@/types';
 
 /**
  * MongoDB document interface for menu nodes.
@@ -27,11 +26,6 @@ export interface IMenuNodeDocument {
     order: number;
     parent: ObjectId | null;
     enabled: boolean;
-    /**
-     * Allow-list of identity states that may see the node. See
-     * `IMenuNode.allowedIdentityStates` for semantics.
-     */
-    allowedIdentityStates?: UserIdentityState[];
     /**
      * Required group memberships (OR-of-membership). See
      * `IMenuNode.requiresGroups` for semantics.

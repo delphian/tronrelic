@@ -23,7 +23,6 @@ vi.mock('../../../../services/websocket.service.js', () => ({
 
 import { MenuService } from '../services/menu.service.js';
 import { MAIN_SYSTEM_CONTAINER_ID } from '../constants.js';
-import { createMockServiceRegistry } from '../../../tests/vitest/mocks/service-registry.js';
 
 function createDatabase(): IDatabaseService {
     const collections = new Map<string, any[]>();
@@ -75,7 +74,7 @@ describe('MenuService System container auto-requiresAdmin', () => {
     beforeEach(async () => {
         vi.clearAllMocks();
         MenuService.__resetForTests();
-        MenuService.setDependencies(createDatabase(), createMockServiceRegistry());
+        MenuService.setDependencies(createDatabase());
         svc = MenuService.getInstance();
         await svc.initialize();
     });
