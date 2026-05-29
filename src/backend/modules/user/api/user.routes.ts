@@ -3,7 +3,6 @@ import type { UserController } from './user.controller.js';
 import type { UserGroupController } from './user-group.controller.js';
 import type { TrafficController } from './traffic.controller.js';
 import { createRateLimiter } from '../../../api/middleware/rate-limit.js';
-import { userContextMiddleware } from '../../../api/middleware/user-context.js';
 
 /**
  * Create Express router for public user endpoints.
@@ -69,59 +68,6 @@ export function createUserRouter(controller: UserController): Router {
      * Get or create user by UUID
      */
     router.get('/:id', userRateLimiter, controller.getUser.bind(controller));
-
-    // ============================================================================
-    // Wallet Routes (10 requests/minute)
-    // ============================================================================
-
-    /**
-     * POST /api/user/:id/wallet/connect
-     * Stage 1: register the wallet (no signature). Moves the user from
-     * *anonymous* to *registered*. See `connectWallet` controller for details.
-     */
-    router.post('/:id/wallet/connect', walletRateLimiter, controller.connectWallet.bind(controller));
-
-    /**
-     * POST /api/user/:id/wallet/challenge
-     * Mint a server-issued single-use nonce for a wallet operation. Required
-     * before link/unlink/set-primary. Mounted before the bare `/wallet` route
-     * so its specific path wins. See `issueWalletChallenge` controller.
-     */
-    router.post('/:id/wallet/challenge', walletRateLimiter, controller.issueWalletChallenge.bind(controller));
-
-    /**
-     * POST /api/user/:id/wallet
-     * Stage 2: verify the wallet via signature against a fresh nonce. Moves
-     * the user (or the specific wallet) into the *verified* state. See
-     * `linkWallet` controller for details.
-     */
-    router.post('/:id/wallet', walletRateLimiter, controller.linkWallet.bind(controller));
-
-    /**
-     * DELETE /api/user/:id/wallet/:address
-     * Unlink wallet from user (requires signature)
-     */
-    router.delete('/:id/wallet/:address', walletRateLimiter, controller.unlinkWallet.bind(controller));
-
-    /**
-     * PATCH /api/user/:id/wallet/:address/primary
-     * Set wallet as primary. Requires signature over a fresh challenge —
-     * cookie alone is insufficient because primary drives downstream
-     * attribution and a captured cookie should not steer it.
-     */
-    router.patch('/:id/wallet/:address/primary', walletRateLimiter, controller.setPrimaryWallet.bind(controller));
-
-    /**
-     * POST /api/user/:id/wallet/:address/refresh-verification
-     * Refresh `verifiedAt` on an already-verified wallet. Narrower
-     * equivalent of the link flow — both update `verifiedAt`, but this
-     * one only operates on already-verified wallets and never toggles
-     * `verified`. Used by callers that specifically want to bump
-     * freshness without going through link's full validation. Requires
-     * a `refresh-verification` nonce and a TronLink signature; nonce
-     * action-scoping prevents replay of signatures from other actions.
-     */
-    router.post('/:id/wallet/:address/refresh-verification', walletRateLimiter, controller.refreshWalletVerification.bind(controller));
 
     // ============================================================================
     // Preferences Routes (30 requests/minute)
@@ -193,45 +139,6 @@ export function createUserRouter(controller: UserController): Router {
      * historically-verified wallet via /wallet (link).
      */
     router.post('/:id/logout', userRateLimiter, controller.logout.bind(controller));
-
-    return router;
-}
-
-/**
- * Create Express router for public profile endpoints.
- *
- * No authentication is required to read a public profile, but
- * `userContextMiddleware` populates `req.userId` from the visitor's
- * `tronrelic_uid` cookie when present so the controller can compute
- * `isOwner` server-side without echoing the owning UUID back over the wire.
- *
- * Routes are mounted at /api/profile.
- *
- * Rate limits (per IP):
- * - Profile lookups: 60 requests/minute
- *
- * @param controller - User controller instance
- * @returns Express router with public profile endpoints
- */
-export function createProfileRouter(controller: UserController): Router {
-    const router = Router();
-
-    const profileRateLimiter = createRateLimiter({
-        windowSeconds: 60,
-        maxRequests: 60,
-        keyPrefix: 'profile:lookup'
-    });
-
-    /**
-     * GET /api/profile/:address
-     * Get public profile by verified wallet address
-     */
-    router.get(
-        '/:address',
-        userContextMiddleware,
-        profileRateLimiter,
-        controller.getProfile.bind(controller)
-    );
 
     return router;
 }

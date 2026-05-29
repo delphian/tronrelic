@@ -41,7 +41,7 @@ import { UserController } from './api/user.controller.js';
 import { WalletController } from './api/wallet.controller.js';
 import { UserGroupController } from './api/user-group.controller.js';
 import { TrafficController } from './api/traffic.controller.js';
-import { createUserRouter, createAdminUserRouter, createProfileRouter } from './api/user.routes.js';
+import { createUserRouter, createAdminUserRouter } from './api/user.routes.js';
 import { createWalletRouter } from './api/wallet.routes.js';
 import { createAdminUserGroupRouter } from './api/user-group.routes.js';
 import { createAdminTrafficRouter } from './api/traffic.routes.js';
@@ -419,11 +419,6 @@ export class UserModule implements IModule<IUserModuleDependencies> {
         this.app.use('/api/user', publicRouter);
         this.logger.info('Public user router mounted at /api/user');
 
-        // Create and mount profile router (IoC - public access, no auth required)
-        const profileRouter = this.createProfileRouter();
-        this.app.use('/api/profile', profileRouter);
-        this.logger.info('Profile router mounted at /api/profile');
-
         // Create and mount admin router (IoC - module attaches itself to app)
         // Apply requireAdmin middleware to all admin routes.
         // Note: the user-groups and traffic routers are mounted FIRST under
@@ -470,19 +465,6 @@ export class UserModule implements IModule<IUserModuleDependencies> {
      */
     private createPublicRouter(): Router {
         return createUserRouter(this.controller);
-    }
-
-    /**
-     * Create the profile router for public profile access.
-     *
-     * No authentication required - publicly accessible profile pages.
-     * The router is then mounted by the module itself using IoC pattern.
-     *
-     * @returns Express router with profile endpoints
-     * @internal
-     */
-    private createProfileRouter(): Router {
-        return createProfileRouter(this.controller);
     }
 
     /**
