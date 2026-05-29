@@ -2,102 +2,60 @@ import type { ComponentType } from 'react';
 import type { Socket } from 'socket.io-client';
 
 /**
- * Wallet link information exposed to frontend plugins.
- *
- * Represents a wallet that has been linked (claimed) to a user account.
- * Wallets follow a two-step flow: connect (claim) → verify (signature).
- */
-export interface IPluginWalletLink {
-    /** TRON wallet address (base58 format) */
-    address: string;
-
-    /** Whether wallet ownership has been cryptographically verified via signature */
-    verified: boolean;
-
-    /** Whether this is the user's primary wallet */
-    isPrimary: boolean;
-
-    /** When the wallet was first linked (ISO timestamp) */
-    linkedAt: string;
-
-    /** When the wallet was last used/connected (ISO timestamp) */
-    lastUsed: string;
-
-    /** Optional user-assigned label for the wallet */
-    label?: string;
-}
-
-/**
  * User state exposed to frontend plugins.
  *
- * Provides user identity and wallet information for feature gating
- * and personalization. Designed as a stable interface that won't break
- * plugins when core user module internals are refactored.
- *
- * Identity progression:
- * 1. Anonymous - `!hasLinkedWallet`
- * 2. Registered - `hasLinkedWallet && !isVerified` (wallet linked but no live session)
- * 3. Verified - `isVerified` (wallet signed, session still within SESSION_TTL_MS)
+ * Mirrors the backend authorization surface so plugin gating reads the
+ * same way on both sides: `isLoggedIn` is the primary gate (any
+ * authenticated Better Auth account), `hasPrimaryWallet` is the single
+ * wallet check, and `primaryWallet` is the proven primary address. A
+ * present wallet is always signature-verified — the wallet store only
+ * holds wallets proven by signature — so there is no separate
+ * verified/unverified distinction.
  *
  * @example
  * ```typescript
- * const { hasLinkedWallet, isVerified, wallets } = context.useUser();
+ * const { isLoggedIn, hasPrimaryWallet, primaryWallet } = context.useUser();
  *
- * // Gate feature to verified users only
- * if (!isVerified) {
- *     return <p>Please verify your wallet to access this feature</p>;
+ * // Primary gate: any signed-in account
+ * if (!isLoggedIn) {
+ *     return <p>Please sign in to access this feature</p>;
  * }
  *
- * // Detect "registered but session aged out" state
- * if (hasLinkedWallet && !isVerified) {
- *     return <p>Please re-sign with your wallet to refresh your session</p>;
+ * // Wallet-specific gate: requires a proven primary wallet
+ * if (!hasPrimaryWallet) {
+ *     return <p>Link a TRON wallet to use this feature</p>;
  * }
  * ```
  */
 export interface IPluginUserState {
     /**
-     * User's unique identifier (UUID).
-     * Always available after initial hydration.
+     * Better Auth account id. Null until the session resolves (anonymous
+     * visitors and the pre-hydration window).
      */
     userId: string | null;
 
     /**
-     * Whether the user has at least one linked wallet (verified or not).
-     * Convenience check for `wallets.length > 0`.
+     * Primary gate — true when the visitor has an authenticated Better
+     * Auth session (email-OTP / OAuth / passkey). Mirrors the backend
+     * `isLoggedIn(req)` predicate. Use this for login-only gating.
      */
-    hasLinkedWallet: boolean;
+    isLoggedIn: boolean;
 
     /**
-     * Whether the user is in the canonical `Verified` identity state —
-     * `user.identityState === UserIdentityState.Verified`, meaning a
-     * wallet was signed and the user-level session is still within
-     * `SESSION_TTL_MS`. Freshness is enforced by the backend's lazy
-     * session-expiry pass, so this is always a live-session signal,
-     * never a historical claim. Use this for feature gating.
-     *
-     * Distinct from per-wallet `verified` (audit history that stays
-     * `true` after any past signature) — see `wallets[].verified`.
+     * True when the account has a signature-proven primary wallet.
+     * Mirrors the backend `hasPrimaryWallet(req)` predicate. Use this for
+     * wallet-gated features — a present wallet is always verified.
      */
-    isVerified: boolean;
+    hasPrimaryWallet: boolean;
 
     /**
-     * All linked wallets (both verified and unverified).
-     * Empty array if user has not linked any wallets.
-     *
-     * To get only verified wallets: `wallets.filter(w => w.verified)`
-     */
-    wallets: IPluginWalletLink[];
-
-    /**
-     * Primary wallet address if set, null otherwise.
-     * Primary is automatically computed as the most recently used verified wallet,
-     * or most recently used unverified wallet if no verified wallets exist.
+     * The proven primary wallet address, or null when none is linked.
      */
     primaryWallet: string | null;
 
     /**
-     * Whether user state has been initialized from backend.
-     * Use this to show loading states before user data is available.
+     * False until the Better Auth session has resolved. Use for loading
+     * states before identity is known.
      */
     initialized: boolean;
 }
