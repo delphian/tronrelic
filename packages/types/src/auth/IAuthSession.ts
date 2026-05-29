@@ -33,8 +33,6 @@ export interface IAuthSessionUser {
     name?: string | null;
     /** Avatar/profile image URL, when set. */
     image?: string | null;
-    /** Primary linked TRON wallet address, when one is set. */
-    primaryWallet?: string | null;
 }
 
 /**
@@ -42,14 +40,18 @@ export interface IAuthSessionUser {
  *
  * `req.authSession` is `null` for anonymous visitors and an
  * `IAuthSession` for logged-in ones. Group ids drive membership/admin
- * gating; `primaryWallet` mirrors the user's denormalized primary wallet
- * for convenience.
+ * gating; `primaryWallet` is the account's denormalized primary wallet.
  */
 export interface IAuthSession {
     /** The authenticated Better Auth user. */
     user: IAuthSessionUser;
     /** Group ids the user belongs to (e.g. `['admin']`). */
     groups: string[];
-    /** Primary linked TRON wallet address, when one is set. */
+    /**
+     * Primary linked TRON wallet address, when one is set — the single
+     * canonical primary for the session. Mirrors core
+     * `IAugmentedSession.primaryWallet`; plugins read it here rather than
+     * from the user record.
+     */
     primaryWallet?: string | null;
 }

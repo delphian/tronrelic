@@ -6,7 +6,7 @@ export type { ITransaction, ITransactionPersistencePayload, ITransactionCategory
 export { ProcessedTransaction } from './transaction/index.js';
 export type { IHttpRequest, IHttpResponse, IHttpNext } from './http/index.js';
 export type { IAuthSession, IAuthSessionUser, IHasAuthSession } from './auth/index.js';
-export { ADMIN_GROUP_ID, isLoggedIn, isAnonymous, isInGroup, isAdmin } from './auth/index.js';
+export { ADMIN_GROUP_ID, isLoggedIn, isAnonymous, isInGroup, isAdmin, hasPrimaryWallet } from './auth/index.js';
 // ILogger removed - use ISystemLogService instead (exported from './system-log/index.js')
 export type { IChainParameters } from './chain-parameters/IChainParameters.js';
 export type { IChainParametersService } from './chain-parameters/IChainParametersService.js';

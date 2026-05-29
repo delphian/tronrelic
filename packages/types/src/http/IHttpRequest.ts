@@ -209,11 +209,14 @@ export interface IHttpRequest<
      * `attachAuthSession` middleware before requests reach plugin routes.
      *
      * `null` for anonymous visitors, an {@link IAuthSession} for
-     * logged-in ones, `undefined` only if the middleware did not run
-     * (test stubs). This is the Better Auth successor to {@link user}:
-     * gate authenticated plugin routes on `req.authSession` via the
-     * `isLoggedIn` / `isAdmin` / `isInGroup` predicates rather than the
-     * legacy `req.user.identityState` reads.
+     * logged-in ones. It is `undefined` only outside the middleware's
+     * reach — test stubs, or the middleware's own bypassed paths (it
+     * early-returns on `/api/auth/*`). Plugin routes always run after the
+     * middleware, so for plugin handlers `authSession` is always set
+     * (`null` or populated), never `undefined`. This is the Better Auth
+     * successor to {@link user}: gate authenticated plugin routes on
+     * `req.authSession` via the `isLoggedIn` / `isAdmin` / `isInGroup`
+     * predicates rather than the legacy `req.user.identityState` reads.
      *
      * @example
      * ```typescript
@@ -226,7 +229,7 @@ export interface IHttpRequest<
      *     if (!isAdmin(req)) {
      *         return res.status(403).json({ error: 'Admin required' });
      *     }
-     *     const userId = req.authSession!.user.id;
+     *     const userId = req.authSession.user.id;
      * }
      * ```
      */

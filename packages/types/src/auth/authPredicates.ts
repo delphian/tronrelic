@@ -41,10 +41,16 @@ export interface IHasAuthSession {
  *
  * `true` when the request carries a resolved Better Auth session.
  *
+ * Acts as a TypeScript type guard: on the truthy branch `req.authSession`
+ * narrows to {@link IAuthSession}, so plugins read `req.authSession.user.id`
+ * without a non-null assertion.
+ *
  * @param req - Request-like object with an `authSession`.
  * @returns Whether a session is present.
  */
-export function isLoggedIn(req: IHasAuthSession): boolean {
+export function isLoggedIn<T extends IHasAuthSession>(
+    req: T
+): req is T & { authSession: IAuthSession } {
     return req.authSession != null;
 }
 
@@ -54,7 +60,9 @@ export function isLoggedIn(req: IHasAuthSession): boolean {
  * @param req - Request-like object with an `authSession`.
  * @returns Whether the caller has no session.
  */
-export function isAnonymous(req: IHasAuthSession): boolean {
+export function isAnonymous<T extends IHasAuthSession>(
+    req: T
+): req is T & { authSession: null | undefined } {
     return req.authSession == null;
 }
 
@@ -67,7 +75,10 @@ export function isAnonymous(req: IHasAuthSession): boolean {
  * @param groupId - Group id to test.
  * @returns Whether the session's groups include `groupId`.
  */
-export function isInGroup(req: IHasAuthSession, groupId: string): boolean {
+export function isInGroup<T extends IHasAuthSession>(
+    req: T,
+    groupId: string
+): req is T & { authSession: IAuthSession } {
     return req.authSession != null && req.authSession.groups.includes(groupId);
 }
 
@@ -80,6 +91,29 @@ export function isInGroup(req: IHasAuthSession, groupId: string): boolean {
  * @param req - Request-like object with an `authSession`.
  * @returns Whether the caller is in the `admin` group.
  */
-export function isAdmin(req: IHasAuthSession): boolean {
+export function isAdmin<T extends IHasAuthSession>(
+    req: T
+): req is T & { authSession: IAuthSession } {
     return isInGroup(req, ADMIN_GROUP_ID);
+}
+
+/**
+ * Does the caller have a linked primary TRON wallet?
+ *
+ * Better Auth separates "logged in" from "owns a wallet": a visitor can
+ * authenticate via email-OTP / OAuth / passkey with no wallet at all.
+ * Plugin routes that previously gated on the legacy
+ * `req.user.identityState === Verified` — which implied a signature-proven
+ * wallet — must migrate to THIS predicate, not {@link isLoggedIn}, or they
+ * would open to wallet-less accounts. Every wallet in the Phase-4 store is
+ * signature-proven at link time, so a present `primaryWallet` is a proven
+ * wallet.
+ *
+ * @param req - Request-like object with an `authSession`.
+ * @returns Whether a logged-in caller has a primary wallet set.
+ */
+export function hasPrimaryWallet<T extends IHasAuthSession>(
+    req: T
+): req is T & { authSession: IAuthSession } {
+    return req.authSession != null && req.authSession.primaryWallet != null;
 }

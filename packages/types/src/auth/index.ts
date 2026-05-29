@@ -12,5 +12,6 @@ export {
     isAnonymous,
     isInGroup,
     isAdmin,
+    hasPrimaryWallet,
     type IHasAuthSession
 } from './authPredicates.js';
