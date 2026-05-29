@@ -116,10 +116,10 @@ describe('UserController.bootstrap', () => {
         // assuming it is the only Set-Cookie.
         const idCookie = res.cookies.find((c: any) => c.name === USER_ID_COOKIE_NAME);
         expect(idCookie).toBeDefined();
-        expect(idCookie.value).toBe(res.jsonBody.id);
-        expect(idCookie.options.httpOnly).toBe(true);
-        expect(idCookie.options.sameSite).toBe('lax');
-        expect(idCookie.options.path).toBe('/');
+        expect(idCookie!.value).toBe(res.jsonBody.id);
+        expect(idCookie!.options.httpOnly).toBe(true);
+        expect(idCookie!.options.sameSite).toBe('lax');
+        expect(idCookie!.options.path).toBe('/');
         // The analytics tid cookie is minted alongside identity.
         expect(res.cookies.find((c: any) => c.name === 'tronrelic_tid')).toBeDefined();
     });
@@ -145,8 +145,8 @@ describe('UserController.bootstrap', () => {
         // name since bootstrap also mints the Phase 5 analytics tid cookie.
         const idCookie = res.cookies.find((c: any) => c.name === USER_ID_COOKIE_NAME);
         expect(idCookie).toBeDefined();
-        expect(idCookie.value).toBe(VALID_UUID_A);
-        expect(idCookie.options.httpOnly).toBe(true);
+        expect(idCookie!.value).toBe(VALID_UUID_A);
+        expect(idCookie!.options.httpOnly).toBe(true);
     });
 
     it('accepts an unsigned legacy cookie and re-anchors the user as signed', async () => {

@@ -114,7 +114,16 @@ export const migration: IMigration = {
         'created before the Phase 4 prod deploy cutoff are eligible. Backs the ' +
         'final phase tracked in PLAN-traffic-events.md.',
     target: 'mongodb',
-    dependencies: ['module:user:010_create_traffic_events_table'],
+    // Depends on 012 (a higher-numbered migration) because 011's synthetic
+    // backfill events now carry the Phase-5 `user_id` / `referral_code`
+    // columns: those columns must exist before 011 inserts, or ClickHouse
+    // rejects every row and the prune/backfill is silently skipped. The
+    // dependency forces the topological sort to run 012 before 011 even
+    // though id order would otherwise place 011 first.
+    dependencies: [
+        'module:user:010_create_traffic_events_table',
+        'module:user:012_traffic_events_user_referral_columns'
+    ],
 
     async up(context: IMigrationContext): Promise<void> {
         if (!context.clickhouse) {
