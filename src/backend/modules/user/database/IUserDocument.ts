@@ -344,6 +344,15 @@ export interface ILinkWalletInput {
 export interface IStartSessionInput {
     /** UUID of the user starting the session. */
     userId: string;
+    /**
+     * Analytics traffic id (`tronrelic_tid`) for the ClickHouse first-touch
+     * lookup. Since Phase 5 of the Better Auth refactor `traffic_events`
+     * rows key on the tid, so the bootstrap event this session correlates
+     * with was written under the tid, not `userId`. Falls back to `userId`
+     * when absent (legacy callers, tests) so correlation still works during
+     * the transition.
+     */
+    tid?: string;
     /** Client IP for country lookup. Never persisted raw. */
     clientIP?: string;
     /** User-agent header for device-category derivation. Never persisted raw. */

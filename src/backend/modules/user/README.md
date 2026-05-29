@@ -274,6 +274,19 @@ The user identity cookie has these characteristics:
 
 **Privacy compliance:** This cookie is classified as "functional/essential" under GDPR because it's necessary for the website to remember user preferences and provide personalized features. No consent banner required.
 
+### Analytics & Referral Cookies (Phase 5)
+
+Phase 5 of the Better Auth refactor decouples analytics from identity by adding two cookies, so traffic tracking survives the Phase 6 removal of `tronrelic_uid`. See `api/traffic-cookies.ts`.
+
+| Cookie | Purpose | Shape | Lifetime |
+|--------|---------|-------|----------|
+| `tronrelic_tid` | Analytics visitor key for `traffic_events` — independent of identity. | HttpOnly, **unsigned**, UUID v4 | 1 year |
+| `tronrelic_ref` | First-touch capture of an inbound `?ref=<code>` for later referral attribution. | HttpOnly, **unsigned**, referral code | 90 days |
+
+Both are minted by the Next.js middleware on the SSR-first path (so they are stable from first paint) and by the backend for direct/client callers; the middleware relays the tid (and any captured ref) to `POST /api/user/bootstrap` so the recorded event keys on the same id. They are unsigned because neither confers identity or authorization — forging a tid only pollutes one's own analytics bucket.
+
+`traffic_events` now keys `candidate_uid` on the **tid** (still a UUID, so the column type is unchanged) rather than the legacy uid. Two additive columns (migration `012_traffic_events_user_referral_columns`) attribute traffic without retyping the sort key: `user_id` (the Better Auth user id when logged in, else null) and `referral_code` (the captured first-touch code). Run migration 012 as part of the Phase 5 release — until it applies, first-touch reads degrade to empty and new-column inserts are rejected.
+
 ## Core Components
 
 ### UserService (Business Logic)

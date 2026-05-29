@@ -9,8 +9,16 @@ import { buildTrafficEvent, getClientIP, withAuthStatus } from '../services/inde
 import { AnalyticsRangeValidationError } from '../services/user.errors.js';
 import {
     setIdentityCookie,
-    resolveIdentityFromCookies
+    resolveIdentityFromCookies,
+    UUID_V4_REGEX
 } from './identity-cookie.js';
+import {
+    resolveTid,
+    setTidCookie,
+    resolveRef,
+    setRefCookie,
+    normalizeReferralCode
+} from './traffic-cookies.js';
 
 /** Maximum length for stored path values. */
 const MAX_PATH_LENGTH = 500;
@@ -371,13 +379,24 @@ export class UserController {
                 );
             }
 
+            // Resolve the analytics traffic id and first-touch referral
+            // code (Phase 5). The traffic event keys on the tid — decoupled
+            // from the identity uid so analytics survives the Phase 6
+            // removal of tronrelic_uid — and attributes to the Better Auth
+            // account when the visitor is logged in.
+            const { tid, referralCode } = this.resolveTrafficCookies(req, res);
+
             // Record the bootstrap as a ClickHouse traffic event. Fire-and-
             // forget; never blocks the response, never throws into the
             // request path. When ClickHouse is unconfigured the service
             // no-ops silently — the orphan-row fix above stays correct
             // because Mongo writes are gated independently.
             this.trafficService.recordEvent(
-                buildTrafficEvent('bootstrap', user.id, req, this.extractBootstrapBody(req))
+                buildTrafficEvent('bootstrap', tid, req, {
+                    ...this.extractBootstrapBody(req),
+                    userId: req.authSession?.user?.id ?? null,
+                    referralCode
+                })
             );
 
             this.logger.debug(
@@ -439,6 +458,54 @@ export class UserController {
             result.utm = utm;
         }
         return result;
+    }
+
+    /**
+     * Resolve the analytics traffic id (`tronrelic_tid`) and first-touch
+     * referral code (`tronrelic_ref`) for a request, minting and persisting
+     * cookies as needed. Shared by the bootstrap and session-start handlers
+     * so both emit `traffic_events` under one stable, identity-independent
+     * key and capture an inbound `?ref=` exactly once.
+     *
+     * **tid.** Prefer a forwarded body value (the Next.js middleware mints
+     * it on the SSR-first path and relays it here), then the existing
+     * cookie, else mint a fresh UUID. Re-issue the cookie only when the
+     * value did not already arrive as a valid cookie — so the SSR mint and
+     * direct/client callers both end with a stable cookie, without a
+     * redundant Set-Cookie on every request.
+     *
+     * **ref.** First-touch wins: when no referral cookie is set yet and the
+     * request carries a well-formed inbound code (forwarded body `ref` or a
+     * `?ref=` query param), capture it and set the cookie. An existing
+     * cookie is never overwritten, so the original referrer is preserved
+     * through later navigations.
+     *
+     * @param req - Express request (cookie-parser populated; may carry a
+     *   middleware-forwarded body and `?ref=`).
+     * @param res - Express response the cookies are written to.
+     * @returns The resolved `tid` and the `referralCode` (or `null`).
+     */
+    private resolveTrafficCookies(req: Request, res: Response): { tid: string; referralCode: string | null } {
+        const body = (req.body ?? {}) as Record<string, unknown>;
+
+        const cookieTid = resolveTid(req);
+        const bodyTid = typeof body.tid === 'string' && UUID_V4_REGEX.test(body.tid) ? body.tid : null;
+        const tid = bodyTid ?? cookieTid ?? randomUUID();
+        if (tid !== cookieTid) {
+            setTidCookie(res, tid);
+        }
+
+        const existingRef = resolveRef(req);
+        const inboundRef =
+            normalizeReferralCode(body.ref) ??
+            normalizeReferralCode((req.query as Record<string, unknown> | undefined)?.ref);
+        let referralCode = existingRef;
+        if (!existingRef && inboundRef) {
+            referralCode = inboundRef;
+            setRefCookie(res, inboundRef);
+        }
+
+        return { tid, referralCode };
     }
 
     /**
@@ -807,8 +874,16 @@ export class UserController {
             // empty-UTM detection, and body-vs-header referrer priority
             // (with internal-domain filtering) all live in `UserService`
             // so any future caller gets identical behaviour.
-            const { session, userId } = await this.userService.startSession({
+            // Resolve the analytics traffic id + referral code (Phase 5).
+            // By session-start the tid cookie was set at bootstrap, so this
+            // reads it back; it is threaded into the service so the
+            // ClickHouse first-touch lookup queries the same key the
+            // bootstrap row was written under.
+            const { tid, referralCode } = this.resolveTrafficCookies(req, res);
+
+            const { session } = await this.userService.startSession({
                 userId: req.params.id,
+                tid,
                 clientIP: getClientIP(req),
                 userAgent: typeof req.headers['user-agent'] === 'string'
                     ? req.headers['user-agent']
@@ -836,17 +911,18 @@ export class UserController {
             // even though a hand-rolled client could submit oversized
             // values directly to `/api/user/:id/session/start`.
             //
-            // Use the canonical `userId` returned by `startSession` (not
-            // `req.params.id`) so a request that arrives carrying a merged
-            // tombstone still records analytics under the canonical UUID.
-            // Without this the next visit's first-touch lookup — which
-            // queries CH by canonical id — would miss this session_start
-            // row and the visitor would lose attribution continuity.
+            // Key on the analytics tid (Phase 5): browser-stable and
+            // independent of identity merges, so — unlike the legacy uid —
+            // it needs no canonical-id remap to keep first-touch
+            // correlation intact. Attribute to the Better Auth account when
+            // the visitor is logged in.
             this.trafficService.recordEvent(
-                buildTrafficEvent('session_start', userId, req, {
+                buildTrafficEvent('session_start', tid, req, {
                     landingPath: sanitizePath(req.body.landingPage),
                     utm: clampUtm(req.body.utm) ?? undefined,
-                    originalReferrer: clampString(req.body.referrer, MAX_REFERRER_LENGTH)
+                    originalReferrer: clampString(req.body.referrer, MAX_REFERRER_LENGTH),
+                    userId: req.authSession?.user?.id ?? null,
+                    referralCode
                 })
             );
 

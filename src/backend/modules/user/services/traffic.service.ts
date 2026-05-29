@@ -66,8 +66,24 @@ export interface ITrafficEvent {
     event_type: TrafficEventType;
     /** Server-side wall clock at write time. */
     timestamp: Date;
-    /** UUID minted by the bootstrap controller. Always present. */
+    /**
+     * Analytics visitor key. Since Phase 5 of the Better Auth refactor this
+     * is the `tronrelic_tid` UUID (decoupled from identity), not the legacy
+     * `tronrelic_uid`. Still a UUID v4, so the column type is unchanged. The
+     * field name stays `candidate_uid` to avoid retyping a sort-key column.
+     */
     candidate_uid: string;
+    /**
+     * Better Auth user id when the event was recorded for a logged-in
+     * visitor, else `null`. Additive Phase-5 column (migration 012) that
+     * attributes traffic to an account without re-keying `candidate_uid`.
+     */
+    user_id: string | null;
+    /**
+     * Referral code captured first-touch from an inbound `?ref=` (the
+     * `tronrelic_ref` cookie), else `null`. Additive Phase-5 column.
+     */
+    referral_code: string | null;
 
     /** Request URL or middleware-supplied `landingPath`. */
     path: string;
@@ -263,6 +279,8 @@ export class TrafficService {
                 event_type,
                 timestamp,
                 candidate_uid,
+                user_id,
+                referral_code,
                 path,
                 referer,
                 original_referrer,
@@ -446,6 +464,16 @@ export interface ITrafficEventBuilderInputs {
     };
     /** `document.referrer` reported by the client at landing. */
     originalReferrer?: string | null;
+    /**
+     * Better Auth user id when the visitor is logged in, else absent.
+     * Populates the additive `user_id` column for account attribution.
+     */
+    userId?: string | null;
+    /**
+     * Referral code captured first-touch (`tronrelic_ref`), else absent.
+     * Populates the additive `referral_code` column.
+     */
+    referralCode?: string | null;
 }
 
 /**
@@ -503,6 +531,8 @@ export function buildTrafficEvent(
         event_type: eventType,
         timestamp: new Date(),
         candidate_uid: candidateUid,
+        user_id: inputs.userId ?? null,
+        referral_code: inputs.referralCode ?? null,
 
         path: inputs.landingPath ?? (typeof req.path === 'string' ? req.path : '/'),
         referer: referer ?? null,
