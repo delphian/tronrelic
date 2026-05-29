@@ -319,6 +319,7 @@ function buildSyntheticEvent(user: IUserDocument, origin: ITrafficOrigin): ITraf
         // captured referral. Both default to null.
         user_id: null,
         referral_code: null,
+        duration_ms: null,
 
         path: origin.landingPage ?? '/',
         referer: origin.referrerDomain ? `https://${origin.referrerDomain}/` : null,

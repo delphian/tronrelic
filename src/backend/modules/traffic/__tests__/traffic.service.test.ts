@@ -64,6 +64,7 @@ const sampleEvent: ITrafficEvent = {
     candidate_uid: '550e8400-e29b-41d4-a716-446655440000',
     user_id: null,
     referral_code: null,
+    duration_ms: null,
     path: '/markets',
     referer: 'https://example.com/post',
     original_referrer: null,

@@ -51,7 +51,7 @@ import { classifyUserAgent, type BotClass } from './bot-classifier.js';
  * event types can be added without changing the migration; the column
  * stays variable-cardinality.
  */
-export type TrafficEventType = 'bootstrap' | 'session_start';
+export type TrafficEventType = 'bootstrap' | 'session_start' | 'session_end' | 'page';
 
 /**
  * Single row written to `traffic_events`.
@@ -84,6 +84,13 @@ export interface ITrafficEvent {
      * `tronrelic_ref` cookie), else `null`. Additive Phase-5 column.
      */
     referral_code: string | null;
+
+    /**
+     * Session duration in milliseconds. Populated only for `session_end`
+     * events; `null` for every other event type. Drives the engagement
+     * panel's average-duration metric. Additive column (migration 013).
+     */
+    duration_ms: number | null;
 
     /** Request URL or middleware-supplied `landingPath`. */
     path: string;
@@ -281,6 +288,7 @@ export class TrafficService {
                 candidate_uid,
                 user_id,
                 referral_code,
+                duration_ms,
                 path,
                 referer,
                 original_referrer,
@@ -474,6 +482,11 @@ export interface ITrafficEventBuilderInputs {
      * Populates the additive `referral_code` column.
      */
     referralCode?: string | null;
+    /**
+     * Session duration in ms, populated for `session_end` events. Maps to the
+     * `duration_ms` column; absent (→ null) for every other event type.
+     */
+    durationMs?: number | null;
 }
 
 /**
@@ -533,6 +546,7 @@ export function buildTrafficEvent(
         candidate_uid: candidateUid,
         user_id: inputs.userId ?? null,
         referral_code: inputs.referralCode ?? null,
+        duration_ms: inputs.durationMs ?? null,
 
         path: inputs.landingPath ?? (typeof req.path === 'string' ? req.path : '/'),
         referer: referer ?? null,
