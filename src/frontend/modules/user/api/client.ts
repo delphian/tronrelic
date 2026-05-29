@@ -653,11 +653,15 @@ export async function adminGetDailyVisitors(
     token: string,
     days: number = 90
 ): Promise<IDailyVisitorData[]> {
+    // The ClickHouse-backed endpoint takes a date window, not a `days` count;
+    // convert. Backend returns { data: [{ day, visitors }] }.
+    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
     const response = await apiClient.get('/admin/users/analytics/daily-visitors', {
         headers: { [adminHeaderKey]: token },
-        params: { days }
+        params: { startDate: since.toISOString(), endDate: new Date().toISOString() }
     });
-    return (response.data as { data: IDailyVisitorData[] }).data ?? [];
+    const rows = (response.data as { data?: Array<{ day: string; visitors: number }> }).data ?? [];
+    return rows.map(r => ({ date: r.day, count: r.visitors }));
 }
 
 /**
@@ -814,6 +818,22 @@ export interface IRetentionEntry {
     returningVisitors: number;
 }
 
+/**
+ * Categorize a referrer domain into a coarse traffic-source bucket for the
+ * dashboard badge. The ClickHouse `traffic_events` store only carries the raw
+ * referrer domain (or `'direct'`), so the category is derived client-side.
+ *
+ * @param source - Referrer domain or `'direct'`.
+ * @returns One of `'direct' | 'organic' | 'social' | 'referral'`.
+ */
+function categorizeTrafficSource(source: string): string {
+    if (!source || source === 'direct') return 'direct';
+    const s = source.toLowerCase();
+    if (/(google|bing|duckduckgo|yahoo|baidu|yandex|ecosia)\./.test(s)) return 'organic';
+    if (/(twitter|x\.com|t\.co|facebook|fb\.com|reddit|linkedin|instagram|youtube|tiktok|telegram|t\.me)/.test(s)) return 'social';
+    return 'referral';
+}
+
 // ============================================================================
 // Aggregate Analytics API Functions
 // ============================================================================
@@ -835,7 +855,17 @@ export async function adminGetTrafficSources(
         headers: { [adminHeaderKey]: token },
         params
     });
-    return response.data as { sources: ITrafficSource[]; total: number };
+    // Backend (TrafficService) returns { data: [{ source, count }] }. Derive
+    // the category badge and percentage client-side.
+    const rows = (response.data as { data?: Array<{ source: string; count: number }> }).data ?? [];
+    const total = rows.reduce((sum, r) => sum + (r.count ?? 0), 0);
+    const sources: ITrafficSource[] = rows.map(r => ({
+        source: r.source,
+        category: categorizeTrafficSource(r.source),
+        count: r.count,
+        percentage: total > 0 ? Math.round((r.count / total) * 1000) / 10 : 0
+    }));
+    return { sources, total };
 }
 
 /**
@@ -880,7 +910,12 @@ export async function adminGetTopLandingPages(
         headers: { [adminHeaderKey]: token },
         params
     });
-    return response.data as { pages: ILandingPage[]; totalPages: number; totalVisitors: number };
+    // Backend returns { data: [{ path, count }] }. Per-page session/view
+    // averages no longer exist (session events land post-Phase-D), so they
+    // surface as 0.
+    const rows = (response.data as { data?: Array<{ path: string; count: number }> }).data ?? [];
+    const pages: ILandingPage[] = rows.map(r => ({ path: r.path, visitors: r.count, avgSessions: 0, avgPageViews: 0 }));
+    return { pages, totalPages: pages.length, totalVisitors: rows.reduce((sum, r) => sum + (r.count ?? 0), 0) };
 }
 
 /**
@@ -900,7 +935,15 @@ export async function adminGetGeoDistribution(
         headers: { [adminHeaderKey]: token },
         params
     });
-    return response.data as { countries: IGeoEntry[]; total: number };
+    // Backend returns { data: [{ country, count }] }; derive percentage.
+    const rows = (response.data as { data?: Array<{ country: string | null; count: number }> }).data ?? [];
+    const total = rows.reduce((sum, r) => sum + (r.count ?? 0), 0);
+    const countries: IGeoEntry[] = rows.map(r => ({
+        country: r.country ?? 'Unknown',
+        count: r.count,
+        percentage: total > 0 ? Math.round((r.count / total) * 1000) / 10 : 0
+    }));
+    return { countries, total };
 }
 
 /**
@@ -920,7 +963,16 @@ export async function adminGetDeviceBreakdown(
         headers: { [adminHeaderKey]: token },
         params
     });
-    return response.data as { devices: IDeviceEntry[]; screenSizes: IScreenSizeEntry[]; total: number };
+    // Backend returns { data: [{ device, count }] }; screen-size dimension was
+    // dropped in the ClickHouse re-platform.
+    const rows = (response.data as { data?: Array<{ device: string; count: number }> }).data ?? [];
+    const total = rows.reduce((sum, r) => sum + (r.count ?? 0), 0);
+    const devices: IDeviceEntry[] = rows.map(r => ({
+        device: r.device,
+        count: r.count,
+        percentage: total > 0 ? Math.round((r.count / total) * 1000) / 10 : 0
+    }));
+    return { devices, screenSizes: [], total };
 }
 
 /**
@@ -940,7 +992,22 @@ export async function adminGetCampaignPerformance(
         headers: { [adminHeaderKey]: token },
         params
     });
-    return response.data as { campaigns: ICampaignEntry[]; total: number };
+    // Backend returns { data: [{ campaign, source, medium, visitors,
+    // conversions, conversionRate }] }. The legacy wallet-connected/-verified
+    // split collapses to a single binary conversion (BA login).
+    const rows = (response.data as {
+        data?: Array<{ campaign: string; source: string; medium: string; visitors: number; conversions: number; conversionRate: number }>
+    }).data ?? [];
+    const campaigns: ICampaignEntry[] = rows.map(r => ({
+        source: r.source,
+        medium: r.medium,
+        campaign: r.campaign,
+        visitors: r.visitors,
+        walletsConnected: r.conversions,
+        walletsVerified: r.conversions,
+        conversionRate: Math.round((r.conversionRate ?? 0) * 100)
+    }));
+    return { campaigns, total: campaigns.length };
 }
 
 /**
@@ -960,7 +1027,17 @@ export async function adminGetEngagement(
         headers: { [adminHeaderKey]: token },
         params
     });
-    return response.data as IEngagementMetrics;
+    // Backend returns { sessions, avgDurationMs, pagesPerSession, bounceRate
+    // (0-1) }. Convert to the dashboard's seconds + percentage shape. Reads
+    // near zero until Phase D wires session-event emission.
+    const d = response.data as { sessions: number; avgDurationMs: number; pagesPerSession: number; bounceRate: number };
+    return {
+        avgSessionDuration: Math.round((d.avgDurationMs ?? 0) / 1000),
+        avgPagesPerSession: Math.round((d.pagesPerSession ?? 0) * 10) / 10,
+        bounceRate: Math.round((d.bounceRate ?? 0) * 100),
+        avgSessionsPerUser: 0,
+        totalUsers: d.sessions ?? 0
+    };
 }
 
 /**
@@ -980,7 +1057,19 @@ export async function adminGetConversionFunnel(
         headers: { [adminHeaderKey]: token },
         params
     });
-    return response.data as { stages: IFunnelStage[] };
+    // Backend returns the binary funnel { distinctVisitors, converted,
+    // conversionRate (0-1) }. Render as two stages (visitors → logged in);
+    // the legacy four-stage wallet/verified shape is retired.
+    const d = response.data as { distinctVisitors: number; converted: number; conversionRate: number };
+    const visitors = d.distinctVisitors ?? 0;
+    const converted = d.converted ?? 0;
+    const convPct = Math.round((d.conversionRate ?? 0) * 100);
+    return {
+        stages: [
+            { stage: 'Visitors', count: visitors, percentage: 100, dropOff: 0 },
+            { stage: 'Logged In', count: converted, percentage: convPct, dropOff: 100 - convPct }
+        ]
+    };
 }
 
 /**
@@ -1000,7 +1089,39 @@ export async function adminGetRetention(
         headers: { [adminHeaderKey]: token },
         params
     });
-    return response.data as { data: IRetentionEntry[] };
+    // Backend returns { data: [{ day, newVisitors, returningVisitors }] };
+    // the component keys retention rows on `date`.
+    const rows = (response.data as { data?: Array<{ day: string; newVisitors: number; returningVisitors: number }> }).data ?? [];
+    return { data: rows.map(r => ({ date: r.day, newVisitors: r.newVisitors, returningVisitors: r.returningVisitors })) };
+}
+
+/** Better Auth account overview for the analytics dashboard. */
+export interface IAnalyticsOverview {
+    /** Total Better Auth accounts. */
+    totalAccounts: number;
+    /** Accounts with at least one linked wallet. */
+    accountsWithWallets: number;
+    /** Wallet-adoption rate as a 0-1 fraction. */
+    walletAdoptionRate: number;
+}
+
+/**
+ * Get the Better Auth account overview (admin endpoint): total accounts and
+ * the wallet-adoption rate. Not time-windowed.
+ *
+ * @param token - Admin API token.
+ * @returns Account count and wallet-adoption metrics.
+ */
+export async function adminGetAnalyticsOverview(token: string): Promise<IAnalyticsOverview> {
+    const response = await apiClient.get('/admin/users/analytics/overview', {
+        headers: { [adminHeaderKey]: token }
+    });
+    const d = response.data as Partial<IAnalyticsOverview>;
+    return {
+        totalAccounts: d.totalAccounts ?? 0,
+        accountsWithWallets: d.accountsWithWallets ?? 0,
+        walletAdoptionRate: d.walletAdoptionRate ?? 0
+    };
 }
 
 // ============================================================================

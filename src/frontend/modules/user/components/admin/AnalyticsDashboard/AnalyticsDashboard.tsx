@@ -37,6 +37,7 @@ import {
     adminGetEngagement,
     adminGetConversionFunnel,
     adminGetRetention,
+    adminGetAnalyticsOverview,
 } from '../../../api';
 import type {
     AnalyticsPeriod,
@@ -50,6 +51,7 @@ import type {
     IEngagementMetrics,
     IFunnelStage,
     IRetentionEntry,
+    IAnalyticsOverview,
 } from '../../../api';
 import styles from './AnalyticsDashboard.module.scss';
 
@@ -149,6 +151,7 @@ export function AnalyticsDashboard({ token }: Props) {
 
     // Data state
     const [engagement, setEngagement] = useState<IEngagementMetrics | null>(null);
+    const [overview, setOverview] = useState<IAnalyticsOverview | null>(null);
     const [funnel, setFunnel] = useState<IFunnelStage[]>([]);
     const [trafficSources, setTrafficSources] = useState<ITrafficSource[]>([]);
     const [trafficTotal, setTrafficTotal] = useState(0);
@@ -223,6 +226,7 @@ export function AnalyticsDashboard({ token }: Props) {
                 deviceRes,
                 campaignRes,
                 retentionRes,
+                overviewRes,
             ] = await Promise.all([
                 adminGetEngagement(token, period, customRange),
                 adminGetConversionFunnel(token, period, customRange),
@@ -232,6 +236,7 @@ export function AnalyticsDashboard({ token }: Props) {
                 adminGetDeviceBreakdown(token, period, customRange),
                 adminGetCampaignPerformance(token, { period, limit: 15, customRange }),
                 adminGetRetention(token, period, customRange),
+                adminGetAnalyticsOverview(token),
             ]);
 
             setEngagement(engagementRes);
@@ -243,6 +248,7 @@ export function AnalyticsDashboard({ token }: Props) {
             setDevices(deviceRes.devices);
             setCampaigns(campaignRes.campaigns);
             setRetention(retentionRes.data);
+            setOverview(overviewRes);
         } catch (error) {
             console.error('Failed to fetch analytics:', error);
         } finally {
@@ -337,6 +343,36 @@ export function AnalyticsDashboard({ token }: Props) {
                 <div className={styles.loading}>Loading analytics data...</div>
             ) : (
                 <>
+                    {/* Account Overview (Better Auth) */}
+                    {overview && (
+                        <Card>
+                            <h3 className={styles.section_title}>
+                                <Users size={16} className={styles.section_title__icon} />
+                                Accounts
+                            </h3>
+                            <div className={styles.metrics_grid}>
+                                <div className={styles.metric_card}>
+                                    <div className={styles.metric_card__value}>
+                                        {overview.totalAccounts.toLocaleString()}
+                                    </div>
+                                    <div className={styles.metric_card__label}>Total Accounts</div>
+                                </div>
+                                <div className={styles.metric_card}>
+                                    <div className={styles.metric_card__value}>
+                                        {overview.accountsWithWallets.toLocaleString()}
+                                    </div>
+                                    <div className={styles.metric_card__label}>With Wallet</div>
+                                </div>
+                                <div className={styles.metric_card}>
+                                    <div className={styles.metric_card__value}>
+                                        {Math.round(overview.walletAdoptionRate * 100)}%
+                                    </div>
+                                    <div className={styles.metric_card__label}>Wallet Adoption</div>
+                                </div>
+                            </div>
+                        </Card>
+                    )}
+
                     {/* Engagement Summary Cards */}
                     {engagement && (
                         <Card>
