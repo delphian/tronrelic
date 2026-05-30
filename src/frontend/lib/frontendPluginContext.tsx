@@ -40,14 +40,13 @@ import { getRuntimeConfig } from './runtimeConfig';
  * via `getRuntimeConfig().apiUrl`, so universal Docker images resolve
  * the correct backend per domain without rebuilding.
  *
- * Authentication rides the same-origin `tronrelic_uid` cookie. The
- * cookie is HttpOnly and signed with `SESSION_SECRET`, set by the
- * server on `/api/user/bootstrap`, and travels automatically with
- * `credentials: 'include'`. The client does not — and cannot — read
- * any admin secret from `localStorage`; the legacy `admin_token`
- * value is gone, and consulting it here was duplicated five times for
- * a value that is always null. Admin endpoints validate the signed
- * cookie via `requireAdmin` middleware (which also accepts the
+ * Authentication rides the same-origin Better Auth session cookie. The
+ * cookie is HttpOnly, set by the auth pipeline on sign-in, and travels
+ * automatically with `credentials: 'include'`. The client does not — and
+ * cannot — read any admin secret from `localStorage`; the legacy
+ * `admin_token` value is gone, and consulting it here was duplicated five
+ * times for a value that is always null. Admin endpoints validate the
+ * session cookie via `requireAdmin` middleware (which also accepts the
  * service-token path for CI/scripts that don't run in a browser).
  */
 class ApiClient implements IApiClient {

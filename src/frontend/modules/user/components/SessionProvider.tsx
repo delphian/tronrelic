@@ -8,11 +8,9 @@
  * flashing the signed-out state while BA's client fetches
  * `/api/auth/get-session` on mount.
  *
- * Phase 3 wiring: this provider mounts alongside the legacy
- * UserIdentityProvider — it does not replace it. The legacy provider
- * continues to mint and refresh the `tronrelic_uid` cookie for every
- * code path still reading `req.user`; BA sessions coexist until the
- * Phase 6 cutover removes the legacy surface.
+ * Better Auth is the sole identity layer. This provider seeds the merged
+ * session from the SSR resolver and republishes BA's live client value to
+ * the React tree so every consumer reads identity from one place.
  */
 
 import { createContext, useContext, useMemo, type ReactNode } from 'react';
@@ -36,12 +34,8 @@ export interface IAuthSessionContext {
     session: ISSRSession | null;
 
     /**
-     * True when the visitor has an authenticated BA session.
-     *
-     * Phase 3+ code should consume this in place of the legacy
-     * `UserIdentityState.Verified` check. The legacy state remains
-     * available through `useWallet()` / Redux selectors for the
-     * components still in the user-state taxonomy.
+     * True when the visitor has an authenticated BA session. This is the
+     * single binary identity flag core and plugin code consume.
      */
     isLoggedIn: boolean;
 

@@ -10,8 +10,8 @@
 
 import { useState } from 'react';
 import { Shield, ShieldAlert } from 'lucide-react';
-import { useAppSelector } from '../../../../store/hooks';
-import { selectHasVerifiedWallet } from '../../../user';
+// Direct import (not the modules/user barrel) keeps component CSS out of the bundle.
+import { useAuthSession } from '../../../user/components/SessionProvider';
 import { Page, PageHeader, Stack } from '../../../../components/layout';
 import { Card } from '../../../../components/ui/Card';
 import { Input } from '../../../../components/ui/Input';
@@ -29,7 +29,7 @@ import styles from './ApprovalChecker.module.scss';
  * No SSR data needed — purely interactive.
  */
 export function ApprovalChecker() {
-    const hasVerifiedWallet = useAppSelector(selectHasVerifiedWallet);
+    const { isLoggedIn } = useAuthSession();
     const [address, setAddress] = useState('');
     const [result, setResult] = useState<IApprovalCheckResult | null>(null);
     const [error, setError] = useState<string | null>(null);
@@ -54,7 +54,7 @@ export function ApprovalChecker() {
         }
     };
 
-    if (!hasVerifiedWallet) {
+    if (!isLoggedIn) {
         return (
             <Page>
                 <PageHeader title="Token Approval Checker" subtitle="Scan a TRON wallet for active TRC20 token approvals" />
@@ -64,10 +64,8 @@ export function ApprovalChecker() {
                             <div className={styles.gate_message}>
                                 <ShieldAlert size={24} />
                                 <p>
-                                    This tool requires a verified wallet. Use the wallet
-                                    button in the page header to connect and sign a TronLink
-                                    wallet — that flow handles both first-time verification
-                                    and re-signing after a stale signature.
+                                    This tool requires you to be signed in. Use the sign-in
+                                    button in the page header to authenticate, then return here.
                                 </p>
                             </div>
                         </Stack>

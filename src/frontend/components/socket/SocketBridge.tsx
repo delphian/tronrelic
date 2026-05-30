@@ -6,7 +6,6 @@ import { getSocket, disconnectSocket, WEBSOCKET_DEFER_TIMEOUT_MS } from '../../l
 import { useAppDispatch, useAppSelector } from '../../store/hooks';
 import { prependMemo } from '../../store/slices/memoSlice';
 import { blockReceived } from '../../features/blockchain/slice';
-import { setUserData, selectUserId } from '../../modules/user';
 import { refetchMenuTree, namespaceConfigSet } from '../../modules/menu/slice';
 import type { IMenuNamespaceConfig } from '../../modules/menu/types';
 import {
@@ -28,7 +27,6 @@ import type {
   MenuNamespaceConfigUpdatePayload,
   SocketSubscriptions
 } from '@/shared';
-import type { IUserData } from '../../modules/user';
 
 /** User interaction events that trigger immediate WebSocket connection */
 const INTERACTION_EVENTS = ['click', 'scroll', 'touchstart', 'keydown', 'mousemove'] as const;
@@ -43,8 +41,6 @@ export function SocketBridge() {
   const desiredRef = useRef<SocketSubscriptions | null>(null);
   const commentThreadsRef = useRef<string[]>([]);
   const commentThreadSetRef = useRef<Set<string>>(new Set());
-  const userIdRef = useRef<string | null>(null);
-  const userSubscribedRef = useRef(false);
   const connectionInitiatedRef = useRef(false);
   const countdownIntervalRef = useRef<number | null>(null);
 
@@ -52,7 +48,6 @@ export function SocketBridge() {
   const pending = useAppSelector(state => state.realtime.pending);
   const connectionStatus = useAppSelector(state => state.realtime.connection.status);
   const commentThreads = useAppSelector(state => state.realtime.subscriptions.commentThreads);
-  const userId = useAppSelector(selectUserId);
 
   useEffect(() => {
     desiredRef.current = desired ?? null;
@@ -61,10 +56,6 @@ export function SocketBridge() {
   useEffect(() => {
     commentThreadsRef.current = commentThreads;
   }, [commentThreads]);
-
-  useEffect(() => {
-    userIdRef.current = userId;
-  }, [userId]);
 
   useEffect(() => {
     const socket = getSocket();
@@ -201,10 +192,6 @@ export function SocketBridge() {
       dispatch(blockReceived(payload));
     };
 
-    const handleUserUpdate = (payload: IUserData) => {
-      dispatch(setUserData(payload));
-    };
-
     const handleMenuUpdate = (payload: MenuUpdatePayload['payload']) => {
       // Per-user gating means the server can't broadcast a single tree
       // shape. The signal carries `{ namespace, nodeId, event, timestamp }`;
@@ -268,7 +255,6 @@ export function SocketBridge() {
     socket.on('pong', handlePong);
     socket.on('memo:new', handleMemoUpdate);
     socket.on('block:new', handleBlockUpdate);
-    socket.on('user:update', handleUserUpdate);
     socket.on('menu:update', handleMenuUpdate);
     socket.on('menu:namespace-config:update', handleMenuNamespaceConfigUpdate);
 
@@ -305,7 +291,6 @@ export function SocketBridge() {
 
       socket.off('memo:new', handleMemoUpdate);
       socket.off('block:new', handleBlockUpdate);
-      socket.off('user:update', handleUserUpdate);
       socket.off('menu:update', handleMenuUpdate);
       socket.off('menu:namespace-config:update', handleMenuNamespaceConfigUpdate);
       socket.off('connect', handleConnect);
@@ -351,26 +336,6 @@ export function SocketBridge() {
 
     commentThreadSetRef.current = next;
   }, [commentThreads, connectionStatus]);
-
-  // Subscribe to user identity events. The user UUID is no longer sent in
-  // the payload — the server reads `tronrelic_uid` from the handshake
-  // cookie at connection time and joins the socket to its own room. The
-  // local `userId` here is only used to decide *when* to subscribe (after
-  // bootstrap completes) and for re-subscribe debouncing.
-  useEffect(() => {
-    const socket = socketRef.current;
-    if (!socket || !socket.connected || !userId) {
-      return;
-    }
-
-    // Only subscribe once per user
-    if (userSubscribedRef.current && userIdRef.current === userId) {
-      return;
-    }
-
-    socket.emit('subscribe', { user: true });
-    userSubscribedRef.current = true;
-  }, [userId, connectionStatus]);
 
   return null;
 }

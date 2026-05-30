@@ -5,7 +5,6 @@ import blockchainReducer from '../features/blockchain/slice';
 import uiReducer from '../features/ui-state/slice';
 import realtimeReducer from '../features/realtime/slice';
 import transactionReducer from '../features/transactions/slice';
-import userReducer, { type UserState } from '../modules/user/slice';
 import menuReducer from '../modules/menu/slice';
 
 declare global {
@@ -26,7 +25,6 @@ const rootReducer = combineReducers({
     ui: uiReducer,
     realtime: realtimeReducer,
     transactions: transactionReducer,
-    user: userReducer,
     menu: menuReducer
 });
 
@@ -54,25 +52,20 @@ function resolveDevToolsConfiguration(): false | Record<string, unknown> {
 }
 
 /**
- * Preloaded state interface for SSR hydration.
- */
-export interface PreloadedUserState {
-    user?: UserState;
-}
-
-/**
- * Create Redux store with optional preloaded state.
+ * Create a Redux store with optional preloaded slice state.
  *
- * Used for SSR hydration to prevent UI flash by preloading
- * user data fetched on the server.
+ * Retained as a factory so `providers.tsx` can memoize a per-render store.
+ * Identity no longer preloads (Better Auth seeds the SessionProvider via
+ * React context, not Redux), so callers currently pass nothing; the
+ * parameter stays for any future SSR-hydrated slice.
  *
- * @param preloadedState - Optional state to hydrate store with
- * @returns Configured Redux store
+ * @param preloadedState - Optional partial slice state to hydrate.
+ * @returns Configured Redux store.
  */
-export function createStore(preloadedState?: PreloadedUserState) {
+export function createStore(preloadedState?: Partial<ReturnType<typeof rootReducer>>) {
     return configureStore({
         reducer: rootReducer,
-        preloadedState: preloadedState as ReturnType<typeof rootReducer>,
+        preloadedState: preloadedState as ReturnType<typeof rootReducer> | undefined,
         devTools: resolveDevToolsConfiguration()
     });
 }

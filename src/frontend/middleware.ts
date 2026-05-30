@@ -20,21 +20,19 @@ export const ORIGINAL_REFERRER_COOKIE = '_original_ref';
 const COOKIE_MAX_AGE = 300;
 
 /**
- * User identity cookie. Server-owned; HttpOnly; one-year max-age. Spec
- * mirrors the backend's `setIdentityCookie` helper. When the request has
- * no cookie, middleware bootstraps it server-to-server so SSR finds an
- * identity on the very first request without redirects or flashes.
+ * UUID v4 validator for the analytics traffic id. The tid is the only
+ * server-issued id the middleware mints — Better Auth owns identity now —
+ * so this guards against a malformed inbound tid cookie before we reuse it.
  */
-const USER_ID_COOKIE_NAME = 'tronrelic_uid';
-const USER_ID_COOKIE_MAX_AGE_SECONDS = 31536000;
 const UUID_V4_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 /**
- * Analytics traffic id (Phase 5 of the Better Auth refactor). A UUID
- * decoupled from identity that keys `traffic_events`, minted here so it is
- * stable from the very first SSR paint and survives the Phase 6 removal of
- * `tronrelic_uid`. Spec mirrors the backend `traffic-cookies.ts` helper:
- * HttpOnly, SameSite=Lax, Secure in production, one-year max-age, unsigned.
+ * Analytics traffic id. A UUID decoupled from identity that keys
+ * `traffic_events`, minted here so it is stable from the very first SSR
+ * paint. Better Auth owns identity; the tid is the sole server-issued id
+ * the middleware mints. Spec mirrors the backend `traffic-cookies.ts`
+ * helper: HttpOnly, SameSite=Lax, Secure in production, one-year max-age,
+ * unsigned.
  */
 const TID_COOKIE_NAME = 'tronrelic_tid';
 const TID_COOKIE_MAX_AGE_SECONDS = 31536000;
@@ -175,44 +173,38 @@ function buildForwardedHeaders(request: NextRequest): Record<string, string> {
 }
 
 /**
- * Mint the identity cookie via the backend's bootstrap endpoint.
+ * Emit the first-touch `bootstrap` traffic event via the backend.
  *
- * Resolves to a valid UUID string when the bootstrap call succeeds. Returns
- * null on any failure — middleware must never block page loads on a backend
- * outage; the client-side `UserIdentityProvider` retries on mount.
+ * Fired once per new visitor (when the analytics tid is freshly minted).
+ * The backend keys the `traffic_events` row on the tid carried in the body
+ * and enriches it with the forwarded client headers. Better Auth owns
+ * identity, so this no longer mints or returns a user id — it is a
+ * fire-and-forget analytics beacon. Failures are swallowed: a backend
+ * outage must never block a page load.
  *
  * The fetch is server-to-server (within the same Docker network). We
- * intentionally don't forward the inbound request's cookies — there's
- * nothing useful in them when this code path runs (the bootstrap fires
- * only when the identity cookie is absent). We *do* forward the visitor
- * context the backend needs to record a useful `traffic_events` row:
- * client headers (UA, Referer, Sec-CH-UA*, Sec-Fetch-*), the original
- * client IP via `X-Forwarded-For`, and a small JSON body with the
- * landing path, UTM params, and `_original_ref` cookie.
+ * forward the visitor context the backend needs to record a useful
+ * `traffic_events` row: client headers (UA, Referer, Sec-CH-UA*,
+ * Sec-Fetch-*), the original client IP via `X-Forwarded-For`, and a small
+ * JSON body with the tid, landing path, UTM params, and `_original_ref`.
  */
-async function bootstrapIdentity(
+async function emitBootstrapEvent(
     request: NextRequest,
     tid: string,
     referralCode: string | null
-): Promise<string | null> {
+): Promise<void> {
     const backendUrl = process.env.SITE_BACKEND || 'http://localhost:4000';
     try {
-        const response = await fetch(`${backendUrl}/api/user/bootstrap`, {
+        await fetch(`${backendUrl}/api/user/bootstrap`, {
             method: 'POST',
             headers: buildForwardedHeaders(request),
             body: buildBootstrapBody(request, tid, referralCode),
-            // Prevent edge runtime from caching identity bootstrap.
+            // Prevent the edge runtime from caching the analytics beacon.
             cache: 'no-store',
             signal: AbortSignal.timeout(3000)
         });
-        if (!response.ok) return null;
-        const body = (await response.json()) as { id?: unknown };
-        if (typeof body?.id !== 'string' || !UUID_V4_REGEX.test(body.id)) {
-            return null;
-        }
-        return body.id;
     } catch {
-        return null;
+        // Ignore — analytics is best-effort, never load-bearing.
     }
 }
 
@@ -317,34 +309,10 @@ export async function middleware(request: NextRequest) {
         return response;
     }
 
-    // Bootstrap the identity cookie on first visit so the SSR pass below
-    // (app/layout.tsx → getServerUser) finds a cookie and can prefetch the
-    // user record. Without this, brand-new visitors would see a flash on
-    // first load while the client-side bootstrap completes after hydration.
-    //
-    // Skip bootstrap whenever the browser sends *any* non-empty identity
-    // cookie:
-    //   - Bare UUID (`<uuid>`): legacy unsigned cookie minted before PR
-    //     #197 or by this middleware on a prior cookieless visit. The
-    //     backend bootstrap accepts it on the next `/api/user/bootstrap`
-    //     call and re-anchors as signed.
-    //   - Signed envelope (`s:<uuid>.<sig>`): the current server-set
-    //     value. The wire format is opaque here — only the backend
-    //     holds `SESSION_SECRET` — but its presence proves the visitor
-    //     already has a canonical identity. Re-bootstrapping would mint
-    //     a fresh UUID and overwrite the signed cookie with an unsigned
-    //     one, orphaning the existing user record on every navigation.
-    //   - Garbage value: ignored on the middleware side; backend
-    //     bootstrap will mint a fresh UUID on the next client-side
-    //     bootstrap call when it can't recover a UUID from the cookie.
-    //
-    // Only mint here when the cookie is genuinely absent or empty. The
-    // raw UUID-regex check that used to gate this call rejected the
-    // signed envelope and orphaned every returning user post-PR-197.
-    // Resolve the analytics traffic id and first-touch referral capture
-    // (Phase 5). Independent of the identity bootstrap below: an existing
-    // visitor may carry a uid from before Phase 5 but no tid yet, so the
-    // tid is minted whenever it is absent regardless of uid state.
+    // Resolve the analytics traffic id (tid) and first-touch referral
+    // capture. Better Auth owns identity now — the middleware mints only the
+    // tid, which keys `traffic_events` independently of any login state. The
+    // tid is minted whenever it is absent or malformed.
     const existingTid = request.cookies.get(TID_COOKIE_NAME)?.value;
     const tid =
         typeof existingTid === 'string' && UUID_V4_REGEX.test(existingTid)
@@ -358,20 +326,12 @@ export async function middleware(request: NextRequest) {
         !existingRef && inboundRef && REFERRAL_CODE_REGEX.test(inboundRef) ? inboundRef : null;
     const referralCode = existingRef ?? refToSet ?? null;
 
-    const existingId = request.cookies.get(USER_ID_COOKIE_NAME)?.value;
-    const needsBootstrap = typeof existingId !== 'string' || existingId.length === 0;
-
-    let injectedUserId: string | null = null;
-    if (needsBootstrap) {
-        injectedUserId = await bootstrapIdentity(request, tid, referralCode);
-        if (injectedUserId) {
-            // Mutate the request's cookie jar so server components running
-            // in the same render tree see the cookie via `next/headers`.
-            request.cookies.set(USER_ID_COOKIE_NAME, injectedUserId);
-        }
-        // On bootstrap failure (backend down, edge timeout) we silently
-        // continue without a cookie — the client-side provider retries
-        // on mount. Better than a redirect loop or a 5xx page.
+    // Fire the first-touch bootstrap analytics event once per new visitor
+    // (i.e. when the tid is freshly minted). Server-to-server, best-effort;
+    // the new tid is carried in the body since it is not yet on the request's
+    // cookie jar. No identity is minted — this is purely a traffic_events row.
+    if (tidMinted) {
+        await emitBootstrapEvent(request, tid, referralCode);
     }
 
     // No redirect - continue with normal request processing
@@ -381,24 +341,11 @@ export async function middleware(request: NextRequest) {
         }
     });
 
-    // Persist the bootstrapped identity on the browser so subsequent
-    // requests carry it. Spec mirrors the backend's setIdentityCookie:
-    // HttpOnly, SameSite=Lax, Secure in production.
     const isProduction = request.nextUrl.protocol === 'https:';
-    if (injectedUserId) {
-        response.cookies.set(USER_ID_COOKIE_NAME, injectedUserId, {
-            httpOnly: true,
-            sameSite: 'lax',
-            secure: isProduction,
-            path: '/',
-            maxAge: USER_ID_COOKIE_MAX_AGE_SECONDS
-        });
-    }
 
-    // Persist the analytics tid (Phase 5) on first sight so every
-    // subsequent request — and the backend traffic_events row — keys on a
-    // stable id independent of identity. Set only when freshly minted to
-    // avoid a redundant Set-Cookie on every navigation.
+    // Persist the analytics tid on first sight so every subsequent request —
+    // and the backend traffic_events row — keys on a stable id. Set only when
+    // freshly minted to avoid a redundant Set-Cookie on every navigation.
     if (tidMinted) {
         response.cookies.set(TID_COOKIE_NAME, tid, {
             httpOnly: true,
