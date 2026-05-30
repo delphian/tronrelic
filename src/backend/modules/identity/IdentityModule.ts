@@ -6,8 +6,10 @@
  * group-membership service that backs BA's `groups` additional field, the
  * BA-user-keyed wallet store, the group-definition registry, and the
  * read-only account directory. It mounts `/api/auth/*`, `/api/user/wallets`,
- * and `/api/admin/users/groups`, and publishes `'user-groups'`, `'wallets'`,
- * and `'accounts'` on the service registry for late-binding consumers.
+ * the `/api/admin/users/groups` group-definition router, and the
+ * `/api/admin/users` account-directory router (the dashboard's user list),
+ * and publishes `'user-groups'`, `'wallets'`, and `'accounts'` on the service
+ * registry for late-binding consumers.
  *
  * The legacy UUID-keyed user module still runs alongside this one until the
  * Phase 6 cutover removes it; this module must therefore `init()` *before*
@@ -33,8 +35,10 @@ import { setAuthInstance } from './services/auth-facade.js';
 import { createAuth, type Auth } from './auth.js';
 import { WalletController } from './api/wallet.controller.js';
 import { UserGroupController } from './api/user-group.controller.js';
+import { AccountsController } from './api/accounts.controller.js';
 import { createWalletRouter } from './api/wallet.routes.js';
 import { createAdminUserGroupRouter } from './api/user-group.routes.js';
+import { createAdminAccountsRouter } from './api/accounts.routes.js';
 import { requireAdmin } from '../../api/middleware/admin-auth.js';
 
 /**
@@ -81,6 +85,7 @@ export class IdentityModule implements IModule<IIdentityModuleDependencies> {
 
     private walletController!: WalletController;
     private groupController!: UserGroupController;
+    private accountsController!: AccountsController;
 
     private readonly logger = logger.child({ module: 'identity' });
 
@@ -149,6 +154,7 @@ export class IdentityModule implements IModule<IIdentityModuleDependencies> {
         // Controllers over the BA-keyed services.
         this.walletController = new WalletController(this.walletService, this.logger);
         this.groupController = new UserGroupController(this.userGroupService, this.logger);
+        this.accountsController = new AccountsController(this.accountDirectoryService, this.logger);
 
         this.logger.info('Identity module initialized');
     }
@@ -156,10 +162,14 @@ export class IdentityModule implements IModule<IIdentityModuleDependencies> {
     /**
      * Mount routers and publish services. Runs after all modules `init()`.
      *
-     * Mounts `/api/user/wallets` and `/api/admin/users/groups` ahead of the
-     * legacy `/api/user` and `/api/admin/users` routers (UserModule runs
-     * after this module) so their literal segments win over the legacy
-     * `/:id` matchers.
+     * Mounts `/api/user/wallets` ahead of the legacy `/api/user` router
+     * (UserModule runs after this module) so its literal segment wins over
+     * that router's `/:id` matcher. Owns the `/api/admin/users` admin tree:
+     * the group-definition router at `/api/admin/users/groups` and the
+     * account-directory catch-all at `/api/admin/users`, registered in that
+     * order. This module runs after the traffic module (see the bootstrap
+     * run-order) so traffic's `/api/admin/users/{analytics,traffic}` routers
+     * register before the account catch-all and win the prefix match.
      */
     async run(): Promise<void> {
         this.logger.info('Running identity module...');
@@ -180,6 +190,16 @@ export class IdentityModule implements IModule<IIdentityModuleDependencies> {
         const adminGroupRouter: Router = createAdminUserGroupRouter(this.groupController);
         this.app.use('/api/admin/users/groups', requireAdmin, adminGroupRouter);
         this.logger.info('Admin user-groups router mounted at /api/admin/users/groups');
+
+        // Admin account-directory router — the catch-all `/api/admin/users`
+        // mount that backs the `/system/users` dashboard. Registered after the
+        // groups router here, and (via bootstrap run-order) after the traffic
+        // module's `/api/admin/users/analytics` + `/traffic` routers, so its
+        // `/:id` matcher never shadows those more-specific prefixes. Replaces
+        // the legacy UUID user-list surface the user module used to mount.
+        const adminAccountsRouter: Router = createAdminAccountsRouter(this.accountsController, this.groupController);
+        this.app.use('/api/admin/users', requireAdmin, adminAccountsRouter);
+        this.logger.info('Admin accounts router mounted at /api/admin/users');
 
         // Publish the BA-keyed services for late-binding discovery.
         this.serviceRegistry.register('user-groups', this.userGroupService);

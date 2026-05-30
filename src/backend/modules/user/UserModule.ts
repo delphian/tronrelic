@@ -25,12 +25,9 @@ import { TronGridClient } from '../blockchain/tron-grid.client.js';
 import { UserService } from './services/user.service.js';
 import { GscService } from '../traffic/services/gsc.service.js';
 import { TrafficService } from '../traffic/services/traffic.service.js';
-import { TrafficController } from '../traffic/api/traffic.controller.js';
 import { UserGroupService } from '../identity/services/user-group.service.js';
-import { UserGroupController } from '../identity/api/user-group.controller.js';
 import { UserController } from './api/user.controller.js';
-import { createUserRouter, createAdminUserRouter } from './api/user.routes.js';
-import { requireAdmin } from '../../api/middleware/admin-auth.js';
+import { createUserRouter } from './api/user.routes.js';
 
 /**
  * User module dependencies for initialization.
@@ -70,12 +67,13 @@ export interface IUserModuleDependencies {
  * - Resolves the traffic-owned GscService / TrafficService singletons and
  *   injects them into UserService for its legacy analytics aggregations
  * - Resolves the BA-keyed UserGroupService singleton (created by IdentityModule)
- * - Creates the user, group, and traffic controllers
+ * - Creates the user controller
  *
  * ### run() phase:
  * - Registers the Users menu item under the System container
  * - Registers UserService on the service registry as `'user'`
- * - Mounts the public `/api/user` and admin `/api/admin/users` routers
+ * - Mounts the public `/api/user` router (the admin `/api/admin/users`
+ *   surface now belongs to the identity module's account-directory router)
  */
 export class UserModule implements IModule<IUserModuleDependencies> {
     /** Module metadata for introspection and logging. */
@@ -99,8 +97,6 @@ export class UserModule implements IModule<IUserModuleDependencies> {
     private trafficService!: TrafficService;
     private userGroupService!: UserGroupService;
     private controller!: UserController;
-    private groupController!: UserGroupController;
-    private trafficController!: TrafficController;
 
     /** Logger instance for this module. */
     private readonly logger = logger.child({ module: 'user' });
@@ -150,8 +146,8 @@ export class UserModule implements IModule<IUserModuleDependencies> {
         this.userService.setTrafficService(this.trafficService);
 
         // Resolve the BA-keyed UserGroupService singleton (created by
-        // IdentityModule). Composed by the legacy admin surface for the
-        // per-user group editor and auth-status response shaping.
+        // IdentityModule). Still composed by UserController for auth-status
+        // response shaping on the surviving legacy `/api/user/*` surface.
         this.userGroupService = UserGroupService.getInstance();
 
         // Create the user controller with its singleton services.
@@ -163,20 +159,6 @@ export class UserModule implements IModule<IUserModuleDependencies> {
             this.logger
         );
 
-        // Group controller over the identity-owned UserGroupService, for the
-        // `PUT /api/admin/users/:id/groups` membership editor in the legacy
-        // admin tree.
-        this.groupController = new UserGroupController(this.userGroupService, this.logger);
-
-        // Traffic controller over the traffic-owned TrafficService, for the
-        // `GET /api/admin/users/:id/traffic-history` read in the legacy admin tree.
-        this.trafficController = new TrafficController(
-            this.trafficService,
-            this.gscService,
-            this.serviceRegistry,
-            this.logger
-        );
-
         this.logger.info('User module initialized');
     }
 
@@ -184,9 +166,9 @@ export class UserModule implements IModule<IUserModuleDependencies> {
      * Run the user module after all modules have initialized.
      *
      * Registers the Users menu item, publishes UserService, and mounts the
-     * public and admin routers. The identity and traffic modules have already
-     * mounted `/api/user/wallets`, `/api/admin/users/groups`, and
-     * `/api/admin/users/traffic` ahead of these.
+     * public `/api/user` router. The identity module mounted
+     * `/api/user/wallets` ahead of it (so the literal segment wins) and now
+     * owns the `/api/admin/users` admin surface.
      *
      * @throws {Error} If runtime setup fails (causes application shutdown).
      */
@@ -218,17 +200,12 @@ export class UserModule implements IModule<IUserModuleDependencies> {
         this.logger.info('UserService registered on service registry as "user"');
 
         // Create and mount the public router (IoC). The identity module mounted
-        // `/api/user/wallets` ahead of this, so the literal segment wins.
+        // `/api/user/wallets` ahead of this, so the literal segment wins. The
+        // admin `/api/admin/users` surface now belongs to the identity module's
+        // account-directory router; this module no longer mounts it.
         const publicRouter = this.createPublicRouter();
         this.app.use('/api/user', publicRouter);
         this.logger.info('Public user router mounted at /api/user');
-
-        // Mount the admin users router. The identity and traffic modules
-        // mounted `/api/admin/users/groups` and `/api/admin/users/traffic`
-        // ahead of this, so their specific paths win over `/:id`.
-        const adminRouter = this.createAdminRouter();
-        this.app.use('/api/admin/users', requireAdmin, adminRouter);
-        this.logger.info('Admin users router mounted at /api/admin/users');
 
         this.logger.info('User module running');
     }
@@ -241,16 +218,6 @@ export class UserModule implements IModule<IUserModuleDependencies> {
      */
     private createPublicRouter(): Router {
         return createUserRouter(this.controller);
-    }
-
-    /**
-     * Create the admin router with authenticated endpoints.
-     *
-     * @returns Express router with admin endpoints.
-     * @internal
-     */
-    private createAdminRouter(): Router {
-        return createAdminUserRouter(this.controller, this.groupController, this.trafficController);
     }
 
     /**

@@ -375,8 +375,13 @@ async function bootstrapRun(ctx: BootstrapContext): Promise<void> {
     await modules.logs.run();
     await modules.pages.run();
     await modules.widgets.run();
-    await modules.identity.run();
+    // Traffic runs before identity so its `/api/admin/users/{analytics,traffic}`
+    // routers register before identity's `/api/admin/users` account-directory
+    // catch-all — the catch-all's `/:id` matcher must not shadow those
+    // more-specific prefixes. init() order is unchanged (identity first), so the
+    // BA-keyed singletons traffic/user resolve via getInstance() still exist.
     await modules.traffic.run();
+    await modules.identity.run();
     await modules.user.run();
     await modules.addressLabels.run();
     await modules.tools.run();
