@@ -179,9 +179,10 @@ export class IdentityModule implements IModule<IIdentityModuleDependencies> {
         this.app.all('/api/auth/*', toNodeHandler(this.auth));
         this.logger.info('Better Auth handler mounted at /api/auth/*');
 
-        // Wallet router — must mount before the legacy `/api/user` router so
-        // the literal `wallets` segment is not captured by that router's
-        // `/:id` cookie-validation middleware.
+        // Wallet router at the literal `/api/user/wallets` segment. The legacy
+        // `/api/user/:id` user module is deleted, so no `/:id` catch-all can
+        // capture `wallets` here — only literal `/api/user/*` routers remain
+        // (this one and the traffic module's `/api/user/bootstrap`).
         const walletRouter: Router = createWalletRouter(this.walletController);
         this.app.use('/api/user/wallets', walletRouter);
         this.logger.info('Wallet router mounted at /api/user/wallets');

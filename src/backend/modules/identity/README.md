@@ -9,15 +9,15 @@ Owns Better Auth and everything keyed by the Better Auth user id: the auth insta
 | Module id | `identity` |
 | Module class | `src/backend/modules/identity/IdentityModule.ts` |
 | Service registry names | `'user-groups'`, `'wallets'`, `'accounts'` |
-| Mounted routes | `/api/auth/*`, `/api/user/wallets/*`, `/api/admin/users/groups/*` |
+| Mounted routes | `/api/auth/*`, `/api/user/wallets/*`, `/api/admin/users/groups/*`, `/api/admin/users` (accounts) |
 | Types package | `@delphian/tronrelic-types` → `IWalletService`, `IAccountDirectoryService`, `IUserGroupService` |
 | Auth collections | `module_user_auth_users` / `_sessions` / `_accounts` / `_verifications` / `_passkeys` |
 | Owned collections | `module_user_wallets`, `module_user_groups` |
-| Bootstrap order | Inits and runs **before** `UserModule` (legacy code resolves these singletons during transition) |
+| Bootstrap order | Inits/runs after `TrafficModule` so traffic's `/api/admin/users/{traffic,analytics}` routers mount before the accounts `/api/admin/users` catch-all |
 
 ## Why This Module Exists Separately
 
-The legacy UUID identity system and Better Auth coexist until the Phase 6 cutover. Splitting BA-keyed concerns into their own module enforces a single-responsibility boundary: **no code outside this module reads `module_user_auth_users` directly** — not even via `IDatabaseService`. The only sanctioned path is `services.get<IAccountDirectoryService>('accounts')`. Wallet and group data follow the same rule through `'wallets'` and `'user-groups'`.
+Better Auth is the sole identity layer — the legacy UUID identity system was removed in the Phase 6 cutover. Keeping BA-keyed concerns in their own module enforces a single-responsibility boundary: **no code outside this module reads `module_user_auth_users` directly** — not even via `IDatabaseService`. The only sanctioned path is `services.get<IAccountDirectoryService>('accounts')`. Wallet and group data follow the same rule through `'wallets'` and `'user-groups'`.
 
 ## Source Map
 
@@ -34,6 +34,7 @@ The legacy UUID identity system and Better Auth coexist until the Phase 6 cutove
 | `services/account-directory.service.ts` | Read-only directory over BA accounts; the `'accounts'` contract |
 | `api/wallet.{controller,routes}.ts` | `/api/user/wallets/*` (BA-session-resolved, no `:id` on the wire) |
 | `api/user-group.{controller,routes}.ts` | `/api/admin/users/groups/*` admin CRUD + membership |
+| `api/accounts.{controller,routes}.ts` | `/api/admin/users` admin account directory (list + per-account group assignment) over the `'accounts'` service |
 | `database/IWalletDocument.ts` | `module_user_wallets` document + `ILinkedWallet` public shape |
 | `database/IUserGroupDocument.ts` | `module_user_groups` document |
 
@@ -78,15 +79,18 @@ Group definitions and membership. See `@/types` `IUserGroupService` for the full
 | GET/POST | `/api/admin/users/groups` | `requireAdmin` | List / create group definitions |
 | GET/PATCH/DELETE | `/api/admin/users/groups/:id` | `requireAdmin` | Read / update / delete a definition |
 | GET | `/api/admin/users/groups/:id/members` | `requireAdmin` | Paginated member ids |
+| GET | `/api/admin/users` | `requireAdmin` | Paginated / searched account summaries (`IAccountSummary[]` + total) |
+| GET | `/api/admin/users/:id` | `requireAdmin` | One account summary, or 404 |
+| PUT | `/api/admin/users/:id/groups` | `requireAdmin` | Set an account's group membership |
 
-The wallet and group routers mount **before** the legacy `/api/user` and `/api/admin/users` routers (UserModule runs after this module) so their literal segments win over the legacy `/:id` matchers.
+`/api/admin/users` is a `/:id` catch-all, so it mounts **last**. The literal-segment routers must mount ahead of it: the groups router here, and the traffic module's `/api/admin/users/{traffic,analytics}` routers (TrafficModule runs before this module). Without that order the catch-all would shadow `traffic`, `analytics`, and `groups`.
 
 ## Lifecycle
 
-**`init()`** constructs (in order) `GroupService`, `WalletService`, `UserGroupService` (seeds the `admin` group), `AccountDirectoryService`, and the Better Auth instance, then wires the auth facade and builds the wallet + group controllers. **`run()`** mounts `/api/auth/*`, the wallet router, and the admin group router, then registers `'user-groups'`, `'wallets'`, `'accounts'`.
+**`init()`** constructs (in order) `GroupService`, `WalletService`, `UserGroupService` (seeds the `admin` group), `AccountDirectoryService`, and the Better Auth instance, then wires the auth facade and builds the wallet + group controllers. **`run()`** mounts `/api/auth/*`, the wallet router, the admin group router, and the admin accounts router (`/api/admin/users`, the `/:id` catch-all, last), then registers `'user-groups'`, `'wallets'`, `'accounts'`.
 
 ## Related
 
 - [system-auth.md](../../../../docs/system/system-auth.md) — Better Auth authorization model and predicates
-- [User Module README](../user/README.md) — legacy UUID identity surface (removed in Phase 6)
+- [Traffic Module README](../traffic/README.md) — the sibling analytics module that mounts the other `/api/admin/users/*` routers
 - [Module Architecture](../../../../docs/system/modules/modules-architecture.md) — IModule contract, bootstrap order, service registry

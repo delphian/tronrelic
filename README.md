@@ -50,7 +50,8 @@ Everything under `src/backend/` — modules, blockchain sync, scheduler, databas
 | [Logging System](docs/system/system-logging.md) | Pino, MongoDB persistence, log queries |
 | [Menu Module](src/backend/modules/menu/README.md) | Navigation management, plugin integration |
 | [Pages Module](src/backend/modules/pages/README.md) | CMS, markdown, file uploads |
-| [User Module](src/backend/modules/user/README.md) | Identity, wallet linking, preferences |
+| [Identity Module](src/backend/modules/identity/README.md) | Better Auth, groups, wallet store, account directory |
+| [Traffic Module](src/backend/modules/traffic/README.md) | ClickHouse traffic_events analytics, tid/ref cookies, GSC |
 | [Runtime Configuration](docs/system/system-runtime-config.md) | Universal Docker images, SITE_URL |
 | [Scheduler Operations](docs/system/system-scheduler-operations.md) | Job management, cron, troubleshooting |
 | [Testing Framework](docs/system/system-testing.md) | Vitest, Mongoose mocks, test isolation |
