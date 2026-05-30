@@ -33,7 +33,7 @@ export function createExpressApp(): Express {
   // Body parsers consume the raw request stream, but Better Auth's
   // Node integration needs the original body to validate email-OTP
   // codes, OAuth callbacks, and passkey assertions. Skip them on
-  // `/api/auth/*` so `toNodeHandler` (mounted by UserModule.run()) can
+  // `/api/auth/*` so `toNodeHandler` (mounted by IdentityModule.run()) can
   // read the body itself. Cookie-parser above is safe to leave global
   // because it only reads headers.
   app.use(skipForAuthRoutes(express.json({ limit: '5mb' })));
@@ -71,11 +71,11 @@ export function createExpressApp(): Express {
   // middleware in the framework layer so every downstream route
   // (including the /api router mounted by bootstrapInit after this
   // function returns) inherits a pre-resolved req.authSession.
-  // Registering it inside UserModule.run() would be too late —
+  // Registering it inside a module's run() would be too late —
   // bootstrapInit mounts the /api router before module.run() fires,
   // so middleware added there would never see /api/* requests. The
   // middleware lazily resolves the auth instance via the facade, so
-  // it is safe to register here before UserModule.init() configures
+  // it is safe to register here before IdentityModule.init() configures
   // the BA singleton; real traffic only arrives after both phases
   // complete and the server starts listening.
   app.use(attachAuthSession);

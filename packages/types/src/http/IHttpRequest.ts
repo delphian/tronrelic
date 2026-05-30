@@ -165,16 +165,17 @@ export interface IHttpRequest<
     get(name: string): string | undefined;
 
     /**
-     * User UUID extracted from the `tronrelic_uid` cookie.
+     * Better Auth user id of the admin operator, set by the `requireAdmin`
+     * middleware on the session-authenticated path for the audit trail.
      *
-     * Populated by middleware before requests reach plugin routes. Undefined if
-     * no valid user cookie is present.
+     * Undefined on anonymous requests, on the service-token admin path, and
+     * on any route `requireAdmin` does not guard. Read `req.authSession` for
+     * general identity — not this field.
      *
      * @example
      * ```typescript
-     * if (!req.userId) {
-     *     return res.status(401).json({ error: 'Authentication required' });
-     * }
+     * // After requireAdmin admits via the session path, attribute the action:
+     * logger.info({ operator: req.userId }, 'admin mutation');
      * ```
      */
     userId?: string;

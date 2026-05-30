@@ -7,7 +7,7 @@
  * any predicate) and the four predicate functions against a stubbed
  * auth instance. The facade routes group checks through the live
  * {@link GroupService} singleton, so tests configure both in
- * lockstep — same wiring as `UserModule.init()`.
+ * lockstep — same wiring as `IdentityModule.init()`.
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';

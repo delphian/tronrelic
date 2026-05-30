@@ -95,7 +95,7 @@ interface IAuthUserPrimaryWallet {
 /**
  * Better Auth-keyed wallet linking service.
  *
- * Singleton; configured during `UserModule.init()` via
+ * Singleton; configured during `IdentityModule.init()` via
  * {@link WalletService.setDependencies}.
  */
 export class WalletService implements IWalletService {

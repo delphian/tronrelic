@@ -36,7 +36,7 @@ const CHALLENGE_ACTIONS: ReadonlySet<WalletAction> = new Set<WalletAction>([
 /**
  * Controller for `/api/user/wallets/*`.
  *
- * Constructed in `UserModule.init()` with the {@link WalletService}
+ * Constructed in `IdentityModule.init()` with the {@link WalletService}
  * singleton and the module logger.
  */
 export class WalletController {

@@ -7,7 +7,7 @@ declare module 'express-serve-static-core' {
     /**
      * Better Auth session augmented with group membership and primary
      * wallet, populated by the `attachAuthSession` middleware mounted
-     * in `UserModule.run()`.
+     * in the Express loader (`loaders/express.ts`).
      *
      * - `undefined` — middleware has not run (test harnesses,
      *   pre-mount internal calls).

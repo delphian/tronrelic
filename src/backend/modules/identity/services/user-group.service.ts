@@ -88,7 +88,7 @@ export class UserGroupService implements IUserGroupService {
 
     /**
      * Create indexes on the group-definition collection. Called from
-     * `UserModule.init`. The membership index on the Better Auth user
+     * `IdentityModule.init`. The membership index on the Better Auth user
      * collection is owned by {@link GroupService.createIndexes}.
      */
     async createIndexes(): Promise<void> {

@@ -102,7 +102,7 @@ let configuredAuth: Auth | null = null;
 /**
  * Configure the facade with the application's auth instance.
  *
- * Called from `UserModule.init()` once the Better Auth instance has
+ * Called from `IdentityModule.init()` once the Better Auth instance has
  * been constructed. Subsequent calls overwrite the reference — useful
  * in test setup where the instance is rebuilt per suite.
  *
@@ -327,7 +327,7 @@ export async function getSessionFromHeaders(
 function requireAuth(): Auth {
     if (!configuredAuth) {
         throw new Error(
-            'Auth facade not configured — UserModule.init() must call setAuthInstance() before any facade function runs.'
+            'Auth facade not configured — IdentityModule.init() must call setAuthInstance() before any facade function runs.'
         );
     }
     return configuredAuth;

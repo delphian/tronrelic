@@ -276,7 +276,7 @@ const DEFAULT_AGGREGATE_LIMIT = 20;
  * ClickHouse-backed traffic events store.
  *
  * Acquire via `TrafficService.setDependencies(...)` once during
- * `UserModule.init()`, then `TrafficService.getInstance()` in callers.
+ * `TrafficModule.init()`, then `TrafficService.getInstance()` in callers.
  */
 export class TrafficService {
     private static instance: TrafficService | null = null;

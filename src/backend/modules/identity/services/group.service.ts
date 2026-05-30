@@ -59,7 +59,7 @@ interface IAuthUserDoc {
 /**
  * Group membership service backed by Better Auth's user collection.
  *
- * Singleton; created and configured during `UserModule.init()` via
+ * Singleton; created and configured during `IdentityModule.init()` via
  * {@link GroupService.setDependencies}. Subsequent calls to
  * {@link GroupService.getInstance} return the configured instance.
  *
@@ -111,7 +111,7 @@ export class GroupService {
     /**
      * Configure the singleton with its dependencies.
      *
-     * Must be called exactly once during `UserModule.init()`. Calling
+     * Must be called exactly once during `IdentityModule.init()`. Calling
      * a second time is a no-op (the existing instance is kept) so
      * callers cannot accidentally swap dependencies after services
      * have started consuming the singleton.
