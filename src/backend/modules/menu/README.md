@@ -139,13 +139,15 @@ if (menu) {
 
 Menu nodes can be gated on two independent fields, ANDed together. The
 backend filters menu reads at request time using the Better Auth session
-resolved onto `req.authSession`; admin token holders bypass the filter so the
-admin UI can render and edit gated nodes.
+resolved onto `req.authSession`. `GET /api/menu` applies this per-visitor
+filter to every caller; the origin-tagged admin view at `GET /api/menu/manage`
+(behind `requireAdmin`) returns the full tree including disabled and gated
+rows so the admin UI can render and edit them.
 
 | Field | Shape | Semantics |
 |-------|-------|-----------|
 | `requiresGroups` | `string[]?` | Visible if the user is a member of *any* listed group id (OR-of-membership). Group ids reference `module_user_groups` rows managed by the identity module. |
-| `requiresAdmin` | `boolean?` | Visible only when `IUserGroupService.isAdmin(req.userId)` returns true. Routes through the user-groups service registry entry so future seeded admin tiers (e.g. `super-admin`) automatically qualify. |
+| `requiresAdmin` | `boolean?` | Visible only when the viewer's admin flag is true — `isAdmin(req)` derived from the Better Auth session and resolved once per request by `resolveViewer`. |
 
 The filter lives in `MenuService.getTreeForUser(namespace, user?)` and
 `getChildrenForUser(parentId, namespace, user?)`. Both are called by the

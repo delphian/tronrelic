@@ -22,7 +22,7 @@ import type { ISSRSession } from '../lib/session-server';
  *
  * `session` is the merged read: live data from the BA client when
  * present, otherwise the SSR seed for the first render. `isLoggedIn`
- * is the binary identity flag plugin and core code use to gate on
+ * is the binary identity flag that plugin and core code use to gate on
  * authentication.
  */
 export interface IAuthSessionContext {
