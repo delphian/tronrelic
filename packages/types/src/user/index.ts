@@ -1,28 +1,10 @@
-export { USER_FILTERS } from './IUserFilter.js';
-export type { UserFilterType } from './IUserFilter.js';
-
-export { USER_IDENTITY_STATES, UserIdentityState } from './IUserIdentityState.js';
-
-export type {
-    IUser,
-    IWalletLink,
-    IUserPreferences,
-    IUserActivity,
-    IUserSession,
-    IUtmParams,
-    IPageVisit,
-    DeviceCategory,
-    ScreenSizeCategory
-} from './IUser.js';
-
-export {
-    SESSION_TTL_MS,
-    isSessionFresh
-} from './IUser.js';
-
-export type { ISessionFreshnessInput } from './IUser.js';
-
-export type { IAuthStatus } from './IAuthStatus.js';
+/**
+ * User-group types. The legacy UUID identity surface (IUser, IUserService,
+ * IUserIdentityState, IUserFilter, IAuthStatus and their summary/history
+ * types) was removed in the Better Auth cutover (@delphian/tronrelic-types
+ * 3.0.0). Identity now flows through the published `identity` services
+ * (IAccountDirectoryService, IWalletService) and `IUserGroupService`.
+ */
 
 export type {
     IUserGroup,
@@ -31,42 +13,3 @@ export type {
 } from './IUserGroup.js';
 
 export type { IUserGroupService } from './IUserGroupService.js';
-
-export type {
-    BucketInterval,
-    IUserService,
-    IUserActivitySummary,
-    IUserWalletSummary,
-    IUserRetentionSummary,
-    IUserPreferencesSummary,
-    IPageTrafficHistory,
-    IPageTrafficBucket,
-    IPageTrafficEntry,
-    IRecentPageViewsResult,
-    IRecentPageView,
-    ITrafficSourcesHistory,
-    IDailyTrafficSourceBucket,
-    IDailyTrafficSourceEntry,
-    IGeoDistributionHistory,
-    IDailyGeoBucket,
-    IDailyGeoEntry,
-    IDeviceBreakdownHistory,
-    IDailyDeviceBucket,
-    ILandingPagesHistory,
-    IDailyLandingPageBucket,
-    IDailyLandingPageEntry,
-    ICampaignPerformanceHistory,
-    IDailyCampaignBucket,
-    IDailyCampaignEntry,
-    ISessionDurationHistory,
-    IDailySessionDurationBucket,
-    IPagesPerSessionHistory,
-    IDailyPagesPerSessionBucket,
-    INewVsReturningHistory,
-    IDailyNewVsReturningBucket,
-    IWalletConversionHistory,
-    IDailyWalletConversionBucket,
-    IExitPagesHistory,
-    IDailyExitPageBucket,
-    IDailyExitPageEntry
-} from './IUserService.js';

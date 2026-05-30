@@ -20,8 +20,22 @@
  * ```
  */
 
-import type { DeviceCategory, ScreenSizeCategory } from '@/types';
 import type geoipLite from 'geoip-lite';
+
+/**
+ * Device category derived from the request User-Agent. Traffic-domain
+ * analytics enum, relocated here from the removed legacy `@/types` user
+ * surface in the Better Auth cutover — the traffic module is its only
+ * consumer.
+ */
+export type DeviceCategory = 'mobile' | 'tablet' | 'desktop' | 'unknown';
+
+/**
+ * Screen-size category derived from viewport width breakpoints. Traffic-domain
+ * analytics enum, relocated here from the removed legacy `@/types` user
+ * surface in the Better Auth cutover.
+ */
+export type ScreenSizeCategory = 'mobile-sm' | 'mobile-md' | 'mobile-lg' | 'tablet' | 'desktop' | 'desktop-lg' | 'unknown';
 
 // Dynamic import for geoip-lite (optional dependency)
 let geoip: typeof geoipLite | null = null;

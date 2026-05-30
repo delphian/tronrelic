@@ -1,4 +1,3 @@
-import type { IUser } from '../user/IUser.js';
 import type { IAuthSession } from '../auth/IAuthSession.js';
 
 /**
@@ -179,30 +178,6 @@ export interface IHttpRequest<
      * ```
      */
     userId?: string;
-
-    /**
-     * Resolved user data from userService.
-     *
-     * Populated by middleware after resolving `userId` via userService. Undefined if
-     * no valid user cookie is present or user doesn't exist in database.
-     *
-     * To check if a user is "registered" (has linked wallets):
-     * ```typescript
-     * const isRegistered = (req.user?.wallets?.length ?? 0) > 0;
-     * ```
-     *
-     * @example
-     * ```typescript
-     * if (!req.user) {
-     *     return res.status(401).json({ error: 'Authentication required' });
-     * }
-     *
-     * // Access user data
-     * const wallets = req.user.wallets;
-     * const preferences = req.user.preferences;
-     * ```
-     */
-    user?: IUser;
 
     /**
      * Resolved Better Auth session, attached by the core
