@@ -23,7 +23,7 @@
 
 import type { Request, Response, NextFunction, RequestHandler } from 'express';
 import { logger } from '../../lib/logger.js';
-import { getSessionForRequest } from '../../modules/user/services/auth-facade.js';
+import { getSessionForRequest } from '../../modules/identity/services/auth-facade.js';
 
 const moduleLogger = logger.child({ component: 'auth-session-middleware' });
 
@@ -36,8 +36,8 @@ const moduleLogger = logger.child({ component: 'auth-session-middleware' });
  * `next()`; never sends a response.
  *
  * Mount this once, early in the chain, via `app.use(attachAuthSession)`
- * before any route handler that wants to call the facade. The
- * UserModule does this in its `run()` phase before mounting routes.
+ * before any route handler that wants to call the facade. The Express
+ * loader (`loaders/express.ts`) does this before the `/api` router mounts.
  */
 export const attachAuthSession: RequestHandler = async (
     req: Request,

@@ -20,7 +20,10 @@ const envSchema = z.object({
   ADMIN_API_TOKEN: z.string().optional(),
   METRICS_TOKEN: z.string().optional(),
   /**
-   * HMAC secret used to sign the `tronrelic_uid` identity cookie.
+   * Secret passed to cookie-parser so Express can verify `req.signedCookies`.
+   * No longer signs an identity cookie — the legacy `tronrelic_uid` cookie was
+   * removed in the Better Auth cutover, and the Better Auth session cookie is
+   * signed independently with `BETTER_AUTH_SECRET`.
    *
    * Required in production: cookie-parser falls back to no-op signing if a
    * secret is not provided, which silently disables forgery protection.

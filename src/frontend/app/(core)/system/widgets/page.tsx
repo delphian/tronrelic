@@ -15,7 +15,7 @@
  * `/system/menu` and `/system/hooks` this is a client component
  * because the page needs hooks (`useModal`, `useToast`, WebSocket
  * subscription, redux). Admin auth runs on the cookie path —
- * same-origin fetches carry the signed `tronrelic_uid` cookie, which
+ * same-origin fetches carry the Better Auth session cookie, which
  * `requireAdmin` consults; `useSystemAuth().token` stays as an empty
  * string for transitional API compatibility. WebSocket subscription
  * to `widgets:placements-update` triggers a list refetch so admin

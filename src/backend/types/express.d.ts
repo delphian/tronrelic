@@ -1,5 +1,5 @@
 import 'express-serve-static-core';
-import type { IAugmentedSession } from '../modules/user/services/auth-facade.js';
+import type { IAugmentedSession } from '../modules/identity/services/auth-facade.js';
 
 declare module 'express-serve-static-core' {
   interface Request {
@@ -7,7 +7,7 @@ declare module 'express-serve-static-core' {
     /**
      * Better Auth session augmented with group membership and primary
      * wallet, populated by the `attachAuthSession` middleware mounted
-     * in `UserModule.run()`.
+     * in the Express loader (`loaders/express.ts`).
      *
      * - `undefined` — middleware has not run (test harnesses,
      *   pre-mount internal calls).

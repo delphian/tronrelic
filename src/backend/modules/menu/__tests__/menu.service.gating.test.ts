@@ -3,24 +3,15 @@
 /**
  * MenuService gating filter tests.
  *
- * Covers `getTreeForUser` and `getChildrenForUser`: identity-state allow-list,
- * group OR-membership, admin predicate via the user-groups service registry
- * entry, and combinations. The mock `IUserGroupService` only stubs the
- * methods the filter actually calls (`isAdmin`, `isMember`); the registry is
- * a minimal in-memory implementation.
+ * Covers `getTreeForUser` and `getChildrenForUser`: group OR-membership and
+ * the admin predicate, driven by the `IMenuViewer` resolved from the Better
+ * Auth session. An `undefined` viewer denotes an anonymous visitor, who sees
+ * only ungated nodes.
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { ObjectId } from 'mongodb';
-import type {
-    IDatabaseService,
-    IServiceRegistry,
-    IUser,
-    IUserGroupService,
-    UserIdentityState as UserIdentityStateType
-} from '@/types';
-import { UserIdentityState } from '@/types';
-import { createMockServiceRegistry } from '../../../tests/vitest/mocks/service-registry.js';
+import type { IDatabaseService, IMenuViewer } from '@/types';
 
 vi.mock('../../../../services/websocket.service.js', () => ({
     WebSocketService: {
@@ -78,159 +69,93 @@ function createDatabase(): IDatabaseService {
     } as unknown as IDatabaseService;
 }
 
-
-// Stub IUserGroupService implementing only what the menu filter calls. The
-// admin predicate uses the user's `groups[]` array as an allow-list, since the
-// MenuService never asks the service for membership directly — group-membership
-// checks read off the user object in-memory.
-function createGroupsService(adminUserIds: Set<string>): IUserGroupService {
-    return {
-        listGroups: async () => [],
-        getGroup: async () => null,
-        createGroup: async () => { throw new Error('not used'); },
-        updateGroup: async () => { throw new Error('not used'); },
-        deleteGroup: async () => undefined,
-        getUserGroups: async (userId: string) => [],
-        isMember: async (userId: string, groupId: string) => false,
-        addMember: async () => undefined,
-        removeMember: async () => undefined,
-        setUserGroups: async () => [],
-        getMembers: async () => ({ userIds: [], total: 0 }),
-        isAdmin: async (userId: string) => adminUserIds.has(userId)
-    } as IUserGroupService;
-}
-
-function makeUser(overrides: Partial<IUser> = {}): IUser {
-    return {
-        id: 'u-1',
-        identityState: UserIdentityState.Verified,
-        identityVerifiedAt: new Date(),
-        wallets: [],
-        preferences: {} as IUser['preferences'],
-        activity: { firstSeen: new Date(), lastSeen: new Date(), pageViews: 0 } as IUser['activity'],
-        groups: [],
-        createdAt: new Date(),
-        updatedAt: new Date(),
-        ...overrides
-    };
+/** Build a viewer with the given groups and admin flag. */
+function viewer(groups: string[], isAdmin = false): IMenuViewer {
+    return { groups, isAdmin };
 }
 
 describe('MenuService gating filter', () => {
     let db: IDatabaseService;
-    let registry: IServiceRegistry;
     let svc: MenuService;
 
     beforeEach(async () => {
         vi.clearAllMocks();
         db = createDatabase();
-        registry = createMockServiceRegistry();
         MenuService.__resetForTests();
-        MenuService.setDependencies(db, registry);
+        MenuService.setDependencies(db);
         svc = MenuService.getInstance();
         await svc.initialize();
     });
 
-    it('treats a missing user as anonymous and shows only ungated or anonymous-allowed nodes', async () => {
+    it('treats an undefined viewer as anonymous and shows only ungated nodes', async () => {
         await svc.create({ namespace: 'main', label: 'Public', url: '/p', order: 1, parent: null, enabled: true });
-        await svc.create({ namespace: 'main', label: 'Anon-only', url: '/a', order: 2, parent: null, enabled: true, allowedIdentityStates: [UserIdentityState.Anonymous] });
-        await svc.create({ namespace: 'main', label: 'Verified-only', url: '/v', order: 3, parent: null, enabled: true, allowedIdentityStates: [UserIdentityState.Verified] });
+        await svc.create({ namespace: 'main', label: 'VIP', url: '/vip', order: 2, parent: null, enabled: true, requiresGroups: ['vip-traders'] });
+        await svc.create({ namespace: 'main', label: 'Admin', url: '/admin', order: 3, parent: null, enabled: true, requiresAdmin: true });
 
         const tree = await svc.getTreeForUser('main', undefined);
         const labels = tree.all.map((n) => n.label).sort();
         // Default Home is auto-created on empty initialize — include it.
-        expect(labels).toEqual(['Anon-only', 'Home', 'Public']);
+        expect(labels).toEqual(['Home', 'Public']);
     });
 
-    it('hides anonymous-only nodes from a verified user and shows verified-only nodes', async () => {
-        await svc.create({ namespace: 'main', label: 'Anon-only', url: '/a', order: 1, parent: null, enabled: true, allowedIdentityStates: [UserIdentityState.Anonymous] });
-        await svc.create({ namespace: 'main', label: 'Verified-only', url: '/v', order: 2, parent: null, enabled: true, allowedIdentityStates: [UserIdentityState.Verified] });
-
-        const verified = makeUser({ id: 'u-verified', identityState: UserIdentityState.Verified });
-        const tree = await svc.getTreeForUser('main', verified);
-        const labels = tree.all.map((n) => n.label).sort();
-        expect(labels).toEqual(['Home', 'Verified-only']);
-    });
-
-    it('honors the "verified or anonymous" combination', async () => {
-        await svc.create({ namespace: 'main', label: 'Mixed', url: '/m', order: 1, parent: null, enabled: true, allowedIdentityStates: [UserIdentityState.Anonymous, UserIdentityState.Verified] });
-
-        const anon = await svc.getTreeForUser('main', undefined);
-        expect(anon.all.some((n) => n.label === 'Mixed')).toBe(true);
-
-        const verified = await svc.getTreeForUser('main', makeUser({ id: 'u-verified', identityState: UserIdentityState.Verified }));
-        expect(verified.all.some((n) => n.label === 'Mixed')).toBe(true);
-
-        const registered = await svc.getTreeForUser('main', makeUser({ id: 'u-reg', identityState: UserIdentityState.Registered }));
-        expect(registered.all.some((n) => n.label === 'Mixed')).toBe(false);
-    });
-
-    it('shows group-gated nodes only to users in any required group', async () => {
+    it('shows group-gated nodes only to viewers in any required group', async () => {
         await svc.create({ namespace: 'main', label: 'VIP', url: '/vip', order: 1, parent: null, enabled: true, requiresGroups: ['vip-traders', 'whales'] });
 
-        const outsider = await svc.getTreeForUser('main', makeUser({ id: 'u-out', groups: [] }));
+        const outsider = await svc.getTreeForUser('main', viewer([]));
         expect(outsider.all.some((n) => n.label === 'VIP')).toBe(false);
 
-        const insider = await svc.getTreeForUser('main', makeUser({ id: 'u-in', groups: ['whales'] }));
+        const insider = await svc.getTreeForUser('main', viewer(['whales']));
         expect(insider.all.some((n) => n.label === 'VIP')).toBe(true);
     });
 
-    it('treats missing user-groups service as "no admin" — admin-gated nodes hidden from everyone', async () => {
+    it('hides admin-gated nodes from non-admin viewers (even with an "admin" group string)', async () => {
         await svc.create({ namespace: 'main', label: 'Admin', url: '/admin', order: 1, parent: null, enabled: true, requiresAdmin: true });
 
-        const tree = await svc.getTreeForUser('main', makeUser({ id: 'u-1', groups: ['admin'] }));
-        // No user-groups service registered yet — isAdmin always returns false.
-        expect(tree.all.some((n) => n.label === 'Admin')).toBe(false);
+        const nonAdmin = await svc.getTreeForUser('main', viewer(['admin'], false));
+        expect(nonAdmin.all.some((n) => n.label === 'Admin')).toBe(false);
     });
 
-    it('shows admin-gated nodes when the user is an admin per the registered service', async () => {
-        registry.register('user-groups', createGroupsService(new Set(['u-admin'])));
-
+    it('shows admin-gated nodes to admin viewers', async () => {
         await svc.create({ namespace: 'main', label: 'Admin', url: '/admin', order: 1, parent: null, enabled: true, requiresAdmin: true });
 
-        const admin = await svc.getTreeForUser('main', makeUser({ id: 'u-admin' }));
+        const admin = await svc.getTreeForUser('main', viewer([], true));
         expect(admin.all.some((n) => n.label === 'Admin')).toBe(true);
-
-        const peasant = await svc.getTreeForUser('main', makeUser({ id: 'u-peasant' }));
-        expect(peasant.all.some((n) => n.label === 'Admin')).toBe(false);
     });
 
-    it('ANDs identity-state, group, and admin predicates together', async () => {
-        registry.register('user-groups', createGroupsService(new Set(['u-admin'])));
-
+    it('ANDs group and admin predicates together', async () => {
         await svc.create({
             namespace: 'main',
-            label: 'AdminAndVerifiedAndVip',
+            label: 'AdminAndVip',
             url: '/x',
             order: 1,
             parent: null,
             enabled: true,
-            allowedIdentityStates: [UserIdentityState.Verified],
             requiresGroups: ['vip-traders'],
             requiresAdmin: true
         });
 
-        // Wrong on every axis
-        const noFit = await svc.getTreeForUser('main', makeUser({ id: 'u-1', identityState: UserIdentityState.Anonymous, groups: [] }));
-        expect(noFit.all.some((n) => n.label === 'AdminAndVerifiedAndVip')).toBe(false);
+        // Admin but missing the required group.
+        const adminNoGroup = await svc.getTreeForUser('main', viewer([], true));
+        expect(adminNoGroup.all.some((n) => n.label === 'AdminAndVip')).toBe(false);
 
-        // Verified but missing group + not admin
-        const verifiedOnly = await svc.getTreeForUser('main', makeUser({ id: 'u-2', identityState: UserIdentityState.Verified, groups: [] }));
-        expect(verifiedOnly.all.some((n) => n.label === 'AdminAndVerifiedAndVip')).toBe(false);
+        // In the group but not admin.
+        const groupNoAdmin = await svc.getTreeForUser('main', viewer(['vip-traders'], false));
+        expect(groupNoAdmin.all.some((n) => n.label === 'AdminAndVip')).toBe(false);
 
-        // Hits all three predicates
-        const allFit = await svc.getTreeForUser('main', makeUser({ id: 'u-admin', identityState: UserIdentityState.Verified, groups: ['vip-traders'] }));
-        expect(allFit.all.some((n) => n.label === 'AdminAndVerifiedAndVip')).toBe(true);
+        // Satisfies both predicates.
+        const both = await svc.getTreeForUser('main', viewer(['vip-traders'], true));
+        expect(both.all.some((n) => n.label === 'AdminAndVip')).toBe(true);
     });
 
     it('getChildrenForUser applies the same gating to direct children', async () => {
         const parent = await svc.create({ namespace: 'main', label: 'Tools', url: '/tools', order: 1, parent: null, enabled: true });
         await svc.create({ namespace: 'main', label: 'Public-tool', url: '/tools/p', order: 1, parent: parent._id!, enabled: true });
-        await svc.create({ namespace: 'main', label: 'Verified-tool', url: '/tools/v', order: 2, parent: parent._id!, enabled: true, allowedIdentityStates: [UserIdentityState.Verified] });
+        await svc.create({ namespace: 'main', label: 'VIP-tool', url: '/tools/v', order: 2, parent: parent._id!, enabled: true, requiresGroups: ['vip-traders'] });
 
         const anonChildren = await svc.getChildrenForUser(parent._id!, 'main', undefined);
         expect(anonChildren.map((n) => n.label).sort()).toEqual(['Public-tool']);
 
-        const verifiedChildren = await svc.getChildrenForUser(parent._id!, 'main', makeUser({ id: 'u-v', identityState: UserIdentityState.Verified }));
-        expect(verifiedChildren.map((n) => n.label).sort()).toEqual(['Public-tool', 'Verified-tool']);
+        const vipChildren = await svc.getChildrenForUser(parent._id!, 'main', viewer(['vip-traders']));
+        expect(vipChildren.map((n) => n.label).sort()).toEqual(['Public-tool', 'VIP-tool']);
     });
 });

@@ -11,27 +11,25 @@ import { Router } from 'express';
 import type { Request, Response, NextFunction } from 'express';
 import { asyncHandler } from '../../../api/middleware/async-handler.js';
 import { createRateLimiter } from '../../../api/middleware/rate-limit.js';
-import { userContextMiddleware } from '../../../api/middleware/user-context.js';
+import { getSessionForRequest } from '../../../modules/identity/services/auth-facade.js';
 import type { ToolsController } from './tools.controller.js';
 
 /**
- * Require the request user to have at least one cryptographically verified wallet.
+ * Require the caller to be signed in.
  *
- * Depends on userContextMiddleware having already populated req.user.
- * Returns 401 when no user context exists and 403 when no verified wallet is found.
+ * Resolves the Better Auth session and returns 401 for anonymous callers;
+ * any authenticated account passes. The approval checker only reads public
+ * on-chain data for an address the caller types in, so a linked wallet is not
+ * a prerequisite — login is the bar, matching the frontend `isLoggedIn` gate
+ * in `ApprovalChecker`. `getSessionForRequest` resolves to null rather than
+ * throwing, so this middleware never rejects.
  */
-function requireVerifiedWallet(req: Request, res: Response, next: NextFunction): void {
-    if (!(req as any).user) {
-        res.status(401).json({ error: 'Authentication required', message: 'A verified wallet is required to use this tool' });
+async function requireLogin(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const session = await getSessionForRequest(req);
+    if (!session) {
+        res.status(401).json({ error: 'Authentication required', message: 'Sign in to use this tool' });
         return;
     }
-
-    const hasVerified = ((req as any).user.wallets ?? []).some((w: { verified?: boolean }) => w.verified);
-    if (!hasVerified) {
-        res.status(403).json({ error: 'Wallet verification required', message: 'You must verify a wallet via TronLink signature before using this tool' });
-        return;
-    }
-
     next();
 }
 
@@ -64,7 +62,7 @@ export function createToolsRouter(controller: ToolsController): Router {
     router.post('/stake/from-trx', rateLimiter, asyncHandler(controller.estimateStakeFromTrx));
     router.post('/stake/from-energy', rateLimiter, asyncHandler(controller.estimateStakeFromEnergy));
     router.post('/signature/verify', rateLimiter, asyncHandler(controller.verifySignature));
-    router.post('/approval/check', userContextMiddleware, requireVerifiedWallet, approvalRateLimiter, asyncHandler(controller.checkApprovals));
+    router.post('/approval/check', requireLogin, approvalRateLimiter, asyncHandler(controller.checkApprovals));
     router.post('/timestamp/convert', rateLimiter, asyncHandler(controller.convertTimestamp));
 
     return router;

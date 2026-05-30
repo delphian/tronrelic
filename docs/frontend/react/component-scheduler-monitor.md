@@ -53,7 +53,7 @@ Filtered embedding (e.g. on a market-jobs panel):
 
 ## Gotchas
 
-**The `token` prop is transitional and intended to be `''`.** `useSystemAuth().token` returns an empty string. Admin authority resolves at the API through the signed `tronrelic_uid` cookie; the backend treats empty `x-admin-token` as "no service token, fall through to cookie path." Do not gate rendering on `token` truthiness — gate on `useSystemAuth().isAuthenticated`. See [user module — admin authentication](../../../src/backend/modules/user/README.md#admin-authentication--dual-track).
+**The `token` prop is transitional and intended to be `''`.** `useSystemAuth().token` returns an empty string. Admin authority resolves at the API through the Better Auth session cookie; the backend treats empty `x-admin-token` as "no service token, use the session." Do not gate rendering on `token` truthiness — gate on `useSystemAuth().isAuthenticated`. See [system-auth.md](../../system/system-auth.md).
 
 **Schedule input is uncontrolled.** `defaultValue` only initializes; React state is not the source of truth while typing. Don't try to drive it from a parent — the field commits on blur/Enter and only fires `onScheduleChange` if the trimmed value differs from `job.schedule`.
 
@@ -90,4 +90,4 @@ Full endpoint reference: [system-api-scheduler.md](../../system/system-api-sched
 - [system-scheduler-operations.md](../../system/system-scheduler-operations.md) — Cron syntax, operations runbook
 - [system-dashboard.md](../../system/system-dashboard.md) — Where SchedulerMonitor mounts in production
 - [plugins-frontend-context.md](../../plugins/plugins-frontend-context.md) — Why plugins should not deep-import this component
-- [User module README](../../../src/backend/modules/user/README.md#admin-authentication--dual-track) — Dual-track admin gate
+- [system-auth.md](../../system/system-auth.md) — admin gate (Better Auth session or `ADMIN_API_TOKEN` service token)

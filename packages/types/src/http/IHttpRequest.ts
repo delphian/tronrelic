@@ -1,4 +1,3 @@
-import type { IUser } from '../user/IUser.js';
 import type { IAuthSession } from '../auth/IAuthSession.js';
 
 /**
@@ -166,43 +165,20 @@ export interface IHttpRequest<
     get(name: string): string | undefined;
 
     /**
-     * User UUID extracted from the `tronrelic_uid` cookie.
+     * Better Auth user id of the admin operator, set by the `requireAdmin`
+     * middleware on the session-authenticated path for the audit trail.
      *
-     * Populated by middleware before requests reach plugin routes. Undefined if
-     * no valid user cookie is present.
+     * Undefined on anonymous requests, on the service-token admin path, and
+     * on any route `requireAdmin` does not guard. Read `req.authSession` for
+     * general identity — not this field.
      *
      * @example
      * ```typescript
-     * if (!req.userId) {
-     *     return res.status(401).json({ error: 'Authentication required' });
-     * }
+     * // After requireAdmin admits via the session path, attribute the action:
+     * logger.info({ operator: req.userId }, 'admin mutation');
      * ```
      */
     userId?: string;
-
-    /**
-     * Resolved user data from userService.
-     *
-     * Populated by middleware after resolving `userId` via userService. Undefined if
-     * no valid user cookie is present or user doesn't exist in database.
-     *
-     * To check if a user is "registered" (has linked wallets):
-     * ```typescript
-     * const isRegistered = (req.user?.wallets?.length ?? 0) > 0;
-     * ```
-     *
-     * @example
-     * ```typescript
-     * if (!req.user) {
-     *     return res.status(401).json({ error: 'Authentication required' });
-     * }
-     *
-     * // Access user data
-     * const wallets = req.user.wallets;
-     * const preferences = req.user.preferences;
-     * ```
-     */
-    user?: IUser;
 
     /**
      * Resolved Better Auth session, attached by the core

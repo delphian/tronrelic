@@ -12,8 +12,6 @@ Admin endpoints accept any of the paths below via the `requireAdmin` middleware,
 
 **Session path** (humans, the `/system` SPA). A Better Auth session whose account is in the `admin` group authorizes the call. Same-origin fetches carry the session cookie when `credentials: 'include'`.
 
-**Legacy cookie path** (coexistence, removed in Phase 6). A signed `tronrelic_uid` cookie identifying a user with `identityState === Verified` and membership in the `admin` group. Still honored during the Better Auth migration.
-
 **Service-token path** (CI, scripts, first-admin bootstrap). Set `ADMIN_API_TOKEN` in the backend `.env` and pass it in `X-Admin-Token` (preferred) or `Authorization: Bearer`. Query-param auth (`?token=...`) is intentionally rejected so tokens never leak into access logs.
 
 ```bash

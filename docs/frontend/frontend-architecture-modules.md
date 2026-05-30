@@ -24,19 +24,18 @@ If the feature is "page-specific and tiny" it can still live in `features/`, but
 ## Module Directory Layout
 
 ```
-modules/user/
+modules/<name>/
 ├── components/
-│   ├── WalletButton/
-│   │   ├── WalletButton.tsx
-│   │   ├── WalletButton.module.scss
+│   ├── WidgetCard/
+│   │   ├── WidgetCard.tsx
+│   │   ├── WidgetCard.module.scss
 │   │   └── index.ts
-│   ├── Profile/
-│   └── admin/UsersMonitor/
-├── hooks/                       # useWallet, useSessionTracking
+│   └── admin/SomeMonitor/
+├── hooks/                       # module-specific hooks
 ├── api/                         # API client functions
-├── lib/                         # identity.ts, server.ts
-├── types/                       # user.types.ts
-├── slice.ts                     # Redux slice
+├── lib/                         # helpers, SSR resolvers
+├── types/                       # module types
+├── slice.ts                     # Redux slice (when the module owns state)
 └── index.ts                     # Public API barrel
 ```
 
@@ -48,20 +47,18 @@ Every module exposes its surface through one barrel. Consumers import from the m
 
 ```typescript
 // modules/user/index.ts
-export { UserIdentityProvider } from './components/UserIdentityProvider';
 export { WalletButton } from './components/WalletButton';
-export { ProfilePage } from './components/Profile';
-export { useWallet } from './hooks/useWallet';
-export { default as userReducer } from './slice';
-export * from './slice';
-export type { User, UserPreferences } from './types';
+export { SessionProvider, useAuthSession } from './components/SessionProvider';
+export { AuthModal } from './components/AuthModal';
+export { ProfileMenu } from './components/ProfileMenu';
+export type { ISSRSession } from './lib';
 ```
 
 Why barrels matter here: importing `'../../user/components/WalletButton/WalletButton'` couples the consumer to the module's internal layout. Move the component, every consumer breaks. Importing `'../../user'` survives every internal refactor.
 
 ```typescript
 // Good — uses public API
-import { WalletButton, useWallet } from '../../../modules/user';
+import { WalletButton, useAuthSession } from '../../../modules/user';
 
 // Bad — bypasses public API, couples to internal structure
 import { WalletButton } from '../../../modules/user/components/WalletButton/WalletButton';
@@ -91,7 +88,7 @@ A page file with 500 lines of component logic is the failure mode this rule prev
 
 | Module | Purpose |
 |--------|---------|
-| `user` | Identity, wallet management, profiles |
+| `user` | Better Auth login, wallet button, admin analytics dashboards |
 | `menu` | Navigation system (PriorityNav, useMenuConfig) |
 | `address-labels` | Address labeling and display |
 | `scheduler` | Scheduler monitoring UI |
@@ -138,11 +135,11 @@ For complex components, expand the folder with `<Name>Utils.ts`, `<Name>Types.ts
 Each module owns one focused slice. The store imports reducers through module barrels:
 
 ```typescript
-import { userReducer } from '../modules/user';
-import { walletReducer, bookmarkReducer } from '../features/accounts';
+import menuReducer from '../modules/menu/slice';
+import transactionReducer from '../features/transactions/slice';
 
 export const store = configureStore({
-    reducer: { user: userReducer, wallet: walletReducer, bookmarks: bookmarkReducer }
+    reducer: { menu: menuReducer, transactions: transactionReducer }
 });
 ```
 

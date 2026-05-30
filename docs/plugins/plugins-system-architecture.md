@@ -83,7 +83,7 @@ Loaded during API bootstrap (`src/backend/src/index.ts`) in two phases.
 1. `loadPlugins` (in `src/backend/src/loaders/plugins.ts`) imports the generated registry.
 2. Each discovered plugin is registered in the `plugin_metadata` MongoDB collection with default state `installed: false, enabled: false`. Existing plugins have title and version refreshed.
 3. A plugin-scoped `IDatabaseService` is created using the plugin id for namespace isolation.
-4. An `IPluginContext` is assembled with `ObserverRegistry.getInstance()`, `WebSocketService.getInstance()`, `UserService.getInstance()`, the `BaseObserver` class, the scoped database service, and a plugin-scoped child logger.
+4. An `IPluginContext` is assembled with `ObserverRegistry.getInstance()`, `WebSocketService.getInstance()`, the service registry (`context.services`), the `BaseObserver` class, the scoped database service, and a plugin-scoped child logger.
 5. The plugin and its context are registered with `PluginManagerService` for dynamic lifecycle.
 
 ### Initialization Phase (Installed AND Enabled Only)
@@ -101,7 +101,8 @@ Plugins never reach into `src/backend/src` directly. They consume the injected c
 - `BaseObserver` — class injected as a constructor argument (do not import). Provides queueing, back-pressure, telemetry.
 - `database` — scoped MongoDB access with auto-prefix (`plugin_<id>_*`). See [system-database.md](../system/system-database.md#plugins).
 - `logger` — plugin-scoped child logger; every log line carries plugin metadata.
-- `userService` — `getById`, `getByWallet` for batch jobs, observers, WebSocket handlers where `req.user` is unavailable. See [User Module README](../../src/backend/modules/user/README.md#plugin-access-to-user-data).
+
+Account, wallet, and group data are not on the context — reach them through the published service registry (`services.get('accounts')` / `'wallets'` / `'user-groups'`). See the [Identity Module README](../../src/backend/modules/identity/README.md#published-service-contracts).
 
 ### Backend Implementation Pattern
 
@@ -187,7 +188,7 @@ Use SCSS Modules (`Component.module.scss`, colocated, scoped class names). Refer
 
 `/system/plugins` lists all discovered plugins with installed/enabled state and lifecycle controls (Install, Uninstall, Enable, Disable). Hook errors are captured and shown in the UI. Uninstall always sets `installed: false` even if the hook fails — the hook is best-effort cleanup. Plugins must be installed before they can be enabled; uninstalling auto-disables. Database state persists across restarts. Frontend only loads plugins that are installed AND enabled.
 
-REST endpoints under `/api/plugin-management/`: `GET /all`, `POST /:pluginId/install`, `POST /:pluginId/uninstall`, `POST /:pluginId/enable`, `POST /:pluginId/disable`. All require admin authentication via the dual-track signed `tronrelic_uid` cookie — same-origin fetches carry it automatically.
+REST endpoints under `/api/plugin-management/`: `GET /all`, `POST /:pluginId/install`, `POST /:pluginId/uninstall`, `POST /:pluginId/enable`, `POST /:pluginId/disable`. All require admin authentication via the Better Auth session cookie — same-origin fetches carry it automatically.
 
 For plugin-owned admin pages (settings UI under `/system/plugins/<id>/`, admin REST routes under `/api/plugins/<id>/system/**`), see [plugins-page-registration-admin.md](./plugins-page-registration-admin.md) and [plugins-api-registration.md](./plugins-api-registration.md).
 

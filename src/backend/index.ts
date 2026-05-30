@@ -32,7 +32,8 @@ import { DatabaseModule } from './modules/database/index.js';
 import { ClickHouseModule } from './modules/clickhouse/index.js';
 import { PagesModule } from './modules/pages/index.js';
 import { WidgetsModule } from './modules/widgets/index.js';
-import { UserModule } from './modules/user/index.js';
+import { IdentityModule } from './modules/identity/index.js';
+import { TrafficModule } from './modules/traffic/index.js';
 import { AddressLabelsModule } from './modules/address-labels/index.js';
 import { ToolsModule } from './modules/tools/index.js';
 import { BlockchainObserverService } from './services/blockchain-observer/index.js';
@@ -221,7 +222,8 @@ interface BootstrapContext {
         logs: LogsModule;
         pages: PagesModule;
         widgets: WidgetsModule;
-        user: UserModule;
+        identity: IdentityModule;
+        traffic: TrafficModule;
         addressLabels: AddressLabelsModule;
         tools: ToolsModule;
         scheduler: SchedulerModule;
@@ -305,7 +307,8 @@ async function bootstrapInit(): Promise<BootstrapContext> {
     const logsModule = new LogsModule();
     const pagesModule = new PagesModule();
     const widgetsModule = new WidgetsModule();
-    const userModule = new UserModule();
+    const identityModule = new IdentityModule();
+    const trafficModule = new TrafficModule();
     const addressLabelsModule = new AddressLabelsModule();
     const toolsModule = new ToolsModule();
     const schedulerModule = new SchedulerModule();
@@ -315,7 +318,8 @@ async function bootstrapInit(): Promise<BootstrapContext> {
     await widgetsModule.init(sharedDeps);
     await schedulerModule.init({ database: coreDatabase, menuService, app });
     const schedulerService = schedulerModule.getSchedulerService();
-    await userModule.init({ ...sharedDeps, scheduler: schedulerService, systemConfig: SystemConfigService.getInstance(), clickhouse });
+    await identityModule.init(sharedDeps);
+    await trafficModule.init({ ...sharedDeps, scheduler: schedulerService, clickhouse });
     await addressLabelsModule.init(sharedDeps);
     await toolsModule.init(sharedDeps);
 
@@ -334,7 +338,8 @@ async function bootstrapInit(): Promise<BootstrapContext> {
             logs: logsModule,
             pages: pagesModule,
             widgets: widgetsModule,
-            user: userModule,
+            identity: identityModule,
+            traffic: trafficModule,
             addressLabels: addressLabelsModule,
             tools: toolsModule,
             scheduler: schedulerModule,
@@ -365,7 +370,12 @@ async function bootstrapRun(ctx: BootstrapContext): Promise<void> {
     await modules.logs.run();
     await modules.pages.run();
     await modules.widgets.run();
-    await modules.user.run();
+    // Traffic runs before identity so its `/api/admin/users/{analytics,traffic}`
+    // routers register before identity's `/api/admin/users` account-directory
+    // catch-all — the catch-all's `/:id` matcher must not shadow those
+    // more-specific prefixes.
+    await modules.traffic.run();
+    await modules.identity.run();
     await modules.addressLabels.run();
     await modules.tools.run();
     await modules.scheduler.run();

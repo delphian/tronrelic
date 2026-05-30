@@ -77,7 +77,8 @@ Before creating a new module, confirm the feature is essential infrastructure (o
 **Example modules** (each has a README.md in its directory with complete documentation):
 - [Pages](../../../src/backend/modules/pages/) - Canonical reference implementation (storage providers, file uploads, markdown CMS)
 - [Menu](../../../src/backend/modules/menu/) - Navigation management, event-driven validation, WebSocket updates
-- [User](../../../src/backend/modules/user/) - Visitor identity, wallet linking, cookie-based auth
+- [Identity](../../../src/backend/modules/identity/) - Better Auth, groups, signature-proven wallet store, account directory
+- [Traffic](../../../src/backend/modules/traffic/) - ClickHouse traffic_events analytics, tid/ref cookies, bot/geo classification
 
 **Related topics:**
 - [system-database.md](../system-database.md) - Database access architecture and IDatabaseService

@@ -1,167 +1,27 @@
 /**
  * User Module
  *
- * Provides user identity management including UUID tracking,
- * wallet linking, preferences, and activity tracking.
+ * Better Auth login + profile affordances, wallet display, and the
+ * `/system/users` admin dashboards (account directory, traffic analytics,
+ * Google Search Console). Better Auth is the sole identity layer — the
+ * legacy UUID identity slice, cookie utilities, TronLink wallet hook, and
+ * public profile subtree were removed in the Phase 6 cutover.
  *
  * ## Directory Structure
  *
  * ```
  * modules/user/
  * ├── index.ts          # Barrel exports (this file)
- * ├── slice.ts          # Redux state management
- * ├── api/
- * │   ├── index.ts      # API exports
- * │   └── client.ts     # API client functions
- * ├── types/
- * │   ├── index.ts      # Type exports
- * │   └── user.types.ts # Interface definitions
- * ├── hooks/
- * │   ├── index.ts      # Hooks exports
- * │   └── useWallet.ts  # TronLink wallet connection hook
- * └── lib/
- *     ├── index.ts      # Lib exports (client-safe)
- *     ├── identity.ts   # UUID/cookie utilities
- *     ├── tronWeb.ts    # TronLink provider utilities
- *     └── server.ts     # SSR utilities (import directly, not via barrel)
+ * ├── api/              # Admin analytics + GSC client
+ * ├── components/       # AuthModal, WalletButton, ProfileMenu, SessionProvider, admin/*
+ * └── lib/              # Better Auth client + SSR session resolver
  * ```
  */
 
 // =============================================================================
-// Types
+// Components — Better Auth login + profile
 // =============================================================================
 
-export type {
-    IUserData,
-    IWalletLink,
-    IUserPreferences,
-    IUserActivity,
-    IUserStats
-} from './types';
-
-// =============================================================================
-// Redux Slice
-// =============================================================================
-
-export { default as userReducer } from './slice';
-
-export {
-    // Actions
-    setUserId,
-    setUserData,
-    markInitialized,
-    clearError,
-    resetUserState,
-    // Wallet connection actions
-    setConnectedAddress,
-    setConnectionStatus,
-    setConnectionError,
-    setProviderDetected,
-    resetWalletConnection,
-    setWalletVerified,
-    // Async thunks
-    initializeUser,
-    linkWalletThunk,
-    unlinkWalletThunk,
-    setPrimaryWalletThunk,
-    updatePreferencesThunk,
-    recordActivityThunk,
-    logoutThunk,
-    // Selectors
-    selectUserId,
-    selectUserData,
-    selectWallets,
-    selectPrimaryWallet,
-    selectPreferences,
-    selectUserStatus,
-    selectUserError,
-    selectUserInitialized,
-    selectHasWallets,
-    selectHasVerifiedWallet,
-    // Identity-state selectors (read the canonical UserIdentityState)
-    selectIdentityState,
-    selectIsAnonymous,
-    selectIsRegistered,
-    selectIsVerified,
-    // Wallet connection selectors
-    selectConnectedAddress,
-    selectConnectionStatus,
-    selectProviderDetected,
-    selectConnectionError,
-    selectIsWalletConnected,
-    selectWalletVerified
-} from './slice';
-
-export type { UserState, UserStatus, WalletConnectionStatus } from './slice';
-
-// =============================================================================
-// API Client
-// =============================================================================
-
-export {
-    // User API functions
-    fetchUser,
-    linkWallet,
-    unlinkWallet,
-    setPrimaryWallet,
-    updatePreferences,
-    recordActivity,
-    // Session tracking functions
-    startSession,
-    recordPage,
-    heartbeat,
-    endSession,
-    // Logout
-    logoutUser,
-    // Admin API functions
-    adminListUsers,
-    adminGetUserStats,
-    adminGetUser,
-    adminGetDailyVisitors,
-    adminGetVisitorOrigins
-} from './api';
-
-export type { ISessionData, IDailyVisitorData, IVisitorOrigin, IUtmParams, VisitorPeriod } from './api';
-
-// =============================================================================
-// Identity Utilities
-// =============================================================================
-//
-// The server is the only writer of `tronrelic_uid`. Client-side UUID
-// generation, cookie writing, and the localStorage mirror have been
-// removed; the constant and validator below remain for SSR helpers.
-
-export {
-    USER_ID_COOKIE_NAME,
-    isValidUUID,
-    // TronLink provider utilities
-    getTronWeb,
-    assertTronWeb,
-    // SSR state building utilities
-    buildSSRUserState
-} from './lib';
-
-export type { TronWebProvider, SSRUserData } from './lib';
-
-// =============================================================================
-// Server Utilities (SSR)
-// =============================================================================
-// NOTE: Server utilities (getServerUserId, getServerUser, hasServerUserIdentity)
-// must be imported directly from './lib/server' in Server Components only.
-// They use next/headers which cannot be re-exported through client-safe barrels.
-
-// =============================================================================
-// Hooks
-// =============================================================================
-
-export { useWallet, useSessionTracking } from './hooks';
-
-// =============================================================================
-// Components
-// =============================================================================
-
-export { UserIdentityProvider } from './components';
-export type { UserIdentityProviderProps } from './components';
 export { WalletButton } from './components';
 export { SessionProvider, useAuthSession } from './components';
 export type { IAuthSessionContext, ISessionProviderProps } from './components';
@@ -169,12 +29,21 @@ export { AuthModal } from './components';
 export type { IAuthModalProps } from './components';
 export { ProfileMenu } from './components';
 export type { IProfileMenuProps } from './components';
-export { authClient, useSession, signIn, signOut, signUp } from './lib';
-export type { ISSRSession } from './lib';
+
+// =============================================================================
+// Components — `/system/users` admin dashboards
+// =============================================================================
+
 export { UsersMonitor } from './components';
 export { VisitorAnalytics } from './components';
 export { AnalyticsDashboard } from './components';
-export { ReferralOverview } from './components';
 export { GscSettings } from './components';
 export { GroupsManager } from './components';
 export { TrafficDashboard } from './components';
+
+// =============================================================================
+// Better Auth client
+// =============================================================================
+
+export { authClient, useSession, signIn, signOut, signUp } from './lib';
+export type { ISSRSession } from './lib';

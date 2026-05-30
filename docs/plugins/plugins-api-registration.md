@@ -27,11 +27,11 @@ Every route entry uses the `IApiRouteConfig` contract. Focus on these fields:
 
 Remember: `req.params`, `req.query`, `req.body`, and `req.ip` are plain objects; `res.status()`, `res.json()`, `res.send()`, and `res.setHeader()` mirror familiar Express methods but stay framework-agnostic.
 
-**`requiresAdmin` runs the admin gate.** The `requireAdmin` middleware admits the call when, in order, (a) the Better Auth session is in the `admin` group, (b) — during the legacy-coexistence window — the signed `tronrelic_uid` cookie identifies a verified user in the `admin` group, or (c) the request carries `ADMIN_API_TOKEN` via `x-admin-token` / `Authorization: Bearer`. The middleware tags the request with `req.adminVia = 'user' | 'service-token'` so handlers and audit logs can attribute the call. See [system-auth.md](../system/system-auth.md) for the authorization model.
+**`requiresAdmin` runs the admin gate.** The `requireAdmin` middleware admits the call when, in order, (a) the Better Auth session is in the `admin` group, or (b) the request carries `ADMIN_API_TOKEN` via `x-admin-token` / `Authorization: Bearer`. The middleware tags the request with `req.adminVia = 'user' | 'service-token'` so handlers and audit logs can attribute the call. See [system-auth.md](../system/system-auth.md) for the authorization model.
 
 The middleware short-circuits failures with **401**, or **503 when `ADMIN_API_TOKEN` is unset and no admin user resolves** — that 503 is the deliberate "admin surface disabled" signal, not a misconfiguration to retry. See [system-auth.md](../system/system-auth.md) for the canonical specification of the admin authorization model.
 
-The middleware overlaps with `IUserGroupService.isAdmin(req.userId)` — both confirm a human is admin via group membership — but the middleware *also* accepts the service token, while `isAdmin` is a pure predicate the handler consults to vary response shape. Combine them when an admin SPA route both rejects unauthenticated callers and renders different UI per operator: gate with `requiresAdmin: true`, then call `isAdmin(req.userId)` inside the handler. See [plugins-service-registry.md](./plugins-service-registry.md) and the [User Module README](../../src/backend/modules/user/README.md#user-groups-and-admin-status) for the consumption side.
+The middleware overlaps with `IUserGroupService.isAdmin(req.userId)` — both confirm a human is admin via group membership — but the middleware *also* accepts the service token, while `isAdmin` is a pure predicate the handler consults to vary response shape. Combine them when an admin SPA route both rejects unauthenticated callers and renders different UI per operator: gate with `requiresAdmin: true`, then call the `isAdmin(req)` predicate inside the handler. See [plugins-service-registry.md](./plugins-service-registry.md) and the [Identity Module README](../../src/backend/modules/identity/README.md#published-service-contracts) for the consumption side.
 
 **Auth context is automatically available.** The `attachAuthSession` middleware resolves the Better Auth session onto `req.authSession` before your handler runs. Gate with the synchronous predicates from `@delphian/tronrelic-types` — they read `req.authSession` and act as type guards, so it narrows to non-null on the truthy branch:
 
@@ -41,7 +41,7 @@ The middleware overlaps with `IUserGroupService.isAdmin(req.userId)` — both co
 
 The user id is `req.authSession.user.id`; the canonical wallet is `req.authSession.primaryWallet`. See [system-auth.md](../system/system-auth.md) for the full model.
 
-> **Coexistence.** The legacy `req.userId` / `req.user` (`IUser`) fields populated from the `tronrelic_uid` cookie still exist during the Better Auth migration and are removed in Phase 6. New plugins use `req.authSession` and the predicates above; do not write new `req.user.identityState` gates.
+> **Note.** The legacy `req.user` (`IUser`) field and the `tronrelic_uid` cookie were removed in the Better Auth cutover. Gate on `req.authSession` and the predicates above — never `req.user`. (`req.userId` survives, but now carries the Better Auth user id that `requireAdmin` sets for audit, not a legacy UUID.)
 
 ## Minimal Example
 

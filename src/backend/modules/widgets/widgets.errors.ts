@@ -5,7 +5,7 @@
  * classes via `instanceof` rather than matching against
  * `err.message` prefixes — the message text remains free to evolve
  * without silently degrading 400/409 responses to 500. Mirrors the
- * convention in `modules/user/services/user.errors.ts`.
+ * convention in `modules/identity/services/user-group.errors.ts`.
  *
  * @module backend/modules/widgets/widgets.errors
  */

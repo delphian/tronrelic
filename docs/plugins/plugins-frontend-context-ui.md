@@ -95,29 +95,15 @@ Reactive identity hook. Avoids Redux coupling and inline freshness recomputation
 
 ```typescript
 interface IPluginUserState {
-    userId: string | null;
-    hasLinkedWallet: boolean;     // wallets.length > 0
-    isVerified: boolean;          // identityState === Verified (live session)
-    wallets: IPluginWalletLink[];
-    primaryWallet: string | null; // most-recent verified wallet, else most-recent unverified
-    initialized: boolean;
-}
-
-interface IPluginWalletLink {
-    address: string;
-    verified: boolean;            // historical: true after any past signature
-    isPrimary: boolean;
-    linkedAt: string;
-    lastUsed: string;
-    label?: string;
+    userId: string | null;        // Better Auth account id; null when anonymous
+    isLoggedIn: boolean;          // authenticated Better Auth session — primary gate
+    hasPrimaryWallet: boolean;    // account has a signature-proven primary wallet
+    primaryWallet: string | null; // the proven primary wallet address, or null
+    initialized: boolean;         // false until the session resolves
 }
 ```
 
-`isVerified` is the user-level live-session signal — backend `identityState` expires after `SESSION_TTL_MS` (14 days). Per-wallet `verified` is audit history that stays `true` forever. Use `isVerified` for feature gating; use `wallets.some(w => w.verified)` only for the historical claim.
-
-Identity progression: Anonymous (`!hasLinkedWallet`) → Registered (`hasLinkedWallet && !isVerified`) → Verified.
-
-> **Coexistence.** `useUser()` and its `isVerified` / `identityState` / `wallets` fields reflect the *legacy* UUID identity system. It is still live and accurate today, but the frontend plugin auth surface migrates to the Better Auth session in the Phase 6 cutover. Backend plugin routes already gate on `req.authSession` — see [system-auth.md](../system/system-auth.md).
+`isLoggedIn` mirrors the backend `isLoggedIn(req)` predicate — use it for login-only gates. `hasPrimaryWallet` mirrors `hasPrimaryWallet(req)`; use it for wallet-gated features, since a Better Auth account can be email/OAuth/passkey-only with no wallet. A present `primaryWallet` is always signature-proven — there is no separate verified/unverified distinction. See [system-auth.md](../system/system-auth.md).
 
 ## Modal (`context.useModal`)
 
@@ -144,14 +130,14 @@ import type { IFrontendPluginContext } from '@/types';
 
 export function MyPluginPage({ context }: { context: IFrontendPluginContext }) {
     const { layout, ui, useUser, useModal, useToast } = context;
-    const { isVerified } = useUser();
+    const { hasPrimaryWallet } = useUser();
     const modal = useModal();
     const toast = useToast();
 
     const handlePremium = () => {
-        if (!isVerified) {
+        if (!hasPrimaryWallet) {
             const id = modal.open({
-                title: 'Wallet Verification Required',
+                title: 'Primary Wallet Required',
                 size: 'sm',
                 content: (
                     <p>

@@ -184,7 +184,7 @@ widgets.registerWidget({
 | GET | `/api/admin/system/widget-types` | `IWidgetTypeSnapshot` — groups (one per declaring plugin) → types |
 | GET / POST / PATCH / DELETE | `/api/admin/system/widgets/placements[/:id]` | Placement CRUD; see [system-api-widgets.md](../system/system-api-widgets.md) |
 
-All three chain `createAdminRateLimiter` before `requireAdmin` — admits the signed `tronrelic_uid` cookie or the `x-admin-token` header.
+All three chain `createAdminRateLimiter` before `requireAdmin` — admits the Better Auth admin session or the `x-admin-token` header.
 
 The pre-split read endpoints (`/api/widgets/all`, `/api/widgets/zones/:zone`) have been deleted. The SSR data endpoint `/api/widgets?route=...` remains.
 

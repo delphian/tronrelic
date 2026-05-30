@@ -10,7 +10,6 @@ import type {
     IUserGroup,
     MenuNodeOrigin
 } from '@/types';
-import { UserIdentityState } from '@/types';
 
 import { Page, Stack } from '../../../../components/layout';
 import { Badge } from '../../../../components/ui/Badge';
@@ -913,18 +912,6 @@ interface MenuNodeFormProps {
     onCancel: () => void;
 }
 
-const ALL_IDENTITY_STATES: UserIdentityState[] = [
-    UserIdentityState.Anonymous,
-    UserIdentityState.Registered,
-    UserIdentityState.Verified
-];
-
-const IDENTITY_STATE_LABELS: Record<UserIdentityState, string> = {
-    [UserIdentityState.Anonymous]: 'Anonymous',
-    [UserIdentityState.Registered]: 'Registered',
-    [UserIdentityState.Verified]: 'Verified'
-};
-
 function MenuNodeForm({ mode, initial, availableParents, availableGroups, onSubmit, onCancel }: MenuNodeFormProps) {
     const { open: openInnerModal, close: closeInnerModal } = useModal();
     const [data, setData] = useState<Partial<IMenuNode>>({
@@ -934,7 +921,6 @@ function MenuNodeForm({ mode, initial, availableParents, availableGroups, onSubm
         order: initial?.order ?? 0,
         parent: initial?.parent ?? null,
         enabled: initial?.enabled ?? true,
-        allowedIdentityStates: initial?.allowedIdentityStates,
         requiresGroups: initial?.requiresGroups,
         requiresAdmin: initial?.requiresAdmin ?? false
     });
@@ -959,19 +945,11 @@ function MenuNodeForm({ mode, initial, availableParents, availableGroups, onSubm
             // JSON payload, which the partial-update path interprets as
             // "leave this field unchanged" — preventing operators from ever
             // clearing a gate from the UI.
-            const states = data.allowedIdentityStates ?? [];
-            // All three states checked is semantically identical to no gate;
-            // collapse to an empty array so the persist path unsets the
-            // field rather than storing a tautological full set.
-            const normalizedStates =
-                states.length === ALL_IDENTITY_STATES.length ? [] : states;
-
             const normalized: Partial<IMenuNode> = {
                 ...data,
                 label: typeof data.label === 'string' ? data.label.trim() : data.label,
                 url: blankToUndefined(data.url) as string | undefined,
                 icon: blankToUndefined(data.icon) as string | undefined,
-                allowedIdentityStates: normalizedStates,
                 requiresGroups: data.requiresGroups ?? [],
                 requiresAdmin: Boolean(data.requiresAdmin)
             };
@@ -979,16 +957,6 @@ function MenuNodeForm({ mode, initial, availableParents, availableGroups, onSubm
         } finally {
             setSaving(false);
         }
-    };
-
-    const toggleIdentityState = (state: UserIdentityState) => {
-        setData((prev) => {
-            const current = prev.allowedIdentityStates ?? [];
-            const next = current.includes(state)
-                ? current.filter((s) => s !== state)
-                : [...current, state];
-            return { ...prev, allowedIdentityStates: next };
-        });
     };
 
     const toggleGroup = (groupId: string) => {
@@ -1094,29 +1062,6 @@ function MenuNodeForm({ mode, initial, availableParents, availableGroups, onSubm
 
             <fieldset className={styles.field} disabled={saving}>
                 <legend className={styles.field_label}>Visibility</legend>
-
-                <div className={styles.field}>
-                    <span className={styles.field_label}>Identity states</span>
-                    {ALL_IDENTITY_STATES.map((state) => {
-                        const checked = (data.allowedIdentityStates ?? []).includes(state);
-                        const inputId = `mn-state-${state}`;
-                        return (
-                            <label key={state} htmlFor={inputId} className={styles.inline_toggle}>
-                                <input
-                                    id={inputId}
-                                    type="checkbox"
-                                    checked={checked}
-                                    onChange={() => toggleIdentityState(state)}
-                                />
-                                <span>{IDENTITY_STATE_LABELS[state]}</span>
-                            </label>
-                        );
-                    })}
-                    <p className={styles.field_hint}>
-                        Leave all unchecked or all checked for "no restriction" — both
-                        normalize to no gate at save time.
-                    </p>
-                </div>
 
                 <div className={styles.field}>
                     <span className={styles.field_label}>Required groups</span>

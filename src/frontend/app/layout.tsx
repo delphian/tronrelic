@@ -5,11 +5,10 @@ import { getServerConfig, type RuntimeConfig } from '../lib/serverConfig';
 import { getServerSideApiUrl } from '../lib/api-url';
 import { buildMetadata, SITE_NAME } from '../lib/seo';
 import './globals.scss';
-import { Providers, type SSRUserData } from './providers';
+import { Providers } from './providers';
 import { MainHeader } from '../components/layout/MainHeader';
 import { BlockTicker } from '../components/layout/BlockTicker';
 import { WidgetZone, fetchWidgetsForRoute } from '../components/widgets';
-import { getServerUserId, getServerUser } from '../modules/user/lib/server';
 import { getServerSession, type ISSRSession } from '../modules/user/lib/session-server';
 import type { BlockSummary } from '../features/blockchain/slice';
 
@@ -280,30 +279,6 @@ async function fetchInitialBlock(): Promise<BlockSummary | null> {
 }
 
 /**
- * Fetch user data during SSR to prevent wallet button flash and to
- * seed the auth gate with server-computed truth on first paint.
- *
- * Returns the full `IUserData` payload — including `identityState`,
- * `groups`, and `authStatus` — so the Redux preload matches what
- * the backend would have shipped on a client-side bootstrap call.
- * Returning `null` (no cookie, fetch failure, or backend miss) lets
- * `UserIdentityProvider` fall through to its mount-time bootstrap,
- * which is the only safe way to populate `authStatus` client-side.
- */
-async function fetchSSRUserData(): Promise<SSRUserData | null> {
-  try {
-    const userId = await getServerUserId();
-    if (!userId) {
-      return null;
-    }
-
-    return await getServerUser(userId);
-  } catch {
-    return null;
-  }
-}
-
-/**
  * Fetch the Better Auth session for SSR.
  *
  * Resolves the session by forwarding the inbound cookies to BA's
@@ -339,11 +314,10 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
   // via ssr.headFragments and stamps data-theme="active" via
   // ssr.htmlAttributes, so no separate fetchActiveThemes call or cookie
   // branch is needed in this layout.
-  const [runtimeConfig, headFragments, htmlAttributes, ssrUserData, ssrSession, initialBlock, tickerWidgets] = await Promise.all([
+  const [runtimeConfig, headFragments, htmlAttributes, ssrSession, initialBlock, tickerWidgets] = await Promise.all([
     getServerConfig(),
     fetchHeadFragments(pathname, cookieMap),
     fetchHtmlAttributes(pathname, cookieMap),
-    fetchSSRUserData(),
     fetchSSRSession(),
     fetchInitialBlock(),
     fetchWidgetsForRoute(pathname, {})
@@ -371,7 +345,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
         {headFragments.map(renderHeadFragment)}
       </head>
       <body>
-        <Providers ssrUserData={ssrUserData} ssrSession={ssrSession}>
+        <Providers ssrSession={ssrSession}>
           <MainHeader />
           <BlockTicker initialBlock={initialBlock} />
           <WidgetZone name="ticker-after" widgets={tickerWidgets} route={pathname} params={{}} />

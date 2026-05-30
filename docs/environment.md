@@ -22,9 +22,9 @@ There are no `NEXT_PUBLIC_*` vars by design. Production builds inline build-time
 
 ## SESSION_SECRET
 
-Without a real secret the `tronrelic_uid` cookie is a bare UUID. Any client that learns a UUID can forge `Cookie: tronrelic_uid=<uuid>` and impersonate that user. Signing turns the wire value into `s:<uuid>.<HMAC>`, which forgery cannot produce without the secret.
+`SESSION_SECRET` is the secret `loaders/express.ts` hands to `cookie-parser`, so Express can verify `req.signedCookies`. It no longer signs an identity cookie — the legacy `tronrelic_uid` cookie was removed in the Better Auth cutover, and identity now rides the Better Auth session cookie, which Better Auth signs independently with `BETTER_AUTH_SECRET`. The current analytics cookies (`tronrelic_tid`, `tronrelic_ref`) are unsigned by design. `SESSION_SECRET` is retained as a defensive keep so any future signed cookie is verifiable.
 
-If the variable is unset, production (`NODE_ENV=production` or `ENV=production`) refuses to start, while dev and test fall back to a placeholder and emit `console.warn`. Rotating the secret invalidates every existing cookie: anonymous and registered visitors get a fresh UUID on next bootstrap, and verified users re-anchor through link-wallet identity-swap on their next signature. There is no session table to flush.
+If the variable is unset, production (`NODE_ENV=production` or `ENV=production`) refuses to start, while dev and test fall back to a placeholder and emit `console.warn`. Rotating it only affects signed cookies parsed by `cookie-parser`; it does not touch Better Auth sessions (those rotate with `BETTER_AUTH_SECRET`).
 
 ## TronGrid Rate Limits
 

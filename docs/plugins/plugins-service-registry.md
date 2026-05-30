@@ -92,26 +92,23 @@ disable: async (context: IPluginContext) => {
 
 ## Platform-Provided Services: `user-groups`
 
-Modules also publish on the registry. `IUserGroupService` (registered as `'user-groups'` by the user module) is the canonical entry point for plugin permission gating. It exposes membership reads and writes (`isMember`, `getUserGroups`, `addMember`, `removeMember`) plus a special `isAdmin(userId)` predicate that resolves through any system-flagged group whose id matches the reserved-admin pattern. The service contract ships with the platform via `@/types`, so consumers don't need a sibling types package:
+Modules also publish on the registry. `IUserGroupService` (registered as `'user-groups'` by the identity module) is the canonical entry point for plugin permission gating. It exposes membership reads and writes (`isMember`, `getUserGroups`, `addMember`, `removeMember`) plus an `isAdmin(userId)` predicate — admin is membership in the single literal `admin` group. The contract ships with the platform via `@/types`, so consumers don't need a sibling types package:
 
 ```typescript
 import type { IUserGroupService } from '@/types';
 
 const groups = context.services.get<IUserGroupService>('user-groups');
-if (groups && req.userId && await groups.isAdmin(req.userId)) {
-    // Render admin-only UI for the cookie-identified visitor
+// `userId` is a Better Auth account id you already hold — e.g. req.authSession.user.id
+if (groups && userId && await groups.isAdmin(userId)) {
+    // This account is an admin
 }
 ```
 
-`isAdmin(userId)` is a per-user predicate keyed off the visitor's UUID — use it whenever a request handler runs in cookie-identified context and the question is "should this person see admin UI?"
+`isAdmin(userId)` answers "is this *account* an admin?" — pass it a Better Auth user id you already hold. For the common "is the *caller* an admin?" question inside a request handler, prefer the synchronous Better Auth predicate `isAdmin(req)` from `@/types`, which reads `req.authSession` directly and needs no account-id plumbing.
 
-**Do not conflate it with route-level admin auth.** The `requiresAdmin: true` flag on `IApiRouteConfig` and the `requireAdmin` middleware admit a request when, in order, (a) the Better Auth session is in the `admin` group, (b) — during coexistence — the signed `tronrelic_uid` cookie identifies a Verified user in the `admin` group, or (c) the request carries `ADMIN_API_TOKEN` via `x-admin-token` / `Authorization: Bearer`. The middleware tags the request with `req.adminVia = 'user' | 'service-token'`. See [system-auth.md](../system/system-auth.md).
+**Do not conflate either with route-level admin auth.** The `requiresAdmin: true` flag on `IApiRouteConfig` and the `requireAdmin` middleware admit a request when, in order, (a) the Better Auth session is in the `admin` group, or (b) the request carries `ADMIN_API_TOKEN` via `x-admin-token` / `Authorization: Bearer`. The middleware tags the request with `req.adminVia = 'user' | 'service-token'` and short-circuits failures; `isAdmin(req)` is a pure predicate the handler consults to vary response shape. A typical admin route combines them: protect with `requiresAdmin: true`, then call `isAdmin(req)` inside to render per-operator UI. Plugins that need per-account admin gating must call `IUserGroupService.isAdmin` rather than rolling their own scheme. See [system-auth.md](../system/system-auth.md).
 
-> **Coexistence.** `IUserGroupService.isAdmin(req.userId)` shown above is the *legacy* UUID-keyed per-visitor check, removed in Phase 6. New plugin code asks the per-caller admin question with the Better Auth predicate `isAdmin(req)` from `@delphian/tronrelic-types`, which reads `req.authSession`. See [system-auth.md](../system/system-auth.md).
-
-The cookie path overlaps with `groups.isAdmin(req.userId)` — both ask "is this human an admin?" — but the middleware short-circuits the request on failure, while `groups.isAdmin` is a pure predicate the handler consults to vary response shape. A typical admin SPA combines them: protect the route with `requireAdmin` so unauthenticated callers don't reach the handler, then call `groups.isAdmin(req.userId)` inside to make per-user rendering decisions. Plugins that want per-user admin gating must call `IUserGroupService.isAdmin` rather than rolling their own scheme — the JSDoc on the interface explicitly warns against parallel permission models.
-
-See the [User Module README](../../src/backend/modules/user/README.md#user-groups-and-admin-status) for the full method table, reserved-admin slug rules, and cache-invalidation semantics.
+See the [Identity Module README](../../src/backend/modules/identity/README.md#published-service-contracts) for the `IUserGroupService` method table and the `admin`-group semantics.
 
 ## Further Reading
 
@@ -119,4 +116,4 @@ See the [User Module README](../../src/backend/modules/user/README.md#user-group
 - [plugins-api-registration.md](./plugins-api-registration.md) — `requiresAdmin` flag and dual-track middleware
 - [modules.md](../system/modules/modules.md#module-vs-plugin-decision-matrix) — How the registry shifts the module vs plugin decision
 - [modules-architecture.md](../system/modules/modules-architecture.md#service-registry--late-binding-di) — Module-side perspective on the registry
-- [User Module README](../../src/backend/modules/user/README.md#user-groups-and-admin-status) — `IUserGroupService` reference
+- [Identity Module README](../../src/backend/modules/identity/README.md#published-service-contracts) — `IUserGroupService` reference

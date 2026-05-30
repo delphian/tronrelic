@@ -1,604 +1,23 @@
 /**
- * User module API client functions.
+ * User module analytics + Google Search Console API client.
  *
- * Provides typed API calls for user identity operations including
- * fetching users, linking wallets, managing preferences, and admin operations.
+ * Typed admin API calls backing the `/system/users` analytics dashboards.
+ * Visitor counts, traffic-source breakdowns, geo/device distributions,
+ * engagement, the binary conversion funnel, the Better Auth account
+ * overview, and GSC configuration — all served from the ClickHouse-backed
+ * `traffic_events` store via the traffic module's admin routes. The legacy
+ * UUID user CRUD, wallet, session, profile, and referral calls were removed
+ * in the Better Auth cutover along with the routes that backed them.
  */
 
 import { apiClient } from '../../../lib/api';
-import type { IUserData, IUserPreferences, IUserStats } from '../types';
 
-// ============================================================================
-// Wallet Connection Result Types
-// ============================================================================
-
-/**
- * Result of wallet registration attempt (stage 1 of the two-stage wallet flow).
- *
- * On success, the wallet is stored on the backend with `verified: false`,
- * moving the user from *anonymous* to *registered*. When the wallet is
- * already linked to another user, returns `loginRequired: true` with the
- * existing user ID — the frontend should then prompt for signature
- * verification to swap identity into the existing (verified) owner.
- */
-export interface IConnectWalletResult {
-    /** Whether registration succeeded (wallet now linked to this user) */
-    success: boolean;
-    /** Updated user data (when success=true) */
-    user?: IUserData;
-    /** Whether wallet is linked to another user and login is required */
-    loginRequired?: boolean;
-    /** The existing user ID that owns this wallet (when loginRequired=true) */
-    existingUserId?: string;
-}
-
-/**
- * Result of wallet verification attempt (stage 2 of the two-stage wallet flow).
- *
- * On success the wallet is upgraded to `verified: true` and the user
- * transitions into the *verified* state. When identity swap occurs (wallet
- * belonged to another user), returns `identitySwapped: true` with the
- * existing owner's data — the calling UUID becomes a tombstone.
- */
-export interface ILinkWalletResult {
-    /** The user data (either updated current user or swapped-to user) */
-    user: IUserData;
-    /** Whether identity was swapped to existing wallet owner */
-    identitySwapped?: boolean;
-    /** The previous user ID before swap (for cleanup on frontend) */
-    previousUserId?: string;
-}
-
-/**
- * Wallet operations gated by a server-issued challenge.
- *
- * `'refresh-verification'` updates the per-wallet `verifiedAt` and
- * the user-level `identityVerifiedAt` on an already-linked,
- * already-verified wallet. It is the natural action when a user's
- * session has expired — the backend's lazy expiry pass has already
- * downgraded them to `Registered`, and re-signing here lifts them
- * back to `Verified`. Distinct nonce scope keeps a captured signature
- * for any other action from being replayable here.
- */
-export type WalletChallengeAction = 'link' | 'unlink' | 'set-primary' | 'refresh-verification';
-
-/**
- * Server-issued single-use wallet challenge.
- *
- * The client signs `message` verbatim with TronLink and submits the
- * signature plus `nonce` back to the matching wallet endpoint within the
- * TTL window indicated by `expiresAt`.
- */
-export interface IWalletChallenge {
-    /** Single-use nonce to submit alongside the signature */
-    nonce: string;
-    /** Canonical message to sign verbatim with TronLink */
-    message: string;
-    /** Unix epoch ms when the nonce expires (informational only) */
-    expiresAt: number;
-}
-
-// ============================================================================
-// User API Functions
-// ============================================================================
-
-/**
- * Bootstrap the visitor's identity.
- *
- * Idempotent: returning visitors get their canonical user back; first-time
- * visitors have a UUID minted server-side and an HttpOnly `tronrelic_uid`
- * cookie set on the response. The frontend never reads the UUID from
- * cookies or localStorage — every page load just calls this once and
- * receives the user data.
- *
- * @returns User data from API
- */
-export async function bootstrapUser(): Promise<IUserData> {
-    const response = await apiClient.post(
-        `/user/bootstrap`,
-        {},
-        { withCredentials: true }
-    );
-    return response.data as IUserData;
-}
-
-/**
- * Fetch user data by UUID.
- *
- * Used after bootstrap when the client already knows its own UUID and
- * needs to refresh the data (e.g. after wallet operations). Cookie still
- * required — the backend validates `tronrelic_uid` matches `:id`.
- *
- * @param userId - User UUID
- * @returns User data from API
- */
-export async function fetchUser(userId: string): Promise<IUserData> {
-    const response = await apiClient.get(`/user/${userId}`, {
-        withCredentials: true
-    });
-    return response.data as IUserData;
-}
-
-/**
- * Register a wallet to a user identity (no signature required).
- *
- * Stage 1 of the two-stage wallet flow. Stores the wallet on the backend
- * with `verified: false`, moving the user from *anonymous* to *registered*.
- * Use `linkWallet` (stage 2) to upgrade the wallet to *verified*.
- *
- * The function name `connectWallet` matches the HTTP route
- * (`POST /api/user/:id/wallet/connect`) for wire consistency; the *effect*
- * is registration.
- *
- * When the wallet is already linked to another user, returns
- * `loginRequired: true`. Frontend should then prompt for signature
- * verification to log in as that existing owner.
- *
- * @param userId - User UUID
- * @param address - TRON wallet address
- * @returns Result with success status or login requirement
- */
-export async function connectWallet(
-    userId: string,
-    address: string
-): Promise<IConnectWalletResult> {
-    const response = await apiClient.post(
-        `/user/${userId}/wallet/connect`,
-        { address },
-        { withCredentials: true }
-    );
-    return response.data as IConnectWalletResult;
-}
-
-/**
- * Request a server-issued single-use challenge for a wallet operation.
- *
- * Replaces the legacy client-supplied timestamp with a server-minted nonce.
- * Call this before `linkWallet`, `unlinkWallet`, or `setPrimaryWallet`,
- * sign the returned `message` with TronLink, then submit the signature
- * along with `nonce` to the matching endpoint within the TTL window
- * (~60 seconds).
- *
- * @param userId - User UUID
- * @param action - Wallet operation the challenge will gate
- * @param address - TRON wallet address (hex or base58 — server normalizes)
- * @returns Challenge with nonce, canonical message, and expiry
- */
-export async function requestWalletChallenge(
-    userId: string,
-    action: WalletChallengeAction,
-    address: string
-): Promise<IWalletChallenge> {
-    const response = await apiClient.post(
-        `/user/${userId}/wallet/challenge`,
-        { action, address },
-        { withCredentials: true }
-    );
-    return response.data as IWalletChallenge;
-}
-
-/**
- * Verify a wallet on a user identity (cryptographic signature required).
- *
- * Stage 2 of the two-stage wallet flow. Upgrades a registered wallet to
- * `verified: true` (or adds it as already verified), moving the user into
- * the *verified* state.
- *
- * The function name `linkWallet` matches the HTTP route
- * (`POST /api/user/:id/wallet`) for wire consistency; the *effect* is
- * verification.
- *
- * If the wallet belongs to another user, performs identity swap and returns
- * `identitySwapped: true` with the existing owner's data. Frontend should
- * update cookie/localStorage to the new user ID — this is the cross-browser
- * login path for *verified* users.
- *
- * @param userId - User UUID
- * @param address - TRON wallet address
- * @param message - Canonical message returned by the matching challenge
- * @param signature - TronLink signature over `message`
- * @param nonce - Single-use nonce from `requestWalletChallenge`
- * @returns Result with user data and optional identity swap indicator
- */
-export async function linkWallet(
-    userId: string,
-    address: string,
-    message: string,
-    signature: string,
-    nonce: string
-): Promise<ILinkWalletResult> {
-    const response = await apiClient.post(
-        `/user/${userId}/wallet`,
-        { address, message, signature, nonce },
-        { withCredentials: true }
-    );
-    return response.data as ILinkWalletResult;
-}
-
-/**
- * Unlink a wallet from user identity.
- *
- * @param userId - User UUID
- * @param address - TRON wallet address to unlink
- * @param message - Canonical message returned by the matching challenge
- * @param signature - TronLink signature over `message`
- * @param nonce - Single-use nonce from `requestWalletChallenge`
- * @returns Updated user data
- */
-export async function unlinkWallet(
-    userId: string,
-    address: string,
-    message: string,
-    signature: string,
-    nonce: string
-): Promise<IUserData> {
-    const response = await apiClient.delete(
-        `/user/${userId}/wallet/${address}`,
-        {
-            data: { message, signature, nonce },
-            withCredentials: true
-        }
-    );
-    return response.data as IUserData;
-}
-
-/**
- * Set a wallet as primary.
- *
- * Step-up authentication: requires a fresh signature even though the wallet
- * was already verified at link time. Cookie alone is XSS-stealable, and
- * primary drives downstream attribution that should not be steerable from
- * a captured cookie.
- *
- * @param userId - User UUID
- * @param address - TRON wallet address to set as primary
- * @param message - Canonical message returned by the matching challenge
- * @param signature - TronLink signature over `message`
- * @param nonce - Single-use nonce from `requestWalletChallenge`
- * @returns Updated user data
- */
-export async function setPrimaryWallet(
-    userId: string,
-    address: string,
-    message: string,
-    signature: string,
-    nonce: string
-): Promise<IUserData> {
-    const response = await apiClient.patch(
-        `/user/${userId}/wallet/${address}/primary`,
-        { message, signature, nonce },
-        { withCredentials: true }
-    );
-    return response.data as IUserData;
-}
-
-/**
- * Refresh the user's session by re-signing an already-verified wallet.
- *
- * The user-level session clock (`identityVerifiedAt`) ages out after
- * `SESSION_TTL_MS`, at which point the backend lazily downgrades the
- * user from `Verified` to `Registered`. This call mints a
- * `'refresh-verification'` challenge, the user signs the canonical
- * message with TronLink, and the backend bumps both the per-wallet
- * `verifiedAt` and the user-level `identityVerifiedAt`, lifting the
- * user back to `Verified`. This is the natural verify-wallet
- * affordance for the wallet card on `/profile` — no special "stale
- * admin" flow, just normal wallet management.
- *
- * Mints a `'refresh-verification'` challenge via `requestWalletChallenge`,
- * the user signs the canonical message with TronLink, and this call
- * consumes the nonce and updates `verifiedAt = now` on the wallet.
- *
- * Refuses to operate on registered (unsigned) wallets — moving a
- * wallet from registered → verified is the link flow's job. Use
- * `linkWallet` for that.
- *
- * @param userId - User UUID
- * @param address - Already-verified wallet address to refresh
- * @param message - Canonical message returned by the matching challenge
- * @param signature - TronLink signature over `message`
- * @param nonce - Single-use nonce from `requestWalletChallenge` with action='refresh-verification'
- * @returns Updated user data with the wallet's `verifiedAt` set to now
- */
-export async function refreshWalletVerification(
-    userId: string,
-    address: string,
-    message: string,
-    signature: string,
-    nonce: string
-): Promise<IUserData> {
-    const response = await apiClient.post(
-        `/user/${userId}/wallet/${address}/refresh-verification`,
-        { message, signature, nonce },
-        { withCredentials: true }
-    );
-    return response.data as IUserData;
-}
-
-/**
- * Update user preferences.
- *
- * @param userId - User UUID
- * @param preferences - Partial preferences to update
- * @returns Updated user data
- */
-export async function updatePreferences(
-    userId: string,
-    preferences: Partial<IUserPreferences>
-): Promise<IUserData> {
-    const response = await apiClient.patch(
-        `/user/${userId}/preferences`,
-        preferences,
-        { withCredentials: true }
-    );
-    return response.data as IUserData;
-}
-
-/**
- * Record user activity (page view).
- *
- * @param userId - User UUID
- * @deprecated Use startSession and recordPage for session-aware tracking
- */
-export async function recordActivity(userId: string): Promise<void> {
-    await apiClient.post(
-        `/user/${userId}/activity`,
-        {},
-        { withCredentials: true }
-    );
-}
-
-// ============================================================================
-// Session Tracking Functions
-// ============================================================================
-
-/** Screen size category based on viewport width breakpoints */
-export type ScreenSizeCategory = 'mobile-sm' | 'mobile-md' | 'mobile-lg' | 'tablet' | 'desktop' | 'desktop-lg' | 'unknown';
-
-/**
- * UTM campaign tracking parameters captured from the landing page URL.
- */
-export interface IUtmParams {
-    source?: string;
-    medium?: string;
-    campaign?: string;
-    term?: string;
-    content?: string;
-}
-
-/**
- * Session data returned from session/start endpoint.
- */
-export interface ISessionData {
-    startedAt: string;
-    endedAt: string | null;
-    durationSeconds: number;
-    pages: Array<{ path: string; timestamp: string }>;
-    device: 'mobile' | 'tablet' | 'desktop' | 'unknown';
-    screenWidth: number | null;
-    screenSize: ScreenSizeCategory;
-    referrerDomain: string | null;
-    country: string | null;
-    utm: IUtmParams | null;
-    landingPage: string | null;
-    searchKeyword: string | null;
-}
-
-/**
- * Start a new session or return the active session.
- * Device, country, and referrer are derived from request headers server-side.
- * Screen size is derived from the provided screenWidth using design system breakpoints.
- * Search keywords are extracted server-side from the referrer URL for known search engines.
- *
- * @param userId - User UUID
- * @param referrer - Optional referrer URL (defaults to document.referrer)
- * @param screenWidth - Optional viewport width in pixels
- * @param utm - Optional UTM campaign parameters from landing page URL
- * @param landingPage - Optional landing page path
- * @returns Session data
- */
-export async function startSession(
-    userId: string,
-    referrer?: string,
-    screenWidth?: number,
-    utm?: IUtmParams,
-    landingPage?: string
-): Promise<ISessionData> {
-    const response = await apiClient.post(
-        `/user/${userId}/session/start`,
-        { referrer, screenWidth, utm, landingPage },
-        { withCredentials: true }
-    );
-    return response.data.session as ISessionData;
-}
-
-/**
- * Record a page visit in the current session.
- *
- * @param userId - User UUID
- * @param path - Route path (e.g., '/accounts/TXyz...')
- */
-export async function recordPage(userId: string, path: string): Promise<void> {
-    await apiClient.post(
-        `/user/${userId}/session/page`,
-        { path },
-        { withCredentials: true }
-    );
-}
-
-/**
- * Update session heartbeat to extend duration tracking.
- * Should be called periodically (e.g., every 30 seconds).
- *
- * @param userId - User UUID
- */
-export async function heartbeat(userId: string): Promise<void> {
-    await apiClient.post(
-        `/user/${userId}/session/heartbeat`,
-        {},
-        { withCredentials: true }
-    );
-}
-
-/**
- * End the current session explicitly.
- * Called when user navigates away or closes the page.
- *
- * @param userId - User UUID
- */
-export async function endSession(userId: string): Promise<void> {
-    await apiClient.post(
-        `/user/${userId}/session/end`,
-        {},
-        { withCredentials: true }
-    );
-}
-
-// ============================================================================
-// Logout
-// ============================================================================
-
-/**
- * End the user's verified session.
- *
- * Calls `POST /api/user/:id/logout`, which downgrades `identityState`
- * from `Verified` to `Registered` (or `Anonymous` if no wallets remain)
- * and clears `identityVerifiedAt`. Wallets and the cookie persist.
- *
- * @param userId - User UUID
- * @returns Updated user data
- */
-export async function logoutUser(userId: string): Promise<IUserData> {
-    const response = await apiClient.post(
-        `/user/${userId}/logout`,
-        {},
-        { withCredentials: true }
-    );
-    return response.data as IUserData;
-}
-
-// ============================================================================
-// Public Profile Functions
-// ============================================================================
-
-/**
- * Public profile data returned from the profile endpoint.
- */
-export interface IPublicProfile {
-    /** Verified wallet address for this profile */
-    address: string;
-    /** When the user account was created */
-    createdAt: string;
-    /** Always true — public profiles only resolve for *verified* users. */
-    isVerified: true;
-    /**
-     * True when the requester's cookie identity owns this profile.
-     *
-     * Computed server-side from the visitor's `tronrelic_uid` cookie so the
-     * owning UUID never leaves the server. Owners already know their own UUID
-     * (cookie / Redux); non-owners always see `false`.
-     */
-    isOwner: boolean;
-}
-
-/**
- * Fetch public profile by wallet address.
- *
- * This endpoint is publicly accessible — no authentication required.
- * Returns null if no profile exists for the given address. A profile only
- * exists when the address belongs to a user in the *verified* identity
- * state (i.e. the wallet has `verified: true`); registered (unsigned)
- * wallet addresses resolve to null.
- *
- * @param address - TRON wallet address
- * @returns Profile data or null if not found
- */
-export async function fetchProfile(address: string): Promise<IPublicProfile | null> {
-    try {
-        const response = await apiClient.get(`/profile/${address}`);
-        return response.data as IPublicProfile;
-    } catch (error) {
-        if ((error as { response?: { status: number } }).response?.status === 404) {
-            return null;
-        }
-        throw error;
-    }
-}
-
-// ============================================================================
-// Referral API Functions
-// ============================================================================
-
-/** Referral statistics response. */
-export interface IReferralStats {
-    /** User's referral code */
-    code: string;
-    /** Number of visitors who arrived via this referral code */
-    referredCount: number;
-    /** Number of referred visitors who verified a wallet */
-    convertedCount: number;
-}
-
-/**
- * Get referral code and stats for the authenticated user.
- *
- * Returns null if the user has no referral code yet (i.e. they are still
- * *anonymous* or *registered* — codes are issued only on transition into
- * the *verified* state). Throws on auth errors or server failures so the
- * UI can show an appropriate error state instead of the misleading
- * "verify wallet" message.
- *
- * @param userId - User UUID
- * @returns Referral stats or null (no code yet)
- * @throws Error on auth/network/server failures
- */
-export async function fetchReferralStats(userId: string): Promise<IReferralStats | null> {
-    const response = await apiClient.get(`/user/${userId}/referral`, {
-        withCredentials: true
-    });
-    const data = response.data as IReferralStats | { referral: null };
-    if ('referral' in data && data.referral === null) {
-        return null;
-    }
-    return data as IReferralStats;
-}
-
-// ============================================================================
-// Admin API Functions
-// ============================================================================
-
+/** Admin token header consumed by every endpoint here. */
 const adminHeaderKey = 'x-admin-token';
 
-/**
- * List all users (admin endpoint).
- *
- * @param token - Admin API token
- * @param options - Pagination and search options
- * @returns Users list with stats
- */
-export async function adminListUsers(
-    token: string,
-    options?: { limit?: number; skip?: number; search?: string }
-): Promise<{ users: IUserData[]; total: number; stats: IUserStats }> {
-    const response = await apiClient.get('/admin/users', {
-        headers: { [adminHeaderKey]: token },
-        params: options
-    });
-    return response.data as { users: IUserData[]; total: number; stats: IUserStats };
-}
-
-/**
- * Get user statistics (admin endpoint).
- *
- * @param token - Admin API token
- * @returns User statistics
- */
-export async function adminGetUserStats(token: string): Promise<IUserStats> {
-    const response = await apiClient.get('/admin/users/stats', {
-        headers: { [adminHeaderKey]: token }
-    });
-    return response.data as IUserStats;
-}
+// ============================================================================
+// Visitor Analytics Types
+// ============================================================================
 
 /**
  * Daily visitor count data point.
@@ -642,6 +61,10 @@ export interface IVisitorOrigin {
     pageViews: number;
 }
 
+// ============================================================================
+// Visitor Analytics API Functions
+// ============================================================================
+
 /**
  * Get daily unique visitor counts for charting (admin endpoint).
  *
@@ -653,36 +76,21 @@ export async function adminGetDailyVisitors(
     token: string,
     days: number = 90
 ): Promise<IDailyVisitorData[]> {
+    // The ClickHouse-backed endpoint takes a date window, not a `days` count;
+    // convert. Backend returns { data: [{ day, visitors }] }.
+    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
     const response = await apiClient.get('/admin/users/analytics/daily-visitors', {
         headers: { [adminHeaderKey]: token },
-        params: { days }
+        params: { startDate: since.toISOString(), endDate: new Date().toISOString() }
     });
-    return (response.data as { data: IDailyVisitorData[] }).data ?? [];
-}
-
-/**
- * Get visitor traffic origins from first-ever sessions (admin endpoint).
- *
- * @param token - Admin API token
- * @param options - Period, pagination options
- * @returns Paginated list of visitor origins
- */
-export async function adminGetVisitorOrigins(
-    token: string,
-    options?: { period?: VisitorPeriod; limit?: number; skip?: number }
-): Promise<{ visitors: IVisitorOrigin[]; total: number }> {
-    const response = await apiClient.get('/admin/users/analytics/visitor-origins', {
-        headers: { [adminHeaderKey]: token },
-        params: options
-    });
-    return response.data as { visitors: IVisitorOrigin[]; total: number };
+    const rows = (response.data as { data?: Array<{ day: string; visitors: number }> }).data ?? [];
+    return rows.map(r => ({ date: r.day, count: r.visitors }));
 }
 
 /**
  * Get new users first seen within the specified period (admin endpoint).
  *
- * Unlike adminGetVisitorOrigins which filters by lastSeen (recent activity),
- * this filters by firstSeen (new arrivals) and sorts most recent first.
+ * Filters by firstSeen (new arrivals) and sorts most recent first.
  *
  * @param token - Admin API token
  * @param options - Period, pagination options
@@ -814,6 +222,22 @@ export interface IRetentionEntry {
     returningVisitors: number;
 }
 
+/**
+ * Categorize a referrer domain into a coarse traffic-source bucket for the
+ * dashboard badge. The ClickHouse `traffic_events` store only carries the raw
+ * referrer domain (or `'direct'`), so the category is derived client-side.
+ *
+ * @param source - Referrer domain or `'direct'`.
+ * @returns One of `'direct' | 'organic' | 'social' | 'referral'`.
+ */
+function categorizeTrafficSource(source: string): string {
+    if (!source || source === 'direct') return 'direct';
+    const s = source.toLowerCase();
+    if (/(google|bing|duckduckgo|yahoo|baidu|yandex|ecosia)\./.test(s)) return 'organic';
+    if (/(twitter|x\.com|t\.co|facebook|fb\.com|reddit|linkedin|instagram|youtube|tiktok|telegram|t\.me)/.test(s)) return 'social';
+    return 'referral';
+}
+
 // ============================================================================
 // Aggregate Analytics API Functions
 // ============================================================================
@@ -835,7 +259,17 @@ export async function adminGetTrafficSources(
         headers: { [adminHeaderKey]: token },
         params
     });
-    return response.data as { sources: ITrafficSource[]; total: number };
+    // Backend (TrafficService) returns { data: [{ source, count }] }. Derive
+    // the category badge and percentage client-side.
+    const rows = (response.data as { data?: Array<{ source: string; count: number }> }).data ?? [];
+    const total = rows.reduce((sum, r) => sum + (r.count ?? 0), 0);
+    const sources: ITrafficSource[] = rows.map(r => ({
+        source: r.source,
+        category: categorizeTrafficSource(r.source),
+        count: r.count,
+        percentage: total > 0 ? Math.round((r.count / total) * 1000) / 10 : 0
+    }));
+    return { sources, total };
 }
 
 /**
@@ -880,7 +314,12 @@ export async function adminGetTopLandingPages(
         headers: { [adminHeaderKey]: token },
         params
     });
-    return response.data as { pages: ILandingPage[]; totalPages: number; totalVisitors: number };
+    // Backend returns { data: [{ path, count }] }. Per-page session/view
+    // averages no longer exist (session events land post-Phase-D), so they
+    // surface as 0.
+    const rows = (response.data as { data?: Array<{ path: string; count: number }> }).data ?? [];
+    const pages: ILandingPage[] = rows.map(r => ({ path: r.path, visitors: r.count, avgSessions: 0, avgPageViews: 0 }));
+    return { pages, totalPages: pages.length, totalVisitors: rows.reduce((sum, r) => sum + (r.count ?? 0), 0) };
 }
 
 /**
@@ -900,7 +339,15 @@ export async function adminGetGeoDistribution(
         headers: { [adminHeaderKey]: token },
         params
     });
-    return response.data as { countries: IGeoEntry[]; total: number };
+    // Backend returns { data: [{ country, count }] }; derive percentage.
+    const rows = (response.data as { data?: Array<{ country: string | null; count: number }> }).data ?? [];
+    const total = rows.reduce((sum, r) => sum + (r.count ?? 0), 0);
+    const countries: IGeoEntry[] = rows.map(r => ({
+        country: r.country ?? 'Unknown',
+        count: r.count,
+        percentage: total > 0 ? Math.round((r.count / total) * 1000) / 10 : 0
+    }));
+    return { countries, total };
 }
 
 /**
@@ -920,7 +367,16 @@ export async function adminGetDeviceBreakdown(
         headers: { [adminHeaderKey]: token },
         params
     });
-    return response.data as { devices: IDeviceEntry[]; screenSizes: IScreenSizeEntry[]; total: number };
+    // Backend returns { data: [{ device, count }] }; screen-size dimension was
+    // dropped in the ClickHouse re-platform.
+    const rows = (response.data as { data?: Array<{ device: string; count: number }> }).data ?? [];
+    const total = rows.reduce((sum, r) => sum + (r.count ?? 0), 0);
+    const devices: IDeviceEntry[] = rows.map(r => ({
+        device: r.device,
+        count: r.count,
+        percentage: total > 0 ? Math.round((r.count / total) * 1000) / 10 : 0
+    }));
+    return { devices, screenSizes: [], total };
 }
 
 /**
@@ -940,7 +396,22 @@ export async function adminGetCampaignPerformance(
         headers: { [adminHeaderKey]: token },
         params
     });
-    return response.data as { campaigns: ICampaignEntry[]; total: number };
+    // Backend returns { data: [{ campaign, source, medium, visitors,
+    // conversions, conversionRate }] }. The legacy wallet-connected/-verified
+    // split collapses to a single binary conversion (BA login).
+    const rows = (response.data as {
+        data?: Array<{ campaign: string; source: string; medium: string; visitors: number; conversions: number; conversionRate: number }>
+    }).data ?? [];
+    const campaigns: ICampaignEntry[] = rows.map(r => ({
+        source: r.source,
+        medium: r.medium,
+        campaign: r.campaign,
+        visitors: r.visitors,
+        walletsConnected: r.conversions,
+        walletsVerified: r.conversions,
+        conversionRate: Math.round((r.conversionRate ?? 0) * 100)
+    }));
+    return { campaigns, total: campaigns.length };
 }
 
 /**
@@ -960,7 +431,17 @@ export async function adminGetEngagement(
         headers: { [adminHeaderKey]: token },
         params
     });
-    return response.data as IEngagementMetrics;
+    // Backend returns { sessions, avgDurationMs, pagesPerSession, bounceRate
+    // (0-1) }. Convert to the dashboard's seconds + percentage shape. Reads
+    // near zero until Phase D wires session-event emission.
+    const d = response.data as { sessions: number; avgDurationMs: number; pagesPerSession: number; bounceRate: number };
+    return {
+        avgSessionDuration: Math.round((d.avgDurationMs ?? 0) / 1000),
+        avgPagesPerSession: Math.round((d.pagesPerSession ?? 0) * 10) / 10,
+        bounceRate: Math.round((d.bounceRate ?? 0) * 100),
+        avgSessionsPerUser: 0,
+        totalUsers: d.sessions ?? 0
+    };
 }
 
 /**
@@ -980,7 +461,19 @@ export async function adminGetConversionFunnel(
         headers: { [adminHeaderKey]: token },
         params
     });
-    return response.data as { stages: IFunnelStage[] };
+    // Backend returns the binary funnel { distinctVisitors, converted,
+    // conversionRate (0-1) }. Render as two stages (visitors → logged in);
+    // the legacy four-stage wallet/verified shape is retired.
+    const d = response.data as { distinctVisitors: number; converted: number; conversionRate: number };
+    const visitors = d.distinctVisitors ?? 0;
+    const converted = d.converted ?? 0;
+    const convPct = Math.round((d.conversionRate ?? 0) * 100);
+    return {
+        stages: [
+            { stage: 'Visitors', count: visitors, percentage: 100, dropOff: 0 },
+            { stage: 'Logged In', count: converted, percentage: convPct, dropOff: 100 - convPct }
+        ]
+    };
 }
 
 /**
@@ -1000,57 +493,39 @@ export async function adminGetRetention(
         headers: { [adminHeaderKey]: token },
         params
     });
-    return response.data as { data: IRetentionEntry[] };
+    // Backend returns { data: [{ day, newVisitors, returningVisitors }] };
+    // the component keys retention rows on `date`.
+    const rows = (response.data as { data?: Array<{ day: string; newVisitors: number; returningVisitors: number }> }).data ?? [];
+    return { data: rows.map(r => ({ date: r.day, newVisitors: r.newVisitors, returningVisitors: r.returningVisitors })) };
 }
 
-// ============================================================================
-// Referral Analytics Types and Functions
-// ============================================================================
-
-/** Top referrer entry in admin referral overview. */
-export interface ITopReferrer {
-    userId: string;
-    code: string;
-    referredCount: number;
-    convertedCount: number;
-}
-
-/** Recent referral entry in admin referral overview. */
-export interface IRecentReferral {
-    userId: string;
-    referredBy: string;
-    referredAt: string;
-    hasVerifiedWallet: boolean;
-}
-
-/** Aggregate referral program overview. */
-export interface IReferralOverview {
-    totalReferrals: number;
-    totalConverted: number;
-    conversionRate: number;
-    usersWithCodes: number;
-    topReferrers: ITopReferrer[];
-    recentReferrals: IRecentReferral[];
+/** Better Auth account overview for the analytics dashboard. */
+export interface IAnalyticsOverview {
+    /** Total Better Auth accounts. */
+    totalAccounts: number;
+    /** Accounts with at least one linked wallet. */
+    accountsWithWallets: number;
+    /** Wallet-adoption rate as a 0-1 fraction. */
+    walletAdoptionRate: number;
 }
 
 /**
- * Get aggregate referral program overview (admin endpoint).
+ * Get the Better Auth account overview (admin endpoint): total accounts and
+ * the wallet-adoption rate. Not time-windowed.
  *
- * @param token - Admin API token
- * @param options - Period and limit options
- * @returns Referral overview with top referrers and recent activity
+ * @param token - Admin API token.
+ * @returns Account count and wallet-adoption metrics.
  */
-export async function adminGetReferralOverview(
-    token: string,
-    options?: { period?: AnalyticsPeriod; limit?: number; customRange?: ICustomDateRange }
-): Promise<IReferralOverview> {
-    const { customRange, ...rest } = options ?? {};
-    const params = customRange ? { ...customRange, limit: rest.limit } : rest;
-    const response = await apiClient.get('/admin/users/analytics/referral-overview', {
-        headers: { [adminHeaderKey]: token },
-        params
+export async function adminGetAnalyticsOverview(token: string): Promise<IAnalyticsOverview> {
+    const response = await apiClient.get('/admin/users/analytics/overview', {
+        headers: { [adminHeaderKey]: token }
     });
-    return response.data as IReferralOverview;
+    const d = response.data as Partial<IAnalyticsOverview>;
+    return {
+        totalAccounts: d.totalAccounts ?? 0,
+        accountsWithWallets: d.accountsWithWallets ?? 0,
+        walletAdoptionRate: d.walletAdoptionRate ?? 0
+    };
 }
 
 // ============================================================================
@@ -1127,28 +602,4 @@ export async function adminRefreshGscData(token: string): Promise<{ rowsFetched:
         { headers: { [adminHeaderKey]: token } }
     );
     return response.data as { rowsFetched: number };
-}
-
-/**
- * Get any user by ID (admin endpoint).
- *
- * @param token - Admin API token
- * @param userId - User UUID to lookup
- * @returns User data or null if not found
- */
-export async function adminGetUser(
-    token: string,
-    userId: string
-): Promise<IUserData | null> {
-    try {
-        const response = await apiClient.get(`/admin/users/${userId}`, {
-            headers: { [adminHeaderKey]: token }
-        });
-        return response.data as IUserData;
-    } catch (error) {
-        if ((error as { response?: { status: number } }).response?.status === 404) {
-            return null;
-        }
-        throw error;
-    }
 }

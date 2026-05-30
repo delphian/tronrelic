@@ -52,11 +52,15 @@ Markdown-authored CMS for admin-published content. `PageService` (singleton, imp
 
 ### Authentication & Authorization
 
-Identity runs on Better Auth (email-OTP / OAuth / passkey), mounted at `/api/auth/*`. The `attachAuthSession` middleware resolves the session once per request onto `req.authSession`; modules and plugins gate through predicates (`isLoggedIn` / `isInGroup` / `isAdmin`, plus `hasPrimaryWallet` for plugins) rather than reading session fields. A legacy UUID identity layer coexists and is removed in the Phase 6 cutover. See [system-auth.md](./system-auth.md).
+Identity runs on Better Auth (email-OTP / OAuth / passkey), mounted at `/api/auth/*`. The `attachAuthSession` middleware resolves the session once per request onto `req.authSession`; modules and plugins gate through predicates (`isLoggedIn` / `isInGroup` / `isAdmin`, plus `hasPrimaryWallet` for plugins) rather than reading session fields. See [system-auth.md](./system-auth.md).
 
-### User
+### Identity
 
-The user module hosts both the Better Auth instance (above) and the legacy UUID system still live during the migration: visitor identity on an HttpOnly, HMAC-signed `tronrelic_uid` cookie, the stored `UserIdentityState` taxonomy (`Anonymous` | `Registered` | `Verified`), and multi-wallet linking. The legacy surface is removed in Phase 6. See [User Module README](../../src/backend/modules/user/README.md) and [system-auth.md](./system-auth.md).
+The identity module owns Better Auth and everything keyed by the Better Auth user id: the auth instance (above), the `GroupService` (admin/group membership), the signature-proven wallet store, and the account directory. It publishes `'accounts'`, `'wallets'`, and `'user-groups'` on the service registry so plugins and modules reach account data without touching `module_user_auth_*` directly. See [Identity Module README](../../src/backend/modules/identity/README.md) and [system-auth.md](./system-auth.md).
+
+### Traffic
+
+The traffic module owns cookieless behavioral analytics: the ClickHouse `traffic_events` store, the `tronrelic_tid`/`tronrelic_ref` cookies, bot classification, and geo/device derivation. It backs the `/system/users` analytics dashboards. See [Traffic Module README](../../src/backend/modules/traffic/README.md).
 
 ### Hooks
 
@@ -82,7 +86,7 @@ Inspect health at `/system` (auth: `ADMIN_API_TOKEN`) — fastest path to blockc
 | [modules.md](./modules/modules.md) | Module overview, module-vs-plugin matrix, service singleton rules |
 | [modules-architecture.md](./modules/modules-architecture.md) | `IModule` interface, bootstrap order, DI, service registry |
 | [modules-creating.md](./modules/modules-creating.md) | Step-by-step new-module guide |
-| [system-auth.md](./system-auth.md) | Better Auth identity, `req.authSession`, authorization predicates, coexistence/cutover |
+| [system-auth.md](./system-auth.md) | Better Auth identity, `req.authSession`, authorization predicates |
 | [system-database.md](./system-database.md) | `IDatabaseService`, three-tier access, namespace isolation |
 | [system-blockchain-sync-architecture.md](./system-blockchain-sync-architecture.md) | Block retrieval, enrichment pipeline, observer dispatch |
 | [system-scheduler-operations.md](./system-scheduler-operations.md) | Job control, cron syntax, persistence, troubleshooting |
@@ -98,7 +102,8 @@ Inspect health at `/system` (auth: `ADMIN_API_TOKEN`) — fastest path to blockc
 | [system-logging.md](./system-logging.md) | Pino, MongoDB persistence, log queries |
 | [Menu Module README](../../src/backend/modules/menu/README.md) | Menu service, plugin integration, WebSocket events |
 | [Pages Module README](../../src/backend/modules/pages/README.md) | Markdown CMS, storage providers, file uploads |
-| [User Module README](../../src/backend/modules/user/README.md) | Identity cookie, wallet linking, admin UI |
+| [Identity Module README](../../src/backend/modules/identity/README.md) | Better Auth, groups, wallet store, account directory |
+| [Traffic Module README](../../src/backend/modules/traffic/README.md) | ClickHouse traffic_events, tid/ref cookies, analytics |
 | [system-testing.md](./system-testing.md) | Vitest, Mongoose mocks, fixtures |
 
 ## Related

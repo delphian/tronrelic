@@ -7,7 +7,7 @@
  * real-time updates.
  */
 
-export type { IMenuNode, IMenuNodeWithChildren } from './IMenuNode.js';
+export type { IMenuNode, IMenuNodeWithChildren, IMenuViewer } from './IMenuNode.js';
 export type {
     MenuNodeOrigin,
     IMenuNodeAdminView,

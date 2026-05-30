@@ -17,7 +17,7 @@ export type { IUsdtParametersFetcher } from './usdt-parameters/IUsdtParametersFe
 export type { ICacheService } from './services/ICacheService.js';
 export type { IServiceRegistry, IServiceWatchHandlers, ServiceWatchDisposer } from './services/IServiceRegistry.js';
 export type { ISignatureService } from './services/ISignatureService.js';
-export type { IMenuNode, IMenuNodeWithChildren, IMenuTree, IMenuValidation, MenuEventType, IMenuEvent, MenuEventSubscriber, IMenuService, IMenuNamespaceConfig, MenuNodeOrigin, IMenuNodeAdminView, IMenuNodeAdminViewWithChildren, IMenuTreeAdminView } from './menu/index.js';
+export type { IMenuNode, IMenuNodeWithChildren, IMenuViewer, IMenuTree, IMenuValidation, MenuEventType, IMenuEvent, MenuEventSubscriber, IMenuService, IMenuNamespaceConfig, MenuNodeOrigin, IMenuNodeAdminView, IMenuNodeAdminViewWithChildren, IMenuTreeAdminView } from './menu/index.js';
 export type {
     IWidgetData,
     IWidgetComponentProps,
@@ -39,8 +39,8 @@ export type { IPage, IPageSettings, IPageService, IMarkdownService, IFrontmatter
 export type { IStorageProvider, IStorageObjectStat, IFileService, IFileRecord, IFileSource, IFileUploadOptions, IFileListFilter, IVariantOptions, IFileVariant, IFilesSettings, IFilesSettingsService } from './files/index.js';
 export { FILE_SOURCE_KINDS, FileValidationError, FileSizeExceededError } from './files/index.js';
 export type { IModule, IModuleMetadata } from './module/index.js';
-export { USER_FILTERS, USER_IDENTITY_STATES, UserIdentityState, SESSION_TTL_MS, isSessionFresh } from './user/index.js';
-export type { UserFilterType, BucketInterval, IUser, IWalletLink, IUserPreferences, IUserActivity, IUserSession, IUtmParams, IPageVisit, DeviceCategory, ScreenSizeCategory, IUserService, IUserActivitySummary, IUserWalletSummary, IUserRetentionSummary, IUserPreferencesSummary, IPageTrafficHistory, IPageTrafficBucket, IPageTrafficEntry, IRecentPageViewsResult, IRecentPageView, ITrafficSourcesHistory, IDailyTrafficSourceBucket, IDailyTrafficSourceEntry, IGeoDistributionHistory, IDailyGeoBucket, IDailyGeoEntry, IDeviceBreakdownHistory, IDailyDeviceBucket, ILandingPagesHistory, IDailyLandingPageBucket, IDailyLandingPageEntry, ICampaignPerformanceHistory, IDailyCampaignBucket, IDailyCampaignEntry, ISessionDurationHistory, IDailySessionDurationBucket, IPagesPerSessionHistory, IDailyPagesPerSessionBucket, INewVsReturningHistory, IDailyNewVsReturningBucket, IWalletConversionHistory, IDailyWalletConversionBucket, IExitPagesHistory, IDailyExitPageBucket, IDailyExitPageEntry, IUserGroup, ICreateUserGroupInput, IUpdateUserGroupInput, IUserGroupService, IAuthStatus, ISessionFreshnessInput } from './user/index.js';
+export type { IWalletService, ILinkedWallet, WalletAction, IWalletChallenge, IWalletMutationInput, IAccountDirectoryService, IAccountSummary, IListAccountsOptions, IListAccountsResult } from './identity/index.js';
+export type { IUserGroup, ICreateUserGroupInput, IUpdateUserGroupInput, IUserGroupService } from './user/index.js';
 export type { ITronGridService, ITronGridAccountResponse, ITronGridAccountPermission } from './tron-grid/index.js';
 export type { IBlockStats, IBlock, IBlockchainService, ITransactionTimeseriesPoint } from './blockchain/index.js';
 export type { IAddressLabel, IResolvedAddressLabel, AddressCategory, AddressLabelSourceType, ITronAddressMetadata, IAddressLabelService, ICreateAddressLabelInput, IUpdateAddressLabelInput, IAddressLabelFilter, IAddressLabelImportResult, IAddressLabelListResult } from './address-label/index.js';

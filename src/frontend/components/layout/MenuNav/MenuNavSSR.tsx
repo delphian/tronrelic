@@ -8,11 +8,11 @@
  *
  * The component fetches from the /api/menu endpoint with namespace filtering
  * to retrieve menu items for a specific namespace (e.g., 'main', 'system', 'footer').
- * The visitor's tronrelic_uid cookie is forwarded to the backend so that
- * MenuService.getTreeForUser can apply per-user visibility gating
- * (allowedIdentityStates / requiresGroups / requiresAdmin); without this the
- * SSR pass would always render the anonymous-visible subset and admins would
- * see admin items only after a post-hydration refetch.
+ * The visitor's Better Auth session cookie is forwarded to the backend so
+ * that MenuService.getTreeForUser can apply per-user visibility gating
+ * (requiresGroups / requiresAdmin); without this the SSR pass would always
+ * render the anonymous-visible subset and admins would see admin items only
+ * after a post-hydration refetch.
  *
  * When running in Docker, uses the internal Docker network (http://backend:4000)
  * for SSR fetches to avoid SSL certificate validation issues and improve performance.
@@ -85,10 +85,10 @@ interface IMenuNavSSRProps {
 export async function MenuNavSSR({ namespace, ariaLabel }: IMenuNavSSRProps) {
     try {
         // Forward all incoming cookies so backend gating sees the real
-        // visitor. The identity cookie (tronrelic_uid) is the load-bearing
-        // one today, but forwarding the whole header future-proofs the
-        // SSR fetch against any new server-side cookie (session affinity,
-        // CSRF, signed-identity upgrade) without revisiting this site.
+        // visitor. The Better Auth session cookie is the load-bearing one
+        // for gating, but forwarding the whole header future-proofs the SSR
+        // fetch against any new server-side cookie (session affinity, CSRF,
+        // analytics tid) without revisiting this site.
         const cookieStore = await cookies();
         const cookieHeader = cookieStore.toString();
 

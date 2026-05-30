@@ -39,7 +39,7 @@ export const myBackendPlugin = definePlugin({
 | `order` | Sort position; lower = earlier; default 999 |
 | `parent` | Parent node `_id`, or `null` for top-level |
 | `enabled` | Visibility toggle |
-| `allowedIdentityStates` | Allow-list of `'anonymous' \| 'registered' \| 'verified'` |
+| `allowedIdentityStates` | **Vestigial** — the `UserIdentityState` taxonomy it gated was removed in the Better Auth cutover; gate on `requiresGroups` / `requiresAdmin` instead |
 | `requiresGroups` | OR-of-membership across admin-defined groups |
 | `requiresAdmin` | Visibility predicate via `IUserGroupService.isAdmin` |
 
@@ -64,22 +64,21 @@ await context.menuService.create({
 
 ## Visibility Gating
 
-Three optional fields filter menu visibility per visitor at read time:
+Two optional fields filter menu visibility per visitor at read time:
 
-- `allowedIdentityStates` — show only to listed identity states.
 - `requiresGroups` — OR-membership across admin-defined groups.
 - `requiresAdmin` — routes through `IUserGroupService.isAdmin`.
 
-The menu config's `requiresAdmin` is a *visibility* predicate. It is unrelated to the `requireAdmin` HTTP middleware in [plugins-api-registration.md](./plugins-api-registration.md), which gates routes (Better Auth session, legacy cookie, or `x-admin-token`).
+The menu config's `requiresAdmin` is a *visibility* predicate. It is unrelated to the `requireAdmin` HTTP middleware in [plugins-api-registration.md](./plugins-api-registration.md), which gates routes (Better Auth session or `x-admin-token`).
 
-> **Coexistence.** `allowedIdentityStates` keys off the legacy `UserIdentityState` taxonomy, removed in the Phase 6 cutover; menu visibility gating reworks onto the Better Auth session then. `requiresGroups` / `requiresAdmin` (group membership) carry forward. See [system-auth.md](../system/system-auth.md).
+> **Note.** `allowedIdentityStates` (the legacy `UserIdentityState` taxonomy) was removed in the Better Auth cutover. Gate menu visibility on `requiresGroups` / `requiresAdmin` (group membership) instead. See [system-auth.md](../system/system-auth.md).
 
 ```typescript
 await context.menuService.create({
     namespace: 'main', label: 'Premium Tools',
     url: '/plugins/my-plugin/premium', icon: 'Sparkles',
     order: 200, parent: null, enabled: true,
-    allowedIdentityStates: [UserIdentityState.Verified]
+    requiresGroups: ['premium']
 });
 ```
 

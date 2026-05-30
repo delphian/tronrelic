@@ -17,9 +17,9 @@ import { attachAuthSession } from '../auth-session.js';
 import {
     setAuthInstance,
     resetAuthInstanceForTests
-} from '../../../modules/user/services/auth-facade.js';
-import { GroupService } from '../../../modules/user/services/group.service.js';
-import { AUTH_USERS_COLLECTION } from '../../../modules/user/services/auth-constants.js';
+} from '../../../modules/identity/services/auth-facade.js';
+import { GroupService } from '../../../modules/identity/services/group.service.js';
+import { AUTH_USERS_COLLECTION } from '../../../modules/identity/services/auth-constants.js';
 import { createMockDatabaseService } from '../../../tests/vitest/mocks/database-service.js';
 
 class StubLogger implements ISystemLogService {

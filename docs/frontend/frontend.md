@@ -42,7 +42,7 @@ Every module exposes its public API through a barrel `index.ts`. Consumers impor
 
 ```typescript
 // Good — uses public API
-import { WalletButton, useWallet } from '../../../modules/user';
+import { WalletButton, useAuthSession } from '../../../modules/user';
 
 // Bad — bypasses public API, couples to internal structure
 import { WalletButton } from '../../../modules/user/components/WalletButton/WalletButton';
