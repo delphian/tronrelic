@@ -138,29 +138,27 @@ if (menu) {
 ## Visibility Gating
 
 Menu nodes can be gated on three independent fields, ANDed together. The
-backend filters menu reads at request time using the cookie-resolved
-`req.user`; admin token holders bypass the filter so the admin UI can render
-and edit gated nodes.
+backend filters menu reads at request time using the Better Auth session
+resolved onto `req.authSession`; admin token holders bypass the filter so the
+admin UI can render and edit gated nodes.
 
-> **Coexistence note.** This filter keys off the legacy `req.user` /
-> `UserIdentityState`, which the Phase 6 Better Auth cutover removes —
-> `allowedIdentityStates` retires and the filter reworks onto the Better
-> Auth session (`req.authSession`) at that point. `requiresGroups` /
-> `requiresAdmin` (group membership) carry forward. See
+> **Note.** The Better Auth cutover removed the legacy `UserIdentityState`
+> taxonomy, so `allowedIdentityStates` is now a vestigial schema field with no
+> live identity state to match — gate on `requiresGroups` / `requiresAdmin`
+> (group membership), which key off `req.authSession`. See
 > [system-auth.md](../../../../docs/system/system-auth.md).
 
 | Field | Shape | Semantics |
 |-------|-------|-----------|
-| `allowedIdentityStates` | `UserIdentityState[]?` | Visible only to users whose `identityState` is in the set. `undefined` means no gate. Empty array is rejected at write time. |
-| `requiresGroups` | `string[]?` | Visible if the user is a member of *any* listed group id (OR-of-membership). Group ids reference `module_user_groups` rows managed by the user module. |
+| `allowedIdentityStates` | `string[]?` | **Vestigial.** The `UserIdentityState` taxonomy it gated on was removed in the Better Auth cutover. Retained in the schema but no longer matches a live session attribute — use `requiresGroups` / `requiresAdmin` instead. |
+| `requiresGroups` | `string[]?` | Visible if the user is a member of *any* listed group id (OR-of-membership). Group ids reference `module_user_groups` rows managed by the identity module. |
 | `requiresAdmin` | `boolean?` | Visible only when `IUserGroupService.isAdmin(req.userId)` returns true. Routes through the user-groups service registry entry so future seeded admin tiers (e.g. `super-admin`) automatically qualify. |
 
 The filter lives in `MenuService.getTreeForUser(namespace, user?)` and
 `getChildrenForUser(parentId, namespace, user?)`. Both are called by the
-public read endpoints (`GET /api/menu`, `GET /api/menu/resolve`) after
-`userContextMiddleware` has populated `req.user`. Anonymous visitors pass
-`undefined` and only see nodes with no gates (or with `'anonymous'` in the
-allow-list).
+public read endpoints (`GET /api/menu`, `GET /api/menu/resolve`) after the
+`attachAuthSession` middleware has populated `req.authSession`. Anonymous
+visitors pass `undefined` and only see nodes with no group/admin gates.
 
 The admin predicate looks up `'user-groups'` from the service registry
 lazily — the user module registers the service in its `run()` phase, so by
@@ -238,7 +236,7 @@ the server returns the filtered view.
 
 ## REST API Reference
 
-Navigation reads are public — the frontend chrome fetches them without an admin token, with per-user gating applied from the `tronrelic_uid` cookie. The admin management read (`GET /api/menu/manage`) and every mutating endpoint go through `requireAdmin`, which accepts either the cookie path (verified wallet + admin group) or `ADMIN_API_TOKEN` via `x-admin-token` / `Authorization: Bearer`. See [system-api.md](../../../../docs/system/system-api.md) for complete authentication patterns.
+Navigation reads are public — the frontend chrome fetches them without an admin token, with per-user gating applied from the Better Auth session. The admin management read (`GET /api/menu/manage`) and every mutating endpoint go through `requireAdmin`, which accepts either a Better Auth admin session or `ADMIN_API_TOKEN` via `x-admin-token` / `Authorization: Bearer`. See [system-api.md](../../../../docs/system/system-api.md) for complete authentication patterns.
 
 **Public (no auth):**
 

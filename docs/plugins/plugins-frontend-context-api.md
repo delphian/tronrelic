@@ -28,7 +28,7 @@ interface IApiClient {
 |---------|-------------------|
 | Base URL | `getRuntimeConfig()` — runtime, not build-time |
 | Body serialization | JSON-stringified for `post`/`put` |
-| Credentials | Cookie sent so backend resolves `tronrelic_uid` |
+| Credentials | Cookie sent so the backend resolves the Better Auth session |
 | Errors | Throws on non-2xx with response body in error |
 | Typing | Generic `<T>` parameter on all methods |
 

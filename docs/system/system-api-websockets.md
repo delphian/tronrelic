@@ -78,7 +78,7 @@ socket.emit('subscribe', {
 socket.emit('unsubscribe', 'plugin-id', 'room-name');
 ```
 
-Format 3 keys are core capabilities (`transactions`, `comments`, `chat`, `markets`, `memos`, `notifications`, `user`), not plugin IDs. The `user` subscription resolves the UUID server-side from the `tronrelic_uid` cookie — clients must not pass a userId.
+Format 3 keys are core capabilities (`transactions`, `comments`, `chat`, `markets`, `memos`, `notifications`), not plugin IDs. (The legacy per-user `user` subscription was removed in the Better Auth cutover along with the `tronrelic_uid` cookie it keyed on.)
 
 Subscribe failures surface as `subscription:error` with `{ message }`. Standard Socket.IO `connect_error` and `disconnect` events apply; on `disconnect` reason `'io server disconnect'` the client must call `socket.connect()` to reconnect.
 

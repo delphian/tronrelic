@@ -66,24 +66,24 @@ useEffect(() => {
 const displayData = data ?? initialData;
 ```
 
-Exception: `UserIdentityProvider` preloads Redux from SSR via `buildSSRUserState(ssrUserData)` in `providers.tsx`, so user identity does not flash. Mirror that pattern only when avoiding flash matters more than the added boot-time cost.
+Exception: `SessionProvider` is seeded with the SSR-resolved Better Auth session (`ssrSession`) in `providers.tsx`, so a logged-in visitor's auth state does not flash to signed-out. Mirror that pattern only when avoiding flash matters more than the added boot-time cost.
 
 ## Provider Composition
 
-All providers compose in `src/frontend/app/providers.tsx`. Outer providers must be available to inner ones — Redux first so every component reaches the store; toast/modal next so plugins can call `useToast`/`useModal`; plugin context before `PluginLoader` so plugins resolve their DI; identity before `PluginLoader` so plugins see a known user.
+All providers compose in `src/frontend/app/providers.tsx`. Outer providers must be available to inner ones — Redux first so every component reaches the store; toast/modal next so plugins can call `useToast`/`useModal`; plugin context before `PluginLoader` so plugins resolve their DI; the session provider before `PluginLoader` so plugins see a resolved auth session.
 
 Actual order from `providers.tsx`:
 
 ```
-<Provider store={store}>            ← Redux, store memoized from ssrUserData
+<Provider store={store}>            ← Redux (no SSR identity preload)
   <ToastProvider>                   ← useToast()
     <ModalProvider>                 ← useModal()
       <FrontendPluginContextProvider>
         <SocketBridge />            ← single Socket.IO client; resends subs on reconnect
-        <UserIdentityProvider>      ← bootstraps tronrelic_uid cookie, watches wallet
-          <PluginLoader />          ← runs after identity is known
+        <SessionProvider>           ← Better Auth session, SSR-seeded from ssrSession
+          <PluginLoader />          ← runs after the session is resolved
           {children}
-        </UserIdentityProvider>
+        </SessionProvider>
       </FrontendPluginContextProvider>
     </ModalProvider>
   </ToastProvider>
@@ -94,15 +94,15 @@ All providers are `'use client'` — they manage runtime state.
 
 | Provider | Purpose | Reference |
 |----------|---------|-----------|
-| Redux `<Provider>` | Global state, preloaded with `ssrUserData` | `src/frontend/store/` |
+| Redux `<Provider>` | Global state (no SSR identity preload) | `src/frontend/store/` |
 | `<ToastProvider>` | Notifications via `useToast()` | `components/ui/ToastProvider/` |
 | `<ModalProvider>` | Portal-based modals via `useModal()` | [component-icon-picker-modal.md](./component-icon-picker-modal.md) |
 | `<FrontendPluginContextProvider>` | Plugin DI (UI, layout, api, charts, websocket) | [plugins-frontend-context.md](../../plugins/plugins-frontend-context.md) |
 | `<SocketBridge />` | Single shared Socket.IO connection | `components/socket/SocketBridge.tsx` |
-| `<UserIdentityProvider>` | Identity cookie bootstrap, wallet watcher | `modules/user/components/UserIdentityProvider.tsx` |
-| `<PluginLoader />` | Activates frontend plugins; must run inside identity provider | `components/plugins/PluginLoader.tsx` |
+| `<SessionProvider>` | Better Auth session context (SSR-seeded) | `modules/user/components/SessionProvider.tsx` |
+| `<PluginLoader />` | Activates frontend plugins; must run inside the session provider | `components/plugins/PluginLoader.tsx` |
 
-`UserIdentityProvider` imports directly (not via the `modules/user` barrel) — barrels pull component CSS into the layout bundle.
+`SessionProvider` imports directly (not via the `modules/user` barrel) — barrels pull component CSS into the layout bundle.
 
 ## Server vs Client Components
 

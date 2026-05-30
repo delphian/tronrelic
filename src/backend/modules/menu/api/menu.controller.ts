@@ -335,9 +335,9 @@ export class MenuController {
      *
      * **Route:** GET /api/menu
      *
-     * **Authentication:** Public — `userContextMiddleware` resolves the
-     *                     `tronrelic_uid` cookie so per-user gating applies.
-     *                     Anonymous callers see only ungated nodes.
+     * **Authentication:** Public — `attachAuthSession` resolves the Better
+     *                     Auth session so per-user gating applies. Anonymous
+     *                     callers see only ungated nodes.
      *
      * **Response:** (shape after filtering; concrete fields depend on caller's identity)
      * ```json

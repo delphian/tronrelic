@@ -24,11 +24,11 @@ export function createExpressApp(): Express {
   }));
 
   app.use(compression());
-  // Pass SESSION_SECRET so cookie-parser populates `req.signedCookies` for
-  // signed cookies (s:<value>.<HMAC> on the wire). Unsigned cookies still
-  // populate `req.cookies` so legacy clients keep working during the grace
-  // window in `userContextMiddleware` — but `requireAdmin` reads only from
-  // `req.signedCookies` to close the cookie-forgery vector.
+  // Pass SESSION_SECRET so cookie-parser populates `req.signedCookies` for any
+  // signed cookies (s:<value>.<HMAC> on the wire); unsigned cookies populate
+  // `req.cookies`. Identity rides the Better Auth session cookie, which Better
+  // Auth signs and verifies itself — this stays wired so any future signed
+  // cookie is verifiable.
   app.use(cookieParser(env.SESSION_SECRET));
   // Body parsers consume the raw request stream, but Better Auth's
   // Node integration needs the original body to validate email-OTP

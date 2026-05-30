@@ -48,20 +48,18 @@ Every module exposes its surface through one barrel. Consumers import from the m
 
 ```typescript
 // modules/user/index.ts
-export { UserIdentityProvider } from './components/UserIdentityProvider';
 export { WalletButton } from './components/WalletButton';
-export { ProfilePage } from './components/Profile';
-export { useWallet } from './hooks/useWallet';
-export { default as userReducer } from './slice';
-export * from './slice';
-export type { User, UserPreferences } from './types';
+export { SessionProvider, useAuthSession } from './components/SessionProvider';
+export { AuthModal } from './components/AuthModal';
+export { ProfileMenu } from './components/ProfileMenu';
+export type { ISSRSession } from './lib';
 ```
 
 Why barrels matter here: importing `'../../user/components/WalletButton/WalletButton'` couples the consumer to the module's internal layout. Move the component, every consumer breaks. Importing `'../../user'` survives every internal refactor.
 
 ```typescript
 // Good — uses public API
-import { WalletButton, useWallet } from '../../../modules/user';
+import { WalletButton, useAuthSession } from '../../../modules/user';
 
 // Bad — bypasses public API, couples to internal structure
 import { WalletButton } from '../../../modules/user/components/WalletButton/WalletButton';

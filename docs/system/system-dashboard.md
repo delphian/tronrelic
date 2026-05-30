@@ -10,20 +10,11 @@ Scheduler jobs fail silently, blockchain sync stalls without warning, observers 
 
 ### Authentication Workflow
 
-Admin authority comes from `admin` group membership, not a JS-readable token. The `requireAdmin` middleware admits a Better Auth admin session, the legacy cookie path below, or the service token — see [system-auth.md](./system-auth.md).
+Admin authority comes from `admin` group membership, not a JS-readable token. The `requireAdmin` middleware admits a Better Auth admin session or the service token — see [system-auth.md](./system-auth.md).
 
-**Primary path (Better Auth).** Sign in via the header (email-OTP / OAuth / passkey) with an account in the `admin` group; the `/system` nav and routes unlock immediately — no wallet required. Get into the group via `ADMIN_EMAILS` on signup or the Groups editor on `/system/users`.
+**How to become an admin.** Sign in via the header (email-OTP / OAuth / passkey) with an account in the `admin` group; the `/system` nav and routes unlock immediately — no wallet required. Get into the group via `ADMIN_EMAILS` on signup (the Better Auth after-create hook auto-promotes a matching verified email) or the Groups editor on `/system/users`. Navigating to `/system` then passes `requireAdmin`, which confirms the session is in the `admin` group.
 
-**Legacy cookie path (coexistence, removed in Phase 6).** Still honored during the migration:
-
-1. **Bootstrap your identity** by visiting any TronRelic page — the server mints the signed `tronrelic_uid` cookie via `POST /api/user/bootstrap`.
-2. **Verify a wallet** via the header WalletButton (TronLink signature). This moves your `identityState` to `Verified` and starts the 14-day session clock.
-3. **Get added to the `admin` group** by an existing operator using the Groups editor on `/system/users`. For a fresh install with no admins yet, see [Bootstrapping the first admin](../../src/backend/modules/user/README.md#bootstrapping-the-first-admin) — it uses the service token (`ADMIN_API_TOKEN`) once, then the cookie path takes over.
-4. **Navigate to** `/system`. The `requireAdmin` middleware reads the signed cookie, confirms `Verified`, and checks `IUserGroupService.isAdmin(userId)`. The `/system` nav entry only appears when all three pass.
-
-**Recovery:** if your session ages past `SESSION_TTL_MS` (14 days), the dashboard becomes inaccessible — re-sign via the header WalletButton to refresh `identityVerifiedAt`. There is no separate "stale admin" UI.
-
-**Service token alternative:** scripts, CI, and the first-admin bootstrap use `ADMIN_API_TOKEN` via the `x-admin-token` header (or `Authorization: Bearer`). Intended for automation, not human operators in the browser. Protect like any production secret and rotate on suspected compromise — human admins authenticate via the cookie path and are unaffected by token rotation.
+**Service token alternative:** scripts, CI, and the first-admin bootstrap use `ADMIN_API_TOKEN` via the `x-admin-token` header (or `Authorization: Bearer`). Intended for automation, not human operators in the browser. Protect like any production secret and rotate on suspected compromise — human admins authenticate via Better Auth and are unaffected by token rotation.
 
 ## The System Page
 
@@ -52,7 +43,7 @@ Other admin features live on dedicated pages — each owned by its module and do
 | `/system/plugins` | Plugin loader | [../plugins/plugins.md](../plugins/plugins.md) |
 | `/system/pages` | Pages module | [Pages Module README](../../src/backend/modules/pages/README.md) |
 | `/system/menu` | Menu module | [Menu Module README](../../src/backend/modules/menu/README.md) |
-| `/system/users` | User module | [User Module README](../../src/backend/modules/user/README.md) |
+| `/system/users` | Identity + Traffic modules | [Identity Module README](../../src/backend/modules/identity/README.md) |
 | `/system/theme` | Theme system | [ui-theme.md](../frontend/ui/ui-theme.md) |
 | `/system/address-labels` | Address Labels module | `src/backend/modules/address-labels/` (no README yet) |
 | `/system/logout` | — | Clears cookie and redirects |
@@ -75,12 +66,11 @@ The System page is the triage map. Identify *which* subsystem is degraded, then 
 
 ### Cannot Access Dashboard (401 Unauthorized)
 
-**Cause:** Cookie path failed and no valid service token was provided. The middleware tries the cookie path first; the service-token branch produces 401 on missing or invalid tokens (or 503 when `ADMIN_API_TOKEN` is unset entirely).
+**Cause:** Session resolution failed and no valid service token was provided. The middleware tries the Better Auth session first; the service-token branch produces 401 on missing or invalid tokens (or 503 when `ADMIN_API_TOKEN` is unset entirely).
 
-**Cookie path (humans):**
-1. Confirm a signed `tronrelic_uid` cookie exists in devtools → Application → Cookies. If absent, reload the site so `POST /api/user/bootstrap` mints it.
-2. Confirm `identityState === Verified` (e.g., via `/api/user/me` or the WalletButton state). If `Registered`, sign a wallet via the header WalletButton to refresh `identityVerifiedAt`.
-3. Confirm your UUID appears in the `admin` group on `/system/users` (ask a current admin if not).
+**Session path (humans):**
+1. Confirm you're signed in — a Better Auth session cookie should exist in devtools → Application → Cookies. If absent, sign in via the header auth button.
+2. Confirm your account is in the `admin` group on `/system/users` (ask a current admin if not).
 
 **Service token (scripts/CI):**
 1. Verify `ADMIN_API_TOKEN` is set in backend `.env` and the backend was restarted after the change.

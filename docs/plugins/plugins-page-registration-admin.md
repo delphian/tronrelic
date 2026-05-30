@@ -91,5 +91,5 @@ await context.menuService.create({
 - `src/backend/modules/menu/constants.ts` — `MAIN_SYSTEM_CONTAINER_ID` definition and the rationale for the hex sentinel
 - `src/plugins/trp-ai-assistant/` — canonical reference for `adminPages` + `manifest.adminUrl` (the plugin intentionally surfaces only via the System Plugins page, not a custom System nav entry; also demonstrates teardown of stale legacy menu nodes during `init`)
 - [Menu Module README → Visibility Gating](../../src/backend/modules/menu/README.md#visibility-gating) — full visibility contract
-- [admin authentication — dual-track](../../src/backend/modules/user/README.md#admin-authentication--dual-track) — HTTP middleware admits cookie OR `x-admin-token`
+- [system-auth.md](../system/system-auth.md) — `requireAdmin` admits a Better Auth admin session OR the `ADMIN_API_TOKEN` service token
 - [plugins-api-registration.md](./plugins-api-registration.md) — `/api/plugins/<id>/system/**` auto-gating
