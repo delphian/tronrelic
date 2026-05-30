@@ -70,9 +70,9 @@ interface IMenuNavSSRProps {
  * to retrieve only relevant navigation items.
  *
  * The component includes error handling and will render an empty navigation if the
- * API request fails (graceful degradation). The visitor's identity cookie is
- * forwarded so the backend's per-user gating filter resolves req.user; missing
- * or invalid cookies degrade to the anonymous-visible subset.
+ * API request fails (graceful degradation). The visitor's Better Auth session
+ * cookie is forwarded so the backend's per-visitor gating filter resolves
+ * `req.authSession`; missing or invalid cookies degrade to the anonymous-visible subset.
  *
  * Menu items are fetched fresh on every request (no caching) to ensure navigation
  * always reflects the current menu structure from the database, and because the

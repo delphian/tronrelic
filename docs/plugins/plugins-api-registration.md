@@ -37,11 +37,11 @@ The middleware overlaps with `IUserGroupService.isAdmin(req.userId)` — both co
 
 - `isLoggedIn(req)` — any authenticated account. Login-only gates.
 - `isAdmin(req)` / `isInGroup(req, id)` — role / group-membership gates.
-- `hasPrimaryWallet(req)` — the account has a signature-proven primary wallet. **Use this for wallet-gated routes**, not `isLoggedIn`: a Better Auth account can be email/OAuth/passkey-only with no wallet, so mapping a legacy `req.user.identityState === Verified` gate to `isLoggedIn` would open it to wallet-less callers.
+- `hasPrimaryWallet(req)` — the account has a signature-proven primary wallet. **Use this for wallet-gated routes** rather than `isLoggedIn`: a Better Auth account can be email/OAuth/passkey-only with no wallet, so a wallet-gated route must confirm the wallet, not merely a session.
 
 The user id is `req.authSession.user.id`; the canonical wallet is `req.authSession.primaryWallet`. See [system-auth.md](../system/system-auth.md) for the full model.
 
-> **Note.** The legacy `req.user` (`IUser`) field and the `tronrelic_uid` cookie were removed in the Better Auth cutover. Gate on `req.authSession` and the predicates above — never `req.user`. (`req.userId` survives, but now carries the Better Auth user id that `requireAdmin` sets for audit, not a legacy UUID.)
+> **Note.** Gate on `req.authSession` through the predicates above. `req.userId` carries the Better Auth user id that `requireAdmin` sets for audit logging on admin routes.
 
 ## Minimal Example
 

@@ -326,8 +326,8 @@ export class MenuController {
      *
      * Returns the hierarchical menu projected through the cookie-resolved
      * visitor's gating: nodes with `enabled: false` are stripped, and per-node
-     * gating fields (`allowedIdentityStates`, `requiresGroups`, `requiresAdmin`)
-     * narrow the tree to what this visitor may see. Admins receive the same
+     * gating fields (`requiresGroups`, `requiresAdmin`) narrow the tree to
+     * what this visitor may see. Admins receive the same
      * shape as everyone else — the origin-tagged management view lives at
      * `GET /api/menu/manage`. Root nodes are in the `roots` array, each
      * potentially containing nested children; the `all` array provides a
@@ -384,7 +384,7 @@ export class MenuController {
             // Admins do not get a privileged shape here; the admin
             // management surface lives at `GET /api/menu/manage`. Node
             // visibility is controlled exclusively by per-node gating
-            // (`allowedIdentityStates`, `requiresGroups`, `requiresAdmin`).
+            // (`requiresGroups`, `requiresAdmin`).
             const viewer = await resolveViewer(req);
             const filtered = await this.service.getTreeForUser(namespace, viewer);
             res.json({ success: true, tree: publicTreeView(filtered) });

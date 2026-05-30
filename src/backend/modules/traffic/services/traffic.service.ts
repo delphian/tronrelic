@@ -67,10 +67,9 @@ export interface ITrafficEvent {
     /** Server-side wall clock at write time. */
     timestamp: Date;
     /**
-     * Analytics visitor key. Since Phase 5 of the Better Auth refactor this
-     * is the `tronrelic_tid` UUID (decoupled from identity), not the legacy
-     * `tronrelic_uid`. Still a UUID v4, so the column type is unchanged. The
-     * field name stays `candidate_uid` to avoid retyping a sort-key column.
+     * Analytics visitor key — the `tronrelic_tid` UUID, decoupled from
+     * identity. A UUID v4 stored in the `candidate_uid` column; the field
+     * name stays `candidate_uid` to avoid retyping a sort-key column.
      */
     candidate_uid: string;
     /**

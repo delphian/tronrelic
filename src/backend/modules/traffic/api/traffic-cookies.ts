@@ -2,11 +2,10 @@
  * @fileoverview Analytics (`tronrelic_tid`) and referral (`tronrelic_ref`)
  * cookie specs and helpers.
  *
- * These cookies decouple behavioral analytics from identity. The legacy
- * `tronrelic_uid` cookie did double duty — identity continuity AND the visitor
- * key for `traffic_events`. The Better Auth cutover removed `tronrelic_uid`
- * (Better Auth owns identity), so analytics keeps its own key that survives
- * that removal: `tronrelic_tid`.
+ * These cookies decouple behavioral analytics from identity. Better Auth
+ * owns identity; analytics keeps its own independent visitor key,
+ * `tronrelic_tid`, so the `traffic_events` store never depends on the
+ * identity layer.
  *
  * **`tronrelic_tid` (traffic id).** A server-minted UUID v4 that keys every
  * `traffic_events` row regardless of auth state. It confers no identity or

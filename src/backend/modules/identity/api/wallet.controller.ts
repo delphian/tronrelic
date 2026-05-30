@@ -1,13 +1,10 @@
 /**
  * @fileoverview HTTP interface for the Better Auth-keyed wallet store.
  *
- * Phase 4 of the Better Auth refactor. Unlike the legacy wallet
- * endpoints under `/api/user/:id/wallet/*` — which validate a
- * `tronrelic_uid` cookie against a UUID path param — these routes
- * resolve the caller from the Better Auth session (`req.authSession`,
- * populated by the `attachAuthSession` middleware) and carry no id in
- * the path. Anonymous callers get 401; the account is never named on
- * the wire because it is implied by the session.
+ * These routes resolve the caller from the Better Auth session
+ * (`req.authSession`, populated by the `attachAuthSession` middleware) and
+ * carry no id in the path. Anonymous callers get 401; the account is never
+ * named on the wire because it is implied by the session.
  *
  * The controller is a thin HTTP adapter: it resolves the session user
  * id, validates the request body, delegates to {@link WalletService},

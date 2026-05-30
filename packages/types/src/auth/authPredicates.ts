@@ -5,8 +5,7 @@
  * depends on Better Auth and lives outside the plugin workspace), so
  * these dependency-free helpers read the pre-resolved
  * {@link IAuthSession} the core middleware already attached to the
- * request. They are the Better Auth replacement for the legacy
- * `req.user.identityState === Verified` checks plugins used to write.
+ * request.
  *
  * Unlike the core facade's async `isLoggedIn(req)` (which resolves the
  * session from cookies), these are synchronous pure reads of
@@ -102,10 +101,8 @@ export function isAdmin<T extends IHasAuthSession>(
  *
  * Better Auth separates "logged in" from "owns a wallet": a visitor can
  * authenticate via email-OTP / OAuth / passkey with no wallet at all.
- * Plugin routes that previously gated on the legacy
- * `req.user.identityState === Verified` — which implied a signature-proven
- * wallet — must migrate to THIS predicate, not {@link isLoggedIn}, or they
- * would open to wallet-less accounts. Every wallet in the Phase-4 store is
+ * Use THIS predicate, not {@link isLoggedIn}, for wallet-gated routes, or
+ * they would open to wallet-less accounts. Every wallet in the store is
  * signature-proven at link time, so a present `primaryWallet` is a proven
  * wallet.
  *
