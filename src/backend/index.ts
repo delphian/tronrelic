@@ -32,7 +32,6 @@ import { DatabaseModule } from './modules/database/index.js';
 import { ClickHouseModule } from './modules/clickhouse/index.js';
 import { PagesModule } from './modules/pages/index.js';
 import { WidgetsModule } from './modules/widgets/index.js';
-import { UserModule } from './modules/user/index.js';
 import { IdentityModule } from './modules/identity/index.js';
 import { TrafficModule } from './modules/traffic/index.js';
 import { AddressLabelsModule } from './modules/address-labels/index.js';
@@ -225,7 +224,6 @@ interface BootstrapContext {
         widgets: WidgetsModule;
         identity: IdentityModule;
         traffic: TrafficModule;
-        user: UserModule;
         addressLabels: AddressLabelsModule;
         tools: ToolsModule;
         scheduler: SchedulerModule;
@@ -311,7 +309,6 @@ async function bootstrapInit(): Promise<BootstrapContext> {
     const widgetsModule = new WidgetsModule();
     const identityModule = new IdentityModule();
     const trafficModule = new TrafficModule();
-    const userModule = new UserModule();
     const addressLabelsModule = new AddressLabelsModule();
     const toolsModule = new ToolsModule();
     const schedulerModule = new SchedulerModule();
@@ -323,7 +320,6 @@ async function bootstrapInit(): Promise<BootstrapContext> {
     const schedulerService = schedulerModule.getSchedulerService();
     await identityModule.init(sharedDeps);
     await trafficModule.init({ ...sharedDeps, scheduler: schedulerService, clickhouse });
-    await userModule.init({ ...sharedDeps, systemConfig: SystemConfigService.getInstance() });
     await addressLabelsModule.init(sharedDeps);
     await toolsModule.init(sharedDeps);
 
@@ -344,7 +340,6 @@ async function bootstrapInit(): Promise<BootstrapContext> {
             widgets: widgetsModule,
             identity: identityModule,
             traffic: trafficModule,
-            user: userModule,
             addressLabels: addressLabelsModule,
             tools: toolsModule,
             scheduler: schedulerModule,
@@ -378,11 +373,9 @@ async function bootstrapRun(ctx: BootstrapContext): Promise<void> {
     // Traffic runs before identity so its `/api/admin/users/{analytics,traffic}`
     // routers register before identity's `/api/admin/users` account-directory
     // catch-all — the catch-all's `/:id` matcher must not shadow those
-    // more-specific prefixes. init() order is unchanged (identity first), so the
-    // BA-keyed singletons traffic/user resolve via getInstance() still exist.
+    // more-specific prefixes.
     await modules.traffic.run();
     await modules.identity.run();
-    await modules.user.run();
     await modules.addressLabels.run();
     await modules.tools.run();
     await modules.scheduler.run();

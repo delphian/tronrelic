@@ -1,12 +1,12 @@
 /// <reference types="vitest" />
 
 /**
- * @fileoverview Unit tests for the Phase 5 analytics/referral cookie helpers.
+ * @fileoverview Unit tests for the analytics/referral cookie helpers.
  *
- * Covers resolution (signed-bag-free, unsigned reads), validation
- * (UUID for tid, code regex for ref), and the cookie-set option shape
- * (HttpOnly, unsigned, SameSite, max-age). Express `req`/`res` are stubbed
- * — only `cookies` and `res.cookie` matter here.
+ * Covers resolution (unsigned reads), validation (UUID for tid, code regex for
+ * ref), and the cookie-set option shape (HttpOnly, unsigned, SameSite,
+ * max-age). Express `req`/`res` are stubbed — only `cookies` and `res.cookie`
+ * matter here.
  */
 
 import { describe, it, expect, vi } from 'vitest';

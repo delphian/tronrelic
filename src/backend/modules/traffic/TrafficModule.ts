@@ -4,17 +4,16 @@
  * Carved out of the former omnibus user module. Owns the ClickHouse
  * `traffic_events` pipeline (`TrafficService`), Google Search Console keyword
  * integration (`GscService`), the User-Agent bot classifier, geo/IP derivation,
- * and the admin traffic dashboard reads. Mounts `/api/admin/users/traffic` and
- * registers the daily `gsc:fetch` job.
+ * the admin traffic dashboard reads, and the slim first-touch analytics
+ * bootstrap endpoint. Mounts `/api/admin/users/traffic`, the public
+ * `/api/user/bootstrap`, and registers the daily `gsc:fetch` job.
  *
  * Analytics are keyed off the cookieless `tronrelic_tid`, independent of
- * identity, so this surface survives the Phase 6 removal of the legacy UUID
- * identity system. It runs before `UserModule` so the legacy `UserService` can
- * resolve the `TrafficService` / `GscService` singletons it still leans on for
- * its (soon-to-be-dropped) analytics aggregations.
+ * identity, so this surface survived the Better Auth cutover that removed the
+ * legacy UUID identity system.
  *
  * Two-phase lifecycle: `init()` constructs services without activating; `run()`
- * mounts the admin router and registers the scheduled job.
+ * mounts the routers and registers the scheduled job.
  */
 
 import type { Express, Router } from 'express';
@@ -24,7 +23,9 @@ import { GscService } from './services/gsc.service.js';
 import { TrafficService } from './services/traffic.service.js';
 import { initGeoIP } from './services/geo.service.js';
 import { TrafficController } from './api/traffic.controller.js';
+import { BootstrapController } from './api/bootstrap.controller.js';
 import { createAdminTrafficRouter, createAdminAnalyticsRouter } from './api/traffic.routes.js';
+import { createBootstrapRouter } from './api/bootstrap.routes.js';
 import { requireAdmin } from '../../api/middleware/admin-auth.js';
 
 /**
@@ -75,6 +76,7 @@ export class TrafficModule implements IModule<ITrafficModuleDependencies> {
     private gscService!: GscService;
     private trafficService!: TrafficService;
     private trafficController!: TrafficController;
+    private bootstrapController!: BootstrapController;
 
     private readonly logger = logger.child({ module: 'traffic' });
 
@@ -113,15 +115,20 @@ export class TrafficModule implements IModule<ITrafficModuleDependencies> {
             this.logger
         );
 
+        // Slim first-touch analytics bootstrap (no identity, no Mongo).
+        this.bootstrapController = new BootstrapController(this.trafficService, this.logger);
+
         this.logger.info('Traffic module initialized');
     }
 
     /**
-     * Mount the admin traffic router and register the GSC fetch job.
+     * Mount the admin traffic + analytics routers, the public bootstrap router,
+     * and register the GSC fetch job.
      *
-     * `/api/admin/users/traffic` mounts ahead of the legacy `/api/admin/users`
-     * router (UserModule runs after this module) so its specific `/traffic/*`
-     * paths win over the legacy `/:id` matcher.
+     * This module runs before the identity module, so its specific
+     * `/api/admin/users/{traffic,analytics}` prefixes register ahead of
+     * identity's `/api/admin/users` account-directory catch-all and win over
+     * its `/:id` matcher.
      */
     async run(): Promise<void> {
         this.logger.info('Running traffic module...');
@@ -130,13 +137,19 @@ export class TrafficModule implements IModule<ITrafficModuleDependencies> {
         this.app.use('/api/admin/users/traffic', requireAdmin, adminTrafficRouter);
         this.logger.info('Admin traffic router mounted at /api/admin/users/traffic');
 
-        // Analytics dashboard router. Mounts ahead of the legacy
-        // /api/admin/users router (UserModule runs after this module) so the
-        // analytics paths win over its `/:id` matcher and shadow the legacy
-        // (Mongo-backed) analytics handlers still present on it until Phase D.
+        // Analytics dashboard router. Mounts ahead of identity's
+        // /api/admin/users account-directory catch-all (identity runs after
+        // this module) so the analytics paths win over its `/:id` matcher.
         const adminAnalyticsRouter: Router = createAdminAnalyticsRouter(this.trafficController);
         this.app.use('/api/admin/users/analytics', requireAdmin, adminAnalyticsRouter);
         this.logger.info('Admin analytics router mounted at /api/admin/users/analytics');
+
+        // Public slim bootstrap — no auth, mints the analytics cookies and
+        // emits one traffic_events row. A literal sub-path under /api/user
+        // (sibling of identity's /api/user/wallets); no /:id catch remains.
+        const bootstrapRouter: Router = createBootstrapRouter(this.bootstrapController);
+        this.app.use('/api/user/bootstrap', bootstrapRouter);
+        this.logger.info('Bootstrap router mounted at /api/user/bootstrap');
 
         // Daily GSC fetch (3 AM). SchedulerService supports late registration.
         if (this.scheduler) {
@@ -151,20 +164,5 @@ export class TrafficModule implements IModule<ITrafficModuleDependencies> {
         }
 
         this.logger.info('Traffic module running');
-    }
-
-    /**
-     * Expose the TrafficService singleton for the legacy user module, which
-     * still injects it into UserService for analytics aggregations until
-     * Phase 6 removes that surface. Available after `init()`.
-     *
-     * @returns The TrafficService singleton.
-     * @throws {Error} If called before `init()`.
-     */
-    getTrafficService(): TrafficService {
-        if (!this.trafficService) {
-            throw new Error('TrafficModule not initialized - call init() first');
-        }
-        return this.trafficService;
     }
 }
