@@ -260,6 +260,53 @@ export interface IEngagementMetrics {
 }
 
 /**
+ * One row of the analytics new-arrivals table: a tid whose global first-seen
+ * (across the full table) falls inside the window, with its first-touch
+ * attribution and lifetime activity counts. Shaped to the frontend
+ * `IVisitorOrigin` the `/system/users` panel renders directly. `searchKeyword`
+ * is always null — `traffic_events` carries no keyword column.
+ */
+export interface INewVisitorOrigin {
+    userId: string;
+    firstSeen: string;
+    lastSeen: string;
+    country: string | null;
+    referrerDomain: string | null;
+    landingPage: string | null;
+    device: string;
+    utm: { source: string | null; medium: string | null; campaign: string | null; term: string | null; content: string | null } | null;
+    searchKeyword: string | null;
+    sessionsCount: number;
+    pageViews: number;
+}
+
+/** A page of {@link INewVisitorOrigin} rows plus the unpaginated total. */
+export interface INewVisitorsPage {
+    visitors: INewVisitorOrigin[];
+    total: number;
+}
+
+/**
+ * Drill-down breakdown for a single referrer source. Shaped to the frontend
+ * `ITrafficSourceDetails`. Percentages are each dimension's share of the
+ * source's total pageviews. `searchKeywords` is always empty (no keyword
+ * column) and `walletsConnected` / `walletsVerified` are always zero
+ * (`traffic_events` has no wallet column — conversion is the binary
+ * "ever logged in" proxy via `user_id`).
+ */
+export interface ITrafficSourceDetailsResult {
+    source: string;
+    visitors: number;
+    landingPages: Array<{ path: string; count: number; percentage: number }>;
+    countries: Array<{ country: string; count: number; percentage: number }>;
+    devices: Array<{ device: string; count: number; percentage: number }>;
+    utmCampaigns: Array<{ source: string; medium: string; campaign: string; count: number }>;
+    searchKeywords: Array<{ keyword: string; count: number }>;
+    engagement: { avgSessions: number; avgPageViews: number; avgDuration: number };
+    conversion: { walletsConnected: number; walletsVerified: number; conversionRate: number };
+}
+
+/**
  * ClickHouse table backing every traffic event the user module records.
  *
  * Exported so module-internal collaborators (notably migration 011's
@@ -766,6 +813,11 @@ export class TrafficService {
             INNER JOIN (
                 SELECT candidate_uid, min(toDate(timestamp)) AS first_day
                 FROM ${TABLE_NAME}
+                WHERE candidate_uid IN (
+                    SELECT DISTINCT candidate_uid
+                    FROM ${TABLE_NAME}
+                    WHERE ${clause}
+                )
                 GROUP BY candidate_uid
             ) AS f USING (candidate_uid)
             GROUP BY day
@@ -898,6 +950,211 @@ export class TrafficService {
             };
         } catch (error) {
             this.logger.warn({ error }, 'Failed to read engagement metrics');
+            return empty;
+        }
+    }
+
+    /**
+     * Visitors whose global first-seen (across the full table) falls inside the
+     * window — the "new arrivals" of the period — newest first, with first-touch
+     * attribution and lifetime activity counts.
+     *
+     * The heavy per-tid grouping is bounded to tids active in the window (a new
+     * tid has its first event in-window, so it is always in that set), then
+     * `HAVING` keeps only those whose global min timestamp lands in the window.
+     * The inner `IN` filters which tids participate, not which of their rows
+     * count, so `min`/`max`/`argMin` still see each tid's full history.
+     *
+     * @param range - Inclusive date window.
+     * @param limit - Page size.
+     * @param skip - Pagination offset.
+     * @returns A page of new-visitor origins plus the unpaginated total.
+     */
+    async getNewVisitors(range: IAnalyticsDateRange, limit = 50, skip = 0): Promise<INewVisitorsPage> {
+        if (!this.clickhouse) return { visitors: [], total: 0 };
+        const { clause, params } = this.rangeParams(range);
+        let firstSeenClause = 'firstSeen >= parseDateTimeBestEffort({since:String})';
+        if (range.until) {
+            firstSeenClause += ' AND firstSeen <= parseDateTimeBestEffort({until:String})';
+        }
+        const activeInWindow = `candidate_uid IN (SELECT DISTINCT candidate_uid FROM ${TABLE_NAME} WHERE ${clause})`;
+        const pageSql = `
+            SELECT
+                candidate_uid AS userId,
+                min(timestamp) AS firstSeen,
+                max(timestamp) AS lastSeen,
+                argMin(country, timestamp) AS country,
+                argMin(multiIf(referer IS NULL OR referer = '', NULL, domain(referer)), timestamp) AS referrerDomain,
+                argMin(path, timestamp) AS landingPage,
+                argMin(device, timestamp) AS device,
+                argMin(utm_source, timestamp) AS utmSource,
+                argMin(utm_medium, timestamp) AS utmMedium,
+                argMin(utm_campaign, timestamp) AS utmCampaign,
+                argMin(utm_term, timestamp) AS utmTerm,
+                argMin(utm_content, timestamp) AS utmContent,
+                count() AS pageViews,
+                countIf(event_type = 'session_start') AS sessionsCount
+            FROM ${TABLE_NAME}
+            WHERE ${activeInWindow}
+            GROUP BY candidate_uid
+            HAVING ${firstSeenClause}
+            ORDER BY firstSeen DESC
+            LIMIT {limit:UInt32} OFFSET {skip:UInt32}
+        `;
+        const countSql = `
+            SELECT count() AS total FROM (
+                SELECT candidate_uid, min(timestamp) AS firstSeen
+                FROM ${TABLE_NAME}
+                WHERE ${activeInWindow}
+                GROUP BY candidate_uid
+                HAVING ${firstSeenClause}
+            )
+        `;
+        try {
+            const [rows, countRows] = await Promise.all([
+                this.clickhouse.query<{
+                    userId: string; firstSeen: string; lastSeen: string;
+                    country: string | null; referrerDomain: string | null;
+                    landingPage: string; device: string;
+                    utmSource: string | null; utmMedium: string | null; utmCampaign: string | null;
+                    utmTerm: string | null; utmContent: string | null;
+                    pageViews: string | number; sessionsCount: string | number;
+                }>(pageSql, { ...params, limit, skip }),
+                this.clickhouse.query<{ total: string | number }>(countSql, params)
+            ]);
+            const visitors: INewVisitorOrigin[] = rows.map(r => {
+                const hasUtm = Boolean(r.utmSource || r.utmMedium || r.utmCampaign || r.utmTerm || r.utmContent);
+                return {
+                    userId: r.userId,
+                    firstSeen: String(r.firstSeen),
+                    lastSeen: String(r.lastSeen),
+                    country: r.country ?? null,
+                    referrerDomain: r.referrerDomain ?? null,
+                    landingPage: r.landingPage ?? null,
+                    device: r.device,
+                    utm: hasUtm
+                        ? {
+                              source: r.utmSource ?? null,
+                              medium: r.utmMedium ?? null,
+                              campaign: r.utmCampaign ?? null,
+                              term: r.utmTerm ?? null,
+                              content: r.utmContent ?? null
+                          }
+                        : null,
+                    searchKeyword: null,
+                    sessionsCount: Number(r.sessionsCount),
+                    pageViews: Number(r.pageViews)
+                };
+            });
+            return { visitors, total: Number(countRows[0]?.total ?? 0) };
+        } catch (error) {
+            this.logger.warn({ error }, 'Failed to read new visitors');
+            return { visitors: [], total: 0 };
+        }
+    }
+
+    /**
+     * Drill-down breakdown for a single referrer source (a referrer domain or
+     * `'direct'`): visitor count, top landing pages / countries / devices / UTM
+     * campaigns, engagement, and the binary conversion proxy.
+     *
+     * Percentages are each row's share of the source's total pageviews. The
+     * source is matched the same way {@link getTrafficSources} buckets it, so a
+     * value returned there round-trips here.
+     *
+     * @param range - Inclusive date window.
+     * @param source - Referrer domain (e.g. `'duckduckgo.com'`) or `'direct'`.
+     * @returns The source breakdown, or an empty shell when the source has no
+     *          events in the window.
+     */
+    async getTrafficSourceDetails(range: IAnalyticsDateRange, source: string): Promise<ITrafficSourceDetailsResult> {
+        const empty: ITrafficSourceDetailsResult = {
+            source,
+            visitors: 0,
+            landingPages: [],
+            countries: [],
+            devices: [],
+            utmCampaigns: [],
+            searchKeywords: [],
+            engagement: { avgSessions: 0, avgPageViews: 0, avgDuration: 0 },
+            conversion: { walletsConnected: 0, walletsVerified: 0, conversionRate: 0 }
+        };
+        if (!this.clickhouse) return empty;
+        const { clause, params } = this.rangeParams(range);
+        const sourceExpr = `multiIf(referer IS NULL OR referer = '', 'direct', domain(referer))`;
+        const where = `${clause} AND ${sourceExpr} = {source:String}`;
+        const p = { ...params, source };
+        const round1 = (n: number): number => Math.round(n * 10) / 10;
+        try {
+            const summaryRows = await this.clickhouse.query<{
+                visitors: string | number; sessions: string | number; events: string | number;
+                avgDuration: string | number | null; converted: string | number;
+            }>(`
+                SELECT
+                    uniqExact(candidate_uid) AS visitors,
+                    countIf(event_type = 'session_start') AS sessions,
+                    count() AS events,
+                    avgIf(duration_ms, event_type = 'session_end' AND duration_ms IS NOT NULL) AS avgDuration,
+                    uniqExactIf(candidate_uid, user_id IS NOT NULL) AS converted
+                FROM ${TABLE_NAME}
+                WHERE ${where}
+            `, p);
+            const summary = summaryRows[0];
+            const visitors = summary ? Number(summary.visitors) : 0;
+            if (!visitors) return empty;
+            const events = Number(summary.events);
+            const sessions = Number(summary.sessions);
+            const converted = Number(summary.converted);
+            const pct = (count: number): number => (events > 0 ? round1((count / events) * 100) : 0);
+
+            const [landingRows, countryRows, deviceRows, utmRows] = await Promise.all([
+                this.clickhouse.query<{ path: string; count: string | number }>(`
+                    SELECT path, count() AS count FROM ${TABLE_NAME} WHERE ${where}
+                    GROUP BY path ORDER BY count DESC LIMIT 10
+                `, p),
+                this.clickhouse.query<{ country: string; count: string | number }>(`
+                    SELECT country, count() AS count FROM ${TABLE_NAME} WHERE ${where} AND country IS NOT NULL
+                    GROUP BY country ORDER BY count DESC LIMIT 30
+                `, p),
+                this.clickhouse.query<{ device: string; count: string | number }>(`
+                    SELECT device, count() AS count FROM ${TABLE_NAME} WHERE ${where}
+                    GROUP BY device ORDER BY count DESC
+                `, p),
+                this.clickhouse.query<{ source: string | null; medium: string | null; campaign: string; count: string | number }>(`
+                    SELECT
+                        utm_source AS source, utm_medium AS medium, utm_campaign AS campaign,
+                        count() AS count
+                    FROM ${TABLE_NAME} WHERE ${where} AND utm_campaign IS NOT NULL
+                    GROUP BY source, medium, campaign ORDER BY count DESC LIMIT 10
+                `, p)
+            ]);
+
+            return {
+                source,
+                visitors,
+                landingPages: landingRows.map(r => ({ path: r.path, count: Number(r.count), percentage: pct(Number(r.count)) })),
+                countries: countryRows.map(r => ({ country: r.country, count: Number(r.count), percentage: pct(Number(r.count)) })),
+                devices: deviceRows.map(r => ({ device: r.device, count: Number(r.count), percentage: pct(Number(r.count)) })),
+                utmCampaigns: utmRows.map(r => ({
+                    source: r.source ?? '(none)',
+                    medium: r.medium ?? '(none)',
+                    campaign: r.campaign,
+                    count: Number(r.count)
+                })),
+                searchKeywords: [],
+                engagement: {
+                    avgSessions: round1(sessions / visitors),
+                    avgPageViews: round1(events / visitors),
+                    avgDuration: Number(summary.avgDuration ?? 0)
+                },
+                conversion: {
+                    walletsConnected: 0,
+                    walletsVerified: 0,
+                    conversionRate: round1((converted / visitors) * 100)
+                }
+            };
+        } catch (error) {
+            this.logger.warn({ error }, 'Failed to read traffic source details');
             return empty;
         }
     }

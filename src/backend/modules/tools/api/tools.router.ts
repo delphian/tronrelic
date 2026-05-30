@@ -15,24 +15,19 @@ import { getSessionForRequest } from '../../../modules/identity/services/auth-fa
 import type { ToolsController } from './tools.controller.js';
 
 /**
- * Require the caller to have a signature-proven primary wallet.
+ * Require the caller to be signed in.
  *
- * Resolves the Better Auth session and gates on its denormalized
- * `primaryWallet`. Returns 401 for anonymous callers and 403 for
- * authenticated accounts that have not linked a wallet. A present
- * `primaryWallet` is always signature-proven (the wallet store only holds
- * wallets verified by signature), so this is the faithful replacement for
- * the legacy "verified wallet required" gate. `getSessionForRequest`
- * resolves to null rather than throwing, so this middleware never rejects.
+ * Resolves the Better Auth session and returns 401 for anonymous callers;
+ * any authenticated account passes. The approval checker only reads public
+ * on-chain data for an address the caller types in, so a linked wallet is not
+ * a prerequisite — login is the bar, matching the frontend `isLoggedIn` gate
+ * in `ApprovalChecker`. `getSessionForRequest` resolves to null rather than
+ * throwing, so this middleware never rejects.
  */
-async function requireVerifiedWallet(req: Request, res: Response, next: NextFunction): Promise<void> {
+async function requireLogin(req: Request, res: Response, next: NextFunction): Promise<void> {
     const session = await getSessionForRequest(req);
     if (!session) {
-        res.status(401).json({ error: 'Authentication required', message: 'Sign in and link a wallet to use this tool' });
-        return;
-    }
-    if (!session.primaryWallet) {
-        res.status(403).json({ error: 'Wallet verification required', message: 'Link a TRON wallet via TronLink signature before using this tool' });
+        res.status(401).json({ error: 'Authentication required', message: 'Sign in to use this tool' });
         return;
     }
     next();
@@ -67,7 +62,7 @@ export function createToolsRouter(controller: ToolsController): Router {
     router.post('/stake/from-trx', rateLimiter, asyncHandler(controller.estimateStakeFromTrx));
     router.post('/stake/from-energy', rateLimiter, asyncHandler(controller.estimateStakeFromEnergy));
     router.post('/signature/verify', rateLimiter, asyncHandler(controller.verifySignature));
-    router.post('/approval/check', requireVerifiedWallet, approvalRateLimiter, asyncHandler(controller.checkApprovals));
+    router.post('/approval/check', requireLogin, approvalRateLimiter, asyncHandler(controller.checkApprovals));
     router.post('/timestamp/convert', rateLimiter, asyncHandler(controller.convertTimestamp));
 
     return router;

@@ -41,7 +41,9 @@ export function createAdminAnalyticsRouter(controller: TrafficController): Route
 
     router.get('/daily-visitors', controller.getDailyVisitors.bind(controller));
     router.get('/visitor-origins', controller.getVisitorOrigins.bind(controller));
+    router.get('/new-users', controller.getNewUsers.bind(controller));
     router.get('/traffic-sources', controller.getTrafficSources.bind(controller));
+    router.get('/traffic-source-details', controller.getTrafficSourceDetails.bind(controller));
     router.get('/top-landing-pages', controller.getTopLandingPages.bind(controller));
     router.get('/geo-distribution', controller.getGeoDistribution.bind(controller));
     router.get('/device-breakdown', controller.getDeviceBreakdown.bind(controller));

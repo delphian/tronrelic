@@ -36,9 +36,14 @@ export const migration: IMigration = {
             await collection.drop();
             console.log('[Migration] Dropped collection: users');
         } catch (error) {
-            // MongoDB throws "ns not found" when the collection is already
-            // gone (fresh install, or a re-run). Idempotent: treat as success.
-            if (error instanceof Error && error.message.includes('ns not found')) {
+            // MongoDB signals an already-gone collection with error code 26
+            // (NamespaceNotFound) and the "ns not found" message. The message
+            // wording drifts across server/driver versions, so check the stable
+            // code as well. Either way it is idempotent — treat as success.
+            const isNotFound =
+                (typeof (error as { code?: number }).code === 'number' && (error as { code?: number }).code === 26) ||
+                (error instanceof Error && error.message.includes('ns not found'));
+            if (isNotFound) {
                 console.log('[Migration] Skipped (not found): users');
             } else {
                 throw new Error(`Failed to drop collection users: ${error instanceof Error ? error.message : String(error)}`);

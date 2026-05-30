@@ -173,6 +173,44 @@ export class TrafficController {
     }
 
     /**
+     * GET /api/admin/users/analytics/new-users?period=&limit=&skip=
+     * Visitors whose global first-seen falls within the window, newest first.
+     * Returns `{ visitors, total }` unwrapped — the client types this as
+     * `{ visitors: IVisitorOrigin[]; total }` and reads it directly.
+     */
+    async getNewUsers(req: Request, res: Response): Promise<void> {
+        const range = resolveAnalyticsRange(req.query);
+        const limit = parsePositiveInt(req.query.limit, 50, MAX_LIMIT);
+        const skip = parseNonNegativeInt(req.query.skip, 0);
+        try {
+            res.json(await this.trafficService.getNewVisitors(range, limit, skip));
+        } catch (error) {
+            this.logger.error({ err: error }, 'Failed to fetch new users');
+            res.status(500).json({ error: 'InternalError', message: 'Failed to fetch new users' });
+        }
+    }
+
+    /**
+     * GET /api/admin/users/analytics/traffic-source-details?source=&period=
+     * Drill-down breakdown for one referrer source. Returns the
+     * `ITrafficSourceDetails` shape unwrapped — the client reads it directly.
+     */
+    async getTrafficSourceDetails(req: Request, res: Response): Promise<void> {
+        const source = typeof req.query.source === 'string' ? req.query.source : '';
+        if (!source) {
+            res.status(400).json({ error: 'ValidationError', message: 'source query parameter is required' });
+            return;
+        }
+        const range = resolveAnalyticsRange(req.query);
+        try {
+            res.json(await this.trafficService.getTrafficSourceDetails(range, source));
+        } catch (error) {
+            this.logger.error({ err: error }, 'Failed to fetch traffic source details');
+            res.status(500).json({ error: 'InternalError', message: 'Failed to fetch traffic source details' });
+        }
+    }
+
+    /**
      * GET /api/admin/users/analytics/top-landing-pages?limit=
      * Top landing paths by event count.
      */
@@ -325,7 +363,11 @@ export class TrafficController {
         }
         try {
             await this.gscService.saveCredentials(serviceAccountJson, siteUrl);
-            res.json({ success: true });
+            // Return the fresh status, not a bare { success } — the client types
+            // this call as IGscStatus and stores the result directly in panel
+            // state. A success-only body would null out configured/siteUrl/
+            // lastFetch until a separate refresh.
+            res.json(await this.gscService.getStatus());
         } catch (error) {
             this.logger.error({ err: error }, 'Failed to save GSC credentials');
             res.status(500).json({ error: 'InternalError', message: 'Failed to save GSC credentials' });

@@ -130,11 +130,12 @@ export class AccountDirectoryService implements IAccountDirectoryService {
         const limit = Math.min(Math.max(1, options.limit ?? DEFAULT_LIMIT), MAX_LIMIT);
         const skip = Math.max(0, options.skip ?? 0);
 
-        const filter = options.search
+        const search = options.search ? AccountDirectoryService.escapeRegex(options.search) : null;
+        const filter = search
             ? {
                   $or: [
-                      { email: { $regex: options.search, $options: 'i' } },
-                      { name: { $regex: options.search, $options: 'i' } }
+                      { email: { $regex: search, $options: 'i' } },
+                      { name: { $regex: search, $options: 'i' } }
                   ]
               }
             : {};
@@ -148,6 +149,22 @@ export class AccountDirectoryService implements IAccountDirectoryService {
             accounts: docs.map(AccountDirectoryService.toSummary),
             total
         };
+    }
+
+    /**
+     * Escape user-supplied text for safe literal use inside a MongoDB `$regex`.
+     *
+     * Account search feeds the raw term straight into a `$regex` filter, so an
+     * unescaped term lets a caller inject regex syntax — a crafted pattern can
+     * trigger catastrophic backtracking (ReDoS) or silently change which rows
+     * match. Backslash-escaping every regex metacharacter forces the term to
+     * match literally, which is the only behaviour the search box promises.
+     *
+     * @param input - Raw search string from the caller.
+     * @returns The input with all regex special characters escaped.
+     */
+    private static escapeRegex(input: string): string {
+        return input.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
     }
 
     /**
