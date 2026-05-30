@@ -21,13 +21,6 @@ export interface SocketSubscriptions {
     wallet: string;
     channels?: NotificationChannel[];
   };
-  /**
-   * Identity-scoped subscription. The user's UUID is resolved server-side
-   * from the `tronrelic_uid` cookie at handshake time — clients no longer
-   * (and must not) pass a userId in the payload. Send a sentinel `true`
-   * to opt the socket into its own `user:<uid>` room.
-   */
-  user?: true;
 }
 
 export interface TransactionAlertPayload {
@@ -123,7 +116,6 @@ export interface MenuNodeSerialized {
   parent?: string | null;
   enabled: boolean;
   namespace?: string;
-  allowedIdentityStates?: string[];
   requiresGroups?: string[];
   requiresAdmin?: boolean;
   children?: MenuNodeSerialized[];

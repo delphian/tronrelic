@@ -137,22 +137,17 @@ if (menu) {
 
 ## Visibility Gating
 
-Menu nodes can be gated on three independent fields, ANDed together. The
+Menu nodes can be gated on two independent fields, ANDed together. The
 backend filters menu reads at request time using the Better Auth session
-resolved onto `req.authSession`; admin token holders bypass the filter so the
-admin UI can render and edit gated nodes.
-
-> **Note.** The Better Auth cutover removed the legacy `UserIdentityState`
-> taxonomy, so `allowedIdentityStates` is now a vestigial schema field with no
-> live identity state to match — gate on `requiresGroups` / `requiresAdmin`
-> (group membership), which key off `req.authSession`. See
-> [system-auth.md](../../../../docs/system/system-auth.md).
+resolved onto `req.authSession`. `GET /api/menu` applies this per-visitor
+filter to every caller; the origin-tagged admin view at `GET /api/menu/manage`
+(behind `requireAdmin`) returns the full tree including disabled and gated
+rows so the admin UI can render and edit them.
 
 | Field | Shape | Semantics |
 |-------|-------|-----------|
-| `allowedIdentityStates` | `string[]?` | **Vestigial.** The `UserIdentityState` taxonomy it gated on was removed in the Better Auth cutover. Retained in the schema but no longer matches a live session attribute — use `requiresGroups` / `requiresAdmin` instead. |
 | `requiresGroups` | `string[]?` | Visible if the user is a member of *any* listed group id (OR-of-membership). Group ids reference `module_user_groups` rows managed by the identity module. |
-| `requiresAdmin` | `boolean?` | Visible only when `IUserGroupService.isAdmin(req.userId)` returns true. Routes through the user-groups service registry entry so future seeded admin tiers (e.g. `super-admin`) automatically qualify. |
+| `requiresAdmin` | `boolean?` | Visible only when the viewer's admin flag is true — `isAdmin(req)` derived from the Better Auth session and resolved once per request by `resolveViewer`. |
 
 The filter lives in `MenuService.getTreeForUser(namespace, user?)` and
 `getChildrenForUser(parentId, namespace, user?)`. Both are called by the
@@ -252,7 +247,7 @@ Navigation reads are public — the frontend chrome fetches them without an admi
 | Endpoint | Method | Purpose | Key Fields |
 |----------|--------|---------|------------|
 | `/api/menu/manage` | GET | Origin-tagged tree for the menu admin UI — includes disabled and gated rows | Query: `namespace` (optional, defaults to 'main') |
-| `/api/menu` | POST | Create persisted menu node | Body: `label` (required), `description`, `url`, `icon`, `order`, `parent`, `enabled`, `allowedIdentityStates`, `requiresGroups`, `requiresAdmin` |
+| `/api/menu` | POST | Create persisted menu node | Body: `label` (required), `description`, `url`, `icon`, `order`, `parent`, `enabled`, `requiresGroups`, `requiresAdmin` |
 | `/api/menu/:id` | PATCH | Update menu node | Body: any fields to update |
 | `/api/menu/:id` | DELETE | Delete menu node | Does **not** cascade — children become orphans unless a `before:delete` subscriber handles them |
 | `/api/menu/namespace/:namespace/config` | PUT | Replace namespace configuration | Body: `overflow`, `icons`, `layout`, `styling` |

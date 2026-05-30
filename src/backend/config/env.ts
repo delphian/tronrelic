@@ -21,8 +21,7 @@ const envSchema = z.object({
   METRICS_TOKEN: z.string().optional(),
   /**
    * Secret passed to cookie-parser so Express can verify `req.signedCookies`.
-   * No longer signs an identity cookie — the legacy `tronrelic_uid` cookie was
-   * removed in the Better Auth cutover, and the Better Auth session cookie is
+   * It does not sign an identity cookie — the Better Auth session cookie is
    * signed independently with `BETTER_AUTH_SECRET`.
    *
    * Required in production: cookie-parser falls back to no-op signing if a

@@ -4,8 +4,9 @@
  * codebase.
  *
  * Plugins, modules, controllers, and middleware import the predicate
- * helpers exported here and never reach for `req.user`, Better Auth's
- * client API, or the GroupService directly. The single-surface rule
+ * helpers exported here rather than resolving the session, calling
+ * Better Auth's client API, or querying the GroupService directly. The
+ * single-surface rule
  * lets later phases swap the underlying mechanism — different session
  * backend, role/permission overlays, multi-tier admin — without
  * touching every call site.

@@ -16,7 +16,7 @@ Solves Next.js build-time env inlining so a single Docker image runs on any doma
 
 ### Backend Modules
 
-Non-toggleable infrastructure (Pages, Menu, User, Migrations) initialized during bootstrap. Two-phase lifecycle — `init()` resolves typed DI dependencies, `run()` mounts routes — fail-fast, no degraded mode. Plugins, by contrast, are optional and runtime-toggleable. See [modules.md](./modules/modules.md), [modules-architecture.md](./modules/modules-architecture.md), [modules-creating.md](./modules/modules-creating.md).
+Non-toggleable infrastructure (Pages, Menu, Identity, Traffic, Migrations) initialized during bootstrap. Two-phase lifecycle — `init()` resolves typed DI dependencies, `run()` mounts routes — fail-fast, no degraded mode. Plugins, by contrast, are optional and runtime-toggleable. See [modules.md](./modules/modules.md), [modules-architecture.md](./modules/modules-architecture.md), [modules-creating.md](./modules/modules-creating.md).
 
 ### Database Access
 

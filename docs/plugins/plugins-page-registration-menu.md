@@ -39,9 +39,8 @@ export const myBackendPlugin = definePlugin({
 | `order` | Sort position; lower = earlier; default 999 |
 | `parent` | Parent node `_id`, or `null` for top-level |
 | `enabled` | Visibility toggle |
-| `allowedIdentityStates` | **Vestigial** — the `UserIdentityState` taxonomy it gated was removed in the Better Auth cutover; gate on `requiresGroups` / `requiresAdmin` instead |
 | `requiresGroups` | OR-of-membership across admin-defined groups |
-| `requiresAdmin` | Visibility predicate via `IUserGroupService.isAdmin` |
+| `requiresAdmin` | Visibility predicate via the viewer's `isAdmin(req)` flag (derived from the Better Auth session) |
 
 `order` convention: `0–9` core nav, `10–99` feature plugins, `100+` admin/system.
 
@@ -67,11 +66,9 @@ await context.menuService.create({
 Two optional fields filter menu visibility per visitor at read time:
 
 - `requiresGroups` — OR-membership across admin-defined groups.
-- `requiresAdmin` — routes through `IUserGroupService.isAdmin`.
+- `requiresAdmin` — matches the viewer's admin flag (`isAdmin(req)`, derived from the Better Auth session).
 
 The menu config's `requiresAdmin` is a *visibility* predicate. It is unrelated to the `requireAdmin` HTTP middleware in [plugins-api-registration.md](./plugins-api-registration.md), which gates routes (Better Auth session or `x-admin-token`).
-
-> **Note.** `allowedIdentityStates` (the legacy `UserIdentityState` taxonomy) was removed in the Better Auth cutover. Gate menu visibility on `requiresGroups` / `requiresAdmin` (group membership) instead. See [system-auth.md](../system/system-auth.md).
 
 ```typescript
 await context.menuService.create({

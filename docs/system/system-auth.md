@@ -6,7 +6,7 @@ Identity and access control run on [Better Auth](https://better-auth.com). A vis
 
 Auth touches every protected route, admin surface, and wallet-gated plugin feature. Reading session cookies or rolling per-feature "is this user allowed" checks by hand produces inconsistent gating, security holes, and code that breaks when the identity backend changes. The system below funnels every check through one resolved session object and one predicate vocabulary, so a route's access rule is one readable call and the backend can evolve without touching call sites.
 
-Better Auth is the sole identity layer. The legacy UUID identity system (`tronrelic_uid` cookie, `req.user`, `UserIdentityState`) was removed in the Phase 6 cutover — it no longer exists, and `req.authSession` is the only identity surface.
+Better Auth is the sole identity layer. `req.authSession` — populated once per request by the `attachAuthSession` middleware — is the only identity surface; read it through the `isLoggedIn` / `isInGroup` / `isAdmin` predicates.
 
 ## How It Works
 

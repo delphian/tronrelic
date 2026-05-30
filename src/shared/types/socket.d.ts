@@ -20,8 +20,6 @@ export interface SocketSubscriptions {
         wallet: string;
         channels?: NotificationChannel[];
     };
-    /** Identity room opt-in. UUID is resolved server-side from the cookie. */
-    user?: true;
 }
 export interface TransactionAlertPayload {
     event: 'transaction:large' | 'delegation:new' | 'stake:new';

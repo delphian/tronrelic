@@ -1271,8 +1271,8 @@ export class MenuService implements IMenuService {
                 return;
             }
 
-            // Per-user gating (allowedIdentityStates / requiresGroups /
-            // requiresAdmin) means there is no single tree shape that fits
+            // Per-user gating (requiresGroups / requiresAdmin) means there
+            // is no single tree shape that fits
             // every connected client. Send a refetch signal instead — each
             // client re-requests `GET /api/menu` with its own cookie and the
             // server returns the filtered view. Identifiers are kept in the

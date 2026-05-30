@@ -39,7 +39,7 @@ See [frontend-architecture-modules.md](../../frontend/frontend-architecture-modu
 | Deep integration | Express app, core database | Injected `IPluginContext` only |
 | Frontend UI | Optional | Typically included |
 
-**Module examples:** Pages, Menu, User, Scheduler, Logs, Database.
+**Module examples:** Pages, Menu, Identity, Traffic, Scheduler, Logs, Database.
 
 The deciding factor between module and plugin is no longer "does it provide shared services?" but "can the application function without it?" If the answer is no, it's a module. If yes — even if other components optionally consume its services — it's a plugin. The service registry (`context.services`) makes this possible by enabling plugins to expose shared capabilities at runtime without requiring promotion to a module.
 

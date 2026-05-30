@@ -8,11 +8,9 @@
  * so this is the narrowed, dependency-free view plugins read through
  * `req.authSession` — without importing Better Auth or any core module.
  *
- * It is the Better Auth successor to the legacy `req.user` surface: where
- * plugins used to gate on `req.user.identityState === Verified`, they now
- * gate on the presence of `req.authSession` (logged in) and its `groups`
- * (admin / membership). Use the {@link isLoggedIn} / {@link isAdmin} /
- * {@link isInGroup} helpers rather than poking at the fields directly.
+ * Gate on the presence of `req.authSession` (logged in) and its `groups`
+ * (admin / membership) through the {@link isLoggedIn} / {@link isAdmin} /
+ * {@link isInGroup} helpers rather than reading the fields directly.
  */
 
 /**

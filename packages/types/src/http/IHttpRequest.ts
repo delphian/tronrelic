@@ -13,28 +13,30 @@ import type { IAuthSession } from '../auth/IAuthSession.js';
  * - Easier testing with mock request objects
  * - Clear contract for what request data is available
  *
- * ## User Context
+ * ## Auth Context
  *
- * The `userId` and `user` fields are populated by middleware before requests
- * reach plugin routes. Plugins can check `req.user` to determine if a user
- * is authenticated and access their profile data.
+ * The core `attachAuthSession` middleware resolves the Better Auth session
+ * onto `req.authSession` before requests reach plugin routes. Gate with the
+ * synchronous predicates from `@delphian/tronrelic-types` — they read
+ * `req.authSession` and act as type guards.
  *
  * @example
  * ```typescript
+ * import { isLoggedIn, hasPrimaryWallet } from '@delphian/tronrelic-types';
+ *
  * // In a plugin route handler
  * handler: async (req, res) => {
- *     if (!req.user) {
+ *     if (!isLoggedIn(req)) {
  *         return res.status(401).json({ error: 'Authentication required' });
  *     }
  *
- *     // Check if user has linked wallets (registered)
- *     const isRegistered = (req.user.wallets?.length ?? 0) > 0;
- *     if (!isRegistered) {
- *         return res.status(403).json({ error: 'Wallet verification required' });
+ *     // Wallet-gated routes confirm a signature-proven primary wallet
+ *     if (!hasPrimaryWallet(req)) {
+ *         return res.status(403).json({ error: 'A linked wallet is required' });
  *     }
  *
- *     // Proceed with authenticated, registered user
- *     const userId = req.userId;
+ *     // Proceed with the authenticated account
+ *     const userId = req.authSession.user.id;
  * }
  * ```
  */
@@ -189,10 +191,9 @@ export interface IHttpRequest<
      * reach — test stubs, or the middleware's own bypassed paths (it
      * early-returns on `/api/auth/*`). Plugin routes always run after the
      * middleware, so for plugin handlers `authSession` is always set
-     * (`null` or populated), never `undefined`. This is the Better Auth
-     * successor to {@link user}: gate authenticated plugin routes on
-     * `req.authSession` via the `isLoggedIn` / `isAdmin` / `isInGroup`
-     * predicates rather than the legacy `req.user.identityState` reads.
+     * (`null` or populated), never `undefined`. Gate authenticated plugin
+     * routes on `req.authSession` via the `isLoggedIn` / `isAdmin` /
+     * `isInGroup` predicates.
      *
      * @example
      * ```typescript
