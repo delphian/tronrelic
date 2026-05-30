@@ -130,14 +130,14 @@ import type { IFrontendPluginContext } from '@/types';
 
 export function MyPluginPage({ context }: { context: IFrontendPluginContext }) {
     const { layout, ui, useUser, useModal, useToast } = context;
-    const { isVerified } = useUser();
+    const { hasPrimaryWallet } = useUser();
     const modal = useModal();
     const toast = useToast();
 
     const handlePremium = () => {
-        if (!isVerified) {
+        if (!hasPrimaryWallet) {
             const id = modal.open({
-                title: 'Wallet Verification Required',
+                title: 'Primary Wallet Required',
                 size: 'sm',
                 content: (
                     <p>

@@ -161,9 +161,9 @@ public read endpoints (`GET /api/menu`, `GET /api/menu/resolve`) after the
 visitors pass `undefined` and only see nodes with no group/admin gates.
 
 The admin predicate looks up `'user-groups'` from the service registry
-lazily — the user module registers the service in its `run()` phase, so by
+lazily — the identity module registers the service in its `run()` phase, so by
 the time anyone calls `GET /api/menu` it's available. If the registry entry
-is missing (tests, or a deployment where the user module hasn't initialized
+is missing (tests, or a deployment where the identity module hasn't initialized
 yet), `requiresAdmin: true` nodes are hidden from everyone except the
 shared-admin-token holder.
 

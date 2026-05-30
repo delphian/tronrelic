@@ -11,11 +11,6 @@
  * and publishes `'user-groups'`, `'wallets'`, and `'accounts'` on the service
  * registry for late-binding consumers.
  *
- * The legacy UUID-keyed user module still runs alongside this one until the
- * Phase 6 cutover removes it; this module must therefore `init()` *before*
- * `UserModule` so the legacy code can resolve the BA-keyed singletons it still
- * leans on during the transition.
- *
  * Follows TronRelic's two-phase lifecycle: `init()` constructs services and
  * controllers without activating; `run()` mounts routes and registers
  * services. Errors in either phase abort bootstrap (no degraded mode).
@@ -162,14 +157,13 @@ export class IdentityModule implements IModule<IIdentityModuleDependencies> {
     /**
      * Mount routers and publish services. Runs after all modules `init()`.
      *
-     * Mounts `/api/user/wallets` ahead of the legacy `/api/user` router
-     * (UserModule runs after this module) so its literal segment wins over
-     * that router's `/:id` matcher. Owns the `/api/admin/users` admin tree:
-     * the group-definition router at `/api/admin/users/groups` and the
-     * account-directory catch-all at `/api/admin/users`, registered in that
-     * order. This module runs after the traffic module (see the bootstrap
-     * run-order) so traffic's `/api/admin/users/{analytics,traffic}` routers
-     * register before the account catch-all and win the prefix match.
+     * Mounts the wallet router at the literal `/api/user/wallets` segment.
+     * Owns the `/api/admin/users` admin tree: the group-definition router at
+     * `/api/admin/users/groups` and the account-directory catch-all at
+     * `/api/admin/users`, registered in that order. This module runs after the
+     * traffic module (see the bootstrap run-order) so traffic's
+     * `/api/admin/users/{analytics,traffic}` routers register before the
+     * account catch-all and win the prefix match.
      */
     async run(): Promise<void> {
         this.logger.info('Running identity module...');
@@ -209,20 +203,5 @@ export class IdentityModule implements IModule<IIdentityModuleDependencies> {
         this.logger.info('Registered user-groups, wallets, accounts on the service registry');
 
         this.logger.info('Identity module running');
-    }
-
-    /**
-     * Expose the group-definition service for the legacy user module, which
-     * still composes it into the `/api/admin/users` router until Phase 6
-     * removes that surface. Available after `init()`.
-     *
-     * @returns The UserGroupService singleton.
-     * @throws {Error} If called before `init()`.
-     */
-    getUserGroupService(): UserGroupService {
-        if (!this.userGroupService) {
-            throw new Error('IdentityModule not initialized - call init() first');
-        }
-        return this.userGroupService;
     }
 }

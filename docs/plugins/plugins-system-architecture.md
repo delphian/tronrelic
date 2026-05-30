@@ -83,7 +83,7 @@ Loaded during API bootstrap (`src/backend/src/index.ts`) in two phases.
 1. `loadPlugins` (in `src/backend/src/loaders/plugins.ts`) imports the generated registry.
 2. Each discovered plugin is registered in the `plugin_metadata` MongoDB collection with default state `installed: false, enabled: false`. Existing plugins have title and version refreshed.
 3. A plugin-scoped `IDatabaseService` is created using the plugin id for namespace isolation.
-4. An `IPluginContext` is assembled with `ObserverRegistry.getInstance()`, `WebSocketService.getInstance()`, `UserService.getInstance()`, the `BaseObserver` class, the scoped database service, and a plugin-scoped child logger.
+4. An `IPluginContext` is assembled with `ObserverRegistry.getInstance()`, `WebSocketService.getInstance()`, the service registry (`context.services`), the `BaseObserver` class, the scoped database service, and a plugin-scoped child logger.
 5. The plugin and its context are registered with `PluginManagerService` for dynamic lifecycle.
 
 ### Initialization Phase (Installed AND Enabled Only)

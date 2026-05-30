@@ -86,7 +86,7 @@ Inspect health at `/system` (auth: `ADMIN_API_TOKEN`) — fastest path to blockc
 | [modules.md](./modules/modules.md) | Module overview, module-vs-plugin matrix, service singleton rules |
 | [modules-architecture.md](./modules/modules-architecture.md) | `IModule` interface, bootstrap order, DI, service registry |
 | [modules-creating.md](./modules/modules-creating.md) | Step-by-step new-module guide |
-| [system-auth.md](./system-auth.md) | Better Auth identity, `req.authSession`, authorization predicates, coexistence/cutover |
+| [system-auth.md](./system-auth.md) | Better Auth identity, `req.authSession`, authorization predicates |
 | [system-database.md](./system-database.md) | `IDatabaseService`, three-tier access, namespace isolation |
 | [system-blockchain-sync-architecture.md](./system-blockchain-sync-architecture.md) | Block retrieval, enrichment pipeline, observer dispatch |
 | [system-scheduler-operations.md](./system-scheduler-operations.md) | Job control, cron syntax, persistence, troubleshooting |

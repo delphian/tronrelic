@@ -47,7 +47,7 @@ The `/api/admin/users/traffic/*` reads below are under `requireAdmin` and accept
 | GET | `/api/admin/users/traffic/top-countries` | Most-active ISO-3166 alpha-2 countries |
 | GET | `/api/admin/users/traffic/bot-other-samples` | Frequent UAs classified `bot_other` (classifier-gap feedback) |
 
-The `/api/admin/users/analytics/*` router (also `requireAdmin`) serves the `/system/users` dashboard aggregates — daily visitors, traffic sources, geo/device breakdowns, engagement, the binary conversion funnel, retention, and the GSC endpoints — all backed by `traffic_events`. The frontend consumes them through `modules/user/api/client.ts`.
+The `/api/admin/users/analytics/*` router (also `requireAdmin`) serves the `/system/users` dashboard aggregates — daily visitors, traffic sources, geo/device breakdowns, engagement, the binary conversion funnel, retention, and the GSC endpoints — all backed by `traffic_events`. The frontend consumes them through `src/frontend/modules/user/api/client.ts`.
 
 `POST /api/user/bootstrap` (public) emits one first-touch `bootstrap` row keyed on the inbound `tronrelic_tid`; it mints no identity.
 

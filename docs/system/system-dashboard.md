@@ -91,4 +91,4 @@ The probe will return `connected: false` immediately rather than 503; check the 
 - [system-api.md](./system-api.md) — Admin API reference for everything the dashboard fetches
 - [system-api-overview.md](./system-api-overview.md) — Health probe and config endpoint details
 - [system-runtime-config.md](./system-runtime-config.md) — Why `siteUrl` edits need a frontend restart
-- [environment.md](../environment.md) — `ADMIN_API_TOKEN`, `ENABLE_SCHEDULER`, `SESSION_TTL_MS`
+- [environment.md](../environment.md) — `ADMIN_API_TOKEN`, `ENABLE_SCHEDULER`, `BETTER_AUTH_SECRET`

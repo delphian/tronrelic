@@ -27,7 +27,7 @@ Every route entry uses the `IApiRouteConfig` contract. Focus on these fields:
 
 Remember: `req.params`, `req.query`, `req.body`, and `req.ip` are plain objects; `res.status()`, `res.json()`, `res.send()`, and `res.setHeader()` mirror familiar Express methods but stay framework-agnostic.
 
-**`requiresAdmin` runs the admin gate.** The `requireAdmin` middleware admits the call when, in order, (a) the Better Auth session is in the `admin` group, (b) — during the legacy-coexistence window — the signed `tronrelic_uid` cookie identifies a verified user in the `admin` group, or (c) the request carries `ADMIN_API_TOKEN` via `x-admin-token` / `Authorization: Bearer`. The middleware tags the request with `req.adminVia = 'user' | 'service-token'` so handlers and audit logs can attribute the call. See [system-auth.md](../system/system-auth.md) for the authorization model.
+**`requiresAdmin` runs the admin gate.** The `requireAdmin` middleware admits the call when, in order, (a) the Better Auth session is in the `admin` group, or (b) the request carries `ADMIN_API_TOKEN` via `x-admin-token` / `Authorization: Bearer`. The middleware tags the request with `req.adminVia = 'user' | 'service-token'` so handlers and audit logs can attribute the call. See [system-auth.md](../system/system-auth.md) for the authorization model.
 
 The middleware short-circuits failures with **401**, or **503 when `ADMIN_API_TOKEN` is unset and no admin user resolves** — that 503 is the deliberate "admin surface disabled" signal, not a misconfiguration to retry. See [system-auth.md](../system/system-auth.md) for the canonical specification of the admin authorization model.
 

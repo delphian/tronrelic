@@ -70,8 +70,7 @@ socket.emit('subscribe', 'plugin-id', { /* options */ });
 socket.emit('subscribe', {
     transactions: { minAmount: 1_000_000, addresses: ['T...'] },
     comments: { resourceId: 'abc123' },
-    chat: true,
-    user: true        // server resolves UUID from cookie
+    chat: true
 });
 
 // Unsubscribe (room-based)
@@ -144,10 +143,6 @@ The `stats` field is typed as a generic `Record` because additional aggregations
 ### `memo:new`
 
 `{ memoId, txId, memo, timestamp, fromAddress, toAddress }` — all strings.
-
-### `user:update`
-
-Identity-scoped (room: `user:<uuid>`). Payload includes the user's `id`, `wallets[]` (each `{address, linkedAt, isPrimary, label?}`), `preferences` (theme, timezone, language, notifications flag), `activity` (lastSeen, pageViews, firstSeen), and timestamps.
 
 ### `menu:update`
 

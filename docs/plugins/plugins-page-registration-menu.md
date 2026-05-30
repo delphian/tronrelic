@@ -39,7 +39,7 @@ export const myBackendPlugin = definePlugin({
 | `order` | Sort position; lower = earlier; default 999 |
 | `parent` | Parent node `_id`, or `null` for top-level |
 | `enabled` | Visibility toggle |
-| `allowedIdentityStates` | Allow-list of `'anonymous' \| 'registered' \| 'verified'` |
+| `allowedIdentityStates` | **Vestigial** — the `UserIdentityState` taxonomy it gated was removed in the Better Auth cutover; gate on `requiresGroups` / `requiresAdmin` instead |
 | `requiresGroups` | OR-of-membership across admin-defined groups |
 | `requiresAdmin` | Visibility predicate via `IUserGroupService.isAdmin` |
 
@@ -64,9 +64,8 @@ await context.menuService.create({
 
 ## Visibility Gating
 
-Three optional fields filter menu visibility per visitor at read time:
+Two optional fields filter menu visibility per visitor at read time:
 
-- `allowedIdentityStates` — show only to listed identity states.
 - `requiresGroups` — OR-membership across admin-defined groups.
 - `requiresAdmin` — routes through `IUserGroupService.isAdmin`.
 
