@@ -39,7 +39,7 @@ const USER_ID_HEX = /^[0-9a-fA-F]{24}$/;
  * @returns The matching `ObjectId`, or `null` when `userId` is malformed.
  */
 export function toUserKey(userId: string): ObjectId | null {
-    const key = USER_ID_HEX.test(userId) ? new ObjectId(userId) : null;
+    const key = typeof userId === 'string' && USER_ID_HEX.test(userId) ? new ObjectId(userId) : null;
     return key;
 }
 
