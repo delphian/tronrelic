@@ -11,6 +11,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { ObjectId } from 'mongodb';
 import type { Request, Response, NextFunction } from 'express';
 import type { ISystemLogService } from '@/types';
 import { attachAuthSession } from '../auth-session.js';
@@ -21,6 +22,11 @@ import {
 import { GroupService } from '../../../modules/identity/services/group.service.js';
 import { AUTH_USERS_COLLECTION } from '../../../modules/identity/services/auth-constants.js';
 import { createMockDatabaseService } from '../../../tests/vitest/mocks/database-service.js';
+
+// Better Auth exposes the user id as the 24-char hex form of the ObjectId
+// `_id`; the session carries the hex string and the users collection is
+// keyed by the matching ObjectId.
+const USER_ABC = 'abcabcabcabcabcabcabcabc';
 
 class StubLogger implements ISystemLogService {
     public level: string = 'info';
@@ -103,12 +109,12 @@ describe('attachAuthSession middleware', () => {
     it('sets req.authSession to the augmented session for logged-in callers', async () => {
         setAuthInstance(makeStubAuth({
             session: {
-                user: { id: 'user_abc', email: 'a@b.com' },
+                user: { id: USER_ABC, email: 'a@b.com' },
                 session: { id: 'sess_1', token: 't', expiresAt: new Date().toISOString() }
             }
         }));
         mockDatabase.getCollectionData(AUTH_USERS_COLLECTION).push({
-            _id: 'user_abc',
+            _id: new ObjectId(USER_ABC),
             email: 'a@b.com',
             emailVerified: true,
             groups: ['admin', 'vip']
@@ -122,7 +128,7 @@ describe('attachAuthSession middleware', () => {
 
         const populated = req as Request & { authSession?: { user: { id: string }; groups: string[] } | null };
         expect(populated.authSession).not.toBeNull();
-        expect(populated.authSession?.user.id).toBe('user_abc');
+        expect(populated.authSession?.user.id).toBe(USER_ABC);
         expect(populated.authSession?.groups).toEqual(expect.arrayContaining(['admin', 'vip']));
         expect(next).toHaveBeenCalledOnce();
     });

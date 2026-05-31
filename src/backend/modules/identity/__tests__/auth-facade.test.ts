@@ -11,6 +11,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { ObjectId } from 'mongodb';
 import type { Request } from 'express';
 import type { ISystemLogService } from '@/types';
 import {
@@ -58,6 +59,12 @@ class StubLogger implements ISystemLogService {
 function makeRequest(headers: Record<string, string> = {}): Request {
     return { headers } as unknown as Request;
 }
+
+// Better Auth exposes user ids as the 24-char hex form of the ObjectId
+// `_id`; sessions carry the hex string and the users collection is keyed by
+// the matching ObjectId.
+const USER_ABC = 'abcabcabcabcabcabcabcabc';
+const USER_PLAIN = 'abcdef012345abcdef012345';
 
 /**
  * Build a stubbed Better Auth instance that returns a fixed session
@@ -114,14 +121,14 @@ describe('auth facade', () => {
         });
 
         it('returns true / false respectively when a session resolves', async () => {
-            setAuthInstance(makeStubAuth({ user: { id: 'user_abc', email: 'a@b.com' } }));
+            setAuthInstance(makeStubAuth({ user: { id: USER_ABC, email: 'a@b.com' } }));
             const req = makeRequest();
             expect(await isLoggedIn(req)).toBe(true);
             expect(await isAnonymous(req)).toBe(false);
         });
 
         it('caches the resolved session on the request object', async () => {
-            const auth = makeStubAuth({ user: { id: 'user_abc', email: 'a@b.com' } });
+            const auth = makeStubAuth({ user: { id: USER_ABC, email: 'a@b.com' } });
             setAuthInstance(auth);
             const req = makeRequest();
             await isLoggedIn(req);
@@ -141,9 +148,9 @@ describe('auth facade', () => {
         });
 
         it('returns true for a logged-in user with the requested group', async () => {
-            setAuthInstance(makeStubAuth({ user: { id: 'user_abc', email: 'a@b.com' } }));
+            setAuthInstance(makeStubAuth({ user: { id: USER_ABC, email: 'a@b.com' } }));
             mockDatabase.getCollectionData(AUTH_USERS_COLLECTION).push({
-                _id: 'user_abc',
+                _id: new ObjectId(USER_ABC),
                 email: 'a@b.com',
                 emailVerified: true,
                 groups: ['admin', 'vip']
@@ -155,9 +162,9 @@ describe('auth facade', () => {
         });
 
         it('routes isAdmin through the ADMIN_GROUP_ID constant', async () => {
-            setAuthInstance(makeStubAuth({ user: { id: 'user_abc', email: 'a@b.com' } }));
+            setAuthInstance(makeStubAuth({ user: { id: USER_ABC, email: 'a@b.com' } }));
             mockDatabase.getCollectionData(AUTH_USERS_COLLECTION).push({
-                _id: 'user_abc',
+                _id: new ObjectId(USER_ABC),
                 email: 'a@b.com',
                 emailVerified: true,
                 groups: [ADMIN_GROUP_ID]
@@ -167,9 +174,9 @@ describe('auth facade', () => {
         });
 
         it('returns false for a logged-in user not in the group', async () => {
-            setAuthInstance(makeStubAuth({ user: { id: 'user_plain', email: 'p@b.com' } }));
+            setAuthInstance(makeStubAuth({ user: { id: USER_PLAIN, email: 'p@b.com' } }));
             mockDatabase.getCollectionData(AUTH_USERS_COLLECTION).push({
-                _id: 'user_plain',
+                _id: new ObjectId(USER_PLAIN),
                 email: 'p@b.com',
                 emailVerified: true,
                 groups: ['vip']

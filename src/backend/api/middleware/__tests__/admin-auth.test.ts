@@ -1,6 +1,7 @@
 /// <reference types="vitest" />
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { ObjectId } from 'mongodb';
 import type { ISystemLogService } from '@/types';
 import { createMockDatabaseService } from '../../../tests/vitest/mocks/database-service.js';
 
@@ -38,6 +39,13 @@ class NullLogger implements ISystemLogService {
 }
 
 const SERVICE_TOKEN = 'test-service-token-1234567890abcdef';
+
+// Better Auth exposes user ids as the 24-char hex form of the ObjectId
+// `_id`; sessions carry the hex string and the users collection is keyed by
+// the matching ObjectId.
+const ADMIN_USER_1 = '1a1a1a1a1a1a1a1a1a1a1a1a';
+const ADMIN_USER_3 = '3a3a3a3a3a3a3a3a3a3a3a3a';
+const PLAIN_USER = 'd1d1d1d1d1d1d1d1d1d1d1d1';
 
 function makeReqRes(opts: { headerToken?: string; bearer?: string } = {}) {
     const req: any = {
@@ -85,7 +93,7 @@ describe('requireAdmin middleware', () => {
      */
     function seedBaUser(userId: string, groups: string[]): void {
         mockDb.getCollectionData(AUTH_USERS_COLLECTION).push({
-            _id: userId,
+            _id: new ObjectId(userId),
             email: `${userId}@example.com`,
             emailVerified: true,
             groups
@@ -109,27 +117,27 @@ describe('requireAdmin middleware', () => {
     describe('Better Auth session path', () => {
         it('approves a BA admin session and tags adminVia="user" with the BA user id', async () => {
             setAuthInstance(makeStubAuth({
-                user: { id: 'ba_admin_1', email: 'a@b.com' },
+                user: { id: ADMIN_USER_1, email: 'a@b.com' },
                 session: { id: 's1', token: 't', expiresAt: new Date().toISOString() }
             }));
-            seedBaUser('ba_admin_1', ['admin']);
+            seedBaUser(ADMIN_USER_1, ['admin']);
 
             const { req, res, next, called } = makeReqRes();
             await requireAdmin(req, res, next);
 
             expect(called()).toBe(true);
             expect(req.adminVia).toBe('user');
-            expect(req.userId).toBe('ba_admin_1');
+            expect(req.userId).toBe(ADMIN_USER_1);
         });
 
         it('rejects a non-admin BA session — there is no legacy fallback', async () => {
             // Service token set so the failed session path lands on 401, not 503.
             process.env.ADMIN_API_TOKEN = SERVICE_TOKEN;
             setAuthInstance(makeStubAuth({
-                user: { id: 'ba_plain', email: 'p@b.com' },
+                user: { id: PLAIN_USER, email: 'p@b.com' },
                 session: { id: 's2', token: 't', expiresAt: new Date().toISOString() }
             }));
-            seedBaUser('ba_plain', ['vip']);
+            seedBaUser(PLAIN_USER, ['vip']);
 
             const { req, res, next, called } = makeReqRes();
             await requireAdmin(req, res, next);
@@ -207,17 +215,17 @@ describe('requireAdmin middleware', () => {
         it('admits the BA admin session even when a service token is also present', async () => {
             process.env.ADMIN_API_TOKEN = SERVICE_TOKEN;
             setAuthInstance(makeStubAuth({
-                user: { id: 'ba_admin_3', email: 'a@b.com' },
+                user: { id: ADMIN_USER_3, email: 'a@b.com' },
                 session: { id: 's3', token: 't', expiresAt: new Date().toISOString() }
             }));
-            seedBaUser('ba_admin_3', ['admin']);
+            seedBaUser(ADMIN_USER_3, ['admin']);
 
             const { req, res, next, called } = makeReqRes({ headerToken: SERVICE_TOKEN });
             await requireAdmin(req, res, next);
 
             expect(called()).toBe(true);
             expect(req.adminVia).toBe('user');
-            expect(req.userId).toBe('ba_admin_3');
+            expect(req.userId).toBe(ADMIN_USER_3);
         });
     });
 });

@@ -14,6 +14,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { ObjectId } from 'mongodb';
 import type { ICacheService, ISystemLogService } from '@/types';
 import { WalletService, WALLETS_COLLECTION } from '../services/wallet.service.js';
 import { WalletChallengeService } from '../services/wallet-challenge.service.js';
@@ -95,8 +96,10 @@ class StubLogger implements ISystemLogService {
     async getStats(): Promise<any> { return { total: 0, byLevel: {}, resolved: 0, unresolved: 0 }; }
 }
 
-const USER_A = 'user_aaa';
-const USER_B = 'user_bbb';
+// Better Auth exposes user ids as the 24-char hex form of the ObjectId
+// `_id`; the denormalized primaryWallet write keys by that ObjectId.
+const USER_A = 'aaaaaaaaaaaaaaaaaaaaaaaa';
+const USER_B = 'bbbbbbbbbbbbbbbbbbbbbbbb';
 const WALLET_1 = 'TWallet1111111111111111111111111111';
 const WALLET_2 = 'TWallet2222222222222222222222222222';
 
@@ -115,11 +118,15 @@ describe('WalletService', () => {
         return { address, message: challenge.message, signature: 'sig', nonce: challenge.nonce };
     }
 
-    /** Read the denormalized primaryWallet from the seeded BA user row. */
+    /**
+     * Read the denormalized primaryWallet from the seeded BA user row.
+     * The seeded `_id` is an ObjectId (as BA stores it), so compare on its
+     * hex form against the caller's hex user id.
+     */
     function authPrimary(userId: string): string | null | undefined {
         const row = mockDatabase
             .getCollectionData(AUTH_USERS_COLLECTION)
-            .find((d: any) => d._id === userId);
+            .find((d: any) => d._id?.toString() === userId);
         return row ? row.primaryWallet : undefined;
     }
 
@@ -127,8 +134,9 @@ describe('WalletService', () => {
         mockDatabase = createMockDatabaseService();
         cache = new MockCacheService();
         // Seed BA user rows so the denormalized primaryWallet write lands.
-        mockDatabase.getCollectionData(AUTH_USERS_COLLECTION).push({ _id: USER_A, primaryWallet: null });
-        mockDatabase.getCollectionData(AUTH_USERS_COLLECTION).push({ _id: USER_B, primaryWallet: null });
+        // `_id` is an ObjectId, matching Better Auth's storage shape.
+        mockDatabase.getCollectionData(AUTH_USERS_COLLECTION).push({ _id: new ObjectId(USER_A), primaryWallet: null });
+        mockDatabase.getCollectionData(AUTH_USERS_COLLECTION).push({ _id: new ObjectId(USER_B), primaryWallet: null });
         WalletService.resetForTests();
         WalletService.setDependencies(mockDatabase, cache, new StubLogger(), {} as any);
         service = WalletService.getInstance();

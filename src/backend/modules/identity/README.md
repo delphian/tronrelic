@@ -19,6 +19,8 @@ Owns Better Auth and everything keyed by the Better Auth user id: the auth insta
 
 Better Auth is the sole identity layer — the legacy UUID identity system was removed in the Phase 6 cutover. Keeping BA-keyed concerns in their own module enforces a single-responsibility boundary: **no code outside this module reads `module_user_auth_users` directly** — not even via `IDatabaseService`. The only sanctioned path is `services.get<IAccountDirectoryService>('accounts')`. Wallet and group data follow the same rule through `'wallets'` and `'user-groups'`.
 
+**User id type.** Better Auth's `mongodbAdapter` stores the user `_id` as a native MongoDB `ObjectId` and exposes it as its 24-character hex string (`user.id`). That hex string is the canonical, *opaque* user id everywhere outside this module: store it verbatim, compare it verbatim, never cast it to an `ObjectId`, and never `$lookup` against the user collection's `_id`. The string↔ObjectId conversion lives only in `services/user-id.ts`, used by the services that own the BA collection (`GroupService`, `WalletService`, `AccountDirectoryService`).
+
 ## Source Map
 
 | Path | Responsibility |
@@ -27,6 +29,7 @@ Better Auth is the sole identity layer — the legacy UUID identity system was r
 | `auth.ts` | Better Auth factory (`createAuth`), `Auth` type; takes a raw Mongo `Db` (documented `IDatabaseService` exception) |
 | `services/auth-facade.ts` | Session resolution + `isLoggedIn`/`isAdmin`/`isInGroup` predicates over `req.authSession`; `setAuthInstance` |
 | `services/auth-constants.ts` | Physical BA collection names (`AUTH_USERS_COLLECTION`, `AUTH_COLLECTIONS`) |
+| `services/user-id.ts` | `toUserKey` / `userIdFromKey` — BA user-id hex ↔ `_id` ObjectId conversion at the collection boundary; the opaque-hex-string contract |
 | `services/group.service.ts` | Membership primitive over the BA `groups` field; `ADMIN_GROUP_ID` |
 | `services/user-group.service.ts` | Group-definition registry + the `'user-groups'` contract; composes `GroupService` |
 | `services/wallet.service.ts` | BA-keyed wallet store (`module_user_wallets`); the `'wallets'` contract |

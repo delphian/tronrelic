@@ -33,6 +33,10 @@ The core facade is async because it can resolve the session from cookies when no
 
 Group membership (including admin) is owned by `GroupService` (`modules/identity/services/group.service.ts`), which reads/writes the `groups` array on the Better Auth user record. `isAdmin` is membership in the reserved `admin` group.
 
+### User ids are opaque hex strings
+
+A Better Auth user id is a string — the 24-character hex form of the native MongoDB `ObjectId` the adapter stores as `_id` on `module_user_auth_users`. Treat `req.authSession.user.id` as **opaque**: store it verbatim as a foreign key, compare it verbatim, and never cast it to an `ObjectId` or `$lookup` your own collection directly against the user collection's `_id`. The string↔ObjectId conversion is confined to the identity services that own the user collection (`services/user-id.ts`); everyone else resolves account, wallet, and group data through the `'accounts'` / `'wallets'` / `'user-groups'` service contracts, which return the opaque string. Mixing the two representations — storing the id as a string in one place and an ObjectId in another — silently breaks equality matching.
+
 ### `isLoggedIn` is not `hasPrimaryWallet`
 
 Better Auth separates *being signed in* from *owning a wallet*. A visitor can authenticate via email-OTP, OAuth, or a passkey with **no TRON wallet linked at all**. Gate accordingly:
