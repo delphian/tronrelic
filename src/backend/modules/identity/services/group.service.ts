@@ -12,17 +12,20 @@
  * (`setDependencies()` / `getInstance()`) because membership state is
  * shared application-wide and configured exactly once at bootstrap.
  *
- * **Storage shape.** Better Auth's `mongodbAdapter` maps the logical
- * `id` field on the User model to MongoDB's `_id` (transparently
- * transforming on read and write), so every query in this service
- * filters by `{ _id: userId }`. The `groups` field is the BA
- * additional field declared in `auth.ts`; nothing else in the codebase
- * writes to it.
+ * **Storage shape.** Better Auth's `mongodbAdapter` lets MongoDB
+ * generate the user `_id` as a native `ObjectId` and exposes it to the
+ * app as its 24-character hex string (`user.id`). Every query in this
+ * service therefore converts the incoming hex `userId` to an `ObjectId`
+ * via {@link toUserKey} before filtering by `{ _id }` — a raw string
+ * would never match the ObjectId-typed `_id`. The `groups` field is the
+ * BA additional field declared in `auth.ts`; nothing else in the
+ * codebase writes to it. See `user-id.ts` for the id-type contract.
  */
 
-import type { Collection } from 'mongodb';
+import type { Collection, ObjectId } from 'mongodb';
 import type { IDatabaseService, ISystemLogService } from '@/types';
 import { AUTH_USERS_COLLECTION } from './auth-constants.js';
+import { toUserKey, userIdFromKey } from './user-id.js';
 
 /**
  * Group id reserved for administrators.
@@ -41,12 +44,12 @@ export const ADMIN_GROUP_ID = 'admin';
  */
 interface IAuthUserDoc {
     /**
-     * Better Auth's user id, stored as MongoDB `_id` (string, not
-     * ObjectId). The adapter remaps `id` ↔ `_id` transparently when
-     * BA itself queries, so the `_id` we see here is the same value
-     * BA returns as `user.id` from its session API.
+     * Better Auth's user id, stored as MongoDB's native `ObjectId`.
+     * Better Auth exposes it to the app as its 24-character hex string
+     * (`user.id`); this service converts that string to an `ObjectId`
+     * via {@link toUserKey} for every `_id` query. See `user-id.ts`.
      */
-    _id: string;
+    _id: ObjectId;
 
     /**
      * Group ids the user is a member of. Empty array or missing both
@@ -166,12 +169,15 @@ export class GroupService {
      *          $addToSet writes. Order is not guaranteed.
      */
     public async getUserGroups(userId: string): Promise<string[]> {
-        const collection = this.getCollection();
-        const doc = await collection.findOne(
-            { _id: userId },
-            { projection: { groups: 1 } }
-        );
-        const groups = doc?.groups ?? [];
+        const key = toUserKey(userId);
+        let groups: string[] = [];
+        if (key) {
+            const doc = await this.getCollection().findOne(
+                { _id: key },
+                { projection: { groups: 1 } }
+            );
+            groups = doc?.groups ?? [];
+        }
         return groups;
     }
 
@@ -184,12 +190,16 @@ export class GroupService {
      *          `groups` array, `false` otherwise (including missing user).
      */
     public async isMember(userId: string, groupId: string): Promise<boolean> {
-        const collection = this.getCollection();
-        const count = await collection.countDocuments(
-            { _id: userId, groups: groupId },
-            { limit: 1 }
-        );
-        return count > 0;
+        const key = toUserKey(userId);
+        let member = false;
+        if (key) {
+            const count = await this.getCollection().countDocuments(
+                { _id: key, groups: groupId },
+                { limit: 1 }
+            );
+            member = count > 0;
+        }
+        return member;
     }
 
     /**
@@ -221,12 +231,16 @@ export class GroupService {
      *          MongoDB would otherwise return invisibly).
      */
     public async addMember(userId: string, groupId: string): Promise<boolean> {
-        const collection = this.getCollection();
-        const result = await collection.updateOne(
-            { _id: userId },
-            { $addToSet: { groups: groupId } }
-        );
-        return result.matchedCount > 0;
+        const key = toUserKey(userId);
+        let matched = false;
+        if (key) {
+            const result = await this.getCollection().updateOne(
+                { _id: key },
+                { $addToSet: { groups: groupId } }
+            );
+            matched = result.matchedCount > 0;
+        }
+        return matched;
     }
 
     /**
@@ -240,12 +254,16 @@ export class GroupService {
      *          `false` when no user matched the id.
      */
     public async removeMember(userId: string, groupId: string): Promise<boolean> {
-        const collection = this.getCollection();
-        const result = await collection.updateOne(
-            { _id: userId },
-            { $pull: { groups: groupId } }
-        );
-        return result.matchedCount > 0;
+        const key = toUserKey(userId);
+        let matched = false;
+        if (key) {
+            const result = await this.getCollection().updateOne(
+                { _id: key },
+                { $pull: { groups: groupId } }
+            );
+            matched = result.matchedCount > 0;
+        }
+        return matched;
     }
 
     /**
@@ -262,13 +280,17 @@ export class GroupService {
      *          `false` when no user matched the id.
      */
     public async setUserGroups(userId: string, groupIds: string[]): Promise<boolean> {
-        const collection = this.getCollection();
-        const unique = Array.from(new Set(groupIds));
-        const result = await collection.updateOne(
-            { _id: userId },
-            { $set: { groups: unique } }
-        );
-        return result.matchedCount > 0;
+        const key = toUserKey(userId);
+        let matched = false;
+        if (key) {
+            const unique = Array.from(new Set(groupIds));
+            const result = await this.getCollection().updateOne(
+                { _id: key },
+                { $set: { groups: unique } }
+            );
+            matched = result.matchedCount > 0;
+        }
+        return matched;
     }
 
     /**
@@ -300,7 +322,7 @@ export class GroupService {
                 .toArray(),
             collection.countDocuments(filter)
         ]);
-        return { userIds: docs.map((d) => d._id), total };
+        return { userIds: docs.map((d) => userIdFromKey(d._id)), total };
     }
 
     /**

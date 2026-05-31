@@ -1,6 +1,7 @@
 /// <reference types="vitest" />
 
 import { describe, it, expect, beforeEach } from 'vitest';
+import { ObjectId } from 'mongodb';
 import type { ISystemLogService } from '@/types';
 import { UserGroupService } from '../services/user-group.service.js';
 import { GroupService } from '../services/group.service.js';
@@ -56,19 +57,32 @@ function seedGroup(
 }
 
 /**
+ * Valid 24-character hex Better Auth user ids. Better Auth stores the user
+ * `_id` as a native ObjectId and exposes it as this hex string, so seeded
+ * users must use hex ids and seed `_id` as an ObjectId. Group *slugs*
+ * (`vip`, `admin`, …) are not user ids and stay arbitrary strings.
+ */
+const USER_1 = '111111111111111111111111';
+const ALICE = 'aaaaaaaaaaaaaaaaaaaaaaaa';
+const BOB = 'bbbbbbbbbbbbbbbbbbbbbbbb';
+const CAROL = 'cccccccccccccccccccccccc';
+const ADMIN_USER = 'dddddddddddddddddddddddd';
+const NORMAL_USER = 'eeeeeeeeeeeeeeeeeeeeeeee';
+
+/**
  * Helper: seed a Better Auth user document directly into the
- * `module_user_auth_users` collection. Membership now lives on the BA
- * user's `groups` additional field (keyed by `_id`), so seeding here is
+ * `module_user_auth_users` collection. Membership lives on the BA user's
+ * `groups` additional field, keyed by the ObjectId `_id`, so seeding here is
  * how we establish membership state — the shared mock does not apply
  * `$addToSet`/`$pull`, so write paths are validated via matched/throw
- * contracts rather than array mutation.
+ * contracts rather than array mutation. `id` must be a 24-char hex string.
  */
 function seedUser(
     db: ReturnType<typeof createMockDatabaseService>,
     id: string,
     groups: string[] = []
 ): void {
-    db.getCollectionData(AUTH_USERS_COLLECTION).push({ _id: id, groups });
+    db.getCollectionData(AUTH_USERS_COLLECTION).push({ _id: new ObjectId(id), groups });
 }
 
 describe('UserGroupService', () => {
@@ -202,7 +216,7 @@ describe('UserGroupService', () => {
     // the read-side contract plus the definition-validation/throw paths.
 
     describe('membership reads', () => {
-        const userId = 'user-1';
+        const userId = USER_1;
 
         beforeEach(() => {
             seedUser(mockDatabase, userId, ['vip']);
@@ -228,7 +242,7 @@ describe('UserGroupService', () => {
     });
 
     describe('membership write validation', () => {
-        const userId = 'user-1';
+        const userId = USER_1;
 
         beforeEach(() => {
             seedUser(mockDatabase, userId);
@@ -251,7 +265,7 @@ describe('UserGroupService', () => {
     // -------- setUserGroups --------
 
     describe('setUserGroups', () => {
-        const userId = 'user-1';
+        const userId = USER_1;
 
         beforeEach(() => {
             seedUser(mockDatabase, userId, ['vip']);
@@ -282,14 +296,14 @@ describe('UserGroupService', () => {
             expect(result).toEqual(['vip', 'whales']);
             // Confirm the persisted BA user document reflects the new array.
             // GroupService uses a top-level $set, which the mock supports.
-            const doc = mockDatabase.getCollectionData(AUTH_USERS_COLLECTION).find(u => u._id === userId);
+            const doc = mockDatabase.getCollectionData(AUTH_USERS_COLLECTION).find(u => u._id?.toString() === userId);
             expect(doc?.groups).toEqual(['vip', 'whales']);
         });
 
         it('accepts an empty array to clear all memberships', async () => {
             const result = await service.setUserGroups(userId, []);
             expect(result).toEqual([]);
-            const doc = mockDatabase.getCollectionData(AUTH_USERS_COLLECTION).find(u => u._id === userId);
+            const doc = mockDatabase.getCollectionData(AUTH_USERS_COLLECTION).find(u => u._id?.toString() === userId);
             expect(doc?.groups).toEqual([]);
         });
     });
@@ -299,9 +313,9 @@ describe('UserGroupService', () => {
     describe('getMembers', () => {
         beforeEach(() => {
             seedGroup(mockDatabase, { id: 'vip', name: 'VIP' });
-            seedUser(mockDatabase, 'alice', ['vip']);
-            seedUser(mockDatabase, 'bob', ['vip']);
-            seedUser(mockDatabase, 'carol', []);
+            seedUser(mockDatabase, ALICE, ['vip']);
+            seedUser(mockDatabase, BOB, ['vip']);
+            seedUser(mockDatabase, CAROL, []);
         });
 
         it('throws on unknown group so admin UIs can distinguish "no members" from "wrong slug"', async () => {
@@ -310,7 +324,7 @@ describe('UserGroupService', () => {
 
         it('returns the user ids that belong to the group with total count', async () => {
             const result = await service.getMembers('vip');
-            expect(new Set(result.userIds)).toEqual(new Set(['alice', 'bob']));
+            expect(new Set(result.userIds)).toEqual(new Set([ALICE, BOB]));
             expect(result.total).toBe(2);
         });
 
@@ -325,8 +339,8 @@ describe('UserGroupService', () => {
     // -------- isAdmin --------
 
     describe('isAdmin', () => {
-        const adminUser = 'admin-user';
-        const normalUser = 'normal-user';
+        const adminUser = ADMIN_USER;
+        const normalUser = NORMAL_USER;
 
         beforeEach(() => {
             seedUser(mockDatabase, adminUser, ['admin']);

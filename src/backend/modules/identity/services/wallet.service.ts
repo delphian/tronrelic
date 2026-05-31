@@ -44,6 +44,7 @@ import { WalletChallengeService } from './wallet-challenge.service.js';
 import type { WalletChallengeAction, IWalletChallenge } from './wallet-challenge.service.js';
 import type { IWalletDocument, ILinkedWallet } from '../database/IWalletDocument.js';
 import { AUTH_USERS_COLLECTION } from './auth-constants.js';
+import { toUserKey } from './user-id.js';
 
 /**
  * Physical collection name for the Better Auth-keyed wallet store.
@@ -83,12 +84,14 @@ export interface IWalletMutationInput {
 /**
  * Shape of the Better Auth user row this service denormalizes onto.
  *
- * Restricted to the field written here — BA owns the full schema. The
- * adapter maps the logical `id` to MongoDB `_id`, so writes filter by
- * `{ _id: userId }` (same boundary {@link GroupService} uses).
+ * Restricted to the field written here — BA owns the full schema. BA's
+ * adapter stores the user `_id` as a native `ObjectId` and exposes it as
+ * the hex `user.id`, so the denormalized write converts the incoming
+ * `userId` to an `ObjectId` via {@link toUserKey} before filtering by
+ * `{ _id }` (same boundary {@link GroupService} uses). See `user-id.ts`.
  */
 interface IAuthUserPrimaryWallet {
-    _id: string;
+    _id: ObjectId;
     primaryWallet?: string | null;
 }
 
@@ -496,7 +499,12 @@ export class WalletService implements IWalletService {
      * @param address - Primary address, or `null` to clear.
      */
     private async setAuthPrimary(userId: string, address: string | null): Promise<void> {
-        await this.authUsers.updateOne({ _id: userId }, { $set: { primaryWallet: address } });
+        const key = toUserKey(userId);
+        if (key) {
+            await this.authUsers.updateOne({ _id: key }, { $set: { primaryWallet: address } });
+        } else {
+            this.logger.warn({ userId }, 'setAuthPrimary skipped: malformed Better Auth user id');
+        }
     }
 
     /**

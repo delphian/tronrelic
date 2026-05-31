@@ -12,7 +12,7 @@
  * state configured once at bootstrap.
  */
 
-import type { Collection } from 'mongodb';
+import type { Collection, ObjectId } from 'mongodb';
 import type {
     IAccountDirectoryService,
     IAccountSummary,
@@ -22,6 +22,7 @@ import type {
     ISystemLogService
 } from '@/types';
 import { AUTH_USERS_COLLECTION } from './auth-constants.js';
+import { toUserKey, userIdFromKey } from './user-id.js';
 
 /** Default page size for {@link AccountDirectoryService.listAccounts}. */
 const DEFAULT_LIMIT = 50;
@@ -32,11 +33,14 @@ const MAX_LIMIT = 200;
 /**
  * Subset of the Better Auth user row this service reads.
  *
- * Better Auth's adapter maps the logical `id` to MongoDB `_id` (a string), and
- * the `groups` / `primaryWallet` additional fields are declared in `auth.ts`.
+ * BA's adapter stores the user `_id` as a native `ObjectId` and exposes it as
+ * the hex `user.id`; reads convert the incoming hex id to an `ObjectId` via
+ * {@link toUserKey}, and {@link userIdFromKey} converts it back on the way out
+ * so the public summary's `id` stays an opaque string. The `groups` /
+ * `primaryWallet` additional fields are declared in `auth.ts`.
  */
 interface IAuthUserDocument {
-    _id: string;
+    _id: ObjectId;
     email: string;
     name?: string | null;
     emailVerified?: boolean;
@@ -116,8 +120,13 @@ export class AccountDirectoryService implements IAccountDirectoryService {
      * @returns The summary, or null when no such account exists.
      */
     public async getAccount(baUserId: string): Promise<IAccountSummary | null> {
-        const doc = await this.authUsers.findOne({ _id: baUserId });
-        return doc ? AccountDirectoryService.toSummary(doc) : null;
+        const key = toUserKey(baUserId);
+        let summary: IAccountSummary | null = null;
+        if (key) {
+            const doc = await this.authUsers.findOne({ _id: key });
+            summary = doc ? AccountDirectoryService.toSummary(doc) : null;
+        }
+        return summary;
     }
 
     /**
@@ -175,7 +184,7 @@ export class AccountDirectoryService implements IAccountDirectoryService {
      */
     private static toSummary(doc: IAuthUserDocument): IAccountSummary {
         return {
-            id: doc._id,
+            id: userIdFromKey(doc._id),
             email: doc.email,
             name: doc.name ?? null,
             emailVerified: doc.emailVerified ?? false,
