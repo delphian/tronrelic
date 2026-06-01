@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { cn } from '../../../../lib/cn';
 import styles from './BarChart.module.css';
 
@@ -128,6 +128,8 @@ interface RenderBar {
  * One tooltip row (one series' value at the hovered category).
  */
 interface TooltipDatum {
+    /** Series id — the stable, unique key for the row (labels may repeat) */
+    id: string;
     label: string;
     value: number;
     color: string;
@@ -211,17 +213,20 @@ export function BarChart({
     const height = propHeight ?? chrome.defaultHeight;
     const isWidget = mode === 'widget';
 
-    const containerRef = useRef<HTMLElement | null>(null);
+    const [container, setContainer] = useState<HTMLElement | null>(null);
     const [containerWidth, setContainerWidth] = useState(chrome.minWidth);
     const [tooltip, setTooltip] = useState<TooltipState | null>(null);
     const [hiddenSeries, setHiddenSeries] = useState<Set<string>>(new Set());
 
     /**
      * Observes container width changes and updates the chart responsively.
-     * Disconnects on unmount to avoid leaks. Skipped entirely in non-DOM/SSR.
+     * Backed by a state ref (`container`) rather than `useRef` so the observer
+     * attaches whenever the figure mounts — including the empty-state-to-loaded
+     * transition, where the figure is absent on the first render. Disconnects on
+     * unmount to avoid leaks. Skipped entirely in non-DOM/SSR.
      */
     useEffect(() => {
-        if (!containerRef.current || typeof ResizeObserver === 'undefined') {
+        if (!container || typeof ResizeObserver === 'undefined') {
             return;
         }
 
@@ -232,13 +237,15 @@ export function BarChart({
             }
         });
 
-        observer.observe(containerRef.current);
+        observer.observe(container);
         return () => observer.disconnect();
-    }, [chrome.minWidth]);
+    }, [container, chrome.minWidth]);
 
     /**
      * Toggles visibility of a series by ID (normal-mode legend interaction).
-     * Hiding a series rescales the Y-axis to the remaining data.
+     * Hiding a series rescales the Y-axis to the remaining data. Refuses to hide
+     * the last visible series so the chart never collapses to the empty state —
+     * which would remove the legend and leave no control to restore the data.
      */
     const toggleSeries = (seriesId: string) => {
         setHiddenSeries(prev => {
@@ -246,11 +253,29 @@ export function BarChart({
             if (next.has(seriesId)) {
                 next.delete(seriesId);
             } else {
+                const visibleCount = series.filter(
+                    item => item.data.length > 0 && !next.has(item.id)
+                ).length;
+                if (visibleCount <= 1) {
+                    return prev;
+                }
                 next.add(seriesId);
             }
             return next;
         });
     };
+
+    /**
+     * Stable fallback colors keyed by series id, derived from each series' index
+     * in the original `series` array. Because the index never depends on which
+     * series are hidden or empty, a series renders the same color in its bars,
+     * tooltip, and legend dot — the three would otherwise desync once an earlier
+     * series is hidden and the filtered indices shift.
+     */
+    const seriesColors = useMemo(
+        () => new Map(series.map((item, index) => [item.id, resolveColor(item.color, index)])),
+        [series]
+    );
 
     /**
      * Computes scales, category layout, and the full list of rendered columns.
@@ -304,9 +329,17 @@ export function BarChart({
         const baselineY = scaleY(zeroInRange ? 0 : minY);
 
         // Categories are the sorted union of all timestamps across visible series.
+        // Drop unparseable dates (NaN) so they cannot poison coordinate math, and
+        // bail to the empty state if nothing valid remains (avoids divide-by-zero).
         const categoryTimes = Array.from(
             new Set(visibleSeries.flatMap(item => item.data.map(point => toDate(point.date).getTime())))
-        ).sort((a, b) => a - b);
+        )
+            .filter(time => !Number.isNaN(time))
+            .sort((a, b) => a - b);
+
+        if (categoryTimes.length === 0) {
+            return null;
+        }
 
         const groupWidth = innerWidth / categoryTimes.length;
         const groupInner = groupWidth * chrome.groupInnerRatio;
@@ -317,11 +350,13 @@ export function BarChart({
         const barInset = seriesCount > 1 ? Math.min(slotWidth * 0.12, 2) : 0;
         const barWidth = Math.max(slotWidth - barInset, chrome.minBarWidth);
 
-        // Fast lookup of each series' value/metadata by category time.
-        const seriesLookup = visibleSeries.map((item, index) => {
+        // Fast lookup of each series' value/metadata by category time. Color is
+        // resolved from the stable per-id map, not the filtered position, so it
+        // stays aligned with the legend when series are hidden.
+        const seriesLookup = visibleSeries.map(item => {
             const byTime = new Map<number, BarDataPoint>();
             item.data.forEach(point => byTime.set(toDate(point.date).getTime(), point));
-            return { item, index, color: resolveColor(item.color, index), byTime };
+            return { item, color: seriesColors.get(item.id) ?? resolveColor(item.color, 0), byTime };
         });
 
         const categories = categoryTimes.map((time, categoryIndex) => {
@@ -385,7 +420,7 @@ export function BarChart({
             zeroInRange,
             seriesLookup
         };
-    }, [series, hiddenSeries, containerWidth, height, chrome, fixedYMin, fixedYMax]);
+    }, [series, hiddenSeries, containerWidth, height, chrome, fixedYMin, fixedYMax, seriesColors]);
 
     if (!chartData) {
         return <div className={cn(styles.chart, className)}>{emptyLabel}</div>;
@@ -397,9 +432,9 @@ export function BarChart({
      * Resolves the hovered category from the pointer X position and builds the
      * tooltip rows for every visible series at that category. Normal mode only.
      *
-     * @param event - React mouse event from the SVG element
+     * @param event - React pointer event from the SVG element (mouse, touch, or pen)
      */
-    const handlePointerMove = (event: React.MouseEvent<SVGSVGElement>) => {
+    const handlePointerMove = (event: React.PointerEvent<SVGSVGElement>) => {
         if (!chrome.interactive || !categories.length) {
             return;
         }
@@ -427,6 +462,7 @@ export function BarChart({
                     return null;
                 }
                 const datum: TooltipDatum = {
+                    id: item.id,
                     label: item.label,
                     value: point.value,
                     color,
@@ -454,13 +490,13 @@ export function BarChart({
     const ariaLabel = `Bar chart: ${series.map(item => item.label).join(', ')}`;
 
     return (
-        <figure ref={containerRef} className={cn(styles.chart, isWidget && styles['chart--widget'], className)}>
+        <figure ref={setContainer} className={cn(styles.chart, isWidget && styles['chart--widget'], className)}>
             <svg
                 viewBox={`0 0 ${width} ${chartHeight}`}
                 role="img"
                 aria-label={ariaLabel}
-                onMouseMove={chrome.interactive ? handlePointerMove : undefined}
-                onMouseLeave={chrome.interactive ? handlePointerLeave : undefined}
+                onPointerMove={chrome.interactive ? handlePointerMove : undefined}
+                onPointerLeave={chrome.interactive ? handlePointerLeave : undefined}
             >
                 {chrome.showAxes && yTicks.map((tick, index) => (
                     <g key={`y-tick-${index}`}>
@@ -532,7 +568,7 @@ export function BarChart({
                 >
                     <span className={styles.tooltip__label}>{xAxisFormatter(tooltip.date)}</span>
                     {tooltip.items.map(item => (
-                        <div key={item.label} className={styles.tooltip__row}>
+                        <div key={item.id} className={styles.tooltip__row}>
                             <span className={styles.tooltip__series}>
                                 <span className={styles.tooltip__swatch} style={{ background: item.color }} />
                                 {item.label}
@@ -545,9 +581,9 @@ export function BarChart({
 
             {chrome.showLegend && (
                 <figcaption className={styles.legend}>
-                    {series.filter(item => item.data.length > 0).map((item, index) => {
+                    {series.filter(item => item.data.length > 0).map(item => {
                         const isHidden = hiddenSeries.has(item.id);
-                        const color = resolveColor(item.color, index);
+                        const color = seriesColors.get(item.id) ?? resolveColor(item.color, 0);
                         return (
                             <button
                                 key={`legend-${item.id}`}
