@@ -287,4 +287,106 @@ describe('TrafficService', () => {
             expect(logger.warn).toHaveBeenCalled();
         });
     });
+
+    describe('getPageActivity()', () => {
+        const range = { since: new Date('2026-04-01T00:00:00.000Z') };
+
+        it('returns an empty page when ClickHouse is unavailable', async () => {
+            TrafficService.setDependencies(undefined, createMockLogger());
+            const out = await TrafficService.getInstance().getPageActivity('tid', range);
+            expect(out).toEqual({ rows: [], total: 0 });
+        });
+
+        it('groups anonymous tid activity on candidate_uid with user_id IS NULL', async () => {
+            const ch = createMockClickHouse();
+            const sqls: string[] = [];
+            ch.query = async <T>(sql: string): Promise<T[]> => {
+                sqls.push(sql);
+                if (sql.includes('AS total')) return [{ total: '3' }] as T[];
+                return [{
+                    id: 'tid-1', firstSeen: '2026-04-30 10:00:00.000', lastSeen: '2026-04-30 10:05:00.000',
+                    pageViews: '4', distinctPaths: '3', firstPath: '/', lastPath: '/markets',
+                    country: 'US', device: 'desktop'
+                }] as T[];
+            };
+            TrafficService.setDependencies(ch, createMockLogger());
+
+            const out = await TrafficService.getInstance().getPageActivity('tid', range, 25, 0);
+
+            const joined = sqls.join('\n');
+            expect(joined).toContain("event_type = 'page'");
+            expect(joined).toContain('user_id IS NULL');
+            expect(joined).toContain('GROUP BY candidate_uid');
+            expect(out.total).toBe(3);
+            expect(out.rows[0]).toMatchObject({ id: 'tid-1', pageViews: 4, distinctPaths: 3, lastPath: '/markets' });
+        });
+
+        it('groups registered activity on user_id with user_id IS NOT NULL', async () => {
+            const ch = createMockClickHouse();
+            const sqls: string[] = [];
+            ch.query = async <T>(sql: string): Promise<T[]> => {
+                sqls.push(sql);
+                if (sql.includes('AS total')) return [{ total: 1 }] as T[];
+                return [] as T[];
+            };
+            TrafficService.setDependencies(ch, createMockLogger());
+
+            await TrafficService.getInstance().getPageActivity('user', range);
+
+            const joined = sqls.join('\n');
+            expect(joined).toContain('user_id IS NOT NULL');
+            expect(joined).toContain('GROUP BY user_id');
+        });
+    });
+
+    describe('getPageHits()', () => {
+        const range = { since: new Date('2026-04-01T00:00:00.000Z') };
+
+        it('returns [] when ClickHouse is unavailable', async () => {
+            TrafficService.setDependencies(undefined, createMockLogger());
+            const out = await TrafficService.getInstance().getPageHits('user', 'ba_42', range);
+            expect(out).toEqual([]);
+        });
+
+        it('rejects a non-UUID tid id without querying ClickHouse', async () => {
+            const ch = createMockClickHouse();
+            let called = false;
+            ch.query = async <T>(): Promise<T[]> => { called = true; return [] as T[]; };
+            TrafficService.setDependencies(ch, createMockLogger());
+
+            const out = await TrafficService.getInstance().getPageHits('tid', 'not-a-uuid', range);
+
+            expect(out).toEqual([]);
+            expect(called).toBe(false);
+        });
+
+        it('matches candidate_uid for a tid subject and maps hits', async () => {
+            const ch = createMockClickHouse();
+            const captured: { sql?: string; params?: Record<string, unknown> } = {};
+            ch.query = async <T>(sql: string, params?: unknown): Promise<T[]> => {
+                captured.sql = sql;
+                captured.params = params as Record<string, unknown>;
+                return [{ timestamp: '2026-04-30 10:05:00.000', path: '/markets', referer: null, device: 'desktop', country: 'US' }] as T[];
+            };
+            TrafficService.setDependencies(ch, createMockLogger());
+
+            const out = await TrafficService.getInstance().getPageHits('tid', '550e8400-e29b-41d4-a716-446655440000', range, 50);
+
+            expect(captured.sql).toContain('candidate_uid = {id:UUID}');
+            expect(captured.sql).toContain("event_type = 'page'");
+            expect(captured.params?.id).toBe('550e8400-e29b-41d4-a716-446655440000');
+            expect(out).toEqual([{ timestamp: '2026-04-30 10:05:00.000', path: '/markets', referer: null, device: 'desktop', country: 'US' }]);
+        });
+
+        it('matches user_id for a user subject', async () => {
+            const ch = createMockClickHouse();
+            const captured: { sql?: string } = {};
+            ch.query = async <T>(sql: string): Promise<T[]> => { captured.sql = sql; return [] as T[]; };
+            TrafficService.setDependencies(ch, createMockLogger());
+
+            await TrafficService.getInstance().getPageHits('user', 'ba_user_42', range);
+
+            expect(captured.sql).toContain('user_id = {id:String}');
+        });
+    });
 });

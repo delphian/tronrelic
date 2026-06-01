@@ -7,6 +7,7 @@
 
 export { UsersMonitor } from './UsersMonitor';
 export { VisitorAnalytics } from './VisitorAnalytics';
+export { PageActivity } from './PageActivity';
 export { AnalyticsDashboard } from './AnalyticsDashboard';
 export { GscSettings } from './GscSettings';
 export { GroupsManager } from './GroupsManager';

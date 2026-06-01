@@ -17,6 +17,7 @@ export type { IProfileMenuProps } from './ProfileMenu';
 // Admin components
 export { UsersMonitor } from './admin';
 export { VisitorAnalytics } from './admin';
+export { PageActivity } from './admin';
 export { AnalyticsDashboard } from './admin';
 export { GscSettings } from './admin';
 export { GroupsManager } from './admin';

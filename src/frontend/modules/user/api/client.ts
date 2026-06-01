@@ -88,15 +88,19 @@ export async function adminGetDailyVisitors(
 }
 
 /**
- * Get new users first seen within the specified period (admin endpoint).
+ * Get anonymous first touches first seen within the specified period (admin
+ * endpoint).
  *
- * Filters by firstSeen (new arrivals) and sorts most recent first.
+ * A first touch is the earliest `bootstrap` row for a cookieless visitor —
+ * server-recorded by the Next.js middleware, so this surface intentionally
+ * includes bots, crawlers, and unfurlers as well as humans. Filtered by global
+ * first-seen (new arrivals in the window) and sorted most recent first.
  *
  * @param token - Admin API token
  * @param options - Period, pagination options
- * @returns Paginated list of new user origins
+ * @returns Paginated list of first-touch origins
  */
-export async function adminGetNewUsers(
+export async function adminGetAnonymousFirstTouches(
     token: string,
     options?: { period?: VisitorPeriod; limit?: number; skip?: number }
 ): Promise<{ visitors: IVisitorOrigin[]; total: number }> {
@@ -105,6 +109,86 @@ export async function adminGetNewUsers(
         params: options
     });
     return response.data as { visitors: IVisitorOrigin[]; total: number };
+}
+
+/** Which subject a page-activity clickstream read keys on. */
+export type PageActivitySubject = 'tid' | 'user';
+
+/**
+ * One row of a page-activity clickstream summary — a subject (an anonymous tid
+ * or a registered account) with its `page`-event counts over the window. Only
+ * interactive `page` events count; first-touch `bootstrap` rows are excluded,
+ * so bots do not appear here.
+ */
+export interface IPageActivityRow {
+    /** Subject key — the analytics tid (UUID) or the Better Auth user id. */
+    id: string;
+    firstSeen: string;
+    lastSeen: string;
+    pageViews: number;
+    distinctPaths: number;
+    firstPath: string | null;
+    lastPath: string | null;
+    country: string | null;
+    device: string;
+}
+
+/** One page hit in a subject's clickstream drill-down. */
+export interface IPageHit {
+    timestamp: string;
+    path: string;
+    referer: string | null;
+    device: string;
+    country: string | null;
+}
+
+/**
+ * Get the per-subject page-activity clickstream summary (admin endpoint).
+ *
+ * `'tid'` returns anonymous visitors keyed on the cookieless traffic id;
+ * `'user'` returns registered accounts keyed on the Better Auth user id.
+ *
+ * @param token - Admin API token
+ * @param subject - `'tid'` (anonymous) or `'user'` (registered)
+ * @param options - Period, pagination options
+ * @returns Paginated activity rows plus the unpaginated subject total
+ */
+export async function adminGetPageActivity(
+    token: string,
+    subject: PageActivitySubject,
+    options?: { period?: VisitorPeriod; limit?: number; skip?: number }
+): Promise<{ rows: IPageActivityRow[]; total: number }> {
+    const endpoint = subject === 'tid'
+        ? '/admin/users/analytics/tid-activity'
+        : '/admin/users/analytics/user-activity';
+    const response = await apiClient.get(endpoint, {
+        headers: { [adminHeaderKey]: token },
+        params: options
+    });
+    return response.data as { rows: IPageActivityRow[]; total: number };
+}
+
+/**
+ * Get the ordered page-hit clickstream for one subject (admin endpoint) —
+ * every page the tid or account hit in the window, newest first.
+ *
+ * @param token - Admin API token
+ * @param subject - `'tid'` (anonymous) or `'user'` (registered)
+ * @param id - The subject key (a UUID for `'tid'`, the user id for `'user'`)
+ * @param options - Period, limit options
+ * @returns The subject's page hits
+ */
+export async function adminGetPageHits(
+    token: string,
+    subject: PageActivitySubject,
+    id: string,
+    options?: { period?: VisitorPeriod; limit?: number }
+): Promise<IPageHit[]> {
+    const response = await apiClient.get('/admin/users/analytics/page-hits', {
+        headers: { [adminHeaderKey]: token },
+        params: { subject, id, ...options }
+    });
+    return (response.data as { data?: IPageHit[] }).data ?? [];
 }
 
 // ============================================================================
