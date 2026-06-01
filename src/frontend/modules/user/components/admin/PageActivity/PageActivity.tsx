@@ -44,7 +44,91 @@ const PAGE_LIMIT = 25;
 /** Max page hits fetched for a drill-down. */
 const HITS_LIMIT = 200;
 
-interface TableProps {
+interface IPageHitsRowProps {
+    token: string;
+    subject: PageActivitySubject;
+    id: string;
+    period: VisitorPeriod;
+}
+
+/**
+ * Expanded clickstream row for a single subject. Self-contained so each open
+ * drill-down owns its fetch — mounting on expand and unmounting on collapse —
+ * which eliminates the shared-state race where a late response from a
+ * previously-open row could render under the currently-open one.
+ *
+ * @param props - The subject to fetch hits for and the active window.
+ * @returns A table row spanning the parent's columns with the page-hit list.
+ */
+function PageHitsRow({ token, subject, id, period }: IPageHitsRowProps) {
+    const [hits, setHits] = useState<IPageHit[]>([]);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        let active = true;
+        /**
+         * Fetch this subject's page hits, dropping the result if the row has
+         * unmounted (collapsed or the table re-fetched) before it resolved.
+         */
+        const fetchHits = async (): Promise<void> => {
+            setLoading(true);
+            try {
+                const result = await adminGetPageHits(token, subject, id, { period, limit: HITS_LIMIT });
+                if (active) {
+                    setHits(result);
+                }
+            } catch (error) {
+                console.error('Failed to fetch page hits:', error);
+                if (active) {
+                    setHits([]);
+                }
+            } finally {
+                if (active) {
+                    setLoading(false);
+                }
+            }
+        };
+        fetchHits();
+        return () => { active = false; };
+    }, [token, subject, id, period]);
+
+    return (
+        <tr className={styles.detail_row}>
+            <td colSpan={8}>
+                {loading ? (
+                    <div className={styles.loading}>Loading pages…</div>
+                ) : hits.length === 0 ? (
+                    <div className={styles.empty}>No page hits in this window.</div>
+                ) : (
+                    <>
+                        <ol className={styles.hits}>
+                            {hits.map((hit, index) => (
+                                <li key={`${hit.timestamp}_${index}`} className={styles.hit}>
+                                    <span className={styles.hit_time}>
+                                        <ClientTime date={hit.timestamp} format="datetime" />
+                                    </span>
+                                    <code className={styles.hit_path}>{hit.path}</code>
+                                    {hit.referer && (
+                                        <span className={styles.hit_referer} title={hit.referer}>
+                                            ← {hit.referer}
+                                        </span>
+                                    )}
+                                </li>
+                            ))}
+                        </ol>
+                        {hits.length >= HITS_LIMIT && (
+                            <p className="text-muted">
+                                Showing the newest {HITS_LIMIT} page hits — more exist in this window.
+                            </p>
+                        )}
+                    </>
+                )}
+            </td>
+        </tr>
+    );
+}
+
+interface IPageActivityTableProps {
     token: string;
     subject: PageActivitySubject;
     title: string;
@@ -59,7 +143,7 @@ interface TableProps {
  * @param props - Table configuration.
  * @returns The rendered activity section.
  */
-function PageActivityTable({ token, subject, title, description, subjectHeading }: TableProps) {
+function PageActivityTable({ token, subject, title, description, subjectHeading }: IPageActivityTableProps) {
     const [period, setPeriod] = useState<VisitorPeriod>('24h');
     const [rows, setRows] = useState<IPageActivityRow[]>([]);
     const [total, setTotal] = useState(0);
@@ -67,29 +151,40 @@ function PageActivityTable({ token, subject, title, description, subjectHeading 
     const [page, setPage] = useState(1);
 
     const [expandedId, setExpandedId] = useState<string | null>(null);
-    const [hits, setHits] = useState<IPageHit[]>([]);
-    const [hitsLoading, setHitsLoading] = useState(false);
 
-    const fetchRows = useCallback(async () => {
-        setLoading(true);
-        try {
-            const result = await adminGetPageActivity(token, subject, {
-                period,
-                limit: PAGE_LIMIT,
-                skip: (page - 1) * PAGE_LIMIT
-            });
-            setRows(result.rows ?? []);
-            setTotal(result.total ?? 0);
-        } catch (error) {
-            console.error('Failed to fetch page activity:', error);
-            setRows([]);
-            setTotal(0);
-        } finally {
-            setLoading(false);
-        }
+    useEffect(() => {
+        let active = true;
+        /**
+         * Fetch the activity page, dropping the result if a newer period/page
+         * selection (or unmount) superseded this request before it resolved.
+         */
+        const fetchRows = async (): Promise<void> => {
+            setLoading(true);
+            try {
+                const result = await adminGetPageActivity(token, subject, {
+                    period,
+                    limit: PAGE_LIMIT,
+                    skip: (page - 1) * PAGE_LIMIT
+                });
+                if (active) {
+                    setRows(result.rows ?? []);
+                    setTotal(result.total ?? 0);
+                }
+            } catch (error) {
+                console.error('Failed to fetch page activity:', error);
+                if (active) {
+                    setRows([]);
+                    setTotal(0);
+                }
+            } finally {
+                if (active) {
+                    setLoading(false);
+                }
+            }
+        };
+        fetchRows();
+        return () => { active = false; };
     }, [token, subject, period, page]);
-
-    useEffect(() => { fetchRows(); }, [fetchRows]);
 
     const totalPages = total > 0 ? Math.ceil(total / PAGE_LIMIT) : 1;
 
@@ -105,28 +200,15 @@ function PageActivityTable({ token, subject, title, description, subjectHeading 
     };
 
     /**
-     * Toggle a row's page-hit drill-down, fetching the clickstream on open.
+     * Toggle a row's page-hit drill-down open or closed. The expanded row owns
+     * its own fetch (see {@link PageHitsRow}), so this only flips which row is
+     * open — there is no shared hit state to race.
      *
      * @param id - The subject id of the row to expand or collapse.
      */
-    const toggleExpand = useCallback(async (id: string): Promise<void> => {
-        if (expandedId === id) {
-            setExpandedId(null);
-            return;
-        }
-        setExpandedId(id);
-        setHits([]);
-        setHitsLoading(true);
-        try {
-            const result = await adminGetPageHits(token, subject, id, { period, limit: HITS_LIMIT });
-            setHits(result);
-        } catch (error) {
-            console.error('Failed to fetch page hits:', error);
-            setHits([]);
-        } finally {
-            setHitsLoading(false);
-        }
-    }, [expandedId, token, subject, period]);
+    const toggleExpand = useCallback((id: string): void => {
+        setExpandedId(prev => (prev === id ? null : id));
+    }, []);
 
     return (
         <div className={styles.section}>
@@ -193,31 +275,7 @@ function PageActivityTable({ token, subject, title, description, subjectHeading 
                                             </td>
                                         </tr>
                                         {expandedId === row.id && (
-                                            <tr className={styles.detail_row}>
-                                                <td colSpan={8}>
-                                                    {hitsLoading ? (
-                                                        <div className={styles.loading}>Loading pages…</div>
-                                                    ) : hits.length === 0 ? (
-                                                        <div className={styles.empty}>No page hits in this window.</div>
-                                                    ) : (
-                                                        <ol className={styles.hits}>
-                                                            {hits.map((hit, index) => (
-                                                                <li key={`${hit.timestamp}_${index}`} className={styles.hit}>
-                                                                    <span className={styles.hit_time}>
-                                                                        <ClientTime date={hit.timestamp} format="datetime" />
-                                                                    </span>
-                                                                    <code className={styles.hit_path}>{hit.path}</code>
-                                                                    {hit.referer && (
-                                                                        <span className={styles.hit_referer} title={hit.referer}>
-                                                                            ← {hit.referer}
-                                                                        </span>
-                                                                    )}
-                                                                </li>
-                                                            ))}
-                                                        </ol>
-                                                    )}
-                                                </td>
-                                            </tr>
+                                            <PageHitsRow token={token} subject={subject} id={row.id} period={period} />
                                         )}
                                     </React.Fragment>
                                 ))}
@@ -252,7 +310,7 @@ function PageActivityTable({ token, subject, title, description, subjectHeading 
     );
 }
 
-interface Props {
+interface IPageActivityProps {
     token: string;
 }
 
@@ -263,7 +321,7 @@ interface Props {
  * @param props.token - Admin authentication token for API requests.
  * @returns The rendered page-activity sections.
  */
-export function PageActivity({ token }: Props) {
+export function PageActivity({ token }: IPageActivityProps) {
     return (
         <div className={styles.container}>
             <PageActivityTable

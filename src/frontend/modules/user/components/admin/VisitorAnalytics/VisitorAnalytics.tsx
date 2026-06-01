@@ -112,30 +112,41 @@ export function VisitorAnalytics({ token }: Props) {
         }
     }, [token, chartRange]);
 
-    /**
-     * Fetch anonymous first touches using typed API client.
-     */
-    const fetchFirstTouches = useCallback(async () => {
-        setFirstTouchesLoading(true);
-        try {
-            const result = await adminGetAnonymousFirstTouches(token, {
-                period: firstTouchesPeriod,
-                limit: firstTouchesLimit,
-                skip: (firstTouchesPage - 1) * firstTouchesLimit
-            });
-            setFirstTouches(result.visitors ?? []);
-            setFirstTouchesTotal(result.total ?? 0);
-        } catch (error) {
-            console.error('Failed to fetch anonymous first touches:', error);
-            setFirstTouches([]);
-            setFirstTouchesTotal(0);
-        } finally {
-            setFirstTouchesLoading(false);
-        }
-    }, [token, firstTouchesPeriod, firstTouchesPage]);
-
     useEffect(() => { fetchChartData(); }, [fetchChartData]);
-    useEffect(() => { fetchFirstTouches(); }, [fetchFirstTouches]);
+
+    useEffect(() => {
+        let active = true;
+        /**
+         * Fetch the first-touches page, dropping the result if a newer
+         * period/page selection (or unmount) superseded it before resolving.
+         */
+        const fetchFirstTouches = async (): Promise<void> => {
+            setFirstTouchesLoading(true);
+            try {
+                const result = await adminGetAnonymousFirstTouches(token, {
+                    period: firstTouchesPeriod,
+                    limit: firstTouchesLimit,
+                    skip: (firstTouchesPage - 1) * firstTouchesLimit
+                });
+                if (active) {
+                    setFirstTouches(result.visitors ?? []);
+                    setFirstTouchesTotal(result.total ?? 0);
+                }
+            } catch (error) {
+                console.error('Failed to fetch anonymous first touches:', error);
+                if (active) {
+                    setFirstTouches([]);
+                    setFirstTouchesTotal(0);
+                }
+            } finally {
+                if (active) {
+                    setFirstTouchesLoading(false);
+                }
+            }
+        };
+        fetchFirstTouches();
+        return () => { active = false; };
+    }, [token, firstTouchesPeriod, firstTouchesPage]);
 
     /**
      * Build chart series from daily visitor data.
