@@ -25,6 +25,7 @@ import { Table, Thead, Tbody, Tr, Th, Td } from '../components/ui/Table';
 import { useModal as useModalHook } from '../components/ui/ModalProvider';
 import { useToast as useToastHook } from '../components/ui/ToastProvider';
 import { LineChart } from '../features/charts/components/LineChart';
+import { BarChart } from '../features/charts/components/BarChart';
 import { SchedulerMonitor } from '../modules/scheduler';
 import { Page, PageHeader, Stack, Grid, Section } from '../components/layout';
 import { useAuthSession } from '../modules/user/components/SessionProvider';
@@ -346,7 +347,8 @@ export function FrontendPluginContextProvider({ children }: { children: React.Re
         };
 
         const charts: IChartComponents = {
-            LineChart
+            LineChart,
+            BarChart
         };
 
         const system: ISystemComponents = {
@@ -442,7 +444,8 @@ export function createPluginContext(pluginId: string): IFrontendPluginContext {
     };
 
     const charts: IChartComponents = {
-        LineChart
+        LineChart,
+        BarChart
     };
 
     const system: ISystemComponents = {

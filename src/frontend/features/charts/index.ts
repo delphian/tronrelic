@@ -6,3 +6,5 @@
 
 // Components
 export { LineChart } from './components/LineChart';
+export { BarChart } from './components/BarChart';
+export type { BarChartSeries } from './components/BarChart';
