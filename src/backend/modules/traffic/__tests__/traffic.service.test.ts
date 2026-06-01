@@ -319,6 +319,10 @@ describe('TrafficService', () => {
             expect(joined).toContain('GROUP BY candidate_uid');
             expect(out.total).toBe(3);
             expect(out.rows[0]).toMatchObject({ id: 'tid-1', pageViews: 4, distinctPaths: 3, lastPath: '/markets' });
+            // ClickHouse's native suffix-less DateTime is normalized to ISO-8601 UTC
+            // so the frontend's `new Date(...)` parses it as UTC, not local time.
+            expect(out.rows[0].firstSeen).toBe('2026-04-30T10:00:00.000Z');
+            expect(out.rows[0].lastSeen).toBe('2026-04-30T10:05:00.000Z');
         });
 
         it('groups registered activity on user_id with user_id IS NOT NULL', async () => {
@@ -375,7 +379,9 @@ describe('TrafficService', () => {
             expect(captured.sql).toContain('candidate_uid = {id:UUID}');
             expect(captured.sql).toContain("event_type = 'page'");
             expect(captured.params?.id).toBe('550e8400-e29b-41d4-a716-446655440000');
-            expect(out).toEqual([{ timestamp: '2026-04-30 10:05:00.000', path: '/markets', referer: null, device: 'desktop', country: 'US' }]);
+            // The suffix-less ClickHouse timestamp is normalized to ISO-8601 UTC so
+            // the frontend's `new Date(...)` parses it as UTC, not local time.
+            expect(out).toEqual([{ timestamp: '2026-04-30T10:05:00.000Z', path: '/markets', referer: null, device: 'desktop', country: 'US' }]);
         });
 
         it('matches user_id for a user subject', async () => {
