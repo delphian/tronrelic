@@ -191,6 +191,63 @@ export class TrafficController {
     }
 
     /**
+     * GET /api/admin/users/analytics/tid-activity?period=&limit=&skip=
+     * Per-tid `page`-event clickstream summary for anonymous visitors. Returns
+     * `{ rows, total }` unwrapped — the client reads it directly.
+     */
+    async getTidActivity(req: Request, res: Response): Promise<void> {
+        const range = resolveAnalyticsRange(req.query);
+        const limit = parsePositiveInt(req.query.limit, 50, MAX_LIMIT);
+        const skip = parseNonNegativeInt(req.query.skip, 0);
+        try {
+            res.json(await this.trafficService.getPageActivity('tid', range, limit, skip));
+        } catch (error) {
+            this.logger.error({ err: error }, 'Failed to fetch tid activity');
+            res.status(500).json({ error: 'InternalError', message: 'Failed to fetch tid activity' });
+        }
+    }
+
+    /**
+     * GET /api/admin/users/analytics/user-activity?period=&limit=&skip=
+     * Per-account `page`-event clickstream summary for registered visitors.
+     * Returns `{ rows, total }` unwrapped — the client reads it directly.
+     */
+    async getUserActivity(req: Request, res: Response): Promise<void> {
+        const range = resolveAnalyticsRange(req.query);
+        const limit = parsePositiveInt(req.query.limit, 50, MAX_LIMIT);
+        const skip = parseNonNegativeInt(req.query.skip, 0);
+        try {
+            res.json(await this.trafficService.getPageActivity('user', range, limit, skip));
+        } catch (error) {
+            this.logger.error({ err: error }, 'Failed to fetch user activity');
+            res.status(500).json({ error: 'InternalError', message: 'Failed to fetch user activity' });
+        }
+    }
+
+    /**
+     * GET /api/admin/users/analytics/page-hits?subject=tid|user&id=&period=&limit=
+     * The ordered page-hit clickstream for one subject — every page the tid or
+     * account hit in the window, newest first.
+     */
+    async getPageHits(req: Request, res: Response): Promise<void> {
+        const rawSubject = req.query.subject;
+        const subject = rawSubject === 'user' ? 'user' : rawSubject === 'tid' ? 'tid' : null;
+        const id = typeof req.query.id === 'string' ? req.query.id : '';
+        if (!subject || !id) {
+            res.status(400).json({ error: 'ValidationError', message: "subject ('tid'|'user') and id are required" });
+            return;
+        }
+        const range = resolveAnalyticsRange(req.query);
+        const limit = parsePositiveInt(req.query.limit, MAX_HISTORY_LIMIT, MAX_HISTORY_LIMIT);
+        try {
+            res.json({ data: await this.trafficService.getPageHits(subject, id, range, limit) });
+        } catch (error) {
+            this.logger.error({ err: error }, 'Failed to fetch page hits');
+            res.status(500).json({ error: 'InternalError', message: 'Failed to fetch page hits' });
+        }
+    }
+
+    /**
      * GET /api/admin/users/analytics/traffic-source-details?source=&period=
      * Drill-down breakdown for one referrer source. Returns the
      * `ITrafficSourceDetails` shape unwrapped — the client reads it directly.

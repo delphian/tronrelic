@@ -8,7 +8,6 @@ import { Badge } from '../../../../../components/ui/Badge';
 import { ClientTime } from '../../../../../components/ui/ClientTime';
 import { useModal } from '../../../../../components/ui/ModalProvider';
 import { useToast } from '../../../../../components/ui/ToastProvider';
-import { VisitorAnalytics } from '../VisitorAnalytics';
 import { UserGroupsForm } from './UserGroupsForm';
 import styles from './UsersMonitor.module.scss';
 
@@ -50,8 +49,9 @@ interface Props {
  * membership, and opens the group-membership editor per account.
  *
  * Account-count and wallet-adoption overviews live in the Analytics tab
- * (`AnalyticsDashboard`); this view embeds `VisitorAnalytics` for the
- * new-arrivals panel and otherwise focuses on the account list.
+ * (`AnalyticsDashboard`); first-touch and per-page traffic analytics moved to
+ * the Traffic tab (`VisitorAnalytics` / `PageActivity`). This view focuses on
+ * the account list.
  *
  * Client-only admin tool: `/system/users` is admin-gated and the token comes
  * from `SystemAuthContext` at runtime, so the SSR + Live Updates pattern does
@@ -184,8 +184,6 @@ export function UsersMonitor({ token }: Props) {
                     Better Auth accounts — search by email or name and manage group membership
                 </p>
             </header>
-
-            <VisitorAnalytics token={token} />
 
             <div className={styles.controls}>
                 <div className={styles.search_box}>

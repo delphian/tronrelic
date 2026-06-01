@@ -42,6 +42,7 @@ import type { Request } from 'express';
 import type { IClickHouseService, ISystemLogService } from '@/types';
 import { getClientIP, getCountryFromIP, getDeviceCategory } from './geo.service.js';
 import { classifyUserAgent, type BotClass } from './bot-classifier.js';
+import { UUID_V4_REGEX } from '../api/traffic-cookies.js';
 
 /**
  * Categorical event types written to `traffic_events.event_type`.
@@ -303,6 +304,61 @@ export interface ITrafficSourceDetailsResult {
     searchKeywords: Array<{ keyword: string; count: number }>;
     engagement: { avgSessions: number; avgPageViews: number; avgDuration: number };
     conversion: { walletsConnected: number; walletsVerified: number; conversionRate: number };
+}
+
+/**
+ * One row of a page-activity clickstream summary: a subject (a tid for
+ * anonymous visitors, a Better Auth user id for registered ones) with the
+ * lifetime-in-window counts of its `page` events. Powers the per-tid and
+ * per-user activity tables on the traffic dashboard. `firstPath`/`lastPath`
+ * bound the visit; `distinctPaths` separates a deep explorer from a refresher.
+ */
+export interface IPageActivityRow {
+    /** Subject key — the `candidate_uid` (tid) or `user_id`, depending on the read. */
+    id: string;
+    /** Earliest in-window `page` event for the subject. */
+    firstSeen: string;
+    /** Latest in-window `page` event for the subject. */
+    lastSeen: string;
+    /** Total `page` events in the window. */
+    pageViews: number;
+    /** Distinct paths the subject hit in the window. */
+    distinctPaths: number;
+    /** Path of the earliest in-window `page` event. */
+    firstPath: string | null;
+    /** Path of the latest in-window `page` event. */
+    lastPath: string | null;
+    /** Country of the latest in-window event (ISO-3166 alpha-2), or `null`. */
+    country: string | null;
+    /** Device category of the latest in-window event. */
+    device: string;
+}
+
+/** A page of {@link IPageActivityRow} rows plus the unpaginated subject total. */
+export interface IPageActivityPage {
+    rows: IPageActivityRow[];
+    total: number;
+}
+
+/** Which subject column a page-hit drill-down keys on. */
+export type PageHitSubject = 'tid' | 'user';
+
+/**
+ * One `page` event in a subject's clickstream drill-down. The ordered list of
+ * these is the literal "every page they hit" answer the dashboard renders when
+ * an operator expands a {@link IPageActivityRow}.
+ */
+export interface IPageHit {
+    /** Server-side wall clock the page event was recorded at. */
+    timestamp: string;
+    /** The page path. */
+    path: string;
+    /** HTTP `Referer` at the time, or `null`. */
+    referer: string | null;
+    /** Device category. */
+    device: string;
+    /** Country (ISO-3166 alpha-2), or `null`. */
+    country: string | null;
 }
 
 /**
@@ -1155,6 +1211,126 @@ export class TrafficService {
         } catch (error) {
             this.logger.warn({ error }, 'Failed to read traffic source details');
             return empty;
+        }
+    }
+
+    /**
+     * Per-subject `page`-event clickstream summary over the window, newest
+     * activity first. The subject is the analytics tid (`candidate_uid`) for
+     * anonymous browsing or the Better Auth `user_id` for registered browsing;
+     * the two reads are the same shape so the dashboard renders them through one
+     * table component. Only `page` events count — `bootstrap` first-touch rows
+     * (which include bots) are deliberately excluded so this surface reflects
+     * real interactive navigation, not scanner noise.
+     *
+     * @param subject - `'tid'` groups anonymous page hits by `candidate_uid`
+     *   (rows where `user_id IS NULL`); `'user'` groups by `user_id`
+     *   (`user_id IS NOT NULL`).
+     * @param range - Inclusive date window.
+     * @param limit - Page size.
+     * @param skip - Pagination offset.
+     * @returns A page of activity rows plus the unpaginated subject total.
+     */
+    async getPageActivity(subject: PageHitSubject, range: IAnalyticsDateRange, limit = 50, skip = 0): Promise<IPageActivityPage> {
+        if (!this.clickhouse) return { rows: [], total: 0 };
+        const { clause, params } = this.rangeParams(range);
+        // `subject` is a closed union, never user input, so interpolating the
+        // grouping column and its NULL predicate is injection-safe.
+        const idColumn = subject === 'tid' ? 'candidate_uid' : 'user_id';
+        const subjectFilter = subject === 'tid' ? 'user_id IS NULL' : 'user_id IS NOT NULL';
+        const where = `${clause} AND event_type = 'page' AND ${subjectFilter}`;
+        const rowsSql = `
+            SELECT
+                ${idColumn} AS id,
+                min(timestamp) AS firstSeen,
+                max(timestamp) AS lastSeen,
+                count() AS pageViews,
+                uniqExact(path) AS distinctPaths,
+                argMin(path, timestamp) AS firstPath,
+                argMax(path, timestamp) AS lastPath,
+                argMax(country, timestamp) AS country,
+                argMax(device, timestamp) AS device
+            FROM ${TABLE_NAME}
+            WHERE ${where}
+            GROUP BY ${idColumn}
+            ORDER BY lastSeen DESC
+            LIMIT {limit:UInt32} OFFSET {skip:UInt32}
+        `;
+        const countSql = `
+            SELECT uniqExact(${idColumn}) AS total
+            FROM ${TABLE_NAME}
+            WHERE ${where}
+        `;
+        try {
+            const [rows, countRows] = await Promise.all([
+                this.clickhouse.query<{
+                    id: string; firstSeen: string; lastSeen: string;
+                    pageViews: string | number; distinctPaths: string | number;
+                    firstPath: string | null; lastPath: string | null;
+                    country: string | null; device: string;
+                }>(rowsSql, { ...params, limit, skip }),
+                this.clickhouse.query<{ total: string | number }>(countSql, params)
+            ]);
+            return {
+                rows: rows.map(r => ({
+                    id: r.id,
+                    firstSeen: String(r.firstSeen),
+                    lastSeen: String(r.lastSeen),
+                    pageViews: Number(r.pageViews),
+                    distinctPaths: Number(r.distinctPaths),
+                    firstPath: r.firstPath ?? null,
+                    lastPath: r.lastPath ?? null,
+                    country: r.country ?? null,
+                    device: r.device
+                })),
+                total: Number(countRows[0]?.total ?? 0)
+            };
+        } catch (error) {
+            this.logger.warn({ error, subject }, 'Failed to read page activity');
+            return { rows: [], total: 0 };
+        }
+    }
+
+    /**
+     * The ordered `page`-event clickstream for a single subject — literally
+     * every page the tid or account hit in the window, newest first. Backs the
+     * drill-down an operator opens from a {@link IPageActivityRow}.
+     *
+     * @param subject - `'tid'` matches `candidate_uid` (a UUID); `'user'`
+     *   matches `user_id` (an opaque Better Auth id string).
+     * @param id - The subject key. For `'tid'` it must be a UUID; a malformed
+     *   value yields `[]` rather than a ClickHouse type error.
+     * @param range - Inclusive date window.
+     * @param limit - Max page hits to return.
+     * @returns The subject's page hits, newest first.
+     */
+    async getPageHits(subject: PageHitSubject, id: string, range: IAnalyticsDateRange, limit = 200): Promise<IPageHit[]> {
+        if (!this.clickhouse) return [];
+        if (subject === 'tid' && !UUID_V4_REGEX.test(id)) return [];
+        const { clause, params } = this.rangeParams(range);
+        const subjectExpr = subject === 'tid' ? 'candidate_uid = {id:UUID}' : 'user_id = {id:String}';
+        const sql = `
+            SELECT timestamp, path, referer, device, country
+            FROM ${TABLE_NAME}
+            WHERE ${clause} AND event_type = 'page' AND ${subjectExpr}
+            ORDER BY timestamp DESC
+            LIMIT {limit:UInt32}
+        `;
+        try {
+            const rows = await this.clickhouse.query<{
+                timestamp: string; path: string; referer: string | null;
+                device: string; country: string | null;
+            }>(sql, { ...params, id, limit });
+            return rows.map(r => ({
+                timestamp: String(r.timestamp),
+                path: r.path,
+                referer: r.referer ?? null,
+                device: r.device,
+                country: r.country ?? null
+            }));
+        } catch (error) {
+            this.logger.warn({ error, subject }, 'Failed to read page hits');
+            return [];
         }
     }
 }

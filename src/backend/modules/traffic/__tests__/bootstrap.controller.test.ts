@@ -106,4 +106,34 @@ describe('BootstrapController', () => {
         expect(cookies.find(c => c.name === REF_COOKIE_NAME)?.value).toBe('promo_2026');
         expect(recordEvent.mock.calls[0][0].referral_code).toBe('promo_2026');
     });
+
+    it('emits a page event keyed on the existing tid for the route-change beacon', async () => {
+        const req = buildReq({
+            cookies: { [TID_COOKIE_NAME]: EXISTING_TID },
+            body: { landingPath: '/markets/energy' }
+        } as unknown as Partial<Request>);
+        const { res, json } = buildRes();
+
+        await controller.page(req, res);
+
+        expect(recordEvent).toHaveBeenCalledTimes(1);
+        const event = recordEvent.mock.calls[0][0];
+        expect(event.event_type).toBe('page');
+        expect(event.candidate_uid).toBe(EXISTING_TID);
+        expect(event.path).toBe('/markets/energy');
+        expect(json).toHaveBeenCalledWith({ success: true });
+    });
+
+    it('attributes a page event to the logged-in account', async () => {
+        const req = buildReq({
+            cookies: { [TID_COOKIE_NAME]: EXISTING_TID },
+            body: { landingPath: '/account' },
+            authSession: { user: { id: 'ba_user_42' } }
+        } as unknown as Partial<Request>);
+        const { res } = buildRes();
+
+        await controller.page(req, res);
+
+        expect(recordEvent.mock.calls[0][0].user_id).toBe('ba_user_42');
+    });
 });

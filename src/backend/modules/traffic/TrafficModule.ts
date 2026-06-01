@@ -4,9 +4,10 @@
  * Carved out of the former omnibus user module. Owns the ClickHouse
  * `traffic_events` pipeline (`TrafficService`), Google Search Console keyword
  * integration (`GscService`), the User-Agent bot classifier, geo/IP derivation,
- * the admin traffic dashboard reads, and the slim first-touch analytics
- * bootstrap endpoint. Mounts `/api/admin/users/traffic`, the public
- * `/api/user/bootstrap`, and registers the daily `gsc:fetch` job.
+ * the admin traffic dashboard reads, and the public traffic-event ingestion
+ * endpoints. Mounts `/api/admin/users/{traffic,analytics}`, the public
+ * `/api/user/bootstrap` (first touch) and `/api/user/track` (page navigation),
+ * and registers the daily `gsc:fetch` job.
  *
  * Analytics are keyed off the cookieless `tronrelic_tid`, independent of
  * identity, so this surface survived the Better Auth cutover that removed the
@@ -25,7 +26,7 @@ import { initGeoIP } from './services/geo.service.js';
 import { TrafficController } from './api/traffic.controller.js';
 import { BootstrapController } from './api/bootstrap.controller.js';
 import { createAdminTrafficRouter, createAdminAnalyticsRouter } from './api/traffic.routes.js';
-import { createBootstrapRouter } from './api/bootstrap.routes.js';
+import { createBootstrapRouter, createPageEventRouter } from './api/bootstrap.routes.js';
 import { requireAdmin } from '../../api/middleware/admin-auth.js';
 
 /**
@@ -150,6 +151,13 @@ export class TrafficModule implements IModule<ITrafficModuleDependencies> {
         const bootstrapRouter: Router = createBootstrapRouter(this.bootstrapController);
         this.app.use('/api/user/bootstrap', bootstrapRouter);
         this.logger.info('Bootstrap router mounted at /api/user/bootstrap');
+
+        // Public page-event ingestion — the client-side route-change beacon
+        // posts here on every navigation. Same controller as bootstrap; emits a
+        // `page` row keyed on the tid and attributed to the account when present.
+        const pageEventRouter: Router = createPageEventRouter(this.bootstrapController);
+        this.app.use('/api/user/track', pageEventRouter);
+        this.logger.info('Page-event router mounted at /api/user/track');
 
         // Daily GSC fetch (3 AM). SchedulerService supports late registration.
         if (this.scheduler) {

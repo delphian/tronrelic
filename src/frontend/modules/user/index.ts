@@ -36,6 +36,7 @@ export type { IProfileMenuProps } from './components';
 
 export { UsersMonitor } from './components';
 export { VisitorAnalytics } from './components';
+export { PageActivity } from './components';
 export { AnalyticsDashboard } from './components';
 export { GscSettings } from './components';
 export { GroupsManager } from './components';

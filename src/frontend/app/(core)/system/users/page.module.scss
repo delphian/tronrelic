@@ -50,3 +50,10 @@
 .content {
     flex: 1;
 }
+
+/* Traffic tab stacks several capture-pattern dashboards vertically. */
+.traffic_stack {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-lg);
+}

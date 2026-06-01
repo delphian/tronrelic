@@ -1,23 +1,28 @@
 /**
- * @fileoverview Slim analytics bootstrap controller.
+ * @fileoverview Edge/client traffic-event ingestion controller.
  *
- * `POST /api/user/bootstrap` is the first-touch analytics entry point. The
- * Next.js middleware calls it server-to-server when an inbound page request
- * carries no `tronrelic_tid` cookie, so SSR records a `traffic_events` row on
- * the very first visit; client/direct callers hit it the same way.
+ * Two public, identity-free entry points that both resolve the unsigned
+ * `tronrelic_tid` / `tronrelic_ref` cookies, attribute to the logged-in account
+ * via `req.authSession` when present, and emit one `traffic_events` row:
  *
- * After the Better Auth cutover this endpoint is purely a traffic concern: it
- * reads (and mints) the unsigned `tronrelic_tid` / `tronrelic_ref` cookies,
- * emits one `bootstrap` ClickHouse event, and returns `{ success: true }`. It
- * does NOT mint an identity, touch MongoDB, or read the legacy `users`
- * collection — Better Auth owns identity, and `req.authSession` already carries
- * the logged-in account id when present.
+ * - `POST /api/user/bootstrap` — the first-touch `bootstrap` event. The Next.js
+ *   middleware calls it server-to-server when an inbound page request carries no
+ *   `tronrelic_tid` cookie, so even cookieless bots and unfurlers are captured.
+ * - `POST /api/user/track` — a `page` event. Fired by the client-side
+ *   route-change beacon on every navigation (hard + soft), so it captures the
+ *   full clickstream of cookie-running visitors — anonymous (tid) and registered
+ *   (`user_id`) alike. Bots that do not run JS never reach it, so the `page`
+ *   stream is naturally interactive-traffic-only.
+ *
+ * Neither endpoint mints an identity, touches MongoDB, or reads the legacy
+ * `users` collection — Better Auth owns identity, and `req.authSession` already
+ * carries the logged-in account id when present.
  */
 
 import type { Request, Response } from 'express';
 import { randomUUID } from 'node:crypto';
 import type { ISystemLogService } from '@/types';
-import { TrafficService, buildTrafficEvent } from '../services/traffic.service.js';
+import { TrafficService, buildTrafficEvent, type TrafficEventType } from '../services/traffic.service.js';
 import {
     UUID_V4_REGEX,
     resolveTid,
@@ -131,10 +136,7 @@ export class BootstrapController {
     /**
      * POST /api/user/bootstrap
      *
-     * Resolve/mint the traffic id and first-touch referral code, emit one
-     * `bootstrap` ClickHouse event keyed on the tid (attributed to the Better
-     * Auth account when logged in), and return `{ success: true }`. No identity
-     * mint, no MongoDB.
+     * Record the first-touch `bootstrap` event. See {@link record}.
      *
      * @param req - Express request (cookie-parser populated; may carry a
      *   middleware-forwarded body and `?ref=`).
@@ -142,14 +144,45 @@ export class BootstrapController {
      * @returns Resolves once the response has been written.
      */
     async bootstrap(req: Request, res: Response): Promise<void> {
+        return this.record('bootstrap', req, res);
+    }
+
+    /**
+     * POST /api/user/track
+     *
+     * Record a `page` event for the client-side route-change beacon. Same
+     * resolution path as {@link bootstrap} — the only difference is the event
+     * type, so the full clickstream and the first-touch row share one shape and
+     * one attribution rule.
+     *
+     * @param req - Express request carrying the beaconed `landingPath` body.
+     * @param res - Express response.
+     * @returns Resolves once the response has been written.
+     */
+    async page(req: Request, res: Response): Promise<void> {
+        return this.record('page', req, res);
+    }
+
+    /**
+     * Resolve/mint the traffic id and first-touch referral code, emit one
+     * ClickHouse event of `eventType` keyed on the tid (attributed to the Better
+     * Auth account when logged in), and return `{ success: true }`. No identity
+     * mint, no MongoDB.
+     *
+     * @param eventType - `'bootstrap'` (first touch) or `'page'` (navigation).
+     * @param req - Express request.
+     * @param res - Express response.
+     * @returns Resolves once the response has been written.
+     */
+    private async record(eventType: TrafficEventType, req: Request, res: Response): Promise<void> {
         try {
             const { tid, referralCode } = this.resolveTrafficCookies(req, res);
 
             // Fire-and-forget — never blocks the response, never throws into the
             // request path. No-ops silently when ClickHouse is unconfigured.
             this.trafficService.recordEvent(
-                buildTrafficEvent('bootstrap', tid, req, {
-                    ...this.extractBootstrapBody(req),
+                buildTrafficEvent(eventType, tid, req, {
+                    ...this.extractEventInputs(req),
                     userId: req.authSession?.user?.id ?? null,
                     referralCode
                 })
@@ -157,9 +190,9 @@ export class BootstrapController {
 
             res.json({ success: true });
         } catch (error) {
-            this.logger.error({ error }, 'Failed to bootstrap analytics traffic event');
+            this.logger.error({ error, eventType }, 'Failed to record analytics traffic event');
             res.status(500).json({
-                error: 'Failed to bootstrap',
+                error: 'Failed to record',
                 message: error instanceof Error ? error.message : 'Unknown error'
             });
         }
@@ -168,14 +201,14 @@ export class BootstrapController {
     }
 
     /**
-     * Pull `landingPath`, `utm`, and `originalReferrer` from the bootstrap body
+     * Pull `landingPath`, `utm`, and `originalReferrer` from the request body
      * and apply storage caps so a hand-rolled direct caller cannot inflate the
-     * ClickHouse row.
+     * ClickHouse row. Shared by the bootstrap and page-event paths.
      *
      * @param req - Express request carrying the (optionally middleware-forwarded) body.
      * @returns The capped, sanitized event-builder inputs.
      */
-    private extractBootstrapBody(req: Request): {
+    private extractEventInputs(req: Request): {
         landingPath?: string;
         utm?: NonNullable<ReturnType<typeof clampUtm>>;
         originalReferrer?: string | null;

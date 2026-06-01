@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useSystemAuth } from '../../../../features/system';
-import { UsersMonitor, AnalyticsDashboard, GscSettings, GroupsManager, TrafficDashboard } from '../../../../modules/user';
+import { UsersMonitor, AnalyticsDashboard, GscSettings, GroupsManager, TrafficDashboard, VisitorAnalytics, PageActivity } from '../../../../modules/user';
 import styles from './page.module.scss';
 
 /** Tab identifiers for the users admin page. */
@@ -12,8 +12,11 @@ type UsersTab = 'users' | 'analytics' | 'traffic' | 'groups' | 'settings';
  * System users administration page with tabbed interface.
  *
  * Tabs consolidate user-related admin functionality:
- * - Users: Per-user identity management, wallet links, activity
+ * - Users: Better Auth account directory and group management
  * - Analytics: Aggregate traffic sources, engagement, conversion funnel
+ * - Traffic: Capture patterns — anonymous first touches (incl. bots), daily
+ *   visitors, anonymous (tid) and registered (user_id) per-page clickstreams,
+ *   and bot/geo/path breakdowns
  * - Groups: Admin-defined user groups consumed by plugins for permission gating
  * - Settings: GSC integration and other admin settings
  *
@@ -67,7 +70,13 @@ export default function SystemUsersPage() {
             <div className={styles.content}>
                 {activeTab === 'users' && <UsersMonitor token={token} />}
                 {activeTab === 'analytics' && <AnalyticsDashboard token={token} />}
-                {activeTab === 'traffic' && <TrafficDashboard token={token} />}
+                {activeTab === 'traffic' && (
+                    <div className={styles.traffic_stack}>
+                        <VisitorAnalytics token={token} />
+                        <PageActivity token={token} />
+                        <TrafficDashboard token={token} />
+                    </div>
+                )}
                 {activeTab === 'groups' && <GroupsManager token={token} />}
                 {activeTab === 'settings' && <GscSettings token={token} />}
             </div>

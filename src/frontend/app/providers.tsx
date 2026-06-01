@@ -10,6 +10,7 @@ import { PluginLoader } from '../components/plugins/PluginLoader';
 import { FrontendPluginContextProvider } from '../lib/frontendPluginContext';
 // Direct imports avoid pulling component CSS via barrel exports
 import { SessionProvider } from '../modules/user/components/SessionProvider';
+import { PageViewTracker } from '../modules/user/components/PageViewTracker';
 import type { ISSRSession } from '../modules/user/lib/session-server';
 
 // Re-export the SSR session shape for layout.tsx
@@ -40,6 +41,7 @@ export function Providers({ children, ssrSession }: ProvidersProps) {
                         <SocketBridge />
                         <SessionProvider initialSession={ssrSession ?? null}>
                             <PluginLoader />
+                            <PageViewTracker />
                             {children}
                         </SessionProvider>
                     </FrontendPluginContextProvider>
