@@ -319,6 +319,10 @@ describe('TrafficService', () => {
             expect(joined).toContain('GROUP BY candidate_uid');
             expect(out.total).toBe(3);
             expect(out.rows[0]).toMatchObject({ id: 'tid-1', pageViews: 4, distinctPaths: 3, lastPath: '/markets' });
+            // ClickHouse's native suffix-less DateTime is normalized to ISO-8601 UTC
+            // so the frontend's `new Date(...)` parses it as UTC, not local time.
+            expect(out.rows[0].firstSeen).toBe('2026-04-30T10:00:00.000Z');
+            expect(out.rows[0].lastSeen).toBe('2026-04-30T10:05:00.000Z');
         });
 
         it('groups registered activity on user_id with user_id IS NOT NULL', async () => {

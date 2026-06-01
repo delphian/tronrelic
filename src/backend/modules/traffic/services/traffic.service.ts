@@ -723,7 +723,7 @@ export class TrafficService {
             }>(sql, { ...params, limit, skip });
             return rows.map(r => ({
                 candidateUid: r.candidateUid,
-                firstSeen: String(r.firstSeen),
+                firstSeen: clickHouseDateToIso(String(r.firstSeen)),
                 path: r.path,
                 referer: r.referer,
                 utmSource: r.utmSource,
@@ -1081,8 +1081,8 @@ export class TrafficService {
                 const hasUtm = Boolean(r.utmSource || r.utmMedium || r.utmCampaign || r.utmTerm || r.utmContent);
                 return {
                     userId: r.userId,
-                    firstSeen: String(r.firstSeen),
-                    lastSeen: String(r.lastSeen),
+                    firstSeen: clickHouseDateToIso(String(r.firstSeen)),
+                    lastSeen: clickHouseDateToIso(String(r.lastSeen)),
                     country: r.country ?? null,
                     referrerDomain: r.referrerDomain ?? null,
                     landingPage: r.landingPage ?? null,
@@ -1274,8 +1274,8 @@ export class TrafficService {
             return {
                 rows: rows.map(r => ({
                     id: r.id,
-                    firstSeen: String(r.firstSeen),
-                    lastSeen: String(r.lastSeen),
+                    firstSeen: clickHouseDateToIso(String(r.firstSeen)),
+                    lastSeen: clickHouseDateToIso(String(r.lastSeen)),
                     pageViews: Number(r.pageViews),
                     distinctPaths: Number(r.distinctPaths),
                     firstPath: r.firstPath ?? null,
@@ -1534,6 +1534,24 @@ function parseClickHouseDateTime64Utc(value: string): Date {
         Number(second),
         Number(milliseconds.padEnd(3, '0'))
     ));
+}
+
+/**
+ * Convert a ClickHouse native `DateTime64(3)` string to an ISO-8601 UTC string.
+ *
+ * Aggregate reads (`min`/`max`/`argMin` over `timestamp`) return the column's
+ * native `YYYY-MM-DD HH:MM:SS.mmm` form with no zone suffix. The frontend's
+ * `new Date(value)` parses that space-separated, suffix-less form as *local*
+ * time, shifting every value by the viewer's UTC offset and skewing relative
+ * ages — west-of-UTC offsets push recent rows into the future, which renders
+ * as "just now" indefinitely. Emitting ISO-8601 with the `Z` suffix keeps the
+ * wire value unambiguously UTC so the client parses it correctly.
+ *
+ * @param value - ClickHouse native DateTime64 string.
+ * @returns ISO-8601 UTC string (with `Z` suffix).
+ */
+function clickHouseDateToIso(value: string): string {
+    return parseClickHouseDateTime64Utc(value).toISOString();
 }
 
 /**
