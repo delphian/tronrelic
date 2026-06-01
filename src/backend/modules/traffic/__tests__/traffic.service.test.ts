@@ -379,7 +379,9 @@ describe('TrafficService', () => {
             expect(captured.sql).toContain('candidate_uid = {id:UUID}');
             expect(captured.sql).toContain("event_type = 'page'");
             expect(captured.params?.id).toBe('550e8400-e29b-41d4-a716-446655440000');
-            expect(out).toEqual([{ timestamp: '2026-04-30 10:05:00.000', path: '/markets', referer: null, device: 'desktop', country: 'US' }]);
+            // The suffix-less ClickHouse timestamp is normalized to ISO-8601 UTC so
+            // the frontend's `new Date(...)` parses it as UTC, not local time.
+            expect(out).toEqual([{ timestamp: '2026-04-30T10:05:00.000Z', path: '/markets', referer: null, device: 'desktop', country: 'US' }]);
         });
 
         it('matches user_id for a user subject', async () => {

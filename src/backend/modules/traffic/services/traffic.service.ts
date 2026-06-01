@@ -1322,7 +1322,7 @@ export class TrafficService {
                 device: string; country: string | null;
             }>(sql, { ...params, id, limit });
             return rows.map(r => ({
-                timestamp: String(r.timestamp),
+                timestamp: clickHouseDateToIso(String(r.timestamp)),
                 path: r.path,
                 referer: r.referer ?? null,
                 device: r.device,
@@ -1551,7 +1551,8 @@ function parseClickHouseDateTime64Utc(value: string): Date {
  * @returns ISO-8601 UTC string (with `Z` suffix).
  */
 function clickHouseDateToIso(value: string): string {
-    return parseClickHouseDateTime64Utc(value).toISOString();
+    const date = parseClickHouseDateTime64Utc(value);
+    return Number.isNaN(date.getTime()) ? value : date.toISOString();
 }
 
 /**
