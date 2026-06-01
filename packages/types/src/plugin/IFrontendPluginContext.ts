@@ -298,6 +298,35 @@ export interface IChartComponents {
         /** Fixed maximum value for Y-axis (overrides auto-calculated maximum) */
         yAxisMax?: number;
     }>;
+
+    /**
+     * Grouped column (bar) chart for categorical/time-bucketed totals.
+     *
+     * Renders one column per series for each shared category, grouped side by
+     * side, and supports negative values below a zero baseline. The `mode` prop
+     * selects density: `normal` paints axes, legend, and an interactive tooltip;
+     * `widget` strips chrome to bars and baseline for a compact widget-zone fit.
+     */
+    BarChart: ComponentType<{
+        series: Array<{
+            id: string;
+            label: string;
+            data: Array<{ date: string; value: number; metadata?: Record<string, unknown> }>;
+            color?: string;
+        }>;
+        /** Rendering density (default: 'normal') */
+        mode?: 'normal' | 'widget';
+        /** Chart height in pixels (default: 320 normal, 120 widget) */
+        height?: number;
+        yAxisFormatter?: (value: number) => string;
+        xAxisFormatter?: (value: Date) => string;
+        emptyLabel?: string;
+        className?: string;
+        /** Fixed minimum value for Y-axis (overrides auto-calculated minimum) */
+        yAxisMin?: number;
+        /** Fixed maximum value for Y-axis (overrides auto-calculated maximum) */
+        yAxisMax?: number;
+    }>;
 }
 
 /**

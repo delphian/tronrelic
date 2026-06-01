@@ -1,0 +1,152 @@
+/**
+ * BarChart Component Styles
+ *
+ * SVG-based grouped column chart with two density modes (normal / widget).
+ * Structural chrome (gridlines, baseline, axis labels, tooltip, legend) is
+ * driven entirely by design tokens; data-driven column fills are applied inline
+ * by the component per the data-visualization token exception.
+ */
+
+/* ========================================
+   Chart Container
+   ======================================== */
+
+.chart {
+    width: 100%;
+    position: relative;
+    margin: 0;
+}
+
+.chart svg {
+    width: 100%;
+    height: auto;
+    display: block;
+}
+
+/* Widget mode renders edge-to-edge with no surrounding chrome. */
+.chart--widget {
+    line-height: 0;
+}
+
+/* ========================================
+   SVG Chrome (tokenized fills/strokes)
+   ======================================== */
+
+.gridline {
+    stroke: var(--color-border);
+}
+
+.baseline {
+    stroke: var(--color-border-strong);
+    stroke-width: var(--border-width-thin);
+}
+
+.axis_label {
+    fill: var(--color-text-muted);
+    font-size: var(--font-size-caption);
+}
+
+.bar {
+    transition: opacity var(--transition-fast);
+}
+
+.bar--dim {
+    opacity: var(--opacity-35);
+}
+
+/* ========================================
+   Interactive Tooltip (normal mode)
+   ======================================== */
+
+.tooltip {
+    position: absolute;
+    display: inline-flex;
+    flex-direction: column;
+    gap: var(--gap-2xs);
+    min-width: var(--max-width-xs);
+    max-width: var(--max-width-xs);
+    padding: var(--padding-sm) var(--padding-md);
+    border-radius: var(--radius-md);
+    background: var(--color-surface-accent);
+    border: var(--border-width-thin) solid var(--color-border-strong);
+    box-shadow: var(--shadow-lg);
+    color: var(--color-text);
+    font-size: var(--font-size-body-sm);
+    pointer-events: none;
+    transform: translate(-50%, -110%);
+    z-index: var(--z-index-dropdown);
+}
+
+.tooltip__label {
+    font-weight: var(--font-weight-semibold);
+}
+
+.tooltip__row {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--gap-md);
+    color: var(--color-text-muted);
+}
+
+.tooltip__series {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--gap-xs);
+}
+
+.tooltip__swatch {
+    display: inline-block;
+    width: var(--icon-size-xs);
+    height: var(--icon-size-xs);
+    border-radius: var(--radius-xs);
+    flex-shrink: 0;
+}
+
+/* ========================================
+   Legend (normal mode)
+   ======================================== */
+
+.legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--gap-md);
+    margin-top: var(--gap-sm);
+}
+
+.legend__item {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-sm);
+    padding: var(--padding-2xs) var(--padding-sm);
+    background: transparent;
+    border: none;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: background-color var(--transition-fast), opacity var(--transition-fast);
+}
+
+.legend__item:hover {
+    background: var(--color-surface-muted);
+}
+
+.legend__item--hidden {
+    opacity: var(--opacity-50);
+}
+
+.legend__item--hidden:hover {
+    opacity: var(--opacity-75);
+}
+
+.legend__dot {
+    display: inline-flex;
+    width: var(--icon-size-xs);
+    height: var(--icon-size-xs);
+    border-radius: var(--radius-full);
+    border: var(--border-width-medium) solid;
+    flex-shrink: 0;
+}
+
+.legend__label {
+    color: var(--color-text-subtle);
+    font-size: var(--font-size-body-sm);
+}
