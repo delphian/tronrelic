@@ -6,6 +6,16 @@ import type { IWidgetComponentProps } from '@/types';
 import { createPluginContext } from '../../lib/frontendPluginContext';
 
 /**
+ * Stable empty-config reference used as the `instanceConfig` fallback.
+ *
+ * Defined at module scope so the defaulted value keeps a constant
+ * identity across renders. Inlining `{}` would mint a fresh object each
+ * render, breaking `React.memo` and any `useEffect(..., [instanceConfig])`
+ * in widget components that rely on referential equality.
+ */
+const EMPTY_CONFIG: Record<string, unknown> = {};
+
+/**
  * Props for the WidgetWithContext wrapper component.
  */
 interface WidgetWithContextProps {
@@ -78,7 +88,7 @@ export function WidgetWithContext({
             context={context}
             route={route}
             params={params}
-            instanceConfig={instanceConfig ?? {}}
+            instanceConfig={instanceConfig ?? EMPTY_CONFIG}
         />
     );
 }
