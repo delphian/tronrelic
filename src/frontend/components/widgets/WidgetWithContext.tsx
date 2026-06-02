@@ -20,6 +20,14 @@ interface WidgetWithContextProps {
     data: unknown;
 
     /**
+     * Operator-editable per-placement instance configuration, forwarded
+     * to the widget component so it can branch on the same config its
+     * backend data fetcher received. Defaults to `{}` when the placement
+     * carries no overrides.
+     */
+    instanceConfig?: Record<string, unknown>;
+
+    /**
      * Plugin ID for creating namespaced context.
      */
     pluginId: string;
@@ -56,6 +64,7 @@ interface WidgetWithContextProps {
 export function WidgetWithContext({
     Component,
     data,
+    instanceConfig,
     pluginId,
     route,
     params
@@ -63,5 +72,13 @@ export function WidgetWithContext({
     // Memoize context creation to avoid recreating on every render
     const context = useMemo(() => createPluginContext(pluginId), [pluginId]);
 
-    return <Component data={data} context={context} route={route} params={params} />;
+    return (
+        <Component
+            data={data}
+            context={context}
+            route={route}
+            params={params}
+            instanceConfig={instanceConfig ?? {}}
+        />
+    );
 }

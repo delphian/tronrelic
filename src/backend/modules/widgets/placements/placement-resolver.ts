@@ -151,7 +151,11 @@ export class PlacementResolver {
                 pluginId: owner,
                 order: placement.order,
                 title: placement.title,
-                data
+                data,
+                // Forward the same instance config the fetcher received so
+                // the frontend component can branch on it. Mirror the
+                // empty-object default used for the fetcher context above.
+                instanceConfig: placement.instanceConfig ?? {}
             };
         } catch (error) {
             clearTimeout(timerId);
