@@ -37,4 +37,13 @@ export interface WidgetData {
      * JSON-serializable object.
      */
     data: unknown;
+
+    /**
+     * Operator-editable per-placement instance configuration, forwarded
+     * from the resolved placement so the widget component can branch on
+     * the same config its backend data fetcher received.
+     *
+     * Optional on the wire; the renderer defaults it to `{}` on read.
+     */
+    instanceConfig?: Record<string, unknown>;
 }

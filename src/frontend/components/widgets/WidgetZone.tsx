@@ -31,6 +31,7 @@ function WidgetRenderer({ widget, route, params }: WidgetRendererProps) {
             <WidgetWithContext
                 Component={Component}
                 data={widget.data}
+                instanceConfig={widget.instanceConfig}
                 pluginId={widget.pluginId}
                 route={route}
                 params={params}

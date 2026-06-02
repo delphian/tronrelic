@@ -565,6 +565,34 @@ describe('PlacementResolver', () => {
         );
     });
 
+    it('forwards instanceConfig onto the returned IWidgetData', async () => {
+        (typeRegistry as any).__types.set('plugin:type', buildType('plugin:type', async () => ({ ok: true })));
+        (placementService.findByRoute as ReturnType<typeof vi.fn>).mockResolvedValue([
+            buildPlacement({
+                id: 'p-cfg',
+                typeId: 'plugin:type',
+                instanceConfig: { maxPosts: 3, theme: 'compact' }
+            })
+        ]);
+
+        const result = await resolver.resolveForRoute('/', {});
+
+        expect(result).toHaveLength(1);
+        expect(result[0].instanceConfig).toEqual({ maxPosts: 3, theme: 'compact' });
+    });
+
+    it('defaults the returned instanceConfig to {} when the placement carries none', async () => {
+        (typeRegistry as any).__types.set('plugin:type', buildType('plugin:type', async () => ({ ok: true })));
+        (placementService.findByRoute as ReturnType<typeof vi.fn>).mockResolvedValue([
+            buildPlacement({ id: 'p-empty', typeId: 'plugin:type', instanceConfig: undefined })
+        ]);
+
+        const result = await resolver.resolveForRoute('/', {});
+
+        expect(result).toHaveLength(1);
+        expect(result[0].instanceConfig).toEqual({});
+    });
+
     it('sorts results by zone (alphabetical), then order', async () => {
         // 'main-after' sorts before 'main-before' alphabetically, so
         // the expected ordering joins zone-asc then order-asc within

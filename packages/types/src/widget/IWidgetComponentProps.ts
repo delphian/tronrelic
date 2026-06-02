@@ -69,6 +69,21 @@ export interface IWidgetComponentProps {
      * `{ address: 'TXyz123...' }`. Empty object for static routes.
      */
     params: Record<string, string>;
+
+    /**
+     * Operator-editable per-placement instance configuration for this
+     * widget's placement.
+     *
+     * Mirrors the `instanceConfig` the backend data fetcher received via
+     * {@link IWidgetPlacementContext} (validated against the widget type's
+     * `configSchema` at write time), letting the component branch on the
+     * same operator settings the fetcher saw — e.g. toggling an optional
+     * series or switching display density — without a second round trip.
+     *
+     * Always an object; the renderer substitutes `{}` when the placement
+     * carries no overrides, so reads need no null-guarding.
+     */
+    instanceConfig: Record<string, unknown>;
 }
 
 /**

@@ -41,4 +41,15 @@ export interface IWidgetData {
      * JSON-serializable object.
      */
     data: unknown;
+
+    /**
+     * Operator-editable per-placement instance configuration, forwarded
+     * verbatim from the resolved placement so the frontend component can
+     * branch on the same config the backend data fetcher received.
+     *
+     * Optional on the wire for backward compatibility; the resolver always
+     * populates it (substituting `{}` when the placement carries no
+     * overrides) and the frontend renderer defaults it to `{}` on read.
+     */
+    instanceConfig?: Record<string, unknown>;
 }
